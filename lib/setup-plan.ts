@@ -1,0 +1,9 @@
+export const setupSteps=[
+  {number:1,title:"Create the company memory",owner:"You + Codex",manual:"Create a Supabase project and run supabase/schema.sql.",coding:"Connect authentication, replace sample data, and secure every query.",unlock:"Supabase credentials"},
+  {number:2,title:"Connect product truth",owner:"You + Codex",manual:"Prepare a Google Sheet with 3–5 real products and share it with a service account.",coding:"Build validated sync, change detection, error reporting, and weekly scheduling.",unlock:"Sheet ID, service-account email and private key"},
+  {number:3,title:"Build catalog generation",owner:"You + Codex",manual:"Provide the existing catalog design and confirm currency, MOQ, and price rules.",coding:"Convert the design to HTML, match products, generate PDFs, and store versions.",unlock:"Catalog design file"},
+  {number:4,title:"Activate real AI",owner:"You + Codex",manual:"Create an Anthropic API key with a spending limit and add it in Vercel.",coding:"Implement structured profiling, email generation, and reply classification.",unlock:"Anthropic key"},
+  {number:5,title:"Validate lead sourcing",owner:"You + Codex",manual:"Choose one country and one segment; provide a test CSV of 20–30 companies.",coding:"Import, normalize domains, deduplicate, enrich, and score the test cohort.",unlock:"Country, segment and test CSV"},
+  {number:6,title:"Connect safe outreach",owner:"You + Codex",manual:"Set up filazoo.co mailboxes plus SPF, DKIM, DMARC and a business address.",coding:"Add verification, approval queue, timezone scheduling, limits, suppression, and reply polling.",unlock:"Mailbox credentials after warm-up"},
+  {number:7,title:"Enable human alerts",owner:"You + Codex",manual:"Create a Telegram bot and choose the big-order threshold.",coding:"Alert on interested or big-order replies and stop automation for human takeover.",unlock:"Bot token, chat ID and threshold"},
+] as const;

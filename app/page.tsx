@@ -6,6 +6,7 @@ export default function DashboardPage() {
   const priority = companies.filter((company) => company.fitScore >= 8).slice(0, 4);
   return <>
     <PageHeader eyebrow="Thursday, 8 October" title="Good morning, Filazoo" description="Your B2B pipeline is healthy. Four high-fit prospects need attention today." action={<Link className="button button-primary" href="/companies">Add company <span aria-hidden>+</span></Link>} />
+    <div className="demo-banner"><span>DEMO DATA</span><p>This dashboard uses sample companies until Supabase is connected.</p><Link href="/setup">Continue setup →</Link></div>
     <section className="metric-grid" aria-label="Business overview">{dashboardMetrics.map((metric) => <MetricCard key={metric.label} {...metric} />)}</section>
     <section className="dashboard-grid">
       <SectionCard className="span-2" title="Pipeline overview" subtitle="Lead movement across the last 30 days" action={<Link className="text-link" href="/pipeline">View pipeline →</Link>}>

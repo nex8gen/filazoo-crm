@@ -6,9 +6,9 @@ import { Icon, type IconName } from "@/components/icon";
 
 const navigation: { href: string; label: string; icon: IconName; badge?: string }[] = [
   { href: "/", label: "Overview", icon: "grid" },
-  { href: "/companies", label: "Companies", icon: "building", badge: "248" },
+  { href: "/companies", label: "Companies", icon: "building", badge: "Demo" },
   { href: "/pipeline", label: "Pipeline", icon: "pipeline" },
-  { href: "/emails", label: "Email queue", icon: "mail", badge: "12" },
+  { href: "/emails", label: "Email queue", icon: "mail", badge: "Demo" },
   { href: "/catalog", label: "Catalog", icon: "catalog" },
   { href: "/automation", label: "Automation", icon: "automation" },
 ];
@@ -25,6 +25,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <p className="nav-label">WORKSPACE</p>
         {navigation.map((item) => { const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href); return <Link className={active ? "active" : ""} href={item.href} key={item.href} onClick={() => setOpen(false)}><Icon name={item.icon}/><span>{item.label}</span>{item.badge && <small>{item.badge}</small>}</Link>; })}
         <p className="nav-label nav-label-spaced">SYSTEM</p>
+        <Link className={pathname.startsWith("/setup") ? "active" : ""} href="/setup" onClick={() => setOpen(false)}><Icon name="setup"/><span>Setup center</span></Link>
         <Link className={pathname.startsWith("/settings") ? "active" : ""} href="/settings" onClick={() => setOpen(false)}><Icon name="settings"/><span>Settings</span></Link>
       </nav>
       <div className="safety-card"><span className="safety-dot"/><div><strong>Dry run is on</strong><p>No emails will be sent</p></div></div>
