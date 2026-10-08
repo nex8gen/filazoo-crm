@@ -10,6 +10,7 @@ const navigation: { href: string; label: string; icon: IconName; badge?: string 
   { href: "/pipeline", label: "Pipeline", icon: "pipeline" },
   { href: "/emails", label: "Email queue", icon: "mail", badge: "12" },
   { href: "/catalog", label: "Catalog", icon: "catalog" },
+  { href: "/automation", label: "Automation", icon: "automation" },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
