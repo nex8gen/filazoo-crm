@@ -21,7 +21,7 @@ export function ForgotPasswordForm() {
           {state?.success ? <p role="status" className="text-xs text-primary">{state.success}</p> : null}
           <Button className="w-full" type="submit" disabled={pending}><Mail />{pending ? "Sending..." : "Send recovery link"}</Button>
         </form>
-        <Button variant="ghost" className="w-full" render={<Link href="/login" />}><ArrowLeft />Back to sign in</Button>
+        <Button nativeButton={false} variant="ghost" className="w-full" render={<Link href="/login" />}><ArrowLeft />Back to sign in</Button>
       </CardContent>
     </Card>
   );

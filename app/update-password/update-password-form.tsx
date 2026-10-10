@@ -30,7 +30,7 @@ export function UpdatePasswordForm() {
           {state?.error ? <p role="alert" className="text-xs text-destructive">{state.error}</p> : null}
           <Button className="w-full" type="submit" disabled={pending}><KeyRound />{pending ? "Updating..." : "Update password"}</Button>
         </form>
-        <Button variant="ghost" className="w-full" render={<Link href="/login" />}>Cancel</Button>
+        <Button nativeButton={false} variant="ghost" className="w-full" render={<Link href="/login" />}>Cancel</Button>
       </CardContent>
     </Card>
   );

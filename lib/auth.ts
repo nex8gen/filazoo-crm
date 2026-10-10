@@ -2,6 +2,7 @@ import "server-only";
 
 import { cache } from "react";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import { hasSupabaseAuthConfig, hasSupabaseConfig } from "@/lib/env";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -12,6 +13,9 @@ export type WorkspaceViewer = AuthViewer & { role: WorkspaceRole; displayName: s
 
 export const getViewer = cache(async (): Promise<AuthViewer | null> => {
   if (!hasSupabaseAuthConfig()) return null;
+  // Supabase validates JWT expiry against the current time. Explicitly defer
+  // that work to the incoming request when Cache Components prerenders a shell.
+  await connection();
   const supabase = await createClient();
   const { data, error } = await supabase.auth.getClaims();
   if (error || !data?.claims?.sub) return null;
