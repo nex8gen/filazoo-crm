@@ -6,18 +6,14 @@ import { useEffect, useState } from "react";
 import {
   Building2,
   ChartNoAxesColumnIncreasing,
-  ChevronDown,
   Inbox,
   LayoutDashboard,
   Library,
-  LogOut,
   Mail,
   Search,
   Settings,
-  UserRound,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   CommandDialog,
@@ -28,14 +24,6 @@ import {
   CommandList,
   CommandShortcut,
 } from "@/components/ui/command";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   Sidebar,
   SidebarContent,
@@ -62,7 +50,7 @@ const navigation = [
   { label: "Settings", href: "/settings", icon: Settings },
 ];
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({ children, userMenu }: { children: React.ReactNode; userMenu?: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [commandOpen, setCommandOpen] = useState(false);
@@ -144,23 +132,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </Button>
           <div className="ml-auto flex items-center gap-1">
             <ThemeToggle />
-            <DropdownMenu>
-              <DropdownMenuTrigger render={<Button variant="ghost" className="h-9 gap-2 px-2" />}>
-                <Avatar className="size-7">
-                  <AvatarFallback className="bg-brand-soft text-xs text-primary">RF</AvatarFallback>
-                </Avatar>
-                <span className="hidden text-xs font-medium sm:inline">Raul</span>
-                <ChevronDown className="hidden size-3 text-muted-foreground sm:block" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuLabel>Filazoo workspace</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem><UserRound /> Profile</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => router.push("/settings")}><Settings /> Settings</DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={async () => { await fetch("/auth/signout", { method: "POST" }); router.push("/login"); router.refresh(); }}><LogOut /> Sign out</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {userMenu}
           </div>
         </header>
         <main className="mx-auto w-full max-w-screen-2xl p-4 md:p-6 lg:p-8">{children}</main>
