@@ -3,7 +3,6 @@ import "server-only";
 import { requireWorkspaceMember } from "@/lib/auth";
 import { formatRelativeDate, getInitials, getPipelineStageLabel } from "@/lib/crm-model";
 import { env, hasSupabaseConfig } from "@/lib/env";
-import { companies as demoCompanies, emailDrafts as demoEmailDrafts, recentActivity as demoActivity } from "@/lib/mock-data";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import type { ActivityItem, Company, DataMode, EmailDraft, Product } from "@/lib/types";
 
@@ -54,13 +53,6 @@ type EventRow = {
   companies: Relation<{ name: string }>;
 };
 
-const demoProducts: Product[] = [
-  { sku: "PLA-MAT-BLK", name: "Matte PLA", material: "PLA", color: "Black", price: "€10.90", moq: 10, status: "Active", updatedAt: null },
-  { sku: "PETG-BSC-CLR", name: "Basic PETG", material: "PETG", color: "Clear", price: "€11.80", moq: 10, status: "Active", updatedAt: null },
-  { sku: "ABS-PRO-GRY", name: "Pro ABS", material: "ABS", color: "Grey", price: "€13.40", moq: 20, status: "Active", updatedAt: null },
-  { sku: "TPU-95A-BLK", name: "Flexible TPU 95A", material: "TPU", color: "Black", price: "€17.60", moq: 10, status: "Active", updatedAt: null },
-];
-
 function first<T>(value: Relation<T>): T | null {
   return Array.isArray(value) ? value[0] ?? null : value;
 }
@@ -75,11 +67,15 @@ function websiteDomain(website: string | null) {
 }
 
 export function getCrmDataMode(): DataMode {
-  return env.authRequired && hasSupabaseConfig() ? "live" : "demo";
+  const serverIsConfigured = hasSupabaseConfig();
+  const productionIsProtected = process.env.NODE_ENV !== "production" || env.authRequired;
+  return serverIsConfigured && productionIsProtected ? "live" : "demo";
 }
 
 async function authorizeLiveRead() {
-  if (getCrmDataMode() === "live") await requireWorkspaceMember(["admin", "operator", "viewer"]);
+  if (getCrmDataMode() === "live" && env.authRequired) {
+    await requireWorkspaceMember(["admin", "operator", "viewer"]);
+  }
 }
 
 function mapCompany(row: CompanyRow): Company {
@@ -107,7 +103,7 @@ function mapCompany(row: CompanyRow): Company {
 
 export async function listCompanies(): Promise<{ mode: DataMode; companies: Company[] }> {
   const mode = getCrmDataMode();
-  if (mode === "demo") return { mode, companies: demoCompanies };
+  if (mode === "demo") return { mode, companies: [] };
   await authorizeLiveRead();
 
   const { data, error } = await createSupabaseAdmin()
@@ -132,7 +128,7 @@ function emailStatus(status: string): EmailDraft["status"] {
 
 export async function listEmailDrafts(): Promise<{ mode: DataMode; emails: EmailDraft[] }> {
   const mode = getCrmDataMode();
-  if (mode === "demo") return { mode, emails: demoEmailDrafts };
+  if (mode === "demo") return { mode, emails: [] };
   await authorizeLiveRead();
 
   const { data, error } = await createSupabaseAdmin()
@@ -162,7 +158,7 @@ export async function listEmailDrafts(): Promise<{ mode: DataMode; emails: Email
 
 export async function listProducts(): Promise<{ mode: DataMode; products: Product[] }> {
   const mode = getCrmDataMode();
-  if (mode === "demo") return { mode, products: demoProducts };
+  if (mode === "demo") return { mode, products: [] };
   await authorizeLiveRead();
 
   const { data, error } = await createSupabaseAdmin()
@@ -199,17 +195,21 @@ export async function getDashboardData() {
     return {
       mode: companyResult.mode,
       companies: companyResult.companies,
-      activity: demoActivity,
-      emailQueueCount: demoEmailDrafts.length,
-      replyCount: 4,
+      activity: [],
+      emailQueueCount: 0,
+      sentCount: 0,
+      replyCount: 0,
+      bigOrderCount: 0,
     };
   }
 
   const client = createSupabaseAdmin();
-  const [eventsResult, queuedResult, repliesResult] = await Promise.all([
+  const [eventsResult, queuedResult, sentResult, repliesResult, bigOrdersResult] = await Promise.all([
     client.from("events").select("type,data,created_at,companies(name)").order("created_at", { ascending: false }).limit(4),
     client.from("emails").select("id", { count: "exact", head: true }).in("status", ["draft", "pending_approval", "approved", "scheduled"]),
+    client.from("emails").select("id", { count: "exact", head: true }).eq("status", "sent"),
     client.from("emails").select("id", { count: "exact", head: true }).eq("direction", "received"),
+    client.from("pipeline").select("id", { count: "exact", head: true }).eq("stage", "big_order"),
   ]);
   if (eventsResult.error) throw new Error(`Unable to load activity: ${eventsResult.error.message}`);
 
@@ -224,6 +224,8 @@ export async function getDashboardData() {
     companies: companyResult.companies,
     activity,
     emailQueueCount: queuedResult.count ?? 0,
+    sentCount: sentResult.count ?? 0,
     replyCount: repliesResult.count ?? 0,
+    bigOrderCount: bigOrdersResult.count ?? 0,
   };
 }

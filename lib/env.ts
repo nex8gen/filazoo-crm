@@ -11,5 +11,9 @@ export const env={
   authRequired:parsed.data.AUTH_REQUIRED==="true",
   dryRun:parsed.data.DRY_RUN!=="false",
 };
-export function hasSupabaseAuthConfig(){return Boolean(env.NEXT_PUBLIC_SUPABASE_URL&&env.supabasePublishableKey)}
-export function hasSupabaseConfig(){return Boolean(hasSupabaseAuthConfig()&&env.supabaseSecretKey)}
+function looksLikeSupabaseKey(value: string | undefined, prefix: string) {
+  if (!value) return false;
+  return value.startsWith(prefix) || value.split(".").length === 3;
+}
+export function hasSupabaseAuthConfig(){return Boolean(env.NEXT_PUBLIC_SUPABASE_URL&&looksLikeSupabaseKey(env.supabasePublishableKey,"sb_publishable_"))}
+export function hasSupabaseConfig(){return Boolean(hasSupabaseAuthConfig()&&looksLikeSupabaseKey(env.supabaseSecretKey,"sb_secret_"))}

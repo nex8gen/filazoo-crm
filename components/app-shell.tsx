@@ -123,7 +123,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span className="size-2 shrink-0 rounded-full bg-primary" />
             <div className="min-w-0 group-data-[collapsible=icon]:hidden">
               <p className="truncate text-xs font-medium">System operational</p>
-              <p className="truncate text-xs text-muted-foreground">Demo workspace</p>
+              <p className="truncate text-xs text-muted-foreground">Supabase workspace</p>
             </div>
           </div>
         </SidebarFooter>
@@ -158,7 +158,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <DropdownMenuItem><UserRound /> Profile</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => router.push("/settings")}><Settings /> Settings</DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem><LogOut /> Sign out</DropdownMenuItem>
+                <DropdownMenuItem onClick={async () => { await fetch("/auth/signout", { method: "POST" }); router.push("/login"); router.refresh(); }}><LogOut /> Sign out</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
