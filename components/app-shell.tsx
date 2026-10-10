@@ -50,6 +50,8 @@ const navigation = [
   { label: "Settings", href: "/settings", icon: Settings },
 ];
 
+const authPaths = ["/login", "/forgot-password", "/update-password", "/auth/"];
+
 export function AppShell({ children, userMenu }: { children: React.ReactNode; userMenu?: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -66,7 +68,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  if (pathname === "/login") return children;
+  if (authPaths.some((path) => pathname === path || (path.endsWith("/") && pathname.startsWith(path)))) return children;
 
   const navigate = (href: string) => {
     setCommandOpen(false);
