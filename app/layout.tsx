@@ -1,24 +1,24 @@
 import type { Metadata } from "next";
-import { Manrope, Sora } from "next/font/google";
+import { GeistSans } from "geist/font/sans";
+import { ThemeProvider } from "@/components/theme-provider";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { Toaster } from "@/components/ui/sonner";
 import { AppShell } from "@/components/app-shell";
-import { Suspense } from "react";
 import "./globals.css";
 
-const manrope = Manrope({ variable: "--font-body", subsets: ["latin"] });
-const sora = Sora({ variable: "--font-display", subsets: ["latin"] });
-
 export const metadata: Metadata = {
-  title: { default: "Filazoo CRM", template: "%s · Filazoo CRM" },
-  description: "B2B prospecting, outreach, and relationship management for Filazoo.",
+  title: { default: "Filazoo", template: "%s · Filazoo" },
+  description: "B2B outreach intelligence and relationship management.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${manrope.variable} ${sora.variable}`}>
+    <html lang="en" className={GeistSans.variable} suppressHydrationWarning>
       <body>
-        <Suspense fallback={<main className="main-content"><div className="page-loading">Loading workspace…</div></main>}>
-          <AppShell>{children}</AppShell>
-        </Suspense>
+        <ThemeProvider>
+          <TooltipProvider><AppShell>{children}</AppShell></TooltipProvider>
+          <Toaster position="bottom-right" />
+        </ThemeProvider>
       </body>
     </html>
   );

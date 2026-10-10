@@ -2,7 +2,8 @@
 -- CRM tables are server-only. The publishable key is reserved for Auth.
 
 begin;
-create extension if not exists citext;
+create schema if not exists extensions;
+create extension if not exists citext with schema extensions;
 
 create or replace function public.set_updated_at() returns trigger language plpgsql security invoker set search_path = public as $$
 begin
@@ -43,7 +44,7 @@ create table public.company_profiles (
   company_id uuid primary key references public.companies(id) on delete cascade,
   summary text, products_they_print text, likely_materials text[] not null default array[]::text[],
   likely_products text[] not null default array[]::text[], company_size text,
-  fit_score integer check (fit_score is null or fit_score between 0 and 100),
+  fit_score integer check (fit_score is null or fit_score between 1 and 10),
   interest_tags text[] not null default array[]::text[], evidence jsonb not null default '[]'::jsonb,
   model_name text, profiled_at timestamptz, updated_at timestamptz not null default now()
 );
@@ -83,7 +84,7 @@ create table public.emails (
 
 create table public.pipeline (
   company_id uuid primary key references public.companies(id) on delete cascade,
-  stage text not null default 'new' check (stage in ('new','qualified','contacted','replied','sample','negotiation','won','lost')),
+  stage text not null default 'new' check (stage in ('new','contacted','replied','interested','big_order','won','lost')),
   notes text, estimated_value numeric(14,2) check (estimated_value is null or estimated_value >= 0),
   currency char(3) not null default 'USD', next_followup_at timestamptz,
   owner_id uuid references auth.users(id) on delete set null, updated_at timestamptz not null default now()
@@ -104,9 +105,14 @@ create index companies_segment_country_idx on public.companies(segment,country);
 create index contacts_company_id_idx on public.contacts(company_id);
 create index contacts_verification_status_idx on public.contacts(verification_status);
 create index emails_contact_id_idx on public.emails(contact_id);
+create index emails_catalog_id_idx on public.emails(catalog_id);
+create index emails_approved_by_idx on public.emails(approved_by);
 create index emails_status_scheduled_for_idx on public.emails(status,scheduled_for);
 create index events_company_created_at_idx on public.events(company_id,created_at desc);
+create index events_actor_id_idx on public.events(actor_id);
 create index pipeline_stage_idx on public.pipeline(stage);
+create index pipeline_owner_id_idx on public.pipeline(owner_id);
+create index catalogs_company_id_idx on public.catalogs(company_id);
 
 create trigger workspace_members_set_updated_at before update on public.workspace_members for each row execute function public.set_updated_at();
 create trigger companies_set_updated_at before update on public.companies for each row execute function public.set_updated_at();

@@ -1,5 +1,8 @@
-import { PageHeader, StatusPill } from "@/components/ui";
-import { emailDrafts } from "@/lib/mock-data";
+import { Mail, Plus } from "lucide-react";
+import { EmptyState } from "@/components/data-state";
+import { PageHeader } from "@/components/page-header";
+import { Button } from "@/components/ui/button";
 
-export const metadata={title:"Email queue"};
-export default function EmailsPage(){return <><PageHeader title="Email approval queue" description="Review every message before it can enter the sending schedule." action={<div className="dry-badge"><i/>DRY RUN ON</div>}/><div className="tab-row"><button className="active">Needs approval <span>12</span></button><button>Scheduled <span>30</span></button><button>Sent</button><button>Replies <span>4</span></button></div><div className="email-list">{emailDrafts.map(email=><article className="email-card" key={email.id}><div className="email-select"><input type="checkbox" aria-label={`Select email to ${email.company}`}/></div><div className="email-content"><div className="email-heading"><div><strong>{email.company}</strong><span>to {email.contact} · Step {email.step}</span></div><StatusPill value={email.status}/></div><h2>{email.subject}</h2><p>{email.preview}</p><footer><span>Scheduled: {email.scheduledFor}</span><div><button className="button button-quiet">Edit</button><button className="button button-primary">Approve</button></div></footer></div></article>)}</div></>}
+export default function EmailsPage() {
+  return <div><PageHeader title="Emails" description="Review personalized drafts and keep every outbound message controlled." actions={<Button size="sm"><Plus /> New sequence</Button>} /><EmptyState icon={Mail} title="No email drafts yet" description="Qualified contacts and approved sequences will appear here when outreach begins." action={{ label: "Create sequence" }} /></div>;
+}
