@@ -1,19 +1,9 @@
-import { Filter, Plus } from "lucide-react";
-import { KanbanBoard } from "@/components/kanban-board";
-import { PageHeader } from "@/components/page-header";
-import { Button } from "@/components/ui/button";
+import { PipelineWorkspace } from "@/components/pipeline-workspace";
+import { requireWorkspaceMember } from "@/lib/auth";
 import { listCompanies } from "@/lib/data/crm";
 
 export default async function PipelinePage() {
+  const viewer = await requireWorkspaceMember(["admin", "operator", "viewer"]);
   const { companies } = await listCompanies();
-  return (
-    <div>
-      <PageHeader
-        title="Pipeline"
-        description="Move qualified companies through the outreach journey and keep high-value opportunities visible."
-        actions={<><Button size="sm" variant="outline"><Filter /> Filter</Button><Button size="sm"><Plus /> Add opportunity</Button></>}
-      />
-      <KanbanBoard companies={companies} />
-    </div>
-  );
+  return <PipelineWorkspace companies={companies} canWrite={viewer.role !== "viewer"} />;
 }

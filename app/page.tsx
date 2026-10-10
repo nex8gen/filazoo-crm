@@ -1,14 +1,16 @@
-import { BellRing, Building2, Mail, MessageSquareReply, Plus } from "lucide-react";
+import { BellRing, Building2, Mail, MessageSquareReply } from "lucide-react";
+import { AddCompanyButton } from "@/components/crm-action-dialogs";
 import { EmptyState } from "@/components/data-state";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { requireWorkspaceMember } from "@/lib/auth";
 import { getDashboardData } from "@/lib/data/crm";
 
 const statIcons = [Building2, Mail, MessageSquareReply, BellRing];
 
 export default async function DashboardPage() {
+  const viewer = await requireWorkspaceMember(["admin", "operator", "viewer"]);
   const data = await getDashboardData();
   const stats = [
     { label: "Companies", value: data.companies.length, detail: "in Supabase" },
@@ -22,7 +24,7 @@ export default async function DashboardPage() {
       <PageHeader
         title="Dashboard"
         description="A concise view of prospecting activity, outreach performance, and high-value opportunities."
-        actions={<Button size="sm"><Plus /> Add company</Button>}
+        actions={<AddCompanyButton canWrite={viewer.role !== "viewer"} />}
       />
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

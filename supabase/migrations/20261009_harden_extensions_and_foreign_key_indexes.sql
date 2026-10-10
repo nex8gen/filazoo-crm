@@ -14,4 +14,8 @@ create index if not exists events_actor_id_idx
 create index if not exists pipeline_owner_id_idx
   on public.pipeline(owner_id);
 
+-- Moving citext changes the qualified type name PostgREST caches. Refresh it
+-- after this migration so Data API writes do not keep resolving public.citext.
+notify pgrst, 'reload schema';
+
 commit;

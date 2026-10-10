@@ -4,7 +4,7 @@ import { requireWorkspaceMember } from "@/lib/auth";
 import { formatRelativeDate, getInitials, getPipelineStageLabel } from "@/lib/crm-model";
 import { env, hasSupabaseConfig } from "@/lib/env";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
-import type { ActivityItem, Company, DataMode, EmailDraft, Product } from "@/lib/types";
+import type { ActivityItem, Catalog, Company, ContactOption, DataMode, EmailDraft, Product, Reply } from "@/lib/types";
 
 type Relation<T> = T | T[] | null;
 
@@ -51,6 +51,38 @@ type EventRow = {
   data: Record<string, unknown> | null;
   created_at: string;
   companies: Relation<{ name: string }>;
+};
+
+type ContactOptionRow = {
+  id: string;
+  company_id: string;
+  name: string | null;
+  email: string;
+  verification_status: string;
+  companies: Relation<{ name: string }>;
+};
+
+type CatalogRow = {
+  id: string;
+  product_skus: string[] | null;
+  currency: string;
+  price_date: string;
+  version: number;
+  pdf_url: string | null;
+  created_at: string;
+  companies: Relation<{ name: string }>;
+};
+
+type ReplyRow = {
+  id: string;
+  subject: string | null;
+  body: string | null;
+  sent_at: string | null;
+  created_at: string;
+  contacts: Relation<{
+    name: string | null;
+    companies: Relation<{ name: string }>;
+  }>;
 };
 
 function first<T>(value: Relation<T>): T | null {
@@ -156,6 +188,88 @@ export async function listEmailDrafts(): Promise<{ mode: DataMode; emails: Email
   return { mode, emails };
 }
 
+export async function listContactOptions(): Promise<{ mode: DataMode; contacts: ContactOption[] }> {
+  const mode = getCrmDataMode();
+  if (mode === "demo") return { mode, contacts: [] };
+  await authorizeLiveRead();
+
+  const { data, error } = await createSupabaseAdmin()
+    .from("contacts")
+    .select("id,company_id,name,email,verification_status,companies(name)")
+    .eq("unsubscribed", false)
+    .order("created_at", { ascending: false })
+    .limit(500);
+  if (error) throw new Error(`Unable to load contacts: ${error.message}`);
+
+  return {
+    mode,
+    contacts: ((data ?? []) as unknown as ContactOptionRow[]).map((row) => ({
+      id: row.id,
+      companyId: row.company_id,
+      company: first(row.companies)?.name || "Unknown company",
+      name: row.name || row.email,
+      email: row.email,
+      verificationStatus: row.verification_status,
+    })),
+  };
+}
+
+export async function listCatalogs(): Promise<{ mode: DataMode; catalogs: Catalog[] }> {
+  const mode = getCrmDataMode();
+  if (mode === "demo") return { mode, catalogs: [] };
+  await authorizeLiveRead();
+
+  const { data, error } = await createSupabaseAdmin()
+    .from("catalogs")
+    .select("id,product_skus,currency,price_date,version,pdf_url,created_at,companies(name)")
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (error) throw new Error(`Unable to load catalogs: ${error.message}`);
+
+  return {
+    mode,
+    catalogs: ((data ?? []) as unknown as CatalogRow[]).map((row) => ({
+      id: row.id,
+      company: first(row.companies)?.name || "Unknown company",
+      productSkus: row.product_skus ?? [],
+      currency: row.currency,
+      priceDate: row.price_date,
+      version: row.version,
+      pdfUrl: row.pdf_url,
+      createdAt: row.created_at,
+    })),
+  };
+}
+
+export async function listReplies(): Promise<{ mode: DataMode; replies: Reply[] }> {
+  const mode = getCrmDataMode();
+  if (mode === "demo") return { mode, replies: [] };
+  await authorizeLiveRead();
+
+  const { data, error } = await createSupabaseAdmin()
+    .from("emails")
+    .select("id,subject,body,sent_at,created_at,contacts(name,companies(name))")
+    .eq("direction", "received")
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (error) throw new Error(`Unable to load replies: ${error.message}`);
+
+  return {
+    mode,
+    replies: ((data ?? []) as unknown as ReplyRow[]).map((row) => {
+      const contact = first(row.contacts);
+      return {
+        id: row.id,
+        company: first(contact?.companies ?? null)?.name || "Unknown company",
+        contact: contact?.name || "Unknown contact",
+        subject: row.subject || "Untitled reply",
+        body: row.body || "No reply body was stored.",
+        receivedAt: row.sent_at || row.created_at,
+      };
+    }),
+  };
+}
+
 export async function listProducts(): Promise<{ mode: DataMode; products: Product[] }> {
   const mode = getCrmDataMode();
   if (mode === "demo") return { mode, products: [] };
@@ -209,7 +323,7 @@ export async function getDashboardData() {
     client.from("emails").select("id", { count: "exact", head: true }).in("status", ["draft", "pending_approval", "approved", "scheduled"]),
     client.from("emails").select("id", { count: "exact", head: true }).eq("status", "sent"),
     client.from("emails").select("id", { count: "exact", head: true }).eq("direction", "received"),
-    client.from("pipeline").select("id", { count: "exact", head: true }).eq("stage", "big_order"),
+    client.from("pipeline").select("company_id", { count: "exact", head: true }).eq("stage", "big_order"),
   ]);
   if (eventsResult.error) throw new Error(`Unable to load activity: ${eventsResult.error.message}`);
 

@@ -1,0 +1,23 @@
+import type { SVGProps } from "react";
+
+export function BrandMark({ className, ...props }: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      viewBox="0 0 46 46"
+      xmlns="http://www.w3.org/2000/svg"
+      {...props}
+    >
+      <path
+        d="M40 23C40 13.6112 32.3888 6 23 6C13.6112 6 6 13.6112 6 23C6 32.3888 13.6112 40 23 40V46C10.2975 46 0 35.7025 0 23C0 10.2975 10.2975 0 23 0C35.7025 0 46 10.2975 46 23C46 35.7025 35.7025 46 23 46V40C32.3888 40 40 32.3888 40 23Z"
+        fill="currentColor"
+      />
+      <path
+        d="M30 23C30 19.134 26.866 16 23 16C19.134 16 16 19.134 16 23C16 26.866 19.134 30 23 30V36C15.8203 36 10 30.1797 10 23C10 15.8203 15.8203 10 23 10C30.1797 10 36 15.8203 36 23C36 30.1797 30.1797 36 23 36V30C26.866 30 30 26.866 30 23Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}

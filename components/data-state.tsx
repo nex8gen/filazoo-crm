@@ -9,11 +9,13 @@ export function EmptyState({
   description,
   icon: Icon = Inbox,
   action,
+  children,
 }: {
   title: string;
   description: string;
   icon?: LucideIcon;
   action?: { label: string; onClick?: () => void };
+  children?: React.ReactNode;
 }) {
   return (
     <Card className="border-dashed shadow-none">
@@ -21,6 +23,7 @@ export function EmptyState({
         <div className="grid size-10 place-items-center rounded-lg border bg-muted"><Icon className="size-4 text-muted-foreground" /></div>
         <div className="space-y-1"><h2 className="text-sm font-medium">{title}</h2><p className="max-w-sm text-xs text-muted-foreground">{description}</p></div>
         {action && <Button size="sm" onClick={action.onClick}>{action.label}</Button>}
+        {children}
       </CardContent>
     </Card>
   );

@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "seed:sample": "node --experimental-strip-types scripts/seed-sample-data.ts",
     "verify": "npm run lint && npm run test && npm run build"
   },
   "dependencies": {

@@ -65,6 +65,12 @@ The local `main` branch and GitHub `main` were synchronized through commit `68ae
 - Dark and light themes
 - Command palette and page navigation
 - Loading, empty, and error-state components
+- Working company creation with optional primary contacts and audit events
+- CSV company export
+- Persistent opportunity creation and pipeline drag-and-drop stage updates
+- Safe email-draft creation that never sends from the creation flow
+- Catalog selection/version creation with product and currency choices
+- Role-aware mutation controls for administrators, operators, and read-only viewers
 
 ### Implemented authentication
 
@@ -98,6 +104,7 @@ This is a private workspace. There is intentionally no public self-registration 
 - Browser and server authentication clients
 - Workspace authorization table
 - Live database-backed data-access layer
+- Idempotent, clearly labeled sample dataset for CRM demonstrations
 - Health endpoint at `/api/health`
 - Live/demo mode detection
 
@@ -143,7 +150,7 @@ The user interface is ahead of the automation backend. Do not describe the follo
 - Inbound mailbox/reply ingestion
 - Automated follow-up sequences
 - Big-order notifications
-- CSV company import and audited CRUD operations
+- CSV company import and complete audited edit/delete operations
 - Complete compliance, unsubscribe, bounce, and deliverability workflow
 - Production monitoring and job retry infrastructure
 
@@ -156,6 +163,7 @@ Some screens may display empty live states until records are added to Supabase. 
 - `app/` - Next.js routes, pages, route handlers, and Server Actions
 - `components/` - shared application components
 - `components/ui/` - reusable shadcn/Base UI primitives
+- `app/crm-actions.ts` - authorized, validated CRM mutations and audit-event writes
 - `lib/data/crm.ts` - authorized CRM reads and database-to-UI mapping
 - `lib/data/members.ts` - administrator team/member reads
 - `lib/auth.ts` - current user and workspace authorization
@@ -165,6 +173,7 @@ Some screens may display empty live states until records are added to Supabase. 
 - `lib/env.ts` - validated environment configuration
 - `lib/types.ts` - shared application types
 - `tests/` - Node test suite
+- `scripts/seed-sample-data.ts` - dry-run-only sample CRM seed with deterministic IDs
 
 ### Authentication flow
 
@@ -181,6 +190,17 @@ Browser code must never query protected CRM tables using an administrator key. P
 ## 6. Environment and deployment
 
 Local secrets are stored in `.env.local`, which must remain uncommitted. Do not overwrite it unless the user explicitly asks.
+
+### Current Vercel production status
+
+- Vercel project: `nex8gens-projects/filazoo-crm`
+- Production origin: `https://filazoo-crm.vercel.app`
+- Production deployment verified on 2026-10-10: `dpl_4tSsffJQiMpfUTQFnmvRBURUdCTi`
+- `NEXT_PUBLIC_APP_URL` points to the production origin.
+- `AUTH_REQUIRED=true` and `DRY_RUN=true` are enforced in Production.
+- `/api/health` reports the Supabase database connected and dry-run enabled.
+- Unauthenticated requests to `/` redirect to `/login`.
+- Vercel Deployment Protection remains enabled; do not disable it for automated checks because `vercel curl` can authenticate safely.
 
 Required live configuration:
 
@@ -234,6 +254,15 @@ Run the full verification suite after every meaningful change:
 ```bash
 npm run verify
 ```
+
+Seed or refresh the synthetic demonstration records (safe to rerun):
+
+```bash
+npm run seed:sample
+```
+
+The seed refuses to run when `DRY_RUN=false`. Its companies and products use
+`[SAMPLE]` labels, and all contact addresses use reserved `.example` domains.
 
 Local preview:
 

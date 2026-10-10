@@ -53,6 +53,35 @@ export type EmailDraft = {
   status: "Needs approval" | "Scheduled" | "Draft";
 };
 
+export type ContactOption = {
+  id: string;
+  companyId: string;
+  company: string;
+  name: string;
+  email: string;
+  verificationStatus: string;
+};
+
+export type Catalog = {
+  id: string;
+  company: string;
+  productSkus: string[];
+  currency: string;
+  priceDate: string;
+  version: number;
+  pdfUrl: string | null;
+  createdAt: string;
+};
+
+export type Reply = {
+  id: string;
+  company: string;
+  contact: string;
+  subject: string;
+  body: string;
+  receivedAt: string;
+};
+
 export type Product = {
   sku: string;
   name: string;
