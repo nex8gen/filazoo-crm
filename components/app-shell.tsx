@@ -7,12 +7,12 @@ import {
   BookOpen,
   Building2,
   ChartNoAxesColumnIncreasing,
-  ChevronDown,
   Inbox,
   LayoutDashboard,
   Library,
   Mail,
   Menu,
+  Package2,
   Search,
   Settings,
   Sparkles,
@@ -36,6 +36,7 @@ type NavigationItem = {
   href: string;
   icon: typeof LayoutDashboard;
   description: string;
+  exact?: boolean;
 };
 
 type NavigationGroup = {
@@ -67,10 +68,13 @@ const navigation: NavigationGroup[] = [
     ],
   },
   {
-    label: "Resources",
-    eyebrow: "Data",
+    label: "Catalogs",
+    eyebrow: "Catalog management",
     icon: Library,
-    items: [{ label: "Catalogs", href: "/catalogs", icon: BookOpen, description: "Products and collections" }],
+    items: [
+      { label: "Products", href: "/catalogs", icon: Package2, description: "Products, pricing and availability", exact: true },
+      { label: "Company Catalogs", href: "/catalogs/companies", icon: BookOpen, description: "Tailored selections for each company" },
+    ],
   },
   {
     label: "Settings",
@@ -83,16 +87,17 @@ const navigation: NavigationGroup[] = [
 const allItems = navigation.flatMap((group) => group.items);
 const authPaths = ["/login", "/forgot-password", "/update-password", "/auth/", "/access-denied"];
 
-function itemIsActive(pathname: string, href: string) {
-  return href === "/" ? pathname === "/" : pathname.startsWith(href);
+function itemIsActive(pathname: string, item: NavigationItem) {
+  if (item.href === "/" || item.exact) return pathname === item.href;
+  return pathname === item.href || pathname.startsWith(`${item.href}/`);
 }
 
 function SidebarNavigation({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
   const activeGroup = useMemo(
-    () => navigation.find((group) => group.items.some((item) => itemIsActive(pathname, item.href))) ?? navigation[0],
+    () => navigation.find((group) => group.items.some((item) => itemIsActive(pathname, item))) ?? navigation[0],
     [pathname],
   );
-  const activeItem = activeGroup.items.find((item) => itemIsActive(pathname, item.href));
+  const activeItem = activeGroup.items.find((item) => itemIsActive(pathname, item));
 
   return (
     <div className="relative flex h-full min-h-0 w-[19rem]">
@@ -129,7 +134,7 @@ function SidebarNavigation({ pathname, onNavigate }: { pathname: string; onNavig
           <p className="px-3 pb-2 font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground">{activeGroup.eyebrow}</p>
           <ul className="space-y-0.5">
             {activeGroup.items.map((item) => {
-              const active = itemIsActive(pathname, item.href);
+              const active = itemIsActive(pathname, item);
               return (
                 <li key={item.href}>
                   <Link
@@ -175,7 +180,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
 
   if (authPaths.some((path) => pathname === path || (path.endsWith("/") && pathname.startsWith(path)))) return children;
 
-  const activeItem = allItems.find((item) => itemIsActive(pathname, item.href)) ?? allItems[0];
+  const activeItem = allItems.find((item) => itemIsActive(pathname, item)) ?? allItems[0];
   const activeGroup = navigation.find((group) => group.items.includes(activeItem)) ?? navigation[0];
   const navigate = (href: string) => {
     setCommandOpen(false);
@@ -191,11 +196,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
         <Link href="/" aria-label="Filazoo home" className="hidden size-5 items-center justify-center text-primary md:flex">
           <BrandMark className="size-5" />
         </Link>
-        <span className="mx-3 hidden text-muted-foreground/40 md:block">/</span>
-        <button className="hidden items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground md:flex" type="button">
-          Filazoo CRM <ChevronDown className="size-3" />
-        </button>
-        <span className="mx-3 hidden text-border lg:block">/</span>
+        <span className="mx-3 hidden text-muted-foreground/40 lg:block">/</span>
         <div className="hidden items-center gap-2 text-xs lg:flex">
           <activeGroup.icon className="size-3.5 text-muted-foreground" />
           <span>{activeGroup.label}</span>

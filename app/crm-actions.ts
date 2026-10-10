@@ -41,6 +41,24 @@ const catalogSchema = z.object({
   currency: z.enum(["USD", "EUR", "GBP", "CNY"]),
   productSkus: z.array(z.string().trim().min(1).max(100)).max(100),
 });
+const productSchema = z.object({
+  sku: z.string().trim().min(2).max(100).regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/),
+  name: z.string().trim().min(2).max(160),
+  material: z.string().trim().min(1).max(100),
+  colors: z.string().trim().min(1).max(2000),
+  diameter: optionalText(50),
+  weight: optionalText(50),
+  currency: z.enum(["USD", "EUR", "GBP", "CNY"]),
+  minimum1: z.coerce.number().int().min(1).max(1_000_000),
+  price1: z.coerce.number().min(0).max(1_000_000),
+  minimum2: z.union([z.literal(""), z.coerce.number().int().min(1).max(1_000_000)]),
+  price2: z.union([z.literal(""), z.coerce.number().min(0).max(1_000_000)]),
+  minimum3: z.union([z.literal(""), z.coerce.number().int().min(1).max(1_000_000)]),
+  price3: z.union([z.literal(""), z.coerce.number().min(0).max(1_000_000)]),
+  stockStatus: optionalText(100),
+  leadTime: optionalText(100),
+  imageUrl: z.string().trim().url().max(1000).optional().or(z.literal("")),
+});
 
 function normalizeWebsite(value: string | undefined) {
   if (!value) return null;
@@ -57,7 +75,7 @@ function domainFromWebsite(website: string | null) {
 }
 
 function refreshCrm() {
-  ["/", "/companies", "/pipeline", "/emails", "/catalogs"].forEach((path) => revalidatePath(path));
+  ["/", "/companies", "/pipeline", "/emails", "/catalogs", "/catalogs/companies"].forEach((path) => revalidatePath(path));
 }
 
 export async function createCompany(_state: CrmActionState, formData: FormData): Promise<CrmActionState> {
@@ -196,4 +214,60 @@ export async function createCatalog(_state: CrmActionState, formData: FormData):
   await admin.from("events").insert({ company_id: company.id, actor_id: viewer.id, type: "catalog_created", data: { summary: `Catalog v${version} created with ${parsed.data.productSkus.length} products.` } });
   refreshCrm();
   return { success: `Catalog v${version} saved for ${company.name}.` };
+}
+
+export async function createProduct(_state: CrmActionState, formData: FormData): Promise<CrmActionState> {
+  await requireWorkspaceMember(["admin", "operator"]);
+  const parsed = productSchema.safeParse({
+    sku: formData.get("sku"),
+    name: formData.get("name"),
+    material: formData.get("material"),
+    colors: formData.get("colors"),
+    diameter: formData.get("diameter"),
+    weight: formData.get("weight"),
+    currency: formData.get("currency"),
+    minimum1: formData.get("minimum1"),
+    price1: formData.get("price1"),
+    minimum2: formData.get("minimum2") || "",
+    price2: formData.get("price2") || "",
+    minimum3: formData.get("minimum3") || "",
+    price3: formData.get("price3") || "",
+    stockStatus: formData.get("stockStatus"),
+    leadTime: formData.get("leadTime"),
+    imageUrl: formData.get("imageUrl"),
+  });
+  if (!parsed.success) return { error: "Enter valid product details, pricing, and an optional image URL." };
+  const optionalTiersAreComplete = (parsed.data.minimum2 === "") === (parsed.data.price2 === "") && (parsed.data.minimum3 === "") === (parsed.data.price3 === "");
+  if (!optionalTiersAreComplete) return { error: "Each optional pricing tier needs both a minimum quantity and a price." };
+
+  const colors = parsed.data.colors.split(",").map((color) => color.trim()).filter(Boolean);
+  const tiers = [
+    { minimum: parsed.data.minimum1, price: parsed.data.price1 },
+    ...(parsed.data.minimum2 === "" ? [] : [{ minimum: parsed.data.minimum2, price: parsed.data.price2 as number }]),
+    ...(parsed.data.minimum3 === "" ? [] : [{ minimum: parsed.data.minimum3, price: parsed.data.price3 as number }]),
+  ].sort((a, b) => a.minimum - b.minimum);
+  if (new Set(tiers.map((tier) => tier.minimum)).size !== tiers.length) return { error: "Pricing tier quantities must be unique." };
+
+  const { error } = await createSupabaseAdmin().from("products").insert({
+    sku: parsed.data.sku.toUpperCase(),
+    name: parsed.data.name,
+    material: parsed.data.material,
+    color: colors.join(", "),
+    diameter: parsed.data.diameter || null,
+    weight: parsed.data.weight || null,
+    price: parsed.data.price1,
+    currency: parsed.data.currency,
+    moq: parsed.data.minimum1,
+    stock_status: parsed.data.stockStatus || "Not specified",
+    lead_time: parsed.data.leadTime || "Not specified",
+    image_url: parsed.data.imageUrl || null,
+    tags: ["manual", ...tiers.map((tier) => `price-tier:${tier.minimum}:${tier.price}`)],
+    description: `Volume pricing: ${tiers.map((tier) => `${tier.minimum}+ ${parsed.data.currency} ${tier.price.toFixed(2)}`).join("; ")}.`,
+    active: true,
+    sheet_updated_at: new Date().toISOString(),
+  });
+  if (error) return { error: error.code === "23505" ? "A product with this SKU already exists." : "The product could not be added." };
+  revalidatePath("/catalogs");
+  revalidatePath("/catalogs/companies");
+  return { success: `${parsed.data.name} was added.` };
 }

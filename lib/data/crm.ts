@@ -5,6 +5,7 @@ import { formatRelativeDate, getInitials, getPipelineStageLabel } from "@/lib/cr
 import { env, hasSupabaseConfig } from "@/lib/env";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import type { ActivityItem, Catalog, Company, ContactOption, DataMode, EmailDraft, Product, Reply } from "@/lib/types";
+import { b2bProducts } from "@/lib/data/b2b-products";
 
 type Relation<T> = T | T[] | null;
 
@@ -272,28 +273,46 @@ export async function listReplies(): Promise<{ mode: DataMode; replies: Reply[] 
 
 export async function listProducts(): Promise<{ mode: DataMode; products: Product[] }> {
   const mode = getCrmDataMode();
-  if (mode === "demo") return { mode, products: [] };
+  if (mode === "demo") return { mode, products: b2bProducts };
   await authorizeLiveRead();
 
   const { data, error } = await createSupabaseAdmin()
     .from("products")
-    .select("sku,name,material,color,price,currency,moq,active,sheet_updated_at")
+    .select("sku,name,image_url,material,color,diameter,weight,price,currency,moq,stock_status,lead_time,tags,active,sheet_updated_at")
     .order("name")
     .limit(500);
   if (error) throw new Error(`Unable to load products: ${error.message}`);
-  return {
-    mode,
-    products: (data ?? []).map((row) => ({
-      sku: row.sku,
-      name: row.name,
-      material: row.material || "—",
-      color: row.color || "—",
-      price: row.price == null ? "—" : new Intl.NumberFormat("en", { style: "currency", currency: row.currency }).format(Number(row.price)),
-      moq: row.moq,
-      status: row.active ? "Active" : "Inactive",
-      updatedAt: row.sheet_updated_at,
-    })),
-  };
+  const syncedProducts = (data ?? []).map((row) => {
+      const price = row.price == null ? "—" : new Intl.NumberFormat("en", { style: "currency", currency: row.currency }).format(Number(row.price));
+      const priceTiers = (row.tags ?? []).flatMap((tag: string) => {
+        const match = /^price-tier:(\d+):(\d+(?:\.\d+)?)$/.exec(tag);
+        return match ? [{ minimumQuantity: Number(match[1]), price: new Intl.NumberFormat("en", { style: "currency", currency: row.currency }).format(Number(match[2])) }] : [];
+      }).sort((a: { minimumQuantity: number }, b: { minimumQuantity: number }) => a.minimumQuantity - b.minimumQuantity);
+      return {
+        sku: row.sku,
+        name: row.name,
+        imageUrl: row.image_url,
+        material: row.material || "—",
+        color: row.color || "—",
+        colors: row.color ? row.color.split(",").map((color: string) => color.trim()).filter(Boolean) : [],
+        diameter: row.diameter || "—",
+        weight: row.weight || "—",
+        price,
+        moq: row.moq,
+        priceTiers: priceTiers.length ? priceTiers : price === "—" ? [] : [{ minimumQuantity: row.moq ?? 1, price }],
+        stockStatus: row.stock_status || "Not specified",
+        leadTime: row.lead_time || "Not specified",
+        status: row.active ? "Active" : "Inactive",
+        updatedAt: row.sheet_updated_at,
+      };
+    });
+  const syncedBySku = new Map(syncedProducts.map((product) => [product.sku, product]));
+  const quotationSkus = new Set(b2bProducts.map((product) => product.sku));
+  const quotationProducts = b2bProducts.map((product) => {
+    const synced = syncedBySku.get(product.sku);
+    return synced ? { ...product, ...synced, colors: product.colors, color: product.color, priceTiers: product.priceTiers } : product;
+  });
+  return { mode, products: [...quotationProducts, ...syncedProducts.filter((product) => !quotationSkus.has(product.sku))] };
 }
 
 function eventTone(type: string) {

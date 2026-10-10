@@ -85,10 +85,17 @@ export type Reply = {
 export type Product = {
   sku: string;
   name: string;
+  imageUrl: string | null;
   material: string;
   color: string;
+  colors: string[];
+  diameter: string;
+  weight: string;
   price: string;
   moq: number | null;
+  priceTiers: { minimumQuantity: number; price: string }[];
+  stockStatus: string;
+  leadTime: string;
   status: string;
   updatedAt: string | null;
 };
