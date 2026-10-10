@@ -2,6 +2,8 @@
 
 Filazoo CRM is the controlled workspace for B2B company research, product matching, catalog generation, outreach approval, and reply handling.
 
+For the complete product vision, current implementation status, architecture, safety rules, and next-step handoff, read [`PROJECT.md`](./PROJECT.md).
+
 The application currently supports two data modes:
 
 - **Demo mode** uses clearly labeled sample records when production credentials or authentication are incomplete.
