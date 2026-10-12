@@ -1,62 +1,132 @@
 import crypto from "node:crypto";
 
-import { hasSupabaseConfig } from "./env.ts";
+import { env, hasSupabaseConfig } from "./env.ts";
 import { createSupabaseAdmin } from "./supabase/admin.ts";
 
-export type MetaMessageRecord = {
+const graphApiVersion = env.META_GRAPH_API_VERSION;
+type UnknownRecord = Record<string, unknown>;
+
+export type FacebookMessageRecord = {
   id: string;
-  from: string;
+  threadId: string;
+  pageId: string;
+  senderId: string;
+  recipientId: string;
+  direction: "inbound" | "outbound";
   type: string;
   body: string;
   timestamp: string;
   customerName: string;
-  phoneNumberId: string | null;
-  displayPhoneNumber: string | null;
+  rawPayload: UnknownRecord;
+};
+
+export type FacebookLeadEvent = {
+  leadgenId: string;
+  pageId: string;
+  formId: string | null;
+  adId: string | null;
+  adGroupId: string | null;
+  createdTime: string;
+  rawPayload: UnknownRecord;
+};
+
+export type FacebookWebhookPayload = { messages: FacebookMessageRecord[]; leads: FacebookLeadEvent[] };
+
+export type MetaThreadMessage = {
+  id: string;
+  direction: "inbound" | "outbound";
+  body: string;
+  type: string;
+  status: "received" | "sent" | "failed";
+  createdAt: string;
 };
 
 export type MetaConversationThread = {
   id: string;
+  customerId: string;
   customer: string;
-  phone: string;
-  company: string;
+  pageId: string;
   status: "New" | "Open" | "Follow-up";
   unread: number;
   lastMessage: string;
   updatedAt: string;
+  replyWindowEndsAt: string | null;
+  replyWindowOpen: boolean;
+  messages: MetaThreadMessage[];
 };
 
-export const demoMetaThreads: MetaConversationThread[] = [
-  {
-    id: "thread-1",
-    customer: "Ava Patel",
-    phone: "+15551234567",
-    company: "Northwind Plastics",
-    status: "New",
-    unread: 2,
-    lastMessage: "Hi, is the PETG still available for next week?",
-    updatedAt: "2 minutes ago",
-  },
-  {
-    id: "thread-2",
-    customer: "Miguel Ruiz",
-    phone: "+15557654321",
-    company: "Blue Harbor Packaging",
-    status: "Open",
-    unread: 1,
-    lastMessage: "We need a quote for 3,200 kg with a sample pack.",
-    updatedAt: "18 minutes ago",
-  },
-  {
-    id: "thread-3",
-    customer: "Nina Foster",
-    phone: "+15550001122",
-    company: "Evergreen Retail",
-    status: "Follow-up",
-    unread: 0,
-    lastMessage: "Thanks, I’ll review your catalog and come back to you.",
-    updatedAt: "1 hour ago",
-  },
-];
+export type MetaLead = {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  formId: string | null;
+  adId: string | null;
+  createdAt: string;
+};
+
+export type MetaConnectionStatus = {
+  configured: boolean;
+  pageId: string | null;
+  pageName: string | null;
+  graphApiVersion: string;
+  callbackUrl: string;
+  missing: string[];
+  error: string | null;
+};
+
+export type MetaInboxData = {
+  threads: MetaConversationThread[];
+  leads: MetaLead[];
+  connection: MetaConnectionStatus;
+  dataError: string | null;
+};
+
+function asRecord(value: unknown): UnknownRecord | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as UnknownRecord) : null;
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function asString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function metaTimestamp(value: unknown): string {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return new Date(value < 1_000_000_000_000 ? value * 1000 : value).toISOString();
+  }
+  if (typeof value === "string" && /^\d+$/.test(value)) {
+    const numeric = Number(value);
+    return new Date(value.length <= 10 ? numeric * 1000 : numeric).toISOString();
+  }
+  return new Date().toISOString();
+}
+
+function extractMessengerBody(event: UnknownRecord) {
+  const message = asRecord(event.message);
+  const postback = asRecord(event.postback);
+  if (message) {
+    const text = asString(message.text);
+    if (text) return { body: text, type: "text", message };
+    const attachments = asArray(message.attachments);
+    if (attachments.length > 0) {
+      const first = asRecord(attachments[0]);
+      const type = asString(first?.type) ?? "attachment";
+      return { body: `[${type} attachment]`, type, message };
+    }
+  }
+  if (postback) {
+    return {
+      body: asString(postback.title) ?? asString(postback.payload) ?? "Messenger postback",
+      type: "postback",
+      message: postback,
+    };
+  }
+  return null;
+}
 
 export function buildMetaSignature(secret: string, body: string) {
   return crypto.createHmac("sha256", secret).update(body, "utf8").digest("hex");
@@ -64,12 +134,9 @@ export function buildMetaSignature(secret: string, body: string) {
 
 export function verifyMetaSignature(secret: string, body: string, signature: string | null | undefined) {
   if (!secret || !signature) return false;
-
   const provided = signature.replace(/^sha256=/i, "").trim().toLowerCase();
   const expected = buildMetaSignature(secret, body);
-
-  if (provided.length !== expected.length) return false;
-
+  if (!/^[a-f0-9]{64}$/.test(provided) || provided.length !== expected.length) return false;
   try {
     return crypto.timingSafeEqual(Buffer.from(provided, "hex"), Buffer.from(expected, "hex"));
   } catch {
@@ -77,253 +144,308 @@ export function verifyMetaSignature(secret: string, body: string, signature: str
   }
 }
 
-function extractMessageBody(message: Record<string, unknown>) {
-  const text = message.text as { body?: string } | undefined;
-  if (typeof text?.body === "string" && text.body.trim()) return text.body.trim();
+export function normalizeMetaPayload(payload: unknown): FacebookWebhookPayload {
+  const root = asRecord(payload);
+  if (!root || root.object !== "page") return { messages: [], leads: [] };
+  const messages: FacebookMessageRecord[] = [];
+  const leads: FacebookLeadEvent[] = [];
 
-  const interactive = message.interactive as { button_reply?: { title?: string }; list_reply?: { title?: string } } | undefined;
-  if (typeof interactive?.button_reply?.title === "string" && interactive.button_reply.title.trim()) {
-    return interactive.button_reply.title.trim();
-  }
-  if (typeof interactive?.list_reply?.title === "string" && interactive.list_reply.title.trim()) {
-    return interactive.list_reply.title.trim();
-  }
+  for (const rawEntry of asArray(root.entry)) {
+    const entry = asRecord(rawEntry);
+    if (!entry) continue;
+    const pageId = asString(entry.id) ?? "";
 
-  const reaction = message.reaction as { emoji?: string } | undefined;
-  if (typeof reaction?.emoji === "string" && reaction.emoji.trim()) return reaction.emoji.trim();
-
-  return "Meta message received";
-}
-
-export function normalizeMetaPayload(payload: unknown): MetaMessageRecord[] {
-  if (!payload || typeof payload !== "object") return [];
-
-  const entry = Array.isArray((payload as { entry?: unknown[] }).entry) ? (payload as { entry: unknown[] }).entry : [];
-  const messages: MetaMessageRecord[] = [];
-
-  for (const item of entry) {
-    if (!item || typeof item !== "object") continue;
-
-    const changes = Array.isArray((item as { changes?: unknown[] }).changes) ? (item as { changes: unknown[] }).changes : [];
-
-    for (const change of changes) {
-      if (!change || typeof change !== "object") continue;
-
-      const value = (change as { value?: Record<string, unknown> }).value ?? {};
-      const metadata = (value.metadata as Record<string, unknown> | undefined) ?? {};
-      const rawMessages = Array.isArray(value.messages) ? value.messages : [];
-      const contacts = Array.isArray(value.contacts) ? value.contacts : [];
-
-      for (const message of rawMessages) {
-        if (!message || typeof message !== "object") continue;
-
-        const record = message as Record<string, unknown>;
-        const from = String(record.from ?? "");
-        const body = extractMessageBody(record);
-        if (!from || !body) continue;
-
-        const contact = contacts.find((entryContact) => {
-          const contactRecord = entryContact as Record<string, unknown>;
-          return String(contactRecord.wa_id ?? "") === from;
-        }) as Record<string, unknown> | undefined;
-
-        messages.push({
-          id: String(record.id ?? `${from}-${record.timestamp ?? Date.now()}`),
-          from,
-          type: String(record.type ?? "text"),
-          body,
-          timestamp: String(record.timestamp ?? new Date().toISOString()),
-          customerName: String((contact?.profile as { name?: string } | undefined)?.name ?? from),
-          phoneNumberId: String((metadata.phone_number_id as string | undefined) ?? null),
-          displayPhoneNumber: String((metadata.display_phone_number as string | undefined) ?? null),
-        });
-      }
-    }
-  }
-
-  return messages;
-}
-
-type MetaMessageInsert = {
-  message_id: string;
-  thread_id: string;
-  phone: string;
-  customer_name: string;
-  company_name: string | null;
-  direction: "inbound" | "outbound";
-  body: string;
-  status: "received" | "sent" | "failed";
-  source: "meta_whatsapp";
-  raw_payload: Record<string, unknown> | null;
-};
-
-export async function saveMetaMessage(input: MetaMessageInsert) {
-  if (!hasSupabaseConfig()) {
-    return { ok: true, demo: true, saved: false };
-  }
-
-  try {
-    const client = createSupabaseAdmin();
-    const { error } = await client.from("meta_messages").upsert(
-      {
-        message_id: input.message_id,
-        thread_id: input.thread_id,
-        phone: input.phone,
-        customer_name: input.customer_name,
-        company_name: input.company_name,
-        direction: input.direction,
-        body: input.body,
-        status: input.status,
-        source: input.source,
-        raw_payload: input.raw_payload,
-      },
-      { onConflict: "message_id" },
-    );
-
-    if (error) throw new Error(error.message);
-    return { ok: true, demo: false, saved: true };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to save Meta message.";
-    return { ok: false, demo: false, saved: false, error: message };
-  }
-}
-
-export async function saveInboundMetaMessage(message: MetaMessageRecord) {
-  return saveMetaMessage({
-    message_id: message.id,
-    thread_id: message.from,
-    phone: message.from,
-    customer_name: message.customerName,
-    company_name: null,
-    direction: "inbound",
-    body: message.body,
-    status: "received",
-    source: "meta_whatsapp",
-    raw_payload: { from: message.from, type: message.type, timestamp: message.timestamp, phoneNumberId: message.phoneNumberId, displayPhoneNumber: message.displayPhoneNumber },
-  });
-}
-
-export async function saveOutboundMetaMessage({
-  to,
-  body,
-  messageId,
-}: {
-  to: string;
-  body: string;
-  messageId: string;
-}) {
-  return saveMetaMessage({
-    message_id: messageId,
-    thread_id: to,
-    phone: to,
-    customer_name: "CRM operator",
-    company_name: null,
-    direction: "outbound",
-    body,
-    status: "sent",
-    source: "meta_whatsapp",
-    raw_payload: { to, body },
-  });
-}
-
-export async function sendMetaTextMessage({
-  to,
-  text,
-  accessToken,
-  phoneNumberId,
-}: {
-  to: string;
-  text: string;
-  accessToken?: string;
-  phoneNumberId?: string;
-}) {
-  const token = accessToken ?? process.env.META_ACCESS_TOKEN;
-  const numberId = phoneNumberId ?? process.env.META_PHONE_NUMBER_ID;
-
-  if (!token || !numberId) {
-    return {
-      ok: true,
-      demo: true,
-      messageId: `demo-${Date.now()}`,
-      note: "Meta credentials are not configured, so the message was queued in demo mode.",
-    };
-  }
-
-  const response = await fetch(`https://graph.facebook.com/v20.0/${numberId}/messages`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      to,
-      type: "text",
-      text: { body: text },
-      preview_url: false,
-    }),
-  });
-
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    const message = typeof payload?.error?.message === "string" ? payload.error.message : "Unable to send Meta message.";
-    return { ok: false, error: message };
-  }
-
-  const messageId = payload?.messages?.[0]?.id ?? `meta-${Date.now()}`;
-  const saved = await saveOutboundMetaMessage({ to, body: text, messageId });
-
-  if (!saved.ok && !saved.demo) {
-    console.warn("Meta outbound message was sent but could not be stored in Supabase:", saved.error);
-  }
-
-  return {
-    ok: true,
-    messageId,
-    demo: false,
-  };
-}
-
-export async function listMetaThreads(): Promise<MetaConversationThread[]> {
-  if (!hasSupabaseConfig()) {
-    return demoMetaThreads;
-  }
-
-  try {
-    const client = createSupabaseAdmin();
-    const { data, error } = await client
-      .from("meta_messages")
-      .select("id,thread_id,phone,customer_name,company_name,body,direction,status,created_at")
-      .order("created_at", { ascending: false })
-      .limit(200);
-
-    if (error) throw new Error(error.message);
-
-    const byThread = new Map<string, MetaConversationThread>();
-    for (const row of data ?? []) {
-      const threadId = String(row.thread_id ?? row.phone ?? row.id);
-      const existing = byThread.get(threadId);
-      const message = String(row.body ?? "") || "Meta message received";
-      const updatedAt = row.created_at ? new Date(row.created_at).toLocaleString() : "Just now";
-      const customer = String(row.customer_name ?? row.phone ?? "Unknown contact");
-      const company = String(row.company_name ?? "Unknown company");
-      const unread = row.direction === "inbound" ? 1 : 0;
-
-      byThread.set(threadId, {
-        id: row.id,
-        customer,
-        phone: String(row.phone ?? ""),
-        company,
-        status: existing?.status ?? (unread ? "New" : "Open"),
-        unread: existing ? Math.max(existing.unread, unread) : unread,
-        lastMessage: existing?.lastMessage ? existing.lastMessage : message,
-        updatedAt: existing?.updatedAt ?? updatedAt,
+    for (const rawEvent of asArray(entry.messaging)) {
+      const event = asRecord(rawEvent);
+      const sender = asRecord(event?.sender);
+      const recipient = asRecord(event?.recipient);
+      if (!event || !sender || !recipient) continue;
+      const senderId = asString(sender.id) ?? "";
+      const recipientId = asString(recipient.id) ?? pageId;
+      const content = extractMessengerBody(event);
+      if (!senderId || !recipientId || !content) continue;
+      const isEcho = asRecord(event.message)?.is_echo === true;
+      const direction = isEcho || senderId === pageId ? "outbound" : "inbound";
+      const threadId = direction === "inbound" ? senderId : recipientId;
+      const messageId = asString(content.message.mid) ?? `${threadId}-${event.timestamp ?? Date.now()}`;
+      messages.push({
+        id: messageId,
+        threadId,
+        pageId: pageId || (direction === "inbound" ? recipientId : senderId),
+        senderId,
+        recipientId,
+        direction,
+        type: content.type,
+        body: content.body,
+        timestamp: metaTimestamp(event.timestamp),
+        customerName: threadId,
+        rawPayload: event,
       });
     }
 
-    const threads = Array.from(byThread.values()).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-    return threads.length ? threads : demoMetaThreads;
-  } catch {
-    return demoMetaThreads;
+    for (const rawChange of asArray(entry.changes)) {
+      const change = asRecord(rawChange);
+      const value = asRecord(change?.value);
+      if (!change || change.field !== "leadgen" || !value) continue;
+      const leadgenId = asString(value.leadgen_id);
+      if (!leadgenId) continue;
+      leads.push({
+        leadgenId,
+        pageId: asString(value.page_id) ?? pageId,
+        formId: asString(value.form_id),
+        adId: asString(value.ad_id),
+        adGroupId: asString(value.adgroup_id),
+        createdTime: metaTimestamp(value.created_time),
+        rawPayload: value,
+      });
+    }
   }
+  return { messages, leads };
+}
+
+async function graphRequest(path: string, init?: RequestInit) {
+  if (!env.META_FACEBOOK_PAGE_ACCESS_TOKEN) {
+    return { ok: false as const, error: "META_FACEBOOK_PAGE_ACCESS_TOKEN is not configured." };
+  }
+  let response: Response;
+  try {
+    response = await fetch(`https://graph.facebook.com/${graphApiVersion}/${path}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${env.META_FACEBOOK_PAGE_ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+        ...init?.headers,
+      },
+      cache: "no-store",
+    });
+  } catch (error) {
+    return { ok: false as const, error: error instanceof Error ? error.message : "Meta Graph API could not be reached." };
+  }
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const errorPayload = asRecord(asRecord(payload)?.error);
+    return { ok: false as const, error: asString(errorPayload?.message) ?? `Meta Graph API returned HTTP ${response.status}.` };
+  }
+  return { ok: true as const, payload: asRecord(payload) ?? {} };
+}
+
+async function fetchMessengerProfile(customerId: string) {
+  const result = await graphRequest(`${encodeURIComponent(customerId)}?fields=first_name,last_name,name`);
+  if (!result.ok) return null;
+  const fallback = [asString(result.payload.first_name), asString(result.payload.last_name)].filter(Boolean).join(" ");
+  return (asString(result.payload.name) ?? fallback) || null;
+}
+
+type MetaMessageInsert = {
+  messageId: string;
+  threadId: string;
+  pageId: string;
+  senderId: string;
+  recipientId: string;
+  customerName: string;
+  direction: "inbound" | "outbound";
+  body: string;
+  messageType: string;
+  status: "received" | "sent" | "failed";
+  createdAt: string;
+  rawPayload: UnknownRecord | null;
+};
+
+export async function saveMetaMessage(input: MetaMessageInsert) {
+  if (!hasSupabaseConfig()) return { ok: false as const, saved: false, error: "Supabase is not configured." };
+  const { error } = await createSupabaseAdmin().from("meta_messages").upsert({
+    message_id: input.messageId,
+    thread_id: input.threadId,
+    page_id: input.pageId,
+    sender_id: input.senderId,
+    recipient_id: input.recipientId,
+    customer_name: input.customerName,
+    direction: input.direction,
+    body: input.body,
+    message_type: input.messageType,
+    status: input.status,
+    source: "facebook_messenger",
+    raw_payload: input.rawPayload,
+    created_at: input.createdAt,
+  }, { onConflict: "message_id" });
+  if (error) return { ok: false as const, saved: false, error: error.message };
+  return { ok: true as const, saved: true };
+}
+
+export async function saveInboundMetaMessage(message: FacebookMessageRecord) {
+  const customerName = message.direction === "inbound"
+    ? (await fetchMessengerProfile(message.threadId)) ?? message.customerName
+    : message.customerName;
+  return saveMetaMessage({
+    messageId: message.id,
+    threadId: message.threadId,
+    pageId: message.pageId,
+    senderId: message.senderId,
+    recipientId: message.recipientId,
+    customerName,
+    direction: message.direction,
+    body: message.body,
+    messageType: message.type,
+    status: message.direction === "inbound" ? "received" : "sent",
+    createdAt: message.timestamp,
+    rawPayload: message.rawPayload,
+  });
+}
+
+function normalizeLeadFields(fieldData: unknown) {
+  const normalized: Record<string, string> = {};
+  for (const rawField of asArray(fieldData)) {
+    const field = asRecord(rawField);
+    const name = asString(field?.name);
+    if (!name) continue;
+    normalized[name] = asArray(field?.values).map(String).filter(Boolean).join(", ");
+  }
+  return normalized;
+}
+
+export async function saveMetaLead(event: FacebookLeadEvent) {
+  if (!hasSupabaseConfig()) return { ok: false as const, saved: false, error: "Supabase is not configured." };
+  const detail = await graphRequest(`${encodeURIComponent(event.leadgenId)}?fields=id,created_time,ad_id,form_id,field_data`);
+  const detailPayload = detail.ok ? detail.payload : {};
+  const fields = normalizeLeadFields(detailPayload.field_data);
+  const fullName = fields.full_name || [fields.first_name, fields.last_name].filter(Boolean).join(" ") || null;
+  const { error } = await createSupabaseAdmin().from("meta_leads").upsert({
+    leadgen_id: event.leadgenId,
+    page_id: event.pageId,
+    form_id: asString(detailPayload.form_id) ?? event.formId,
+    ad_id: asString(detailPayload.ad_id) ?? event.adId,
+    adgroup_id: event.adGroupId,
+    full_name: fullName,
+    email: fields.email || null,
+    phone: fields.phone_number || fields.phone || null,
+    field_data: detailPayload.field_data ?? [],
+    raw_payload: { webhook: event.rawPayload, detail: detailPayload, detail_error: detail.ok ? null : detail.error },
+    created_at: asString(detailPayload.created_time) ?? event.createdTime,
+  }, { onConflict: "leadgen_id" });
+  if (error) return { ok: false as const, saved: false, error: error.message };
+  return { ok: true as const, saved: true, detailFetched: detail.ok };
+}
+
+export async function sendMetaTextMessage({ to, text }: { to: string; text: string }) {
+  if (!env.META_FACEBOOK_PAGE_ACCESS_TOKEN || !env.META_FACEBOOK_PAGE_ID) {
+    return { ok: false as const, error: "Facebook Page Messenger credentials are not configured." };
+  }
+  const result = await graphRequest(`${encodeURIComponent(env.META_FACEBOOK_PAGE_ID)}/messages`, {
+    method: "POST",
+    body: JSON.stringify({ recipient: { id: to }, messaging_type: "RESPONSE", message: { text } }),
+  });
+  if (!result.ok) return result;
+  const messageId = asString(result.payload.message_id) ?? `facebook-${Date.now()}`;
+  const createdAt = new Date().toISOString();
+  const saved = await saveMetaMessage({
+    messageId,
+    threadId: to,
+    pageId: env.META_FACEBOOK_PAGE_ID,
+    senderId: env.META_FACEBOOK_PAGE_ID,
+    recipientId: to,
+    customerName: to,
+    direction: "outbound",
+    body: text,
+    messageType: "text",
+    status: "sent",
+    createdAt,
+    rawPayload: { recipient: { id: to }, message: { text } },
+  });
+  if (!saved.ok) console.warn("Facebook Messenger reply sent but not stored in Supabase", { error: saved.error });
+  return { ok: true as const, messageId, createdAt, saved: saved.ok };
+}
+
+async function getMetaConnectionStatus(): Promise<MetaConnectionStatus> {
+  const required = {
+    META_FACEBOOK_PAGE_ACCESS_TOKEN: env.META_FACEBOOK_PAGE_ACCESS_TOKEN,
+    META_FACEBOOK_PAGE_ID: env.META_FACEBOOK_PAGE_ID,
+    META_WEBHOOK_SECRET: env.META_WEBHOOK_SECRET,
+    META_VERIFY_TOKEN: env.META_VERIFY_TOKEN,
+  };
+  const missing = Object.entries(required).filter(([, value]) => !value).map(([key]) => key);
+  const callbackUrl = new URL("/api/meta/webhook", env.NEXT_PUBLIC_APP_URL).toString();
+  if (missing.length > 0) {
+    return { configured: false, pageId: env.META_FACEBOOK_PAGE_ID || null, pageName: null, graphApiVersion, callbackUrl, missing, error: null };
+  }
+  const result = await graphRequest(`${encodeURIComponent(env.META_FACEBOOK_PAGE_ID!)}?fields=id,name`);
+  return {
+    configured: result.ok,
+    pageId: env.META_FACEBOOK_PAGE_ID || null,
+    pageName: result.ok ? asString(result.payload.name) : null,
+    graphApiVersion,
+    callbackUrl,
+    missing,
+    error: result.ok ? null : result.error,
+  };
+}
+
+function mapThreadRows(rows: UnknownRecord[]): MetaConversationThread[] {
+  const byThread = new Map<string, MetaConversationThread>();
+  for (const row of [...rows].reverse()) {
+    const threadId = String(row.thread_id ?? row.id);
+    const direction = row.direction === "outbound" ? "outbound" : "inbound";
+    const createdAt = String(row.created_at ?? new Date().toISOString());
+    const existing = byThread.get(threadId);
+    const message: MetaThreadMessage = {
+      id: String(row.message_id ?? row.id),
+      direction,
+      body: String(row.body ?? "Messenger event"),
+      type: String(row.message_type ?? "text"),
+      status: row.status === "failed" ? "failed" : direction === "outbound" ? "sent" : "received",
+      createdAt,
+    };
+    const inboundWindow = direction === "inbound" ? new Date(new Date(createdAt).getTime() + 86_400_000).toISOString() : null;
+    if (!existing) {
+      byThread.set(threadId, {
+        id: threadId,
+        customerId: threadId,
+        customer: String(row.customer_name ?? threadId),
+        pageId: String(row.page_id ?? env.META_FACEBOOK_PAGE_ID ?? ""),
+        status: direction === "inbound" ? "New" : "Open",
+        unread: direction === "inbound" ? 1 : 0,
+        lastMessage: message.body,
+        updatedAt: createdAt,
+        replyWindowEndsAt: inboundWindow,
+        replyWindowOpen: Boolean(inboundWindow && new Date(inboundWindow).getTime() > Date.now()),
+        messages: [message],
+      });
+      continue;
+    }
+    existing.messages.push(message);
+    existing.lastMessage = message.body;
+    existing.updatedAt = createdAt;
+    if (direction === "inbound") {
+      existing.customer = String(row.customer_name ?? existing.customer);
+      existing.unread += 1;
+      existing.replyWindowEndsAt = inboundWindow;
+      existing.replyWindowOpen = Boolean(inboundWindow && new Date(inboundWindow).getTime() > Date.now());
+    }
+  }
+  return Array.from(byThread.values()).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+}
+
+export async function getMetaInboxData(): Promise<MetaInboxData> {
+  const connection = await getMetaConnectionStatus();
+  if (!hasSupabaseConfig()) return { threads: [], leads: [], connection, dataError: "Supabase is not configured." };
+  const client = createSupabaseAdmin();
+  const [messagesResult, leadsResult] = await Promise.all([
+    client.from("meta_messages").select("id,message_id,thread_id,page_id,customer_name,direction,body,message_type,status,created_at").order("created_at", { ascending: false }).limit(300),
+    client.from("meta_leads").select("leadgen_id,full_name,email,phone,form_id,ad_id,created_at").order("created_at", { ascending: false }).limit(50),
+  ]);
+  const errors = [messagesResult.error?.message, leadsResult.error?.message].filter(Boolean);
+  const leads: MetaLead[] = (leadsResult.data ?? []).map((row) => ({
+    id: String(row.leadgen_id),
+    name: String(row.full_name ?? row.email ?? "Facebook lead"),
+    email: row.email ? String(row.email) : null,
+    phone: row.phone ? String(row.phone) : null,
+    formId: row.form_id ? String(row.form_id) : null,
+    adId: row.ad_id ? String(row.ad_id) : null,
+    createdAt: String(row.created_at),
+  }));
+  return {
+    threads: mapThreadRows((messagesResult.data ?? []) as UnknownRecord[]),
+    leads,
+    connection,
+    dataError: errors.length > 0 ? errors.join(" ") : null,
+  };
 }

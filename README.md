@@ -27,6 +27,7 @@ If the earlier schema was already installed, run this migration instead:
 
 ```text
 supabase/migrations/20261009_align_crm_model.sql
+supabase/migrations/20261012_meta_messenger_messages.sql
 ```
 
 Create the first user in Supabase Auth, then authorize that user explicitly:
@@ -49,6 +50,22 @@ DRY_RUN=true
 ```
 
 Keep `DRY_RUN=true` until suppression, approval, mailbox authentication, unsubscribe, bounce, and end-to-end tests are complete. Never commit `.env.local` or paste secret values into chat.
+
+## Facebook Messenger and Lead Ads
+
+The Meta integration is for a Facebook Page, not WhatsApp. Add these server-only variables in Vercel Production and redeploy after changing them:
+
+```text
+META_FACEBOOK_PAGE_ACCESS_TOKEN
+META_FACEBOOK_PAGE_ID
+META_WEBHOOK_SECRET
+META_VERIFY_TOKEN
+META_GRAPH_API_VERSION=v26.0
+```
+
+Use `https://YOUR_PUBLIC_DOMAIN/api/meta/webhook` as the Meta Page webhook callback. The callback is public at the Filazoo authentication layer, while POST requests require Meta's `x-hub-signature-256` signature. The deployment hostname itself must not be behind Vercel Authentication; use an unprotected custom domain or adjust Deployment Protection.
+
+In the Meta app, connect the Facebook Page and subscribe the Page webhook to `messages`, `messaging_postbacks`, and `leadgen`. Messenger replies require `pages_messaging`; Lead Ad detail retrieval requires `leads_retrieval` and the Page permissions required by Meta for that app and business. Never put the Page access token or App Secret in a `NEXT_PUBLIC_` variable.
 
 ## Verification
 

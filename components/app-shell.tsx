@@ -66,7 +66,7 @@ const navigation: NavigationGroup[] = [
     items: [
       { label: "Emails", href: "/emails", icon: Mail, description: "Campaign activity" },
       { label: "Replies", href: "/replies", icon: Inbox, description: "Inbound conversations" },
-      { label: "Messenger", href: "/messenger", icon: MessageSquareText, description: "Meta WhatsApp inbox and replies" },
+      { label: "Messenger", href: "/messenger", icon: MessageSquareText, description: "Facebook ad leads and Page Messenger replies" },
       { label: "Automation", href: "/automation", icon: Sparkles, description: "Sequences and rules" },
       { label: "Deliverability", href: "/deliverability", icon: ShieldCheck, description: "Inbox health and checks" },
     ],

@@ -1,6 +1,8 @@
 import { sendMetaTextMessage } from "@/lib/meta-messenger";
+import { requireWorkspaceMember } from "@/lib/auth";
 
 export async function POST(request: Request) {
+  await requireWorkspaceMember(["admin", "operator"]);
   const payload = await request.json().catch(() => null);
   const to = typeof payload?.to === "string" ? payload.to : "";
   const text = typeof payload?.message === "string" ? payload.message : "";
@@ -12,8 +14,6 @@ export async function POST(request: Request) {
   const result = await sendMetaTextMessage({
     to,
     text,
-    accessToken: process.env.META_ACCESS_TOKEN,
-    phoneNumberId: process.env.META_PHONE_NUMBER_ID,
   });
 
   if (!result.ok) {
