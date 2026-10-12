@@ -1,0 +1,18 @@
+import type { Catalog } from "./types";
+
+export function filterCompanyCatalogs(catalogs: Catalog[], query: string, currency: string) {
+  const normalizedQuery = query.trim().toLowerCase();
+
+  return catalogs.filter((catalog) => {
+    const matchesQuery =
+      !normalizedQuery ||
+      [catalog.company, catalog.currency, String(catalog.version), ...catalog.productSkus]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedQuery);
+
+    const matchesCurrency = currency === "all" || catalog.currency === currency;
+
+    return matchesQuery && matchesCurrency;
+  });
+}
