@@ -96,6 +96,22 @@ create table public.events (
   data jsonb not null default '{}'::jsonb, created_at timestamptz not null default now()
 );
 
+create table public.meta_messages (
+  id uuid primary key default gen_random_uuid(),
+  message_id text not null unique,
+  thread_id text not null,
+  phone text not null,
+  customer_name text,
+  company_name text,
+  direction text not null check (direction in ('inbound','outbound')),
+  body text not null,
+  status text not null default 'received' check (status in ('received','sent','failed')),
+  source text not null default 'meta_whatsapp',
+  raw_payload jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table public.suppression (
   email citext primary key, reason text not null, source text, created_at timestamptz not null default now()
 );
@@ -110,6 +126,9 @@ create index emails_approved_by_idx on public.emails(approved_by);
 create index emails_status_scheduled_for_idx on public.emails(status,scheduled_for);
 create index events_company_created_at_idx on public.events(company_id,created_at desc);
 create index events_actor_id_idx on public.events(actor_id);
+create index meta_messages_thread_created_at_idx on public.meta_messages(thread_id,created_at desc);
+create index meta_messages_phone_idx on public.meta_messages(phone);
+create index meta_messages_direction_status_idx on public.meta_messages(direction,status);
 create index pipeline_stage_idx on public.pipeline(stage);
 create index pipeline_owner_id_idx on public.pipeline(owner_id);
 create index catalogs_company_id_idx on public.catalogs(company_id);
@@ -120,6 +139,7 @@ create trigger contacts_set_updated_at before update on public.contacts for each
 create trigger company_profiles_set_updated_at before update on public.company_profiles for each row execute function public.set_updated_at();
 create trigger products_set_updated_at before update on public.products for each row execute function public.set_updated_at();
 create trigger emails_set_updated_at before update on public.emails for each row execute function public.set_updated_at();
+create trigger meta_messages_set_updated_at before update on public.meta_messages for each row execute function public.set_updated_at();
 create trigger pipeline_set_updated_at before update on public.pipeline for each row execute function public.set_updated_at();
 
 alter table public.workspace_members enable row level security;
@@ -130,6 +150,7 @@ alter table public.products enable row level security;
 alter table public.product_sync_runs enable row level security;
 alter table public.catalogs enable row level security;
 alter table public.emails enable row level security;
+alter table public.meta_messages enable row level security;
 alter table public.pipeline enable row level security;
 alter table public.events enable row level security;
 alter table public.suppression enable row level security;

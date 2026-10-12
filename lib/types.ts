@@ -50,7 +50,7 @@ export type EmailDraft = {
   preview: string;
   step: number;
   scheduledFor: string;
-  status: "Needs approval" | "Scheduled" | "Draft";
+  status: "Draft" | "Needs approval" | "Scheduled" | "Sent" | "Failed";
 };
 
 export type ContactOption = {

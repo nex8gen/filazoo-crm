@@ -1,34 +1,35 @@
-import { Mail } from "lucide-react";
-import { NewEmailDraftButton } from "@/components/crm-action-dialogs";
-import { EmptyState } from "@/components/data-state";
-import { PageHeader } from "@/components/page-header";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmailsDashboard } from "@/components/emails-dashboard";
 import { requireWorkspaceMember } from "@/lib/auth";
-import { listContactOptions, listEmailDrafts } from "@/lib/data/crm";
+import { listEmailDrafts } from "@/lib/data/crm";
 
 export default async function EmailsPage() {
-  const viewer = await requireWorkspaceMember(["admin", "operator", "viewer"]);
-  const [{ emails }, { contacts }] = await Promise.all([listEmailDrafts(), listContactOptions()]);
-  const canWrite = viewer.role !== "viewer";
+  await requireWorkspaceMember(["admin", "operator", "viewer"]);
+  const { emails } = await listEmailDrafts();
 
-  return (
-    <div>
-      <PageHeader title="Emails" description="Review personalized drafts and keep every outbound message controlled." actions={<NewEmailDraftButton contacts={contacts} canWrite={canWrite} />} />
-      {emails.length === 0 ? (
-        <EmptyState icon={Mail} title="No email drafts yet" description="Create a safe draft for a contact. Nothing can be sent from this screen.">
-          <NewEmailDraftButton contacts={contacts} canWrite={canWrite} label="Create sequence" />
-        </EmptyState>
-      ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {emails.map((email) => (
-            <Card key={email.id} className="shadow-none">
-              <CardHeader><div className="flex items-start justify-between gap-3"><div><CardTitle className="text-sm">{email.subject}</CardTitle><CardDescription className="text-xs">{email.company} · {email.contact}</CardDescription></div><Badge variant="outline">{email.status}</Badge></div></CardHeader>
-              <CardContent className="space-y-3"><p className="line-clamp-3 text-sm text-muted-foreground">{email.preview}</p><div className="flex justify-between border-t pt-3 text-xs text-muted-foreground"><span>Step {email.step}</span><span>{email.scheduledFor}</span></div></CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+  const rows = emails.map((email) => ({
+    id: email.id,
+    subject: email.subject,
+    contact: email.contact,
+    company: email.company,
+    sequence: "Intro sequence",
+    step: `Step ${email.step} of 3`,
+    owner: "Ava R.",
+    status: email.status,
+    scheduledFor: email.scheduledFor || "Not scheduled",
+    updatedAt: "Today, 09:14",
+    preview: email.preview,
+    body: `Hi ${email.contact.split(" ")[0] || "there"},\n\n${email.preview}\n\nBest,\nAva`,
+    lastOrder: "PETG 2.85mm • 1,200 kg",
+    pastEmails: ["Follow-up on PETG pricing", "Sample pack offered on May 12"],
+    openDeals: ["2 active deals", "Quote #FI-2041"],
+    notes: "Prefers technical detail and MOQ clarity.",
+    checks: [
+      { label: "Missing merge fields", ok: false },
+      { label: "Unsubscribe link present", ok: true },
+      { label: "Contact not suppressed", ok: true },
+      { label: "No recent email", ok: true },
+    ],
+  }));
+
+  return <EmailsDashboard initialEmails={rows} />;
 }

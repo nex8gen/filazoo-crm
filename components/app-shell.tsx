@@ -12,9 +12,11 @@ import {
   Library,
   Mail,
   Menu,
+  MessageSquareText,
   Package2,
   Search,
   Settings,
+  ShieldCheck,
   Sparkles,
   X,
 } from "lucide-react";
@@ -64,7 +66,9 @@ const navigation: NavigationGroup[] = [
     items: [
       { label: "Emails", href: "/emails", icon: Mail, description: "Campaign activity" },
       { label: "Replies", href: "/replies", icon: Inbox, description: "Inbound conversations" },
+      { label: "Messenger", href: "/messenger", icon: MessageSquareText, description: "Meta WhatsApp inbox and replies" },
       { label: "Automation", href: "/automation", icon: Sparkles, description: "Sequences and rules" },
+      { label: "Deliverability", href: "/deliverability", icon: ShieldCheck, description: "Inbox health and checks" },
     ],
   },
   {

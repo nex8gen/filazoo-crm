@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useState } from "react";
+import { useActionState, useMemo, useState } from "react";
 import { Box, ChevronLeft, ChevronRight, Clipboard, Download, FileDown, ImageIcon, Plus, Search, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { createProduct, type CrmActionState } from "@/app/crm-actions";
@@ -77,10 +77,8 @@ export function ProductsCatalog({ products, canWrite }: { products: Product[]; c
     });
   }, [material, products, query, status]);
   const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const visibleProducts = filtered.slice((page - 1) * pageSize, page * pageSize);
-
-  useEffect(() => setPage(1), [query, material, status]);
-  useEffect(() => setPage((current) => Math.min(current, pages)), [pages]);
+  const currentPage = Math.min(page, pages);
+  const visibleProducts = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const exportCsv = () => {
     const fields = ["Name", "SKU", "Material", "Colors", "Volume pricing", "Stock", "Lead time", "Status", "Image URL"];
@@ -104,11 +102,11 @@ export function ProductsCatalog({ products, canWrite }: { products: Product[]; c
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 rounded-lg border bg-card p-3 lg:flex-row lg:items-center">
-        <div className="relative min-w-0 flex-1"><Search className="pointer-events-none absolute left-2.5 top-2 size-4 text-muted-foreground" /><Input value={query} onChange={(event) => setQuery(event.target.value)} className="pl-8" placeholder="Search name, SKU, material, or color…" aria-label="Search products" /></div>
+        <div className="relative min-w-0 flex-1"><Search className="pointer-events-none absolute left-2.5 top-2 size-4 text-muted-foreground" /><Input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} className="pl-8" placeholder="Search name, SKU, material, or color…" aria-label="Search products" /></div>
         <div className="flex flex-wrap items-center gap-2">
           <SlidersHorizontal className="size-4 text-muted-foreground" />
-          <select value={material} onChange={(event) => setMaterial(event.target.value)} className="h-8 rounded-md border bg-background px-2 text-xs" aria-label="Filter by material"><option value="all">All materials</option>{materials.map((value) => <option key={value} value={value}>{value}</option>)}</select>
-          <select value={status} onChange={(event) => setStatus(event.target.value)} className="h-8 rounded-md border bg-background px-2 text-xs" aria-label="Filter by status"><option value="all">All statuses</option><option value="Active">Active</option><option value="Inactive">Inactive</option></select>
+          <select value={material} onChange={(event) => { setMaterial(event.target.value); setPage(1); }} className="h-8 rounded-md border bg-background px-2 text-xs" aria-label="Filter by material"><option value="all">All materials</option>{materials.map((value) => <option key={value} value={value}>{value}</option>)}</select>
+          <select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }} className="h-8 rounded-md border bg-background px-2 text-xs" aria-label="Filter by status"><option value="all">All statuses</option><option value="Active">Active</option><option value="Inactive">Inactive</option></select>
           <Button size="sm" variant="outline" onClick={exportCsv} disabled={!filtered.length}><Download />CSV</Button>
           <Button nativeButton={false} size="sm" variant="outline" render={<a href="/downloads/filazoo-b2b-catalog.pdf" download />}><FileDown />Catalog PDF</Button>
           <AddProductDialog canWrite={canWrite} />
@@ -134,7 +132,7 @@ export function ProductsCatalog({ products, canWrite }: { products: Product[]; c
         </Table>
       </Card>
 
-      <div className="flex flex-col gap-2 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between"><p>Showing {visibleProducts.length ? (page - 1) * pageSize + 1 : 0}–{Math.min(page * pageSize, filtered.length)} of {filtered.length} products</p><div className="flex items-center gap-2"><Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}><ChevronLeft />Previous</Button><span>Page {page} of {pages}</span><Button variant="outline" size="sm" disabled={page >= pages} onClick={() => setPage((current) => current + 1)}>Next<ChevronRight /></Button></div></div>
+      <div className="flex flex-col gap-2 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between"><p>Showing {visibleProducts.length ? (currentPage - 1) * pageSize + 1 : 0}–{Math.min(currentPage * pageSize, filtered.length)} of {filtered.length} products</p><div className="flex items-center gap-2"><Button variant="outline" size="sm" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}><ChevronLeft />Previous</Button><span>Page {currentPage} of {pages}</span><Button variant="outline" size="sm" disabled={currentPage >= pages} onClick={() => setPage(currentPage + 1)}>Next<ChevronRight /></Button></div></div>
     </div>
   );
 }

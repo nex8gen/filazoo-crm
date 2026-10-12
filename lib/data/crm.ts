@@ -1,11 +1,12 @@
 import "server-only";
 
 import { requireWorkspaceMember } from "@/lib/auth";
+import { b2bProducts } from "@/lib/data/b2b-products";
+import { emailDrafts } from "@/lib/mock-data";
 import { formatRelativeDate, getInitials, getPipelineStageLabel } from "@/lib/crm-model";
 import { env, hasSupabaseConfig } from "@/lib/env";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import type { ActivityItem, Catalog, Company, ContactOption, DataMode, EmailDraft, Product, Reply } from "@/lib/types";
-import { b2bProducts } from "@/lib/data/b2b-products";
 
 type Relation<T> = T | T[] | null;
 
@@ -161,7 +162,7 @@ function emailStatus(status: string): EmailDraft["status"] {
 
 export async function listEmailDrafts(): Promise<{ mode: DataMode; emails: EmailDraft[] }> {
   const mode = getCrmDataMode();
-  if (mode === "demo") return { mode, emails: [] };
+  if (mode === "demo") return { mode, emails: emailDrafts };
   await authorizeLiveRead();
 
   const { data, error } = await createSupabaseAdmin()
