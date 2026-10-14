@@ -22,7 +22,15 @@ export async function updateSession(request: NextRequest) {
   const { data } = await supabase.auth.getClaims();
   // Meta reaches this webhook without a Filazoo session. POST requests are
   // authenticated separately with Meta's x-hub-signature-256 HMAC signature.
-  const publicPaths = ["/login", "/forgot-password", "/update-password", "/api/health", "/api/meta/webhook"];
+  const publicPaths = [
+    "/login",
+    "/forgot-password",
+    "/update-password",
+    "/privacy",
+    "/data-deletion",
+    "/api/health",
+    "/api/meta/webhook",
+  ];
   const isPublic = publicPaths.includes(request.nextUrl.pathname) || request.nextUrl.pathname.startsWith("/auth/");
   if (process.env.AUTH_REQUIRED === "true" && !data?.claims && !isPublic) {
     const loginUrl = request.nextUrl.clone();

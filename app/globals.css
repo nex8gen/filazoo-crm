@@ -124,3 +124,43 @@
   body { @apply min-h-screen bg-background text-sm text-foreground antialiased; }
   button, a, input, [role="button"] { @apply transition-colors duration-150; }
 }
+
+/* The unified inbox is information-dense, but operational text should remain
+   readable during long support sessions. Keep metadata at 12px and primary
+   interface copy at 13px or larger, including legacy utility-sized labels. */
+.messenger-workspace {
+  scrollbar-width: none;
+}
+
+.messenger-workspace *::-webkit-scrollbar {
+  display: none;
+}
+
+.messenger-workspace .text-\[8px\],
+.messenger-workspace .text-\[9px\],
+.messenger-workspace .text-\[10px\],
+.messenger-workspace .text-\[11px\] {
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.messenger-workspace .text-xs {
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
+.messenger-workspace .text-sm {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.messenger-workspace .text-base {
+  font-size: 0.95rem;
+  line-height: 1.4rem;
+}
+
+.messenger-workspace .text-2xl {
+  font-size: 1.5rem;
+  line-height: 2rem;
+}
+

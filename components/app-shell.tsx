@@ -89,7 +89,15 @@ const navigation: NavigationGroup[] = [
 ];
 
 const allItems = navigation.flatMap((group) => group.items);
-const authPaths = ["/login", "/forgot-password", "/update-password", "/auth/", "/access-denied"];
+const authPaths = [
+  "/login",
+  "/forgot-password",
+  "/update-password",
+  "/auth/",
+  "/access-denied",
+  "/privacy",
+  "/data-deletion",
+];
 
 function itemIsActive(pathname: string, item: NavigationItem) {
   if (item.href === "/" || item.exact) return pathname === item.href;
@@ -168,6 +176,7 @@ function SidebarNavigation({ pathname, onNavigate }: { pathname: string; onNavig
 export function AppShell({ children, userMenu }: { children: React.ReactNode; userMenu?: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const isMessenger = pathname === "/messenger" || pathname.startsWith("/messenger/");
   const [commandOpen, setCommandOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -192,7 +201,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
   };
 
   return (
-    <div className="min-h-svh bg-background text-foreground">
+    <div className={`${isMessenger ? "h-[calc(100dvh-3rem)] overflow-hidden" : "min-h-svh"} bg-background text-foreground`}>
       <header className="fixed inset-x-0 top-0 z-50 flex h-12 items-center border-b bg-background/95 px-3 backdrop-blur md:px-4">
         <Button aria-label="Open navigation" variant="ghost" size="icon-sm" className="mr-2 md:hidden" onClick={() => setMobileOpen(true)}>
           <Menu />
@@ -231,7 +240,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
       ) : null}
 
       <div className="pt-12 md:pl-[19rem]">
-        <main className="min-h-[calc(100svh-3rem)] w-full px-5 py-7 sm:px-7 lg:px-10 lg:py-10">{children}</main>
+        <main className={`${isMessenger ? "h-[calc(100dvh-3rem)] min-h-0 w-full overflow-hidden px-0 py-0" : "min-h-[calc(100svh-3rem)] w-full px-5 py-7 sm:px-7 lg:px-10 lg:py-10"}`}>{children}</main>
       </div>
 
       <CommandDialog open={commandOpen} onOpenChange={setCommandOpen}>
