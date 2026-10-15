@@ -1,12 +1,9 @@
-import "server-only";
-
-import { requireWorkspaceMember } from "@/lib/auth";
-import { b2bProducts } from "@/lib/data/b2b-products";
-import { emailDrafts } from "@/lib/mock-data";
-import { formatRelativeDate, getInitials, getPipelineStageLabel } from "@/lib/crm-model";
-import { env, hasSupabaseConfig } from "@/lib/env";
-import { createSupabaseAdmin } from "@/lib/supabase/admin";
-import type { ActivityItem, Catalog, Company, ContactOption, DataMode, EmailDraft, Product, Reply } from "@/lib/types";
+import { requireWorkspaceMember } from "../auth.ts";
+import { b2bProducts } from "./b2b-products.ts";
+import { formatRelativeDate, getInitials, getPipelineStageLabel } from "../crm-model.ts";
+import { env, hasSupabaseConfig } from "../env.ts";
+import { createSupabaseAdmin } from "../supabase/admin.ts";
+import type { ActivityItem, Catalog, Company, ContactOption, DataMode, EmailDraft, Product, Reply } from "../types.ts";
 
 type Relation<T> = T | T[] | null;
 
@@ -44,6 +41,7 @@ type EmailRow = {
   status: string;
   contacts: Relation<{
     name: string | null;
+    email: string;
     companies: Relation<{ name: string }>;
   }>;
 };
@@ -83,6 +81,7 @@ type ReplyRow = {
   created_at: string;
   contacts: Relation<{
     name: string | null;
+    email: string;
     companies: Relation<{ name: string }>;
   }>;
 };
@@ -160,9 +159,13 @@ function emailStatus(status: string): EmailDraft["status"] {
   return "Draft";
 }
 
+export function isSampleEmailSubject(subject: string | null | undefined) {
+  return /\[sample\]/i.test(subject ?? "");
+}
+
 export async function listEmailDrafts(): Promise<{ mode: DataMode; emails: EmailDraft[] }> {
   const mode = getCrmDataMode();
-  if (mode === "demo") return { mode, emails: emailDrafts };
+  if (mode === "demo") return { mode, emails: [] };
   await authorizeLiveRead();
 
   const { data, error } = await createSupabaseAdmin()
@@ -173,7 +176,7 @@ export async function listEmailDrafts(): Promise<{ mode: DataMode; emails: Email
     .limit(200);
   if (error) throw new Error(`Unable to load email queue: ${error.message}`);
 
-  const emails = ((data ?? []) as unknown as EmailRow[]).map((row) => {
+  const emails = ((data ?? []) as unknown as EmailRow[]).filter((row) => !isSampleEmailSubject(row.subject)).map((row) => {
     const contact = first(row.contacts);
     const company = first(contact?.companies ?? null);
     return {
@@ -250,7 +253,7 @@ export async function listReplies(): Promise<{ mode: DataMode; replies: Reply[] 
 
   const { data, error } = await createSupabaseAdmin()
     .from("emails")
-    .select("id,subject,body,sent_at,created_at,contacts(name,companies(name))")
+    .select("id,subject,body,sent_at,created_at,contacts(name,email,companies(name))")
     .eq("direction", "received")
     .order("created_at", { ascending: false })
     .limit(200);
@@ -258,12 +261,12 @@ export async function listReplies(): Promise<{ mode: DataMode; replies: Reply[] 
 
   return {
     mode,
-    replies: ((data ?? []) as unknown as ReplyRow[]).map((row) => {
+    replies: ((data ?? []) as unknown as ReplyRow[]).filter((row) => !isSampleEmailSubject(row.subject)).map((row) => {
       const contact = first(row.contacts);
       return {
         id: row.id,
         company: first(contact?.companies ?? null)?.name || "Unknown company",
-        contact: contact?.name || "Unknown contact",
+        contact: contact?.email || "Unknown contact",
         subject: row.subject || "Untitled reply",
         body: row.body || "No reply body was stored.",
         receivedAt: row.sent_at || row.created_at,

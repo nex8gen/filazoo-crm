@@ -1,5 +1,3 @@
-import "server-only";
-
 export type IntegrationStatus={id:string;name:string;detail:string;configured:boolean;required:string[]};
 
 const present=(name:string)=>Boolean(process.env[name]?.trim());

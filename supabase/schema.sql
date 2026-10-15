@@ -20,6 +20,61 @@ create table public.workspace_members (
   updated_at timestamptz not null default now()
 );
 
+create table public.workspace_mailboxes (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete cascade,
+  type text not null check (type in ('workspace','personal')),
+  email citext not null unique,
+  display_name text,
+  is_default boolean not null default false,
+  provider text not null default 'smtp' check (provider in ('smtp','google','microsoft','other')),
+  notes text,
+  smtp_host text,
+  smtp_port integer,
+  smtp_username text,
+  smtp_password text,
+  imap_host text,
+  imap_port integer,
+  imap_username text,
+  imap_password text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table public.email_inbox_state (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  message_key text not null,
+  category text check (category is null or category in ('Needs follow-up','Waiting on customer','Interested','Big order','No action')),
+  starred boolean not null default false,
+  folder text not null default 'inbox' check (folder in ('inbox','archive','trash')),
+  follow_up_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (user_id, message_key)
+);
+
+create table public.email_automation_settings (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  enabled boolean not null default false,
+  steps jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table public.mailbox_sent_messages (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  mailbox_id uuid references public.workspace_mailboxes(id) on delete set null,
+  message_id text,
+  from_email citext not null,
+  to_email citext not null,
+  subject text not null,
+  body text not null default '',
+  status text not null default 'sent' check (status in ('sent','failed')),
+  sent_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+
 create table public.companies (
   id uuid primary key default gen_random_uuid(), name text not null, website text,
   domain citext unique, linkedin_url text, country text, city text, segment text,
@@ -141,6 +196,9 @@ create index emails_contact_id_idx on public.emails(contact_id);
 create index emails_catalog_id_idx on public.emails(catalog_id);
 create index emails_approved_by_idx on public.emails(approved_by);
 create index emails_status_scheduled_for_idx on public.emails(status,scheduled_for);
+create index email_inbox_state_user_updated_idx on public.email_inbox_state(user_id,updated_at desc);
+create index mailbox_sent_messages_user_sent_idx on public.mailbox_sent_messages(user_id,sent_at desc);
+create index mailbox_sent_messages_mailbox_id_idx on public.mailbox_sent_messages(mailbox_id);
 create index events_company_created_at_idx on public.events(company_id,created_at desc);
 create index events_actor_id_idx on public.events(actor_id);
 create index meta_messages_thread_created_at_idx on public.meta_messages(thread_id,created_at desc);
@@ -153,6 +211,9 @@ create index pipeline_owner_id_idx on public.pipeline(owner_id);
 create index catalogs_company_id_idx on public.catalogs(company_id);
 
 create trigger workspace_members_set_updated_at before update on public.workspace_members for each row execute function public.set_updated_at();
+create trigger workspace_mailboxes_set_updated_at before update on public.workspace_mailboxes for each row execute function public.set_updated_at();
+create trigger email_inbox_state_set_updated_at before update on public.email_inbox_state for each row execute function public.set_updated_at();
+create trigger email_automation_settings_set_updated_at before update on public.email_automation_settings for each row execute function public.set_updated_at();
 create trigger companies_set_updated_at before update on public.companies for each row execute function public.set_updated_at();
 create trigger contacts_set_updated_at before update on public.contacts for each row execute function public.set_updated_at();
 create trigger company_profiles_set_updated_at before update on public.company_profiles for each row execute function public.set_updated_at();
@@ -163,6 +224,10 @@ create trigger meta_leads_set_updated_at before update on public.meta_leads for 
 create trigger pipeline_set_updated_at before update on public.pipeline for each row execute function public.set_updated_at();
 
 alter table public.workspace_members enable row level security;
+alter table public.workspace_mailboxes enable row level security;
+alter table public.email_inbox_state enable row level security;
+alter table public.email_automation_settings enable row level security;
+alter table public.mailbox_sent_messages enable row level security;
 alter table public.companies enable row level security;
 alter table public.contacts enable row level security;
 alter table public.company_profiles enable row level security;

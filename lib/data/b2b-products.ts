@@ -1,4 +1,4 @@
-import type { Product } from "@/lib/types";
+import type { Product } from "../types.ts";
 
 type QuoteProduct = {
   sku: string;

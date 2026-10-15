@@ -1,4 +1,4 @@
-import type { Catalog } from "./types";
+import type { Catalog } from "./types.ts";
 
 export function filterCompanyCatalogs(catalogs: Catalog[], query: string, currency: string) {
   const normalizedQuery = query.trim().toLowerCase();

@@ -1,11 +1,17 @@
-import "server-only";
-
 import { cache } from "react";
-import { redirect } from "next/navigation";
-import { connection } from "next/server";
-import { hasSupabaseAuthConfig, hasSupabaseConfig } from "@/lib/env";
-import { createSupabaseAdmin } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
+import { hasSupabaseAuthConfig, hasSupabaseConfig } from "./env.ts";
+import { createSupabaseAdmin } from "./supabase/admin.ts";
+import { createClient } from "./supabase/server.ts";
+
+async function getRedirect() {
+  const mod = await import("next/navigation");
+  return mod.redirect;
+}
+
+async function getConnection() {
+  const mod = await import("next/server");
+  return mod.connection;
+}
 
 export type AuthViewer = { id: string; email: string | null };
 export type WorkspaceRole = "admin" | "operator" | "viewer";
@@ -15,16 +21,21 @@ export const getViewer = cache(async (): Promise<AuthViewer | null> => {
   if (!hasSupabaseAuthConfig()) return null;
   // Supabase validates JWT expiry against the current time. Explicitly defer
   // that work to the incoming request when Cache Components prerenders a shell.
-  await connection();
+  const connection = await getConnection();
+  if (connection) await connection();
   const supabase = await createClient();
   const { data, error } = await supabase.auth.getClaims();
   if (error || !data?.claims?.sub) return null;
   return { id: data.claims.sub, email: typeof data.claims.email === "string" ? data.claims.email : null };
 });
 
-export async function requireViewer() {
+export async function requireViewer(): Promise<AuthViewer> {
   const viewer = await getViewer();
-  if (!viewer) redirect("/login");
+  if (!viewer) {
+    const redirect = await getRedirect();
+    redirect("/login");
+    throw new Error("Authentication required.");
+  }
   return viewer;
 }
 
@@ -46,10 +57,18 @@ export const getWorkspaceViewer = cache(async (): Promise<WorkspaceViewer | null
   };
 });
 
-export async function requireWorkspaceMember(allowedRoles?: readonly WorkspaceRole[]) {
+export async function requireWorkspaceMember(allowedRoles?: readonly WorkspaceRole[]): Promise<WorkspaceViewer> {
   const viewer = await requireViewer();
   const member = await getWorkspaceViewer();
-  if (!member || member.id !== viewer.id) redirect("/access-denied");
-  if (allowedRoles && !allowedRoles.includes(member.role)) redirect("/access-denied");
+  if (!member || member.id !== viewer.id) {
+    const redirect = await getRedirect();
+    redirect("/access-denied");
+    throw new Error("Access denied.");
+  }
+  if (allowedRoles && !allowedRoles.includes(member.role)) {
+    const redirect = await getRedirect();
+    redirect("/access-denied");
+    throw new Error("Access denied.");
+  }
   return member;
 }

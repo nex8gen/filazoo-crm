@@ -128,11 +128,13 @@
 /* The unified inbox is information-dense, but operational text should remain
    readable during long support sessions. Keep metadata at 12px and primary
    interface copy at 13px or larger, including legacy utility-sized labels. */
-.messenger-workspace {
+.messenger-workspace,
+.email-workspace {
   scrollbar-width: none;
 }
 
-.messenger-workspace *::-webkit-scrollbar {
+.messenger-workspace *::-webkit-scrollbar,
+.email-workspace *::-webkit-scrollbar {
   display: none;
 }
 

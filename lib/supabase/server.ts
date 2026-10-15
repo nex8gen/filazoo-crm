@@ -1,12 +1,10 @@
-import "server-only";
-
 import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
-import { env } from "@/lib/env";
+import { env } from "../env.ts";
 
 export async function createClient() {
   const key = env.supabasePublishableKey;
   if (!env.NEXT_PUBLIC_SUPABASE_URL || !key) throw new Error("Supabase authentication is not configured.");
+  const { cookies } = await import("next/headers");
   const cookieStore = await cookies();
   return createServerClient(env.NEXT_PUBLIC_SUPABASE_URL, key, {
     cookies: {

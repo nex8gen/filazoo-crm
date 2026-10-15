@@ -1,7 +1,5 @@
-import "server-only";
-
-import { requireWorkspaceMember, type WorkspaceRole } from "@/lib/auth";
-import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { requireWorkspaceMember, type WorkspaceRole } from "../auth.ts";
+import { createSupabaseAdmin } from "../supabase/admin.ts";
 
 export type WorkspaceMemberRecord = {
   id: string;
