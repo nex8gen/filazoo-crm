@@ -30,6 +30,8 @@ export async function updateSession(request: NextRequest) {
     "/data-deletion",
     "/api/health",
     "/api/meta/webhook",
+    "/api/shopify/webhook",
+    "/api/shopify/form-lead",
   ];
   const isPublic = publicPaths.includes(request.nextUrl.pathname) || request.nextUrl.pathname.startsWith("/auth/");
   if (process.env.AUTH_REQUIRED === "true" && !data?.claims && !isPublic) {

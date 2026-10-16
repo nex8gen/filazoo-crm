@@ -67,6 +67,26 @@ Use `https://YOUR_PUBLIC_DOMAIN/api/meta/webhook` as the Meta Page webhook callb
 
 In the Meta app, connect the Facebook Page and subscribe the Page webhook to `messages`, `messaging_postbacks`, and `leadgen`. Messenger replies require `pages_messaging`; Lead Ad detail retrieval requires `leads_retrieval` and the Page permissions required by Meta for that app and business. Never put the Page access token or App Secret in a `NEXT_PUBLIC_` variable.
 
+## Shopify B2B form leads
+
+The Shopify Forms app should add the customer tag `b2b-lead` when the B2B form is submitted. Add these server-only variables in Vercel Production:
+
+```text
+SHOPIFY_WEBHOOK_SECRET
+SHOPIFY_STORE_DOMAIN=your-store.myshopify.com
+SHOPIFY_B2B_FORM_TAG=b2b-lead
+```
+
+Create a Shopify `customers/create` webhook subscription with JSON format and this callback URL:
+
+```text
+https://YOUR_PUBLIC_DOMAIN/api/shopify/webhook
+```
+
+The callback verifies Shopify's `X-Shopify-Hmac-Sha256` signature and store domain, ignores customers without the configured B2B tag, and deduplicates retries by `X-Shopify-Webhook-Id`. A valid lead creates or matches a CRM company by website/email domain, creates or updates the contact by email, adds the company to the `new` pipeline stage, and records an audit event. Apply `supabase/migrations/20261016_shopify_b2b_leads.sql` before enabling the webhook. Company, website, and job-title values can also be read from customer notes formatted as `Field: Value`; standard Shopify address company/country/city fields are preferred.
+
+The live `/pages/b2b` page uses Shopify's native contact form rather than Shopify Forms/customer creation. Its theme section mirrors each valid submission to `/api/shopify/form-lead` with `navigator.sendBeacon` while preserving Shopify's normal `/contact` submission and confirmation experience. The mirror accepts only `https://filazoo.com`, validates the form identifier and honeypot, deduplicates by browser-generated submission ID, and stores every optional wholesale field in the lead audit event.
+
 ## Verification
 
 ```bash
