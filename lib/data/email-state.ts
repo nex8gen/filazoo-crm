@@ -8,6 +8,7 @@ export type EmailInboxState = {
   messageKey: string;
   category: EmailCategory | null;
   starred: boolean;
+  read: boolean;
   folder: EmailFolderState;
   followUpAt: string | null;
 };
@@ -21,13 +22,14 @@ const defaultSteps: AutomationFlowStep[] = [
 export async function listEmailInboxStates(userId: string): Promise<Map<string, EmailInboxState>> {
   const { data, error } = await createSupabaseAdmin()
     .from("email_inbox_state")
-    .select("message_key,category,starred,folder,follow_up_at")
+    .select("message_key,category,starred,is_read,folder,follow_up_at")
     .eq("user_id", userId);
   if (error) throw new Error(`Unable to load email state: ${error.message}`);
   return new Map((data ?? []).map((row) => [row.message_key, {
     messageKey: row.message_key,
     category: row.category as EmailCategory | null,
     starred: Boolean(row.starred),
+    read: Boolean(row.is_read),
     folder: row.folder as EmailFolderState,
     followUpAt: row.follow_up_at,
   }]));
@@ -39,6 +41,7 @@ export async function saveEmailInboxState(userId: string, state: EmailInboxState
     message_key: state.messageKey,
     category: state.category,
     starred: state.starred,
+    is_read: state.read,
     folder: state.folder,
     follow_up_at: state.followUpAt,
     updated_at: new Date().toISOString(),
@@ -74,21 +77,28 @@ export async function saveEmailAutomationSettings(userId: string, enabled: boole
 export async function listSentMailboxMessages(userId: string): Promise<InboxEmailItem[]> {
   const { data, error } = await createSupabaseAdmin()
     .from("mailbox_sent_messages")
-    .select("id,from_email,to_email,subject,body,status,sent_at")
+    .select("id,from_email,to_email,subject,body,status,sent_at,message_id,thread_key,in_reply_to,reference_ids")
     .eq("user_id", userId)
     .order("sent_at", { ascending: false })
     .limit(100);
   if (error) throw new Error(`Unable to load sent mailbox messages: ${error.message}`);
-  return (data ?? []).map((row) => ({
-    id: `sent-${row.id}`,
-    from: row.from_email,
-    direction: "outbound" as const,
-    status: row.status === "sent" ? "Sent" : "Failed",
-    subject: row.subject,
-    contact: row.to_email,
-    company: "Direct email",
-    preview: row.body.replace(/\s+/g, " ").slice(0, 160),
-    body: row.body,
-    timestamp: row.sent_at,
-  }));
+  return (data ?? []).map((row) => {
+    const item: InboxEmailItem = {
+      id: `sent-${row.id}`,
+      from: row.from_email,
+      direction: "outbound" as const,
+      status: row.status === "sent" ? "Sent" : "Failed",
+      subject: row.subject,
+      contact: row.to_email,
+      company: "Direct email",
+      preview: row.body.replace(/\s+/g, " ").slice(0, 160),
+      body: row.body,
+      timestamp: row.sent_at,
+      messageId: row.message_id,
+      threadId: row.thread_key,
+      inReplyTo: row.in_reply_to,
+      references: Array.isArray(row.reference_ids) ? row.reference_ids : [],
+    };
+    return item;
+  });
 }

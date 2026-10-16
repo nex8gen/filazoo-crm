@@ -5,6 +5,7 @@ import { z } from "zod";
 import { requireWorkspaceMember } from "@/lib/auth";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { pipelineStageValues } from "@/lib/types";
+import { variantTag } from "@/lib/product-utils";
 
 export type CrmActionState = { error?: string; success?: string } | undefined;
 
@@ -58,7 +59,26 @@ const productSchema = z.object({
   stockStatus: optionalText(100),
   leadTime: optionalText(100),
   imageUrl: z.string().trim().url().max(1000).optional().or(z.literal("")),
+  active: z.enum(["true", "false"]).default("true"),
+  variants: z.string().max(50_000),
 });
+
+const productVariantSchema = z.array(z.object({
+  id: z.string().trim().min(1).max(160),
+  name: z.string().trim().min(1).max(120),
+  sku: z.string().trim().min(1).max(120),
+  price: z.string().trim().max(50),
+  stockStatus: z.string().trim().max(100),
+  imageUrl: z.string().trim().url().max(1000).nullable().or(z.literal("")),
+})).min(1).max(100);
+
+function parseProductVariants(value: string) {
+  try {
+    return productVariantSchema.safeParse(JSON.parse(value));
+  } catch {
+    return productVariantSchema.safeParse(null);
+  }
+}
 
 function normalizeWebsite(value: string | undefined) {
   if (!value) return null;
@@ -222,7 +242,7 @@ export async function createProduct(_state: CrmActionState, formData: FormData):
     sku: formData.get("sku"),
     name: formData.get("name"),
     material: formData.get("material"),
-    colors: formData.get("colors"),
+    colors: formData.get("colors") || "",
     diameter: formData.get("diameter"),
     weight: formData.get("weight"),
     currency: formData.get("currency"),
@@ -235,12 +255,17 @@ export async function createProduct(_state: CrmActionState, formData: FormData):
     stockStatus: formData.get("stockStatus"),
     leadTime: formData.get("leadTime"),
     imageUrl: formData.get("imageUrl"),
+    active: formData.get("active") || "true",
+    variants: formData.get("variants") || "[]",
   });
   if (!parsed.success) return { error: "Enter valid product details, pricing, and an optional image URL." };
   const optionalTiersAreComplete = (parsed.data.minimum2 === "") === (parsed.data.price2 === "") && (parsed.data.minimum3 === "") === (parsed.data.price3 === "");
   if (!optionalTiersAreComplete) return { error: "Each optional pricing tier needs both a minimum quantity and a price." };
 
-  const colors = parsed.data.colors.split(",").map((color) => color.trim()).filter(Boolean);
+  const parsedVariants = parseProductVariants(parsed.data.variants);
+  if (!parsedVariants.success) return { error: "Add at least one valid product variant." };
+
+  const colors = parsedVariants.data.map((variant) => variant.name);
   const tiers = [
     { minimum: parsed.data.minimum1, price: parsed.data.price1 },
     ...(parsed.data.minimum2 === "" ? [] : [{ minimum: parsed.data.minimum2, price: parsed.data.price2 as number }]),
@@ -261,13 +286,49 @@ export async function createProduct(_state: CrmActionState, formData: FormData):
     stock_status: parsed.data.stockStatus || "Not specified",
     lead_time: parsed.data.leadTime || "Not specified",
     image_url: parsed.data.imageUrl || null,
-    tags: ["manual", ...tiers.map((tier) => `price-tier:${tier.minimum}:${tier.price}`)],
+    tags: ["manual", ...tiers.map((tier) => `price-tier:${tier.minimum}:${tier.price}`), variantTag(parsedVariants.data.map((variant) => ({ ...variant, imageUrl: variant.imageUrl || null })))],
     description: `Volume pricing: ${tiers.map((tier) => `${tier.minimum}+ ${parsed.data.currency} ${tier.price.toFixed(2)}`).join("; ")}.`,
-    active: true,
+    active: parsed.data.active === "true",
     sheet_updated_at: new Date().toISOString(),
   });
   if (error) return { error: error.code === "23505" ? "A product with this SKU already exists." : "The product could not be added." };
   revalidatePath("/catalogs");
   revalidatePath("/catalogs/companies");
   return { success: `${parsed.data.name} was added.` };
+}
+
+export async function updateProduct(_state: CrmActionState, formData: FormData): Promise<CrmActionState> {
+  await requireWorkspaceMember(["admin", "operator"]);
+  const originalSku = z.string().trim().min(2).max(100).safeParse(formData.get("originalSku"));
+  const parsed = productSchema.safeParse({
+    sku: formData.get("sku"), name: formData.get("name"), material: formData.get("material"), colors: formData.get("colors") || "",
+    diameter: formData.get("diameter"), weight: formData.get("weight"), currency: formData.get("currency"),
+    minimum1: formData.get("minimum1"), price1: formData.get("price1"), minimum2: formData.get("minimum2") || "", price2: formData.get("price2") || "",
+    minimum3: formData.get("minimum3") || "", price3: formData.get("price3") || "", stockStatus: formData.get("stockStatus"), leadTime: formData.get("leadTime"),
+    imageUrl: formData.get("imageUrl"), active: formData.get("active") || "true", variants: formData.get("variants") || "[]",
+  });
+  if (!originalSku.success || !parsed.success) return { error: "Enter valid product and pricing details." };
+  const parsedVariants = parseProductVariants(parsed.data.variants);
+  if (!parsedVariants.success) return { error: "Add at least one valid product variant." };
+  const optionalTiersAreComplete = (parsed.data.minimum2 === "") === (parsed.data.price2 === "") && (parsed.data.minimum3 === "") === (parsed.data.price3 === "");
+  if (!optionalTiersAreComplete) return { error: "Each optional pricing tier needs both a minimum quantity and a price." };
+  const tiers = [
+    { minimum: parsed.data.minimum1, price: parsed.data.price1 },
+    ...(parsed.data.minimum2 === "" ? [] : [{ minimum: parsed.data.minimum2, price: parsed.data.price2 as number }]),
+    ...(parsed.data.minimum3 === "" ? [] : [{ minimum: parsed.data.minimum3, price: parsed.data.price3 as number }]),
+  ].sort((a, b) => a.minimum - b.minimum);
+  if (new Set(tiers.map((tier) => tier.minimum)).size !== tiers.length) return { error: "Pricing tier quantities must be unique." };
+  const colors = parsedVariants.data.map((variant) => variant.name);
+  const { error } = await createSupabaseAdmin().from("products").update({
+    sku: parsed.data.sku.toUpperCase(), name: parsed.data.name, material: parsed.data.material, color: colors.join(", "),
+    diameter: parsed.data.diameter || null, weight: parsed.data.weight || null, price: parsed.data.price1, currency: parsed.data.currency,
+    moq: parsed.data.minimum1, stock_status: parsed.data.stockStatus || "Not specified", lead_time: parsed.data.leadTime || "Not specified",
+    image_url: parsed.data.imageUrl || null, active: parsed.data.active === "true", sheet_updated_at: new Date().toISOString(),
+    tags: ["manual", ...tiers.map((tier) => `price-tier:${tier.minimum}:${tier.price}`), variantTag(parsedVariants.data.map((variant) => ({ ...variant, imageUrl: variant.imageUrl || null })))],
+    description: `Volume pricing: ${tiers.map((tier) => `${tier.minimum}+ ${parsed.data.currency} ${tier.price.toFixed(2)}`).join("; ")}.`,
+  }).eq("sku", originalSku.data);
+  if (error) return { error: error.code === "23505" ? "A product with this SKU already exists." : "The product could not be updated." };
+  revalidatePath("/catalogs");
+  revalidatePath("/catalogs/companies");
+  return { success: `${parsed.data.name} was updated.` };
 }

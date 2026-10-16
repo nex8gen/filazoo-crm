@@ -4,7 +4,7 @@ import { getEmailInboxBackendData } from "@/lib/email-inbox";
 
 export default async function EmailsPage() {
   await requireWorkspaceMember(["admin", "operator", "viewer"]);
-  const { emails, mailboxConfigured, sendConfigured, inboxConfigured, inboxError, aiConfigured, defaultMailboxEmail, mode, automation } = await getEmailInboxBackendData();
+  const { emails, mailboxConfigured, sendConfigured, inboxConfigured, inboxError, aiConfigured, defaultMailboxEmail, mode, automation } = await getEmailInboxBackendData({ syncMailbox: false });
 
   return (
     <EmailInboxWorkspace

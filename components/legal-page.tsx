@@ -19,7 +19,7 @@ export function LegalPage({
       <header className="border-b bg-background/95">
         <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-5 sm:px-8">
           <a href="https://filazoo.com" className="flex items-center gap-2.5 font-semibold" aria-label="Filazoo website">
-            <BrandMark className="size-6 text-primary" />
+            <BrandMark className="h-6 w-auto text-primary" />
             <span>Filazoo</span>
           </a>
           <nav className="flex items-center gap-5 text-sm text-muted-foreground" aria-label="Legal pages">

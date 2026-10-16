@@ -4,6 +4,7 @@ import { formatRelativeDate, getInitials, getPipelineStageLabel } from "../crm-m
 import { env, hasSupabaseConfig } from "../env.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 import type { ActivityItem, Catalog, Company, ContactOption, DataMode, EmailDraft, Product, Reply } from "../types.ts";
+import { variantsFromTags } from "../product-utils.ts";
 
 type Relation<T> = T | T[] | null;
 
@@ -139,13 +140,17 @@ export async function listCompanies(): Promise<{ mode: DataMode; companies: Comp
   if (mode === "demo") return { mode, companies: [] };
   await authorizeLiveRead();
 
+  return { mode, companies: await queryCompanies() };
+}
+
+async function queryCompanies(): Promise<Company[]> {
   const { data, error } = await createSupabaseAdmin()
     .from("companies")
     .select("id,name,website,domain,country,segment,status,company_profiles(summary,fit_score,interest_tags),contacts(name,role,email,verification_status),pipeline(stage,next_followup_at)")
     .order("created_at", { ascending: false })
     .limit(500);
   if (error) throw new Error(`Unable to load companies: ${error.message}`);
-  return { mode, companies: ((data ?? []) as unknown as CompanyRow[]).map(mapCompany) };
+  return ((data ?? []) as unknown as CompanyRow[]).map(mapCompany);
 }
 
 export async function getCompany(id: string) {
@@ -292,29 +297,32 @@ export async function listProducts(): Promise<{ mode: DataMode; products: Produc
         const match = /^price-tier:(\d+):(\d+(?:\.\d+)?)$/.exec(tag);
         return match ? [{ minimumQuantity: Number(match[1]), price: new Intl.NumberFormat("en", { style: "currency", currency: row.currency }).format(Number(match[2])) }] : [];
       }).sort((a: { minimumQuantity: number }, b: { minimumQuantity: number }) => a.minimumQuantity - b.minimumQuantity);
+      const colors = row.color ? row.color.split(",").map((color: string) => color.trim()).filter(Boolean) : [];
+      const stockStatus = row.stock_status || "Not specified";
       return {
         sku: row.sku,
         name: row.name,
         imageUrl: row.image_url,
         material: row.material || "—",
         color: row.color || "—",
-        colors: row.color ? row.color.split(",").map((color: string) => color.trim()).filter(Boolean) : [],
+        colors,
         diameter: row.diameter || "—",
         weight: row.weight || "—",
         price,
         moq: row.moq,
         priceTiers: priceTiers.length ? priceTiers : price === "—" ? [] : [{ minimumQuantity: row.moq ?? 1, price }],
-        stockStatus: row.stock_status || "Not specified",
+        stockStatus,
         leadTime: row.lead_time || "Not specified",
         status: row.active ? "Active" : "Inactive",
         updatedAt: row.sheet_updated_at,
+        variants: variantsFromTags(row.tags ?? [], colors, row.sku, price, stockStatus),
       };
     });
   const syncedBySku = new Map(syncedProducts.map((product) => [product.sku, product]));
   const quotationSkus = new Set(b2bProducts.map((product) => product.sku));
   const quotationProducts = b2bProducts.map((product) => {
     const synced = syncedBySku.get(product.sku);
-    return synced ? { ...product, ...synced, colors: product.colors, color: product.color, priceTiers: product.priceTiers } : product;
+    return synced ? { ...product, ...synced } : product;
   });
   return { mode, products: [...quotationProducts, ...syncedProducts.filter((product) => !quotationSkus.has(product.sku))] };
 }
@@ -327,11 +335,11 @@ function eventTone(type: string) {
 }
 
 export async function getDashboardData() {
-  const companyResult = await listCompanies();
-  if (companyResult.mode === "demo") {
+  const mode = getCrmDataMode();
+  if (mode === "demo") {
     return {
-      mode: companyResult.mode,
-      companies: companyResult.companies,
+      mode,
+      companies: [],
       activity: [],
       emailQueueCount: 0,
       sentCount: 0,
@@ -340,8 +348,10 @@ export async function getDashboardData() {
     };
   }
 
+  await authorizeLiveRead();
   const client = createSupabaseAdmin();
-  const [eventsResult, queuedResult, sentResult, repliesResult, bigOrdersResult] = await Promise.all([
+  const [companies, eventsResult, queuedResult, sentResult, repliesResult, bigOrdersResult] = await Promise.all([
+    queryCompanies(),
     client.from("events").select("type,data,created_at,companies(name)").order("created_at", { ascending: false }).limit(4),
     client.from("emails").select("id", { count: "exact", head: true }).in("status", ["draft", "pending_approval", "approved", "scheduled"]),
     client.from("emails").select("id", { count: "exact", head: true }).eq("status", "sent"),
@@ -357,8 +367,8 @@ export async function getDashboardData() {
   });
 
   return {
-    mode: companyResult.mode,
-    companies: companyResult.companies,
+    mode,
+    companies,
     activity,
     emailQueueCount: queuedResult.count ?? 0,
     sentCount: sentResult.count ?? 0,

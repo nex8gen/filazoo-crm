@@ -2,7 +2,7 @@ import { Package2 } from "lucide-react";
 import { DataModeBanner } from "@/components/data-mode-banner";
 import { EmptyState } from "@/components/data-state";
 import { PageHeader } from "@/components/page-header";
-import { ProductsCatalog } from "@/components/products-catalog";
+import { ProductsCatalogV2 } from "@/components/products-catalog-v2";
 import { requireWorkspaceMember } from "@/lib/auth";
 import { listProducts } from "@/lib/data/crm";
 
@@ -23,7 +23,7 @@ export default async function CatalogsPage() {
       </div>
       {products.length === 0 ? (
         <EmptyState icon={Package2} title="No products synced" description="Add your first product or connect a source to populate pricing, colors, and availability." />
-      ) : <ProductsCatalog products={products} canWrite={viewer.role !== "viewer"} />}
+      ) : <ProductsCatalogV2 products={products} canWrite={viewer.role !== "viewer"} mode={mode} />}
     </div>
   );
 }

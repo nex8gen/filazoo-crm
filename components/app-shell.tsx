@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -23,15 +24,8 @@ import {
 import { BrandMark } from "@/components/brand-mark";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
-import {
-  CommandDialog,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-  CommandShortcut,
-} from "@/components/ui/command";
+
+const WorkspaceCommandMenu = dynamic(() => import("@/components/workspace-command-menu").then((module) => module.WorkspaceCommandMenu));
 
 type NavigationItem = {
   label: string;
@@ -206,8 +200,8 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
         <Button aria-label="Open navigation" variant="ghost" size="icon-sm" className="mr-2 md:hidden" onClick={() => setMobileOpen(true)}>
           <Menu />
         </Button>
-        <Link href="/" aria-label="Filazoo home" className="hidden size-5 items-center justify-center text-primary md:flex">
-          <BrandMark className="size-5" />
+        <Link href="/" aria-label="Filazoo home" className="hidden h-6 items-center justify-center text-primary md:flex">
+          <BrandMark className="h-6 w-auto" />
         </Link>
         <span className="mx-3 hidden text-muted-foreground/40 lg:block">/</span>
         <div className="hidden items-center gap-2 text-xs lg:flex">
@@ -243,21 +237,9 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
         <main className={`${isMessenger ? "h-[calc(100dvh-3rem)] min-h-0 w-full overflow-hidden px-0 py-0" : "min-h-[calc(100svh-3rem)] w-full px-5 py-7 sm:px-7 lg:px-10 lg:py-10"}`}>{children}</main>
       </div>
 
-      <CommandDialog open={commandOpen} onOpenChange={setCommandOpen}>
-        <CommandInput placeholder="Search pages…" />
-        <CommandList>
-          <CommandEmpty>No page found.</CommandEmpty>
-          {navigation.map((group) => (
-            <CommandGroup key={group.label} heading={group.label}>
-              {group.items.map((item, index) => (
-                <CommandItem key={item.href} value={`${group.label} ${item.label}`} onSelect={() => navigate(item.href)}>
-                  <item.icon /><span>{item.label}</span><CommandShortcut>{index + 1}</CommandShortcut>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          ))}
-        </CommandList>
-      </CommandDialog>
+      {commandOpen ? (
+        <WorkspaceCommandMenu navigation={navigation} open={commandOpen} onOpenChange={setCommandOpen} onNavigate={navigate} />
+      ) : null}
     </div>
   );
 }

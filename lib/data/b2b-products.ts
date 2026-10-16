@@ -32,6 +32,14 @@ function quotedProduct({ sku, name, material, colors, prices, minimums = plaMini
     leadTime: "Confirm before order",
     status: "Active",
     updatedAt: quoteUpdatedAt,
+    variants: colors.map((color, index) => ({
+      id: `${sku}-${index + 1}`,
+      name: color,
+      sku: `${sku}-${String(index + 1).padStart(2, "0")}`,
+      price: formattedPrices[0],
+      stockStatus: "Quote available",
+      imageUrl: null,
+    })),
   };
 }
 

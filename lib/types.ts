@@ -98,6 +98,16 @@ export type Product = {
   leadTime: string;
   status: string;
   updatedAt: string | null;
+  variants: ProductVariant[];
+};
+
+export type ProductVariant = {
+  id: string;
+  name: string;
+  sku: string;
+  price: string;
+  stockStatus: string;
+  imageUrl: string | null;
 };
 
 export type ActivityItem = {

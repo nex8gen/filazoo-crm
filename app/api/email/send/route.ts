@@ -15,6 +15,9 @@ const sendSchema = z.object({
   subject: z.string().trim().min(1).max(300),
   text: z.string().max(1_000_000).default(""),
   html: z.string().max(1_500_000).optional(),
+  threadId: z.string().trim().min(1).max(1_100).optional(),
+  inReplyTo: z.string().trim().min(1).max(1_000).optional(),
+  references: z.array(z.string().trim().min(1).max(1_000)).max(100).default([]),
   attachments: z.array(attachmentSchema).max(10).default([]),
 });
 
@@ -26,7 +29,7 @@ export async function POST(request: Request) {
     if (!parsed.success) {
       return Response.json({ ok: false, error: "Enter a valid recipient, subject, and message." }, { status: 400 });
     }
-    const { to, subject, text, attachments } = parsed.data;
+    const { to, subject, text, attachments, threadId, inReplyTo, references } = parsed.data;
     const html = parsed.data.html || text;
     const mailbox = await getEffectiveMailbox(viewer.id).catch(() => null);
     if (!mailboxHasSmtp(mailbox) || !mailbox) {
@@ -47,6 +50,8 @@ export async function POST(request: Request) {
         subject,
         text: text || "",
         html: html || text || "",
+        inReplyTo,
+        references,
         attachments: attachments.map((attachment) => ({
           filename: attachment.filename,
           content: Buffer.from(attachment.content, "base64"),
@@ -65,6 +70,9 @@ export async function POST(request: Request) {
       to_email: to,
       subject,
       body: text || html,
+      thread_key: threadId || null,
+      in_reply_to: inReplyTo || null,
+      reference_ids: references,
       status: "sent",
       sent_at: sentAt,
     }).select("id").single();
@@ -84,6 +92,11 @@ export async function POST(request: Request) {
         company: "Direct email",
         preview: text.replace(/\s+/g, " ").slice(0, 160),
         body: text || html,
+        html: parsed.data.html || null,
+        threadId: threadId || (inReplyTo ? `message:${inReplyTo.toLowerCase()}` : null),
+        messageId: sendResult.messageId || null,
+        inReplyTo: inReplyTo || null,
+        references,
         timestamp: sentAt,
       },
     }, { status: 200 });

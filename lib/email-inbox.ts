@@ -1,12 +1,12 @@
 import type { DataMode, EmailDraft, Reply } from "./types.ts";
-import Imap from "imap";
-import { simpleParser } from "mailparser";
 import { getEffectiveMailbox, mailboxHasImap, mailboxHasSmtp } from "./data/mailboxes.ts";
 import { getEmailAutomationSettings, listEmailInboxStates, listSentMailboxMessages, type EmailCategory, type EmailFolderState } from "./data/email-state.ts";
 import { getViewer } from "./auth.ts";
+import { normalizeReferences, threadKeyForEmail } from "./email-threading.ts";
 
 export type InboxEmailItem = {
   id: string;
+  from?: string;
   direction: "inbound" | "outbound";
   status: string;
   subject: string;
@@ -14,11 +14,17 @@ export type InboxEmailItem = {
   company: string;
   preview: string;
   body: string;
+  html?: string | null;
+  threadId?: string | null;
+  messageId?: string | null;
+  inReplyTo?: string | null;
+  references?: string[];
   timestamp: string;
   step?: string;
   demo?: boolean;
   category?: EmailCategory | null;
   starred?: boolean;
+  read?: boolean;
   folder?: EmailFolderState;
   followUpAt?: string | null;
 };
@@ -61,8 +67,43 @@ type MailboxInboxSource = {
   company?: string;
   preview?: string;
   body?: string;
+  html?: string | null;
+  threadId?: string | null;
+  messageId?: string | null;
+  inReplyTo?: string | null;
+  references?: string[];
   timestamp?: string;
 };
+
+function plainTextFromHtml(html: string) {
+  return html
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<br\s*\/?\s*>/gi, "\n")
+    .replace(/<\/p\s*>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n\s*\n\s*\n/g, "\n\n")
+    .trim();
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function embedInlineImages(html: string, attachments: Array<{ cid?: string; content: Buffer; contentType: string }>) {
+  return attachments.reduce((result, attachment) => {
+    if (!attachment.cid || !attachment.contentType.startsWith("image/")) return result;
+    const dataUrl = `data:${attachment.contentType};base64,${attachment.content.toString("base64")}`;
+    return result.replace(new RegExp(`cid:${escapeRegExp(attachment.cid)}`, "gi"), dataUrl);
+  }, html);
+}
 
 export async function fetchMailboxInboxMessages(mailbox: {
   email: string | null;
@@ -74,6 +115,11 @@ export async function fetchMailboxInboxMessages(mailbox: {
   if (!mailbox || !mailbox.imapHost || !mailbox.imapUsername || !mailbox.imapPassword) {
     return [];
   }
+
+  const [{ default: Imap }, { simpleParser }] = await Promise.all([
+    import("imap"),
+    import("mailparser"),
+  ]);
 
   const imapHost = mailbox.imapHost;
   const imapUsername = mailbox.imapUsername;
@@ -137,9 +183,15 @@ export async function fetchMailboxInboxMessages(mailbox: {
                     const parsed = await simpleParser(Buffer.concat(chunks));
                     const from = parsed.from?.value?.[0];
                     const sender = from?.address || mailbox.email || "Unknown sender";
-                    const bodyText = (parsed.text || parsed.html || "").trim() || "No email body available.";
-                    items.push({
-                      id: parsed.messageId ? `imap-${parsed.messageId}` : `imap-${seqno}-${Date.now()}`,
+                    const rawHtml = typeof parsed.html === "string" ? parsed.html.trim() : "";
+                    const emailHtml = rawHtml ? embedInlineImages(rawHtml, parsed.attachments) : null;
+                    const bodyText = (parsed.text || (emailHtml ? plainTextFromHtml(emailHtml) : "")).trim() || "No email body available.";
+                    const messageId = parsed.messageId || null;
+                    const inReplyTo = parsed.inReplyTo || null;
+                    const references = normalizeReferences(parsed.references);
+                    const id = messageId ? `imap-${messageId}` : `imap-${seqno}-${Date.now()}`;
+                    const item: InboxEmailItem = {
+                      id,
                       direction: "inbound",
                       status: "Received",
                       subject: parsed.subject || "New inbound email",
@@ -147,9 +199,15 @@ export async function fetchMailboxInboxMessages(mailbox: {
                       company: "Unknown company",
                       preview: toPreview(bodyText),
                       body: bodyText,
+                      html: emailHtml,
+                      messageId,
+                      inReplyTo,
+                      references,
                       timestamp: parsed.date ? new Date(parsed.date).toISOString() : new Date().toISOString(),
                       demo: true,
-                    });
+                    };
+                    item.threadId = threadKeyForEmail(item);
+                    items.push(item);
                     messageResolve();
                   } catch (error) {
                     messageReject(error instanceof Error ? error : new Error("Unable to parse the inbound email."));
@@ -205,9 +263,15 @@ export function buildInboxEmailItems({
       company: message.company || "Unknown company",
       preview: toPreview(message.preview || message.body),
       body: message.body || "No email body available.",
+      html: message.html ?? null,
+      threadId: message.threadId ?? null,
+      messageId: message.messageId ?? null,
+      inReplyTo: message.inReplyTo ?? null,
+      references: message.references ?? [],
       timestamp: message.timestamp || new Date().toISOString(),
       demo: true,
     };
+    item.threadId = threadKeyForEmail(item);
     seen.add(item.id);
     return item;
   });
@@ -227,6 +291,7 @@ export function buildInboxEmailItems({
       timestamp: reply.receivedAt || new Date().toISOString(),
       demo: true,
     };
+    item.threadId = threadKeyForEmail(item);
     seen.add(id);
     return item;
   }).filter((item): item is InboxEmailItem => item !== null);
@@ -247,6 +312,7 @@ export function buildInboxEmailItems({
       step: `Step ${draft.step} of 3`,
       demo: true,
     };
+    item.threadId = threadKeyForEmail(item);
     seen.add(id);
     return item;
   }).filter((item): item is InboxEmailItem => item !== null);
@@ -259,19 +325,21 @@ export function buildInboxEmailItems({
   });
 }
 
-export async function getEmailInboxBackendData(): Promise<EmailInboxBackendData> {
+export async function getEmailInboxBackendData({ syncMailbox = true }: { syncMailbox?: boolean } = {}): Promise<EmailInboxBackendData> {
   const { listEmailDrafts, listReplies } = await import("./data/crm.ts");
   const viewer = await getViewer();
   if (!viewer) throw new Error("Authentication required.");
-  const [{ emails, mode }, { replies }, defaultMailbox] = await Promise.all([
+  const [{ emails, mode }, { replies }, defaultMailbox, sentMessages, states] = await Promise.all([
     listEmailDrafts(),
     listReplies(),
     getEffectiveMailbox(viewer.id).catch(() => null),
+    listSentMailboxMessages(viewer.id).catch(() => []),
+    listEmailInboxStates(viewer.id).catch(() => new Map()),
   ]);
 
   let liveInbound: InboxEmailItem[] = [];
   let inboxError: string | null = null;
-  if (mailboxHasImap(defaultMailbox)) {
+  if (syncMailbox && mailboxHasImap(defaultMailbox)) {
     try {
       liveInbound = await fetchMailboxInboxMessages(defaultMailbox);
     } catch (error) {
@@ -280,10 +348,6 @@ export async function getEmailInboxBackendData(): Promise<EmailInboxBackendData>
     }
   }
 
-  const [sentMessages, states] = await Promise.all([
-    listSentMailboxMessages(viewer.id).catch(() => []),
-    listEmailInboxStates(viewer.id).catch(() => new Map()),
-  ]);
   const inbox = [...buildInboxEmailItems({ drafts: emails, replies, inbound: liveInbound }), ...sentMessages]
     .map((item) => ({ ...item, ...(states.get(item.id) ?? {}) }));
   const defaultMailboxEmail = defaultMailbox?.email || null;

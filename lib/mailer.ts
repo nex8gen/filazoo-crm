@@ -37,6 +37,8 @@ export async function sendMailboxEmail(
     subject: string;
     text?: string;
     html?: string;
+    inReplyTo?: string;
+    references?: string[];
     attachments?: Array<{
       filename: string;
       content: Buffer | string;
@@ -57,6 +59,8 @@ export async function sendMailboxEmail(
     subject: mail.subject,
     text: mail.text,
     html: mail.html,
+    inReplyTo: mail.inReplyTo,
+    references: mail.references,
     attachments: mail.attachments,
   });
 }

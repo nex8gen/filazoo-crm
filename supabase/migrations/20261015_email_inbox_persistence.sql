@@ -5,6 +5,7 @@ create table if not exists public.email_inbox_state (
   message_key text not null,
   category text check (category is null or category in ('Needs follow-up','Waiting on customer','Interested','Big order','No action')),
   starred boolean not null default false,
+  is_read boolean not null default false,
   folder text not null default 'inbox' check (folder in ('inbox','archive','trash')),
   follow_up_at timestamptz,
   created_at timestamptz not null default now(),

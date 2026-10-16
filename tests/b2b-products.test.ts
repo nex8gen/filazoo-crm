@@ -7,4 +7,5 @@ test("keeps the complete B2B quotation catalog", () => {
   assert.equal(new Set(b2bProducts.map((product) => product.sku)).size, 57);
   assert.ok(b2bProducts.every((product) => product.priceTiers.length === 3));
   assert.ok(b2bProducts.every((product) => product.colors.length > 0));
+  assert.ok(b2bProducts.every((product) => product.variants.length === product.colors.length));
 });

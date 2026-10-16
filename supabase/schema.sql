@@ -46,6 +46,7 @@ create table public.email_inbox_state (
   message_key text not null,
   category text check (category is null or category in ('Needs follow-up','Waiting on customer','Interested','Big order','No action')),
   starred boolean not null default false,
+  is_read boolean not null default false,
   folder text not null default 'inbox' check (folder in ('inbox','archive','trash')),
   follow_up_at timestamptz,
   created_at timestamptz not null default now(),
@@ -66,6 +67,9 @@ create table public.mailbox_sent_messages (
   user_id uuid not null references auth.users(id) on delete cascade,
   mailbox_id uuid references public.workspace_mailboxes(id) on delete set null,
   message_id text,
+  thread_key text,
+  in_reply_to text,
+  reference_ids text[] not null default '{}',
   from_email citext not null,
   to_email citext not null,
   subject text not null,
@@ -184,6 +188,25 @@ create table public.meta_leads (
   updated_at timestamptz not null default now()
 );
 
+create table public.shopify_leads (
+  webhook_id text primary key,
+  shop_domain text not null,
+  customer_id text not null,
+  email citext not null,
+  company_name text not null,
+  full_name text,
+  phone text,
+  tags text[] not null default '{}',
+  status text not null default 'processing' check (status in ('processing','processed','failed')),
+  company_id uuid references public.companies(id) on delete set null,
+  contact_id uuid references public.contacts(id) on delete set null,
+  error_message text,
+  raw_payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  processed_at timestamptz,
+  updated_at timestamptz not null default now()
+);
+
 create table public.suppression (
   email citext primary key, reason text not null, source text, created_at timestamptz not null default now()
 );
@@ -199,6 +222,7 @@ create index emails_status_scheduled_for_idx on public.emails(status,scheduled_f
 create index email_inbox_state_user_updated_idx on public.email_inbox_state(user_id,updated_at desc);
 create index mailbox_sent_messages_user_sent_idx on public.mailbox_sent_messages(user_id,sent_at desc);
 create index mailbox_sent_messages_mailbox_id_idx on public.mailbox_sent_messages(mailbox_id);
+create index mailbox_sent_messages_thread_key_idx on public.mailbox_sent_messages(user_id,thread_key);
 create index events_company_created_at_idx on public.events(company_id,created_at desc);
 create index events_actor_id_idx on public.events(actor_id);
 create index meta_messages_thread_created_at_idx on public.meta_messages(thread_id,created_at desc);
@@ -206,6 +230,11 @@ create index meta_messages_page_created_at_idx on public.meta_messages(page_id,c
 create index meta_messages_direction_status_idx on public.meta_messages(direction,status);
 create index meta_leads_page_created_at_idx on public.meta_leads(page_id,created_at desc);
 create index meta_leads_form_created_at_idx on public.meta_leads(form_id,created_at desc);
+create index shopify_leads_customer_id_idx on public.shopify_leads(customer_id);
+create index shopify_leads_email_created_at_idx on public.shopify_leads(email,created_at desc);
+create index shopify_leads_status_created_at_idx on public.shopify_leads(status,created_at desc);
+create index shopify_leads_company_id_idx on public.shopify_leads(company_id);
+create index shopify_leads_contact_id_idx on public.shopify_leads(contact_id);
 create index pipeline_stage_idx on public.pipeline(stage);
 create index pipeline_owner_id_idx on public.pipeline(owner_id);
 create index catalogs_company_id_idx on public.catalogs(company_id);
@@ -221,6 +250,7 @@ create trigger products_set_updated_at before update on public.products for each
 create trigger emails_set_updated_at before update on public.emails for each row execute function public.set_updated_at();
 create trigger meta_messages_set_updated_at before update on public.meta_messages for each row execute function public.set_updated_at();
 create trigger meta_leads_set_updated_at before update on public.meta_leads for each row execute function public.set_updated_at();
+create trigger shopify_leads_set_updated_at before update on public.shopify_leads for each row execute function public.set_updated_at();
 create trigger pipeline_set_updated_at before update on public.pipeline for each row execute function public.set_updated_at();
 
 alter table public.workspace_members enable row level security;
@@ -237,6 +267,7 @@ alter table public.catalogs enable row level security;
 alter table public.emails enable row level security;
 alter table public.meta_messages enable row level security;
 alter table public.meta_leads enable row level security;
+alter table public.shopify_leads enable row level security;
 alter table public.pipeline enable row level security;
 alter table public.events enable row level security;
 alter table public.suppression enable row level security;

@@ -6,6 +6,7 @@ const stateSchema = z.object({
   messageKey: z.string().trim().min(1).max(512),
   category: z.enum(["Needs follow-up", "Waiting on customer", "Interested", "Big order", "No action"]).nullable(),
   starred: z.boolean(),
+  read: z.boolean(),
   folder: z.enum(["inbox", "archive", "trash"]),
   followUpAt: z.string().datetime().nullable(),
 });

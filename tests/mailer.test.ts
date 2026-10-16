@@ -14,6 +14,7 @@ test("merges real IMAP messages into the inbox list", () => {
         company: "Northwind",
         preview: "Thanks for the meeting notes",
         body: "Thanks for the meeting notes",
+        html: '<table><tr><td><a href="https://company.example/quote"><img src="https://company.example/quote.png" alt="Quote"></a></td></tr></table>',
         timestamp: "2026-10-14T09:00:00.000Z",
       },
     ],
@@ -31,5 +32,7 @@ test("merges real IMAP messages into the inbox list", () => {
 
   assert.equal(items[0].id, "imap-1");
   assert.equal(items[0].direction, "inbound");
+  assert.match(items[0].html || "", /<table>/);
+  assert.match(items[0].html || "", /<img /);
   assert.equal(items.length, 2);
 });
