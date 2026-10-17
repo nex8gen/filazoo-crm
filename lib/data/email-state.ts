@@ -36,7 +36,9 @@ export async function listEmailInboxStates(userId: string): Promise<Map<string, 
 }
 
 export async function saveEmailInboxState(userId: string, state: EmailInboxState) {
-  const { error } = await createSupabaseAdmin().from("email_inbox_state").upsert({
+  const admin = createSupabaseAdmin();
+  const { data: previous } = await admin.from("email_inbox_state").select("category").eq("user_id", userId).eq("message_key", state.messageKey).maybeSingle();
+  const { error } = await admin.from("email_inbox_state").upsert({
     user_id: userId,
     message_key: state.messageKey,
     category: state.category,
@@ -47,6 +49,7 @@ export async function saveEmailInboxState(userId: string, state: EmailInboxState
     updated_at: new Date().toISOString(),
   }, { onConflict: "user_id,message_key" });
   if (error) throw new Error(`Unable to save email state: ${error.message}`);
+  return { categoryChanged: previous?.category !== state.category, previousCategory: previous?.category ?? null };
 }
 
 export async function getEmailAutomationSettings(userId: string, queueCount: number) {

@@ -29,17 +29,49 @@ export type Company = {
   id: string;
   name: string;
   initials: string;
+  website: string;
   domain: string;
   country: string;
+  city: string;
   segment: string;
+  source: string;
+  sourceLabel: string;
   fitScore: number;
   stage: PipelineStage;
+  outreachStatus: string;
+  estimatedOrderQuantity: number | null;
+  estimatedValue: number | null;
+  currency: string;
+  nextFollowupAt: string | null;
   nextAction: string;
   tags: string[];
   contact: string;
   contactRole: string;
   email: string;
   summary: string;
+};
+
+export type CompanyContact = {
+  id: string;
+  name: string;
+  role: string;
+  email: string;
+  verificationStatus: string;
+};
+
+export type CompanyActivity = {
+  id: string;
+  type: "event" | "email" | "catalog";
+  title: string;
+  detail: string;
+  actor: string;
+  createdAt: string;
+};
+
+export type CompanyDetails = {
+  company: Company;
+  contacts: CompanyContact[];
+  activity: CompanyActivity[];
 };
 
 export type EmailDraft = {

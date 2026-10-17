@@ -14,7 +14,7 @@ export default async function CompaniesPage() {
         description="Research, qualify, and track the organizations in your outreach universe."
         actions={<><ExportCompaniesButton companies={companies} /><AddCompanyButton canWrite={viewer.role !== "viewer"} /></>}
       />
-      <CompaniesTable companies={companies} mode={mode} />
+      <CompaniesTable companies={companies} mode={mode} canWrite={viewer.role !== "viewer"} canDelete={viewer.role === "admin"} />
     </div>
   );
 }

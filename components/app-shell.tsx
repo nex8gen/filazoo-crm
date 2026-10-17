@@ -19,6 +19,7 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
+  Workflow,
   X,
 } from "lucide-react";
 import { BrandMark } from "@/components/brand-mark";
@@ -61,8 +62,15 @@ const navigation: NavigationGroup[] = [
       { label: "Emails", href: "/emails", icon: Mail, description: "Campaign activity" },
       { label: "Replies", href: "/replies", icon: Inbox, description: "Inbound conversations" },
       { label: "Messenger", href: "/messenger", icon: MessageSquareText, description: "Facebook ad leads and Page Messenger replies" },
-      { label: "Automation", href: "/automation", icon: Sparkles, description: "Sequences and rules" },
       { label: "Deliverability", href: "/deliverability", icon: ShieldCheck, description: "Inbox health and checks" },
+    ],
+  },
+  {
+    label: "Lead Channel",
+    eyebrow: "Automation",
+    icon: Sparkles,
+    items: [
+      { label: "AI Agent", href: "/lead-channel/ai-agent", icon: Workflow, description: "Email follow-up flows and agent rules" },
     ],
   },
   {
@@ -171,6 +179,8 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
   const pathname = usePathname();
   const router = useRouter();
   const isMessenger = pathname === "/messenger" || pathname.startsWith("/messenger/");
+  const isFlowBuilder = pathname === "/lead-channel/ai-agent" || pathname.startsWith("/lead-channel/ai-agent/");
+  const usesViewportCanvas = isMessenger || isFlowBuilder;
   const [commandOpen, setCommandOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -195,7 +205,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
   };
 
   return (
-    <div className={`${isMessenger ? "h-[calc(100dvh-3rem)] overflow-hidden" : "min-h-svh"} bg-background text-foreground`}>
+    <div className={`${usesViewportCanvas ? "h-svh overflow-hidden" : "min-h-svh"} bg-background text-foreground`}>
       <header className="fixed inset-x-0 top-0 z-50 flex h-12 items-center border-b bg-background/95 px-3 backdrop-blur md:px-4">
         <Button aria-label="Open navigation" variant="ghost" size="icon-sm" className="mr-2 md:hidden" onClick={() => setMobileOpen(true)}>
           <Menu />
@@ -234,7 +244,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
       ) : null}
 
       <div className="pt-12 md:pl-[19rem]">
-        <main className={`${isMessenger ? "h-[calc(100dvh-3rem)] min-h-0 w-full overflow-hidden px-0 py-0" : "min-h-[calc(100svh-3rem)] w-full px-5 py-7 sm:px-7 lg:px-10 lg:py-10"}`}>{children}</main>
+        <main className={`${usesViewportCanvas ? "h-[calc(100dvh-3rem)] min-h-0 w-full overflow-hidden p-0" : "min-h-[calc(100svh-3rem)] w-full px-5 py-7 sm:px-7 lg:px-10 lg:py-10"}`}>{children}</main>
       </div>
 
       {commandOpen ? (

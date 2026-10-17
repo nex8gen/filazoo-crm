@@ -6,6 +6,7 @@ import { requireWorkspaceMember } from "@/lib/auth";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { pipelineStageValues } from "@/lib/types";
 import { variantTag } from "@/lib/product-utils";
+import { enrollMatchingFlows } from "@/lib/data/flow-runtime";
 
 export type CrmActionState = { error?: string; success?: string } | undefined;
 
@@ -23,6 +24,16 @@ const companySchema = z.object({
   contactName: optionalText(120),
   contactRole: optionalText(120),
   contactEmail: z.string().trim().toLowerCase().email().optional().or(z.literal("")),
+});
+const companyUpdateSchema = companySchema.extend({
+  stage: z.enum(pipelineStageValues),
+  estimatedOrderQuantity: z.union([z.literal(""), z.coerce.number().int().min(0).max(100_000_000)]),
+  estimatedValue: z.union([z.literal(""), z.coerce.number().min(0).max(1_000_000_000)]),
+  currency: z.enum(["USD", "EUR", "GBP", "CNY"]),
+  nextFollowupAt: optionalDateTime,
+  summary: optionalText(5000),
+  fitScore: z.union([z.literal(""), z.coerce.number().int().min(1).max(10)]),
+  tags: optionalText(2000),
 });
 const opportunitySchema = z.object({
   companyId: z.string().uuid(),
@@ -98,6 +109,16 @@ function refreshCrm() {
   ["/", "/companies", "/pipeline", "/emails", "/catalogs", "/catalogs/companies"].forEach((path) => revalidatePath(path));
 }
 
+function refreshCompany(companyId: string) {
+  refreshCrm();
+  revalidatePath(`/companies/${companyId}`);
+}
+
+async function enrollCompanyEvent(event: Parameters<typeof enrollMatchingFlows>[0]) {
+  try { await enrollMatchingFlows(event); }
+  catch (error) { console.error("Company change saved, but flow enrollment failed:", error); }
+}
+
 export async function createCompany(_state: CrmActionState, formData: FormData): Promise<CrmActionState> {
   const viewer = await requireWorkspaceMember(["admin", "operator"]);
   const parsed = companySchema.safeParse({
@@ -152,8 +173,83 @@ export async function createCompany(_state: CrmActionState, formData: FormData):
     return { error: "The company details could not be saved. No partial record was kept." };
   }
 
+  const { data: createdContact } = await admin.from("contacts").select("id").eq("company_id", company.id).order("created_at").limit(1).maybeSingle();
+  await enrollCompanyEvent({ type: "company_segment_changed", conversationId: `company:${company.id}`, companyId: company.id, contactId: createdContact?.id ?? null, segment: parsed.data.segment });
+
   refreshCrm();
   return { success: `${parsed.data.name} was added.` };
+}
+
+export async function updateCompany(companyId: string, _state: CrmActionState, formData: FormData): Promise<CrmActionState> {
+  const viewer = await requireWorkspaceMember(["admin", "operator"]);
+  const id = z.string().uuid().safeParse(companyId);
+  const parsed = companyUpdateSchema.safeParse({
+    name: formData.get("name"), website: formData.get("website"), country: formData.get("country"), city: formData.get("city"),
+    segment: formData.get("segment"), contactName: formData.get("contactName"), contactRole: formData.get("contactRole"), contactEmail: formData.get("contactEmail"),
+    stage: formData.get("stage"), estimatedOrderQuantity: formData.get("estimatedOrderQuantity") || "", estimatedValue: formData.get("estimatedValue") || "",
+    currency: formData.get("currency"), nextFollowupAt: formData.get("nextFollowupAt"), summary: formData.get("summary"), fitScore: formData.get("fitScore") || "", tags: formData.get("tags"),
+  });
+  if (!id.success || !parsed.success) return { error: "Review the company, contact, and pipeline fields and try again." };
+  const website = normalizeWebsite(parsed.data.website);
+  if (parsed.data.website && !website) return { error: "Enter a valid company website." };
+
+  const admin = createSupabaseAdmin();
+  const [{ data: company }, { data: previousPipeline }] = await Promise.all([
+    admin.from("companies").select("id,name,segment").eq("id", id.data).maybeSingle(),
+    admin.from("pipeline").select("stage").eq("company_id", id.data).maybeSingle(),
+  ]);
+  if (!company) return { error: "The company no longer exists." };
+  const tags = (parsed.data.tags || "").split(",").map((tag) => tag.trim()).filter(Boolean).slice(0, 50);
+  const writes = await Promise.all([
+    admin.from("companies").update({
+      name: parsed.data.name, website, domain: domainFromWebsite(website), country: parsed.data.country, city: parsed.data.city || null,
+      segment: parsed.data.segment, status: parsed.data.stage === "won" ? "customer" : parsed.data.stage === "lost" ? "disqualified" : "engaged",
+    }).eq("id", id.data),
+    admin.from("pipeline").upsert({
+      company_id: id.data, stage: parsed.data.stage, estimated_order_quantity: parsed.data.estimatedOrderQuantity === "" ? null : parsed.data.estimatedOrderQuantity,
+      estimated_value: parsed.data.estimatedValue === "" ? null : parsed.data.estimatedValue, currency: parsed.data.currency,
+      next_followup_at: parsed.data.nextFollowupAt ? new Date(parsed.data.nextFollowupAt).toISOString() : null, owner_id: viewer.id, updated_at: new Date().toISOString(),
+    }, { onConflict: "company_id" }),
+    admin.from("company_profiles").upsert({
+      company_id: id.data, summary: parsed.data.summary || null, fit_score: parsed.data.fitScore === "" ? null : parsed.data.fitScore,
+      interest_tags: tags, updated_at: new Date().toISOString(),
+    }, { onConflict: "company_id" }),
+  ]);
+  if (writes.some((result) => result.error)) return { error: "The company could not be updated." };
+
+  const { data: primaryContact } = await admin.from("contacts").select("id").eq("company_id", id.data).order("created_at").limit(1).maybeSingle();
+  if (parsed.data.contactEmail) {
+    const contactValues = { name: parsed.data.contactName || null, role: parsed.data.contactRole || null, email: parsed.data.contactEmail };
+    const contactResult = primaryContact
+      ? await admin.from("contacts").update(contactValues).eq("id", primaryContact.id)
+      : await admin.from("contacts").insert({ company_id: id.data, ...contactValues, verification_status: "unverified" });
+    if (contactResult.error) return { error: "Company details were saved, but the contact email could not be updated." };
+  }
+  await admin.from("events").insert({ company_id: id.data, actor_id: viewer.id, type: "company_updated", data: { summary: `${parsed.data.name} details were updated.` } });
+  const { data: automationContact } = await admin.from("contacts").select("id").eq("company_id", id.data).order("created_at").limit(1).maybeSingle();
+  if (company.segment !== parsed.data.segment) await enrollCompanyEvent({ type: "company_segment_changed", conversationId: `company:${id.data}`, companyId: id.data, contactId: automationContact?.id ?? null, segment: parsed.data.segment });
+  if (previousPipeline?.stage !== parsed.data.stage) await enrollCompanyEvent({ type: "pipeline_stage_changed", conversationId: `company:${id.data}:pipeline`, companyId: id.data, contactId: automationContact?.id ?? null, stage: parsed.data.stage });
+  refreshCompany(id.data);
+  return { success: `${parsed.data.name} was updated.` };
+}
+
+export async function bulkUpdateCompanies(companyIds: string[], action: string): Promise<CrmActionState> {
+  const parsed = z.object({ ids: z.array(z.string().uuid()).min(1).max(500), action: z.enum(["contacted", "interested", "delete"]) }).safeParse({ ids: companyIds, action });
+  if (!parsed.success) return { error: "Select at least one valid company." };
+  const viewer = await requireWorkspaceMember(parsed.data.action === "delete" ? ["admin"] : ["admin", "operator"]);
+  const admin = createSupabaseAdmin();
+  if (parsed.data.action === "delete") {
+    const { error } = await admin.from("companies").delete().in("id", parsed.data.ids);
+    if (error) return { error: "The selected companies could not be deleted." };
+    refreshCrm();
+    return { success: `${parsed.data.ids.length} ${parsed.data.ids.length === 1 ? "company" : "companies"} deleted.` };
+  }
+  const rows = parsed.data.ids.map((companyId) => ({ company_id: companyId, stage: parsed.data.action, owner_id: viewer.id, updated_at: new Date().toISOString() }));
+  const { error } = await admin.from("pipeline").upsert(rows, { onConflict: "company_id" });
+  if (error) return { error: "The bulk update could not be completed." };
+  await admin.from("events").insert(parsed.data.ids.map((companyId) => ({ company_id: companyId, actor_id: viewer.id, type: "bulk_pipeline_update", data: { summary: `Pipeline status changed to ${parsed.data.action}.` } })));
+  refreshCrm();
+  return { success: `${parsed.data.ids.length} ${parsed.data.ids.length === 1 ? "company" : "companies"} updated.` };
 }
 
 export async function createOpportunity(_state: CrmActionState, formData: FormData): Promise<CrmActionState> {
@@ -197,6 +293,8 @@ export async function updatePipelineStage(companyId: string, stage: string): Pro
   const { error } = await admin.from("pipeline").upsert({ company_id: company.id, stage: parsed.data.stage, owner_id: viewer.id, updated_at: new Date().toISOString() }, { onConflict: "company_id" });
   if (error) return { error: "The pipeline stage could not be updated." };
   await admin.from("events").insert({ company_id: company.id, actor_id: viewer.id, type: "pipeline_stage_changed", data: { summary: `${company.name} moved to ${parsed.data.stage.replaceAll("_", " ")}.` } });
+  const { data: contact } = await admin.from("contacts").select("id").eq("company_id", company.id).order("created_at").limit(1).maybeSingle();
+  await enrollCompanyEvent({ type: "pipeline_stage_changed", conversationId: `company:${company.id}:pipeline`, companyId: company.id, contactId: contact?.id ?? null, stage: parsed.data.stage });
   refreshCrm();
   return { success: "Pipeline stage updated." };
 }

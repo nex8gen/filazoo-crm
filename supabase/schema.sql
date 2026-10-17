@@ -62,6 +62,28 @@ create table public.email_automation_settings (
   updated_at timestamptz not null default now()
 );
 
+create table public.flows (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null check (char_length(name) between 1 and 160),
+  trigger_type text not null check (trigger_type in ('email_received','category_changed','no_reply','lead_added_to_list','company_segment_changed','pipeline_stage_changed')),
+  trigger_config jsonb not null default '{}'::jsonb,
+  status text not null default 'draft' check (status in ('draft','live','paused')),
+  created_by uuid not null references auth.users(id) on delete restrict,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table public.flow_steps (
+  id uuid primary key default gen_random_uuid(),
+  flow_id uuid not null references public.flows(id) on delete cascade,
+  position integer not null check (position >= 0),
+  type text not null check (type in ('wait','if_condition','send_email','create_task','change_category','internal_alert','stop')),
+  config jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  unique (flow_id, position)
+);
+
 create table public.mailbox_sent_messages (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -97,6 +119,47 @@ create table public.contacts (
   confidence numeric(5,2) check (confidence is null or confidence between 0 and 100),
   unsubscribed boolean not null default false, consent_source text,
   created_at timestamptz not null default now(), updated_at timestamptz not null default now()
+);
+
+create table public.flow_runs (
+  id uuid primary key default gen_random_uuid(),
+  flow_id uuid not null references public.flows(id) on delete cascade,
+  conversation_id text not null,
+  event_key text,
+  contact_id uuid references public.contacts(id) on delete set null,
+  company_id uuid references public.companies(id) on delete set null,
+  current_step integer not null default 0 check (current_step >= 0),
+  status text not null default 'active' check (status in ('active','done','cancelled','failed')),
+  next_run_at timestamptz,
+  context jsonb not null default '{}'::jsonb,
+  locked_at timestamptz,
+  started_at timestamptz not null default now(),
+  finished_at timestamptz
+);
+
+create table public.crm_tasks (
+  id uuid primary key default gen_random_uuid(), flow_run_id uuid references public.flow_runs(id) on delete set null,
+  company_id uuid references public.companies(id) on delete cascade, contact_id uuid references public.contacts(id) on delete set null,
+  assigned_to uuid references auth.users(id) on delete set null, title text not null check (char_length(title) between 1 and 200),
+  notes text, priority text not null default 'normal' check (priority in ('low','normal','high')),
+  status text not null default 'open' check (status in ('open','done','cancelled')), due_at timestamptz, completed_at timestamptz,
+  created_at timestamptz not null default now(), updated_at timestamptz not null default now()
+);
+
+create table public.internal_notifications (
+  id uuid primary key default gen_random_uuid(), flow_run_id uuid references public.flow_runs(id) on delete set null,
+  user_id uuid not null references auth.users(id) on delete cascade, channel text not null default 'in_app' check (channel in ('in_app','email')),
+  message text not null check (char_length(message) between 1 and 500), conversation_id text,
+  include_thread_link boolean not null default true, read_at timestamptz, created_at timestamptz not null default now()
+);
+
+create table public.flow_run_logs (
+  id uuid primary key default gen_random_uuid(),
+  run_id uuid not null references public.flow_runs(id) on delete cascade,
+  step_id uuid references public.flow_steps(id) on delete set null,
+  result jsonb,
+  error text,
+  created_at timestamptz not null default now()
 );
 
 create table public.company_profiles (
@@ -145,6 +208,7 @@ create table public.pipeline (
   company_id uuid primary key references public.companies(id) on delete cascade,
   stage text not null default 'new' check (stage in ('new','contacted','replied','interested','big_order','won','lost')),
   notes text, estimated_value numeric(14,2) check (estimated_value is null or estimated_value >= 0),
+  estimated_order_quantity integer check (estimated_order_quantity is null or estimated_order_quantity >= 0),
   currency char(3) not null default 'USD', next_followup_at timestamptz,
   owner_id uuid references auth.users(id) on delete set null, updated_at timestamptz not null default now()
 );
@@ -223,6 +287,21 @@ create index email_inbox_state_user_updated_idx on public.email_inbox_state(user
 create index mailbox_sent_messages_user_sent_idx on public.mailbox_sent_messages(user_id,sent_at desc);
 create index mailbox_sent_messages_mailbox_id_idx on public.mailbox_sent_messages(mailbox_id);
 create index mailbox_sent_messages_thread_key_idx on public.mailbox_sent_messages(user_id,thread_key);
+create index flows_user_updated_idx on public.flows(user_id,updated_at desc);
+create index flows_created_by_idx on public.flows(created_by);
+create index flow_steps_flow_position_idx on public.flow_steps(flow_id,position);
+create index flow_runs_flow_id_idx on public.flow_runs(flow_id);
+create index flow_runs_contact_id_idx on public.flow_runs(contact_id);
+create index flow_runs_company_id_idx on public.flow_runs(company_id);
+create index crm_tasks_contact_id_idx on public.crm_tasks(contact_id);
+create index crm_tasks_flow_run_id_idx on public.crm_tasks(flow_run_id);
+create index internal_notifications_flow_run_id_idx on public.internal_notifications(flow_run_id);
+create index flow_runs_due_idx on public.flow_runs(status,next_run_at) where status = 'active';
+create index flow_runs_conversation_idx on public.flow_runs(conversation_id);
+create index flow_run_logs_run_created_idx on public.flow_run_logs(run_id,created_at);
+create index flow_run_logs_step_id_idx on public.flow_run_logs(step_id);
+create unique index flow_runs_one_active_conversation_idx on public.flow_runs(flow_id,conversation_id) where status = 'active';
+create unique index flow_runs_event_key_idx on public.flow_runs(flow_id,event_key) where event_key is not null;
 create index events_company_created_at_idx on public.events(company_id,created_at desc);
 create index events_actor_id_idx on public.events(actor_id);
 create index meta_messages_thread_created_at_idx on public.meta_messages(thread_id,created_at desc);
@@ -243,6 +322,7 @@ create trigger workspace_members_set_updated_at before update on public.workspac
 create trigger workspace_mailboxes_set_updated_at before update on public.workspace_mailboxes for each row execute function public.set_updated_at();
 create trigger email_inbox_state_set_updated_at before update on public.email_inbox_state for each row execute function public.set_updated_at();
 create trigger email_automation_settings_set_updated_at before update on public.email_automation_settings for each row execute function public.set_updated_at();
+create trigger flows_set_updated_at before update on public.flows for each row execute function public.set_updated_at();
 create trigger companies_set_updated_at before update on public.companies for each row execute function public.set_updated_at();
 create trigger contacts_set_updated_at before update on public.contacts for each row execute function public.set_updated_at();
 create trigger company_profiles_set_updated_at before update on public.company_profiles for each row execute function public.set_updated_at();
@@ -252,11 +332,18 @@ create trigger meta_messages_set_updated_at before update on public.meta_message
 create trigger meta_leads_set_updated_at before update on public.meta_leads for each row execute function public.set_updated_at();
 create trigger shopify_leads_set_updated_at before update on public.shopify_leads for each row execute function public.set_updated_at();
 create trigger pipeline_set_updated_at before update on public.pipeline for each row execute function public.set_updated_at();
+create trigger crm_tasks_set_updated_at before update on public.crm_tasks for each row execute function public.set_updated_at();
 
 alter table public.workspace_members enable row level security;
 alter table public.workspace_mailboxes enable row level security;
 alter table public.email_inbox_state enable row level security;
 alter table public.email_automation_settings enable row level security;
+alter table public.flows enable row level security;
+alter table public.flow_steps enable row level security;
+alter table public.flow_runs enable row level security;
+alter table public.flow_run_logs enable row level security;
+alter table public.crm_tasks enable row level security;
+alter table public.internal_notifications enable row level security;
 alter table public.mailbox_sent_messages enable row level security;
 alter table public.companies enable row level security;
 alter table public.contacts enable row level security;

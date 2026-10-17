@@ -120,23 +120,81 @@
 
 @layer base {
   * { @apply border-border outline-ring/50; }
-  html { @apply bg-background font-sans; }
+  html {
+    @apply bg-background font-sans;
+    overscroll-behavior: none;
+  }
   body { @apply min-h-screen bg-background text-sm text-foreground antialiased; }
   button, a, input, [role="button"] { @apply transition-colors duration-150; }
+}
+
+/* Use one compact scrollbar system across the CRM. The thumb stays subtle
+   until a scroll region is hovered or focused, while remaining draggable for
+   mouse users and preserving wheel, trackpad, touch, and keyboard scrolling. */
+html,
+body,
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklch, var(--muted-foreground) 42%, transparent) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  min-width: 36px;
+  min-height: 36px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--muted-foreground) 42%, transparent);
+  background-clip: padding-box;
+}
+
+:is(html, body, *):hover,
+:is(html, body, *):focus-within {
+  scrollbar-color: color-mix(in oklch, var(--muted-foreground) 55%, transparent) transparent;
+}
+
+*:hover::-webkit-scrollbar-thumb,
+*:focus-within::-webkit-scrollbar-thumb {
+  background: color-mix(in oklch, var(--muted-foreground) 55%, transparent);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklch, var(--foreground) 72%, transparent);
+  background-clip: padding-box;
+}
+
+:where(
+  [class*="overflow-auto"],
+  [class*="overflow-y-auto"],
+  [class*="overflow-x-auto"]
+) {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html,
+  :where(
+    [class*="overflow-auto"],
+    [class*="overflow-y-auto"],
+    [class*="overflow-x-auto"]
+  ) {
+    scroll-behavior: smooth;
+  }
 }
 
 /* The unified inbox is information-dense, but operational text should remain
    readable during long support sessions. Keep metadata at 12px and primary
    interface copy at 13px or larger, including legacy utility-sized labels. */
-.messenger-workspace,
-.email-workspace {
-  scrollbar-width: none;
-}
-
-.messenger-workspace *::-webkit-scrollbar,
-.email-workspace *::-webkit-scrollbar {
-  display: none;
-}
 
 .messenger-workspace .text-\[8px\],
 .messenger-workspace .text-\[9px\],

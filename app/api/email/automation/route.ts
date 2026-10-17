@@ -2,6 +2,7 @@ import { z } from "zod";
 import { requireWorkspaceMember } from "@/lib/auth";
 import { saveEmailAutomationSettings } from "@/lib/data/email-state";
 import { getEmailInboxBackendData } from "@/lib/email-inbox";
+import { listFlows, updateFlow } from "@/lib/data/flows";
 
 const stepSchema = z.object({
   id: z.string().trim().min(1).max(100),
@@ -32,6 +33,18 @@ export async function POST(request: Request) {
   }
   try {
     const flow = await saveEmailAutomationSettings(viewer.id, parsed.data.enabled, parsed.data.steps);
+    try {
+      const followUp = (await listFlows(viewer.id)).find((item) => item.name === "3-step follow-up");
+      if (followUp) await updateFlow(viewer.id, followUp.id, {
+        name: followUp.name,
+        triggerType: followUp.triggerType,
+        triggerConfig: followUp.triggerConfig,
+        status: parsed.data.enabled ? "live" : "paused",
+        steps: followUp.steps.map((step) => ({ id: step.id, type: step.type, config: step.config })),
+      });
+    } catch (syncError) {
+      console.warn("Legacy automation saved, but the flow status could not be synchronized:", syncError);
+    }
     return Response.json({ ok: true, flow, updatedAt: new Date().toISOString() }, {
       headers: { "Cache-Control": "no-store" },
       status: 200,

@@ -1,6 +1,5 @@
-import { AutomationConsole } from "@/components/automation-console";
-import { PageHeader, SectionCard } from "@/components/ui";
-import Link from "next/link";
-import { getSetupReadiness } from "@/lib/setup-status";
-export const metadata={title:"Automation"};
-export default function AutomationPage(){const status=getSetupReadiness();return <><PageHeader title="Automation control" description="Verify every gate before discovery, AI, or outreach is allowed to run." action={<div className="dry-badge"><i/>{status.dryRun?"SAFE TEST MODE":"LIVE MODE"}</div>}/><div className="workflow-ribbon">{["Discover","Enrich","Profile","Match products","Approve","Send","Classify replies","Alert"].map((step,index)=><div key={step}><span>{index+1}</span><strong>{step}</strong></div>)}</div><div className="settings-grid"><SectionCard className="span-2" title="End-to-end verification" subtitle="Runs suppression, dry-run, and AI schema checks"><AutomationConsole/></SectionCard><SectionCard title="Connection status" action={<Link className="text-link" href="/setup">Setup guide →</Link>}><div className="connection-list"><div><i className="connected"/><span><strong>Application</strong><small>Online</small></span></div><div><i className="connected"/><span><strong>Mock AI agent</strong><small>Ready for testing</small></span></div>{status.integrations.map(item=><div key={item.id}><i className={item.configured?"connected":""}/><span><strong>{item.name}</strong><small>{item.configured?"Configured":"Awaiting manual setup"}</small></span></div>)}</div></SectionCard><SectionCard className="span-3" title="Production gates" subtitle="Automation cannot advance until these rules pass"><div className="proof-grid"><div><strong>1</strong><p>Verified business contact, lawful targeting and suppression screening.</p></div><div><strong>2</strong><p>Current product data, grounded AI output and human approval.</p></div><div><strong>3</strong><p>Mailbox limits, bounce monitoring and human takeover on interest.</p></div></div></SectionCard></div></>}
+import { redirect } from "next/navigation";
+
+export default function AutomationPage() {
+  redirect("/lead-channel/ai-agent");
+}

@@ -298,6 +298,12 @@ export async function saveShopifyLead(lead: ShopifyLead, webhookId: string, shop
       processed_at: new Date().toISOString(),
     }).eq("webhook_id", webhookId);
     if (completion.error) throw completion.error;
+    try {
+      const { enrollMatchingFlows } = await import("./data/flow-runtime.ts");
+      await enrollMatchingFlows({ type: "lead_added_to_list", conversationId: `shopify:${lead.customerId}`, contactId, companyId: company.id, listId: "Shopify B2B leads", segment: "Shopify B2B lead" });
+    } catch (automationError) {
+      console.error("Shopify lead saved, but flow enrollment failed:", automationError);
+    }
     return { ok: true as const, duplicate: false, companyId: company.id, contactId };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Shopify lead could not be saved.";

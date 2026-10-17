@@ -3,7 +3,7 @@ import { b2bProducts } from "./b2b-products.ts";
 import { formatRelativeDate, getInitials, getPipelineStageLabel } from "../crm-model.ts";
 import { env, hasSupabaseConfig } from "../env.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
-import type { ActivityItem, Catalog, Company, ContactOption, DataMode, EmailDraft, Product, Reply } from "../types.ts";
+import type { ActivityItem, Catalog, Company, CompanyActivity, CompanyDetails, ContactOption, DataMode, EmailDraft, Product, Reply } from "../types.ts";
 import { variantsFromTags } from "../product-utils.ts";
 
 type Relation<T> = T | T[] | null;
@@ -14,7 +14,9 @@ type CompanyRow = {
   website: string | null;
   domain: string | null;
   country: string | null;
+  city: string | null;
   segment: string | null;
+  source: string | null;
   status: string;
   company_profiles: Relation<{
     summary: string | null;
@@ -22,14 +24,23 @@ type CompanyRow = {
     interest_tags: string[] | null;
   }>;
   contacts: Relation<{
+    id: string;
     name: string | null;
     role: string | null;
     email: string;
     verification_status: string;
+    emails: Relation<{
+      status: string;
+      direction: string;
+      created_at: string;
+    }>;
   }>;
   pipeline: Relation<{
     stage: string;
     next_followup_at: string | null;
+    estimated_order_quantity: number | null;
+    estimated_value: number | null;
+    currency: string;
   }>;
 };
 
@@ -100,6 +111,25 @@ function websiteDomain(website: string | null) {
   }
 }
 
+function sourceLabel(source: string | null) {
+  if (source?.includes("shopify")) return "Shopify B2B";
+  if (source?.includes("meta") || source?.includes("facebook") || source?.includes("messenger")) return "Meta";
+  if (source === "manual") return "Manual";
+  return source ? source.replaceAll("_", " ") : "Imported";
+}
+
+function getOutreachStatus(contacts: CompanyRow["contacts"], source: string | null) {
+  const contactList = Array.isArray(contacts) ? contacts : contacts ? [contacts] : [];
+  const emails = contactList.flatMap((contact) => Array.isArray(contact.emails) ? contact.emails : contact.emails ? [contact.emails] : []);
+  const latest = emails.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0];
+  if (latest) {
+    if (latest.direction === "received") return "Email replied";
+    return `Email · ${latest.status.replaceAll("_", " ")}`;
+  }
+  if (source?.includes("meta") || source?.includes("facebook") || source?.includes("messenger")) return "Messenger lead";
+  return "Not started";
+}
+
 export function getCrmDataMode(): DataMode {
   const serverIsConfigured = hasSupabaseConfig();
   const productionIsProtected = process.env.NODE_ENV !== "production" || env.authRequired;
@@ -121,11 +151,20 @@ function mapCompany(row: CompanyRow): Company {
     id: row.id,
     name: row.name,
     initials: getInitials(row.name),
+    website: row.website || "",
     domain,
     country: row.country || "Unknown",
+    city: row.city || "",
     segment: row.segment || "Unclassified",
+    source: row.source || "imported",
+    sourceLabel: sourceLabel(row.source),
     fitScore: profile?.fit_score ?? 0,
     stage: getPipelineStageLabel(pipeline?.stage || row.status),
+    outreachStatus: getOutreachStatus(row.contacts, row.source),
+    estimatedOrderQuantity: pipeline?.estimated_order_quantity ?? null,
+    estimatedValue: pipeline?.estimated_value == null ? null : Number(pipeline.estimated_value),
+    currency: pipeline?.currency || "USD",
+    nextFollowupAt: pipeline?.next_followup_at || null,
     nextAction: pipeline?.next_followup_at ? `Follow up ${formatRelativeDate(pipeline.next_followup_at).toLowerCase()}` : "Review company",
     tags: profile?.interest_tags ?? [],
     contact: contact?.name || "No contact yet",
@@ -146,11 +185,87 @@ export async function listCompanies(): Promise<{ mode: DataMode; companies: Comp
 async function queryCompanies(): Promise<Company[]> {
   const { data, error } = await createSupabaseAdmin()
     .from("companies")
-    .select("id,name,website,domain,country,segment,status,company_profiles(summary,fit_score,interest_tags),contacts(name,role,email,verification_status),pipeline(stage,next_followup_at)")
+    .select("id,name,website,domain,country,city,segment,source,status,company_profiles(summary,fit_score,interest_tags),contacts(id,name,role,email,verification_status,emails(status,direction,created_at)),pipeline(stage,next_followup_at,estimated_order_quantity,estimated_value,currency)")
     .order("created_at", { ascending: false })
     .limit(500);
   if (error) throw new Error(`Unable to load companies: ${error.message}`);
   return ((data ?? []) as unknown as CompanyRow[]).map(mapCompany);
+}
+
+type CompanyEventRow = { id: string; type: string; data: Record<string, unknown> | null; actor_id: string | null; created_at: string };
+type CompanyEmailRow = { id: string; subject: string | null; status: string; direction: string; approved_by: string | null; sent_at: string | null; created_at: string; contacts: Relation<{ name: string | null; email: string }> };
+type CompanyCatalogRow = { id: string; version: number; product_skus: string[] | null; created_at: string };
+
+export async function getCompanyDetails(id: string): Promise<{ mode: DataMode; details: CompanyDetails | null }> {
+  const mode = getCrmDataMode();
+  if (mode === "demo") return { mode, details: null };
+  await authorizeLiveRead();
+  const admin = createSupabaseAdmin();
+  const [companyResult, contactsResult, eventsResult, emailsResult, catalogsResult] = await Promise.all([
+    admin.from("companies").select("id,name,website,domain,country,city,segment,source,status,company_profiles(summary,fit_score,interest_tags),contacts(id,name,role,email,verification_status,emails(status,direction,created_at)),pipeline(stage,next_followup_at,estimated_order_quantity,estimated_value,currency)").eq("id", id).maybeSingle(),
+    admin.from("contacts").select("id,name,role,email,verification_status").eq("company_id", id).order("created_at"),
+    admin.from("events").select("id,type,data,actor_id,created_at").eq("company_id", id).order("created_at", { ascending: false }).limit(200),
+    admin.from("emails").select("id,subject,status,direction,approved_by,sent_at,created_at,contacts!inner(name,email,company_id)").eq("contacts.company_id", id).order("created_at", { ascending: false }).limit(200),
+    admin.from("catalogs").select("id,version,product_skus,created_at").eq("company_id", id).order("created_at", { ascending: false }).limit(100),
+  ]);
+  if (companyResult.error) throw new Error(`Unable to load company: ${companyResult.error.message}`);
+  if (!companyResult.data) return { mode, details: null };
+  const failures = [contactsResult.error, eventsResult.error, emailsResult.error, catalogsResult.error].filter(Boolean);
+  if (failures.length) throw new Error(`Unable to load company activity: ${failures[0]?.message}`);
+
+  const events = (eventsResult.data ?? []) as CompanyEventRow[];
+  const emails = (emailsResult.data ?? []) as unknown as CompanyEmailRow[];
+  const actorIds = [...new Set([...events.map((event) => event.actor_id), ...emails.map((email) => email.approved_by)].filter((value): value is string => Boolean(value)))];
+  const memberNames = new Map<string, string>();
+  if (actorIds.length) {
+    const { data: members } = await admin.from("workspace_members").select("user_id,display_name").in("user_id", actorIds);
+    for (const member of members ?? []) memberNames.set(member.user_id, member.display_name || "Workspace member");
+  }
+
+  const activity: CompanyActivity[] = [
+    ...events.map((event) => ({
+      id: `event-${event.id}`,
+      type: "event" as const,
+      title: event.type.replaceAll("_", " "),
+      detail: typeof event.data?.summary === "string" ? event.data.summary : "Company activity recorded.",
+      actor: event.actor_id ? memberNames.get(event.actor_id) || "Workspace member" : "Automation",
+      createdAt: event.created_at,
+    })),
+    ...emails.map((email) => {
+      const contact = first(email.contacts);
+      return {
+        id: `email-${email.id}`,
+        type: "email" as const,
+        title: email.direction === "received" ? "Email received" : `Email ${email.status.replaceAll("_", " ")}`,
+        detail: `${email.subject || "Untitled email"}${contact ? ` · ${contact.name || contact.email}` : ""}`,
+        actor: email.direction === "received" ? contact?.email || "Contact" : email.approved_by ? memberNames.get(email.approved_by) || "Workspace member" : "AI automation",
+        createdAt: email.sent_at || email.created_at,
+      };
+    }),
+    ...((catalogsResult.data ?? []) as CompanyCatalogRow[]).map((catalog) => ({
+      id: `catalog-${catalog.id}`,
+      type: "catalog" as const,
+      title: `Catalog v${catalog.version} created`,
+      detail: `${catalog.product_skus?.length ?? 0} products included.`,
+      actor: "Workspace",
+      createdAt: catalog.created_at,
+    })),
+  ].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+
+  return {
+    mode,
+    details: {
+      company: mapCompany(companyResult.data as unknown as CompanyRow),
+      contacts: (contactsResult.data ?? []).map((contact) => ({
+        id: contact.id,
+        name: contact.name || "No name",
+        role: contact.role || "Role not confirmed",
+        email: contact.email,
+        verificationStatus: contact.verification_status,
+      })),
+      activity,
+    },
+  };
 }
 
 export async function getCompany(id: string) {
