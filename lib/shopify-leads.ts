@@ -23,6 +23,13 @@ export type ShopifyLead = {
   rawPayload: UnknownRecord;
 };
 
+export type ShopifyLeadLocation = {
+  country: string | null;
+  city: string | null;
+  ipAddress: string | null;
+  source: "form" | "ip" | "unknown";
+};
+
 const genericEmailDomains = new Set([
   "gmail.com", "googlemail.com", "hotmail.com", "outlook.com", "live.com",
   "icloud.com", "me.com", "yahoo.com", "qq.com", "163.com", "126.com",
@@ -75,6 +82,44 @@ function businessDomain(email: string) {
 function companyFromDomain(domain: string) {
   const stem = domain.split(".")[0].replaceAll(/[-_]+/g, " ");
   return stem.replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function countryName(value: string | null) {
+  if (!value) return null;
+  const code = value.trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(code)) return value.trim();
+  try {
+    return new Intl.DisplayNames(["en"], { type: "region" }).of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
+export function getShopifyLeadLocation(headers: Headers, submittedCountry?: string | null, submittedCity?: string | null): ShopifyLeadLocation {
+  const formCountry = asString(submittedCountry);
+  const geoCountry = asString(headers.get("x-vercel-ip-country")) ?? asString(headers.get("cf-ipcountry"));
+  const forwardedIp = headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+  const ipAddress = asString(headers.get("x-real-ip")) ?? asString(forwardedIp);
+  const headerCity = asString(headers.get("x-vercel-ip-city"));
+  let decodedCity = headerCity;
+  if (headerCity) {
+    try { decodedCity = decodeURIComponent(headerCity); } catch { /* Keep the original header value. */ }
+  }
+  return {
+    country: countryName(formCountry ?? geoCountry),
+    city: asString(submittedCity) ?? decodedCity,
+    ipAddress: ipAddress?.slice(0, 64) ?? null,
+    source: formCountry ? "form" : geoCountry ? "ip" : "unknown",
+  };
+}
+
+export function estimatedOrderQuantity(value: string | null | undefined) {
+  if (!value) return null;
+  const normalized = value.replaceAll(",", "").toLowerCase();
+  const numbers = [...normalized.matchAll(/\d+(?:\.\d+)?/g)].map((match) => Number(match[0]));
+  if (!numbers.length) return null;
+  if (/under|less than|below|up to|</.test(normalized)) return Math.round(numbers[0]);
+  return Math.round(numbers[0]);
 }
 
 export function buildShopifySignature(secret: string, body: string) {
@@ -135,7 +180,7 @@ function formValue(formData: FormData, name: string) {
   return asString(formData.get(name));
 }
 
-export function normalizeShopifyFormLead(formData: FormData): ShopifyLead | null {
+export function normalizeShopifyFormLead(formData: FormData, requestHeaders = new Headers()): ShopifyLead | null {
   const submissionId = formValue(formData, "submission_id");
   const email = formValue(formData, "contact[email]")?.toLowerCase();
   const name = formValue(formData, "contact[Name]");
@@ -156,6 +201,13 @@ export function normalizeShopifyFormLead(formData: FormData): ShopifyLead | null
     ["contact[Wants net terms]", "Net payment terms"],
   ].filter(([key]) => formData.get(key) === "Yes").map(([, label]) => label);
 
+  const location = getShopifyLeadLocation(
+    requestHeaders,
+    formValue(formData, "contact[Country]") ?? formValue(formData, "contact[Country Code]"),
+    formValue(formData, "contact[Region]"),
+  );
+  const rawPayload = Object.fromEntries(Array.from(formData.entries()).map(([key, value]) => [key, String(value)]));
+
   return {
     customerId: `form:${submissionId}`,
     email,
@@ -165,8 +217,8 @@ export function normalizeShopifyFormLead(formData: FormData): ShopifyLead | null
     companyName: companyName.slice(0, 160),
     website,
     domain: websiteDomain ?? emailDomain,
-    country: formValue(formData, "contact[Country]"),
-    city: formValue(formData, "contact[Region]"),
+    country: location.country,
+    city: location.city,
     tags: ["b2b-lead", "shopify-contact-form"],
     acceptsMarketing: false,
     details: {
@@ -179,7 +231,15 @@ export function normalizeShopifyFormLead(formData: FormData): ShopifyLead | null
       extras,
     },
     createdAt: new Date().toISOString(),
-    rawPayload: Object.fromEntries(Array.from(formData.entries()).map(([key, value]) => [key, String(value)])),
+    rawPayload: {
+      ...rawPayload,
+      _crm_location: {
+        source: location.source,
+        ipAddress: location.ipAddress,
+        country: location.country,
+        city: location.city,
+      },
+    },
   };
 }
 
@@ -226,16 +286,17 @@ export async function saveShopifyLead(lead: ShopifyLead, webhookId: string, shop
       .maybeSingle();
     if (contactLookupError) throw contactLookupError;
 
-    let company: { id: string; name: string } | null = null;
+    let company: { id: string; name: string; source: string | null; country: string | null; city: string | null } | null = null;
     if (existingContact) {
-      const result = await admin.from("companies").select("id,name").eq("id", existingContact.company_id).single();
+      const result = await admin.from("companies").select("id,name,source,country,city").eq("id", existingContact.company_id).single();
       if (result.error || !result.data) throw result.error ?? new Error("Contact company could not be found.");
       company = result.data;
     } else if (lead.domain) {
-      const result = await admin.from("companies").select("id,name").eq("domain", lead.domain).maybeSingle();
+      const result = await admin.from("companies").select("id,name,source,country,city").eq("domain", lead.domain).maybeSingle();
       if (result.error) throw result.error;
       company = result.data;
     }
+    const isNewCompany = !company;
     if (!company) {
       const result = await admin.from("companies").insert({
         name: lead.companyName,
@@ -248,12 +309,33 @@ export async function saveShopifyLead(lead: ShopifyLead, webhookId: string, shop
         source_url: `https://${shopDomain}`,
         status: "new",
         discovered_at: lead.createdAt,
-      }).select("id,name").single();
+      }).select("id,name,source,country,city").single();
       if (result.error || !result.data) throw result.error ?? new Error("Company could not be created.");
       company = result.data;
-      const pipelineResult = await admin.from("pipeline").upsert({ company_id: company.id, stage: "new" }, { onConflict: "company_id" });
-      if (pipelineResult.error) throw pipelineResult.error;
+    } else {
+      const companyUpdates: Record<string, string> = {};
+      if (lead.country && (!company.country || company.country === "Unknown")) companyUpdates.country = lead.country;
+      if (lead.city && !company.city) companyUpdates.city = lead.city;
+      if (!company.source?.includes("shopify")) companyUpdates.source = [company.source, "shopify_b2b_form"].filter(Boolean).join("+");
+      if (Object.keys(companyUpdates).length) {
+        const updateResult = await admin.from("companies").update(companyUpdates).eq("id", company.id);
+        if (updateResult.error) throw updateResult.error;
+      }
     }
+
+    const quantity = estimatedOrderQuantity(
+      typeof lead.details.estimatedMonthlyVolume === "string" ? lead.details.estimatedMonthlyVolume : null,
+    );
+    const pipelineResult = isNewCompany
+      ? await admin.from("pipeline").insert({
+          company_id: company.id,
+          stage: "new",
+          ...(quantity == null ? {} : { estimated_order_quantity: quantity }),
+        })
+      : quantity == null
+        ? { error: null }
+        : await admin.from("pipeline").update({ estimated_order_quantity: quantity }).eq("company_id", company.id);
+    if (pipelineResult.error) throw pipelineResult.error;
 
     let contactId = existingContact?.id ?? null;
     if (existingContact) {

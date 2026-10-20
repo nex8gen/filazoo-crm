@@ -144,7 +144,7 @@ function SidebarNavigation({ pathname, onNavigate }: { pathname: string; onNavig
         <div className="flex h-12 items-center border-b px-6">
           <span className="text-sm font-medium">{activeGroup.label}</span>
         </div>
-        <nav aria-label={`${activeGroup.label} navigation`} className="min-h-0 flex-1 overflow-y-auto px-3 py-5">
+        <nav aria-label={`${activeGroup.label} navigation`} className="scrollbar-hidden min-h-0 flex-1 overflow-y-auto px-3 py-5">
           <p className="px-3 pb-2 font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground">{activeGroup.eyebrow}</p>
           <ul className="space-y-0.5">
             {activeGroup.items.map((item) => {
@@ -180,6 +180,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
   const router = useRouter();
   const isMessenger = pathname === "/messenger" || pathname.startsWith("/messenger/");
   const isFlowBuilder = pathname === "/lead-channel/ai-agent" || pathname.startsWith("/lead-channel/ai-agent/");
+  const isCompanies = pathname === "/companies";
   const usesViewportCanvas = isMessenger || isFlowBuilder;
   const [commandOpen, setCommandOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -205,7 +206,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
   };
 
   return (
-    <div className={`${usesViewportCanvas ? "h-svh overflow-hidden" : "min-h-svh"} bg-background text-foreground`}>
+    <div className={`${usesViewportCanvas ? "h-svh overflow-hidden" : isCompanies ? "min-h-svh md:h-svh md:overflow-hidden" : "min-h-svh"} bg-background text-foreground`}>
       <header className="fixed inset-x-0 top-0 z-50 flex h-12 items-center border-b bg-background/95 px-3 backdrop-blur md:px-4">
         <Button aria-label="Open navigation" variant="ghost" size="icon-sm" className="mr-2 md:hidden" onClick={() => setMobileOpen(true)}>
           <Menu />
@@ -244,7 +245,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
       ) : null}
 
       <div className="pt-12 md:pl-[19rem]">
-        <main className={`${usesViewportCanvas ? "h-[calc(100dvh-3rem)] min-h-0 w-full overflow-hidden p-0" : "min-h-[calc(100svh-3rem)] w-full px-5 py-7 sm:px-7 lg:px-10 lg:py-10"}`}>{children}</main>
+        <main className={`${usesViewportCanvas ? "h-[calc(100dvh-3rem)] min-h-0 w-full overflow-hidden p-0" : isCompanies ? "min-h-[calc(100svh-3rem)] w-full px-5 py-7 sm:px-7 md:h-[calc(100dvh-3rem)] md:min-h-0 md:overflow-hidden lg:px-10 lg:py-8" : "min-h-[calc(100svh-3rem)] w-full px-5 py-7 sm:px-7 lg:px-10 lg:py-10"}`}>{children}</main>
       </div>
 
       {commandOpen ? (

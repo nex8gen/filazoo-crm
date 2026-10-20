@@ -40,6 +40,33 @@ test("normalizeMetaPayload extracts an inbound Facebook Messenger message", () =
     timestamp: "2024-03-09T16:00:00.000Z",
     customerName: "psid-456",
     rawPayload: payload.entry[0].messaging[0],
+    channel: "facebook",
+  }]);
+});
+
+test("normalizeMetaPayload extracts an inbound Instagram message", () => {
+  const event = {
+    sender: { id: "igsid-456" },
+    recipient: { id: "ig-account-123" },
+    timestamp: 1710000000000,
+    message: { mid: "ig-mid.abc123", text: "Do you ship to France?" },
+  };
+  const result = normalizeMetaPayload({ object: "instagram", entry: [{ id: "ig-account-123", messaging: [event] }] });
+
+  assert.equal(result.leads.length, 0);
+  assert.deepEqual(result.messages, [{
+    id: "ig-mid.abc123",
+    threadId: "igsid-456",
+    pageId: "ig-account-123",
+    senderId: "igsid-456",
+    recipientId: "ig-account-123",
+    direction: "inbound",
+    type: "text",
+    body: "Do you ship to France?",
+    timestamp: "2024-03-09T16:00:00.000Z",
+    customerName: "igsid-456",
+    rawPayload: event,
+    channel: "instagram",
   }]);
 });
 

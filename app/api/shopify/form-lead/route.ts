@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     return Response.json({ ok: true, ignored: true }, { headers: corsHeaders(config.origin) });
   }
 
-  const lead = normalizeShopifyFormLead(formData);
+  const lead = normalizeShopifyFormLead(formData, request.headers);
   if (!lead) {
     return Response.json({ error: "Name, business, email, and submission ID are required" }, { status: 422, headers: corsHeaders(config.origin) });
   }

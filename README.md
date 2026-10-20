@@ -4,10 +4,7 @@ Filazoo CRM is the controlled workspace for B2B company research, product matchi
 
 For the complete product vision, current implementation status, architecture, safety rules, and next-step handoff, read [`PROJECT.md`](./PROJECT.md).
 
-The application currently supports two data modes:
-
-- **Demo mode** uses clearly labeled sample records when production credentials or authentication are incomplete.
-- **Live mode** reads CRM data from Supabase only when the full server configuration is present and `AUTH_REQUIRED=true`.
+The application reads CRM records from Supabase only when the full server configuration is present and `AUTH_REQUIRED=true`. Without that connection, data views render honest empty/offline states; they do not inject sample records.
 
 ## Local development
 
@@ -67,6 +64,8 @@ Use `https://YOUR_PUBLIC_DOMAIN/api/meta/webhook` as the Meta Page webhook callb
 
 In the Meta app, connect the Facebook Page and subscribe the Page webhook to `messages`, `messaging_postbacks`, and `leadgen`. Messenger replies require `pages_messaging`; Lead Ad detail retrieval requires `leads_retrieval` and the Page permissions required by Meta for that app and business. Never put the Page access token or App Secret in a `NEXT_PUBLIC_` variable.
 
+For Instagram Direct, use Messenger API support for Instagram: link the professional Instagram account to the Facebook Page, grant the Page permission to manage Instagram messages, generate a new Page access token, and subscribe the same callback to Instagram messaging events. Facebook and Instagram replies share the server-only Page access token; the CRM separates the two channels using each webhook event's source.
+
 ## Shopify B2B form leads
 
 The Shopify Forms app should add the customer tag `b2b-lead` when the B2B form is submitted. Add these server-only variables in Vercel Production:
@@ -104,7 +103,7 @@ Implemented:
 - Workspace role enforcement
 - Server-only CRM data-access layer
 - Database-backed dashboard, companies, pipeline, email queue, and catalog views
-- Explicit demo fallback
+- Explicit empty/offline fallback when live data is unavailable
 - Dry-run outreach safety policy and mock AI diagnostics
 
 Next:

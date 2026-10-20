@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 
 import {
   buildShopifySignature,
+  estimatedOrderQuantity,
+  getShopifyLeadLocation,
   hasShopifyLeadTag,
   normalizeShopifyFormLead,
   normalizeShopifyCustomer,
@@ -74,4 +76,37 @@ test("normalizes the live Shopify contact form fields", () => {
   assert.equal(lead.details.estimatedMonthlyVolume, "200–499 kg");
   assert.deepEqual(lead.details.materials, ["PETG"]);
   assert.deepEqual(lead.details.extras, ["Sample kit"]);
+});
+
+test("uses request IP geography when the Shopify form country is blank", () => {
+  const formData = new FormData();
+  formData.set("submission_id", "89c65551-4a19-4d17-938f-9eb3537831ca");
+  formData.set("contact[Name]", "Grace Hopper");
+  formData.set("contact[email]", "buyer@example3d.com");
+  formData.set("contact[Company]", "Example 3D");
+  const headers = new Headers({
+    "x-vercel-ip-country": "US",
+    "x-vercel-ip-city": "New%20York",
+    "x-forwarded-for": "203.0.113.10, 10.0.0.1",
+  });
+
+  const lead = normalizeShopifyFormLead(formData, headers);
+  assert.ok(lead);
+  assert.equal(lead.country, "United States");
+  assert.equal(lead.city, "New York");
+  assert.deepEqual(lead.rawPayload._crm_location, {
+    source: "ip",
+    ipAddress: "203.0.113.10",
+    country: "United States",
+    city: "New York",
+  });
+});
+
+test("prefers a submitted country and parses estimated monthly volume", () => {
+  const location = getShopifyLeadLocation(new Headers({ "x-vercel-ip-country": "CA" }), "US", null);
+  assert.equal(location.country, "United States");
+  assert.equal(location.source, "form");
+  assert.equal(estimatedOrderQuantity("Under 50 kg"), 50);
+  assert.equal(estimatedOrderQuantity("200-499 kg"), 200);
+  assert.equal(estimatedOrderQuantity(null), null);
 });

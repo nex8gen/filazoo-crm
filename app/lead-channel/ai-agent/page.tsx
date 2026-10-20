@@ -16,7 +16,7 @@ export default async function AiAgentPage({ searchParams }: PageProps<"/lead-cha
     listFlowFilterOptions().catch(() => ({ segments: [], countries: [] })),
   ]);
 
-  return <div>
+  return <div className="h-full min-h-0">
     <FlowBuilder
       initialFlows={flows}
       initialFlowId={typeof params.flow === "string" ? params.flow : undefined}

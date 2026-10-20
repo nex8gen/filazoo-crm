@@ -21,7 +21,6 @@ type InboxThread = MetaConversationThread & {
   operator?: string;
   language?: string;
   priority?: "High" | "Normal";
-  demo?: boolean;
 };
 
 const channelOptions: Array<{
@@ -33,56 +32,12 @@ const channelOptions: Array<{
 }> = [
   { id: "all", label: "All conversations", shortLabel: "All", markClass: "bg-foreground text-background", connected: true },
   { id: "facebook", label: "Facebook", shortLabel: "Facebook", markClass: "bg-[#1877f2] text-white", connected: true },
-  { id: "instagram", label: "Instagram", shortLabel: "Instagram", markClass: "bg-gradient-to-br from-[#7c3aed] via-[#e1306c] to-[#f59e0b] text-white", connected: false },
+  { id: "instagram", label: "Instagram", shortLabel: "Instagram", markClass: "bg-gradient-to-br from-[#7c3aed] via-[#e1306c] to-[#f59e0b] text-white", connected: true },
   { id: "whatsapp", label: "WhatsApp", shortLabel: "WhatsApp", markClass: "bg-[#25d366] text-white", connected: false },
   { id: "web", label: "Website chat", shortLabel: "Website", markClass: "bg-[#8b5cf6] text-white", connected: false },
 ];
 
-const demoThreads: InboxThread[] = [
-  {
-    id: "demo-lin", customerId: "demo-1001", customer: "Mei Lin", company: "Luna Pet Boutique", pageId: "filazoo-page",
-    status: "New", unread: 2, lastMessage: "可以把你们最新的宠物床目录发给我吗？", updatedAt: "2026-10-14T09:42:00+08:00",
-    replyWindowEndsAt: "2026-10-15T09:42:00+08:00", replyWindowOpen: true, channel: "facebook", operator: "Amy Chen",
-    language: "Chinese", priority: "High", demo: true,
-    messages: [
-      { id: "m1", direction: "inbound", body: "你好，我在 Facebook 上看到了你们的宠物床。", type: "text", status: "received", createdAt: "2026-10-14T09:38:00+08:00" },
-      { id: "m2", direction: "outbound", body: "Hi Mei! Thanks for reaching out to Filazoo. How can I help?", type: "text", status: "sent", createdAt: "2026-10-14T09:40:00+08:00" },
-      { id: "m3", direction: "inbound", body: "可以把你们最新的宠物床目录发给我吗？", type: "text", status: "received", createdAt: "2026-10-14T09:42:00+08:00" },
-    ],
-  },
-  {
-    id: "demo-oliver", customerId: "demo-1002", customer: "Oliver Grant", company: "North & Paws", pageId: "filazoo-page",
-    status: "Open", unread: 0, lastMessage: "Perfect, I’ll review the wholesale prices today.", updatedAt: "2026-10-14T09:18:00+08:00",
-    replyWindowEndsAt: "2026-10-15T09:18:00+08:00", replyWindowOpen: true, channel: "facebook", operator: "You",
-    language: "English", priority: "Normal", demo: true,
-    messages: [
-      { id: "m4", direction: "outbound", body: "I’ve shared our current wholesale catalog and MOQ details.", type: "text", status: "sent", createdAt: "2026-10-14T09:12:00+08:00" },
-      { id: "m5", direction: "inbound", body: "Perfect, I’ll review the wholesale prices today.", type: "text", status: "received", createdAt: "2026-10-14T09:18:00+08:00" },
-    ],
-  },
-  {
-    id: "demo-sofia", customerId: "demo-1003", customer: "Sofia Rossi", company: "Paw House Milano", pageId: "filazoo-page",
-    status: "Follow-up", unread: 1, lastMessage: "Do you ship sample packs to Italy?", updatedAt: "2026-10-14T08:51:00+08:00",
-    replyWindowEndsAt: "2026-10-15T08:51:00+08:00", replyWindowOpen: true, channel: "facebook", operator: "Unassigned",
-    language: "English", priority: "Normal", demo: true,
-    messages: [{ id: "m6", direction: "inbound", body: "Hello! Do you ship sample packs to Italy?", type: "text", status: "received", createdAt: "2026-10-14T08:51:00+08:00" }],
-  },
-  {
-    id: "demo-noah", customerId: "demo-1004", customer: "Noah Williams", company: "The Good Dog Co.", pageId: "filazoo-page",
-    status: "Open", unread: 0, lastMessage: "Thank you for the quick answer!", updatedAt: "2026-10-13T17:23:00+08:00",
-    replyWindowEndsAt: "2026-10-14T17:23:00+08:00", replyWindowOpen: true, channel: "facebook", operator: "Amy Chen",
-    language: "English", priority: "Normal", demo: true,
-    messages: [
-      { id: "m7", direction: "outbound", body: "The recycled-fiber collection will be back in stock next week.", type: "text", status: "sent", createdAt: "2026-10-13T17:20:00+08:00" },
-      { id: "m8", direction: "inbound", body: "Thank you for the quick answer!", type: "text", status: "received", createdAt: "2026-10-13T17:23:00+08:00" },
-    ],
-  },
-];
-
-const translations: Record<string, string> = {
-  "你好，我在 Facebook 上看到了你们的宠物床。": "Hi, I saw your pet beds on Facebook.",
-  "可以把你们最新的宠物床目录发给我吗？": "Could you send me your latest pet bed catalog?",
-};
+const translations: Record<string, string> = {};
 
 function initials(name: string) {
   return name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
@@ -126,10 +81,7 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: () =
 }
 
 export function MessengerInbox({ data }: { data: MetaInboxData }) {
-  const hasLiveThreads = data.threads.length > 0;
-  const initialThreads = useMemo<InboxThread[]>(() => hasLiveThreads
-    ? data.threads.map((thread) => ({ ...thread, channel: "facebook", operator: "You", language: "Auto-detect", priority: "Normal" }))
-    : demoThreads, [data.threads, hasLiveThreads]);
+  const initialThreads = useMemo<InboxThread[]>(() => data.threads.map((thread) => ({ ...thread, operator: "You", language: "Auto-detect", priority: "Normal" })), [data.threads]);
   const [threads, setThreads] = useState(initialThreads);
   const [selectedId, setSelectedId] = useState(initialThreads[0]?.id ?? "");
   const [activeChannel, setActiveChannel] = useState<Channel>("all");
@@ -156,6 +108,13 @@ export function MessengerInbox({ data }: { data: MetaInboxData }) {
   const selectedThread = threads.find((thread) => thread.id === selectedId) ?? filteredThreads[0];
   const activeOption = channelOptions.find((item) => item.id === activeChannel)!;
   const unreadCount = threads.reduce((total, thread) => total + thread.unread, 0);
+  const isChannelConnected = (channel: Channel) => channel === "all"
+    ? data.connection.configured
+    : channel === "facebook"
+      ? data.connection.facebookConfigured
+      : channel === "instagram"
+        ? data.connection.instagramConfigured
+        : false;
 
   function chooseThread(thread: InboxThread) {
     setSelectedId(thread.id);
@@ -208,21 +167,15 @@ export function MessengerInbox({ data }: { data: MetaInboxData }) {
     setSending(true);
     setNotice(null);
     try {
-      let sent: MetaThreadMessage;
-      if (selectedThread.demo) {
-        await new Promise((resolve) => window.setTimeout(resolve, 450));
-        sent = { id: `demo-${Date.now()}`, direction: "outbound", body: message, type: "text", status: "sent", createdAt: new Date().toISOString() };
-      } else {
-        const response = await fetch("/api/meta/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to: selectedThread.customerId, message }) });
-        const result = await response.json().catch(() => null);
-        if (!response.ok) throw new Error(result?.error || "Messenger reply could not be sent.");
-        sent = { id: result?.messageId || `local-${Date.now()}`, direction: "outbound", body: message, type: "text", status: "sent", createdAt: result?.createdAt || new Date().toISOString() };
-      }
+      const response = await fetch("/api/meta/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to: selectedThread.customerId, message, channel: selectedThread.channel }) });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(result?.error || "Messenger reply could not be sent.");
+      const sent: MetaThreadMessage = { id: result?.messageId || `local-${Date.now()}`, direction: "outbound", body: message, type: "text", status: "sent", createdAt: result?.createdAt || new Date().toISOString() };
       setThreads((current) => current.map((thread) => thread.id === selectedThread.id
         ? { ...thread, messages: [...thread.messages, sent], lastMessage: message, updatedAt: sent.createdAt, status: "Open" }
         : thread));
       setDraft("");
-      setNotice(selectedThread.demo ? "Demo reply added to the conversation." : "Reply sent through Facebook Messenger.");
+      setNotice(`Reply sent through ${selectedThread.channel === "instagram" ? "Instagram" : "Facebook Messenger"}.`);
     } catch (reason) {
       setNotice(reason instanceof Error ? reason.message : "Messenger reply could not be sent.");
     } finally {
@@ -238,19 +191,20 @@ export function MessengerInbox({ data }: { data: MetaInboxData }) {
             <h1 className="text-[1.9rem] font-semibold tracking-[-0.02em]">Messenger</h1>
           </div>
           <div className="flex items-center gap-2">
-            <div className="hidden items-center gap-2 rounded-md border bg-background px-3 py-2 text-xs text-muted-foreground sm:flex"><span className={`size-2 rounded-full ${data.connection.configured ? "bg-emerald-500" : "bg-amber-400"}`} />{data.connection.configured ? `Live · ${data.connection.pageName || "Facebook Page"}` : "Demo mode · Facebook setup needed"}</div>
+            <div className="hidden items-center gap-2 rounded-md border bg-background px-3 py-2 text-xs text-muted-foreground sm:flex"><span className={`size-2 rounded-full ${data.connection.configured ? "bg-emerald-500" : "bg-amber-400"}`} />{data.connection.configured ? `Live · ${[data.connection.pageName, data.connection.instagramName].filter(Boolean).join(" + ") || "Meta"}` : "Disconnected · Meta setup needed"}</div>
             <Link href="/settings" className="inline-flex h-9 items-center gap-2 rounded-md border bg-background px-3 text-xs font-medium hover:bg-muted"><Settings2 className="size-4" />Inbox settings</Link>
           </div>
         </div>
         <div className="mt-3 flex gap-1 overflow-x-auto" aria-label="Messaging channels">
           {channelOptions.map((channel) => {
             const active = channel.id === activeChannel;
+            const connected = isChannelConnected(channel.id);
             const count = channel.id === "all" ? unreadCount : threads.filter((thread) => thread.channel === channel.id).reduce((total, thread) => total + thread.unread, 0);
             return (
               <button key={channel.id} type="button" onClick={() => selectChannel(channel.id)} className={`relative flex h-9 shrink-0 items-center gap-2 rounded-md px-3 text-sm font-medium ${active ? "bg-muted text-foreground ring-1 ring-border" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>
                 {channel.id === "all" ? <span className="inline-flex size-5 items-center justify-center rounded-full bg-foreground text-background"><Inbox className="size-3" /></span> : <ChannelMark channel={channel.id} size="sm" />}{channel.shortLabel}
                 {count > 0 ? <span className="min-w-5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-foreground">{count}</span> : null}
-                {!channel.connected ? <span className="size-1.5 rounded-full bg-muted-foreground/30" title="Not connected" /> : null}
+                {!connected ? <span className="size-1.5 rounded-full bg-muted-foreground/30" title="Not connected" /> : null}
                 {active ? <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-primary" /> : null}
               </button>
             );
@@ -266,7 +220,7 @@ export function MessengerInbox({ data }: { data: MetaInboxData }) {
             <label className="flex h-9 items-center gap-2 rounded-md border bg-muted/30 px-2.5 focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10"><Search className="size-3.5 text-muted-foreground" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search people or messages" className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground" /><kbd className="rounded border bg-background px-1 text-[9px] text-muted-foreground">⌘K</kbd></label>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
-            {!activeOption.connected && filteredThreads.length === 0 ? (
+            {!isChannelConnected(activeOption.id) && filteredThreads.length === 0 ? (
               <div className="m-2 rounded-xl border border-dashed bg-muted/20 p-5 text-center"><div className="mx-auto w-fit"><ChannelMark channel={activeOption.id as Exclude<Channel, "all">} /></div><h3 className="mt-3 text-sm font-semibold">Connect {activeOption.label}</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">Bring messages into Filazoo and assign them to your CRM operators.</p><Link href="/settings" className="mt-4 inline-flex h-9 items-center gap-2 rounded-md bg-foreground px-3 text-xs font-medium text-background"><Wifi className="size-3.5" />Connect channel</Link></div>
             ) : filteredThreads.length === 0 ? (
               <div className="m-2 rounded-lg border border-dashed p-5 text-center text-xs text-muted-foreground">No conversations match your search.</div>
@@ -339,7 +293,7 @@ export function MessengerInbox({ data }: { data: MetaInboxData }) {
                   <button type="button" onClick={assignToMe} className="grid w-full grid-cols-[28px_1fr_auto] items-center gap-2 border-b px-3 py-2.5 text-left hover:bg-muted/60"><span className="flex size-7 items-center justify-center rounded-md bg-background text-muted-foreground"><UserRound className="size-3.5" /></span><span className="text-[13px] text-muted-foreground">Assigned to</span><span className="flex items-center gap-2 text-[13px] font-medium"><span className="flex size-6 items-center justify-center rounded-full bg-background text-[10px]">{selectedThread.operator === "Unassigned" ? "+" : initials(selectedThread.operator || "You")}</span>{selectedThread.operator || "Unassigned"}</span></button>
                   <div className="grid grid-cols-[28px_1fr_auto] items-center gap-2 border-b px-3 py-2.5"><span className="flex size-7 items-center justify-center rounded-md bg-background text-muted-foreground"><Languages className="size-3.5" /></span><dt className="text-[13px] text-muted-foreground">Language</dt><dd className="text-[13px] font-medium">{selectedThread.language}</dd></div>
                   <div className="grid grid-cols-[28px_1fr_auto] items-center gap-2 border-b px-3 py-2.5"><span className="flex size-7 items-center justify-center rounded-md bg-background text-muted-foreground"><Flag className="size-3.5" /></span><dt className="text-[13px] text-muted-foreground">Priority</dt><dd className={`text-[13px] font-medium ${selectedThread.priority === "High" ? "text-amber-600" : ""}`}>{selectedThread.priority}</dd></div>
-                  <div className="grid grid-cols-[28px_1fr_auto] items-center gap-2 px-3 py-2.5"><span className="flex size-7 items-center justify-center rounded-md bg-background"><ChannelMark channel={selectedThread.channel} size="sm" /></span><dt className="text-[13px] text-muted-foreground">Channel</dt><dd className="text-[13px] font-medium">Facebook</dd></div>
+                  <div className="grid grid-cols-[28px_1fr_auto] items-center gap-2 px-3 py-2.5"><span className="flex size-7 items-center justify-center rounded-md bg-background"><ChannelMark channel={selectedThread.channel} size="sm" /></span><dt className="text-[13px] text-muted-foreground">Channel</dt><dd className="text-[13px] font-medium">{selectedThread.channel === "instagram" ? "Instagram" : "Facebook"}</dd></div>
                 </dl>
               </div>
 
@@ -355,7 +309,7 @@ export function MessengerInbox({ data }: { data: MetaInboxData }) {
         ) : null}
       </div>
 
-      {!data.connection.configured || data.dataError ? <div className="flex flex-wrap items-center gap-2 border-t bg-amber-50 px-4 py-2 text-[10px] text-amber-900 dark:bg-amber-500/10 dark:text-amber-200"><Zap className="size-3.5" /><span>{data.connection.configured ? "CRM data connection needs attention." : "Previewing the inbox with sample conversations. Connect Meta in Settings to receive and send live messages."}</span>{data.connection.missing.length > 0 ? <span className="font-mono opacity-70">Missing: {data.connection.missing.join(", ")}</span> : null}<Link href="/setup" className="ml-auto flex items-center gap-1 font-semibold hover:underline"><ArrowDownToLine className="size-3" />Setup guide</Link></div> : null}
+      {!data.connection.configured || data.dataError ? <div className="flex flex-wrap items-center gap-2 border-t bg-amber-50 px-4 py-2 text-[10px] text-amber-900 dark:bg-amber-500/10 dark:text-amber-200"><Zap className="size-3.5" /><span>{data.connection.configured ? "CRM data connection needs attention." : "Connect Meta in Settings to receive and send live messages."}</span>{data.connection.missing.length > 0 ? <span className="font-mono opacity-70">Missing: {data.connection.missing.join(", ")}</span> : null}<Link href="/setup" className="ml-auto flex items-center gap-1 font-semibold hover:underline"><ArrowDownToLine className="size-3" />Setup guide</Link></div> : null}
     </div>
   );
 }

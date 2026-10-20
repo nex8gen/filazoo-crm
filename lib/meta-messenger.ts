@@ -5,6 +5,7 @@ import { createSupabaseAdmin } from "./supabase/admin.ts";
 
 const graphApiVersion = env.META_GRAPH_API_VERSION;
 type UnknownRecord = Record<string, unknown>;
+export type MetaChannel = "facebook" | "instagram";
 
 export type FacebookMessageRecord = {
   id: string;
@@ -18,6 +19,7 @@ export type FacebookMessageRecord = {
   timestamp: string;
   customerName: string;
   rawPayload: UnknownRecord;
+  channel: MetaChannel;
 };
 
 export type FacebookLeadEvent = {
@@ -53,6 +55,7 @@ export type MetaConversationThread = {
   replyWindowEndsAt: string | null;
   replyWindowOpen: boolean;
   messages: MetaThreadMessage[];
+  channel: MetaChannel;
 };
 
 export type MetaLead = {
@@ -73,6 +76,10 @@ export type MetaConnectionStatus = {
   callbackUrl: string;
   missing: string[];
   error: string | null;
+  facebookConfigured: boolean;
+  instagramConfigured: boolean;
+  instagramAccountId: string | null;
+  instagramName: string | null;
 };
 
 export type MetaInboxData = {
@@ -146,7 +153,8 @@ export function verifyMetaSignature(secret: string, body: string, signature: str
 
 export function normalizeMetaPayload(payload: unknown): FacebookWebhookPayload {
   const root = asRecord(payload);
-  if (!root || root.object !== "page") return { messages: [], leads: [] };
+  if (!root || (root.object !== "page" && root.object !== "instagram")) return { messages: [], leads: [] };
+  const channel: MetaChannel = root.object === "instagram" ? "instagram" : "facebook";
   const messages: FacebookMessageRecord[] = [];
   const leads: FacebookLeadEvent[] = [];
 
@@ -180,10 +188,11 @@ export function normalizeMetaPayload(payload: unknown): FacebookWebhookPayload {
         timestamp: metaTimestamp(event.timestamp),
         customerName: threadId,
         rawPayload: event,
+        channel,
       });
     }
 
-    for (const rawChange of asArray(entry.changes)) {
+    if (channel === "facebook") for (const rawChange of asArray(entry.changes)) {
       const change = asRecord(rawChange);
       const value = asRecord(change?.value);
       if (!change || change.field !== "leadgen" || !value) continue;
@@ -203,16 +212,15 @@ export function normalizeMetaPayload(payload: unknown): FacebookWebhookPayload {
   return { messages, leads };
 }
 
-async function graphRequest(path: string, init?: RequestInit) {
-  if (!env.META_FACEBOOK_PAGE_ACCESS_TOKEN) {
-    return { ok: false as const, error: "META_FACEBOOK_PAGE_ACCESS_TOKEN is not configured." };
-  }
+async function graphRequest(path: string, init?: RequestInit, options?: { token?: string; host?: string }) {
+  const token = options?.token ?? env.META_FACEBOOK_PAGE_ACCESS_TOKEN;
+  if (!token) return { ok: false as const, error: "Meta access token is not configured." };
   let response: Response;
   try {
-    response = await fetch(`https://graph.facebook.com/${graphApiVersion}/${path}`, {
+    response = await fetch(`https://${options?.host ?? "graph.facebook.com"}/${graphApiVersion}/${path}`, {
       ...init,
       headers: {
-        Authorization: `Bearer ${env.META_FACEBOOK_PAGE_ACCESS_TOKEN}`,
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
         ...init?.headers,
       },
@@ -229,8 +237,9 @@ async function graphRequest(path: string, init?: RequestInit) {
   return { ok: true as const, payload: asRecord(payload) ?? {} };
 }
 
-async function fetchMessengerProfile(customerId: string) {
-  const result = await graphRequest(`${encodeURIComponent(customerId)}?fields=first_name,last_name,name`);
+async function fetchMessengerProfile(customerId: string, channel: MetaChannel) {
+  const fields = channel === "instagram" ? "name,username" : "first_name,last_name,name";
+  const result = await graphRequest(`${encodeURIComponent(customerId)}?fields=${fields}`);
   if (!result.ok) return null;
   const fallback = [asString(result.payload.first_name), asString(result.payload.last_name)].filter(Boolean).join(" ");
   return (asString(result.payload.name) ?? fallback) || null;
@@ -249,6 +258,7 @@ type MetaMessageInsert = {
   status: "received" | "sent" | "failed";
   createdAt: string;
   rawPayload: UnknownRecord | null;
+  channel: MetaChannel;
 };
 
 export async function saveMetaMessage(input: MetaMessageInsert) {
@@ -264,7 +274,7 @@ export async function saveMetaMessage(input: MetaMessageInsert) {
     body: input.body,
     message_type: input.messageType,
     status: input.status,
-    source: "facebook_messenger",
+    source: input.channel === "instagram" ? "instagram_messaging" : "facebook_messenger",
     raw_payload: input.rawPayload,
     created_at: input.createdAt,
   }, { onConflict: "message_id" });
@@ -274,7 +284,7 @@ export async function saveMetaMessage(input: MetaMessageInsert) {
 
 export async function saveInboundMetaMessage(message: FacebookMessageRecord) {
   const customerName = message.direction === "inbound"
-    ? (await fetchMessengerProfile(message.threadId)) ?? message.customerName
+    ? (await fetchMessengerProfile(message.threadId, message.channel)) ?? message.customerName
     : message.customerName;
   return saveMetaMessage({
     messageId: message.id,
@@ -289,6 +299,7 @@ export async function saveInboundMetaMessage(message: FacebookMessageRecord) {
     status: message.direction === "inbound" ? "received" : "sent",
     createdAt: message.timestamp,
     rawPayload: message.rawPayload,
+    channel: message.channel,
   });
 }
 
@@ -326,22 +337,24 @@ export async function saveMetaLead(event: FacebookLeadEvent) {
   return { ok: true as const, saved: true, detailFetched: detail.ok };
 }
 
-export async function sendMetaTextMessage({ to, text }: { to: string; text: string }) {
-  if (!env.META_FACEBOOK_PAGE_ACCESS_TOKEN || !env.META_FACEBOOK_PAGE_ID) {
-    return { ok: false as const, error: "Facebook Page Messenger credentials are not configured." };
+export async function sendMetaTextMessage({ to, text, channel = "facebook" }: { to: string; text: string; channel?: MetaChannel }) {
+  const accountId = env.META_FACEBOOK_PAGE_ID;
+  const token = env.META_FACEBOOK_PAGE_ACCESS_TOKEN;
+  if (!token || !accountId) {
+    return { ok: false as const, error: "Meta Page Messenger credentials are not configured." };
   }
-  const result = await graphRequest(`${encodeURIComponent(env.META_FACEBOOK_PAGE_ID)}/messages`, {
+  const result = await graphRequest(`${encodeURIComponent(accountId)}/messages`, {
     method: "POST",
     body: JSON.stringify({ recipient: { id: to }, messaging_type: "RESPONSE", message: { text } }),
-  });
+  }, { token });
   if (!result.ok) return result;
   const messageId = asString(result.payload.message_id) ?? `facebook-${Date.now()}`;
   const createdAt = new Date().toISOString();
   const saved = await saveMetaMessage({
     messageId,
     threadId: to,
-    pageId: env.META_FACEBOOK_PAGE_ID,
-    senderId: env.META_FACEBOOK_PAGE_ID,
+    pageId: accountId,
+    senderId: accountId,
     recipientId: to,
     customerName: to,
     direction: "outbound",
@@ -350,6 +363,7 @@ export async function sendMetaTextMessage({ to, text }: { to: string; text: stri
     status: "sent",
     createdAt,
     rawPayload: { recipient: { id: to }, message: { text } },
+    channel,
   });
   if (!saved.ok) console.warn("Facebook Messenger reply sent but not stored in Supabase", { error: saved.error });
   return { ok: true as const, messageId, createdAt, saved: saved.ok };
@@ -357,25 +371,32 @@ export async function sendMetaTextMessage({ to, text }: { to: string; text: stri
 
 async function getMetaConnectionStatus(): Promise<MetaConnectionStatus> {
   const required = {
-    META_FACEBOOK_PAGE_ACCESS_TOKEN: env.META_FACEBOOK_PAGE_ACCESS_TOKEN,
-    META_FACEBOOK_PAGE_ID: env.META_FACEBOOK_PAGE_ID,
     META_WEBHOOK_SECRET: env.META_WEBHOOK_SECRET,
     META_VERIFY_TOKEN: env.META_VERIFY_TOKEN,
   };
   const missing = Object.entries(required).filter(([, value]) => !value).map(([key]) => key);
+  const hasFacebookCredentials = Boolean(env.META_FACEBOOK_PAGE_ACCESS_TOKEN && env.META_FACEBOOK_PAGE_ID);
+  if (!hasFacebookCredentials) missing.push("META_FACEBOOK_PAGE_ACCESS_TOKEN", "META_FACEBOOK_PAGE_ID");
   const callbackUrl = new URL("/api/meta/webhook", env.NEXT_PUBLIC_APP_URL).toString();
-  if (missing.length > 0) {
-    return { configured: false, pageId: env.META_FACEBOOK_PAGE_ID || null, pageName: null, graphApiVersion, callbackUrl, missing, error: null };
-  }
-  const result = await graphRequest(`${encodeURIComponent(env.META_FACEBOOK_PAGE_ID!)}?fields=id,name`);
+  const facebook = hasFacebookCredentials
+    ? await graphRequest(`${encodeURIComponent(env.META_FACEBOOK_PAGE_ID!)}?fields=id,name,instagram_business_account{id,name,username}`)
+    : null;
+  const facebookConfigured = Boolean(facebook?.ok);
+  const instagramAccount = facebook?.ok ? asRecord(facebook.payload.instagram_business_account) : null;
+  const instagramConfigured = Boolean(instagramAccount?.id);
+  const errors = [facebook && !facebook.ok ? `Meta: ${facebook.error}` : null].filter(Boolean);
   return {
-    configured: result.ok,
+    configured: missing.length === 0 && (facebookConfigured || instagramConfigured),
     pageId: env.META_FACEBOOK_PAGE_ID || null,
-    pageName: result.ok ? asString(result.payload.name) : null,
+    pageName: facebook?.ok ? asString(facebook.payload.name) : null,
     graphApiVersion,
     callbackUrl,
     missing,
-    error: result.ok ? null : result.error,
+    error: errors.length ? errors.join(" ") : null,
+    facebookConfigured,
+    instagramConfigured,
+    instagramAccountId: asString(instagramAccount?.id),
+    instagramName: asString(instagramAccount?.username) ?? asString(instagramAccount?.name),
   };
 }
 
@@ -383,9 +404,11 @@ function mapThreadRows(rows: UnknownRecord[]): MetaConversationThread[] {
   const byThread = new Map<string, MetaConversationThread>();
   for (const row of [...rows].reverse()) {
     const threadId = String(row.thread_id ?? row.id);
+    const channel: MetaChannel = row.source === "instagram_messaging" ? "instagram" : "facebook";
+    const inboxThreadId = `${channel}:${threadId}`;
     const direction = row.direction === "outbound" ? "outbound" : "inbound";
     const createdAt = String(row.created_at ?? new Date().toISOString());
-    const existing = byThread.get(threadId);
+    const existing = byThread.get(inboxThreadId);
     const message: MetaThreadMessage = {
       id: String(row.message_id ?? row.id),
       direction,
@@ -396,8 +419,8 @@ function mapThreadRows(rows: UnknownRecord[]): MetaConversationThread[] {
     };
     const inboundWindow = direction === "inbound" ? new Date(new Date(createdAt).getTime() + 86_400_000).toISOString() : null;
     if (!existing) {
-      byThread.set(threadId, {
-        id: threadId,
+      byThread.set(inboxThreadId, {
+        id: inboxThreadId,
         customerId: threadId,
         customer: String(row.customer_name ?? threadId),
         pageId: String(row.page_id ?? env.META_FACEBOOK_PAGE_ID ?? ""),
@@ -408,6 +431,7 @@ function mapThreadRows(rows: UnknownRecord[]): MetaConversationThread[] {
         replyWindowEndsAt: inboundWindow,
         replyWindowOpen: Boolean(inboundWindow && new Date(inboundWindow).getTime() > Date.now()),
         messages: [message],
+        channel,
       });
       continue;
     }
@@ -429,7 +453,7 @@ export async function getMetaInboxData(): Promise<MetaInboxData> {
   if (!hasSupabaseConfig()) return { threads: [], leads: [], connection, dataError: "Supabase is not configured." };
   const client = createSupabaseAdmin();
   const [messagesResult, leadsResult] = await Promise.all([
-    client.from("meta_messages").select("id,message_id,thread_id,page_id,customer_name,direction,body,message_type,status,created_at").order("created_at", { ascending: false }).limit(300),
+    client.from("meta_messages").select("id,message_id,thread_id,page_id,customer_name,direction,body,message_type,status,source,created_at").order("created_at", { ascending: false }).limit(300),
     client.from("meta_leads").select("leadgen_id,full_name,email,phone,form_id,ad_id,created_at").order("created_at", { ascending: false }).limit(50),
   ]);
   const errors = [messagesResult.error?.message, leadsResult.error?.message].filter(Boolean);

@@ -1,5 +1,4 @@
 import { requireWorkspaceMember } from "../auth.ts";
-import { b2bProducts } from "./b2b-products.ts";
 import { formatRelativeDate, getInitials, getPipelineStageLabel } from "../crm-model.ts";
 import { env, hasSupabaseConfig } from "../env.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
@@ -186,6 +185,7 @@ async function queryCompanies(): Promise<Company[]> {
   const { data, error } = await createSupabaseAdmin()
     .from("companies")
     .select("id,name,website,domain,country,city,segment,source,status,company_profiles(summary,fit_score,interest_tags),contacts(id,name,role,email,verification_status,emails(status,direction,created_at)),pipeline(stage,next_followup_at,estimated_order_quantity,estimated_value,currency)")
+    .or("source.is.null,source.neq.sample_seed")
     .order("created_at", { ascending: false })
     .limit(500);
   if (error) throw new Error(`Unable to load companies: ${error.message}`);
@@ -397,7 +397,7 @@ export async function listReplies(): Promise<{ mode: DataMode; replies: Reply[] 
 
 export async function listProducts(): Promise<{ mode: DataMode; products: Product[] }> {
   const mode = getCrmDataMode();
-  if (mode === "demo") return { mode, products: b2bProducts };
+  if (mode === "demo") return { mode, products: [] };
   await authorizeLiveRead();
 
   const { data, error } = await createSupabaseAdmin()
@@ -406,7 +406,7 @@ export async function listProducts(): Promise<{ mode: DataMode; products: Produc
     .order("name")
     .limit(500);
   if (error) throw new Error(`Unable to load products: ${error.message}`);
-  const syncedProducts = (data ?? []).map((row) => {
+  const syncedProducts = (data ?? []).filter((row) => !row.sku.startsWith("SAMPLE-") && !row.name.toLowerCase().startsWith("[sample]")).map((row) => {
       const price = row.price == null ? "—" : new Intl.NumberFormat("en", { style: "currency", currency: row.currency }).format(Number(row.price));
       const priceTiers = (row.tags ?? []).flatMap((tag: string) => {
         const match = /^price-tier:(\d+):(\d+(?:\.\d+)?)$/.exec(tag);
@@ -433,13 +433,7 @@ export async function listProducts(): Promise<{ mode: DataMode; products: Produc
         variants: variantsFromTags(row.tags ?? [], colors, row.sku, price, stockStatus),
       };
     });
-  const syncedBySku = new Map(syncedProducts.map((product) => [product.sku, product]));
-  const quotationSkus = new Set(b2bProducts.map((product) => product.sku));
-  const quotationProducts = b2bProducts.map((product) => {
-    const synced = syncedBySku.get(product.sku);
-    return synced ? { ...product, ...synced } : product;
-  });
-  return { mode, products: [...quotationProducts, ...syncedProducts.filter((product) => !quotationSkus.has(product.sku))] };
+  return { mode, products: syncedProducts };
 }
 
 function eventTone(type: string) {

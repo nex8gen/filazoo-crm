@@ -1,4 +1,5 @@
 import { sendMetaTextMessage } from "@/lib/meta-messenger";
+import type { MetaChannel } from "@/lib/meta-messenger";
 import { requireWorkspaceMember } from "@/lib/auth";
 
 export async function POST(request: Request) {
@@ -6,6 +7,7 @@ export async function POST(request: Request) {
   const payload = await request.json().catch(() => null);
   const to = typeof payload?.to === "string" ? payload.to : "";
   const text = typeof payload?.message === "string" ? payload.message : "";
+  const channel: MetaChannel = payload?.channel === "instagram" ? "instagram" : "facebook";
 
   if (!to || !text) {
     return Response.json({ error: "Missing 'to' or 'message' field." }, { status: 400 });
@@ -14,6 +16,7 @@ export async function POST(request: Request) {
   const result = await sendMetaTextMessage({
     to,
     text,
+    channel,
   });
 
   if (!result.ok) {

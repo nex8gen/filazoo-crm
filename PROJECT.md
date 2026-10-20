@@ -104,9 +104,9 @@ This is a private workspace. There is intentionally no public self-registration 
 - Browser and server authentication clients
 - Workspace authorization table
 - Live database-backed data-access layer
-- Idempotent, clearly labeled sample dataset for CRM demonstrations
+- Empty/offline states that never substitute synthetic CRM records
 - Health endpoint at `/api/health`
-- Live/demo mode detection
+- Live/offline data-mode detection
 
 Important database entities include:
 
@@ -154,7 +154,7 @@ The user interface is ahead of the automation backend. Do not describe the follo
 - Complete compliance, unsubscribe, bounce, and deliverability workflow
 - Production monitoring and job retry infrastructure
 
-Some screens may display empty live states until records are added to Supabase. Demo/sample data must always be clearly identified and must never be confused with real prospects.
+Screens display empty states until real records are added to Supabase. Synthetic CRM records are not shipped or seeded.
 
 ## 5. Architecture and source map
 
@@ -173,7 +173,6 @@ Some screens may display empty live states until records are added to Supabase. 
 - `lib/env.ts` - validated environment configuration
 - `lib/types.ts` - shared application types
 - `tests/` - Node test suite
-- `scripts/seed-sample-data.ts` - dry-run-only sample CRM seed with deterministic IDs
 
 ### Authentication flow
 
@@ -254,15 +253,6 @@ Run the full verification suite after every meaningful change:
 ```bash
 npm run verify
 ```
-
-Seed or refresh the synthetic demonstration records (safe to rerun):
-
-```bash
-npm run seed:sample
-```
-
-The seed refuses to run when `DRY_RUN=false`. Its companies and products use
-`[SAMPLE]` labels, and all contact addresses use reserved `.example` domains.
 
 Local preview:
 

@@ -462,7 +462,7 @@ export function EmailInboxWorkspace({
           <span className={`size-2 rounded-full ${mailboxConfigured ? "bg-emerald-500" : sendConfigured || inboxConfigured ? "bg-amber-400" : "bg-red-400"}`} />
           <span className="font-medium">{mailboxConfigured ? "SMTP and IMAP connected" : sendConfigured || inboxConfigured ? "Mailbox partially configured" : "Mailbox setup required"}</span>
           <span className="text-muted-foreground">{syncError ? `Inbox sync failed: ${syncError}` : inboxConfigured ? `Scanning inbox every 30 seconds · ${lastSync}` : sendConfigured ? "Sending is ready; add IMAP settings for inbox sync" : "Connect SMTP + IMAP to enable live mail"}</span>
-          <span className="ml-auto hidden items-center gap-1.5 text-muted-foreground sm:flex"><ShieldCheck className="size-3.5" />{dataMode === "live" ? "Live CRM data" : "Safe demo data"}</span>
+          <span className="ml-auto hidden items-center gap-1.5 text-muted-foreground sm:flex"><ShieldCheck className="size-3.5" />{dataMode === "live" ? "Live CRM data" : "CRM connection unavailable"}</span>
         </div>
       </header>
 

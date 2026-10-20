@@ -231,7 +231,7 @@ create table public.meta_messages (
   body text not null,
   message_type text not null default 'text',
   status text not null default 'received' check (status in ('received','sent','failed')),
-  source text not null default 'facebook_messenger' check (source = 'facebook_messenger'),
+  source text not null default 'facebook_messenger' check (source in ('facebook_messenger','instagram_messaging')),
   raw_payload jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

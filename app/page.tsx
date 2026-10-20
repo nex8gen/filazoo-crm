@@ -1,7 +1,6 @@
 import { AnalyticsDashboard } from "@/components/analytics-dashboard";
-import { requireWorkspaceMember } from "@/lib/auth";
+import { getAnalyticsDashboardData } from "@/lib/data/analytics";
 
 export default async function DashboardPage() {
-  await requireWorkspaceMember(["admin", "operator", "viewer"]);
-  return <AnalyticsDashboard />;
+  return <AnalyticsDashboard data={await getAnalyticsDashboardData()} />;
 }
