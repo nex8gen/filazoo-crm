@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { AppShell } from "@/components/app-shell";
 import { UserMenu } from "@/components/user-menu";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -21,6 +22,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <TooltipProvider><AppShell userMenu={<Suspense fallback={<span className="size-7 rounded-full bg-muted" />}><UserMenu /></Suspense>}>{children}</AppShell></TooltipProvider>
           <Toaster position="bottom-right" />
         </ThemeProvider>
+        <SpeedInsights />
       </body>
     </html>
   );
