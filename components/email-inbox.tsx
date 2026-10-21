@@ -5,8 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive, Bot, Building2, CalendarClock, Check,
   Clock3, FileText, Filter, Forward, Inbox, Languages, Mail, MoreHorizontal,
-  Paperclip, Plus, RefreshCw, Reply, Search, Send, Settings2, ShieldCheck,
-  Smile, Sparkles, Star, Tag, Trash2, UserRound, WandSparkles, Workflow, Zap,
+  LoaderCircle, Library, Paperclip, Plus, RefreshCw, Reply, Search, Send, Settings2, ShieldCheck,
+  Smile, Sparkles, Star, Tag, Trash2, UserRound, WandSparkles, Workflow, X, Zap,
 } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
@@ -16,6 +16,8 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { groupEmailConversations, replyReferences, threadKeyForEmail } from "@/lib/email-threading";
+import { buildCatalogPdf } from "@/lib/catalog-pdf";
+import type { Catalog, Product } from "@/lib/types";
 
 export type EmailWorkspaceItem = {
   id: string;
@@ -45,6 +47,7 @@ export type EmailWorkspaceItem = {
 type Folder = "inbox" | "all" | "drafts" | "scheduled" | "sent" | "starred" | "archive" | "trash";
 type Category = "Needs follow-up" | "Waiting on customer" | "Interested" | "Big order" | "No action";
 type Automation = { enabled: boolean; queueCount: number; steps: Array<{ id: string; title: string; delay: string; action: string; enabled: boolean }> };
+type ComposerAttachment = { id: string; filename: string; content: string; contentType: string; size: number };
 
 const categoryOptions: Category[] = ["Needs follow-up", "Waiting on customer", "Interested", "Big order", "No action"];
 
@@ -122,6 +125,37 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: () =
   return <button type="button" role="switch" aria-checked={checked} aria-label={label} onClick={onChange} className={`relative h-5 w-9 rounded-full ${checked ? "bg-primary" : "bg-muted-foreground/30"}`}><span className={`absolute left-0.5 top-0.5 size-4 rounded-full bg-white shadow-sm ring-1 ring-black/5 transition-transform ${checked ? "translate-x-4" : ""}`} /></button>;
 }
 
+const allowedAttachmentTypes = new Set([
+  "application/pdf", "text/csv", "text/plain", "image/jpeg", "image/png", "image/webp", "image/gif",
+  "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+]);
+
+function bytesToBase64(bytes: Uint8Array) {
+  let binary = "";
+  for (let start = 0; start < bytes.length; start += 32_768) {
+    binary += String.fromCharCode(...bytes.subarray(start, start + 32_768));
+  }
+  return btoa(binary);
+}
+
+async function fileToAttachment(file: File): Promise<ComposerAttachment> {
+  if (file.size > 7_500_000) throw new Error(`${file.name} is larger than the 7.5 MB attachment limit.`);
+  if (!allowedAttachmentTypes.has(file.type)) throw new Error(`${file.name} is not a supported photo, PDF, CSV, document, or spreadsheet.`);
+  return {
+    id: `${file.name}-${file.lastModified}-${crypto.randomUUID()}`,
+    filename: file.name,
+    content: bytesToBase64(new Uint8Array(await file.arrayBuffer())),
+    contentType: file.type,
+    size: file.size,
+  };
+}
+
+function AttachmentChips({ attachments, onRemove }: { attachments: ComposerAttachment[]; onRemove: (id: string) => void }) {
+  if (!attachments.length) return null;
+  return <div className="flex flex-wrap gap-2 px-3 pb-3">{attachments.map((attachment) => <span key={attachment.id} className="inline-flex max-w-full items-center gap-2 rounded-full border bg-muted/40 py-1 pl-2.5 pr-1.5 text-[11px]"><FileText className="size-3.5 shrink-0 text-muted-foreground" /><span className="max-w-52 truncate">{attachment.filename}</span><span className="text-muted-foreground">{Math.max(1, Math.round(attachment.size / 1024))} KB</span><button type="button" onClick={() => onRemove(attachment.id)} aria-label={`Remove ${attachment.filename}`} className="rounded-full p-0.5 hover:bg-muted"><X className="size-3" /></button></span>)}</div>;
+}
+
 function emailMatchesFolder(
   email: EmailWorkspaceItem,
   folder: Folder,
@@ -148,6 +182,8 @@ export function EmailInboxWorkspace({
   defaultMailboxEmail,
   dataMode,
   initialAutomation,
+  products,
+  catalogs,
 }: {
   initialEmails: EmailWorkspaceItem[];
   mailboxConfigured: boolean;
@@ -158,6 +194,8 @@ export function EmailInboxWorkspace({
   defaultMailboxEmail: string | null;
   dataMode: "demo" | "live";
   initialAutomation: Automation;
+  products: Product[];
+  catalogs: Catalog[];
 }) {
   const sourceEmails = initialEmails;
   const [emails, setEmails] = useState(sourceEmails);
@@ -172,6 +210,19 @@ export function EmailInboxWorkspace({
   const [composeBody, setComposeBody] = useState("");
   const [composeError, setComposeError] = useState<string | null>(null);
   const [composeSending, setComposeSending] = useState(false);
+  const [replyAttachments, setReplyAttachments] = useState<ComposerAttachment[]>([]);
+  const [composeAttachments, setComposeAttachments] = useState<ComposerAttachment[]>([]);
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [catalogTarget, setCatalogTarget] = useState<"reply" | "compose">("reply");
+  const [catalogTitle, setCatalogTitle] = useState("Filazoo product catalog");
+  const [selectedCatalogSkus, setSelectedCatalogSkus] = useState<Set<string>>(new Set());
+  const [attachmentBusy, setAttachmentBusy] = useState(false);
+  const [aiDraft, setAiDraft] = useState("");
+  const [aiDraftSource, setAiDraftSource] = useState("");
+  const [aiWriting, setAiWriting] = useState(false);
+  const [translations, setTranslations] = useState<Record<string, string>>({});
+  const [translating, setTranslating] = useState<Set<string>>(new Set());
+  const [translationErrors, setTranslationErrors] = useState<Record<string, string>>({});
   const [translationOn, setTranslationOn] = useState(true);
   const [aiReplyOn, setAiReplyOn] = useState(true);
   const [starred, setStarred] = useState<Set<string>>(() => new Set(sourceEmails.filter((email) => email.starred).map((email) => email.id)));
@@ -186,6 +237,8 @@ export function EmailInboxWorkspace({
   const [syncError, setSyncError] = useState<string | null>(inboxError);
   const [syncing, setSyncing] = useState(false);
   const syncInProgress = useRef(false);
+  const replyFileInput = useRef<HTMLInputElement>(null);
+  const composeFileInput = useRef<HTMLInputElement>(null);
 
   const applyMailboxSnapshot = useCallback((nextEmails: EmailWorkspaceItem[]) => {
     setEmails(nextEmails);
@@ -246,7 +299,66 @@ export function EmailInboxWorkspace({
   }, [categories, categoryFilter, conversations, folder, folderStates, search, starred]);
   const selectedConversation = visible.find((item) => item.messages.some((email) => email.id === selectedId)) ?? visible[0];
   const selected = selectedConversation?.latest;
-  const conversation = selectedConversation?.messages ?? [];
+  const conversation = useMemo(() => selectedConversation?.messages ?? [], [selectedConversation]);
+
+  useEffect(() => {
+    if (!translationOn) return;
+    const pending = conversation.filter((message) => message.direction === "inbound" && message.body.trim() && !translations[message.id] && !translationErrors[message.id] && !translating.has(message.id));
+    if (!pending.length) return;
+    const timer = window.setTimeout(() => {
+      setTranslating((current) => new Set([...current, ...pending.map((message) => message.id)]));
+      for (const message of pending) {
+        void fetch("/api/email/assist", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode: "translate", text: message.body }),
+        }).then(async (response) => {
+          const result = await response.json().catch(() => ({ ok: false, error: "The translation service returned an invalid response." }));
+          if (!response.ok || !result.output) throw new Error(result.error || "Unable to translate this email.");
+          setTranslations((current) => ({ ...current, [message.id]: result.output }));
+        }).catch((error) => {
+          setTranslationErrors((current) => ({
+            ...current,
+            [message.id]: error instanceof Error ? error.message : "Unable to translate this email.",
+          }));
+        }).finally(() => setTranslating((current) => {
+          const next = new Set(current);
+          next.delete(message.id);
+          return next;
+        }));
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [conversation, translating, translationErrors, translationOn, translations]);
+
+  useEffect(() => {
+    if (!aiReplyOn || !aiConfigured || draft.trim().length < 2) {
+      return;
+    }
+    const controller = new AbortController();
+    const source = draft.trim();
+    const timer = window.setTimeout(() => {
+      setAiWriting(true);
+      void fetch("/api/email/assist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "rewrite", text: source, context: selected?.body || "", recipient: selected?.contact || "Customer" }),
+        signal: controller.signal,
+      }).then(async (response) => {
+        const result = await response.json().catch(() => ({ ok: false, error: "Unable to write this email." }));
+        if (!response.ok || !result.output) throw new Error(result.error || "Unable to write this email.");
+        setAiDraft(result.output);
+        setAiDraftSource(source);
+      }).catch((error) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setNotice(error instanceof Error ? error.message : "Unable to write this email.");
+      }).finally(() => setAiWriting(false));
+    }, 700);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [aiConfigured, aiReplyOn, draft, selected?.body, selected?.contact]);
 
   const folderCounts = useMemo(() => {
     const counts: Record<Folder, number> = { inbox: 0, all: 0, drafts: 0, scheduled: 0, sent: 0, starred: 0, archive: 0, trash: 0 };
@@ -344,9 +456,66 @@ export function EmailInboxWorkspace({
     }
   }
 
+  async function addFiles(files: FileList | null, target: "reply" | "compose") {
+    if (!files?.length) return;
+    try {
+      setAttachmentBusy(true);
+      const existing = target === "reply" ? replyAttachments : composeAttachments;
+      if (existing.length + files.length > 10) throw new Error("You can attach up to 10 files to one email.");
+      const next = await Promise.all(Array.from(files).map(fileToAttachment));
+      if (target === "reply") setReplyAttachments((current) => [...current, ...next]);
+      else setComposeAttachments((current) => [...current, ...next]);
+      setNotice(`${next.length} attachment${next.length === 1 ? "" : "s"} added.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to attach this file.";
+      if (target === "compose") setComposeError(message);
+      else setNotice(message);
+    } finally {
+      setAttachmentBusy(false);
+    }
+  }
+
+  function openCatalogPicker(target: "reply" | "compose") {
+    setCatalogTarget(target);
+    setCatalogTitle(target === "reply" && selected?.company && selected.company !== "Direct email" ? `${selected.company} product catalog` : "Filazoo product catalog");
+    setSelectedCatalogSkus(new Set());
+    setCatalogOpen(true);
+  }
+
+  function attachCatalog(productSkus: string[], title: string) {
+    const currentAttachments = catalogTarget === "reply" ? replyAttachments : composeAttachments;
+    if (currentAttachments.length >= 10) {
+      setNotice("You can attach up to 10 files to one email.");
+      return;
+    }
+    const selectedProducts = productSkus.length ? products.filter((product) => productSkus.includes(product.sku)) : products;
+    if (!selectedProducts.length) {
+      setNotice("This catalog does not contain any available products.");
+      return;
+    }
+    try {
+      const customer = catalogTarget === "reply" ? selected?.company : composeTo;
+      const bytes = buildCatalogPdf(selectedProducts, { title, customer: customer || undefined });
+      if (bytes.byteLength > 7_500_000) throw new Error("Catalog is too large to attach.");
+      const attachment: ComposerAttachment = {
+        id: `catalog-${crypto.randomUUID()}`,
+        filename: `${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "filazoo-catalog"}.pdf`,
+        content: bytesToBase64(bytes),
+        contentType: "application/pdf",
+        size: bytes.byteLength,
+      };
+      if (catalogTarget === "reply") setReplyAttachments((current) => [...current, attachment]);
+      else setComposeAttachments((current) => [...current, attachment]);
+      setCatalogOpen(false);
+      setNotice(`${attachment.filename} is ready to send.`);
+    } catch {
+      setNotice("The catalog PDF could not be generated.");
+    }
+  }
+
   async function saveReply() {
     if (!selected || !draft.trim()) return;
-    const trimmedDraft = draft.trim();
+    const trimmedDraft = aiReplyOn && aiDraft && aiDraftSource === draft.trim() ? aiDraft.trim() : draft.trim();
     const recipient = selected.contact.trim();
     const replyParent = conversation[conversation.length - 1] ?? selected;
 
@@ -370,7 +539,7 @@ export function EmailInboxWorkspace({
           subject: `Re: ${selected.subject.replace(/^Re:\s*/i, "")}`,
           text: trimmedDraft,
           html: `<p>${trimmedDraft.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character).replace(/\n/g, "<br />")}</p>`,
-          attachments: [],
+          attachments: replyAttachments.map(({ filename, content, contentType }) => ({ filename, content, contentType })),
           threadId: threadKeyForEmail(selected),
           inReplyTo: replyParent.messageId || undefined,
           references: replyReferences(replyParent),
@@ -385,6 +554,9 @@ export function EmailInboxWorkspace({
       const reply: EmailWorkspaceItem = result.email;
       setEmails((current) => [reply, ...current]);
       setDraft("");
+      setAiDraft("");
+      setAiDraftSource("");
+      setReplyAttachments([]);
       setNotice(`Email sent successfully from ${defaultMailboxEmail}.`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "The CRM could not send this email.");
@@ -418,7 +590,7 @@ export function EmailInboxWorkspace({
       const response = await fetch("/api/email/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to, subject, text, attachments: [] }),
+        body: JSON.stringify({ to, subject, text, attachments: composeAttachments.map(({ filename, content, contentType }) => ({ filename, content, contentType })) }),
       });
       const result = await response.json().catch(() => ({ ok: false, error: "Unable to send the email." }));
       if (!response.ok || !result.ok) throw new Error(result.error || "Unable to send the email.");
@@ -431,6 +603,7 @@ export function EmailInboxWorkspace({
       setComposeTo("");
       setComposeSubject("");
       setComposeBody("");
+      setComposeAttachments([]);
       setComposeOpen(false);
       setNotice(`Email sent successfully from ${defaultMailboxEmail}.`);
     } catch (error) {
@@ -493,8 +666,8 @@ export function EmailInboxWorkspace({
         <main className="hidden min-h-0 flex-col bg-[#fbfbfc] dark:bg-background md:flex" aria-label="Email reader">
           {selected ? <>
             <div className="flex min-h-16 items-center justify-between gap-3 border-b bg-background px-5"><div className="min-w-0"><h2 className="truncate text-base font-semibold">{selected.subject}</h2><p className="mt-1 text-xs text-muted-foreground">{selected.direction === "inbound" ? "From" : "To"} {selected.contact} · {selected.company}</p></div><div className="flex items-center gap-1"><button type="button" title={starred.has(selected.id) ? "Remove star" : "Star email"} onClick={() => toggleStar(selected.id)} className={`rounded-md p-2 hover:bg-muted ${starred.has(selected.id) ? "text-amber-500" : "text-muted-foreground"}`}><Star className="size-4" fill={starred.has(selected.id) ? "currentColor" : "none"} /></button><button type="button" title="Archive" onClick={() => moveSelected("archive")} className="rounded-md p-2 text-muted-foreground hover:bg-muted"><Archive className="size-4" /></button><DropdownMenu><DropdownMenuTrigger aria-label="More email actions" className="rounded-md p-2 text-muted-foreground outline-none hover:bg-muted"><MoreHorizontal className="size-4" /></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-48"><DropdownMenuLabel>Email actions</DropdownMenuLabel><DropdownMenuItem onClick={() => setNotice("Reply composer opened.")}><Reply />Reply</DropdownMenuItem><DropdownMenuItem onClick={() => setNotice("Forward draft created.")}><Forward />Forward</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem variant="destructive" onClick={() => moveSelected("trash")}><Trash2 />Move to trash</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div></div>
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain scroll-smooth px-6 py-6"><div className="mx-auto max-w-3xl space-y-6">{conversation.map((message) => <article key={message.id} className={`flex items-start gap-3 ${message.direction === "outbound" ? "flex-row-reverse" : ""}`}><div className={`flex size-10 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${message.direction === "outbound" ? "bg-primary text-primary-foreground" : "bg-[#e8eef7] text-[#38536f] dark:bg-muted dark:text-foreground"}`}>{initials(message.direction === "outbound" ? message.from || defaultMailboxEmail || "Me" : message.contact)}</div><div className={`min-w-0 flex-1 ${message.direction === "outbound" ? "max-w-[88%]" : ""}`}><div className={`flex flex-wrap items-baseline justify-between gap-2 ${message.direction === "outbound" ? "flex-row-reverse" : ""}`}><div className={message.direction === "outbound" ? "text-right" : ""}><p className="text-sm font-semibold">{message.direction === "outbound" ? message.from || defaultMailboxEmail || "You" : message.contact}</p><p className="mt-0.5 text-xs text-muted-foreground">{message.direction === "outbound" ? `To ${message.contact}` : message.company}</p></div><time className="text-xs text-muted-foreground">{formatTime(message.timestamp)}</time></div><div className={`mt-3 overflow-hidden rounded-xl border shadow-[0_1px_2px_rgba(15,23,42,0.03)] ${message.direction === "outbound" ? "border-primary/20 bg-primary/5 p-5" : message.html ? "bg-background p-0" : "bg-background p-5"}`}><EmailBody email={message} /></div></div></article>)}</div></div>
-            <div className="border-t bg-background p-4"><div className="mx-auto max-w-3xl"><div className="mb-2 flex flex-wrap items-center gap-2"><div className="flex items-center gap-2 rounded-md border bg-violet-50 px-2.5 py-1.5 text-xs text-violet-700 dark:bg-violet-500/10 dark:text-violet-300"><Languages className="size-4" />Auto-translate<Toggle checked={translationOn} onChange={() => setTranslationOn((value) => !value)} label="Toggle email translation" /></div><div className="flex items-center gap-2 rounded-md border bg-emerald-50 px-2.5 py-1.5 text-xs text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"><Bot className="size-4" />AI writing<Toggle checked={aiReplyOn} onChange={() => setAiReplyOn((value) => !value)} label="Toggle AI writing" /></div>{!aiConfigured ? <span className="text-[11px] text-amber-700">AI provider not configured — using safe suggestions</span> : null}</div>{aiReplyOn ? <div className="mb-2 flex gap-2 overflow-x-auto"><span className="flex shrink-0 items-center gap-1 text-xs font-semibold text-violet-600"><Sparkles className="size-3.5" />Suggestions</span>{["Send pricing + MOQ", "Confirm shipping details", "Schedule a follow-up"].map((item) => <button key={item} type="button" onClick={() => setDraft(item === "Send pricing + MOQ" ? `Hi ${selected.contact.split(" ")[0]},\n\nThanks for your message. I’ll send our current wholesale pricing and minimum order quantities for your review.\n\nBest,\n${defaultMailboxEmail || "Filazoo"}` : item === "Confirm shipping details" ? `Hi ${selected.contact.split(" ")[0]},\n\nWe can prepare a shipping quote. Could you confirm the delivery postcode and expected quantity?\n\nBest,\n${defaultMailboxEmail || "Filazoo"}` : `Hi ${selected.contact.split(" ")[0]},\n\nI’ll follow up with you shortly with the latest availability and next steps.\n\nBest,\n${defaultMailboxEmail || "Filazoo"}`)} className="shrink-0 rounded-full border px-3 py-1.5 text-[11px] text-muted-foreground hover:border-primary/40 hover:text-foreground">{item}</button>)}</div> : null}<div className="mb-3 flex items-center justify-between rounded-md border bg-muted/30 px-2.5 py-2 text-[11px] text-muted-foreground"><span>From</span><span className="font-medium text-foreground">{defaultMailboxEmail || "No mailbox selected"}</span></div><div className="rounded-xl border bg-background focus-within:border-primary/50"><textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={`Write a reply to ${selected.contact}…`} className="min-h-24 w-full resize-none bg-transparent p-3.5 text-sm leading-6 outline-none" /><div className="flex items-center justify-between border-t px-2 py-2"><div className="flex gap-1"><button type="button" disabled title="Attachments require mailbox media setup" className="cursor-not-allowed rounded-md p-2 text-muted-foreground opacity-40"><Paperclip className="size-4" /></button><button type="button" title="Add emoji" onClick={() => setDraft((value) => `${value}${value ? " " : ""}😊`)} className="rounded-md p-2 text-muted-foreground hover:bg-muted"><Smile className="size-4" /></button><button type="button" title="Write with AI" onClick={() => setDraft((value) => value || `Hi ${selected.contact.split(" ")[0]},\n\nThanks for your email. I’d be happy to help.\n\nBest,\nFilazoo`)} className="rounded-md p-2 text-violet-600 hover:bg-violet-50"><WandSparkles className="size-4" /></button></div><button type="button" onClick={saveReply} disabled={!draft.trim() || sending} className="inline-flex h-9 items-center gap-2 rounded-md bg-foreground px-3 text-xs font-semibold text-background disabled:opacity-40"><Send className="size-4" />{sending ? "Sending..." : "Send email"}</button></div></div>{notice ? <p className="mt-2 text-xs text-muted-foreground" role="status">{notice}</p> : null}</div></div>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain scroll-smooth px-6 py-6"><div className="mx-auto max-w-3xl space-y-6">{conversation.map((message) => <article key={message.id} className={`flex items-start gap-3 ${message.direction === "outbound" ? "flex-row-reverse" : ""}`}><div className={`flex size-10 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${message.direction === "outbound" ? "bg-primary text-primary-foreground" : "bg-[#e8eef7] text-[#38536f] dark:bg-muted dark:text-foreground"}`}>{initials(message.direction === "outbound" ? message.from || defaultMailboxEmail || "Me" : message.contact)}</div><div className={`min-w-0 flex-1 ${message.direction === "outbound" ? "max-w-[88%]" : ""}`}><div className={`flex flex-wrap items-baseline justify-between gap-2 ${message.direction === "outbound" ? "flex-row-reverse" : ""}`}><div className={message.direction === "outbound" ? "text-right" : ""}><p className="text-sm font-semibold">{message.direction === "outbound" ? message.from || defaultMailboxEmail || "You" : message.contact}</p><p className="mt-0.5 text-xs text-muted-foreground">{message.direction === "outbound" ? `To ${message.contact}` : message.company}</p></div><time className="text-xs text-muted-foreground">{formatTime(message.timestamp)}</time></div><div className={`mt-3 overflow-hidden rounded-xl border shadow-[0_1px_2px_rgba(15,23,42,0.03)] ${message.direction === "outbound" ? "border-primary/20 bg-primary/5 p-5" : message.html ? "bg-background p-0" : "bg-background p-5"}`}><EmailBody email={message} /></div>{translationOn && message.direction === "inbound" ? <div className="mt-2 rounded-xl border border-violet-200/70 bg-violet-50/60 p-4 dark:bg-violet-500/5"><p className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-violet-700 dark:text-violet-300"><Languages className="size-3.5" />Chinese translation</p>{translations[message.id] ? <p className="whitespace-pre-wrap text-sm leading-6">{translations[message.id]}</p> : translating.has(message.id) ? <p className="flex items-center gap-2 text-xs text-muted-foreground"><LoaderCircle className="size-3.5 animate-spin" />Translating customer email...</p> : translationErrors[message.id] ? <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-amber-700 dark:text-amber-300"><span>{translationErrors[message.id]}</span><button type="button" onClick={() => setTranslationErrors((current) => { const next = { ...current }; delete next[message.id]; return next; })} className="rounded-md border border-amber-300/70 px-2 py-1 font-semibold hover:bg-amber-100/70 dark:hover:bg-amber-500/10">Retry</button></div> : <p className="text-xs text-muted-foreground">Waiting for the free translator...</p>}</div> : null}</div></article>)}</div></div>
+            <div className="border-t bg-background p-4"><div className="mx-auto max-w-3xl"><div className="mb-2 flex flex-wrap items-center gap-2"><div className="flex items-center gap-2 rounded-md border bg-violet-50 px-2.5 py-1.5 text-xs text-violet-700 dark:bg-violet-500/10 dark:text-violet-300"><Languages className="size-4" />Auto-translate<Toggle checked={translationOn} onChange={() => setTranslationOn((value) => !value)} label="Toggle email translation" /></div><div className="flex items-center gap-2 rounded-md border bg-emerald-50 px-2.5 py-1.5 text-xs text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"><Bot className="size-4" />AI writing<Toggle checked={aiReplyOn} onChange={() => setAiReplyOn((value) => !value)} label="Toggle AI writing" /></div>{!aiConfigured ? <span className="text-[11px] text-amber-700">AI provider not configured — suggestions remain available</span> : null}</div>{aiReplyOn ? <div className="mb-2 flex gap-2 overflow-x-auto"><span className="flex shrink-0 items-center gap-1 text-xs font-semibold text-violet-600"><Sparkles className="size-3.5" />Suggestions</span>{["Send pricing + MOQ", "Confirm shipping details", "Schedule a follow-up"].map((item) => <button key={item} type="button" onClick={() => setDraft(item === "Send pricing + MOQ" ? `Hi ${selected.contact.split(" ")[0]},\n\nThanks for your message. I’ll send our current wholesale pricing and minimum order quantities for your review.\n\nBest,\n${defaultMailboxEmail || "Filazoo"}` : item === "Confirm shipping details" ? `Hi ${selected.contact.split(" ")[0]},\n\nWe can prepare a shipping quote. Could you confirm the delivery postcode and expected quantity?\n\nBest,\n${defaultMailboxEmail || "Filazoo"}` : `Hi ${selected.contact.split(" ")[0]},\n\nI’ll follow up with you shortly with the latest availability and next steps.\n\nBest,\n${defaultMailboxEmail || "Filazoo"}`)} className="shrink-0 rounded-full border px-3 py-1.5 text-[11px] text-muted-foreground hover:border-primary/40 hover:text-foreground">{item}</button>)}</div> : null}<div className="mb-3 flex items-center justify-between rounded-md border bg-muted/30 px-2.5 py-2 text-[11px] text-muted-foreground"><span>From</span><span className="font-medium text-foreground">{defaultMailboxEmail || "No mailbox selected"}</span></div><div className="overflow-hidden rounded-xl border bg-background focus-within:border-primary/50"><textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={`Write in Chinese or English to reply to ${selected.contact}…`} className="min-h-24 w-full resize-none bg-transparent p-3.5 text-sm leading-6 outline-none" />{aiReplyOn && (aiWriting || aiDraft) ? <div className="border-t border-violet-200/70 bg-violet-50/60 p-3 dark:bg-violet-500/5"><p className="mb-1.5 flex items-center gap-2 text-[11px] font-semibold text-violet-700 dark:text-violet-300">{aiWriting ? <LoaderCircle className="size-3.5 animate-spin" /> : <WandSparkles className="size-3.5" />}Professional English preview</p>{aiDraft ? <p className="whitespace-pre-wrap text-sm leading-6">{aiDraft}</p> : <p className="text-xs text-muted-foreground">Rewriting as you type…</p>}<p className="mt-2 text-[10px] text-muted-foreground">The current preview will be sent automatically. Edit your original draft to update it.</p></div> : null}<AttachmentChips attachments={replyAttachments} onRemove={(id) => setReplyAttachments((current) => current.filter((item) => item.id !== id))} /><div className="flex items-center justify-between border-t px-2 py-2"><div className="flex gap-1"><input ref={replyFileInput} type="file" multiple accept=".pdf,.csv,.txt,.jpg,.jpeg,.png,.webp,.gif,.doc,.docx,.xls,.xlsx" className="hidden" onChange={(event) => { void addFiles(event.target.files, "reply"); event.target.value = ""; }} /><button type="button" disabled={attachmentBusy} title="Attach files" onClick={() => replyFileInput.current?.click()} className="rounded-md p-2 text-muted-foreground hover:bg-muted disabled:opacity-40"><Paperclip className="size-4" /></button><button type="button" title="Attach product catalog" onClick={() => openCatalogPicker("reply")} className="rounded-md p-2 text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-500/10"><Library className="size-4" /></button><button type="button" title="Add emoji" onClick={() => setDraft((value) => `${value}${value ? " " : ""}😊`)} className="rounded-md p-2 text-muted-foreground hover:bg-muted"><Smile className="size-4" /></button><button type="button" title="Start an AI-written reply" onClick={() => setDraft((value) => value || `你好，${selected.contact.split(" ")[0]}，\n\n感谢您的来信。我们很乐意为您提供帮助。\n\n此致\nFilazoo`)} className="rounded-md p-2 text-violet-600 hover:bg-violet-50"><WandSparkles className="size-4" /></button></div><button type="button" onClick={saveReply} disabled={!draft.trim() || sending || aiWriting} className="inline-flex h-9 items-center gap-2 rounded-md bg-foreground px-3 text-xs font-semibold text-background disabled:opacity-40"><Send className="size-4" />{sending ? "Sending..." : aiWriting ? "Writing..." : "Send email"}</button></div></div>{notice ? <p className="mt-2 text-xs text-muted-foreground" role="status">{notice}</p> : null}</div></div>
           </> : <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">Select an email to read it.</div>}
         </main>
 
@@ -521,6 +694,8 @@ export function EmailInboxWorkspace({
               <label className="grid grid-cols-[64px_1fr] items-center border-b py-2 text-sm"><span className="text-muted-foreground">To</span><input type="email" required autoFocus value={composeTo} onChange={(event) => setComposeTo(event.target.value)} placeholder="customer@example.com" className="min-w-0 bg-transparent py-1 outline-none placeholder:text-muted-foreground/60" /></label>
               <label className="grid grid-cols-[64px_1fr] items-center border-b py-2 text-sm"><span className="text-muted-foreground">Subject</span><input required value={composeSubject} onChange={(event) => setComposeSubject(event.target.value)} placeholder="Email subject" className="min-w-0 bg-transparent py-1 outline-none placeholder:text-muted-foreground/60" /></label>
               <textarea required value={composeBody} onChange={(event) => setComposeBody(event.target.value)} placeholder="Write your message…" className="min-h-64 w-full resize-y bg-transparent py-4 text-sm leading-6 outline-none placeholder:text-muted-foreground/60" />
+              <AttachmentChips attachments={composeAttachments} onRemove={(id) => setComposeAttachments((current) => current.filter((item) => item.id !== id))} />
+              <div className="mb-2 flex items-center gap-2 border-t pt-2"><input ref={composeFileInput} type="file" multiple accept=".pdf,.csv,.txt,.jpg,.jpeg,.png,.webp,.gif,.doc,.docx,.xls,.xlsx" className="hidden" onChange={(event) => { void addFiles(event.target.files, "compose"); event.target.value = ""; }} /><button type="button" onClick={() => composeFileInput.current?.click()} disabled={attachmentBusy} className="inline-flex h-8 items-center gap-2 rounded-md border px-2.5 text-xs font-medium hover:bg-muted disabled:opacity-40"><Paperclip className="size-3.5" />Attach file</button><button type="button" onClick={() => openCatalogPicker("compose")} className="inline-flex h-8 items-center gap-2 rounded-md border px-2.5 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:text-sky-300"><Library className="size-3.5" />Add catalog PDF</button></div>
               {composeError ? <p role="alert" className="pb-3 text-xs font-medium text-red-600 dark:text-red-400">{composeError}</p> : null}
             </div>
             <DialogFooter className="mx-0 mb-0 rounded-none px-5 py-3">
@@ -528,6 +703,30 @@ export function EmailInboxWorkspace({
               <button type="submit" disabled={composeSending || !composeTo.trim() || !composeSubject.trim() || !composeBody.trim()} className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-foreground px-4 text-xs font-semibold text-background hover:bg-foreground/90 disabled:opacity-40"><Send className="size-4" />{composeSending ? "Sending…" : "Send email"}</button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={catalogOpen} onOpenChange={setCatalogOpen}>
+        <DialogContent className="w-[min(760px,calc(100%-2rem))] max-w-none gap-0 overflow-hidden p-0">
+          <DialogHeader className="border-b px-5 py-4">
+            <DialogTitle>Attach a product catalog</DialogTitle>
+            <DialogDescription>Use a saved company selection, attach the complete catalog, or build a focused PDF for this email.</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[65vh] space-y-5 overflow-y-auto px-5 py-4">
+            <section>
+              <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Ready-made catalogs</h3>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                <button type="button" onClick={() => attachCatalog([], selected?.company ? `${selected.company} complete catalog` : "Filazoo complete catalog")} className="rounded-lg border p-3 text-left hover:border-primary/40 hover:bg-muted/30"><span className="flex items-center gap-2 text-sm font-semibold"><Library className="size-4 text-sky-600" />Complete Filazoo catalog</span><span className="mt-1 block text-xs text-muted-foreground">All {products.length} available catalog items</span></button>
+                {catalogs.map((catalog) => <button key={catalog.id} type="button" onClick={() => attachCatalog(catalog.productSkus, `${catalog.company} catalog v${catalog.version}`)} className="rounded-lg border p-3 text-left hover:border-primary/40 hover:bg-muted/30"><span className="block truncate text-sm font-semibold">{catalog.company} · v{catalog.version}</span><span className="mt-1 block text-xs text-muted-foreground">{catalog.productSkus.length} products · {catalog.currency}</span></button>)}
+              </div>
+            </section>
+            <section>
+              <div className="flex items-end justify-between gap-3"><label className="min-w-0 flex-1 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Custom catalog title<input value={catalogTitle} onChange={(event) => setCatalogTitle(event.target.value)} className="mt-2 h-9 w-full rounded-md border bg-background px-3 text-sm font-normal normal-case tracking-normal outline-none focus:border-primary/50" /></label><span className="pb-2 text-xs text-muted-foreground">{selectedCatalogSkus.size} selected</span></div>
+              <div className="mt-3 grid max-h-72 gap-2 overflow-y-auto rounded-lg border p-2 sm:grid-cols-2">
+                {products.map((product) => { const checked = selectedCatalogSkus.has(product.sku); return <label key={product.sku} className={`flex cursor-pointer items-start gap-2 rounded-md border p-2.5 ${checked ? "border-primary/40 bg-primary/5" : "border-transparent hover:bg-muted"}`}><input type="checkbox" checked={checked} onChange={() => setSelectedCatalogSkus((current) => { const next = new Set(current); if (next.has(product.sku)) next.delete(product.sku); else next.add(product.sku); return next; })} className="mt-0.5 accent-current" /><span className="min-w-0"><span className="block truncate text-xs font-semibold">{product.name}</span><span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{product.sku} · {product.price}</span></span></label>; })}
+              </div>
+            </section>
+          </div>
+          <DialogFooter className="mx-0 mb-0 rounded-none px-5 py-3"><button type="button" onClick={() => setCatalogOpen(false)} className="inline-flex h-9 items-center rounded-md border px-4 text-xs font-semibold hover:bg-muted">Cancel</button><button type="button" disabled={!selectedCatalogSkus.size || !catalogTitle.trim()} onClick={() => attachCatalog([...selectedCatalogSkus], catalogTitle.trim())} className="inline-flex h-9 items-center gap-2 rounded-md bg-foreground px-4 text-xs font-semibold text-background disabled:opacity-40"><FileText className="size-4" />Generate & attach PDF</button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

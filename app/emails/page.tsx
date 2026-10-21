@@ -1,10 +1,16 @@
 import { EmailInboxWorkspace } from "@/components/email-inbox";
 import { requireWorkspaceMember } from "@/lib/auth";
 import { getEmailInboxBackendData } from "@/lib/email-inbox";
+import { listCatalogs, listProducts } from "@/lib/data/crm";
+import { b2bProducts } from "@/lib/data/b2b-products";
 
 export default async function EmailsPage() {
   await requireWorkspaceMember(["admin", "operator", "viewer"]);
-  const { emails, mailboxConfigured, sendConfigured, inboxConfigured, inboxError, aiConfigured, defaultMailboxEmail, mode, automation } = await getEmailInboxBackendData({ syncMailbox: false });
+  const [{ emails, mailboxConfigured, sendConfigured, inboxConfigured, inboxError, aiConfigured, defaultMailboxEmail, mode, automation }, productResult, catalogResult] = await Promise.all([
+    getEmailInboxBackendData({ syncMailbox: false }),
+    listProducts().catch(() => ({ products: [] })),
+    listCatalogs().catch(() => ({ catalogs: [] })),
+  ]);
 
   return (
     <EmailInboxWorkspace
@@ -17,6 +23,8 @@ export default async function EmailsPage() {
       defaultMailboxEmail={defaultMailboxEmail}
       dataMode={mode}
       initialAutomation={automation}
+      products={productResult.products.length ? productResult.products : b2bProducts}
+      catalogs={catalogResult.catalogs}
     />
   );
 }
