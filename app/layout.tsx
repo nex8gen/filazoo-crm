@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { AppShell } from "@/components/app-shell";
+import { LanguageProvider } from "@/components/language-provider";
 import { UserMenu } from "@/components/user-menu";
 import "./globals.css";
 
@@ -17,10 +18,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={GeistSans.variable} suppressHydrationWarning>
       <body>
-        <ThemeProvider>
-          <TooltipProvider><AppShell userMenu={<Suspense fallback={<span className="size-7 rounded-full bg-muted" />}><UserMenu /></Suspense>}>{children}</AppShell></TooltipProvider>
-          <Toaster position="bottom-right" />
-        </ThemeProvider>
+        <LanguageProvider>
+          <ThemeProvider>
+            <TooltipProvider><AppShell userMenu={<Suspense fallback={<span className="size-7 rounded-full bg-muted" />}><UserMenu /></Suspense>}>{children}</AppShell></TooltipProvider>
+            <Toaster position="bottom-right" />
+          </ThemeProvider>
+        </LanguageProvider>
       </body>
     </html>
   );

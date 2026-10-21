@@ -9,6 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TablePagination } from "@/components/ui/table-pagination";
+
+const PAGE_SIZE = 20;
 
 function formatCatalogDate(value: string) {
   return new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(value));
@@ -17,6 +20,7 @@ function formatCatalogDate(value: string) {
 export function CompanyCatalogsTable({ catalogs }: { catalogs: Catalog[] }) {
   const [query, setQuery] = useState("");
   const [currency, setCurrency] = useState("all");
+  const [page, setPage] = useState(1);
 
   const currencies = useMemo(
     () => [...new Set(catalogs.map((catalog) => catalog.currency))].sort(),
@@ -27,15 +31,18 @@ export function CompanyCatalogsTable({ catalogs }: { catalogs: Catalog[] }) {
     () => filterCompanyCatalogs(catalogs, query, currency),
     [catalogs, query, currency],
   );
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const visibleCatalogs = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 rounded-lg border bg-card p-3 lg:flex-row lg:items-center">
+      <div className="crm-table-toolbar crm-table-page-wide flex-col lg:flex-row">
         <div className="relative min-w-0 flex-1">
           <Search className="pointer-events-none absolute left-2.5 top-2 size-4 text-muted-foreground" />
           <Input
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => { setQuery(event.target.value); setPage(1); }}
             className="pl-8"
             placeholder="Search company, SKU, or version…"
             aria-label="Search company catalogs"
@@ -46,7 +53,7 @@ export function CompanyCatalogsTable({ catalogs }: { catalogs: Catalog[] }) {
           <SlidersHorizontal className="size-4 text-muted-foreground" />
           <select
             value={currency}
-            onChange={(event) => setCurrency(event.target.value)}
+            onChange={(event) => { setCurrency(event.target.value); setPage(1); }}
             className="h-8 rounded-md border bg-background px-2 text-xs"
             aria-label="Filter by currency"
           >
@@ -58,9 +65,10 @@ export function CompanyCatalogsTable({ catalogs }: { catalogs: Catalog[] }) {
             ))}
           </select>
         </div>
+        <p>{filtered.length} catalogs</p>
       </div>
 
-      <Card className="gap-0 py-0 shadow-none">
+      <Card className="crm-table-frame crm-table-page-wide gap-0 py-0 shadow-none">
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
@@ -73,7 +81,7 @@ export function CompanyCatalogsTable({ catalogs }: { catalogs: Catalog[] }) {
           </TableHeader>
 
           <TableBody>
-            {filtered.map((catalog) => (
+            {visibleCatalogs.map((catalog) => (
               <TableRow key={catalog.id}>
                 <TableCell className="pl-4">
                   <div className="min-w-0">
@@ -133,6 +141,17 @@ export function CompanyCatalogsTable({ catalogs }: { catalogs: Catalog[] }) {
             ) : null}
           </TableBody>
         </Table>
+        <TablePagination
+        page={currentPage}
+        pageCount={pageCount}
+        start={visibleCatalogs.length ? (currentPage - 1) * PAGE_SIZE + 1 : 0}
+        end={Math.min(currentPage * PAGE_SIZE, filtered.length)}
+        total={filtered.length}
+        itemLabel="catalogs"
+        onPrevious={() => setPage(currentPage - 1)}
+        onNext={() => setPage(currentPage + 1)}
+        onPageChange={setPage}
+        />
       </Card>
     </div>
   );

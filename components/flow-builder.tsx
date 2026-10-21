@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TablePagination } from "@/components/ui/table-pagination";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -334,9 +335,14 @@ function FlowListView({ flows, canEdit, onCreate, onOpen, onDuplicate, onChangeS
   const activeRuns = flows.reduce((total, flow) => total + (flow.activeRuns || 0), 0);
   const completedRuns = flows.reduce((total, flow) => total + (flow.completedRuns || 0), 0);
   const dateFormatter = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" });
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+  const pageCount = Math.max(1, Math.ceil(flows.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const visibleFlows = flows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   return <section className="scroll-surface h-full min-h-0 overflow-y-auto bg-muted/20">
-    <div className="mx-auto w-full max-w-[1500px] px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
+    <div className="w-full px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-start gap-3">
           <span className="grid size-10 shrink-0 place-items-center rounded-xl border bg-background text-primary shadow-sm"><Workflow className="size-5" /></span>
@@ -351,21 +357,22 @@ function FlowListView({ flows, canEdit, onCreate, onOpen, onDuplicate, onChangeS
         <FlowSummary icon={CheckCircle2} label="Completed" value={completedRuns} detail="All-time journeys" tone="bg-violet-500/10 text-violet-600 dark:text-violet-400" />
       </div>
 
-      <Card className="mt-5 gap-0 overflow-hidden py-0 shadow-sm">
+      <Card className="crm-table-frame crm-table-page-wide mt-5 gap-0 overflow-hidden py-0 shadow-none">
         <div className="flex items-center justify-between border-b px-4 py-3.5 sm:px-5">
           <div><h2 className="text-sm font-semibold">All flows</h2><p className="mt-0.5 text-xs text-muted-foreground">Select a flow to open its canvas and configuration.</p></div>
           <Badge variant="secondary" className="tabular-nums">{flows.length}</Badge>
         </div>
 
         {flows.length ? <>
-          <div className="hidden overflow-x-auto md:block">
+          <div className="hidden md:block">
             <Table className="min-w-[880px]">
               <TableHeader><TableRow className="bg-muted/30 hover:bg-muted/30"><TableHead className="pl-5">Flow</TableHead><TableHead>Trigger</TableHead><TableHead>Status</TableHead><TableHead className="text-center">Active</TableHead><TableHead className="text-center">Completed</TableHead><TableHead>Last updated</TableHead><TableHead className="w-12" /></TableRow></TableHeader>
-              <TableBody>{flows.map((flow) => <TableRow key={flow.id} className="group cursor-pointer" onClick={() => onOpen(flow)}><TableCell className="pl-5"><div className="flex items-center gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary"><Workflow className="size-4" /></span><div><p className="font-semibold group-hover:text-primary">{flow.name}</p><p className="mt-0.5 text-xs text-muted-foreground">{flow.steps.length} action{flow.steps.length === 1 ? "" : "s"}</p></div></div></TableCell><TableCell><p className="max-w-64 truncate text-sm">{formatTrigger(flow.triggerType, flow.triggerConfig)}</p></TableCell><TableCell><FlowStatusBadge status={flow.status} /></TableCell><TableCell className="text-center font-medium tabular-nums">{flow.activeRuns || 0}</TableCell><TableCell className="text-center font-medium tabular-nums">{flow.completedRuns || 0}</TableCell><TableCell className="whitespace-nowrap text-xs text-muted-foreground">{dateFormatter.format(new Date(flow.updatedAt))}</TableCell><TableCell><FlowActions flow={flow} canEdit={canEdit} onOpen={onOpen} onDuplicate={onDuplicate} onChangeStatus={onChangeStatus} onRemove={onRemove} /></TableCell></TableRow>)}</TableBody>
+              <TableBody>{visibleFlows.map((flow) => <TableRow key={flow.id} className="group cursor-pointer" onClick={() => onOpen(flow)}><TableCell className="pl-5"><div className="flex items-center gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary"><Workflow className="size-4" /></span><div><p className="font-semibold group-hover:text-primary">{flow.name}</p><p className="mt-0.5 text-xs text-muted-foreground">{flow.steps.length} action{flow.steps.length === 1 ? "" : "s"}</p></div></div></TableCell><TableCell><p className="max-w-64 truncate text-sm">{formatTrigger(flow.triggerType, flow.triggerConfig)}</p></TableCell><TableCell><FlowStatusBadge status={flow.status} /></TableCell><TableCell className="text-center font-medium tabular-nums">{flow.activeRuns || 0}</TableCell><TableCell className="text-center font-medium tabular-nums">{flow.completedRuns || 0}</TableCell><TableCell className="whitespace-nowrap text-xs text-muted-foreground">{dateFormatter.format(new Date(flow.updatedAt))}</TableCell><TableCell><FlowActions flow={flow} canEdit={canEdit} onOpen={onOpen} onDuplicate={onDuplicate} onChangeStatus={onChangeStatus} onRemove={onRemove} /></TableCell></TableRow>)}</TableBody>
             </Table>
           </div>
 
-          <div className="divide-y md:hidden">{flows.map((flow) => <article key={flow.id} role="button" tabIndex={0} onClick={() => onOpen(flow)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(flow); } }} className="group p-4 outline-none hover:bg-muted/35 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"><div className="flex items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"><Workflow className="size-4" /></span><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><h3 className="truncate font-semibold group-hover:text-primary">{flow.name}</h3><p className="mt-1 truncate text-xs text-muted-foreground">{formatTrigger(flow.triggerType, flow.triggerConfig)}</p></div><FlowActions flow={flow} canEdit={canEdit} onOpen={onOpen} onDuplicate={onDuplicate} onChangeStatus={onChangeStatus} onRemove={onRemove} /></div><div className="mt-3 flex flex-wrap items-center gap-2"><FlowStatusBadge status={flow.status} /><span className="text-xs text-muted-foreground">{flow.steps.length} actions</span><span className="text-muted-foreground/40">·</span><span className="text-xs text-muted-foreground">{flow.activeRuns || 0} active</span></div><p className="mt-3 text-[11px] text-muted-foreground">Updated {dateFormatter.format(new Date(flow.updatedAt))}</p></div></div></article>)}</div>
+          <div className="divide-y md:hidden">{visibleFlows.map((flow) => <article key={flow.id} role="button" tabIndex={0} onClick={() => onOpen(flow)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(flow); } }} className="group p-4 outline-none hover:bg-muted/35 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"><div className="flex items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"><Workflow className="size-4" /></span><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><h3 className="truncate font-semibold group-hover:text-primary">{flow.name}</h3><p className="mt-1 truncate text-xs text-muted-foreground">{formatTrigger(flow.triggerType, flow.triggerConfig)}</p></div><FlowActions flow={flow} canEdit={canEdit} onOpen={onOpen} onDuplicate={onDuplicate} onChangeStatus={onChangeStatus} onRemove={onRemove} /></div><div className="mt-3 flex flex-wrap items-center gap-2"><FlowStatusBadge status={flow.status} /><span className="text-xs text-muted-foreground">{flow.steps.length} actions</span><span className="text-muted-foreground/40">·</span><span className="text-xs text-muted-foreground">{flow.activeRuns || 0} active</span></div><p className="mt-3 text-[11px] text-muted-foreground">Updated {dateFormatter.format(new Date(flow.updatedAt))}</p></div></div></article>)}</div>
+          <TablePagination page={currentPage} pageCount={pageCount} start={(currentPage - 1) * pageSize + 1} end={Math.min(currentPage * pageSize, flows.length)} total={flows.length} itemLabel="flows" onPrevious={() => setPage(currentPage - 1)} onNext={() => setPage(currentPage + 1)} onPageChange={setPage} />
         </> : <div className="grid min-h-64 place-items-center px-6 py-12 text-center"><div><span className="mx-auto grid size-12 place-items-center rounded-2xl bg-primary/10 text-primary"><Workflow className="size-5" /></span><h3 className="mt-4 font-semibold">Create your first flow</h3><p className="mx-auto mt-1 max-w-sm text-sm leading-6 text-muted-foreground">Automate timely follow-ups, internal tasks, and customer journey decisions.</p><Button className="mt-5" onClick={onCreate} disabled={!canEdit}><Plus />Create flow</Button></div></div>}
       </Card>
     </div>

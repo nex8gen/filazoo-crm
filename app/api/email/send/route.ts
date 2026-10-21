@@ -22,7 +22,7 @@ const sendSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const viewer = await requireWorkspaceMember(["admin", "operator", "viewer"]);
+  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
 
   try {
     const parsed = sendSchema.safeParse(await request.json().catch(() => null));

@@ -3,7 +3,7 @@ import type { MetaChannel } from "@/lib/meta-messenger";
 import { requireWorkspaceMember } from "@/lib/auth";
 
 export async function POST(request: Request) {
-  await requireWorkspaceMember(["admin", "operator"]);
+  await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
   const payload = await request.json().catch(() => null);
   const to = typeof payload?.to === "string" ? payload.to : "";
   const text = typeof payload?.message === "string" ? payload.message : "";

@@ -2,7 +2,7 @@ import { requireWorkspaceMember } from "@/lib/auth";
 import { listFlowRunInsights } from "@/lib/data/flow-runtime";
 
 export async function GET(_request: Request, context: RouteContext<"/api/flows/[id]/runs">) {
-  const viewer = await requireWorkspaceMember(["admin", "operator", "viewer"]);
+  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   const { id } = await context.params;
   try {
     return Response.json({ ok: true, runs: await listFlowRunInsights(id, viewer.id) }, { headers: { "Cache-Control": "no-store" } });

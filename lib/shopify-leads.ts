@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 
 import { env, hasSupabaseConfig } from "./env.ts";
 import { createSupabaseAdmin } from "./supabase/admin.ts";
+import { claimNextBdSalesManager } from "./lead-assignment.ts";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -326,10 +327,12 @@ export async function saveShopifyLead(lead: ShopifyLead, webhookId: string, shop
     const quantity = estimatedOrderQuantity(
       typeof lead.details.estimatedMonthlyVolume === "string" ? lead.details.estimatedMonthlyVolume : null,
     );
+    const assignedOwnerId = isNewCompany ? await claimNextBdSalesManager(admin) : null;
     const pipelineResult = isNewCompany
       ? await admin.from("pipeline").insert({
           company_id: company.id,
           stage: "new",
+          owner_id: assignedOwnerId,
           ...(quantity == null ? {} : { estimated_order_quantity: quantity }),
         })
       : quantity == null
@@ -377,6 +380,7 @@ export async function saveShopifyLead(lead: ShopifyLead, webhookId: string, shop
       status: "processed",
       company_id: company.id,
       contact_id: contactId,
+      ...(assignedOwnerId ? { owner_id: assignedOwnerId, assignment_method: "automatic" } : {}),
       processed_at: new Date().toISOString(),
     }).eq("webhook_id", webhookId);
     if (completion.error) throw completion.error;

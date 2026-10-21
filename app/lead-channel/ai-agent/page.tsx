@@ -7,7 +7,7 @@ import { listMailboxes } from "@/lib/data/mailboxes";
 export const metadata: Metadata = { title: "AI Agent" };
 
 export default async function AiAgentPage({ searchParams }: PageProps<"/lead-channel/ai-agent">) {
-  const viewer = await requireWorkspaceMember(["admin", "operator", "viewer"]);
+  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   const params = await searchParams;
   const [flows, mailboxes, members, filterOptions] = await Promise.all([
     listFlows(viewer.id),
@@ -20,7 +20,7 @@ export default async function AiAgentPage({ searchParams }: PageProps<"/lead-cha
     <FlowBuilder
       initialFlows={flows}
       initialFlowId={typeof params.flow === "string" ? params.flow : undefined}
-      canEdit={viewer.role === "admin" || viewer.role === "operator"}
+      canEdit={viewer.role === "admin" || viewer.role === "operator" || viewer.role === "bd_manager"}
       mailboxOptions={mailboxes.map((mailbox) => ({ id: mailbox.id, label: `${mailbox.displayName || mailbox.email} · ${mailbox.email}` }))}
       memberOptions={members}
       filterOptions={filterOptions}

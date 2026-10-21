@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { CompanyDetails } from "@/components/company-details";
+import { AssignedOwner } from "@/components/assigned-owner";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -16,7 +17,7 @@ export default function CompanyPage({ params }: { params: Promise<{ id: string }
 }
 
 async function CompanyPageContent({ params }: { params: Promise<{ id: string }> }) {
-  const [{ id }, viewer] = await Promise.all([params, requireWorkspaceMember(["admin", "operator", "viewer"])]);
+  const [{ id }, viewer] = await Promise.all([params, requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"])]);
   const { details } = await getCompanyDetails(id);
   if (!details) notFound();
   const isShopify = details.company.source.includes("shopify");
@@ -24,7 +25,7 @@ async function CompanyPageContent({ params }: { params: Promise<{ id: string }> 
     <Link href="/companies" className={buttonVariants({ variant: "ghost", size: "sm", className: "mb-4 -ml-2" })}><ArrowLeft />Back to companies</Link>
     <div className="mb-7 flex flex-col gap-3 border-b pb-6 sm:flex-row sm:items-end sm:justify-between">
       <div><div className="mb-3 flex flex-wrap items-center gap-2">{isShopify && <span aria-label="Shopify" className="inline-grid size-7 place-items-center rounded-lg bg-[#95bf47] text-xs font-black text-white shadow-sm">S</span>}<Badge variant="secondary" className={isShopify ? "border-[#95bf47]/30 bg-[#95bf47]/12 text-[#5c7f18] dark:text-[#b5d66e]" : ""}>{details.company.sourceLabel}</Badge><Badge variant="outline">{details.company.stage}</Badge></div><h1 className="text-2xl font-semibold tracking-tight">{details.company.name}</h1><p className="mt-1 text-sm text-muted-foreground">{details.company.domain} · {details.company.country}{details.company.city ? `, ${details.company.city}` : ""}</p></div>
-      {viewer.role === "viewer" && <p className="text-xs text-muted-foreground">Viewer access is read-only</p>}
+      <div className="flex items-center gap-4"><AssignedOwner name={details.company.ownerName} initials={details.company.ownerInitials} assigned={Boolean(details.company.ownerId)} label="Assigned BD Manager" />{viewer.role === "viewer" && <p className="text-xs text-muted-foreground">Viewer access is read-only</p>}</div>
     </div>
     <CompanyDetails details={details} canWrite={viewer.role !== "viewer"} />
   </div>;

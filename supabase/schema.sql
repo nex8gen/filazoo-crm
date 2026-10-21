@@ -14,8 +14,10 @@ $$;
 
 create table public.workspace_members (
   user_id uuid primary key references auth.users(id) on delete cascade,
-  role text not null default 'viewer' check (role in ('admin','operator','viewer')),
+  role text not null default 'viewer' check (role in ('admin','operator','bd_manager','viewer')),
   display_name text,
+  auto_assign_leads boolean not null default false,
+  last_lead_assigned_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -246,6 +248,8 @@ create table public.meta_leads (
   full_name text,
   email text,
   phone text,
+  owner_id uuid references auth.users(id) on delete set null,
+  assignment_method text check (assignment_method is null or assignment_method in ('automatic','manual')),
   field_data jsonb not null default '[]'::jsonb,
   raw_payload jsonb,
   created_at timestamptz not null default now(),
@@ -260,6 +264,8 @@ create table public.shopify_leads (
   company_name text not null,
   full_name text,
   phone text,
+  owner_id uuid references auth.users(id) on delete set null,
+  assignment_method text check (assignment_method is null or assignment_method in ('automatic','manual')),
   tags text[] not null default '{}',
   status text not null default 'processing' check (status in ('processing','processed','failed')),
   company_id uuid references public.companies(id) on delete set null,
@@ -314,6 +320,9 @@ create index shopify_leads_email_created_at_idx on public.shopify_leads(email,cr
 create index shopify_leads_status_created_at_idx on public.shopify_leads(status,created_at desc);
 create index shopify_leads_company_id_idx on public.shopify_leads(company_id);
 create index shopify_leads_contact_id_idx on public.shopify_leads(contact_id);
+create index workspace_members_auto_assignment_idx on public.workspace_members(role,auto_assign_leads,last_lead_assigned_at);
+create index meta_leads_owner_id_idx on public.meta_leads(owner_id);
+create index shopify_leads_owner_id_idx on public.shopify_leads(owner_id);
 create index pipeline_stage_idx on public.pipeline(stage);
 create index pipeline_owner_id_idx on public.pipeline(owner_id);
 create index catalogs_company_id_idx on public.catalogs(company_id);
@@ -368,5 +377,23 @@ alter default privileges in schema public revoke all on tables from anon, authen
 alter default privileges in schema public revoke all on sequences from anon, authenticated;
 alter default privileges in schema public grant all on tables to service_role;
 alter default privileges in schema public grant all on sequences to service_role;
+
+create or replace function public.claim_next_bd_sales_manager() returns uuid language plpgsql security invoker set search_path = public as $$
+declare selected_user_id uuid;
+begin
+  perform pg_advisory_xact_lock(hashtext('filazoo_bd_lead_assignment'));
+  select member.user_id into selected_user_id
+  from public.workspace_members member
+  join auth.users account on account.id = member.user_id
+  where member.role = 'bd_manager' and member.auto_assign_leads = true and account.email_confirmed_at is not null
+  order by member.last_lead_assigned_at asc nulls first, member.created_at asc, member.user_id asc limit 1 for update;
+  if selected_user_id is not null then
+    update public.workspace_members set last_lead_assigned_at = clock_timestamp() where user_id = selected_user_id;
+  end if;
+  return selected_user_id;
+end;
+$$;
+revoke all on function public.claim_next_bd_sales_manager() from public, anon, authenticated;
+grant execute on function public.claim_next_bd_sales_manager() to service_role;
 
 commit;

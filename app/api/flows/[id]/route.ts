@@ -5,7 +5,7 @@ import { flowInputSchema } from "@/lib/flows";
 type Context = { params: Promise<{ id: string }> };
 
 export async function PUT(request: Request, context: Context) {
-  const viewer = await requireWorkspaceMember(["admin", "operator"]);
+  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
   const { id } = await context.params;
   const parsed = flowInputSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ ok: false, error: parsed.error.issues[0]?.message || "Invalid flow." }, { status: 400 });
@@ -18,7 +18,7 @@ export async function PUT(request: Request, context: Context) {
 }
 
 export async function DELETE(_request: Request, context: Context) {
-  const viewer = await requireWorkspaceMember(["admin", "operator"]);
+  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
   const { id } = await context.params;
   try {
     await deleteFlow(viewer.id, id);

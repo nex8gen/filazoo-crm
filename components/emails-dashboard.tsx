@@ -20,6 +20,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { TablePagination } from "@/components/ui/table-pagination";
 
 export type EmailStatusKey = "draft" | "needs_approval" | "scheduled" | "sent" | "failed";
 
@@ -206,11 +207,17 @@ function EmailToolbar({
 }
 
 function EmailTable({ rows, selectedIds, onToggleRow, onOpenRow, onSort }: { rows: EmailRowData[]; selectedIds: Set<string>; onToggleRow: (id: string) => void; onOpenRow: (row: EmailRowData) => void; onSort: (field: "updatedAt" | "scheduledFor" | "subject") => void; }) {
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const visibleRows = rows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
   return (
-    <div className="overflow-hidden rounded-b-xl border border-border bg-background">
-      <div className="overflow-x-auto">
-        <table className="min-w-[980px] w-full border-collapse text-left">
-          <thead className="bg-muted/40 text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
+    <div className="crm-table-frame crm-table-page-wide overflow-hidden border-y border-border bg-background">
+      <div className="crm-table-viewport">
+        <table className="crm-table min-w-[980px] w-full">
+          <thead>
             <tr className="border-b border-border">
               <th className="px-3 py-2.5 text-center"><input type="checkbox" aria-label="Select all emails" className="h-3.5 w-3.5 rounded border" /></th>
               <th className="px-3 py-2.5 font-medium"><button type="button" onClick={() => onSort("subject")} className="inline-flex items-center gap-1">Subject <ArrowUpDown className="size-3" /></button></th>
@@ -223,7 +230,7 @@ function EmailTable({ rows, selectedIds, onToggleRow, onOpenRow, onSort }: { row
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
+            {visibleRows.map((row) => (
               <tr key={row.id} className="border-b border-border/80 hover:bg-muted/20" onClick={() => onOpenRow(row)}>
                 <td className="px-3 py-2 text-center" onClick={(event) => event.stopPropagation()}>
                   <input type="checkbox" checked={selectedIds.has(row.id)} onChange={() => onToggleRow(row.id)} className="h-3.5 w-3.5 rounded border" aria-label={`Select ${row.subject}`} />
@@ -250,6 +257,7 @@ function EmailTable({ rows, selectedIds, onToggleRow, onOpenRow, onSort }: { row
           </tbody>
         </table>
       </div>
+      <TablePagination page={currentPage} pageCount={pageCount} start={(currentPage - 1) * pageSize + 1} end={Math.min(currentPage * pageSize, rows.length)} total={rows.length} itemLabel="emails" onPrevious={() => setPage(currentPage - 1)} onNext={() => setPage(currentPage + 1)} onPageChange={setPage} />
     </div>
   );
 }
@@ -470,7 +478,7 @@ export function EmailsDashboard({ initialEmails }: { initialEmails: Array<Partia
         ) : filteredRows.length === 0 ? (
           <EmptyState title="No emails in this tab" description="Nothing is blocking your outreach right now." />
         ) : (
-          <EmailTable rows={filteredRows} selectedIds={selectedIds} onToggleRow={toggleRow} onOpenRow={openRow} onSort={handleSort} />
+          <EmailTable key={`${activeTab}-${filter}-${search}`} rows={filteredRows} selectedIds={selectedIds} onToggleRow={toggleRow} onOpenRow={openRow} onSort={handleSort} />
         )}
       </div>
 
@@ -481,6 +489,7 @@ export function EmailsDashboard({ initialEmails }: { initialEmails: Array<Partia
 
 export function DeliverabilityDashboard() {
   const [activeTab, setActiveTab] = useState<"errors" | "warnings" | "info">("errors");
+  const [page, setPage] = useState(1);
   const [rows] = useState([
     { type: "Error", entity: "filazoo.com", description: "SPF or DKIM records are missing from the outbound domain.", severity: "error" },
     { type: "Warning", entity: "noreply@filazoo.com", description: "Mailbox is disconnected and rejecting replies.", severity: "warning" },
@@ -499,6 +508,10 @@ export function DeliverabilityDashboard() {
     if (activeTab === "warnings") return row.severity === "warning";
     return row.severity === "info";
   });
+  const pageSize = 10;
+  const pageCount = Math.max(1, Math.ceil(visibleRows.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const pagedRows = visibleRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   return (
     <div className="space-y-6">
@@ -518,7 +531,7 @@ export function DeliverabilityDashboard() {
           <button
             key={tab.key}
             type="button"
-            onClick={() => setActiveTab(tab.key as "errors" | "warnings" | "info")}
+            onClick={() => { setActiveTab(tab.key as "errors" | "warnings" | "info"); setPage(1); }}
             className={`rounded-xl border px-3 py-2 text-left transition-colors ${activeTab === tab.key ? "border-border bg-background shadow-sm" : "border-transparent bg-muted/40 text-muted-foreground"}`}
           >
             <div className="flex items-center gap-2">
@@ -530,10 +543,10 @@ export function DeliverabilityDashboard() {
         ))}
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-border bg-background">
-        <div className="overflow-x-auto">
-          <table className="min-w-full border-collapse text-left">
-            <thead className="bg-muted/40 text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
+      <div className="crm-table-frame crm-table-page-wide overflow-hidden border-y border-border bg-background">
+        <div className="crm-table-viewport">
+          <table className="crm-table min-w-full">
+            <thead>
               <tr className="border-b border-border">
                 <th className="px-3 py-2.5 font-medium">Issue</th>
                 <th className="px-3 py-2.5 font-medium">Entity</th>
@@ -546,7 +559,7 @@ export function DeliverabilityDashboard() {
                   <td colSpan={3} className="px-3 py-12 text-center text-sm text-muted-foreground">No deliverability issues in this category.</td>
                 </tr>
               ) : (
-                visibleRows.map((row) => (
+                pagedRows.map((row) => (
                   <tr key={`${row.entity}-${row.description}`} className="border-b border-border/80 text-sm">
                     <td className="px-3 py-3"><Badge variant={row.severity === "error" ? "destructive" : row.severity === "warning" ? "secondary" : "outline"}>{row.type}</Badge></td>
                     <td className="px-3 py-3 font-medium text-foreground">{row.entity}</td>
@@ -557,6 +570,7 @@ export function DeliverabilityDashboard() {
             </tbody>
           </table>
         </div>
+        <TablePagination page={currentPage} pageCount={pageCount} start={pagedRows.length ? (currentPage - 1) * pageSize + 1 : 0} end={Math.min(currentPage * pageSize, visibleRows.length)} total={visibleRows.length} itemLabel="issues" onPrevious={() => setPage(currentPage - 1)} onNext={() => setPage(currentPage + 1)} onPageChange={setPage} />
       </div>
     </div>
   );

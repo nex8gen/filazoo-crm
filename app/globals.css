@@ -230,6 +230,225 @@ body,
   display: none;
 }
 
+/* Shared CRM table language: quiet headers, clear column structure, and
+   one-pixel separators make dense records easy to scan without card-like
+   decoration inside the grid. Add `crm-table` to native tables; the shared
+   Table component includes it automatically. */
+/* These rules intentionally sit outside Tailwind cascade layers. That keeps
+   page-level utility classes from silently removing the shared grid. */
+.crm-table {
+  --table-grid: color-mix(in oklch, var(--border) 86%, var(--foreground));
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  text-align: left;
+}
+
+.crm-table thead {
+  background: color-mix(in oklch, var(--muted) 52%, var(--background));
+}
+
+.crm-table thead th {
+  height: 2.5rem;
+  padding: 0.625rem 1rem;
+  border-right: 1px solid var(--table-grid);
+  border-bottom: 1px solid var(--table-grid);
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.crm-table tbody tr {
+  height: 3.25rem;
+  background: var(--background);
+  transition: background-color 150ms ease;
+}
+
+.crm-table tbody td,
+.crm-table tfoot td {
+  padding: 0.625rem 1rem;
+  border-right: 1px solid var(--table-grid);
+  border-bottom: 1px solid var(--table-grid);
+  line-height: 1.25rem;
+}
+
+.crm-table :is(th, td):last-child {
+  border-right: 0;
+}
+
+.crm-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.crm-table tbody tr:hover {
+  background: color-mix(in oklch, var(--muted) 44%, var(--background));
+}
+
+.crm-table tbody tr:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+.crm-table-viewport {
+  max-height: min(64vh, 44rem);
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.crm-table-viewport .crm-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.crm-table-frame {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.crm-table-frame > .crm-table-viewport {
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.crm-table-frame > [data-slot="table-pagination"] {
+  margin-top: 0 !important;
+}
+
+/* In full-height table cards, only the table body scrolls. This prevents rows
+   from overflowing across the pagination footer. */
+.crm-table-flex-body {
+  min-height: 18rem;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+@media (min-width: 48rem) {
+  .crm-table-flex-body {
+    min-height: 0;
+  }
+
+  .crm-table-flex-body > .crm-table-viewport {
+    height: 100%;
+    max-height: none;
+  }
+}
+
+.crm-table-toolbar {
+  display: flex;
+  min-height: 3.75rem;
+  align-items: center;
+  gap: 0.75rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--background);
+  padding: 0.75rem 1rem;
+}
+
+.crm-table-toolbar :is(input, select, [data-slot="select-trigger"]) {
+  min-height: 2.5rem;
+}
+
+.crm-table-toolbar > :last-child:is(p) {
+  margin-left: auto;
+  white-space: nowrap;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+/* Keep each data grid, its toolbar, and its pager as one continuous section. */
+.crm-table-toolbar + [data-slot="card"].crm-table-page-wide,
+[data-slot="card"].crm-table-page-wide + [data-slot="table-pagination"] {
+  margin-top: 0 !important;
+}
+
+[data-slot="card"].crm-table-page-wide + [data-slot="table-pagination"] {
+  border-top: 0;
+}
+
+:where(.space-y-4):has(> [data-slot="card"].crm-table-page-wide) > div:first-child:not(.crm-table-toolbar) + [data-slot="card"].crm-table-page-wide {
+  margin-top: 0 !important;
+}
+
+/* Legacy data views expose their toolbar as the first sibling of the shared
+   table card. Normalize it until every page is migrated to the named class. */
+:where(.space-y-4):has(> [data-slot="card"].crm-table-page-wide) > div:first-child:not(.crm-table-toolbar) {
+  width: calc(100% + 2.5rem);
+  min-height: 3.75rem;
+  margin-right: -1.25rem;
+  margin-left: -1.25rem;
+  padding: 0.75rem 1rem;
+  border-right-width: 0;
+  border-left-width: 0;
+  border-radius: 0;
+  background: var(--background);
+}
+
+:where(.space-y-4):has(> [data-slot="card"].crm-table-page-wide) > div:first-child:not(.crm-table-toolbar) :is(input, select, [data-slot="select-trigger"]) {
+  min-height: 2.5rem;
+}
+
+@media (min-width: 40rem) {
+  :where(.space-y-4):has(> [data-slot="card"].crm-table-page-wide) > div:first-child:not(.crm-table-toolbar) {
+    width: calc(100% + 3.5rem);
+    margin-right: -1.75rem;
+    margin-left: -1.75rem;
+  }
+}
+
+@media (min-width: 64rem) {
+  :where(.space-y-4):has(> [data-slot="card"].crm-table-page-wide) > div:first-child:not(.crm-table-toolbar) {
+    width: calc(100% + 5rem);
+    margin-right: -2.5rem;
+    margin-left: -2.5rem;
+  }
+}
+
+@media (max-width: 63.999rem) {
+  .crm-table-toolbar {
+    flex-wrap: wrap;
+  }
+}
+
+/* Tables are page sections, not floating cards. Flatten only cards that own a
+   table; KPI cards and other content panels keep their normal treatment. */
+[data-slot="card"]:has(.crm-table) {
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* Primary data grids break out of the standard page padding so every CRM
+   table uses the same workspace-wide canvas. */
+.crm-table-page-wide {
+  width: calc(100% + 2.5rem);
+  margin-right: -1.25rem;
+  margin-left: -1.25rem;
+}
+
+@media (min-width: 40rem) {
+  .crm-table-page-wide {
+    width: calc(100% + 3.5rem);
+    margin-right: -1.75rem;
+    margin-left: -1.75rem;
+  }
+}
+
+@media (min-width: 64rem) {
+  .crm-table-page-wide {
+    width: calc(100% + 5rem);
+    margin-right: -2.5rem;
+    margin-left: -2.5rem;
+  }
+}
+
 @media (prefers-reduced-motion: no-preference) {
   html,
   :where(

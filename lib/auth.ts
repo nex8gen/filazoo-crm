@@ -14,7 +14,7 @@ async function getConnection() {
 }
 
 export type AuthViewer = { id: string; email: string | null };
-export type WorkspaceRole = "admin" | "operator" | "viewer";
+export type WorkspaceRole = "admin" | "operator" | "bd_manager" | "viewer";
 export type WorkspaceViewer = AuthViewer & { role: WorkspaceRole; displayName: string | null };
 
 export const getViewer = cache(async (): Promise<AuthViewer | null> => {

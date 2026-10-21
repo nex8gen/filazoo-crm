@@ -7,6 +7,7 @@ import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { pipelineStageValues } from "@/lib/types";
 import { variantTag } from "@/lib/product-utils";
 import { enrollMatchingFlows } from "@/lib/data/flow-runtime";
+import { claimNextBdSalesManager } from "@/lib/lead-assignment";
 
 export type CrmActionState = { error?: string; success?: string } | undefined;
 
@@ -120,7 +121,7 @@ async function enrollCompanyEvent(event: Parameters<typeof enrollMatchingFlows>[
 }
 
 export async function createCompany(_state: CrmActionState, formData: FormData): Promise<CrmActionState> {
-  const viewer = await requireWorkspaceMember(["admin", "operator"]);
+  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
   const parsed = companySchema.safeParse({
     name: formData.get("name"),
     website: formData.get("website"),
@@ -154,8 +155,9 @@ export async function createCompany(_state: CrmActionState, formData: FormData):
     return { error: companyError?.code === "23505" ? "A company with this domain already exists." : "The company could not be created." };
   }
 
+  const assignedOwnerId = await claimNextBdSalesManager(admin);
   const relatedWrites = [
-    admin.from("pipeline").insert({ company_id: company.id, stage: "new", owner_id: viewer.id }),
+    admin.from("pipeline").insert({ company_id: company.id, stage: "new", owner_id: assignedOwnerId }),
     admin.from("events").insert({ company_id: company.id, actor_id: viewer.id, type: "company_created", data: { summary: `${parsed.data.name} was added manually.` } }),
   ];
   if (parsed.data.contactEmail) {
@@ -181,7 +183,7 @@ export async function createCompany(_state: CrmActionState, formData: FormData):
 }
 
 export async function updateCompany(companyId: string, _state: CrmActionState, formData: FormData): Promise<CrmActionState> {
-  const viewer = await requireWorkspaceMember(["admin", "operator"]);
+  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
   const id = z.string().uuid().safeParse(companyId);
   const parsed = companyUpdateSchema.safeParse({
     name: formData.get("name"), website: formData.get("website"), country: formData.get("country"), city: formData.get("city"),
@@ -208,7 +210,7 @@ export async function updateCompany(companyId: string, _state: CrmActionState, f
     admin.from("pipeline").upsert({
       company_id: id.data, stage: parsed.data.stage, estimated_order_quantity: parsed.data.estimatedOrderQuantity === "" ? null : parsed.data.estimatedOrderQuantity,
       estimated_value: parsed.data.estimatedValue === "" ? null : parsed.data.estimatedValue, currency: parsed.data.currency,
-      next_followup_at: parsed.data.nextFollowupAt ? new Date(parsed.data.nextFollowupAt).toISOString() : null, owner_id: viewer.id, updated_at: new Date().toISOString(),
+      next_followup_at: parsed.data.nextFollowupAt ? new Date(parsed.data.nextFollowupAt).toISOString() : null, updated_at: new Date().toISOString(),
     }, { onConflict: "company_id" }),
     admin.from("company_profiles").upsert({
       company_id: id.data, summary: parsed.data.summary || null, fit_score: parsed.data.fitScore === "" ? null : parsed.data.fitScore,
@@ -236,7 +238,7 @@ export async function updateCompany(companyId: string, _state: CrmActionState, f
 export async function bulkUpdateCompanies(companyIds: string[], action: string): Promise<CrmActionState> {
   const parsed = z.object({ ids: z.array(z.string().uuid()).min(1).max(500), action: z.enum(["contacted", "interested", "delete"]) }).safeParse({ ids: companyIds, action });
   if (!parsed.success) return { error: "Select at least one valid company." };
-  const viewer = await requireWorkspaceMember(parsed.data.action === "delete" ? ["admin"] : ["admin", "operator"]);
+  const viewer = await requireWorkspaceMember(parsed.data.action === "delete" ? ["admin"] : ["admin", "operator", "bd_manager"]);
   const admin = createSupabaseAdmin();
   if (parsed.data.action === "delete") {
     const { error } = await admin.from("companies").delete().in("id", parsed.data.ids);
@@ -244,7 +246,7 @@ export async function bulkUpdateCompanies(companyIds: string[], action: string):
     refreshCrm();
     return { success: `${parsed.data.ids.length} ${parsed.data.ids.length === 1 ? "company" : "companies"} deleted.` };
   }
-  const rows = parsed.data.ids.map((companyId) => ({ company_id: companyId, stage: parsed.data.action, owner_id: viewer.id, updated_at: new Date().toISOString() }));
+  const rows = parsed.data.ids.map((companyId) => ({ company_id: companyId, stage: parsed.data.action, updated_at: new Date().toISOString() }));
   const { error } = await admin.from("pipeline").upsert(rows, { onConflict: "company_id" });
   if (error) return { error: "The bulk update could not be completed." };
   await admin.from("events").insert(parsed.data.ids.map((companyId) => ({ company_id: companyId, actor_id: viewer.id, type: "bulk_pipeline_update", data: { summary: `Pipeline status changed to ${parsed.data.action}.` } })));
@@ -253,7 +255,7 @@ export async function bulkUpdateCompanies(companyIds: string[], action: string):
 }
 
 export async function createOpportunity(_state: CrmActionState, formData: FormData): Promise<CrmActionState> {
-  const viewer = await requireWorkspaceMember(["admin", "operator"]);
+  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
   const parsed = opportunitySchema.safeParse({
     companyId: formData.get("companyId"),
     stage: formData.get("stage"),
@@ -274,7 +276,6 @@ export async function createOpportunity(_state: CrmActionState, formData: FormDa
     currency: parsed.data.currency,
     next_followup_at: parsed.data.nextFollowupAt ? new Date(parsed.data.nextFollowupAt).toISOString() : null,
     notes: parsed.data.notes || null,
-    owner_id: viewer.id,
     updated_at: new Date().toISOString(),
   }, { onConflict: "company_id" });
   if (error) return { error: "The opportunity could not be saved." };
@@ -284,13 +285,13 @@ export async function createOpportunity(_state: CrmActionState, formData: FormDa
 }
 
 export async function updatePipelineStage(companyId: string, stage: string): Promise<CrmActionState> {
-  const viewer = await requireWorkspaceMember(["admin", "operator"]);
+  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
   const parsed = z.object({ companyId: z.string().uuid(), stage: z.enum(pipelineStageValues) }).safeParse({ companyId, stage });
   if (!parsed.success) return { error: "Invalid pipeline update." };
   const admin = createSupabaseAdmin();
   const { data: company } = await admin.from("companies").select("id,name").eq("id", parsed.data.companyId).maybeSingle();
   if (!company) return { error: "The company no longer exists." };
-  const { error } = await admin.from("pipeline").upsert({ company_id: company.id, stage: parsed.data.stage, owner_id: viewer.id, updated_at: new Date().toISOString() }, { onConflict: "company_id" });
+  const { error } = await admin.from("pipeline").upsert({ company_id: company.id, stage: parsed.data.stage, updated_at: new Date().toISOString() }, { onConflict: "company_id" });
   if (error) return { error: "The pipeline stage could not be updated." };
   await admin.from("events").insert({ company_id: company.id, actor_id: viewer.id, type: "pipeline_stage_changed", data: { summary: `${company.name} moved to ${parsed.data.stage.replaceAll("_", " ")}.` } });
   const { data: contact } = await admin.from("contacts").select("id").eq("company_id", company.id).order("created_at").limit(1).maybeSingle();
@@ -299,8 +300,29 @@ export async function updatePipelineStage(companyId: string, stage: string): Pro
   return { success: "Pipeline stage updated." };
 }
 
+export async function assignPipelineOwner(companyId: string, ownerId: string | null): Promise<CrmActionState> {
+  const viewer = await requireWorkspaceMember(["admin"]);
+  const parsed = z.object({ companyId: z.string().uuid(), ownerId: z.string().uuid().nullable() }).safeParse({ companyId, ownerId });
+  if (!parsed.success) return { error: "Invalid lead assignment." };
+  const admin = createSupabaseAdmin();
+  const { data: company } = await admin.from("companies").select("id,name").eq("id", parsed.data.companyId).maybeSingle();
+  if (!company) return { error: "The company no longer exists." };
+  let ownerName = "Unassigned";
+  if (parsed.data.ownerId) {
+    const { data: member } = await admin.from("workspace_members").select("display_name").eq("user_id", parsed.data.ownerId).eq("role", "bd_manager").eq("auto_assign_leads", true).maybeSingle();
+    if (!member) return { error: "Choose an active BD Sales Manager." };
+    ownerName = member.display_name || "BD Sales Manager";
+  }
+  const { error } = await admin.from("pipeline").upsert({ company_id: company.id, owner_id: parsed.data.ownerId, updated_at: new Date().toISOString() }, { onConflict: "company_id" });
+  if (error) return { error: "The lead owner could not be updated." };
+  await admin.from("shopify_leads").update({ owner_id: parsed.data.ownerId, assignment_method: parsed.data.ownerId ? "manual" : null }).eq("company_id", company.id);
+  await admin.from("events").insert({ company_id: company.id, actor_id: viewer.id, type: "lead_owner_changed", data: { summary: parsed.data.ownerId ? `${company.name} was manually assigned to ${ownerName}.` : `${company.name} was returned to the unassigned queue.` } });
+  refreshCompany(company.id);
+  return { success: parsed.data.ownerId ? `Assigned to ${ownerName}.` : "Lead unassigned." };
+}
+
 export async function createEmailDraft(_state: CrmActionState, formData: FormData): Promise<CrmActionState> {
-  const viewer = await requireWorkspaceMember(["admin", "operator"]);
+  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
   const parsed = emailSchema.safeParse({ contactId: formData.get("contactId"), subject: formData.get("subject"), body: formData.get("body") });
   if (!parsed.success) return { error: "Choose a contact and enter a subject and message." };
   const admin = createSupabaseAdmin();
@@ -315,7 +337,7 @@ export async function createEmailDraft(_state: CrmActionState, formData: FormDat
 }
 
 export async function createCatalog(_state: CrmActionState, formData: FormData): Promise<CrmActionState> {
-  const viewer = await requireWorkspaceMember(["admin", "operator"]);
+  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
   const parsed = catalogSchema.safeParse({ companyId: formData.get("companyId"), currency: formData.get("currency"), productSkus: formData.getAll("productSkus") });
   if (!parsed.success) return { error: "Choose a company and valid catalog options." };
   const admin = createSupabaseAdmin();
@@ -335,7 +357,7 @@ export async function createCatalog(_state: CrmActionState, formData: FormData):
 }
 
 export async function createProduct(_state: CrmActionState, formData: FormData): Promise<CrmActionState> {
-  await requireWorkspaceMember(["admin", "operator"]);
+  await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
   const parsed = productSchema.safeParse({
     sku: formData.get("sku"),
     name: formData.get("name"),
@@ -396,7 +418,7 @@ export async function createProduct(_state: CrmActionState, formData: FormData):
 }
 
 export async function updateProduct(_state: CrmActionState, formData: FormData): Promise<CrmActionState> {
-  await requireWorkspaceMember(["admin", "operator"]);
+  await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
   const originalSku = z.string().trim().min(2).max(100).safeParse(formData.get("originalSku"));
   const parsed = productSchema.safeParse({
     sku: formData.get("sku"), name: formData.get("name"), material: formData.get("material"), colors: formData.get("colors") || "",

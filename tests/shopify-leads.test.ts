@@ -10,6 +10,7 @@ import {
   normalizeShopifyCustomer,
   verifyShopifySignature,
 } from "../lib/shopify-leads.ts";
+import { buildShopifyFormInboxItems } from "../lib/email-inbox.ts";
 
 test("verifies Shopify webhook HMAC signatures", () => {
   const body = JSON.stringify({ id: 123, email: "buyer@example.com" });
@@ -109,4 +110,24 @@ test("prefers a submitted country and parses estimated monthly volume", () => {
   assert.equal(estimatedOrderQuantity("Under 50 kg"), 50);
   assert.equal(estimatedOrderQuantity("200-499 kg"), 200);
   assert.equal(estimatedOrderQuantity(null), null);
+});
+
+test("turns Shopify form submissions into replyable inbox conversations", () => {
+  const [message] = buildShopifyFormInboxItems([{
+    webhook_id: "form:abc-123",
+    email: "buyer@example3d.com",
+    full_name: "Grace Hopper",
+    company_name: "Example 3D",
+    raw_payload: {
+      "contact[body]": "Please send wholesale pricing.",
+      "contact[Estimated monthly volume]": "200-499 kg",
+    },
+    created_at: "2026-10-21T08:00:00Z",
+  }]);
+
+  assert.equal(message.source, "shopify");
+  assert.equal(message.contact, "buyer@example3d.com");
+  assert.equal(message.contactName, "Grace Hopper");
+  assert.match(message.body, /wholesale pricing/);
+  assert.match(message.body, /200-499 kg/);
 });

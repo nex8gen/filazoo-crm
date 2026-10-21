@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 
 import { env, hasSupabaseConfig } from "./env.ts";
 import { createSupabaseAdmin } from "./supabase/admin.ts";
+import { claimNextBdSalesManager } from "./lead-assignment.ts";
 
 const graphApiVersion = env.META_GRAPH_API_VERSION;
 type UnknownRecord = Record<string, unknown>;
@@ -66,6 +67,8 @@ export type MetaLead = {
   formId: string | null;
   adId: string | null;
   createdAt: string;
+  ownerId: string | null;
+  ownerName: string;
 };
 
 export type MetaConnectionStatus = {
@@ -320,7 +323,10 @@ export async function saveMetaLead(event: FacebookLeadEvent) {
   const detailPayload = detail.ok ? detail.payload : {};
   const fields = normalizeLeadFields(detailPayload.field_data);
   const fullName = fields.full_name || [fields.first_name, fields.last_name].filter(Boolean).join(" ") || null;
-  const { error } = await createSupabaseAdmin().from("meta_leads").upsert({
+  const admin = createSupabaseAdmin();
+  const { data: existing } = await admin.from("meta_leads").select("owner_id,assignment_method").eq("leadgen_id", event.leadgenId).maybeSingle();
+  const ownerId = existing?.owner_id ?? await claimNextBdSalesManager(admin);
+  const { error } = await admin.from("meta_leads").upsert({
     leadgen_id: event.leadgenId,
     page_id: event.pageId,
     form_id: asString(detailPayload.form_id) ?? event.formId,
@@ -329,6 +335,8 @@ export async function saveMetaLead(event: FacebookLeadEvent) {
     full_name: fullName,
     email: fields.email || null,
     phone: fields.phone_number || fields.phone || null,
+    owner_id: ownerId,
+    assignment_method: existing?.assignment_method ?? (ownerId ? "automatic" : null),
     field_data: detailPayload.field_data ?? [],
     raw_payload: { webhook: event.rawPayload, detail: detailPayload, detail_error: detail.ok ? null : detail.error },
     created_at: asString(detailPayload.created_time) ?? event.createdTime,
@@ -454,9 +462,12 @@ export async function getMetaInboxData(): Promise<MetaInboxData> {
   const client = createSupabaseAdmin();
   const [messagesResult, leadsResult] = await Promise.all([
     client.from("meta_messages").select("id,message_id,thread_id,page_id,customer_name,direction,body,message_type,status,source,created_at").order("created_at", { ascending: false }).limit(300),
-    client.from("meta_leads").select("leadgen_id,full_name,email,phone,form_id,ad_id,created_at").order("created_at", { ascending: false }).limit(50),
+    client.from("meta_leads").select("leadgen_id,full_name,email,phone,form_id,ad_id,owner_id,created_at").order("created_at", { ascending: false }).limit(50),
   ]);
   const errors = [messagesResult.error?.message, leadsResult.error?.message].filter(Boolean);
+  const ownerIds = [...new Set((leadsResult.data ?? []).map((row) => row.owner_id).filter((value): value is string => Boolean(value)))];
+  const { data: owners } = ownerIds.length ? await client.from("workspace_members").select("user_id,display_name").in("user_id", ownerIds) : { data: [] };
+  const ownerNames = new Map((owners ?? []).map((owner) => [owner.user_id, owner.display_name || "BD Sales Manager"]));
   const leads: MetaLead[] = (leadsResult.data ?? []).map((row) => ({
     id: String(row.leadgen_id),
     name: String(row.full_name ?? row.email ?? "Facebook lead"),
@@ -465,6 +476,8 @@ export async function getMetaInboxData(): Promise<MetaInboxData> {
     formId: row.form_id ? String(row.form_id) : null,
     adId: row.ad_id ? String(row.ad_id) : null,
     createdAt: String(row.created_at),
+    ownerId: row.owner_id ? String(row.owner_id) : null,
+    ownerName: row.owner_id ? ownerNames.get(String(row.owner_id)) || "BD Sales Manager" : "Unassigned",
   }));
   return {
     threads: mapThreadRows((messagesResult.data ?? []) as UnknownRecord[]),

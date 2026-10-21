@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { Bot, FileText, Mail, Save, UserRound } from "lucide-react";
 import { updateCompany, type CrmActionState } from "@/app/crm-actions";
+import { AssignedOwner } from "@/components/assigned-owner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -82,6 +83,7 @@ export function CompanyDetails({ details, canWrite }: { details: CompanyDetailsT
       <Card>
         <CardHeader><CardTitle>Record summary</CardTitle><CardDescription>Current source and outreach state.</CardDescription></CardHeader>
         <CardContent className="grid grid-cols-2 gap-3">
+          <div className="col-span-2 rounded-lg border p-3"><AssignedOwner name={company.ownerName} initials={company.ownerInitials} assigned={Boolean(company.ownerId)} label="Assigned BD Manager" /></div>
           <Summary label="Source" value={company.sourceLabel} />
           <Summary label="Outreach" value={company.outreachStatus} />
           <Summary label="Status" value={company.stage} />

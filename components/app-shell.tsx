@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { BrandMark } from "@/components/brand-mark";
+import { LanguageSwitcher } from "@/components/language-switcher";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 
@@ -225,6 +226,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
             <span className="hidden text-xs sm:inline">Search workspace</span>
             <kbd className="ml-auto hidden rounded border bg-muted px-1.5 py-0.5 text-[9px] font-normal lg:inline-flex">Ctrl K</kbd>
           </Button>
+          <LanguageSwitcher />
           <ThemeToggle />
           {userMenu}
         </div>
@@ -245,7 +247,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
       ) : null}
 
       <div className="pt-12 md:pl-[19rem]">
-        <main className={`${usesViewportCanvas ? "h-[calc(100dvh-3rem)] min-h-0 w-full overflow-hidden p-0" : isCompanies ? "min-h-[calc(100svh-3rem)] w-full px-5 py-7 sm:px-7 md:h-[calc(100dvh-3rem)] md:min-h-0 md:overflow-hidden lg:px-10 lg:py-8" : "min-h-[calc(100svh-3rem)] w-full px-5 py-7 sm:px-7 lg:px-10 lg:py-10"}`}>{children}</main>
+        <main className={`${usesViewportCanvas ? "h-[calc(100dvh-3rem)] min-h-0 w-full overflow-hidden p-0" : isCompanies ? "min-h-[calc(100svh-3rem)] w-full py-7 md:h-[calc(100dvh-3rem)] md:min-h-0 md:overflow-hidden lg:py-8" : "min-h-[calc(100svh-3rem)] w-full px-5 py-7 sm:px-7 lg:px-10 lg:py-10"}`}>{children}</main>
       </div>
 
       {commandOpen ? (

@@ -42,7 +42,7 @@ function getEnvironmentMailbox(): WorkspaceMailboxRecord | null {
 
 export async function listMailboxes(): Promise<WorkspaceMailboxRecord[]> {
   try {
-    const viewer = await requireWorkspaceMember(["admin", "operator", "viewer"]);
+    const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
     const admin = createSupabaseAdmin();
     const { data, error } = await admin
       .from("workspace_mailboxes")

@@ -34,21 +34,21 @@ export function InviteMemberForm() {
     <form action={action} className="grid gap-4 md:grid-cols-2">
       <div className="space-y-2"><Label htmlFor="inviteName">Name</Label><Input id="inviteName" name="displayName" autoComplete="off" required /></div>
       <div className="space-y-2"><Label htmlFor="inviteEmail">Email</Label><Input id="inviteEmail" name="email" type="email" autoComplete="off" required /></div>
-      <div className="space-y-2"><Label htmlFor="inviteRole">Role</Label><Select name="role" defaultValue="viewer"><SelectTrigger id="inviteRole"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="admin">Admin</SelectItem><SelectItem value="operator">Operator</SelectItem><SelectItem value="viewer">Viewer</SelectItem></SelectContent></Select></div>
+      <div className="space-y-2"><Label htmlFor="inviteRole">Role</Label><Select name="role" defaultValue="bd_manager"><SelectTrigger id="inviteRole"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="admin">Admin</SelectItem><SelectItem value="operator">Operator</SelectItem><SelectItem value="bd_manager">BD Sales Manager</SelectItem><SelectItem value="viewer">Viewer</SelectItem></SelectContent></Select><p className="text-xs text-muted-foreground">BD Sales Managers join the automatic round-robin lead pool.</p></div>
       <div className="flex items-end"><Button type="submit" disabled={pending}><Send />{pending ? "Sending..." : "Send invitation"}</Button></div>
       <div className="md:col-span-2"><FormMessage error={state?.error} success={state?.success} /></div>
     </form>
   );
 }
 
-export function MemberRoleForm({ memberId, role }: { memberId: string; role: "admin" | "operator" | "viewer" }) {
+export function MemberRoleForm({ memberId, role }: { memberId: string; role: "admin" | "operator" | "bd_manager" | "viewer" }) {
   const [state, action, pending] = useActionState(updateMemberRole, undefined);
   return (
     <form action={action} className="flex items-center gap-2">
       <input type="hidden" name="userId" value={memberId} />
       <Select name="role" defaultValue={role}>
         <SelectTrigger aria-label="Workspace role" size="sm"><SelectValue /></SelectTrigger>
-        <SelectContent><SelectItem value="admin">Admin</SelectItem><SelectItem value="operator">Operator</SelectItem><SelectItem value="viewer">Viewer</SelectItem></SelectContent>
+        <SelectContent><SelectItem value="admin">Admin</SelectItem><SelectItem value="operator">Operator</SelectItem><SelectItem value="bd_manager">BD Sales Manager</SelectItem><SelectItem value="viewer">Viewer</SelectItem></SelectContent>
       </Select>
       <Button type="submit" size="sm" variant="outline" disabled={pending}>{pending ? "Saving..." : "Save"}</Button>
       <FormMessage error={state?.error} success={state?.success} />
@@ -148,7 +148,10 @@ export function WorkspaceMailboxForm(props: MailboxFormProps) {
     <form action={action} className="space-y-4">
       <MailboxFields prefix="workspace" {...values} />
       <FormMessage error={state?.error} success={state?.success} />
-      <Button type="submit" disabled={pending}><ShieldCheck />{pending ? "Testing connection..." : "Test and save workspace email"}</Button>
+      <div className="rounded-lg border border-blue-200 bg-blue-50/70 p-3 text-xs leading-5 text-blue-900 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-200">
+        After saving, open <strong>Email</strong> and choose <strong>Import history</strong>. Shopify form enquiries appear automatically; IMAP collects past and new customer replies.
+      </div>
+      <Button type="submit" disabled={pending}><ShieldCheck />{pending ? "Testing connection..." : "Connect mailbox and enable inbox"}</Button>
     </form>
   );
 }

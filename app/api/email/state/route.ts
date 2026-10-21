@@ -16,7 +16,7 @@ const stateSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const viewer = await requireWorkspaceMember(["admin", "operator", "viewer"]);
+  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   const parsed = stateSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return Response.json({ ok: false, error: "Invalid email state." }, { status: 400 });

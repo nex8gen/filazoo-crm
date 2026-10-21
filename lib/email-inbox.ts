@@ -7,11 +7,17 @@ import { normalizeReferences, threadKeyForEmail } from "./email-threading.ts";
 export type InboxEmailItem = {
   id: string;
   from?: string;
+  contactName?: string;
+  source?: "mailbox" | "shopify" | "crm";
   direction: "inbound" | "outbound";
   status: string;
   subject: string;
   contact: string;
   company: string;
+  companyId?: string | null;
+  ownerId?: string | null;
+  ownerName?: string;
+  ownerInitials?: string;
   preview: string;
   body: string;
   html?: string | null;
@@ -64,6 +70,8 @@ type MailboxInboxSource = {
   status?: string;
   subject?: string;
   contact?: string;
+  contactName?: string;
+  source?: "mailbox" | "shopify" | "crm";
   company?: string;
   preview?: string;
   body?: string;
@@ -111,7 +119,7 @@ export async function fetchMailboxInboxMessages(mailbox: {
   imapPort: number | null;
   imapUsername: string | null;
   imapPassword: string | null;
-} | null | undefined): Promise<InboxEmailItem[]> {
+} | null | undefined, { limit = 50 }: { limit?: number } = {}): Promise<InboxEmailItem[]> {
   if (!mailbox || !mailbox.imapHost || !mailbox.imapUsername || !mailbox.imapPassword) {
     return [];
   }
@@ -168,7 +176,7 @@ export async function fetchMailboxInboxMessages(mailbox: {
             return;
           }
 
-          const ids = [...results].slice(-20).reverse();
+          const ids = [...results].slice(-Math.max(1, Math.min(limit, 500))).reverse();
           const fetch = connection.fetch(ids, { bodies: "", markSeen: false });
 
           fetch.on("message", (msg, seqno) => {
@@ -196,6 +204,7 @@ export async function fetchMailboxInboxMessages(mailbox: {
                       status: "Received",
                       subject: parsed.subject || "New inbound email",
                       contact: sender,
+                      contactName: from?.name || undefined,
                       company: "Unknown company",
                       preview: toPreview(bodyText),
                       body: bodyText,
@@ -204,6 +213,7 @@ export async function fetchMailboxInboxMessages(mailbox: {
                       inReplyTo,
                       references,
                       timestamp: parsed.date ? new Date(parsed.date).toISOString() : new Date().toISOString(),
+                      source: "mailbox",
                       demo: true,
                     };
                     item.threadId = threadKeyForEmail(item);
@@ -242,6 +252,70 @@ export async function fetchMailboxInboxMessages(mailbox: {
   });
 }
 
+type ShopifyInboxRow = {
+  webhook_id: string;
+  email: string;
+  full_name: string | null;
+  company_name: string;
+  raw_payload: Record<string, unknown> | null;
+  created_at: string;
+};
+
+function textField(payload: Record<string, unknown> | null, key: string) {
+  const value = payload?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+export function buildShopifyFormInboxItems(rows: ShopifyInboxRow[]): InboxEmailItem[] {
+  return rows.map((row) => {
+    const message = textField(row.raw_payload, "contact[body]");
+    const details = [
+      textField(row.raw_payload, "contact[Business type]") && `Business type: ${textField(row.raw_payload, "contact[Business type]")}`,
+      textField(row.raw_payload, "contact[Estimated monthly volume]") && `Estimated monthly volume: ${textField(row.raw_payload, "contact[Estimated monthly volume]")}`,
+      textField(row.raw_payload, "contact[Phone]") && `Phone: ${textField(row.raw_payload, "contact[Phone]")}`,
+      textField(row.raw_payload, "contact[Website]") && `Website: ${textField(row.raw_payload, "contact[Website]")}`,
+    ].filter((value): value is string => Boolean(value));
+    const body = [message || "A customer submitted the Shopify B2B enquiry form.", details.length ? details.join("\n") : null]
+      .filter(Boolean)
+      .join("\n\n");
+    return {
+      id: `shopify-${row.webhook_id}`,
+      direction: "inbound" as const,
+      status: "Shopify enquiry",
+      subject: `Shopify enquiry from ${row.company_name}`,
+      contact: row.email,
+      contactName: row.full_name || undefined,
+      company: row.company_name,
+      preview: toPreview(body),
+      body,
+      threadId: `shopify:${row.webhook_id}`,
+      timestamp: row.created_at,
+      source: "shopify" as const,
+    };
+  });
+}
+
+async function listShopifyFormInboxMessages() {
+  const { createSupabaseAdmin } = await import("./supabase/admin.ts");
+  const admin = createSupabaseAdmin();
+  const pageSize = 500;
+  const rows: ShopifyInboxRow[] = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await admin
+      .from("shopify_leads")
+      .select("webhook_id,email,full_name,company_name,raw_payload,created_at")
+      .like("customer_id", "form:%")
+      .eq("status", "processed")
+      .order("created_at", { ascending: false })
+      .range(from, from + pageSize - 1);
+    if (error) throw new Error(`Unable to load Shopify enquiries: ${error.message}`);
+    const page = (data ?? []) as ShopifyInboxRow[];
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return buildShopifyFormInboxItems(rows);
+}
+
 export function buildInboxEmailItems({
   drafts = [],
   replies = [],
@@ -260,6 +334,7 @@ export function buildInboxEmailItems({
       status: message.status || "Received",
       subject: message.subject || "New inbound email",
       contact: message.contact || "Unknown contact",
+      contactName: message.contactName,
       company: message.company || "Unknown company",
       preview: toPreview(message.preview || message.body),
       body: message.body || "No email body available.",
@@ -269,6 +344,7 @@ export function buildInboxEmailItems({
       inReplyTo: message.inReplyTo ?? null,
       references: message.references ?? [],
       timestamp: message.timestamp || new Date().toISOString(),
+      source: message.source || "crm",
       demo: true,
     };
     item.threadId = threadKeyForEmail(item);
@@ -325,31 +401,45 @@ export function buildInboxEmailItems({
   });
 }
 
-export async function getEmailInboxBackendData({ syncMailbox = true }: { syncMailbox?: boolean } = {}): Promise<EmailInboxBackendData> {
-  const { listEmailDrafts, listReplies } = await import("./data/crm.ts");
+export async function getEmailInboxBackendData({ syncMailbox = true, history = false }: { syncMailbox?: boolean; history?: boolean } = {}): Promise<EmailInboxBackendData> {
+  const { listCompanies, listEmailDrafts, listReplies } = await import("./data/crm.ts");
   const viewer = await getViewer();
   if (!viewer) throw new Error("Authentication required.");
-  const [{ emails, mode }, { replies }, defaultMailbox, sentMessages, states] = await Promise.all([
+  const [{ emails, mode }, { replies }, companyResult, defaultMailbox, sentMessages, states, shopifyMessages] = await Promise.all([
     listEmailDrafts(),
     listReplies(),
+    listCompanies(),
     getEffectiveMailbox(viewer.id).catch(() => null),
     listSentMailboxMessages(viewer.id).catch(() => []),
     listEmailInboxStates(viewer.id).catch(() => new Map()),
+    listShopifyFormInboxMessages().catch(() => []),
   ]);
 
   let liveInbound: InboxEmailItem[] = [];
   let inboxError: string | null = null;
   if (syncMailbox && mailboxHasImap(defaultMailbox)) {
     try {
-      liveInbound = await fetchMailboxInboxMessages(defaultMailbox);
+      liveInbound = await fetchMailboxInboxMessages(defaultMailbox, { limit: history ? 250 : 50 });
     } catch (error) {
       inboxError = error instanceof Error ? error.message : "Unable to connect to the mailbox inbox.";
       console.warn("Unable to sync mailbox inbox:", inboxError);
     }
   }
 
-  const inbox = [...buildInboxEmailItems({ drafts: emails, replies, inbound: liveInbound }), ...sentMessages]
-    .map((item) => ({ ...item, ...(states.get(item.id) ?? {}) }));
+  const companiesByEmail = new Map(companyResult.companies.filter((company) => company.email).map((company) => [company.email.toLowerCase(), company]));
+  const companiesByName = new Map(companyResult.companies.map((company) => [company.name.toLowerCase(), company]));
+  const inbox = [...buildInboxEmailItems({ drafts: emails, replies, inbound: [...shopifyMessages, ...liveInbound] }), ...sentMessages]
+    .map((item) => {
+      const company = companiesByEmail.get(item.contact.toLowerCase()) ?? companiesByName.get(item.company.toLowerCase());
+      return {
+        ...item,
+        ...(states.get(item.id) ?? {}),
+        companyId: company?.id ?? null,
+        ownerId: company?.ownerId ?? null,
+        ownerName: company?.ownerName ?? "Unassigned",
+        ownerInitials: company?.ownerInitials ?? "—",
+      };
+    });
   const defaultMailboxEmail = defaultMailbox?.email || null;
   const sendConfigured = mailboxHasSmtp(defaultMailbox);
   const inboxConfigured = mailboxHasImap(defaultMailbox);

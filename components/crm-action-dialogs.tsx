@@ -64,9 +64,9 @@ export function AddCompanyButton({ canWrite, compact = false }: { canWrite: bool
 
 export function ExportCompaniesButton({ companies }: { companies: Company[] }) {
   const exportCsv = () => {
-    const fields = ["Name", "Domain", "Country", "Segment", "Stage", "Fit score", "Contact", "Role", "Email", "Next action"];
+    const fields = ["Name", "Domain", "Country", "Segment", "Stage", "Assigned BD Manager", "Fit score", "Contact", "Role", "Email", "Next action"];
     const escape = (value: string | number) => `"${String(value).replaceAll('"', '""')}"`;
-    const rows = companies.map((company) => [company.name, company.domain, company.country, company.segment, company.stage, company.fitScore, company.contact, company.contactRole, company.email, company.nextAction]);
+    const rows = companies.map((company) => [company.name, company.domain, company.country, company.segment, company.stage, company.ownerName, company.fitScore, company.contact, company.contactRole, company.email, company.nextAction]);
     const csv = [fields, ...rows].map((row) => row.map(escape).join(",")).join("\r\n");
     const url = URL.createObjectURL(new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" }));
     const link = document.createElement("a");

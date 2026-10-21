@@ -17,7 +17,7 @@ const automationSchema = z.object({
 });
 
 export async function GET() {
-  await requireWorkspaceMember(["admin", "operator", "viewer"]);
+  await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   const data = await getEmailInboxBackendData();
   return Response.json({ ok: true, flow: data.automation, mode: data.mode, updatedAt: new Date().toISOString() }, {
     headers: { "Cache-Control": "no-store" },
@@ -26,7 +26,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const viewer = await requireWorkspaceMember(["admin", "operator"]);
+  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
   const parsed = automationSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return Response.json({ ok: false, error: "Invalid automation settings." }, { status: 400 });

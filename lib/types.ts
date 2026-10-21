@@ -29,6 +29,9 @@ export type Company = {
   id: string;
   name: string;
   initials: string;
+  ownerId: string | null;
+  ownerName: string;
+  ownerInitials: string;
   website: string;
   domain: string;
   country: string;

@@ -7,7 +7,7 @@ import { requireWorkspaceMember } from "@/lib/auth";
 import { listProducts } from "@/lib/data/crm";
 
 export default async function CatalogsPage() {
-  const viewer = await requireWorkspaceMember(["admin", "operator", "viewer"]);
+  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   const { mode, products } = await listProducts();
   const activeProducts = products.filter((product) => product.status === "Active").length;
   const quotedProducts = products.filter((product) => product.stockStatus === "Quote available").length;

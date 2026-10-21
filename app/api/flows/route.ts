@@ -3,7 +3,7 @@ import { createFlow, listFlows } from "@/lib/data/flows";
 import { flowInputSchema } from "@/lib/flows";
 
 export async function GET() {
-  const viewer = await requireWorkspaceMember(["admin", "operator", "viewer"]);
+  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   try {
     return Response.json({ ok: true, flows: await listFlows(viewer.id) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
@@ -12,7 +12,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const viewer = await requireWorkspaceMember(["admin", "operator"]);
+  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
   const parsed = flowInputSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ ok: false, error: parsed.error.issues[0]?.message || "Invalid flow." }, { status: 400 });
   try {

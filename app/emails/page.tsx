@@ -5,7 +5,7 @@ import { listCatalogs, listProducts } from "@/lib/data/crm";
 import { b2bProducts } from "@/lib/data/b2b-products";
 
 export default async function EmailsPage() {
-  await requireWorkspaceMember(["admin", "operator", "viewer"]);
+  await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   const [{ emails, mailboxConfigured, sendConfigured, inboxConfigured, inboxError, aiConfigured, defaultMailboxEmail, mode, automation }, productResult, catalogResult] = await Promise.all([
     getEmailInboxBackendData({ syncMailbox: false }),
     listProducts().catch(() => ({ products: [] })),

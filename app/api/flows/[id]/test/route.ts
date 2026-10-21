@@ -4,7 +4,7 @@ import { loadFlowFacts } from "@/lib/data/flow-runtime";
 import { simulateFlow } from "@/lib/flow-engine";
 
 export async function POST(request: Request, context: RouteContext<"/api/flows/[id]/test">) {
-  const viewer = await requireWorkspaceMember(["admin", "operator"]);
+  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
   const { id } = await context.params;
   const body = await request.json().catch(() => ({})) as { contactId?: string; companyId?: string; conversationId?: string };
   const flow = (await listFlows(viewer.id)).find((item) => item.id === id);

@@ -5,9 +5,10 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { type SortingState, flexRender } from "@tanstack/react-table";
 import { type LegacyColumnDef as ColumnDef, getCoreRowModel, getPaginationRowModel, getSortedRowModel, useLegacyTable as useReactTable } from "@tanstack/react-table/legacy";
-import { Building2, ChevronLeft, ChevronRight, ChevronsUpDown, CircleAlert, Globe2, Mail, MapPin, MessageCircle, PackageCheck, Search, Trash2, UserRoundCheck } from "lucide-react";
+import { Building2, ChevronsUpDown, CircleAlert, Globe2, Mail, MapPin, MessageCircle, PackageCheck, Search, Trash2, UserRoundCheck } from "lucide-react";
 import { toast } from "sonner";
 import { bulkUpdateCompanies } from "@/app/crm-actions";
+import { AssignedOwner } from "@/components/assigned-owner";
 import { EmptyState } from "@/components/data-state";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +17,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TablePagination } from "@/components/ui/table-pagination";
 import type { Company, DataMode } from "@/lib/types";
 
 const statusClass: Record<Company["stage"], string> = {
@@ -71,7 +73,7 @@ export function CompaniesTable({ companies, mode, canWrite, canDelete }: { compa
 
   const countries = useMemo(() => [...new Set(companies.map((company) => company.country))].sort(), [companies]);
   const filtered = useMemo(() => companies.filter((company) => {
-    const matchesQuery = `${company.name} ${company.domain} ${company.email} ${company.segment}`.toLowerCase().includes(query.toLowerCase());
+    const matchesQuery = `${company.name} ${company.domain} ${company.email} ${company.segment} ${company.ownerName}`.toLowerCase().includes(query.toLowerCase());
     return matchesQuery && (status === "all" || company.stage === status) && (country === "all" || company.country === country);
   }), [companies, country, query, status]);
   const shopifyCount = useMemo(() => companies.filter((company) => company.source.includes("shopify")).length, [companies]);
@@ -99,6 +101,7 @@ export function CompaniesTable({ companies, mode, canWrite, canDelete }: { compa
       cell: ({ row }) => <CompanyIdentity company={row.original} />,
     },
     { accessorKey: "email", header: "Email", cell: ({ getValue }) => <span className="flex max-w-52 items-center gap-1.5 truncate"><Mail className="size-3.5 shrink-0 text-muted-foreground/70" />{getValue<string>() || "No email"}</span> },
+    { accessorKey: "ownerName", header: "Assigned manager", cell: ({ row }) => <AssignedOwner name={row.original.ownerName} initials={row.original.ownerInitials} assigned={Boolean(row.original.ownerId)} compact /> },
     { accessorKey: "country", header: "Country", cell: ({ getValue }) => { const value = getValue<string>(); return <span className={`flex items-center gap-1.5 whitespace-nowrap ${value === "Unknown" ? "text-amber-600 dark:text-amber-400" : ""}`}><MapPin className="size-3.5" />{value}</span>; } },
     { accessorKey: "segment", header: "Segment", cell: ({ getValue }) => <span className="block max-w-44 truncate">{getValue<string>()}</span> },
     { accessorKey: "stage", header: "Status", cell: ({ getValue }) => { const value = getValue<Company["stage"]>(); return <Badge variant="outline" className={statusClass[value]}>{value}</Badge>; } },
@@ -126,7 +129,7 @@ export function CompaniesTable({ companies, mode, canWrite, canDelete }: { compa
   if (companies.length === 0) return <EmptyState title={mode === "live" ? "No companies yet" : "Supabase setup required"} description={mode === "live" ? "Your Supabase companies table is connected and empty. Add or import the first company to begin." : "Add a valid project secret key to the server environment, then redeploy the app."} />;
 
   return <div className="flex min-h-0 flex-1 flex-col gap-5">
-    <div className="grid shrink-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="mx-5 grid shrink-0 gap-3 sm:mx-7 sm:grid-cols-2 lg:mx-10 xl:grid-cols-4">
       {[
         { label: "Total companies", value: companies.length, detail: "Accounts and prospects", icon: Building2, tone: "bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300" },
         { label: "Shopify leads", value: shopifyCount, detail: "Captured from your store", icon: PackageCheck, tone: "bg-[#95bf47]/12 text-[#5c7f18] dark:text-[#b5d66e]" },
@@ -135,12 +138,12 @@ export function CompaniesTable({ companies, mode, canWrite, canDelete }: { compa
       ].map((metric) => <Card key={metric.label} className="gap-0 border-border/70 p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-medium text-muted-foreground">{metric.label}</p><p className="mt-1 text-2xl font-semibold tracking-tight">{metric.value.toLocaleString()}</p><p className="mt-1 text-[11px] text-muted-foreground">{metric.detail}</p></div><span className={`grid size-9 place-items-center rounded-xl ${metric.tone}`}><metric.icon className="size-4" /></span></div></Card>)}
     </div>
 
-    <Card className="min-h-0 flex-1 gap-0 overflow-hidden border-border/70 py-0 shadow-sm">
-      <div className="flex flex-col gap-3 border-b bg-muted/20 p-4 lg:flex-row lg:items-center">
-      <div className="relative flex-1 lg:max-w-md"><Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" /><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search company, email, domain, or segment…" className="h-10 bg-background pl-9" /></div>
+    <Card className="crm-table-frame min-h-0 flex-1 gap-0 overflow-hidden border-border/70 py-0 shadow-sm">
+      <div className="crm-table-toolbar flex-col lg:flex-row">
+      <div className="relative flex-1 lg:max-w-md"><Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" /><Input value={query} onChange={(event) => { setQuery(event.target.value); table.setPageIndex(0); }} placeholder="Search company, email, domain, or segment…" className="h-10 bg-background pl-9" /></div>
       <div className="flex flex-wrap gap-2">
-        <Select value={status} onValueChange={(value) => setStatus(value ?? "all")}><SelectTrigger aria-label="Filter by status" className="h-10 min-w-40 bg-background"><SelectValue placeholder="All statuses" /></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem>{Object.keys(statusClass).map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select>
-        <Select value={country} onValueChange={(value) => setCountry(value ?? "all")}><SelectTrigger aria-label="Filter by country" className="h-10 min-w-40 bg-background"><SelectValue placeholder="All countries" /></SelectTrigger><SelectContent><SelectItem value="all">All countries</SelectItem>{countries.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select>
+        <Select value={status} onValueChange={(value) => { setStatus(value ?? "all"); table.setPageIndex(0); }}><SelectTrigger aria-label="Filter by status" className="h-10 min-w-40 bg-background"><SelectValue placeholder="All statuses" /></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem>{Object.keys(statusClass).map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select>
+        <Select value={country} onValueChange={(value) => { setCountry(value ?? "all"); table.setPageIndex(0); }}><SelectTrigger aria-label="Filter by country" className="h-10 min-w-40 bg-background"><SelectValue placeholder="All countries" /></SelectTrigger><SelectContent><SelectItem value="all">All countries</SelectItem>{countries.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select>
       </div>
       <p className="whitespace-nowrap text-xs font-medium text-muted-foreground lg:ml-auto">Showing {filtered.length} of {companies.length}</p>
     </div>
@@ -148,11 +151,11 @@ export function CompaniesTable({ companies, mode, canWrite, canDelete }: { compa
     {selectedIds.size > 0 && <div className="flex flex-wrap items-center gap-2 border-b bg-brand-soft px-4 py-3"><p className="mr-auto text-sm font-semibold text-primary">{selectedIds.size} selected</p><Button size="sm" variant="outline" disabled={!canWrite || pending} onClick={() => runBulkAction("contacted")}><UserRoundCheck />Mark contacted</Button><Button size="sm" variant="outline" disabled={!canWrite || pending} onClick={() => runBulkAction("interested")}>Mark interested</Button><Button size="sm" variant="destructive" disabled={!canDelete || pending} title={canDelete ? "Delete selected companies" : "Only admins can delete companies"} onClick={() => runBulkAction("delete")}><Trash2 />Delete</Button></div>}
 
     {filtered.length === 0 ? <div className="p-8"><EmptyState title="No companies found" description="Try changing your search or filters to see more results." /></div> : <>
-      <div className="scroll-surface min-h-72 flex-1 overflow-auto md:min-h-0"><Table>
-        <TableHeader className="sticky top-0 z-10 bg-card/95 backdrop-blur">{table.getHeaderGroups().map((group) => <TableRow key={group.id} className="hover:bg-transparent">{group.headers.map((header) => <TableHead key={header.id} className="h-11 whitespace-nowrap text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{header.isPlaceholder ? null : header.column.getCanSort() ? <button className="flex items-center gap-1 hover:text-foreground" onClick={header.column.getToggleSortingHandler()}>{flexRender(header.column.columnDef.header, header.getContext())}<ChevronsUpDown className="size-3" /></button> : flexRender(header.column.columnDef.header, header.getContext())}</TableHead>)}</TableRow>)}</TableHeader>
-        <TableBody>{table.getRowModel().rows.map((row) => <TableRow key={row.id} className="group h-[68px] cursor-pointer border-border/70 transition-colors hover:bg-brand-soft/50" tabIndex={0} onClick={(event) => { if (!(event.target as HTMLElement).closest("button,a,input,[role=checkbox]")) router.push(`/companies/${row.original.id}`); }} onKeyDown={(event) => { if (event.key === "Enter") router.push(`/companies/${row.original.id}`); }}>{row.getVisibleCells().map((cell) => <TableCell key={cell.id} className="text-xs text-muted-foreground">{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}</TableRow>)}</TableBody>
+      <div className="crm-table-flex-body scroll-surface"><Table>
+        <TableHeader className="sticky top-0 z-10 backdrop-blur">{table.getHeaderGroups().map((group) => <TableRow key={group.id} className="hover:bg-transparent">{group.headers.map((header) => <TableHead key={header.id} className="h-11 whitespace-nowrap text-xs font-medium text-muted-foreground">{header.isPlaceholder ? null : header.column.getCanSort() ? <button className="flex items-center gap-1 hover:text-foreground" onClick={header.column.getToggleSortingHandler()}>{flexRender(header.column.columnDef.header, header.getContext())}<ChevronsUpDown className="size-3" /></button> : flexRender(header.column.columnDef.header, header.getContext())}</TableHead>)}</TableRow>)}</TableHeader>
+        <TableBody>{table.getRowModel().rows.map((row) => <TableRow key={row.id} className="group cursor-pointer" tabIndex={0} onClick={(event) => { if (!(event.target as HTMLElement).closest("button,a,input,[role=checkbox]")) router.push(`/companies/${row.original.id}`); }} onKeyDown={(event) => { if (event.key === "Enter") router.push(`/companies/${row.original.id}`); }}>{row.getVisibleCells().map((cell) => <TableCell key={cell.id} className="text-xs text-muted-foreground">{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}</TableRow>)}</TableBody>
       </Table></div>
-      <div className="flex items-center justify-between border-t px-4 py-3"><p className="text-xs text-muted-foreground">Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}</p><div className="flex gap-1"><Button size="icon-sm" variant="outline" disabled={!table.getCanPreviousPage()} onClick={() => table.previousPage()}><ChevronLeft /><span className="sr-only">Previous page</span></Button><Button size="icon-sm" variant="outline" disabled={!table.getCanNextPage()} onClick={() => table.nextPage()}><ChevronRight /><span className="sr-only">Next page</span></Button></div></div>
+      <TablePagination page={table.getState().pagination.pageIndex + 1} pageCount={table.getPageCount()} start={table.getRowModel().rows.length ? table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1 : 0} end={Math.min((table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize, filtered.length)} total={filtered.length} itemLabel="companies" onPrevious={() => table.previousPage()} onNext={() => table.nextPage()} onPageChange={(page) => table.setPageIndex(page - 1)} />
     </>}
     </Card>
   </div>;

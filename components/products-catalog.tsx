@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TablePagination } from "@/components/ui/table-pagination";
 import type { Product } from "@/lib/types";
 
 const pageSize = 20;
@@ -114,7 +115,7 @@ export function ProductsCatalog({ products, canWrite }: { products: Product[]; c
         </div>
       </div>
 
-      <Card className="gap-0 py-0 shadow-none">
+      <Card className="crm-table-frame crm-table-page-wide gap-0 py-0 shadow-none">
         <Table>
           <TableHeader><TableRow className="hover:bg-transparent"><TableHead className="min-w-72 pl-4">Product</TableHead><TableHead>Specifications</TableHead><TableHead className="min-w-64">EXW volume pricing</TableHead><TableHead>Availability</TableHead><TableHead>Status</TableHead><TableHead className="pr-4 text-right">Options</TableHead></TableRow></TableHeader>
           <TableBody>
@@ -131,9 +132,8 @@ export function ProductsCatalog({ products, canWrite }: { products: Product[]; c
             {!visibleProducts.length ? <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">No products match these filters.</TableCell></TableRow> : null}
           </TableBody>
         </Table>
+        <TablePagination page={currentPage} pageCount={pages} start={visibleProducts.length ? (currentPage - 1) * pageSize + 1 : 0} end={Math.min(currentPage * pageSize, filtered.length)} total={filtered.length} itemLabel="products" previousIcon={ChevronLeft} nextIcon={ChevronRight} onPrevious={() => setPage(currentPage - 1)} onNext={() => setPage(currentPage + 1)} onPageChange={setPage} />
       </Card>
-
-      <div className="flex flex-col gap-2 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between"><p>Showing {visibleProducts.length ? (currentPage - 1) * pageSize + 1 : 0}–{Math.min(currentPage * pageSize, filtered.length)} of {filtered.length} products</p><div className="flex items-center gap-2"><Button variant="outline" size="sm" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}><ChevronLeft />Previous</Button><span>Page {currentPage} of {pages}</span><Button variant="outline" size="sm" disabled={currentPage >= pages} onClick={() => setPage(currentPage + 1)}>Next<ChevronRight /></Button></div></div>
     </div>
   );
 }

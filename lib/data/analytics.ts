@@ -35,7 +35,7 @@ function isoDate(value: Date) {
 }
 
 export async function getAnalyticsDashboardData(): Promise<AnalyticsDashboardData> {
-  await requireWorkspaceMember(["admin", "operator", "viewer"]);
+  await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   const client = createSupabaseAdmin();
   const [companiesResult, metaResult, shopifyResult, catalogsResult, productsResult] = await Promise.all([
     client.from("companies")
