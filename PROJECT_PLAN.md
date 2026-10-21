@@ -42,7 +42,7 @@ Build one system (automation + our own web CRM) that:
 | Database, login, file storage | Supabase (PostgreSQL) | Free tier |
 | Hosting | Vercel (app), Railway or Render (PDF worker) | Free tier / small |
 | Background jobs | Inngest (free plan: 50K runs/month; check the pricing page) | Free |
-| AI | Claude API (cheaper model for profiling and classification, stronger model for writing emails) | Pay per use, set a spending limit |
+| AI | Google Gemini API (Flash-Lite for routine writing, with a model override for stronger tasks) | Free tier for the pilot; review limits before scaling |
 | Product data | Google Sheets API | Free |
 | Catalog PDF | HTML template + Playwright | Free |
 | Alerts | Telegram bot | Free |
@@ -58,7 +58,7 @@ Build one system (automation + our own web CRM) that:
 | Lead data (Apollo or Hunter) | about $50 per month |
 | Scraping (Apify or Outscraper) | about $10-30 per month |
 | Email verification | about $10-15 per month |
-| Claude API usage | about $15-40 per month |
+| Gemini API usage | Free tier during the pilot; usage-based pricing if upgraded |
 
 Prices change. Check each provider's current pricing before buying.
 
@@ -86,7 +86,7 @@ Replies read (IMAP/API)  ->  AI classifies  ->  Auto-answer simple questions
 ```
 /app            CRM pages (dashboard, companies, pipeline, emails)
 /app/api        webhooks, unsubscribe endpoint
-/lib            supabase, claude, apollo, mail, sheets, telegram helpers
+/lib            supabase, gemini, apollo, mail, sheets, telegram helpers
 /jobs           background jobs (discover, enrich, profile, send, sync)
 /templates      catalog HTML template
 ```
@@ -97,7 +97,7 @@ Replies read (IMAP/API)  ->  AI classifies  ->  Auto-answer simple questions
 - `findEmails()` and `verifyEmail()`: Hunter / Apollo / ZeroBounce
 - `sendEmail()` and `readReplies()`: SMTP/IMAP, with `DRY_RUN=true` by default
 - `generateCatalog(companyId, skus[])`
-- `profileCompany(url)` and `classifyReply(text)`: Claude
+- `profileCompany(url)` and `classifyReply(text)`: Gemini
 
 ---
 
@@ -233,7 +233,7 @@ Row Level Security is on with no public policies, so only the server (service ro
 | 7 | CRM dashboard | Login, companies list, company detail, Kanban pipeline, email approval queue, replies inbox, settings |
 | 8 | Lead import | CSV import first; Apollo and Apify later; dedupe by website domain |
 | 9 | Email finding and verification | Hunter/Apollo plus ZeroBounce (paid, later) |
-| 10 | AI company profiling | Fetch website text -> Claude returns JSON -> validate with zod -> skip fit score below 5 |
+| 10 | AI company profiling | Fetch website text -> Gemini returns JSON -> validate with zod -> skip fit score below 5 |
 | 11 | AI email generation | 80-120 words, plain text, one specific detail, no invented facts, one email plus two follow-ups |
 | 12 | Sending engine | Daily limits per mailbox, business hours by recipient timezone, random delays, mailbox rotation, auto-pause on high bounces |
 | 13 | Reply handling | Poll every 2-5 minutes, match thread, stop follow-ups, classify, act |
@@ -250,7 +250,7 @@ Row Level Security is on with no public policies, so only the server (service ro
 |---|---|
 | unsubscribe, bounce | Add to `suppression` immediately |
 | not_now | Set a follow-up date months ahead |
-| question | Claude drafts an answer from product data (human approves at first) |
+| question | Gemini drafts an answer from product data (human approves at first) |
 | interested, big_order | Move stage, send Telegram alert, **stop auto-reply so a human takes over** |
 | Unsure | Treat as "needs human" and alert |
 
@@ -308,7 +308,7 @@ Row Level Security is on with no public policies, so only the server (service ro
 
 - [ ] Create GitHub repo and push the project
 - [ ] Review `npm audit` warnings before deploying (do not run `npm audit fix --force` blindly)
-- [ ] Set a spending limit in the Anthropic console
+- [ ] Review Gemini API quotas and configure billing safeguards before leaving the free tier
 - [ ] Buy `filazoo.co` and start warm-up about 3 weeks before the first send
 - [ ] Ask the `filazoo.com` DNS owner for `crm.filazoo.com` (optional)
 

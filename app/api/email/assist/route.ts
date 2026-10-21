@@ -1,4 +1,5 @@
 import { requireWorkspaceMember } from "@/lib/auth";
+import { generateGeminiText } from "@/lib/ai/gemini";
 import { looksLikeEnglish, translateEnglishEmail } from "@/lib/email-translation";
 import { z } from "zod";
 
@@ -8,11 +9,6 @@ const requestSchema = z.object({
   context: z.string().max(8_000).optional(),
   recipient: z.string().max(200).optional(),
 });
-
-type AnthropicResponse = {
-  content?: Array<{ type?: string; text?: string }>;
-  error?: { message?: string };
-};
 
 export async function POST(request: Request) {
   await requireWorkspaceMember(["admin", "operator", "viewer"]);
@@ -35,7 +31,7 @@ export async function POST(request: Request) {
     }
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) {
     return Response.json({ ok: false, error: "AI writing is not configured." }, { status: 503 });
   }
@@ -46,26 +42,13 @@ export async function POST(request: Request) {
   const userContent = `RECIPIENT: ${recipient || "Customer"}\n\nCONTEXT:\n${context || "No additional context."}\n\nSOURCE:\n${text}`;
 
   try {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: process.env.ANTHROPIC_EMAIL_MODEL?.trim() || "claude-haiku-4-5",
-        max_tokens: 1_200,
-        system,
-        messages: [{ role: "user", content: userContent }],
-      }),
-      cache: "no-store",
+    const output = await generateGeminiText({
+      apiKey,
+      model: process.env.GEMINI_EMAIL_MODEL?.trim(),
+      systemInstruction: system,
+      prompt: userContent,
     });
-    const result = await response.json().catch(() => ({})) as AnthropicResponse;
-    if (!response.ok) throw new Error(result.error?.message || "The AI provider could not process this email.");
-    const output = result.content?.filter((block) => block.type === "text").map((block) => block.text || "").join("\n").trim();
-    if (!output) throw new Error("The AI provider returned an empty response.");
-    return Response.json({ ok: true, output }, { headers: { "Cache-Control": "no-store" } });
+    return Response.json({ ok: true, output, provider: "gemini" }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return Response.json({ ok: false, error: error instanceof Error ? error.message : "AI assistance is temporarily unavailable." }, { status: 502 });
   }

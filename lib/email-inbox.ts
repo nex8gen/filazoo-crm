@@ -355,7 +355,7 @@ export async function getEmailInboxBackendData({ syncMailbox = true }: { syncMai
   const inboxConfigured = mailboxHasImap(defaultMailbox);
   const mailboxConfigured = sendConfigured && inboxConfigured;
 
-  const aiConfigured = Boolean(process.env.ANTHROPIC_API_KEY?.trim());
+  const aiConfigured = Boolean(process.env.GEMINI_API_KEY?.trim());
   const automation = await getEmailAutomationSettings(
     viewer.id,
     inbox.filter((item) => item.direction === "inbound").length,
