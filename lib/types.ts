@@ -43,6 +43,7 @@ export type Company = {
   stage: PipelineStage;
   outreachStatus: string;
   estimatedOrderQuantity: number | null;
+  estimatedOrderLabel?: string | null;
   estimatedValue: number | null;
   currency: string;
   nextFollowupAt: string | null;
@@ -112,6 +113,8 @@ export type Catalog = {
 
 export type Reply = {
   id: string;
+  messageId?: string | null;
+  threadId?: string | null;
   company: string;
   contact: string;
   subject: string;

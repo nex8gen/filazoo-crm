@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useSyncExternalStore } from "react";
 import { type AppLanguage, LANGUAGE_STORAGE_KEY, translateUiText } from "@/lib/i18n";
+import { localizedSource } from "@/lib/localized-source";
 
 type LanguageContextValue = { language: AppLanguage; setLanguage: (language: AppLanguage) => void; t: (value: string) => string };
 const LanguageContext = createContext<LanguageContextValue | null>(null);
@@ -38,7 +39,7 @@ function localizeTextNode(node: Text, language: AppLanguage) {
   if (shouldSkip(node)) return;
   const current = node.data;
   const previousTranslation = translatedText.get(node);
-  if (!originalText.has(node) || (language === "zh-CN" && current !== previousTranslation)) originalText.set(node, current);
+  originalText.set(node, localizedSource(current, originalText.get(node), previousTranslation));
   const next = translateUiText(originalText.get(node) ?? current, language);
   translatedText.set(node, next);
   if (current !== next) node.data = next;
@@ -53,7 +54,7 @@ function localizeAttributes(element: Element, language: AppLanguage) {
   for (const attribute of localizedAttributes) {
     const current = element.getAttribute(attribute);
     if (current == null) continue;
-    if (!sources.has(attribute) || (language === "zh-CN" && current !== translations.get(attribute))) sources.set(attribute, current);
+    sources.set(attribute, localizedSource(current, sources.get(attribute), translations.get(attribute)));
     const next = translateUiText(sources.get(attribute) ?? current, language);
     translations.set(attribute, next);
     if (current !== next) element.setAttribute(attribute, next);

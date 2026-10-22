@@ -8,6 +8,11 @@ import type { CustomerProfileContext } from "./ai/email-rewrite.ts";
 export type InboxEmailItem = {
   id: string;
   from?: string;
+  replyTo?: string | null;
+  uid?: number;
+  uidValidity?: number;
+  mailboxKey?: string;
+  bodyLoaded?: boolean;
   contactName?: string;
   source?: "mailbox" | "shopify" | "crm";
   direction: "inbound" | "outbound";
@@ -27,6 +32,7 @@ export type InboxEmailItem = {
   messageId?: string | null;
   inReplyTo?: string | null;
   references?: string[];
+  attachments?: Array<{ filename: string; contentType: string; size: number; url?: string; partId?: string; cid?: string }>;
   timestamp: string;
   step?: string;
   demo?: boolean;
@@ -51,6 +57,7 @@ export type EmailInboxBackendData = {
   sendConfigured: boolean;
   inboxConfigured: boolean;
   inboxError: string | null;
+  lastMailboxSync?: string | null;
   aiConfigured: boolean;
   defaultMailboxEmail: string | null;
   emails: InboxEmailItem[];
@@ -72,6 +79,11 @@ type MailboxInboxSource = {
   status?: string;
   subject?: string;
   contact?: string;
+  replyTo?: string | null;
+  uid?: number;
+  uidValidity?: number;
+  mailboxKey?: string;
+  bodyLoaded?: boolean;
   contactName?: string;
   source?: "mailbox" | "shopify" | "crm";
   company?: string;
@@ -83,175 +95,13 @@ type MailboxInboxSource = {
   inReplyTo?: string | null;
   references?: string[];
   timestamp?: string;
+  attachments?: InboxEmailItem["attachments"];
 };
 
-function plainTextFromHtml(html: string) {
-  return html
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
-    .replace(/<br\s*\/?\s*>/gi, "\n")
-    .replace(/<\/p\s*>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
-    .replace(/[ \t]+/g, " ")
-    .replace(/\n\s*\n\s*\n/g, "\n\n")
-    .trim();
-}
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function embedInlineImages(html: string, attachments: Array<{ cid?: string; content: Buffer; contentType: string }>) {
-  return attachments.reduce((result, attachment) => {
-    if (!attachment.cid || !attachment.contentType.startsWith("image/")) return result;
-    const dataUrl = `data:${attachment.contentType};base64,${attachment.content.toString("base64")}`;
-    return result.replace(new RegExp(`cid:${escapeRegExp(attachment.cid)}`, "gi"), dataUrl);
-  }, html);
-}
-
-export async function fetchMailboxInboxMessages(mailbox: {
-  email: string | null;
-  imapHost: string | null;
-  imapPort: number | null;
-  imapUsername: string | null;
-  imapPassword: string | null;
-} | null | undefined, { limit = 50 }: { limit?: number } = {}): Promise<InboxEmailItem[]> {
-  if (!mailbox || !mailbox.imapHost || !mailbox.imapUsername || !mailbox.imapPassword) {
-    return [];
-  }
-
-  const [{ default: Imap }, { simpleParser }] = await Promise.all([
-    import("imap"),
-    import("mailparser"),
-  ]);
-
-  const imapHost = mailbox.imapHost;
-  const imapUsername = mailbox.imapUsername;
-  const imapPassword = mailbox.imapPassword;
-
-  return new Promise((resolve, reject) => {
-    const items: InboxEmailItem[] = [];
-    const pending: Array<Promise<void>> = [];
-    const connection = new Imap({
-      user: imapUsername,
-      password: imapPassword,
-      host: imapHost,
-      port: mailbox.imapPort ?? 993,
-      tls: true,
-      tlsOptions: {
-        rejectUnauthorized: true,
-        servername: imapHost,
-        minVersion: "TLSv1.2",
-      },
-      authTimeout: 30000,
-      connTimeout: 15000,
-    });
-
-    connection.once("error", (error) => {
-      reject(error);
-    });
-
-    connection.once("ready", () => {
-      connection.openBox("INBOX", false, (openError) => {
-        if (openError) {
-          connection.end();
-          reject(openError);
-          return;
-        }
-
-        connection.search(["ALL"], (searchError, results) => {
-          if (searchError) {
-            connection.end();
-            reject(searchError);
-            return;
-          }
-
-          if (!results || results.length === 0) {
-            connection.end();
-            resolve([]);
-            return;
-          }
-
-          const ids = [...results].slice(-Math.max(1, Math.min(limit, 1000))).reverse();
-          const fetch = connection.fetch(ids, { bodies: "", markSeen: false });
-
-          fetch.on("message", (msg, seqno) => {
-            const parseTask = new Promise<void>((messageResolve, messageReject) => {
-              msg.on("body", (stream) => {
-                const chunks: Buffer[] = [];
-                stream.on("data", (chunk) => {
-                  chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-                });
-                stream.on("end", async () => {
-                  try {
-                    const parsed = await simpleParser(Buffer.concat(chunks));
-                    const from = parsed.from?.value?.[0];
-                    const sender = from?.address || mailbox.email || "Unknown sender";
-                    const rawHtml = typeof parsed.html === "string" ? parsed.html.trim() : "";
-                    const emailHtml = rawHtml ? embedInlineImages(rawHtml, parsed.attachments) : null;
-                    const bodyText = (parsed.text || (emailHtml ? plainTextFromHtml(emailHtml) : "")).trim() || "No email body available.";
-                    const messageId = parsed.messageId || null;
-                    const inReplyTo = parsed.inReplyTo || null;
-                    const references = normalizeReferences(parsed.references);
-                    const id = messageId ? `imap-${messageId}` : `imap-${seqno}-${Date.now()}`;
-                    const item: InboxEmailItem = {
-                      id,
-                      direction: "inbound",
-                      status: "Received",
-                      subject: parsed.subject || "New inbound email",
-                      contact: sender,
-                      contactName: from?.name || undefined,
-                      company: "Unknown company",
-                      preview: toPreview(bodyText),
-                      body: bodyText,
-                      html: emailHtml,
-                      messageId,
-                      inReplyTo,
-                      references,
-                      timestamp: parsed.date ? new Date(parsed.date).toISOString() : new Date().toISOString(),
-                      source: "mailbox",
-                      demo: true,
-                    };
-                    item.threadId = threadKeyForEmail(item);
-                    items.push(item);
-                    messageResolve();
-                  } catch (error) {
-                    messageReject(error instanceof Error ? error : new Error("Unable to parse the inbound email."));
-                  }
-                });
-              });
-            });
-
-            pending.push(parseTask);
-          });
-
-          fetch.once("error", (error) => {
-            connection.end();
-            reject(error);
-          });
-
-          fetch.once("end", async () => {
-            try {
-              await Promise.all(pending);
-              resolve(items.sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime()));
-            } catch (error) {
-              reject(error instanceof Error ? error : new Error("Unable to sync the mailbox inbox."));
-            } finally {
-              connection.end();
-            }
-          });
-        });
-      });
-    });
-
-    connection.connect();
-  });
+export async function fetchMailboxInboxMessages(mailbox: import("./mailbox-imap.ts").ImapMailbox | null | undefined, options: import("./mailbox-imap.ts").ReceiveOptions = {}): Promise<InboxEmailItem[]> {
+  if (!mailbox?.imapHost || !mailbox.imapUsername || !mailbox.imapPassword) return [];
+  const { receiveMailboxMessages } = await import("./mailbox-imap.ts");
+  return receiveMailboxMessages(mailbox, options);
 }
 
 type ShopifyInboxRow = {
@@ -324,25 +174,6 @@ async function listShopifyFormInboxMessages() {
   return buildShopifyFormInboxItems(rows);
 }
 
-async function listCrmContactEmails() {
-  const { createSupabaseAdmin } = await import("./supabase/admin.ts");
-  const admin = createSupabaseAdmin();
-  const pageSize = 1000;
-  const emails: string[] = [];
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await admin
-      .from("contacts")
-      .select("email")
-      .order("created_at", { ascending: false })
-      .range(from, from + pageSize - 1);
-    if (error) throw new Error(`Unable to load CRM contact addresses: ${error.message}`);
-    const page = data ?? [];
-    emails.push(...page.map((row) => row.email).filter((email): email is string => typeof email === "string"));
-    if (page.length < pageSize) break;
-  }
-  return emails;
-}
-
 function normalizedEmail(value: string | null | undefined) {
   return value?.trim().toLowerCase() ?? "";
 }
@@ -379,6 +210,7 @@ export function buildInboxEmailItems({
   inbound?: InboxEmailItem[] | MailboxInboxSource[];
 } = {}): InboxEmailItem[] {
   const seen = new Set<string>();
+  const seenMessageIds = new Set<string>();
 
   const inboundItems = inbound.map((message, index) => {
     const item: InboxEmailItem = {
@@ -387,10 +219,16 @@ export function buildInboxEmailItems({
       status: message.status || "Received",
       subject: message.subject || "New inbound email",
       contact: message.contact || "Unknown contact",
+      replyTo: message.replyTo,
+      uid: message.uid,
+      uidValidity: message.uidValidity,
+      mailboxKey: message.mailboxKey,
+      bodyLoaded: message.bodyLoaded,
+      attachments: message.attachments,
       contactName: message.contactName,
       company: message.company || "Unknown company",
       preview: toPreview(message.preview || message.body),
-      body: message.body || "No email body available.",
+      body: message.bodyLoaded === false ? "" : message.body || "No email body available.",
       html: message.html ?? null,
       threadId: message.threadId ?? null,
       messageId: message.messageId ?? null,
@@ -402,15 +240,21 @@ export function buildInboxEmailItems({
     };
     item.threadId = threadKeyForEmail(item);
     seen.add(item.id);
+    const messageId = normalizeMessageId(item.messageId);
+    if (messageId) seenMessageIds.add(messageId);
     return item;
   });
 
   const replyItems = replies.map((reply, index) => {
     const id = reply.id || `reply-${index}`;
-    if (seen.has(id)) return null;
+    const messageId = normalizeMessageId(reply.messageId);
+    if (seen.has(id) || (messageId && seenMessageIds.has(messageId))) return null;
+    if (messageId) seenMessageIds.add(messageId);
     const item: InboxEmailItem = {
       id,
       direction: "inbound",
+      messageId: reply.messageId,
+      threadId: reply.threadId,
       status: "Received",
       subject: reply.subject || "New inbound email",
       contact: reply.contact || "Unknown contact",
@@ -459,7 +303,7 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
   const { listCompanies, listEmailDrafts, listReplies } = await import("./data/crm.ts");
   const viewer = await getViewer();
   if (!viewer) throw new Error("Authentication required.");
-  const [{ emails, mode }, { replies }, companyResult, defaultMailbox, sentMessages, states, shopifyMessages, contactEmails] = await Promise.all([
+  const [{ emails, mode }, { replies }, companyResult, defaultMailbox, sentMessages, states, shopifyMessages] = await Promise.all([
     listEmailDrafts(),
     listReplies(),
     listCompanies(),
@@ -467,14 +311,18 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
     listSentMailboxMessages(viewer.id).catch(() => []),
     listEmailInboxStates(viewer.id).catch(() => new Map()),
     listShopifyFormInboxMessages().catch(() => []),
-    listCrmContactEmails().catch(() => []),
   ]);
 
   let liveInbound: InboxEmailItem[] = [];
   let inboxError: string | null = null;
-  if (syncMailbox && mailboxHasImap(defaultMailbox)) {
+  let lastMailboxSync: string | null = null;
+  if (mailboxHasImap(defaultMailbox) && defaultMailbox) {
     try {
-      liveInbound = await fetchMailboxInboxMessages(defaultMailbox, { limit: history ? 1000 : 500 });
+      const { loadSyncedMailbox } = await import("./data/mailbox-sync.ts");
+      const result = await loadSyncedMailbox(defaultMailbox, { sync: syncMailbox, history });
+      liveInbound = result.messages;
+      inboxError = result.error;
+      lastMailboxSync = result.syncedAt;
     } catch (error) {
       inboxError = error instanceof Error ? error.message : "Unable to connect to the mailbox inbox.";
       console.warn("Unable to sync mailbox inbox:", inboxError);
@@ -483,8 +331,7 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
 
   const companiesByEmail = new Map(companyResult.companies.filter((company) => company.email).map((company) => [company.email.toLowerCase(), company]));
   const companiesByName = new Map(companyResult.companies.map((company) => [company.name.toLowerCase(), company]));
-  const customerReplies = filterCustomerReplyMessages(liveInbound, contactEmails, sentMessages);
-  const inbox = [...buildInboxEmailItems({ drafts: emails, replies, inbound: [...shopifyMessages, ...customerReplies] }), ...sentMessages]
+  const inbox = [...buildInboxEmailItems({ drafts: emails, replies, inbound: [...shopifyMessages, ...liveInbound] }), ...sentMessages]
     .map((item) => {
       const company = companiesByEmail.get(item.contact.toLowerCase()) ?? companiesByName.get(item.company.toLowerCase());
       return {
@@ -533,6 +380,7 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
     sendConfigured,
     inboxConfigured,
     inboxError,
+    lastMailboxSync,
     aiConfigured,
     defaultMailboxEmail,
     emails: inbox,

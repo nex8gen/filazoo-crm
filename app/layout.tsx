@@ -20,7 +20,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body>
         <LanguageProvider>
           <ThemeProvider>
-            <TooltipProvider><AppShell userMenu={<Suspense fallback={<span className="size-7 rounded-full bg-muted" />}><UserMenu /></Suspense>}>{children}</AppShell></TooltipProvider>
+            <TooltipProvider><Suspense fallback={<div className="min-h-svh bg-background" />}><AppShell userMenu={<Suspense fallback={<span className="size-7 rounded-full bg-muted" />}><UserMenu /></Suspense>}>{children}</AppShell></Suspense></TooltipProvider>
             <Toaster position="bottom-right" />
           </ThemeProvider>
         </LanguageProvider>

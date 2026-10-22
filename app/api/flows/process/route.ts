@@ -1,6 +1,8 @@
 import { requireWorkspaceMember } from "@/lib/auth";
 import { processDueFlowRuns } from "@/lib/data/flow-runtime";
 
+export const maxDuration = 300;
+
 export async function POST() {
   await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
   const results = await processDueFlowRuns();

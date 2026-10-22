@@ -25,6 +25,9 @@ export function buildMailerTransportConfig(input: MailboxTransportInput = {}) {
     host,
     port: Number.isFinite(portValue) ? portValue : secure ? 465 : 587,
     secure,
+    connectionTimeout: 15_000,
+    greetingTimeout: 15_000,
+    socketTimeout: 30_000,
     auth: { user, pass },
     from: (input.from ?? user).trim() || user,
   };
@@ -53,16 +56,20 @@ export async function sendMailboxEmail(
   }
 
   const transport = nodemailer.createTransport(config);
-  return transport.sendMail({
-    from: config.from,
-    to: mail.to,
-    subject: mail.subject,
-    text: mail.text,
-    html: mail.html,
-    inReplyTo: mail.inReplyTo,
-    references: mail.references,
-    attachments: mail.attachments,
-  });
+  try {
+    return await transport.sendMail({
+      from: config.from,
+      to: mail.to,
+      subject: mail.subject,
+      text: mail.text,
+      html: mail.html,
+      inReplyTo: mail.inReplyTo,
+      references: mail.references,
+      attachments: mail.attachments,
+    });
+  } finally {
+    transport.close();
+  }
 }
 
 export async function verifyMailboxSmtp(mailbox: MailboxTransportInput) {

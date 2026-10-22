@@ -17,8 +17,6 @@ import {
   Package2,
   Search,
   Settings,
-  ShieldCheck,
-  Sparkles,
   Workflow,
   X,
 } from "lucide-react";
@@ -63,15 +61,8 @@ const navigation: NavigationGroup[] = [
       { label: "Emails", href: "/emails", icon: Mail, description: "Campaign activity" },
       { label: "Replies", href: "/replies", icon: Inbox, description: "Inbound conversations" },
       { label: "Messenger", href: "/messenger", icon: MessageSquareText, description: "Facebook ad leads and Page Messenger replies" },
-      { label: "Deliverability", href: "/deliverability", icon: ShieldCheck, description: "Inbox health and checks" },
-    ],
-  },
-  {
-    label: "Lead Channel",
-    eyebrow: "Automation",
-    icon: Sparkles,
-    items: [
-      { label: "AI Agent", href: "/lead-channel/ai-agent", icon: Workflow, description: "Email follow-up flows and agent rules" },
+      { label: "Meta Leads", href: "/lead-channel/meta", icon: Inbox, description: "Instant Form leads and simple connection setup" },
+      { label: "AI Automation", href: "/lead-channel/ai-agent", icon: Workflow, description: "Email follow-up flows and automation rules" },
     ],
   },
   {
@@ -147,7 +138,7 @@ function SidebarNavigation({ pathname, onNavigate }: { pathname: string; onNavig
           <span className="text-sm font-medium">{activeGroup.label}</span>
         </div>
         <nav aria-label={`${activeGroup.label} navigation`} className="scrollbar-hidden min-h-0 flex-1 overflow-y-auto px-3 py-5">
-          <p className="px-3 pb-2 font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground">{activeGroup.eyebrow}</p>
+          <p className="px-3 pb-2 text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">{activeGroup.eyebrow}</p>
           <ul className="space-y-0.5">
             {activeGroup.items.map((item) => {
               const active = itemIsActive(pathname, item);
@@ -168,7 +159,7 @@ function SidebarNavigation({ pathname, onNavigate }: { pathname: string; onNavig
           </ul>
           <div className="mx-3 my-5 h-px bg-border" />
           <div className="px-3">
-            <p className="text-xs font-medium text-foreground">{activeItem?.label ?? activeGroup.label}</p>
+            <p className="text-sm font-medium text-foreground">{activeItem?.label ?? activeGroup.label}</p>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">{activeItem?.description ?? "Manage your workspace"}</p>
           </div>
         </nav>
@@ -183,6 +174,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
   const isMessenger = pathname === "/messenger" || pathname.startsWith("/messenger/");
   const isFlowBuilder = pathname === "/lead-channel/ai-agent" || pathname.startsWith("/lead-channel/ai-agent/");
   const isCompanies = pathname === "/companies";
+  const isProducts = pathname === "/catalogs";
   const usesViewportCanvas = isMessenger || isFlowBuilder;
   const [commandOpen, setCommandOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -208,7 +200,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
   };
 
   return (
-    <div className={`${usesViewportCanvas ? "h-svh overflow-hidden" : isCompanies ? "min-h-svh md:h-svh md:overflow-hidden" : "min-h-svh"} bg-background text-foreground`}>
+    <div className={`${usesViewportCanvas || isProducts ? "h-svh overflow-hidden" : isCompanies ? "min-h-svh md:h-svh md:overflow-hidden" : "min-h-svh"} bg-background text-foreground`}>
       <header className="fixed inset-x-0 top-0 z-50 flex h-12 items-center border-b bg-background/95 px-3 backdrop-blur md:px-4">
         <Button aria-label="Open navigation" variant="ghost" size="icon-sm" className="mr-2 md:hidden" onClick={() => setMobileOpen(true)}>
           <Menu />
@@ -222,10 +214,10 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
           <span>{activeGroup.label}</span>
         </div>
         <div className="ml-auto flex items-center gap-1.5">
-          <Button variant="ghost" className="h-8 gap-2 px-2 text-muted-foreground sm:w-52 sm:justify-start" onClick={() => setCommandOpen(true)}>
+          <Button variant="ghost" className="h-8 gap-2 px-2 text-muted-foreground sm:w-60 sm:justify-start" onClick={() => setCommandOpen(true)}>
             <Search className="size-4" />
             <span className="hidden text-xs sm:inline">Search workspace</span>
-            <kbd className="ml-auto hidden rounded border bg-muted px-1.5 py-0.5 text-[9px] font-normal lg:inline-flex">Ctrl K</kbd>
+            <kbd className="ml-auto hidden rounded border bg-muted px-1.5 py-0.5 text-xs font-normal lg:inline-flex">Ctrl K</kbd>
           </Button>
           <LanguageSwitcher />
           <ThemeToggle />
@@ -248,7 +240,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
       ) : null}
 
       <div className="pt-12 md:pl-[19rem]">
-        <main className={`${usesViewportCanvas ? "h-[calc(100dvh-3rem)] min-h-0 w-full overflow-hidden p-0" : isCompanies ? "min-h-[calc(100svh-3rem)] w-full py-7 md:h-[calc(100dvh-3rem)] md:min-h-0 md:overflow-hidden lg:py-8" : "min-h-[calc(100svh-3rem)] w-full px-5 py-7 sm:px-7 lg:px-10 lg:py-10"}`}>{children}</main>
+        <main className={`${usesViewportCanvas ? "h-[calc(100dvh-3rem)] min-h-0 w-full overflow-hidden p-0" : isProducts ? "h-[calc(100dvh-3rem)] min-h-0 w-full overflow-hidden px-5 pt-7 sm:px-7 lg:px-10 lg:pt-10" : isCompanies ? "min-h-[calc(100svh-3rem)] w-full py-7 md:h-[calc(100dvh-3rem)] md:min-h-0 md:overflow-hidden lg:py-8" : "min-h-[calc(100svh-3rem)] w-full px-5 py-7 sm:px-7 lg:px-10 lg:py-10"}`}>{children}</main>
       </div>
 
       {commandOpen ? (

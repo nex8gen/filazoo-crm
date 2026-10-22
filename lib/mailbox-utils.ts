@@ -5,6 +5,7 @@ export type MailboxRecordInput = {
   email?: string | null;
   display_name?: string | null;
   is_default?: boolean | number | string | null;
+  is_active?: boolean | null;
   provider?: string | null;
   notes?: string | null;
   smtp_host?: string | null;
@@ -26,6 +27,7 @@ export type NormalizedMailboxRecord = {
   email: string;
   displayName: string | null;
   isDefault: boolean;
+  isActive: boolean;
   provider: string | null;
   notes: string | null;
   smtpHost: string | null;
@@ -60,6 +62,7 @@ export function normalizeMailboxRow(row: MailboxRecordInput | null | undefined):
     email,
     displayName: typeof row.display_name === "string" ? row.display_name : null,
     isDefault: Boolean(row.is_default),
+    isActive: row.is_active !== false,
     provider: typeof row.provider === "string" ? row.provider : null,
     notes: typeof row.notes === "string" ? row.notes : null,
     smtpHost: typeof row.smtp_host === "string" ? row.smtp_host : null,

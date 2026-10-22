@@ -30,6 +30,7 @@ create table public.workspace_mailboxes (
   email citext not null unique,
   display_name text,
   is_default boolean not null default false,
+  is_active boolean not null default true,
   provider text not null default 'smtp' check (provider in ('smtp','google','microsoft','other')),
   notes text,
   smtp_host text,
@@ -99,6 +100,7 @@ create table public.mailbox_sent_messages (
   to_email citext not null,
   subject text not null,
   body text not null default '',
+  attachments jsonb not null default '[]'::jsonb check (jsonb_typeof(attachments) = 'array'),
   status text not null default 'sent' check (status in ('sent','failed')),
   sent_at timestamptz not null default now(),
   created_at timestamptz not null default now()
@@ -425,5 +427,195 @@ for each statement execute function public.assign_unowned_leads_to_sole_bd_manag
 create trigger workspace_members_assign_unowned_to_sole_bd_delete after delete on public.workspace_members
 for each statement execute function public.assign_unowned_leads_to_sole_bd_manager();
 revoke all on function public.assign_unowned_leads_to_sole_bd_manager() from public, anon, authenticated;
+
+commit;
+
+begin;
+
+-- Only the authenticated application server can invoke this transactional save.
+create or replace function public.save_automation_flow(p_user_id uuid, p_flow_id uuid, p_input jsonb)
+returns uuid language plpgsql security invoker set search_path = public as $$
+declare
+  saved_id uuid;
+  definition jsonb;
+begin
+  if p_flow_id is null then
+    insert into public.flows(user_id,created_by,name,trigger_type,trigger_config,status)
+    values(p_user_id,p_user_id,p_input->>'name',p_input->>'triggerType',p_input->'triggerConfig','draft')
+    returning id into saved_id;
+  else
+    select id into saved_id from public.flows where id=p_flow_id and user_id=p_user_id for update;
+    if saved_id is null then raise exception 'Flow not found.'; end if;
+    select coalesce(jsonb_agg(jsonb_build_object('id',id,'position',position,'type',type,'config',config) order by position),'[]'::jsonb)
+      into definition from public.flow_steps where flow_id=saved_id;
+    update public.flow_runs set context=context || jsonb_build_object('definition',definition::text)
+      where flow_id=saved_id and status='active' and not (context ? 'definition');
+    delete from public.flow_steps where flow_id=saved_id;
+  end if;
+  insert into public.flow_steps(flow_id,position,type,config)
+    select saved_id,(ordinality-1)::integer,step->>'type',step->'config'
+    from jsonb_array_elements(p_input->'steps') with ordinality as items(step,ordinality);
+  if not exists(select 1 from public.flow_steps where flow_id=saved_id) then
+    raise exception 'Add at least one step.';
+  end if;
+  update public.flows set name=p_input->>'name',trigger_type=p_input->>'triggerType',
+    trigger_config=p_input->'triggerConfig',status=p_input->>'status',updated_at=now() where id=saved_id;
+  return saved_id;
+end;
+$$;
+revoke all on function public.save_automation_flow(uuid,uuid,jsonb) from public, anon, authenticated;
+grant execute on function public.save_automation_flow(uuid,uuid,jsonb) to service_role;
+
+create index if not exists flow_run_logs_engagement_idx on public.flow_run_logs(run_id,created_at) where result->>'action' in ('email_opened','link_clicked');
+create index if not exists emails_message_id_idx on public.emails(message_id);
+notify pgrst, 'reload schema';
+commit;
+
+
+begin;
+
+-- Internal bounded mailbox cache, shared across server instances. The API
+-- resolves the viewer's authorized mailbox before accessing its opaque key.
+create table if not exists public.mailbox_sync_state (
+  mailbox_key text primary key,
+  uid_validity bigint,
+  last_uid bigint not null default 0,
+  messages jsonb not null default '[]'::jsonb,
+  synced_at timestamptz,
+  last_error text,
+  lease_token uuid,
+  lease_until timestamptz,
+  check (last_uid >= 0),
+  check (jsonb_typeof(messages) = 'array' and jsonb_array_length(messages) <= 1000)
+);
+alter table public.mailbox_sync_state enable row level security;
+revoke all on public.mailbox_sync_state from anon, authenticated;
+grant select, insert, update, delete on public.mailbox_sync_state to service_role;
+
+create table if not exists public.mailbox_message_content (
+  mailbox_key text not null references public.mailbox_sync_state(mailbox_key) on delete cascade,
+  uid_validity bigint not null,
+  uid bigint not null check (uid > 0),
+  content jsonb not null,
+  primary key (mailbox_key, uid_validity, uid)
+);
+alter table public.mailbox_message_content enable row level security;
+revoke all on public.mailbox_message_content from anon, authenticated;
+grant select, insert, update, delete on public.mailbox_message_content to service_role;
+
+notify pgrst, 'reload schema';
+commit;
+
+begin;
+
+alter table public.meta_leads
+  add column if not exists company_id uuid references public.companies(id) on delete set null,
+  add column if not exists contact_id uuid references public.contacts(id) on delete set null,
+  add column if not exists processed_at timestamptz;
+create index if not exists meta_leads_company_id_idx on public.meta_leads(company_id);
+create index if not exists meta_leads_contact_id_idx on public.meta_leads(contact_id);
+
+-- All lead ingress paths (native Meta, Make, historical import) use this one
+-- transaction. A retry cannot leave a company without its contact/pipeline.
+create or replace function public.link_meta_lead_company() returns trigger
+language plpgsql security invoker set search_path = public, extensions, pg_temp as $$
+declare
+  answers jsonb;
+  lead_email text;
+  lead_name text;
+  company_name text;
+  company_website text;
+  company_domain text;
+  company_country text;
+  company_city text;
+  company_key uuid;
+  contact_key uuid;
+  owner_key uuid;
+  order_text text;
+  order_quantity integer;
+begin
+  if new.company_id is not null then return new; end if;
+  if coalesce(nullif(btrim(new.full_name), ''), nullif(btrim(new.email), ''), nullif(btrim(new.phone), '')) is null then return new; end if;
+
+  select coalesce(jsonb_object_agg(lower(item->>'name'), item->'values'->>0), '{}'::jsonb)
+    into answers from jsonb_array_elements(new.field_data) item where item->>'name' is not null;
+  lead_email := nullif(lower(btrim(new.email)), '');
+  lead_name := coalesce(nullif(btrim(new.full_name), ''), lead_email, new.phone, 'Meta lead');
+  company_name := coalesce(nullif(answers->>'company_name',''), nullif(answers->>'company',''), nullif(answers->>'business_name',''));
+  company_website := coalesce(nullif(answers->>'website',''), nullif(answers->>'company_website',''), nullif(answers->>'business_website',''));
+  if company_website is not null and company_website !~* '^https?://' then company_website := 'https://' || company_website; end if;
+  if company_website ~* '^https?://([a-z0-9-]+\.)+[a-z]{2,}([/:?#]|$)' then
+    company_domain := lower(regexp_replace(split_part(regexp_replace(company_website, '^https?://', '', 'i'), '/', 1), '^www\.', '', 'i'));
+    company_domain := split_part(split_part(split_part(company_domain, ':', 1), '?', 1), '#', 1);
+  else company_website := null;
+  end if;
+  if company_domain is null and lead_email ~ '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$' then
+    company_domain := split_part(lead_email, '@', 2);
+    if company_domain = any(array['gmail.com','googlemail.com','hotmail.com','outlook.com','live.com','icloud.com','me.com','yahoo.com','qq.com','163.com','126.com','proton.me','protonmail.com','aol.com']) then company_domain := null; end if;
+  end if;
+  company_name := coalesce(company_name, case when company_domain is not null then initcap(replace(split_part(company_domain, '.', 1), '-', ' ')) end, lead_name || ' (Meta lead)');
+  company_country := nullif(answers->>'country','');
+  company_city := nullif(answers->>'city','');
+  order_text := coalesce(answers->>'what_is_your_expected_initial_order_quantity?', answers->>'expected_order_quantity', answers->>'order_quantity');
+  if substring(order_text from '[0-9]+') is not null then
+    order_quantity := least(substring(order_text from '[0-9]+')::numeric, 2147483647)::integer;
+  end if;
+
+  -- Serialize shared identities; generic mailbox providers never merge companies.
+  perform pg_advisory_xact_lock(hashtextextended('meta-company:' || coalesce(company_domain, lead_email, new.leadgen_id), 0));
+  if lead_email is not null then
+    select id, company_id into contact_key, company_key from public.contacts where email = lead_email::extensions.citext;
+  end if;
+  if company_key is null and company_domain is not null then
+    select id into company_key from public.companies where domain = company_domain::extensions.citext;
+  end if;
+  if company_key is null then
+    insert into public.companies(name, website, domain, country, city, segment, source, source_url, status, discovered_at)
+    values(left(company_name, 500), company_website, company_domain, company_country, company_city,
+      'Meta B2B lead', 'meta_lead_ads', 'https://www.facebook.com/' || new.page_id, 'new', new.created_at)
+    returning id into company_key;
+  else
+    update public.companies set
+      source = case when coalesce(source, '') like '%meta_lead_ads%' then source else concat_ws('+', nullif(source,''), 'meta_lead_ads') end,
+      website = coalesce(website, company_website),
+      country = coalesce(nullif(country,'Unknown'), company_country),
+      city = coalesce(city, company_city)
+    where id = company_key;
+  end if;
+
+  select owner_id into owner_key from public.pipeline where company_id = company_key for update;
+  if owner_key is null then
+    owner_key := case when new.assignment_method = 'manual' then new.owner_id else public.claim_next_bd_sales_manager() end;
+  end if;
+  insert into public.pipeline(company_id, stage, owner_id, estimated_order_quantity)
+  values(company_key, 'new', owner_key, order_quantity)
+  on conflict(company_id) do update set
+    owner_id = coalesce(pipeline.owner_id, excluded.owner_id),
+    estimated_order_quantity = coalesce(pipeline.estimated_order_quantity, excluded.estimated_order_quantity);
+
+  if contact_key is null and lead_email is not null then
+    insert into public.contacts(company_id, name, email, verification_status, consent_source)
+    values(company_key, lead_name, lead_email, 'unverified', 'meta_lead_ads') returning id into contact_key;
+  end if;
+  insert into public.events(company_id, type, data, created_at)
+  values(company_key, 'meta_lead_received', jsonb_build_object(
+    'summary', lead_name || ' submitted a Meta lead form.' || case when new.phone is not null then ' Phone: ' || new.phone || '.' else '' end
+      || case when order_text is not null then ' Expected order: ' || order_text || '.' else '' end,
+    'leadgen_id', new.leadgen_id, 'email', lead_email, 'phone', new.phone,
+    'form_id', new.form_id, 'ad_id', new.ad_id, 'details', answers), new.created_at);
+  new.company_id := company_key;
+  new.contact_id := contact_key;
+  new.owner_id := owner_key;
+  new.assignment_method := case when new.assignment_method = 'manual' then 'manual' when owner_key is not null then 'automatic' else null end;
+  new.processed_at := clock_timestamp();
+  return new;
+end;
+$$;
+
+revoke all on function public.link_meta_lead_company() from public, anon, authenticated;
+grant execute on function public.link_meta_lead_company() to service_role;
+drop trigger if exists meta_leads_link_company on public.meta_leads;
+create trigger meta_leads_link_company before insert or update of email, full_name, phone, field_data, company_id
+on public.meta_leads for each row execute function public.link_meta_lead_company();
 
 commit;

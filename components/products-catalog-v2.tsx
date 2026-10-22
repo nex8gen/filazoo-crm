@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { Box, CheckSquare2, ChevronLeft, ChevronRight, Clipboard, Download, FileDown, ImageIcon, PackagePlus, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react";
+import { Box, CheckSquare2, ChevronLeft, ChevronRight, Clipboard, Download, FileDown, ImageIcon, PackagePlus, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { createProduct, updateProduct } from "@/app/crm-actions";
 import { downloadCatalogPdf } from "@/lib/catalog-pdf";
@@ -16,6 +16,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TablePagination } from "@/components/ui/table-pagination";
 
@@ -198,13 +199,43 @@ export function ProductsCatalogV2({ products: initialProducts, canWrite, mode }:
     toast.success(`${filtered.length} products exported.`);
   }
 
-  return <div className="space-y-4">
-    <div className="flex flex-col gap-3 rounded-lg border bg-card p-3 lg:flex-row lg:items-center"><div className="relative min-w-0 flex-1"><Search className="pointer-events-none absolute left-2.5 top-2 size-4 text-muted-foreground" /><Input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} className="pl-8" placeholder="Search name, SKU, material, or variant…" aria-label="Search products" /></div><div className="flex flex-wrap items-center gap-2"><SlidersHorizontal className="size-4 text-muted-foreground" /><select value={material} onChange={(event) => { setMaterial(event.target.value); setPage(1); }} className="h-8 rounded-md border bg-background px-2 text-xs" aria-label="Filter by material"><option value="all">All materials</option>{materials.map((value) => <option key={value} value={value}>{value}</option>)}</select><select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }} className="h-8 rounded-md border bg-background px-2 text-xs" aria-label="Filter by status"><option value="all">All statuses</option><option>Active</option><option>Inactive</option></select><Button size="sm" variant="outline" onClick={exportCsv} disabled={!filtered.length}><Download />CSV</Button><Button size="sm" onClick={() => { setEditingProduct(null); setEditorOpen(true); }} disabled={!canWrite} title={canWrite ? "Add a product" : "Viewer access is read-only"}><Plus />Add product</Button></div></div>
+  return <><div className="crm-products-catalog flex min-h-0 flex-1 flex-col">
+    <div className="crm-table-toolbar crm-table-page-wide shrink-0 flex-wrap">
+      <div className="relative min-w-0 basis-full sm:min-w-64 sm:flex-1 sm:basis-64">
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} className="pl-9" placeholder="Search name, SKU, material, or variant…" aria-label="Search products" />
+      </div>
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <Select value={material} onValueChange={(value) => { setMaterial(value ?? "all"); setPage(1); }}>
+          <SelectTrigger aria-label="Filter by material" className="w-40 shrink-0">
+            <SelectValue className="truncate">{material === "all" ? "All materials" : material}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All materials</SelectItem>
+            {materials.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={status} onValueChange={(value) => { setStatus(value ?? "all"); setPage(1); }}>
+          <SelectTrigger aria-label="Filter by status" className="w-36 shrink-0">
+            <SelectValue>{status === "all" ? "All statuses" : status}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="Active">Active</SelectItem>
+            <SelectItem value="Inactive">Inactive</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <Button variant="outline" onClick={exportCsv} disabled={!filtered.length}><Download />CSV</Button>
+        <Button onClick={() => { setEditingProduct(null); setEditorOpen(true); }} disabled={!canWrite} title={canWrite ? "Add a product" : "Viewer access is read-only"}><Plus />Add product</Button>
+      </div>
+    </div>
     {selected.size ? <div className="flex flex-col gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-2"><CheckSquare2 className="size-4 text-primary" /><p className="text-sm font-medium">{selected.size} product{selected.size === 1 ? "" : "s"} selected</p><Button variant="ghost" size="xs" onClick={() => setSelected(new Set())}>Clear</Button></div><Button size="sm" onClick={() => setDownloadOpen(true)}><PackagePlus />Create custom catalog</Button></div> : null}
     <Card className="crm-table-frame crm-table-page-wide gap-0 overflow-hidden py-0 shadow-none"><Table className="min-w-[1180px] table-fixed"><colgroup><col className="w-10" /><col className="w-[280px]" /><col className="w-[280px]" /><col className="w-[250px]" /><col className="w-[165px]" /><col className="w-[85px]" /><col className="w-[120px]" /></colgroup><TableHeader><TableRow className="hover:bg-transparent"><TableHead className="pl-4"><Checkbox checked={visibleSelected} onCheckedChange={() => setSelected((current) => { const next = new Set(current); visibleProducts.forEach((product) => visibleSelected ? next.delete(product.sku) : next.add(product.sku)); return next; })} aria-label="Select visible products" /></TableHead><TableHead>Product</TableHead><TableHead>Specifications</TableHead><TableHead>EXW volume pricing</TableHead><TableHead>Availability</TableHead><TableHead>Status</TableHead><TableHead className="pr-4 text-right">Updated</TableHead></TableRow></TableHeader><TableBody>
       {visibleProducts.map((product) => <TableRow key={product.sku} className="cursor-pointer" onClick={() => { setEditingProduct(product); setEditorOpen(true); }}>
         <TableCell className="pl-4" onClick={(event) => event.stopPropagation()}><Checkbox checked={selected.has(product.sku)} onCheckedChange={() => toggleSelected(product.sku)} aria-label={`Select ${product.name}`} /></TableCell>
-        <TableCell className="overflow-hidden"><button type="button" className="flex w-full min-w-0 items-center gap-3 overflow-hidden text-left" onClick={() => { setEditingProduct(product); setEditorOpen(true); }}><div className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-md border bg-muted/50">{product.imageUrl ? <Image src={product.imageUrl} alt="" width={48} height={48} unoptimized className="size-full object-cover" /> : <ImageIcon className="size-4 text-muted-foreground" />}</div><div className="min-w-0 overflow-hidden"><p className="truncate font-medium hover:text-primary" title={product.name}>{product.name}</p><p className="truncate font-mono text-[11px] text-muted-foreground" title={product.sku}>{product.sku}</p><p className="mt-1 truncate text-[11px] text-muted-foreground">{product.variants.length} variant{product.variants.length === 1 ? "" : "s"} · Click to view</p></div></button></TableCell>
+        <TableCell className="overflow-hidden"><button type="button" className="flex w-full min-w-0 items-center gap-3 overflow-hidden text-left" onClick={() => { setEditingProduct(product); setEditorOpen(true); }}><div className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-md border bg-muted/50">{product.imageUrl ? <Image src={product.imageUrl} alt="" width={48} height={48} unoptimized className="size-full object-cover" /> : <ImageIcon className="size-4 text-muted-foreground" />}</div><div className="min-w-0 overflow-hidden"><p className="truncate font-medium hover:text-primary" title={product.name}>{product.name}</p><p className="truncate font-mono text-xs text-muted-foreground" title={product.sku}>{product.sku}</p><p className="mt-1 truncate text-xs text-muted-foreground">{product.variants.length} variant{product.variants.length === 1 ? "" : "s"} · Click to view</p></div></button></TableCell>
         <TableCell className="overflow-hidden whitespace-normal"><div className="min-w-0 space-y-1 overflow-hidden"><p className="truncate font-medium">{product.material} · {product.variants.length} variant{product.variants.length === 1 ? "" : "s"}</p><p className="truncate text-xs text-muted-foreground" title={product.colors.join(", ")}>{product.colors.join(" · ")}</p>{product.weight !== "Not specified" && product.weight !== "—" ? <p className="truncate text-xs text-muted-foreground">Pack weight: {product.weight}</p> : null}</div></TableCell>
         <TableCell className="overflow-hidden whitespace-normal">{product.priceTiers.length ? <div className="flex max-w-full flex-wrap gap-1.5">{product.priceTiers.map((tier) => <span key={`${tier.minimumQuantity}-${tier.price}`} className="shrink-0 rounded-md border bg-muted/40 px-2 py-1 text-xs"><span className="text-muted-foreground">{tier.minimumQuantity}+</span> <span className="font-medium">{tier.price}</span></span>)}</div> : <span className="text-muted-foreground">Price unavailable</span>}</TableCell>
         <TableCell className="overflow-hidden whitespace-normal"><div className="flex min-w-0 items-start gap-2"><Box className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" /><div className="min-w-0"><p className="truncate" title={product.stockStatus}>{product.stockStatus}</p><p className="mt-0.5 truncate text-xs text-muted-foreground" title={product.leadTime}>{product.leadTime}</p></div></div></TableCell>
@@ -215,7 +246,8 @@ export function ProductsCatalogV2({ products: initialProducts, canWrite, mode }:
     </TableBody></Table>
     <TablePagination page={currentPage} pageCount={pages} start={visibleProducts.length ? (currentPage - 1) * pageSize + 1 : 0} end={Math.min(currentPage * pageSize, filtered.length)} total={filtered.length} itemLabel="products" previousIcon={ChevronLeft} nextIcon={ChevronRight} onPrevious={() => setPage(currentPage - 1)} onNext={() => setPage(currentPage + 1)} onPageChange={setPage} />
     </Card>
+  </div>
     {editorOpen ? <ProductDialog key={editingProduct?.sku ?? "new"} product={editingProduct} open={editorOpen} onOpenChange={setEditorOpen} canWrite={canWrite} mode={mode} onSaved={saveLocal} /> : null}
-    <CatalogDownloadDialog products={selectedProducts} open={downloadOpen} onOpenChange={setDownloadOpen} />
-  </div>;
+    {downloadOpen ? <CatalogDownloadDialog products={selectedProducts} open={downloadOpen} onOpenChange={setDownloadOpen} /> : null}
+  </>;
 }

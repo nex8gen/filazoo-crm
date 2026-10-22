@@ -4,6 +4,7 @@ import { env, hasSupabaseConfig } from "../env.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 import type { ActivityItem, Catalog, Company, CompanyActivity, CompanyDetails, ContactOption, DataMode, EmailDraft, Product, Reply } from "../types.ts";
 import { variantsFromTags } from "../product-utils.ts";
+import { metaOrderLabel } from "../order-estimate.ts";
 
 type Relation<T> = T | T[] | null;
 
@@ -17,6 +18,7 @@ type CompanyRow = {
   segment: string | null;
   source: string | null;
   status: string;
+  meta_leads: Relation<{ created_at: string; field_data: unknown }>;
   company_profiles: Relation<{
     summary: string | null;
     fit_score: number | null;
@@ -87,6 +89,8 @@ type CatalogRow = {
 
 type ReplyRow = {
   id: string;
+  message_id: string | null;
+  thread_id: string | null;
   subject: string | null;
   body: string | null;
   sent_at: string | null;
@@ -126,6 +130,7 @@ function getOutreachStatus(contacts: CompanyRow["contacts"], source: string | nu
     if (latest.direction === "received") return "Email replied";
     return `Email · ${latest.status.replaceAll("_", " ")}`;
   }
+  if (source?.includes("meta_lead_ads")) return "Meta form lead";
   if (source?.includes("meta") || source?.includes("facebook") || source?.includes("messenger")) return "Messenger lead";
   return "Not started";
 }
@@ -167,6 +172,7 @@ function mapCompany(row: CompanyRow, ownerNames = new Map<string, string>()): Co
     stage: getPipelineStageLabel(pipeline?.stage || row.status),
     outreachStatus: getOutreachStatus(row.contacts, row.source),
     estimatedOrderQuantity: pipeline?.estimated_order_quantity ?? null,
+    estimatedOrderLabel: metaOrderLabel(Array.isArray(row.meta_leads) ? row.meta_leads : row.meta_leads ? [row.meta_leads] : [], pipeline?.estimated_order_quantity ?? null),
     estimatedValue: pipeline?.estimated_value == null ? null : Number(pipeline.estimated_value),
     currency: pipeline?.currency || "USD",
     nextFollowupAt: pipeline?.next_followup_at || null,
@@ -190,7 +196,7 @@ export async function listCompanies(): Promise<{ mode: DataMode; companies: Comp
 async function queryCompanies(): Promise<Company[]> {
   const { data, error } = await createSupabaseAdmin()
     .from("companies")
-    .select("id,name,website,domain,country,city,segment,source,status,company_profiles(summary,fit_score,interest_tags),contacts(id,name,role,email,verification_status,emails(status,direction,created_at)),pipeline(stage,next_followup_at,estimated_order_quantity,estimated_value,currency,owner_id)")
+    .select("id,name,website,domain,country,city,segment,source,status,meta_leads(created_at,field_data),company_profiles(summary,fit_score,interest_tags),contacts(id,name,role,email,verification_status,emails(status,direction,created_at)),pipeline(stage,next_followup_at,estimated_order_quantity,estimated_value,currency,owner_id)")
     .or("source.is.null,source.neq.sample_seed")
     .order("created_at", { ascending: false })
     .limit(500);
@@ -212,7 +218,7 @@ export async function getCompanyDetails(id: string): Promise<{ mode: DataMode; d
   await authorizeLiveRead();
   const admin = createSupabaseAdmin();
   const [companyResult, contactsResult, eventsResult, emailsResult, catalogsResult] = await Promise.all([
-    admin.from("companies").select("id,name,website,domain,country,city,segment,source,status,company_profiles(summary,fit_score,interest_tags),contacts(id,name,role,email,verification_status,emails(status,direction,created_at)),pipeline(stage,next_followup_at,estimated_order_quantity,estimated_value,currency,owner_id)").eq("id", id).maybeSingle(),
+    admin.from("companies").select("id,name,website,domain,country,city,segment,source,status,meta_leads(created_at,field_data),company_profiles(summary,fit_score,interest_tags),contacts(id,name,role,email,verification_status,emails(status,direction,created_at)),pipeline(stage,next_followup_at,estimated_order_quantity,estimated_value,currency,owner_id)").eq("id", id).maybeSingle(),
     admin.from("contacts").select("id,name,role,email,verification_status").eq("company_id", id).order("created_at"),
     admin.from("events").select("id,type,data,actor_id,created_at").eq("company_id", id).order("created_at", { ascending: false }).limit(200),
     admin.from("emails").select("id,subject,body,status,direction,approved_by,sent_at,created_at,contacts!inner(name,email,company_id)").eq("contacts.company_id", id).order("created_at", { ascending: false }).limit(200),
@@ -390,7 +396,7 @@ export async function listReplies(): Promise<{ mode: DataMode; replies: Reply[] 
 
   const { data, error } = await createSupabaseAdmin()
     .from("emails")
-    .select("id,subject,body,sent_at,created_at,contacts(name,email,companies(name))")
+    .select("id,subject,body,sent_at,created_at,message_id,thread_id,contacts(name,email,companies(name))")
     .eq("direction", "received")
     .order("created_at", { ascending: false })
     .limit(200);
@@ -407,6 +413,8 @@ export async function listReplies(): Promise<{ mode: DataMode; replies: Reply[] 
         subject: row.subject || "Untitled reply",
         body: row.body || "No reply body was stored.",
         receivedAt: row.sent_at || row.created_at,
+        messageId: row.message_id,
+        threadId: row.thread_id,
       };
     }),
   };

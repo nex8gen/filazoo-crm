@@ -13,6 +13,30 @@ import { createSupabaseAdmin } from "@/lib/supabase/admin";
 
 export type SettingsActionState = { error?: string; success?: string } | undefined;
 
+export async function manageMailbox(_state: SettingsActionState, formData: FormData): Promise<SettingsActionState> {
+  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
+  const parsed = z.object({ mailboxId: z.string().uuid(), operation: z.enum(["stop", "resume", "delete"]) }).safeParse({
+    mailboxId: formData.get("mailboxId"), operation: formData.get("operation"),
+  });
+  if (!parsed.success) return { error: "Choose a valid mailbox and action." };
+
+  const admin = createSupabaseAdmin();
+  // Scope the mutation itself: personal owners or workspace administrators only.
+  const query = parsed.data.operation === "delete"
+    ? admin.from("workspace_mailboxes").delete()
+    : admin.from("workspace_mailboxes").update({ is_active: parsed.data.operation === "resume", updated_at: new Date().toISOString() });
+  let scoped = query.eq("id", parsed.data.mailboxId);
+  if (viewer.role !== "admin") scoped = scoped.eq("type", "personal").eq("user_id", viewer.id);
+  const { data, error } = await scoped.select("id").maybeSingle();
+  if (error) return { error: "The mailbox could not be changed. Please try again." };
+  if (!data) return { error: "Mailbox not found or you do not have permission to manage it." };
+
+  revalidatePath("/settings");
+  revalidatePath("/emails");
+  revalidatePath("/flows");
+  return { success: parsed.data.operation === "delete" ? "Mailbox connection deleted. Email history is preserved." : parsed.data.operation === "stop" ? "Mailbox stopped. Sending and syncing are disabled." : "Mailbox resumed." };
+}
+
 const profileSchema = z.object({ displayName: z.string().trim().min(2).max(80) });
 const inviteSchema = z.object({
   email: z.string().trim().toLowerCase().email(),

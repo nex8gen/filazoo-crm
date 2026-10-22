@@ -86,7 +86,7 @@ export function CompanyCatalogsTable({ catalogs }: { catalogs: Catalog[] }) {
                 <TableCell className="pl-4">
                   <div className="min-w-0">
                     <p className="truncate font-medium">{catalog.company}</p>
-                    <p className="mt-1 text-[11px] text-muted-foreground">Catalog v{catalog.version}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Catalog v{catalog.version}</p>
                   </div>
                 </TableCell>
 
@@ -102,12 +102,12 @@ export function CompanyCatalogsTable({ catalogs }: { catalogs: Catalog[] }) {
                     {catalog.productSkus.length ? (
                       <div className="flex flex-wrap gap-1.5">
                         {catalog.productSkus.slice(0, 4).map((sku) => (
-                          <span key={`${catalog.id}-${sku}`} className="rounded-md border bg-muted/40 px-2 py-1 text-[11px] font-mono">
+                          <span key={`${catalog.id}-${sku}`} className="rounded-md border bg-muted/40 px-2 py-1 text-xs font-mono">
                             {sku}
                           </span>
                         ))}
                         {catalog.productSkus.length > 4 ? (
-                          <span className="self-center text-[11px] text-muted-foreground">+{catalog.productSkus.length - 4} more</span>
+                          <span className="self-center text-xs text-muted-foreground">+{catalog.productSkus.length - 4} more</span>
                         ) : null}
                       </div>
                     ) : (

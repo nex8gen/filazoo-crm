@@ -29,6 +29,7 @@ test("normalizes empty mailbox responses without crashing", () => {
       email: "hello@company.com",
       displayName: "Shared inbox",
       isDefault: true,
+      isActive: true,
       provider: "smtp",
       notes: "Primary workspace mailbox",
       smtpHost: null,
@@ -75,4 +76,19 @@ test("only reports a mailbox connection when the required credentials are comple
   assert.equal(mailboxHasImap(mailbox), true);
   assert.equal(mailboxHasSmtp({ ...mailbox, smtpPassword: null }), false);
   assert.equal(mailboxHasImap({ ...mailbox, imapPassword: null }), false);
+  assert.equal(mailboxHasSmtp({ ...mailbox, isActive: false }), false);
+  assert.equal(mailboxHasImap({ ...mailbox, isActive: false }), false);
+});
+
+test("stopped mailboxes retain credentials for resuming but cannot send or sync", () => {
+  const [mailbox] = normalizeMailboxRows([{
+    email: "hello@company.com", is_active: false,
+    smtp_host: "smtp.example.com", smtp_username: "hello@company.com", smtp_password: "smtp-secret",
+    imap_host: "imap.example.com", imap_username: "hello@company.com", imap_password: "imap-secret",
+  }]);
+  assert.equal(mailbox.isActive, false);
+  assert.equal(mailbox.smtpPassword, "smtp-secret");
+  assert.equal(mailbox.imapPassword, "imap-secret");
+  assert.equal(mailboxHasSmtp(mailbox), false);
+  assert.equal(mailboxHasImap(mailbox), false);
 });

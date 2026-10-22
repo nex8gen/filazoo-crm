@@ -80,7 +80,7 @@ export async function saveEmailAutomationSettings(userId: string, enabled: boole
 export async function listSentMailboxMessages(userId: string): Promise<InboxEmailItem[]> {
   const { data, error } = await createSupabaseAdmin()
     .from("mailbox_sent_messages")
-    .select("id,from_email,to_email,subject,body,status,sent_at,message_id,thread_key,in_reply_to,reference_ids")
+    .select("id,from_email,to_email,subject,body,status,sent_at,message_id,thread_key,in_reply_to,reference_ids,attachments")
     .eq("user_id", userId)
     .order("sent_at", { ascending: false })
     .limit(100);
@@ -101,6 +101,10 @@ export async function listSentMailboxMessages(userId: string): Promise<InboxEmai
       threadId: row.thread_key,
       inReplyTo: row.in_reply_to,
       references: Array.isArray(row.reference_ids) ? row.reference_ids : [],
+      attachments: Array.isArray(row.attachments) ? row.attachments.flatMap((value, index) => {
+        if (!value || typeof value !== "object" || typeof value.filename !== "string" || typeof value.contentType !== "string" || typeof value.size !== "number") return [];
+        return [{ filename: value.filename, contentType: value.contentType, size: value.size, url: `/api/email/attachments/${row.id}/${index}` }];
+      }) : [],
     };
     return item;
   });

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { defaultFlowInput, flowInputSchema } from "../lib/flows.ts";
-import { calculateWaitUntil, simulateFlow, triggerMatches, type FlowFacts } from "../lib/flow-engine.ts";
+import { calculateWaitUntil, simulateFlow, triggerMatches, flowConversationPath, type FlowFacts } from "../lib/flow-engine.ts";
+import { buildFlowEmail, signTracking, verifyTracking } from "../lib/flow-tracking.ts";
 
 const facts: FlowFacts = { customerReplied: false, openedEmail: false, clickedLink: false, category: "Interested", segment: "Print farm", country: "US", companyStatus: "qualified", pipelineStage: "interested", fitScore: 8 };
 
@@ -47,4 +48,80 @@ test("condition branches can skip the next action and stop later", () => {
   }, facts);
   assert.equal(result.trace.some((entry) => entry.type === "send_email" && entry.status === "skipped"), true);
   assert.equal(result.terminal, "stopped");
+});
+
+test("resume time never shortens the configured wait", () => {
+  assert.equal(calculateWaitUntil({ amount: 4, unit: "hours", resumeAt: "09:00" }, new Date("2026-10-20T08:00:00Z")).toISOString(), "2026-10-21T09:00:00.000Z");
+});
+
+test("multiple simulated waits accumulate", () => {
+  const result = simulateFlow({ ...defaultFlowInput, steps: [
+    { type: "wait", config: { amount: 1, unit: "hours" } },
+    { type: "wait", config: { amount: 2, unit: "hours" } },
+  ] }, facts, new Date("2026-10-20T08:00:00Z"));
+  assert.match(result.trace[1].detail, /2026-10-20T11:00:00/);
+});
+
+test("a simulated category change affects subsequent conditions", () => {
+  const result = simulateFlow({ ...defaultFlowInput, steps: [
+    { type: "change_category", config: { category: "No action" } },
+    { type: "if_condition", config: { field: "category_is", category: "No action", action: "stop_flow" } },
+    { type: "create_task", config: { title: "Must not run", assigneeType: "owner", dueInDays: 0 } },
+  ] }, facts);
+  assert.equal(result.terminal, "stopped");
+  assert.equal(result.trace.some((entry) => entry.type === "create_task"), false);
+  assert.equal(facts.category, "Interested");
+});
+
+test("reply protection stops simulated sends", () => {
+  const result = simulateFlow({ ...defaultFlowInput, steps: [defaultFlowInput.steps[1]] }, { ...facts, customerReplied: true });
+  assert.equal(result.terminal, "stopped");
+});
+
+test("invalid times, templates, branch categories and assignees are rejected", () => {
+  for (const step of [
+    { type: "wait", config: { amount: 2, unit: "hours", resumeAt: "25:99" } },
+    { type: "send_email", config: { templateId: "invented", mailboxId: "default", replyInThread: true } },
+    { type: "if_condition", config: { field: "category_is", action: "stop_flow" } },
+    { type: "create_task", config: { assigneeType: "user", dueInDays: 0, title: "Task" } },
+  ]) assert.equal(flowInputSchema.safeParse({ ...defaultFlowInput, steps: [step] }).success, false);
+});
+
+test("all company filters must match", () => {
+  for (const config of [{ country: "UK" }, { companyStatus: "customer" }, { pipelineStage: "won" }, { minFitScore: 9 }]) {
+    assert.equal(triggerMatches("email_received", config, { type: "email_received", conversationId: "thread" }, facts), false);
+  }
+});
+
+const runId = "00000000-0000-4000-a000-000000000001";
+const stepId = "00000000-0000-4000-a000-000000000002";
+test("alert links resolve company events and encode email conversation IDs", () => {
+  assert.equal(flowConversationPath(`company:${runId}:pipeline`), `/companies/${runId}`);
+  assert.equal(flowConversationPath("message:<customer@example.com>"), "/emails?thread=message%3A%3Ccustomer%40example.com%3E");
+});
+test("tracking links are signed, expire, and reject tampering", () => {
+  const payload = { runId, stepId, kind: "click" as const, target: "https://filazoo.com/catalog", expires: Date.now() + 60000 };
+  const token = signTracking(payload, "test-secret");
+  assert.deepEqual(verifyTracking(token, "test-secret"), payload);
+  assert.equal(verifyTracking(token, "wrong-secret"), null);
+  assert.equal(verifyTracking(`${token}modified`, "test-secret"), null);
+  assert.equal(verifyTracking(signTracking({ ...payload, expires: 0 }, "test-secret"), "test-secret"), null);
+  assert.equal(verifyTracking(signTracking({ ...payload, target: "javascript:alert(1)" }, "test-secret"), "test-secret"), null);
+});
+
+test("email settings add preheader, open pixel, click links and UTM tags", () => {
+  const content = buildFlowEmail({ body: "Hello <buyer>\nhttps://filazoo.com/catalog", config: { preheader: "Your <quote>" }, runId, stepId, flowId: "flow", appUrl: "https://crm.example.com", secret: "secret" });
+  assert.match(content.html, /Your &lt;quote&gt;/);
+  assert.match(content.html, /Hello &lt;buyer&gt;/);
+  assert.match(content.html, /<img/);
+  const link = new URL(content.text.split("\n")[1]);
+  const decoded = verifyTracking(link.searchParams.get("token")!, "secret");
+  assert.equal(decoded?.kind, "click");
+  assert.match(decoded?.target || "", /utm_campaign=flow/);
+});
+
+test("tracking toggles remove all tracking when disabled", () => {
+  const content = buildFlowEmail({ body: "https://filazoo.com/catalog", config: { trackOpens: false, trackClicks: false, utmTracking: false }, runId, stepId, flowId: "flow", appUrl: "https://crm.example.com", secret: "secret" });
+  assert.equal(content.text, "https://filazoo.com/catalog");
+  assert.doesNotMatch(content.html, /<img|\/api\/flows\/track|utm_/);
 });

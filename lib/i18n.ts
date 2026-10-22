@@ -13,7 +13,7 @@ const zhCN: Record<string, string> = {
 
   "Workspace": "工作区", "Overview": "概览", "Companies": "企业", "Pipeline": "销售管道",
   "Outreach": "客户触达", "Emails": "邮件", "Replies": "回复", "Messenger": "消息中心",
-  "Deliverability": "送达能力", "Lead Channel": "获客渠道", "AI Agent": "AI 智能体",
+  "Deliverability": "送达能力", "Lead Channel": "获客渠道", "AI Agent": "AI 智能体", "AI Automation": "AI 自动化",
   "Catalogs": "目录", "Catalog management": "目录管理", "Products": "产品",
   "Company Catalogs": "企业专属目录", "Settings": "设置", "General": "通用",
   "Configuration": "配置", "Engagement": "客户互动", "Automation": "自动化",

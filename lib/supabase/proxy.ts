@@ -31,7 +31,12 @@ export async function updateSession(request: NextRequest) {
     "/privacy",
     "/data-deletion",
     "/api/health",
+    // These handlers validate their own signed token / cron bearer secret.
+    "/api/flows/track",
+    "/api/cron/flows",
     "/api/meta/webhook",
+    // Make authenticates this receiver with its own bearer secret.
+    "/api/meta/lead-bridge",
     "/api/shopify/webhook",
     "/api/shopify/form-lead",
   ];

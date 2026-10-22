@@ -77,7 +77,7 @@ const stepConfigSchemas: Record<FlowStepType, z.ZodType<JsonConfig>> = {
     amount: z.number().int().min(1).max(525600),
     unit: z.enum(["minutes", "hours", "days"]),
     businessDays: z.boolean().optional(),
-    resumeAt: z.string().trim().max(20).optional(),
+    resumeAt: z.union([z.literal(""), z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Choose a valid resume time.")]).optional(),
   }),
   if_condition: z.object({
     field: z.enum(["customer_replied", "category_is", "opened_email", "clicked_link"]),
@@ -89,10 +89,11 @@ const stepConfigSchemas: Record<FlowStepType, z.ZodType<JsonConfig>> = {
     if (value.field === "category_is" && !value.category) context.addIssue({ code: "custom", path: ["category"], message: "Choose a category." });
   }),
   send_email: z.object({
-    templateId: z.string().trim().min(1),
+    templateId: z.enum(["helpful_reminder", "send_catalog", "quote_follow_up", "welcome_intro", "last_chance"], { error: "Complete the email template settings." }),
     mailboxId: z.string().trim().min(1),
     replyInThread: z.boolean(),
     subject: z.string().trim().max(300).optional(),
+    body: z.string().trim().min(1).max(20000).optional(),
     preheader: z.string().trim().max(300).optional(),
     trackOpens: z.boolean().optional(),
     trackClicks: z.boolean().optional(),
@@ -132,7 +133,11 @@ export const flowInputSchema = z.object({
     const result = stepConfigSchemas[step.type].safeParse(step.config);
     if (!result.success) context.addIssue({ code: "custom", path: ["steps", index, "config"], message: result.error.issues[0]?.message || "Complete this step." });
   });
-});
+}).transform((flow) => ({
+  ...flow,
+  triggerConfig: triggerConfigSchemas[flow.triggerType].parse(flow.triggerConfig),
+  steps: flow.steps.map((step) => ({ ...step, config: stepConfigSchemas[step.type].parse(step.config) })),
+}));
 
 export type FlowInput = z.infer<typeof flowInputSchema>;
 

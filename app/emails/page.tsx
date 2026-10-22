@@ -4,7 +4,8 @@ import { getEmailInboxBackendData } from "@/lib/email-inbox";
 import { listCatalogs, listProducts } from "@/lib/data/crm";
 import { b2bProducts } from "@/lib/data/b2b-products";
 
-export default async function EmailsPage() {
+export default async function EmailsPage({ searchParams }: PageProps<"/emails">) {
+  const params = await searchParams;
   await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   const [{ emails, mailboxConfigured, sendConfigured, inboxConfigured, inboxError, aiConfigured, defaultMailboxEmail, mode, automation }, productResult, catalogResult] = await Promise.all([
     getEmailInboxBackendData({ syncMailbox: false }),
@@ -15,6 +16,7 @@ export default async function EmailsPage() {
   return (
     <EmailInboxWorkspace
       initialEmails={emails}
+      initialThreadId={typeof params.thread === "string" ? params.thread : undefined}
       mailboxConfigured={mailboxConfigured}
       sendConfigured={sendConfigured}
       inboxConfigured={inboxConfigured}

@@ -4,7 +4,7 @@ import { requireWorkspaceMember } from "@/lib/auth";
 import { listFlowFilterOptions, listFlowMemberOptions, listFlows } from "@/lib/data/flows";
 import { listMailboxes } from "@/lib/data/mailboxes";
 
-export const metadata: Metadata = { title: "AI Agent" };
+export const metadata: Metadata = { title: "AI Automation" };
 
 export default async function AiAgentPage({ searchParams }: PageProps<"/lead-channel/ai-agent">) {
   const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);

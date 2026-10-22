@@ -52,10 +52,10 @@ function CompanyIdentity({ company }: { company: Company }) {
         <SourceMark company={company} />
       </div>
       <div className="min-w-0">
-        <p className="truncate text-[13px] font-semibold leading-5 text-foreground">{company.name}</p>
+        <p className="truncate text-sm font-semibold leading-5 text-foreground">{company.name}</p>
         <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
           <p className="max-w-40 truncate text-xs text-muted-foreground">{company.domain}</p>
-          {isShopify ? <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#95bf47]/12 px-1.5 py-0.5 text-[10px] font-semibold text-[#5c7f18] dark:text-[#b5d66e]"><span className="size-1 rounded-full bg-[#78a832]" />Shopify</span> : null}
+          {isShopify ? <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#95bf47]/12 px-1.5 py-0.5 text-xs font-semibold text-[#5c7f18] dark:text-[#b5d66e]"><span className="size-1 rounded-full bg-[#78a832]" />Shopify</span> : null}
         </div>
       </div>
     </div>
@@ -106,7 +106,12 @@ export function CompaniesTable({ companies, mode, canWrite, canDelete }: { compa
     { accessorKey: "segment", header: "Segment", cell: ({ getValue }) => <span className="block max-w-44 truncate">{getValue<string>()}</span> },
     { accessorKey: "stage", header: "Status", cell: ({ getValue }) => { const value = getValue<Company["stage"]>(); return <Badge variant="outline" className={statusClass[value]}>{value}</Badge>; } },
     { accessorKey: "outreachStatus", header: "Outreach", cell: ({ getValue }) => <span className="whitespace-nowrap">{getValue<string>()}</span> },
-    { accessorKey: "estimatedOrderQuantity", header: "Est. order", cell: ({ row, getValue }) => { const value = getValue<number | null>(); return value == null ? <span className="text-muted-foreground/60">Not set</span> : <span className="whitespace-nowrap font-medium text-foreground">{row.original.source.includes("shopify") ? "≥ " : ""}{value.toLocaleString()} <span className="font-normal text-muted-foreground">kg/mo</span></span>; } },
+    { accessorKey: "estimatedOrderQuantity", header: "Est. order", cell: ({ row, getValue }) => {
+      const value = getValue<number | null>();
+      const label = row.original.estimatedOrderLabel;
+      if (label) return <span className="whitespace-nowrap font-medium text-foreground" title="Customer's submitted initial order estimate">{label}</span>;
+      return value == null ? <span className="text-muted-foreground/60">Not set</span> : <span className="whitespace-nowrap font-medium text-foreground">{value.toLocaleString()} <span className="font-normal text-muted-foreground">{row.original.source.includes("shopify") ? "kg/mo" : "kg"}</span></span>;
+    } },
     { accessorKey: "nextAction", header: "Next action", cell: ({ getValue }) => <span className="block max-w-48 truncate">{getValue<string>()}</span> },
   ], [selectedIds]);
 
@@ -135,7 +140,7 @@ export function CompaniesTable({ companies, mode, canWrite, canDelete }: { compa
         { label: "Shopify leads", value: shopifyCount, detail: "Captured from your store", icon: PackageCheck, tone: "bg-[#95bf47]/12 text-[#5c7f18] dark:text-[#b5d66e]" },
         { label: "Markets", value: knownCountryCount, detail: "Countries identified", icon: Globe2, tone: "bg-violet-50 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300" },
         { label: "Needs review", value: needsReviewCount, detail: "Missing country or estimate", icon: CircleAlert, tone: "bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300" },
-      ].map((metric) => <Card key={metric.label} className="gap-0 border-border/70 p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-medium text-muted-foreground">{metric.label}</p><p className="mt-1 text-2xl font-semibold tracking-tight">{metric.value.toLocaleString()}</p><p className="mt-1 text-[11px] text-muted-foreground">{metric.detail}</p></div><span className={`grid size-9 place-items-center rounded-xl ${metric.tone}`}><metric.icon className="size-4" /></span></div></Card>)}
+      ].map((metric) => <Card key={metric.label} className="gap-0 border-border/70 p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-medium text-muted-foreground">{metric.label}</p><p className="mt-1 text-2xl font-semibold tracking-tight">{metric.value.toLocaleString()}</p><p className="mt-1 text-xs text-muted-foreground">{metric.detail}</p></div><span className={`grid size-9 place-items-center rounded-xl ${metric.tone}`}><metric.icon className="size-4" /></span></div></Card>)}
     </div>
 
     <Card className="crm-table-frame min-h-0 flex-1 gap-0 overflow-hidden border-border/70 py-0 shadow-sm">

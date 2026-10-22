@@ -36,3 +36,12 @@ test("merges real IMAP messages into the inbox list", () => {
   assert.match(items[0].html || "", /<img /);
   assert.equal(items.length, 2);
 });
+
+test("deduplicates the saved CRM reply against its IMAP message and preserves Reply-To", () => {
+  const items = buildInboxEmailItems({
+    inbound: [{ id: "imap-one", messageId: "<one@test>", contact: "sender@test.com", replyTo: "reply@test.com", body: "Hello" }],
+    replies: [{ id: "crm-one", messageId: "<one@test>", threadId: "old-key", contact: "sender@test.com", company: "Buyer", subject: "Enquiry", body: "Hello", receivedAt: "2026-10-22T01:00:00Z" }],
+  });
+  assert.equal(items.length, 1);
+  assert.equal(items[0].replyTo, "reply@test.com");
+});

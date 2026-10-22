@@ -55,12 +55,12 @@ export function TablePagination({
       ref={footerRef}
       data-slot="table-pagination"
       className={cn(
-        "sticky bottom-0 z-20 flex min-h-14 w-full shrink-0 flex-wrap items-center justify-between gap-3 border-y bg-background px-4 py-3 text-xs text-muted-foreground shadow-[0_-1px_0_0_var(--border)]",
+        "sticky bottom-0 z-20 flex min-h-14 w-full shrink-0 flex-col items-center justify-between gap-2 border-y bg-background px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] text-xs text-muted-foreground shadow-[0_-1px_0_0_var(--border)] sm:flex-row sm:flex-wrap sm:gap-3 sm:px-4",
         className,
       )}
     >
-      <p aria-live="polite">Showing {safeStart}–{safeEnd} of {total} {itemLabel}</p>
-      <nav className="flex items-center gap-1" aria-label={`${itemLabel} pagination`}>
+      <p className="min-w-0 text-center sm:text-left" aria-live="polite">Showing {safeStart}–{safeEnd} of {total} {itemLabel}</p>
+      <nav className="flex max-w-full shrink-0 items-center gap-1" aria-label={`${itemLabel} pagination`}>
         <Button variant="outline" size="icon-sm" disabled={safePage <= 1 || total === 0} onClick={() => changePage(onPrevious)} aria-label="Previous page">
           <PreviousIcon />
         </Button>

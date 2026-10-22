@@ -24,6 +24,7 @@ export type TriggerEvent = {
   stage?: string | null;
   eventKey?: string | null;
   flowId?: string | null;
+  occurredAt?: string;
 };
 
 export type SimulationEntry = {
@@ -35,6 +36,11 @@ export type SimulationEntry = {
 
 function normalized(value: unknown) {
   return String(value ?? "").trim().toLowerCase();
+}
+
+export function flowConversationPath(conversationId: string) {
+  const company = /^company:([\da-f-]{36})(?::pipeline)?$/i.exec(conversationId);
+  return company ? `/companies/${company[1]}` : `/emails?thread=${encodeURIComponent(conversationId)}`;
 }
 
 export function matchesProfileFilters(config: JsonConfig, facts: FlowFacts) {
@@ -80,9 +86,10 @@ export function calculateWaitUntil(config: JsonConfig, from = new Date()) {
 
   if (config.businessDays && unit !== "days") moveOffWeekend(result);
   if (typeof config.resumeAt === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(config.resumeAt)) {
+    const earliest = new Date(unit === "days" ? from : result);
     const [hours, minutes] = config.resumeAt.split(":").map(Number);
     result.setUTCHours(hours, minutes, 0, 0);
-    if (result <= from) result.setUTCDate(result.getUTCDate() + 1);
+    if (result < earliest) result.setUTCDate(result.getUTCDate() + 1);
     if (config.businessDays) moveOffWeekend(result);
   }
   return result;
@@ -102,16 +109,19 @@ function actionForCondition(config: JsonConfig, matched: boolean) {
 
 export function simulateFlow(flow: FlowInput, facts: FlowFacts, from = new Date()) {
   const trace: SimulationEntry[] = [];
+  const currentFacts = { ...facts };
+  let cursor = new Date(from);
   let index = 0;
   while (index < flow.steps.length) {
     const step = flow.steps[index]!;
     if (step.type === "wait") {
-      trace.push({ step: index + 1, type: step.type, status: "waiting", detail: `Would resume at ${calculateWaitUntil(step.config, from).toISOString()}` });
+      cursor = calculateWaitUntil(step.config, cursor);
+      trace.push({ step: index + 1, type: step.type, status: "waiting", detail: `Would resume at ${cursor.toISOString()}` });
       index += 1;
       continue;
     }
     if (step.type === "if_condition") {
-      const matched = conditionMatches(step.config, facts);
+      const matched = conditionMatches(step.config, currentFacts);
       const action = actionForCondition(step.config, matched);
       trace.push({ step: index + 1, type: step.type, status: "would_run", detail: `Condition ${matched ? "matched" : "did not match"}; ${action.replaceAll("_", " ")}` });
       if (action === "stop_flow") {
@@ -125,6 +135,11 @@ export function simulateFlow(flow: FlowInput, facts: FlowFacts, from = new Date(
       }
       index += 1;
       continue;
+    }
+    if (step.type === "change_category") currentFacts.category = String(step.config.category);
+    if (step.type === "send_email" && step.config.stopOnReply !== false && currentFacts.customerReplied) {
+      trace.push({ step: index + 1, type: step.type, status: "stopped", detail: "Customer replied; run would be cancelled." });
+      break;
     }
     trace.push({ step: index + 1, type: step.type, status: step.type === "stop" ? "stopped" : "would_run", detail: step.type === "stop" ? String(step.config.reason || "Flow would end here.") : `${step.type.replaceAll("_", " ")} is configured.` });
     if (step.type === "stop") break;

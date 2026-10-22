@@ -134,7 +134,7 @@ function EmailTabBar({ activeTab, onChange, countByTab }: { activeTab: EmailStat
               <span className={`grid size-5 place-items-center rounded-md ${tab.iconClass}`}><Flag className="size-3.5" /></span>
               <span className="text-sm font-medium">{tab.label}</span>
             </div>
-            <div className={`mt-1 text-[11px] ${isActive ? "text-foreground/70" : "text-muted-foreground"}`}>
+            <div className={`mt-1 text-xs ${isActive ? "text-foreground/70" : "text-muted-foreground"}`}>
               {count} {tab.countLabel}
             </div>
           </button>
@@ -347,7 +347,7 @@ function EmailDetailDrawer({ row, open, onClose }: { row: EmailRowData | null; o
                 {row.checks.map((check) => (
                   <li key={check.label} className="flex items-center justify-between gap-3 rounded-md border border-border bg-background px-2.5 py-2">
                     <span>{check.label}</span>
-                    {check.ok ? <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700"><Check className="size-3" /> OK</span> : <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700"><AlertTriangle className="size-3" /> Flag</span>}
+                    {check.ok ? <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-700"><Check className="size-3" /> OK</span> : <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700"><AlertTriangle className="size-3" /> Flag</span>}
                   </li>
                 ))}
               </ul>
@@ -538,7 +538,7 @@ export function DeliverabilityDashboard() {
               <span className={`grid size-5 place-items-center rounded-md ${tab.bg}`}><ShieldAlert className="size-3.5" /></span>
               <span className="text-sm font-medium">{tab.label}</span>
             </div>
-            <div className="mt-1 text-[11px] text-foreground/70">{counts[tab.key as keyof typeof counts]} {tab.key === "errors" ? "errors" : tab.key === "warnings" ? "warnings" : "info"}</div>
+            <div className="mt-1 text-xs text-foreground/70">{counts[tab.key as keyof typeof counts]} {tab.key === "errors" ? "errors" : tab.key === "warnings" ? "warnings" : "info"}</div>
           </button>
         ))}
       </div>

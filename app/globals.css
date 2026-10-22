@@ -12,15 +12,15 @@
   --card-foreground: #171717;
   --popover: #ffffff;
   --popover-foreground: #171717;
-  --primary: #3ecf8e;
-  --primary-foreground: #052e20;
+  --primary: #08794e;
+  --primary-foreground: #ffffff;
   --secondary: #f7f7f7;
   --secondary-foreground: #262626;
   --muted: #f4f4f4;
-  --muted-foreground: #737373;
+  --muted-foreground: #626262;
   --accent: #f4f4f4;
   --accent-foreground: #171717;
-  --destructive: #404040;
+  --destructive: #b42318;
   --border: #e5e5e5;
   --input: #e5e5e5;
   --ring: #3ecf8e;
@@ -31,8 +31,8 @@
   --chart-5: #e5e5e5;
   --sidebar: #ffffff;
   --sidebar-foreground: #262626;
-  --sidebar-primary: #3ecf8e;
-  --sidebar-primary-foreground: #052e20;
+  --sidebar-primary: #08794e;
+  --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: rgb(62 207 142 / 12%);
   --sidebar-accent-foreground: #171717;
   --sidebar-border: #e5e5e5;
@@ -56,7 +56,7 @@
   --muted-foreground: #a3a3a3;
   --accent: #222222;
   --accent-foreground: #f5f5f5;
-  --destructive: #a3a3a3;
+  --destructive: #fda29b;
   --border: #292929;
   --input: #333333;
   --ring: #3ecf8e;
@@ -79,6 +79,16 @@
 
 @theme inline {
   --font-sans: var(--font-geist-sans);
+  /* CRM type scale: supporting copy 13/20, controls 14/20, body 15/24.
+     Carbon productive typography informs the compact control size:
+     https://carbondesignsystem.com/building-blocks/foundations/typography/type-sets
+     Keep rem units so browser font preferences and zoom remain effective. */
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.25rem;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.25rem;
+  --text-body: 0.9375rem;
+  --text-body--line-height: 1.5rem;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -124,13 +134,15 @@
     @apply bg-background font-sans;
     overscroll-behavior: none;
   }
-  body { @apply min-h-screen bg-background text-sm text-foreground antialiased; }
+  body { @apply min-h-screen bg-background text-body text-foreground antialiased; }
   button, a, input, [role="button"] { @apply transition-colors duration-150; }
 
   /* Keep legacy native selects aligned with the shared Select component until
      their form flows are migrated. The popup remains platform-accessible. */
   select:not([multiple]) {
-    min-height: 2rem;
+    min-height: 2.5rem;
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
     appearance: none;
     border: 1px solid var(--input);
     border-radius: 0.5rem;
@@ -254,9 +266,9 @@ body,
   border-right: 1px solid var(--table-grid);
   border-bottom: 1px solid var(--table-grid);
   color: var(--muted-foreground);
-  font-size: 0.75rem;
-  font-weight: 500;
-  line-height: 1rem;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: var(--text-sm--line-height);
   letter-spacing: 0;
   text-transform: none;
 }
@@ -320,6 +332,25 @@ body,
   margin-top: 0 !important;
 }
 
+/* Reserve the footer's full height while the product rows use the remaining
+   viewport space, including when filters wrap or the browser is zoomed. */
+.crm-products-catalog > :not(.crm-table-frame) {
+  flex-shrink: 0;
+}
+
+.crm-products-catalog > div:not(.crm-table-toolbar):not(.crm-table-frame) {
+  margin-block: 0.75rem;
+}
+
+.crm-products-catalog > .crm-table-frame {
+  flex: 1 1 0%;
+  margin-block: 0;
+}
+
+.crm-products-catalog > .crm-table-frame > .crm-table-viewport {
+  max-height: none;
+}
+
 /* In full-height table cards, only the table body scrolls. This prevents rows
    from overflowing across the pagination footer. */
 .crm-table-flex-body {
@@ -357,7 +388,7 @@ body,
   margin-left: auto;
   white-space: nowrap;
   color: var(--muted-foreground);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 500;
 }
 
@@ -459,36 +490,3 @@ body,
     scroll-behavior: smooth;
   }
 }
-
-/* The unified inbox is information-dense, but operational text should remain
-   readable during long support sessions. Keep metadata at 12px and primary
-   interface copy at 13px or larger, including legacy utility-sized labels. */
-
-.messenger-workspace .text-\[8px\],
-.messenger-workspace .text-\[9px\],
-.messenger-workspace .text-\[10px\],
-.messenger-workspace .text-\[11px\] {
-  font-size: 0.75rem;
-  line-height: 1rem;
-}
-
-.messenger-workspace .text-xs {
-  font-size: 0.8125rem;
-  line-height: 1.25rem;
-}
-
-.messenger-workspace .text-sm {
-  font-size: 0.875rem;
-  line-height: 1.25rem;
-}
-
-.messenger-workspace .text-base {
-  font-size: 0.95rem;
-  line-height: 1.4rem;
-}
-
-.messenger-workspace .text-2xl {
-  font-size: 1.5rem;
-  line-height: 2rem;
-}
-

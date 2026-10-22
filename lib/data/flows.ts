@@ -1,5 +1,6 @@
 import "server-only";
 
+import { validateFlowResources } from "./flow-runtime.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 import { defaultFlowInput, type AutomationFlow, type FlowInput, type FlowStep, type FlowStepType, type JsonConfig, type TriggerType, type FlowStatus } from "../flows.ts";
 
@@ -37,28 +38,10 @@ function mapFlows(rows: FlowRow[], steps: StepRow[], runs: RunRow[]): Automation
 }
 
 async function insertFlow(userId: string, input: FlowInput) {
-  const admin = createSupabaseAdmin();
-  const { data: flow, error } = await admin.from("flows").insert({
-    user_id: userId,
-    name: input.name,
-    trigger_type: input.triggerType,
-    trigger_config: input.triggerConfig,
-    status: input.status,
-    created_by: userId,
-  }).select("id").single();
-  if (error || !flow) throw new Error(`Unable to create flow: ${error?.message || "No flow returned."}`);
-
-  const { error: stepError } = await admin.from("flow_steps").insert(input.steps.map((step, position) => ({
-    flow_id: flow.id,
-    position,
-    type: step.type,
-    config: step.config,
-  })));
-  if (stepError) {
-    await admin.from("flows").delete().eq("id", flow.id).eq("user_id", userId);
-    throw new Error(`Unable to create flow steps: ${stepError.message}`);
-  }
-  return flow.id as string;
+  if (input.status === "live") await validateFlowResources(userId, input);
+  const { data, error } = await createSupabaseAdmin().rpc("save_automation_flow", { p_user_id: userId, p_flow_id: null, p_input: input });
+  if (error) throw new Error(`Unable to create flow: ${error.message}`);
+  return data as string;
 }
 
 async function ensureDefaultFlow(userId: string) {
@@ -93,26 +76,9 @@ export async function createFlow(userId: string, input: FlowInput) {
 }
 
 export async function updateFlow(userId: string, flowId: string, input: FlowInput) {
-  const admin = createSupabaseAdmin();
-  const { data, error } = await admin.from("flows").update({
-    name: input.name,
-    trigger_type: input.triggerType,
-    trigger_config: input.triggerConfig,
-    status: input.status,
-    updated_at: new Date().toISOString(),
-  }).eq("id", flowId).eq("user_id", userId).select("id").maybeSingle();
-  if (error) throw new Error(`Unable to update flow: ${error.message}`);
-  if (!data) throw new Error("Flow not found.");
-
-  const { error: deleteError } = await admin.from("flow_steps").delete().eq("flow_id", flowId);
-  if (deleteError) throw new Error(`Unable to replace flow steps: ${deleteError.message}`);
-  const { error: insertError } = await admin.from("flow_steps").insert(input.steps.map((step, position) => ({
-    flow_id: flowId,
-    position,
-    type: step.type,
-    config: step.config,
-  })));
-  if (insertError) throw new Error(`Unable to save flow steps: ${insertError.message}`);
+  if (input.status === "live") await validateFlowResources(userId, input);
+  const { error } = await createSupabaseAdmin().rpc("save_automation_flow", { p_user_id: userId, p_flow_id: flowId, p_input: input });
+  if (error) throw new Error(error.message);
   return (await listFlows(userId)).find((flow) => flow.id === flowId)!;
 }
 
@@ -127,7 +93,7 @@ export type FlowMemberOption = { id: string; label: string };
 export async function listFlowMemberOptions(): Promise<FlowMemberOption[]> {
   const admin = createSupabaseAdmin();
   const [{ data: members, error }, { data: users }] = await Promise.all([
-    admin.from("workspace_members").select("user_id,display_name").order("display_name"),
+    admin.from("workspace_members").select("user_id,display_name").not("activated_at", "is", null).order("display_name"),
     admin.auth.admin.listUsers({ page: 1, perPage: 200 }),
   ]);
   if (error) throw new Error(`Unable to load workspace members: ${error.message}`);
@@ -141,8 +107,14 @@ export async function listFlowMemberOptions(): Promise<FlowMemberOption[]> {
 export type FlowFilterOptions = { segments: string[]; countries: string[] };
 
 export async function listFlowFilterOptions(): Promise<FlowFilterOptions> {
-  const { data, error } = await createSupabaseAdmin().from("companies").select("segment,country").limit(1000);
-  if (error) throw new Error(`Unable to load company filters: ${error.message}`);
+  const data: Array<{ segment: string | null; country: string | null }> = [];
+  const admin = createSupabaseAdmin();
+  for (let offset = 0; ; offset += 1000) {
+    const { data: batch, error } = await admin.from("companies").select("segment,country").order("id").range(offset, offset + 999);
+    if (error) throw new Error(`Unable to load company filters: ${error.message}`);
+    data.push(...(batch ?? []));
+    if (!batch || batch.length < 1000) break;
+  }
   const unique = (values: Array<string | null>) => [...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b));
   return { segments: unique((data ?? []).map((row) => row.segment)), countries: unique((data ?? []).map((row) => row.country)) };
 }

@@ -297,6 +297,7 @@ export async function saveShopifyLead(lead: ShopifyLead, webhookId: string, shop
       if (result.error) throw result.error;
       company = result.data;
     }
+    const createdCompany = !company;
     if (!company) {
       const result = await admin.from("companies").insert({
         name: lead.companyName,
@@ -402,6 +403,7 @@ export async function saveShopifyLead(lead: ShopifyLead, webhookId: string, shop
     try {
       const { enrollMatchingFlows } = await import("./data/flow-runtime.ts");
       await enrollMatchingFlows({ type: "lead_added_to_list", conversationId: `shopify:${lead.customerId}`, contactId, companyId: company.id, listId: "Shopify B2B leads", segment: "Shopify B2B lead" });
+      if (createdCompany) await enrollMatchingFlows({ type: "company_segment_changed", conversationId: `company:${company.id}`, contactId, companyId: company.id, segment: "Shopify B2B lead", eventKey: `shopify-company:${company.id}` });
     } catch (automationError) {
       console.error("Shopify lead saved, but flow enrollment failed:", automationError);
     }

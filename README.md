@@ -8,6 +8,22 @@ The application reads CRM records from Supabase only when the full server config
 
 ## Local development
 
+### AI follow-up automation
+
+The builder at `/lead-channel/ai-agent` uses company segments from the CRM. Waits, both condition branches, email options, task assignment, category changes, alerts, and stop outcomes execute on the server. Times in wait and business-hour settings are UTC. Existing runs retain their enrolled steps when a flow is edited; pausing preserves waiting runs.
+
+Apply `supabase/migrations/20261022040419_automation_atomic_save.sql` before using the updated flow API. Configure `NEXT_PUBLIC_APP_URL` to the public CRM origin for signed open/click links. Open tracking depends on the recipient loading images; mail privacy proxies and link scanners can affect engagement signals.
+
+The worker imports mailbox messages before scanning inbound/no-reply triggers and resuming due runs. `vercel.json` invokes `/api/cron/flows` every minute; configure a strong `CRON_SECRET` in the deployment environment. Vercel's per-minute cron requires Pro or Enterprise. On Hobby, use an external scheduler with `Authorization: Bearer <CRON_SECRET>` or a suitable hosting plan. A local `next dev` process does not run Vercel cron automatically. Keep `DRY_RUN=true` while testing; live sending also requires a verified contact and configured SMTP mailbox.
+
+`Audit flow` validates and simulates the current draft without sending messages. Real run events and errors appear under Insights. To verify the database runtime and HTTP endpoints with disposable records and forced dry-run email delivery, run:
+
+```powershell
+node --env-file=.env.local --conditions=react-server --experimental-strip-types scripts/verify-flows.ts
+```
+
+The integration script requires the local dev server at `http://localhost:3000` (or `FLOW_TEST_ORIGIN`) and cleans up its temporary CRM records.
+
 ```bash
 npm install
 copy .env.example .env.local
@@ -49,6 +65,22 @@ DRY_RUN=true
 Keep `DRY_RUN=true` until suppression, approval, mailbox authentication, unsubscribe, bounce, and end-to-end tests are complete. Never commit `.env.local` or paste secret values into chat.
 
 ## Facebook Messenger and Lead Ads
+
+### Simple Instant Form connection (Make)
+
+Open **Meta Leads** in the CRM sidebar (`/lead-channel/meta`). This is the simpler option for ad form submissions: use Make's Facebook Lead Ads **New Lead** instant trigger, then its HTTP module to POST JSON to `/api/meta/lead-bridge`. Make handles the Facebook connection; this path does not require a custom Meta Developer app or a Meta Page token in the CRM.
+
+The CRM automatically derives a separate bridge credential from its existing server-only database key using a domain-separated HMAC. The admin setup panel shows this credential, the callback, field mapping, and test steps. Use `Authorization: Bearer <connection secret>` in Make. For independent rotation, optionally set server-only `META_LEAD_BRIDGE_SECRET` to a random value of at least 32 characters and redeploy. Rotating the database key also rotates the derived bridge credential. Set `NEXT_PUBLIC_APP_URL` to the public CRM origin. The callback domain must be reachable without deployment authentication. Never put the secret in a URL or a `NEXT_PUBLIC_` variable.
+
+Map `lead_id` and `page_id` as their original numeric Meta IDs **encoded as strings**, plus `full_name`, `email`, and/or `phone`. Optional fields: `form_id`, `ad_id`, `created_time` (ISO datetime), and `field_data` (`[{"name":"question","values":["answer"]}]`). Omit missing optional values. The receiver rejects ID-only notifications; retrieve the form answers in Make before forwarding. It returns 201 for a new lead, 200 for a duplicate, and a non-2xx status for a failure so Make can retry. Keep error retries enabled in Make.
+
+Apply `supabase/migrations/20261022070000_meta_lead_companies.sql` before deploying the receiver. A database trigger atomically creates or matches the company, contact, and pipeline record for every Meta ingestion path. Existing contacts match by email; companies match by business domain, while personal email providers never merge unrelated businesses. Existing pipeline stages and owners are preserved. Form answers, phone, and original submission time are retained in company activity. Contacts stay unverified and unsubscribed contacts remain suppressed.
+
+Manage Meta leads on **Companies**, alongside Shopify leads. The Meta Leads page is a connection log showing the latest 100 submissions with 15-second refresh; BD managers only see their assigned records. Repeated deliveries preserve saved answers and ownership. In Make, map New Lead's **Lead ID**, **Page ID**, **Form ID**, **Ad ID**, and **Mappable field data** array into the corresponding receiver fields. Both native `{name,values:[...]}` and Make `{name,value}` answer formats are accepted. Structured JSON handles quotes and line breaks safely.
+
+For a historical import, normalize the exported IDs as strings (remove Meta CSV's `l:`, `f:`, and `ag:` prefixes), retain original `created_time`, and keep all form answers in `field_data`. Store exports in an ignored/private directory. Preview with `node --env-file=.env.local --experimental-strip-types scripts/import-meta-leads.mjs PATH_TO_PRIVATE_JSON`, then add `--execute` to import. Reruns skip existing IDs. For previously saved unlinked records, updating `field_data` to itself invokes the company-linking trigger. The rollback-only database integration checks are in `tests/meta-company-link.sql`. This connection does not import campaign performance or create Messenger conversations.
+
+### Direct Meta connection (advanced)
 
 The Meta integration is for a Facebook Page, not WhatsApp. Add these server-only variables in Vercel Production and redeploy after changing them:
 
