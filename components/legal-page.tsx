@@ -17,19 +17,19 @@ export function LegalPage({
   return (
     <div className="min-h-svh bg-background text-foreground">
       <header className="border-b bg-background/95">
-        <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-5 sm:px-8">
+        <div className="mx-auto flex min-h-16 max-w-5xl flex-wrap items-center justify-between gap-4 px-5 py-4 sm:px-8">
           <a href="https://filazoo.com" className="flex items-center gap-2.5 font-semibold" aria-label="Filazoo website">
             <BrandMark className="h-6 w-auto text-primary" />
             <span>Filazoo</span>
           </a>
-          <nav className="flex items-center gap-5 text-sm text-muted-foreground" aria-label="Legal pages">
+          <nav className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground" aria-label="Legal pages">
             <Link className="transition-colors hover:text-foreground" href="/privacy">Privacy</Link>
             <Link className="transition-colors hover:text-foreground" href="/data-deletion">Data deletion</Link>
           </nav>
         </div>
       </header>
 
-      <main className="mx-auto max-w-3xl px-5 py-12 sm:px-8 sm:py-16">
+      <main className="mx-auto max-w-3xl break-words px-5 py-12 sm:px-8 sm:py-16 [&_code]:break-all">
         <p className="font-mono text-xs uppercase tracking-[0.12em] text-primary">{eyebrow}</p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">{title}</h1>
         <p className="mt-4 max-w-2xl text-base leading-7 text-muted-foreground">{description}</p>

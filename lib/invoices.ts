@@ -1,0 +1,164 @@
+import { z } from "zod";
+
+// All supported currencies use two decimal places. Store money as integer minor units.
+export const invoiceCurrencies = [
+  "USD",
+  "EUR",
+  "GBP",
+  "CNY",
+  "CAD",
+  "AUD",
+  "HKD",
+] as const;
+const money = z.number().int().min(0).max(100_000_000);
+const date = z.iso.date();
+export const invoiceDocumentSchema = z
+  .object({
+    sellerName: z.string().trim().min(1).max(200),
+    sellerAddress: z.string().trim().max(2000),
+    sellerTaxId: z.string().trim().max(100),
+    customerName: z.string().trim().min(1).max(200),
+    customerEmail: z.union([z.email(), z.literal("")]),
+    customerAddress: z.string().trim().max(2000),
+    customerTaxId: z.string().trim().max(100),
+    currency: z.enum(invoiceCurrencies),
+    issueDate: date,
+    dueDate: date,
+    reference: z.string().trim().max(200),
+    notes: z.string().trim().max(4000),
+    paymentInstructions: z.string().trim().max(2000),
+    discountMinor: money,
+    shippingMinor: money,
+    items: z
+      .array(
+        z.object({
+          description: z.string().trim().min(1).max(500),
+          quantity: z.number().int().min(1).max(1_000_000),
+          unitPriceMinor: money,
+          taxBps: z.number().int().min(0).max(10000),
+        }),
+      )
+      .min(1)
+      .max(100),
+  })
+  .superRefine((doc, ctx) => {
+    if (doc.dueDate < doc.issueDate)
+      ctx.addIssue({
+        code: "custom",
+        message: "Due date must be on or after the issue date.",
+        path: ["dueDate"],
+      });
+    const subtotal = doc.items.reduce(
+      (sum, item) => sum + item.quantity * item.unitPriceMinor,
+      0,
+    );
+    if (doc.discountMinor > subtotal)
+      ctx.addIssue({
+        code: "custom",
+        message: "Discount cannot exceed the subtotal.",
+        path: ["discountMinor"],
+      });
+    if (subtotal > 100_000_000_000)
+      ctx.addIssue({
+        code: "custom",
+        message: "Invoice exceeds the supported maximum.",
+      });
+    else if (invoiceTotals(doc).total > 200_000_000_000)
+      ctx.addIssue({
+        code: "custom",
+        message: "Invoice total exceeds the supported maximum.",
+      });
+  });
+
+export type InvoiceDocument = z.infer<typeof invoiceDocumentSchema>;
+export type InvoicePayment = {
+  id: string;
+  amount_minor: number;
+  paid_on: string;
+  method: string;
+  reference: string;
+  created_at: string;
+};
+export type Invoice = {
+  id: string;
+  number: number;
+  document: InvoiceDocument;
+  status: "draft" | "issued" | "void";
+  total_minor: number;
+  paid_minor: number;
+  revision: number;
+  created_at: string;
+  updated_at: string;
+  invoice_payments?: InvoicePayment[];
+};
+
+/** Allocate invoice discount proportionally before calculating line tax. Shipping is untaxed. */
+export function invoiceTotals(doc: InvoiceDocument) {
+  const subtotal = doc.items.reduce(
+    (sum, item) => sum + item.quantity * item.unitPriceMinor,
+    0,
+  );
+  let allocated = 0;
+  let cumulative = 0;
+  const lines = doc.items.map((item) => {
+    const gross = item.quantity * item.unitPriceMinor;
+    cumulative += gross;
+    // An editor can temporarily contain fractional quantities before validation.
+    // Keep its preview usable; validated documents always take the exact path.
+    const exact = [doc.discountMinor, cumulative, subtotal].every(Number.isSafeInteger);
+    const target = subtotal
+      ? exact
+        ? Number((BigInt(doc.discountMinor) * BigInt(cumulative)) / BigInt(subtotal))
+        : Math.floor(doc.discountMinor * cumulative / subtotal)
+      : 0;
+    const discount = target - allocated;
+    allocated += discount;
+    const net = gross - discount;
+    const tax = Math.round((net * item.taxBps) / 10000);
+    return { gross, discount, net, tax, total: net + tax };
+  });
+  const tax = lines.reduce((sum, line) => sum + line.tax, 0);
+  return {
+    subtotal,
+    tax,
+    total: subtotal - doc.discountMinor + tax + doc.shippingMinor,
+    lines,
+  };
+}
+
+export function invoiceLabel(invoice: Pick<Invoice, "number">) {
+  return `INV-${String(invoice.number).padStart(6, "0")}`;
+}
+export function invoiceStatus(invoice: Invoice, today: string) {
+  if (invoice.status !== "issued") return invoice.status;
+  if (invoice.paid_minor >= invoice.total_minor) return "paid";
+  if (invoice.document.dueDate < today) return "overdue";
+  return invoice.paid_minor > 0 ? "partial" : "issued";
+}
+export function formatMoney(minor: number, currency: string) {
+  return new Intl.NumberFormat("en", { style: "currency", currency }).format(
+    minor / 100,
+  );
+}
+export const paymentSchema = z.object({
+  id: z.uuid(),
+  amountMinor: money.refine(
+    (value) => value > 0,
+    "Payment must be greater than zero.",
+  ),
+  paidOn: date,
+  method: z.enum(["bank_transfer", "cash", "card", "other"]),
+  reference: z.string().trim().max(200),
+});
+export const invoiceMutationSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("save"),
+    revision: z.number().int().positive(),
+    document: invoiceDocumentSchema,
+  }),
+  z.object({
+    action: z.enum(["issue", "void", "delete"]),
+    revision: z.number().int().positive(),
+  }),
+  z.object({ action: z.literal("payment"), payment: paymentSchema }),
+]);

@@ -8,6 +8,12 @@ The application reads CRM records from Supabase only when the full server config
 
 ## Local development
 
+### Email translation
+
+Inbound English emails use Google's unofficial free translation endpoint by default, with no API key or MyMemory daily character allowance. This endpoint has no availability or unlimited-use guarantee and may throttle requests. Translation errors appear with the existing Retry action; AI writing uses its own configuration.
+
+For control over quotas, run your own [LibreTranslate server](https://docs.libretranslate.com/guides/installation/) with English and Chinese models (`libretranslate --load-only en,zh`). Set server-only `LIBRETRANSLATE_URL` to its base URL (for example, `http://localhost:5000` locally), and optionally `LIBRETRANSLATE_API_KEY` if your server requires authentication. Restart or redeploy the CRM after changing these values. The configured server receives message text, and the CRM does not fall back to Google when it is unavailable. In production, use a secured server URL reachable from the CRM host; localhost refers to that host. Self-hosting removes the external daily quota when configured without request limits, but requires server resources. The existing 20,000-character per-message request limit remains.
+
 ### AI follow-up automation
 
 The builder at `/lead-channel/ai-agent` uses company segments from the CRM. Waits, both condition branches, email options, task assignment, category changes, alerts, and stop outcomes execute on the server. Times in wait and business-hour settings are UTC. Existing runs retain their enrolled steps when a flow is edited; pausing preserves waiting runs.

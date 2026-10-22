@@ -1,5 +1,23 @@
 # CRM email receiving and replies
 
+## Mailbox structure review — October 22, 2026
+
+The supplied OKKI reference has three states: a full-width mailbox overview; a selected message with a compact list, reader, and contact context; and an expanded inline reply. Persistent folder navigation, small date-grouped rows, unread emphasis, message actions, and independent scrolling make those states usable together.
+
+The previous CRM opened the first conversation automatically, used large message cards and chat bubbles, hid folders and contact details below the widest breakpoint, duplicated Compose, and left the complete reply toolset permanently open. A second CRM navigation sidebar further reduced the reading area.
+
+The email workspace now follows that structure:
+
+- The initial view is a dense, date-grouped list with sender/address, subject, preview, time, unread state, reply/attachment indicators, stars, and selection. Opening a row switches to a compact list and document-style reader; Mailbox returns to the overview.
+- Email is a standalone main navigation item, separate from Outreach, on desktop and mobile. It opens the mailbox directly without a secondary CRM submenu. Mail folders remain visible on desktop, with a folder selector on smaller screens.
+- Inbox, Needs follow-up, Unread, All mail, Drafts, Scheduled, Sent, Starred, Archive, and Trash use existing message data and saved state. Needs follow-up uses the saved category. Sent uses outbound direction. Counts represent conversations in the loaded CRM snapshot, not provider-wide mailbox totals.
+- Search, source/category filters, 30-conversation pagination, previous/next conversation navigation, and select-page controls work together. Bulk read/unread, archive/restore, and trash actions use `/api/email/state`; failed updates are reported without claiming success.
+- Contact and follow-up details can be opened at every screen size. They appear alongside the reader on wide desktops and as an overlay on smaller screens. Quick reply expands on demand; collapsing it retains its content. Translation is available in the reader toolbar.
+
+Provider spam/custom folders are not implemented: the persisted folder model currently supports Inbox, Archive, and Trash, independently of IMAP provider folders. Drafts and Scheduled show existing CRM records; the new-message composer does not yet save resumable drafts or schedule sends. AI guidance in the contact panel is general guidance, not a generated spam or buying-intent classification. These require separate backend work and should not be represented by cosmetic controls.
+
+Verification used the authenticated local mailbox: saved inbox rendering, on-demand original HTML body loading, persisted read state, translation, reply expand/collapse, search, pagination, and bulk selection controls. Layout checks at 390 px and 1280 px found no document-level horizontal overflow; the normal wide desktop showed the list, reader, and contact panel together. No customer email was sent and bulk mutations were not exercised on customer messages. TypeScript, lint, tests, and production build are also checked before delivery.
+
 The mailbox inbox used to download and parse 500 complete MIME messages on every 30-second refresh (1,000 for history). Attachments and provider login delays blocked every other message. It also silently excluded unknown senders. Saved CRM replies omitted RFC identifiers, so duplicate copies could appear as separate conversations. The reply composer selected the latest item's contact instead of the latest inbound message's Reply-To.
 
 ## Current flow

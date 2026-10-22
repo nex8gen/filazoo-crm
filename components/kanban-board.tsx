@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, type DragEndEvent, useDroppable, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -23,6 +24,19 @@ const stageByLabel = Object.fromEntries(stages.map((stage) => [stage.label, stag
 export function KanbanBoard({ companies, managers, canWrite, canAssign, query = "", stageFilter = "all" }: { companies: Company[]; managers: BdSalesManager[]; canWrite: boolean; canAssign: boolean; query?: string; stageFilter?: string }) {
   const [cards, setCards] = useState<PipelineCard[]>(() => companies.map((company) => ({ id: company.id, company: company.name, country: company.country, ownerId: company.ownerId, ownerName: company.ownerName, ownerInitials: company.ownerInitials, stage: stageByLabel[company.stage] })));
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
+  const [mobileStage, setMobileStage] = useState<PipelineStageValue>(stages[0].id);
+
+  async function changeStage(id: string, nextStage: PipelineStageValue) {
+    const card = cards.find((item) => item.id === id);
+    if (!card || !canWrite || card.stage === nextStage) return;
+    const previousStage = card.stage;
+    setCards((current) => current.map((item) => item.id === id ? { ...item, stage: nextStage } : item));
+    const result = await updatePipelineStage(id, nextStage);
+    if (result?.error) {
+      setCards((current) => current.map((item) => item.id === id ? { ...item, stage: previousStage } : item));
+      toast.error(result.error);
+    } else toast.success("Pipeline stage updated.");
+  }
 
   const onDragEnd = async ({ active, over }: DragEndEvent) => {
     if (!over) return;
@@ -30,15 +44,7 @@ export function KanbanBoard({ companies, managers, canWrite, canAssign, query = 
     const overCard = cards.find((card) => card.id === over.id);
     const nextStage = overCard?.stage ?? stages.find((stage) => stage.id === over.id)?.id;
     if (!activeCard || !nextStage || activeCard.stage === nextStage) return;
-    const previousStage = activeCard.stage;
-    setCards((current) => current.map((card) => card.id === activeCard.id ? { ...card, stage: nextStage } : card));
-    const result = await updatePipelineStage(activeCard.id, nextStage);
-    if (result?.error) {
-      setCards((current) => current.map((card) => card.id === activeCard.id ? { ...card, stage: previousStage } : card));
-      toast.error(result.error);
-      return;
-    }
-    toast.success("Pipeline stage updated.");
+    await changeStage(activeCard.id, nextStage);
   };
 
   const normalizedQuery = query.trim().toLowerCase();
@@ -46,7 +52,20 @@ export function KanbanBoard({ companies, managers, canWrite, canAssign, query = 
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-      <div className="flex min-w-0 gap-4 overflow-x-auto pb-4">
+      <div className="space-y-3 md:hidden">
+        <label className="flex flex-col gap-2 text-sm font-medium">Pipeline stage
+          <select value={stageFilter === "all" ? mobileStage : stageFilter} disabled={stageFilter !== "all"} onChange={(event) => setMobileStage(event.target.value as PipelineStageValue)} className="w-full rounded-lg border bg-background px-3 py-2">{stages.map((stage) => <option key={stage.id} value={stage.id}>{stage.label} ({visibleCards.filter((card) => card.stage === stage.id).length})</option>)}</select>
+        </label>
+        <p className="text-xs text-muted-foreground">Open a company or use Move to stage to update a deal.</p>
+        {visibleCards.filter((card) => card.stage === (stageFilter === "all" ? mobileStage : stageFilter)).map((card) => <Card key={card.id} className="gap-3 p-4 shadow-none">
+          <div className="flex items-start justify-between gap-3"><div className="min-w-0"><Link href={`/companies/${card.id}`} className="text-sm font-semibold text-primary hover:underline">{card.company}</Link><p className="mt-1 text-xs text-muted-foreground">{card.country}</p></div><Avatar className="size-8" title={card.ownerName}><AvatarFallback className="text-xs">{card.ownerInitials}</AvatarFallback></Avatar></div>
+          <p className="text-xs text-muted-foreground">Owner: {card.ownerName}</p>
+          {canWrite ? <label className="flex flex-col gap-1.5 text-xs text-muted-foreground">Move to stage<select aria-label={`Move ${card.company} to stage`} value={card.stage} onChange={(event) => void changeStage(card.id, event.target.value as PipelineStageValue)} className="w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground">{stages.map((stage) => <option key={stage.id} value={stage.id}>{stage.label}</option>)}</select></label> : null}
+          {canAssign ? <label className="flex flex-col gap-1.5 text-xs text-muted-foreground">Assigned manager<select aria-label={`Assign ${card.company}`} value={card.ownerId || "unassigned"} onChange={async (event) => { const ownerId = event.target.value === "unassigned" ? null : event.target.value; const result = await assignPipelineOwner(card.id, ownerId); if (result?.error) toast.error(result.error); else { setCards((current) => current.map((item) => item.id === card.id ? { ...item, ownerId, ownerName: managers.find((manager) => manager.id === ownerId)?.name || "Unassigned", ownerInitials: ownerId ? initials(managers.find((manager) => manager.id === ownerId)?.name || "BD") : "—" } : item)); toast.success("Lead owner updated."); } }} className="w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground"><option value="unassigned">Unassigned</option>{managers.map((manager) => <option key={manager.id} value={manager.id}>{manager.name}</option>)}</select></label> : null}
+        </Card>)}
+        {!visibleCards.some((card) => card.stage === (stageFilter === "all" ? mobileStage : stageFilter)) ? <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No companies in this stage.</p> : null}
+      </div>
+      <div className="hidden min-w-0 gap-4 overflow-x-auto pb-4 md:flex">
         {stages.filter((stage) => stageFilter === "all" || stage.id === stageFilter).map((stage) => <KanbanColumn key={stage.id} stage={stage} cards={visibleCards.filter((card) => card.stage === stage.id)} managers={managers} canWrite={canWrite} canAssign={canAssign} onOwnerChanged={(id, ownerId) => setCards((current) => current.map((card) => card.id === id ? { ...card, ownerId, ownerName: managers.find((manager) => manager.id === ownerId)?.name || "Unassigned", ownerInitials: ownerId ? initials(managers.find((manager) => manager.id === ownerId)?.name || "BD") : "—" } : card))} />)}
       </div>
     </DndContext>

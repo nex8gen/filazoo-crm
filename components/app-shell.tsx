@@ -3,7 +3,7 @@
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BookOpen,
   Building2,
@@ -15,15 +15,16 @@ import {
   Menu,
   MessageSquareText,
   Package2,
+  ReceiptText,
   Search,
   Settings,
   Workflow,
-  X,
 } from "lucide-react";
 import { BrandMark } from "@/components/brand-mark";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 const WorkspaceCommandMenu = dynamic(() => import("@/components/workspace-command-menu").then((module) => module.WorkspaceCommandMenu));
 
@@ -39,6 +40,7 @@ type NavigationGroup = {
   label: string;
   eyebrow: string;
   icon: typeof LayoutDashboard;
+  direct?: boolean;
   items: NavigationItem[];
 };
 
@@ -51,14 +53,21 @@ const navigation: NavigationGroup[] = [
       { label: "Overview", href: "/", icon: LayoutDashboard, description: "Performance at a glance" },
       { label: "Companies", href: "/companies", icon: Building2, description: "Accounts and prospects" },
       { label: "Pipeline", href: "/pipeline", icon: ChartNoAxesColumnIncreasing, description: "Deals by stage" },
+      { label: "Invoices", href: "/invoices", icon: ReceiptText, description: "Billing, balances and payments" },
     ],
+  },
+  {
+    label: "Email",
+    eyebrow: "Mailbox",
+    icon: Mail,
+    direct: true,
+    items: [{ label: "Email", href: "/emails", icon: Mail, description: "Mailbox and email conversations" }],
   },
   {
     label: "Outreach",
     eyebrow: "Engagement",
-    icon: Mail,
+    icon: MessageSquareText,
     items: [
-      { label: "Emails", href: "/emails", icon: Mail, description: "Campaign activity" },
       { label: "Replies", href: "/replies", icon: Inbox, description: "Inbound conversations" },
       { label: "Messenger", href: "/messenger", icon: MessageSquareText, description: "Facebook ad leads and Page Messenger replies" },
       { label: "Meta Leads", href: "/lead-channel/meta", icon: Inbox, description: "Instant Form leads and simple connection setup" },
@@ -107,8 +116,8 @@ function SidebarNavigation({ pathname, onNavigate }: { pathname: string; onNavig
   const activeItem = activeGroup.items.find((item) => itemIsActive(pathname, item));
 
   return (
-    <div className="relative flex h-full min-h-0 w-[19rem]">
-      <aside className="group/rail absolute inset-y-0 left-0 z-20 flex w-12 flex-col overflow-hidden border-r bg-background py-2 transition-[width,box-shadow] duration-200 ease-out md:hover:w-52 md:hover:shadow-lg">
+    <div className={`relative flex h-full min-h-0 ${activeGroup.direct ? "w-12" : "w-[19rem]"}`}>
+      <aside className="group/rail absolute inset-y-0 left-0 z-20 flex w-12 flex-col overflow-hidden border-r bg-background py-2 transition-[width,box-shadow] duration-200 ease-out hover:w-52 hover:shadow-lg focus-within:w-52 focus-within:shadow-lg">
         <nav aria-label="Primary navigation" className="flex flex-1 flex-col gap-1 px-1.5">
           {navigation.map((group) => {
             const active = group.label === activeGroup.label;
@@ -117,12 +126,13 @@ function SidebarNavigation({ pathname, onNavigate }: { pathname: string; onNavig
                 key={group.label}
                 href={group.items[0].href}
                 aria-label={group.label}
+                aria-current={active ? "page" : undefined}
                 onClick={onNavigate}
-                className={`relative flex h-9 w-9 shrink-0 items-center gap-3 overflow-hidden rounded-md px-2 text-muted-foreground outline-none transition-[width,background-color,color] hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring md:group-hover/rail:w-48 ${active ? "bg-muted text-foreground" : ""}`}
+                className={`relative flex h-10 w-9 shrink-0 items-center gap-3 overflow-hidden rounded-md px-2 text-muted-foreground outline-none transition-[width,background-color,color] hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring group-hover/rail:w-48 group-focus-within/rail:w-48 ${active ? "bg-muted text-foreground" : ""}`}
               >
                 {active ? <span className="absolute -left-1 top-2 h-5 w-0.5 rounded-r bg-primary" /> : null}
                 <group.icon className="size-[17px] shrink-0" />
-                <span className="whitespace-nowrap text-sm opacity-0 transition-opacity duration-150 md:group-hover/rail:opacity-100">{group.label}</span>
+                <span className="whitespace-nowrap text-sm opacity-0 transition-opacity duration-150 group-hover/rail:opacity-100 group-focus-within/rail:opacity-100">{group.label}</span>
               </Link>
             );
           })}
@@ -133,7 +143,7 @@ function SidebarNavigation({ pathname, onNavigate }: { pathname: string; onNavig
         </div>
       </aside>
 
-      <aside className="ml-12 flex w-64 shrink-0 flex-col border-r bg-background">
+      {!activeGroup.direct ? <aside className="ml-12 flex w-64 shrink-0 flex-col border-r bg-background">
         <div className="flex h-12 items-center border-b px-6">
           <span className="text-sm font-medium">{activeGroup.label}</span>
         </div>
@@ -163,7 +173,7 @@ function SidebarNavigation({ pathname, onNavigate }: { pathname: string; onNavig
             <p className="mt-1 text-xs leading-5 text-muted-foreground">{activeItem?.description ?? "Manage your workspace"}</p>
           </div>
         </nav>
-      </aside>
+      </aside> : null}
     </div>
   );
 }
@@ -175,13 +185,15 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
   const isFlowBuilder = pathname === "/lead-channel/ai-agent" || pathname.startsWith("/lead-channel/ai-agent/");
   const isCompanies = pathname === "/companies";
   const isProducts = pathname === "/catalogs";
-  const usesViewportCanvas = isMessenger || isFlowBuilder;
+  const isEmails = pathname === "/emails";
+  const usesViewportCanvas = isMessenger || isFlowBuilder || isEmails;
   const [commandOpen, setCommandOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const navigationTriggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey)) {
+      if (event.key?.toLowerCase() === "k" && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
         setCommandOpen((open) => !open);
       }
@@ -201,20 +213,22 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
 
   return (
     <div className={`${usesViewportCanvas || isProducts ? "h-svh overflow-hidden" : isCompanies ? "min-h-svh md:h-svh md:overflow-hidden" : "min-h-svh"} bg-background text-foreground`}>
+      <a href="#workspace-content" className="sr-only fixed left-4 top-2 z-[100] rounded-md bg-primary px-4 py-2 text-primary-foreground focus:not-sr-only">Skip to content</a>
       <header className="fixed inset-x-0 top-0 z-50 flex h-12 items-center border-b bg-background/95 px-3 backdrop-blur md:px-4">
-        <Button aria-label="Open navigation" variant="ghost" size="icon-sm" className="mr-2 md:hidden" onClick={() => setMobileOpen(true)}>
+        <Button ref={navigationTriggerRef} aria-label="Open navigation" aria-expanded={mobileOpen} variant="ghost" size="icon-sm" className="mr-2 lg:hidden" onClick={() => setMobileOpen(true)}>
           <Menu />
         </Button>
         <Link href="/" aria-label="Filazoo home" className="hidden h-6 items-center justify-center text-primary md:flex">
           <BrandMark className="h-6 w-auto" />
         </Link>
+        <span className="min-w-0 truncate text-sm font-semibold md:ml-3 lg:hidden">{activeItem.label}</span>
         <span className="mx-3 hidden text-muted-foreground/40 lg:block">/</span>
         <div className="hidden items-center gap-2 text-xs lg:flex">
           <activeGroup.icon className="size-3.5 text-muted-foreground" />
           <span>{activeGroup.label}</span>
         </div>
         <div className="ml-auto flex items-center gap-1.5">
-          <Button variant="ghost" className="h-8 gap-2 px-2 text-muted-foreground sm:w-60 sm:justify-start" onClick={() => setCommandOpen(true)}>
+          <Button aria-label="Search workspace" variant="ghost" className="h-8 gap-2 px-2 text-muted-foreground sm:w-60 sm:justify-start" onClick={() => setCommandOpen(true)}>
             <Search className="size-4" />
             <span className="hidden text-xs sm:inline">Search workspace</span>
             <kbd className="ml-auto hidden rounded border bg-muted px-1.5 py-0.5 text-xs font-normal lg:inline-flex">Ctrl K</kbd>
@@ -225,22 +239,31 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
         </div>
       </header>
 
-      <div className="fixed inset-y-0 left-0 z-40 hidden pt-12 md:block">
+      <div className="fixed inset-y-0 left-0 z-40 hidden pt-12 lg:block">
         <SidebarNavigation pathname={pathname} />
       </div>
 
-      {mobileOpen ? (
-        <div className="fixed inset-0 z-[60] md:hidden">
-          <button className="absolute inset-0 bg-black/30" aria-label="Close navigation" onClick={() => setMobileOpen(false)} />
-          <div className="absolute inset-y-0 left-0 w-[calc(100%-3rem)] max-w-[19.5rem] bg-background shadow-xl">
-            <Button aria-label="Close navigation" variant="ghost" size="icon-sm" className="absolute right-2 top-2 z-10" onClick={() => setMobileOpen(false)}><X /></Button>
-            <SidebarNavigation pathname={pathname} onNavigate={() => setMobileOpen(false)} />
-          </div>
-        </div>
-      ) : null}
+      <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+        <SheetContent side="left" finalFocus={navigationTriggerRef} className="!z-[70] !w-[min(22rem,calc(100%-1rem))] gap-0 overflow-y-auto pb-[env(safe-area-inset-bottom)]">
+          <SheetHeader className="border-b pr-14">
+            <SheetTitle>Filazoo workspace</SheetTitle>
+            <SheetDescription>Accounts, conversations, and sales tools</SheetDescription>
+          </SheetHeader>
+          <nav aria-label="Workspace navigation" className="space-y-5 p-4">
+            {navigation.map((group) => group.direct ? <Link key={group.label} href={group.items[0].href} onClick={() => setMobileOpen(false)} aria-current={itemIsActive(pathname, group.items[0]) ? "page" : undefined} className={`flex min-h-11 items-center gap-3 rounded-lg px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring ${itemIsActive(pathname, group.items[0]) ? "bg-brand-soft font-semibold text-primary" : "hover:bg-muted"}`}><group.icon className="size-4 shrink-0" />{group.label}</Link> : <div key={group.label}>
+              <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{group.label}</p>
+              <ul className="space-y-1">{group.items.map((item) => <li key={item.href}>
+                <Link href={item.href} onClick={() => setMobileOpen(false)} aria-current={itemIsActive(pathname, item) ? "page" : undefined} className={`flex min-h-11 items-center gap-3 rounded-lg px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring ${itemIsActive(pathname, item) ? "bg-brand-soft font-semibold text-primary" : "hover:bg-muted"}`}>
+                  <item.icon className="size-4 shrink-0" />{item.label}
+                </Link>
+              </li>)}</ul>
+            </div>)}
+          </nav>
+        </SheetContent>
+      </Sheet>
 
-      <div className="pt-12 md:pl-[19rem]">
-        <main className={`${usesViewportCanvas ? "h-[calc(100dvh-3rem)] min-h-0 w-full overflow-hidden p-0" : isProducts ? "h-[calc(100dvh-3rem)] min-h-0 w-full overflow-hidden px-5 pt-7 sm:px-7 lg:px-10 lg:pt-10" : isCompanies ? "min-h-[calc(100svh-3rem)] w-full py-7 md:h-[calc(100dvh-3rem)] md:min-h-0 md:overflow-hidden lg:py-8" : "min-h-[calc(100svh-3rem)] w-full px-5 py-7 sm:px-7 lg:px-10 lg:py-10"}`}>{children}</main>
+      <div className={`min-w-0 pt-12 ${isEmails ? "lg:pl-12" : "lg:pl-[19rem]"}`}>
+        <main id="workspace-content" tabIndex={-1} className={`${pathname === "/emails" ? "" : "crm-workspace-content"} outline-none ${usesViewportCanvas ? "h-[calc(100dvh-3rem)] min-h-0 w-full overflow-hidden p-0" : isProducts ? "h-[calc(100dvh-3rem)] min-h-0 w-full overflow-hidden px-5 pt-7 sm:px-7 lg:px-10 lg:pt-10" : isCompanies ? "min-h-[calc(100svh-3rem)] w-full py-7 md:h-[calc(100dvh-3rem)] md:min-h-0 md:overflow-hidden lg:py-8" : "min-h-[calc(100svh-3rem)] w-full px-5 py-7 sm:px-7 lg:px-10 lg:py-10"}`}>{children}</main>
       </div>
 
       {commandOpen ? (

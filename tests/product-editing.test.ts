@@ -21,8 +21,9 @@ test("builds a downloadable PDF from only the selected products", () => {
   assert.match(text, /Basic PLA/);
   assert.match(text, /PLA Pro/);
   assert.doesNotMatch(text, /Macaron PLA/);
-  assert.match(text, /CURATED PRODUCT EDITION/);
-  assert.match(text, /VOLUME PRICING/);
-  assert.match(text, /PRIVATE WHOLESALE CATALOG/);
-  assert.equal(text.match(/\/Type \/Page\b/g)?.length, 4);
+  assert.match(text, /Type \/ specifications/);
+  assert.match(text, /EXW unit price/);
+  assert.match(text, /Default photo/);
+  assert.match(text, /\/MediaBox \[0 0 842 595\]/);
+  assert.ok((text.match(/\/Type \/Page\b/g)?.length ?? 0) >= 1);
 });

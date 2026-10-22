@@ -1,7 +1,31 @@
 import Link from "next/link";
-import { PageHeader, SectionCard } from "@/components/ui";
+import { PageHeader } from "@/components/page-header";
+import { Badge } from "@/components/ui/badge";
 import { setupSteps } from "@/lib/setup-plan";
 import { getSetupReadiness } from "@/lib/setup-status";
 
-export const metadata={title:"Setup center"};
-export default function SetupPage(){const status=getSetupReadiness();return <><PageHeader eyebrow="Guided implementation" title="Build the real automation" description="Complete each manual account step, then Codex can implement and test the corresponding module." action={<Link className="button button-outline" href="/automation">Run safe verification</Link>}/><section className="setup-hero"><div><span>Overall readiness</span><strong>{status.percent}%</strong><p>{status.configured} of {status.total} external integrations are configured.</p></div><div className="setup-progress"><i style={{width:`${status.percent}%`}}/></div><aside><strong>{status.dryRun?"Dry run protected":"Live mode"}</strong><p>{status.dryRun?"No real outreach can be sent.":"Review production safety immediately."}</p></aside></section><div className="setup-layout"><section className="setup-steps">{setupSteps.map(step=><article key={step.number}><span className="step-number">{step.number}</span><div className="step-copy"><header><div><small>{step.owner}</small><h2>{step.title}</h2></div><span className="step-state">Waiting</span></header><div className="ownership-grid"><div><strong>YOU DO MANUALLY</strong><p>{step.manual}</p></div><div><strong>CODEX BUILDS NEXT</strong><p>{step.coding}</p></div></div><footer>Unlock needed: <strong>{step.unlock}</strong></footer></div></article>)}</section><aside className="setup-aside"><SectionCard title="Start here" subtitle="The first blocker to remove"><ol><li>Create a Supabase project.</li><li>Run <code>supabase/schema.sql</code>.</li><li>Connect Supabase to this Vercel project.</li><li>Tell Codex when complete.</li></ol></SectionCard><SectionCard title="Never share in chat" subtitle="Enter secrets directly in Vercel"><div className="secret-list"><code>SUPABASE_SECRET_KEY</code><code>GEMINI_API_KEY</code><code>GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY</code><code>SMTP_PASSWORD</code><code>TELEGRAM_BOT_TOKEN</code></div></SectionCard><SectionCard title="Recommended pilot" subtitle="Prove the system before scaling"><div className="pilot-card"><strong>Germany</strong><span>3D printing service bureaus</span><p>20–30 companies · human approval · dry run</p></div></SectionCard></aside></div></>}
+export const metadata = { title: "Setup center" };
+
+export default function SetupPage() {
+  const status = getSetupReadiness();
+  return <>
+    <PageHeader title="Setup center" description="Connect your integrations and review the steps to get your workspace ready." actions={<Link className="inline-flex min-h-11 items-center rounded-lg border px-4 text-sm font-medium hover:bg-muted" href="/automation">Review automation</Link>} />
+    <section className="mb-6 grid gap-5 rounded-xl border bg-card p-5 sm:grid-cols-[1fr_auto]" aria-label="Integration readiness">
+      <div><p className="text-sm text-muted-foreground">Overall readiness</p><p className="mt-1 text-3xl font-semibold">{status.percent}%</p><p className="mt-2 text-sm text-muted-foreground">{status.configured} of {status.total} integrations configured</p></div>
+      <div><Badge variant="secondary">{status.dryRun ? "Dry run protected" : "Live mode"}</Badge><p className="mt-2 max-w-xs text-sm text-muted-foreground">{status.dryRun ? "No real outreach can be sent." : "Review production settings before sending outreach."}</p></div>
+      <div role="progressbar" aria-label="Integration readiness" aria-valuenow={status.percent} aria-valuemin={0} aria-valuemax={100} className="h-2 overflow-hidden rounded-full bg-muted sm:col-span-2"><div className="h-full rounded-full bg-primary" style={{ width: `${status.percent}%` }} /></div>
+    </section>
+    <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_18rem]">
+      <section className="space-y-4" aria-label="Setup steps">{setupSteps.map((step) => <article key={step.number} className="rounded-xl border bg-card p-4 sm:p-5">
+        <header className="flex items-start gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand-soft text-sm font-semibold text-primary">{step.number}</span><div className="min-w-0 flex-1"><p className="text-xs text-muted-foreground">{step.owner}</p><h2 className="mt-1 text-base font-semibold">{step.title}</h2></div><Badge variant="outline">Waiting</Badge></header>
+        <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2"><div className="rounded-lg bg-muted/40 p-3"><h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Account setup</h3><p className="mt-2 text-sm leading-6">{step.manual}</p></div><div className="rounded-lg bg-muted/40 p-3"><h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Implementation</h3><p className="mt-2 text-sm leading-6">{step.coding}</p></div></div>
+        <p className="mt-4 border-t pt-3 text-xs text-muted-foreground">Required: <span className="font-medium text-foreground">{step.unlock}</span></p>
+      </article>)}</section>
+      <aside className="space-y-4">
+        <section className="rounded-xl border p-5"><h2 className="font-semibold">Start here</h2><ol className="mt-3 list-decimal space-y-3 pl-5 text-sm leading-6 text-muted-foreground"><li>Create a Supabase project.</li><li>Run <code className="break-all">supabase/schema.sql</code>.</li><li>Connect Supabase to this Vercel project.</li><li>Verify the connection.</li></ol></section>
+        <section className="rounded-xl border p-5"><h2 className="font-semibold">Server credentials</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Enter secrets directly in Vercel.</p><ul className="mt-3 space-y-2">{["SUPABASE_SECRET_KEY", "GEMINI_API_KEY", "GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY", "SMTP_PASSWORD", "TELEGRAM_BOT_TOKEN"].map((key) => <li key={key}><code className="block break-all rounded-md bg-muted p-2 text-xs">{key}</code></li>)}</ul></section>
+        <section className="rounded-xl border p-5"><h2 className="font-semibold">Recommended pilot</h2><p className="mt-3 text-sm font-medium">Germany</p><p className="mt-1 text-sm text-muted-foreground">3D printing service bureaus</p><p className="mt-3 text-xs leading-5 text-muted-foreground">20–30 companies · human approval · dry run</p></section>
+      </aside>
+    </div>
+  </>;
+}

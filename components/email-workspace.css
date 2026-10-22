@@ -1,0 +1,71 @@
+.email-workspace { background: var(--background); font-size: 13px; line-height: 20px; }
+.email-workspace :where(button, input, select, a):focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.mail-layout { --mail-folder-width: 224px; display: grid; grid-template-columns: var(--mail-folder-width) minmax(0, 1fr); position: relative; min-height: 0; flex: 1; }
+.mail-layout > * { min-width: 0; }
+.mail-folders { display: flex; overflow-y: auto; }
+.mail-folders nav button { white-space: nowrap; font-size: 13px; line-height: 20px; }
+.mail-folders nav button > span:last-child { font-size: 12px; }
+.mail-folders > div:first-child button { font-size: 14px; }
+.mail-folders > div:last-child .text-xs { font-size: 13px; }
+.mail-folders svg { flex-shrink: 0; }
+.mail-list { display: flex; min-height: 0; flex-direction: column; border-right: 1px solid var(--border); }
+.mail-reader, .mail-details { display: none; }
+.mail-layout[data-reading="true"] { grid-template-columns: var(--mail-folder-width) 292px minmax(0, 1fr); }
+.mail-layout[data-reading="true"] .mail-reader { display: flex; }
+.mail-date-group { padding: 12px 16px 7px; font-size: 12px; font-weight: 600; color: var(--muted-foreground); }
+.mail-row { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 14px; border-bottom: 1px solid var(--border); }
+.mail-row:hover { background: var(--muted); }
+.mail-row[data-active="true"] { background: color-mix(in srgb, var(--primary) 8%, var(--background)); }
+.mail-row > input { flex-shrink: 0; accent-color: var(--primary); }
+.mail-row-open { display: grid; grid-template-columns: 6px minmax(120px, 23%) minmax(0, 1fr) 32px 42px; align-items: center; gap: 12px; flex: 1; min-width: 0; padding: 10px 0; text-align: left; font-size: 13px; line-height: 20px; }
+.mail-unread-dot { width: 6px; height: 6px; border-radius: 50%; }
+.mail-row[data-unread="true"] .mail-unread-dot { background: #1670ff; }
+.mail-row[data-unread="true"] .mail-sender, .mail-row[data-unread="true"] .mail-subject { font-weight: 600; }
+.mail-row[data-unread="true"] .mail-subject { color: #1670ff; }
+.mail-summary { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.mail-preview, .mail-row time { color: var(--muted-foreground); font-weight: 400; }
+.mail-row time { font-size: 12px; text-align: right; }
+.mail-indicators { display: flex; gap: 4px; color: var(--muted-foreground); }
+.mail-star { padding: 6px; border-radius: 4px; }
+.mail-star:hover { background: var(--muted); }
+.mail-rows-compact .mail-row { padding: 0 10px; gap: 6px; }
+.mail-rows-compact .mail-row-open { grid-template-columns: 6px minmax(0, 1fr) 36px; gap: 5px 8px; padding: 14px 0; }
+.mail-rows-compact .mail-summary { grid-column: 2 / -1; display: flex; flex-direction: column; gap: 5px; }
+.mail-rows-compact .mail-summary > span { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.mail-rows-compact .mail-preview { font-size: 13px; }
+.mail-rows-compact .mail-row time { grid-column: 3; grid-row: 1; }
+.mail-rows-compact .mail-indicators { display: none; }
+.mail-rows-compact .mail-sender-address { display: none; }
+.mail-reader { min-height: 0; flex-direction: column; background: var(--background); }
+.mail-reader h2 { font-size: 20px; line-height: 28px; }
+.mail-search { display: flex; align-items: center; gap: 8px; width: 100%; max-width: 520px; height: 36px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: color-mix(in srgb, var(--muted) 45%, var(--background)); transition: border-color 150ms, box-shadow 150ms; }
+.mail-search:focus-within { border-color: var(--primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 12%, transparent); }
+.mail-search input { flex: 1; min-width: 0; width: 100%; height: 100%; border: 0; padding: 0; background: transparent; font-size: 13px; line-height: 20px; color: var(--foreground); }
+.mail-search input::placeholder { color: var(--muted-foreground); }
+.email-workspace .mail-search input:focus-visible, .email-workspace .mail-search input:focus { outline: none; box-shadow: none; }
+.mail-details { min-height: 0; flex-direction: column; }
+.mail-layout[data-reading="true"][data-details="true"] .mail-details { display: flex; position: absolute; inset: 0 0 0 auto; width: min(360px, 100%); z-index: 20; box-shadow: -12px 0 30px #00000012; }
+.mail-folder-select { display: none; }
+.mail-header-compose { display: none; }
+@media (min-width: 1600px) {
+  .mail-layout[data-reading="true"][data-details="true"] { grid-template-columns: var(--mail-folder-width) 292px minmax(0, 1fr) 360px; }
+  .mail-layout[data-reading="true"][data-details="true"] .mail-details { position: static; width: auto; box-shadow: none; }
+}
+@media (max-width: 1199px) {
+  .mail-header-compose { display: inline-flex; }
+  .mail-layout[data-reading="true"] { grid-template-columns: 250px minmax(0, 1fr); }
+  .mail-layout[data-reading="true"] .mail-folders { display: none; }
+  .mail-layout[data-reading="true"] .mail-folder-select { display: flex; }
+}
+@media (max-width: 767px) {
+  .mail-layout, .mail-layout[data-reading="true"] { grid-template-columns: minmax(0, 1fr); }
+  .mail-folders, .mail-layout[data-reading="true"] .mail-list { display: none; }
+  .mail-folder-select { display: flex; }
+  .mail-row-open { grid-template-columns: 6px minmax(0, 1fr) 42px; gap: 5px 8px; }
+  .mail-summary { grid-column: 2 / -1; }
+  .mail-indicators { display: none; }
+  .mail-sender-address { display: none; }
+  .mail-row time { grid-column: 3; grid-row: 1; }
+  .mail-reader > div:first-of-type { padding-inline: 12px; }
+  .mail-reader textarea { font-size: 16px; }
+}

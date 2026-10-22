@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import {
-  Archive, ArrowDownToLine, Bot, Check, CheckCheck, ChevronDown, CircleUserRound,
+  Archive, ArrowDownToLine, ArrowLeft, Bot, Check, CheckCheck, ChevronDown, CircleUserRound,
   Clock3, Copy, Filter, Flag, Globe2, Inbox, Languages, MessageCircleMore,
   MoreHorizontal, PanelRightClose, Paperclip, Phone, Plus, Search, SendHorizonal,
   Settings2, Smile, Sparkles, UserCheck, UserRound, WandSparkles, Wifi, Zap,
@@ -84,6 +84,8 @@ export function MessengerInbox({ data }: { data: MetaInboxData }) {
   const initialThreads = useMemo<InboxThread[]>(() => data.threads.map((thread) => ({ ...thread, operator: "You", language: "Auto-detect", priority: "Normal" })), [data.threads]);
   const [threads, setThreads] = useState(initialThreads);
   const [selectedId, setSelectedId] = useState(initialThreads[0]?.id ?? "");
+  const [mobileReading, setMobileReading] = useState(false);
+  const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
   const [activeChannel, setActiveChannel] = useState<Channel>("all");
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState("");
@@ -91,7 +93,7 @@ export function MessengerInbox({ data }: { data: MetaInboxData }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [translationOn, setTranslationOn] = useState(true);
   const [autoReplyOn, setAutoReplyOn] = useState(true);
-  const [detailsOpen, setDetailsOpen] = useState(true);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [onlyUnread, setOnlyUnread] = useState(false);
   const [resolvedIds, setResolvedIds] = useState<Set<string>>(() => new Set());
   const [sortNewest, setSortNewest] = useState(true);
@@ -123,6 +125,7 @@ export function MessengerInbox({ data }: { data: MetaInboxData }) {
   }
 
   function selectChannel(channel: Channel) {
+    setMobileReading(false);
     setActiveChannel(channel);
     const first = threads.find((thread) => channel === "all" || thread.channel === channel);
     if (first) setSelectedId(first.id);
@@ -185,7 +188,7 @@ export function MessengerInbox({ data }: { data: MetaInboxData }) {
 
   return (
     <div className="messenger-workspace flex h-[calc(100dvh-3rem)] flex-col overflow-hidden bg-[#f7f8fa] dark:bg-background">
-      <div className="border-b bg-background px-4 pb-3 pt-4 sm:px-6">
+      <div className={`${mobileReading ? "hidden md:block" : ""} shrink-0 border-b bg-background px-4 pb-3 pt-4 sm:px-6`}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <h1 className="text-[1.9rem] font-semibold tracking-[-0.02em]">Messenger</h1>
@@ -213,8 +216,8 @@ export function MessengerInbox({ data }: { data: MetaInboxData }) {
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 bg-background md:grid-cols-[340px_minmax(0,1fr)] 2xl:grid-cols-[360px_minmax(480px,1fr)_300px]">
-        <section className="flex min-h-0 flex-col border-r" aria-label="Conversations">
+      <div className={`relative grid min-h-0 flex-1 grid-cols-1 bg-background md:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)] ${selectedThread && detailsOpen ? "min-[100rem]:grid-cols-[320px_minmax(0,1fr)_300px]" : ""}`}>
+        <section className={`${mobileReading ? "hidden" : "flex"} min-h-0 min-w-0 flex-col border-r md:flex`} aria-label="Conversations">
           <div className="border-b p-3">
             <div className="flex items-center justify-between px-1 pb-3"><div className="flex items-center gap-2"><h2 className="text-base font-semibold">Inbox</h2><span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">{filteredThreads.length}</span></div><div className="flex items-center gap-1"><button type="button" title={onlyUnread ? "Show all conversations" : "Show unread only"} aria-pressed={onlyUnread} onClick={() => setOnlyUnread((value) => !value)} className={`rounded-md p-2 hover:bg-muted hover:text-foreground ${onlyUnread ? "bg-primary/10 text-primary" : "text-muted-foreground"}`}><Filter className="size-4" /></button><DropdownMenu><DropdownMenuTrigger className="rounded-md p-2 text-muted-foreground outline-none hover:bg-muted hover:text-foreground" aria-label="Inbox actions"><MoreHorizontal className="size-4" /></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-48"><DropdownMenuLabel>Inbox actions</DropdownMenuLabel><DropdownMenuItem onClick={() => setThreads((current) => current.map((thread) => ({ ...thread, unread: 0 })))}><CheckCheck />Mark all as read</DropdownMenuItem><DropdownMenuItem onClick={() => setOnlyUnread(true)}><Filter />Show unread only</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div></div>
             <label className="flex h-9 items-center gap-2 rounded-md border bg-muted/30 px-2.5 focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10"><Search className="size-3.5 text-muted-foreground" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search people or messages" className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground" /><kbd className="rounded border bg-background px-1 text-xs text-muted-foreground">⌘K</kbd></label>
@@ -227,7 +230,7 @@ export function MessengerInbox({ data }: { data: MetaInboxData }) {
             ) : filteredThreads.map((thread) => {
               const selected = selectedThread?.id === thread.id;
               return (
-                <button key={thread.id} type="button" onClick={() => chooseThread(thread)} className={`group relative mb-1.5 flex w-full gap-3.5 rounded-xl p-3.5 text-left transition-colors ${selected ? "bg-[#f0fdf7] shadow-[inset_0_0_0_1px_rgba(62,207,142,0.12)] dark:bg-primary/10" : "hover:bg-muted/60"}`}>
+                <button key={thread.id} type="button" aria-pressed={selected} onClick={() => { chooseThread(thread); setMobileReading(true); }} className={`group relative mb-1.5 flex w-full gap-3.5 rounded-xl p-3.5 text-left transition-colors ${selected ? "bg-[#f0fdf7] shadow-[inset_0_0_0_1px_rgba(62,207,142,0.12)] dark:bg-primary/10" : "hover:bg-muted/60"}`}>
                   {selected ? <span className="absolute inset-y-3 left-0 w-0.5 rounded-r bg-primary" /> : null}
                   <div className="relative flex size-10 shrink-0 items-center justify-center rounded-full bg-[#e8eef7] text-xs font-semibold text-[#38536f] dark:bg-muted dark:text-foreground">{initials(thread.customer)}<span className="absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-background"><ChannelMark channel={thread.channel} size="sm" /></span></div>
                   <div className="min-w-0 flex-1"><div className="flex items-baseline gap-2"><p className="min-w-0 flex-1 truncate text-xs font-semibold">{thread.customer}</p><time className="shrink-0 text-xs text-muted-foreground">{formatTime(thread.updatedAt)}</time></div><p className="mt-0.5 truncate text-xs text-muted-foreground">{thread.company || `Messenger ID ${thread.customerId}`}</p><div className="mt-2 flex items-center gap-2"><p className={`min-w-0 flex-1 truncate text-xs ${thread.unread ? "font-medium text-foreground" : "text-muted-foreground"}`}>{thread.lastMessage}</p>{thread.unread > 0 ? <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{thread.unread}</span> : null}</div></div>
@@ -238,7 +241,8 @@ export function MessengerInbox({ data }: { data: MetaInboxData }) {
           <div className="flex items-center justify-between border-t px-4 py-2.5 text-xs text-muted-foreground"><span>{threads.length} total conversations</span><button type="button" onClick={() => setSortNewest((value) => !value)} className="flex items-center gap-1 rounded px-1 py-0.5 hover:bg-muted hover:text-foreground">{sortNewest ? "Newest first" : "Oldest first"} <ChevronDown className={`size-3 transition-transform ${sortNewest ? "" : "rotate-180"}`} /></button></div>
         </section>
 
-        <section className="hidden min-h-0 flex-col bg-[#fbfbfc] dark:bg-background md:flex" aria-label="Conversation">
+        <section className={`${mobileReading ? "flex" : "hidden"} min-h-0 min-w-0 flex-col bg-[#fbfbfc] dark:bg-background md:flex`} aria-label="Conversation">
+          <button type="button" onClick={() => setMobileReading(false)} className="flex min-h-11 shrink-0 items-center gap-2 border-b bg-background px-4 text-sm font-medium md:hidden"><ArrowLeft className="size-4" />All conversations</button>
           {selectedThread && (activeChannel === "all" || selectedThread.channel === activeChannel) ? (
             <>
               <header className="flex min-h-16 items-center justify-between gap-3 border-b bg-background px-4 sm:px-5">
@@ -259,9 +263,9 @@ export function MessengerInbox({ data }: { data: MetaInboxData }) {
                   })}
                 </div></div>
               </div>
-              <div className="border-t bg-background p-3 sm:p-4"><div className="mx-auto max-w-3xl">
-                <div className="mb-2 flex flex-wrap items-center gap-2"><div className="flex items-center gap-2 rounded-md border bg-[#faf5ff] px-2.5 py-1.5 text-xs text-[#6d28d9] dark:bg-violet-500/10 dark:text-violet-300"><Languages className="size-3.5" /><span>Chinese → English</span><Toggle checked={translationOn} onChange={() => setTranslationOn((value) => !value)} label="Toggle automatic translation" /></div><div className="flex items-center gap-2 rounded-md border bg-[#f0fdf4] px-2.5 py-1.5 text-xs text-[#047857] dark:bg-emerald-500/10 dark:text-emerald-300"><Bot className="size-3.5" /><span>AI auto-reply</span><Toggle checked={autoReplyOn} onChange={() => setAutoReplyOn((value) => !value)} label="Toggle AI auto-reply" /></div><span className="ml-auto flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="size-3" />{formatReplyWindow(selectedThread.replyWindowEndsAt)}</span></div>
-                {autoReplyOn ? <div className="mb-2 flex items-center gap-2 overflow-x-auto pb-0.5"><span className="flex shrink-0 items-center gap-1 text-xs font-semibold text-violet-600 dark:text-violet-300"><Sparkles className="size-3" />AI suggestions</span>{["Share the latest catalog", "Confirm shipping options", "Ask about order quantity"].map((suggestion) => <button key={suggestion} type="button" onClick={() => setDraft(suggestion === "Share the latest catalog" ? "Absolutely — I’ll send our latest pet bed catalog with wholesale pricing and MOQ details now." : suggestion === "Confirm shipping options" ? "Yes, we can help with international shipping. Which country and quantity should I quote?" : "What quantity are you considering for your first order?")} className="shrink-0 rounded-full border bg-background px-3 py-1.5 text-xs text-muted-foreground hover:border-primary/40 hover:text-foreground">{suggestion}</button>)}</div> : null}
+              <div className="messenger-composer shrink-0 border-t bg-background p-3 sm:p-4" data-tools-open={mobileToolsOpen}><div className="mx-auto max-w-3xl"><button type="button" aria-expanded={mobileToolsOpen} onClick={() => setMobileToolsOpen((open) => !open)} className="mb-2 flex min-h-9 items-center gap-2 text-xs font-medium text-muted-foreground md:hidden"><Settings2 className="size-4" />Reply options<ChevronDown className="size-3" /></button>
+                <div className="messenger-reply-tools mb-2 flex flex-wrap items-center gap-2"><div className="flex items-center gap-2 rounded-md border bg-[#faf5ff] px-2.5 py-1.5 text-xs text-[#6d28d9] dark:bg-violet-500/10 dark:text-violet-300"><Languages className="size-3.5" /><span>Chinese → English</span><Toggle checked={translationOn} onChange={() => setTranslationOn((value) => !value)} label="Toggle automatic translation" /></div><div className="flex items-center gap-2 rounded-md border bg-[#f0fdf4] px-2.5 py-1.5 text-xs text-[#047857] dark:bg-emerald-500/10 dark:text-emerald-300"><Bot className="size-3.5" /><span>AI auto-reply</span><Toggle checked={autoReplyOn} onChange={() => setAutoReplyOn((value) => !value)} label="Toggle AI auto-reply" /></div><span className="ml-auto flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="size-3" />{formatReplyWindow(selectedThread.replyWindowEndsAt)}</span></div>
+                {autoReplyOn ? <div className="messenger-reply-tools mb-2 flex items-center gap-2 overflow-x-auto pb-0.5"><span className="flex shrink-0 items-center gap-1 text-xs font-semibold text-violet-600 dark:text-violet-300"><Sparkles className="size-3" />AI suggestions</span>{["Share the latest catalog", "Confirm shipping options", "Ask about order quantity"].map((suggestion) => <button key={suggestion} type="button" onClick={() => setDraft(suggestion === "Share the latest catalog" ? "Absolutely — I’ll send our latest pet bed catalog with wholesale pricing and MOQ details now." : suggestion === "Confirm shipping options" ? "Yes, we can help with international shipping. Which country and quantity should I quote?" : "What quantity are you considering for your first order?")} className="shrink-0 rounded-full border bg-background px-3 py-1.5 text-xs text-muted-foreground hover:border-primary/40 hover:text-foreground">{suggestion}</button>)}</div> : null}
                 <div className="rounded-xl border bg-background shadow-[0_8px_30px_rgba(15,23,42,0.05)] focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10"><textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void handleSend(); } }} disabled={!selectedThread.replyWindowOpen || resolvedIds.has(selectedThread.id)} placeholder={resolvedIds.has(selectedThread.id) ? "Reopen this conversation to reply" : selectedThread.replyWindowOpen ? `Reply to ${selectedThread.customer}…` : "The reply window is closed"} className="min-h-20 w-full resize-none bg-transparent px-3.5 pt-3 text-xs outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed" /><div className="flex items-center justify-between border-t px-2 py-1.5"><div className="flex items-center gap-0.5"><button type="button" disabled title="Attachments require Meta media-message setup" className="cursor-not-allowed rounded-md p-1.5 text-muted-foreground opacity-40"><Paperclip className="size-4" /></button><button type="button" title="Add emoji" onClick={() => setDraft((value) => `${value}${value ? " " : ""}😊`)} className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"><Smile className="size-4" /></button><button type="button" title="Draft with AI" onClick={() => setDraft((value) => value || "Thanks for reaching out! I’d be happy to help with your request.")} className="rounded-md p-1.5 text-violet-600 hover:bg-violet-50 dark:text-violet-300 dark:hover:bg-violet-500/10"><WandSparkles className="size-4" /></button></div><div className="flex items-center gap-2"><span className="hidden text-xs text-muted-foreground sm:inline">Enter to send</span><button type="button" onClick={() => void handleSend()} disabled={sending || !draft.trim() || !selectedThread.replyWindowOpen || resolvedIds.has(selectedThread.id)} className="inline-flex h-8 items-center gap-2 rounded-md bg-[#153f33] px-3 text-xs font-semibold text-white hover:bg-[#0f3329] disabled:cursor-not-allowed disabled:opacity-40 dark:bg-primary dark:text-primary-foreground"><SendHorizonal className="size-3.5" />{sending ? "Sending" : "Send"}</button></div></div></div>
                 {notice ? <p role="status" className="mt-2 text-xs text-muted-foreground">{notice}</p> : null}
               </div></div>
@@ -270,7 +274,7 @@ export function MessengerInbox({ data }: { data: MetaInboxData }) {
         </section>
 
         {selectedThread && detailsOpen ? (
-          <aside className="hidden min-h-0 flex-col border-l bg-background 2xl:flex" aria-label="Customer details">
+          <aside className="absolute inset-y-0 right-0 z-30 flex w-full max-w-[300px] min-h-0 flex-col overflow-y-auto border-l bg-background shadow-xl min-[100rem]:static min-[100rem]:shadow-none" aria-label="Customer details">
             <div className="flex h-16 items-center justify-between border-b px-5">
               <h2 className="text-base font-semibold">Customer details</h2>
               <button type="button" title="Hide customer details" onClick={() => setDetailsOpen(false)} className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground"><PanelRightClose className="size-4" /></button>

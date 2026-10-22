@@ -1,0 +1,61 @@
+/* Let nested grids shrink; tables and canvases own their scrolling. */
+.crm-workspace-content,
+.crm-workspace-content :where(.grid > *, .flex > *) {
+  min-width: 0;
+}
+
+.crm-workspace-content :where(h1, h2, h3, p, dd) {
+  overflow-wrap: anywhere;
+}
+
+[data-slot="popover-content"] {
+  max-width: calc(100vw - 1rem);
+  max-height: min(48rem, calc(100dvh - 2rem));
+  overflow-y: auto;
+}
+
+.crm-product-desktop > .crm-table-viewport {
+  min-height: 0;
+  max-height: none;
+  flex: 1 1 0%;
+}
+
+@media (max-width: 47.999rem) {
+  .crm-company-summary [data-slot="card"] { padding: 0.875rem; }
+  .crm-company-summary [data-slot="card"] > div { flex-direction: column-reverse; gap: 0.5rem; }
+  .crm-company-summary [data-slot="card"] > div > span { display: none; }
+  .crm-company-summary [data-slot="card"] p:last-child { display: none; }
+  .crm-table-toolbar { align-items: stretch; }
+  .crm-table-toolbar > :where(div) { width: 100%; }
+  .crm-table-toolbar :where([data-slot="select-trigger"]) {
+    flex: 1 1 8rem;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .crm-table-toolbar > :last-child:is(p) { margin-left: 0; white-space: normal; }
+
+  /* Use one usable editor pane when height is limited by a phone keyboard. */
+  .crm-flow-workspace { display: flex; flex-direction: column; }
+  .crm-flow-workspace > main,
+  .crm-flow-workspace > aside { width: 100%; flex: 1 1 0%; min-height: 0; }
+  .crm-flow-workspace[data-mobile-panel="canvas"] > aside,
+  .crm-flow-workspace[data-mobile-panel="settings"] > main { display: none; }
+
+  .messenger-workspace:not(.email-workspace) :where(section, main) { min-width: 0; }
+  .messenger-composer[data-tools-open="false"] .messenger-reply-tools { display: none; }
+  .messenger-composer { max-height: 60%; overflow-y: auto; padding-bottom: max(0.75rem, env(safe-area-inset-bottom)); }
+
+  [data-slot="table-pagination"] button[aria-label^="Go to page"]:not([aria-current="page"]) { display: none; }
+  [data-slot="table-pagination"] nav > div::after { content: attr(aria-label); padding-inline: 0.5rem; }
+}
+
+@media (max-width: 47.999rem) and (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not(.email-workspace *), textarea:not(.email-workspace *), select:not(.email-workspace *) { font-size: 1rem; }
+  :where(button, a[role="button"], [data-slot="select-trigger"]):not([role="switch"]):not([role="checkbox"]):not([data-slot="calendar"] *):not(.email-workspace *) { min-height: 2.75rem; }
+  :where(button[aria-label], button[title]):not([role="switch"]):not([role="checkbox"]):not([data-slot="calendar"] *):not(.email-workspace *) { min-width: 2.75rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}
+

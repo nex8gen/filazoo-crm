@@ -1,0 +1,73 @@
+.invoice-workspace input,
+.invoice-workspace textarea,
+.invoice-workspace select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--background);
+  padding: 0.6rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--foreground);
+}
+.invoice-workspace input:focus-visible,
+.invoice-workspace textarea:focus-visible,
+.invoice-workspace select:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.invoice-workspace input:disabled {
+  opacity: 0.6;
+}
+.invoice-paper td,
+.invoice-paper dd,
+.invoice-paper p {
+  overflow-wrap: anywhere;
+}
+@media print {
+  @page {
+    size: A4;
+    margin: 15mm;
+  }
+  body:has(.invoice-paper)
+    *:not(.invoice-paper):not(.invoice-paper *):not(:has(.invoice-paper)) {
+    display: none !important;
+  }
+  body:has(.invoice-paper),
+  body :has(.invoice-paper) {
+    display: block !important;
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    transform: none !important;
+  }
+  .invoice-paper {
+    position: static !important;
+    width: 100% !important;
+    border: 0 !important;
+    padding: 0 !important;
+    color: #111 !important;
+    background: white !important;
+    font-size: 11pt !important;
+  }
+  .invoice-paper * {
+    color: #111 !important;
+    background: transparent !important;
+  }
+  .invoice-paper .overflow-x-auto {
+    overflow: visible !important;
+  }
+  .invoice-paper tr {
+    break-inside: avoid;
+  }
+  .invoice-paper thead {
+    display: table-header-group;
+  }
+  .invoice-paper dl {
+    break-inside: avoid;
+  }
+}

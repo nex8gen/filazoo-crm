@@ -9,15 +9,19 @@ import {
   DEFAULT_EMAIL_TITLE,
   normalizeSignatureName,
 } from "@/lib/ai/email-rewrite";
-import { looksLikeEnglish, translateEnglishEmail } from "@/lib/email-translation";
+import { getEmailTranslationProvider, looksLikeEnglish, translateEmailSegments, translateEnglishEmail } from "@/lib/email-translation";
 import { z } from "zod";
+import { emailSummaryInstruction, parseEmailSummary, validateEmailFollowUp } from "@/lib/ai/email-summary";
 
 const requestSchema = z.object({
-  mode: z.enum(["rewrite", "translate"]),
+  mode: z.enum(["rewrite", "translate", "summary"]),
   text: z.string().trim().min(1).max(20_000),
+  segments: z.array(z.string().trim().min(1).max(20_000)).min(1).max(500)
+    .refine((segments) => segments.reduce((length, text) => length + text.length, 0) <= 20_000, "Email is too long to translate.").optional(),
   context: z.string().max(8_000).optional(),
   recipient: z.string().max(200).optional(),
   assignedManagerName: z.string().max(200).optional(),
+  currentFollowUpAt: z.string().datetime({ offset: true }).nullable().optional(),
   customerProfile: z.object({
     companyName: z.string().max(300),
     contactName: z.string().max(300).optional(),
@@ -52,12 +56,20 @@ export async function POST(request: Request) {
 
   const { mode, text, context, recipient, assignedManagerName, customerProfile, conversationHistory } = parsed.data;
   if (mode === "translate") {
+    if (parsed.data.segments) {
+      try {
+        const segments = await translateEmailSegments(parsed.data.segments);
+        return Response.json({ ok: true, segments, provider: getEmailTranslationProvider() }, { headers: { "Cache-Control": "no-store" } });
+      } catch (error) {
+        return Response.json({ ok: false, error: error instanceof Error ? error.message : "Translation is temporarily unavailable." }, { status: 502 });
+      }
+    }
     if (!looksLikeEnglish(text)) {
       return Response.json({ ok: true, output: text, skipped: true }, { headers: { "Cache-Control": "no-store" } });
     }
     try {
       const output = await translateEnglishEmail(text);
-      return Response.json({ ok: true, output, provider: "mymemory" }, { headers: { "Cache-Control": "no-store" } });
+      return Response.json({ ok: true, output, provider: getEmailTranslationProvider() }, { headers: { "Cache-Control": "no-store" } });
     } catch (error) {
       return Response.json({ ok: false, error: error instanceof Error ? error.message : "Translation is temporarily unavailable." }, { status: 502 });
     }
@@ -71,15 +83,23 @@ export async function POST(request: Request) {
     title: DEFAULT_EMAIL_TITLE,
     company: DEFAULT_EMAIL_COMPANY,
   };
-  const system = mode === "rewrite" ? buildEmailRewriteInstruction(signature) : "";
-  const userContent = buildEmailRewritePrompt({
+  const system = mode === "summary" ? `${emailSummaryInstruction}\nCURRENT TIME: ${new Date().toISOString()}\nWORKSPACE TIMEZONE: Asia/Shanghai` : buildEmailRewriteInstruction(signature);
+  const userContent = mode === "summary" ? JSON.stringify({
+    contact: recipient,
+    customerProfile,
+    conversationHistory,
+    latestMessage: text,
+    currentFollowUpAt: parsed.data.currentFollowUpAt,
+  }) : buildEmailRewritePrompt({
     recipient,
     managerInput: text,
     customerProfile,
     conversationHistory,
     legacyContext: context,
   });
-  const finalizeOutput = (output: string) => mode === "rewrite" ? applyEmailSignature(output, signature) : output;
+  const finalizeOutput = (output: string) => mode === "summary"
+    ? JSON.stringify(validateEmailFollowUp(parseEmailSummary(output), new Date()))
+    : applyEmailSignature(output, signature);
 
   const generateWithGateway = () => generateGatewayText({
     token: gatewayToken!,
@@ -89,7 +109,7 @@ export async function POST(request: Request) {
   });
 
   if (!apiKey && !gatewayToken) {
-    return Response.json({ ok: false, error: "AI writing is not configured." }, { status: 503 });
+    return Response.json({ ok: false, error: "AI assistance is not configured." }, { status: 503 });
   }
 
   if (!apiKey && gatewayToken) {

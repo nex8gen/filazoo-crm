@@ -8,6 +8,7 @@ import { AppShell } from "@/components/app-shell";
 import { LanguageProvider } from "@/components/language-provider";
 import { UserMenu } from "@/components/user-menu";
 import "./globals.css";
+import "./responsive.css";
 
 export const metadata: Metadata = {
   title: { default: "Filazoo", template: "%s · Filazoo" },
@@ -16,7 +17,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={GeistSans.variable} suppressHydrationWarning>
+    <html lang="en" className={GeistSans.variable} data-scroll-behavior="smooth" suppressHydrationWarning>
       <body>
         <LanguageProvider>
           <ThemeProvider>
