@@ -19,6 +19,7 @@ import { AssignedOwner } from "@/components/assigned-owner";
 import { groupEmailConversations, replyReferences, threadKeyForEmail } from "@/lib/email-threading";
 import { buildCatalogPdf } from "@/lib/catalog-pdf";
 import type { Catalog, Product } from "@/lib/types";
+import type { CustomerProfileContext } from "@/lib/ai/email-rewrite";
 
 export type EmailWorkspaceItem = {
   id: string;
@@ -34,6 +35,7 @@ export type EmailWorkspaceItem = {
   ownerId?: string | null;
   ownerName?: string;
   ownerInitials?: string;
+  customerProfile?: CustomerProfileContext;
   preview: string;
   body: string;
   html?: string | null;
@@ -317,6 +319,12 @@ export function EmailInboxWorkspace({
   const selectedConversation = visible.find((item) => item.messages.some((email) => email.id === selectedId)) ?? visible[0];
   const selected = selectedConversation?.latest;
   const conversation = useMemo(() => selectedConversation?.messages ?? [], [selectedConversation]);
+  const conversationContext = useMemo(() => conversation.slice(-8).map((message) => ({
+    direction: message.direction,
+    subject: message.subject,
+    body: message.body.slice(0, 2_000),
+    timestamp: message.timestamp,
+  })), [conversation]);
 
   useEffect(() => {
     if (!translationOn) return;
@@ -363,7 +371,14 @@ export function EmailInboxWorkspace({
       void fetch("/api/email/assist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "rewrite", text: source, context: selected?.body || "", recipient: selected?.contact || "Customer" }),
+        body: JSON.stringify({
+          mode: "rewrite",
+          text: source,
+          recipient: selected?.contactName || selected?.customerProfile?.contactName || selected?.contact || "Customer",
+          assignedManagerName: selected?.ownerId ? selected.ownerName : undefined,
+          customerProfile: selected?.customerProfile,
+          conversationHistory: conversationContext,
+        }),
         signal: controller.signal,
       }).then(async (response) => {
         const result = await response.json().catch(() => ({ ok: false, error: "Unable to write this email." }));
@@ -387,7 +402,7 @@ export function EmailInboxWorkspace({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [aiConfigured, aiReplyOn, aiRetryNonce, draft, selected?.body, selected?.contact]);
+  }, [aiConfigured, aiReplyOn, aiRetryNonce, conversationContext, draft, selected?.contact, selected?.contactName, selected?.customerProfile, selected?.ownerId, selected?.ownerName]);
 
   useEffect(() => {
     if (!aiReplyOn || (!aiWriting && !aiDraft && !aiWritingError)) return;

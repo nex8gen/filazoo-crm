@@ -3,6 +3,7 @@ import { getEffectiveMailbox, mailboxHasImap, mailboxHasSmtp } from "./data/mail
 import { getEmailAutomationSettings, listEmailInboxStates, listSentMailboxMessages, type EmailCategory, type EmailFolderState } from "./data/email-state.ts";
 import { getViewer } from "./auth.ts";
 import { normalizeMessageId, normalizeReferences, threadKeyForEmail } from "./email-threading.ts";
+import type { CustomerProfileContext } from "./ai/email-rewrite.ts";
 
 export type InboxEmailItem = {
   id: string;
@@ -18,6 +19,7 @@ export type InboxEmailItem = {
   ownerId?: string | null;
   ownerName?: string;
   ownerInitials?: string;
+  customerProfile?: CustomerProfileContext;
   preview: string;
   body: string;
   html?: string | null;
@@ -491,6 +493,22 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
         companyId: company?.id ?? null,
         ownerId: company?.ownerId ?? null,
         ownerName: company?.ownerName ?? "Unassigned",
+        customerProfile: company ? {
+          companyName: company.name,
+          contactName: item.contactName || company.contact,
+          contactRole: company.contactRole,
+          website: company.website,
+          country: company.country,
+          city: company.city,
+          segment: company.segment,
+          summary: company.summary,
+          interests: company.tags,
+          fitScore: company.fitScore,
+          pipelineStage: company.stage,
+          estimatedOrderQuantity: company.estimatedOrderQuantity ?? undefined,
+          estimatedValue: company.estimatedValue ?? undefined,
+          currency: company.currency,
+        } : undefined,
         ownerInitials: company?.ownerInitials ?? "—",
       };
     });
