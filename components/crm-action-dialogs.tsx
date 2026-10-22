@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import type { Company, ContactOption, Product } from "@/lib/types";
+import { pipelineStageLabels, pipelineStageValues, type Company, type ContactOption, type Product } from "@/lib/types";
 
 function ActionMessage({ state }: { state: CrmActionState }) {
   if (state?.error) return <p role="alert" className="text-xs text-destructive">{state.error}</p>;
@@ -91,7 +91,7 @@ export function AddOpportunityButton({ companies, canWrite }: { companies: Compa
           <form action={dialog.action} className="space-y-4">
             <Field label="Company" id="opportunity-company"><Select name="companyId" required><SelectTrigger id="opportunity-company" className="w-full"><SelectValue placeholder="Choose a company" /></SelectTrigger><SelectContent>{companies.map((company) => <SelectItem key={company.id} value={company.id}>{company.name}</SelectItem>)}</SelectContent></Select></Field>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Stage" id="opportunity-stage"><Select name="stage" defaultValue="new"><SelectTrigger id="opportunity-stage" className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="new">New</SelectItem><SelectItem value="contacted">Contacted</SelectItem><SelectItem value="replied">Replied</SelectItem><SelectItem value="interested">Interested</SelectItem><SelectItem value="big_order">Big order</SelectItem><SelectItem value="won">Won</SelectItem><SelectItem value="lost">Lost</SelectItem></SelectContent></Select></Field>
+              <Field label="Stage" id="opportunity-stage"><Select name="stage" defaultValue="new"><SelectTrigger id="opportunity-stage" className="w-full"><SelectValue /></SelectTrigger><SelectContent>{pipelineStageValues.map((value) => <SelectItem key={value} value={value}>{pipelineStageLabels[value]}</SelectItem>)}</SelectContent></Select></Field>
               <Field label="Next follow-up" id="opportunity-followup"><Input id="opportunity-followup" name="nextFollowupAt" type="datetime-local" /></Field>
               <Field label="Estimated value" id="opportunity-value"><Input id="opportunity-value" name="estimatedValue" type="number" min="0" step="0.01" /></Field>
               <Field label="Currency" id="opportunity-currency"><Select name="currency" defaultValue="USD"><SelectTrigger id="opportunity-currency" className="w-full"><SelectValue /></SelectTrigger><SelectContent>{["USD", "EUR", "GBP", "CNY"].map((currency) => <SelectItem key={currency} value={currency}>{currency}</SelectItem>)}</SelectContent></Select></Field>

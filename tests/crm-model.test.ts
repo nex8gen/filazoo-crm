@@ -7,7 +7,7 @@ test("uses one canonical pipeline model and maps legacy database stages", () => 
   assert.equal(normalizePipelineStage("interested"), "interested");
   assert.equal(normalizePipelineStage("qualified"), "interested");
   assert.equal(normalizePipelineStage("negotiation"), "big_order");
-  assert.equal(getPipelineStageLabel("big_order"), "Big order");
+  assert.equal(getPipelineStageLabel("big_order"), "Quote / bulk order");
 });
 
 test("creates stable company initials", () => {

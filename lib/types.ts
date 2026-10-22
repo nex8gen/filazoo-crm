@@ -11,13 +11,13 @@ export const pipelineStageValues = [
 export type PipelineStageValue = (typeof pipelineStageValues)[number];
 
 export const pipelineStageLabels: Record<PipelineStageValue, string> = {
-  new: "New",
-  contacted: "Contacted",
-  replied: "Replied",
-  interested: "Interested",
-  big_order: "Big order",
-  won: "Won",
-  lost: "Lost",
+  new: "Profile created",
+  contacted: "Catalog sent",
+  replied: "Customer replied",
+  interested: "Qualified interest",
+  big_order: "Quote / bulk order",
+  won: "Order confirmed",
+  lost: "Closed / not proceeding",
 };
 
 export const pipelineStages = pipelineStageValues.map((value) => pipelineStageLabels[value]);
@@ -67,6 +67,8 @@ export type CompanyActivity = {
   type: "event" | "email" | "catalog";
   title: string;
   detail: string;
+  body?: string;
+  direction?: "received" | "sent";
   actor: string;
   createdAt: string;
 };

@@ -12,7 +12,7 @@ type PeriodValue = { currentPeriod: number; previousPeriod: number };
 type Range = { from: Date; to: Date };
 const channelLabels: Record<AnalyticsChannel, string> = { meta: "Meta", store: "Direct / Shopify", partner: "Partner / referral" };
 const channelColors: Record<AnalyticsChannel, string> = { meta: "#3b82f6", store: "#10b981", partner: "#f59e0b" };
-const stageLabels: Record<string, string> = { new: "New", contacted: "Contacted", replied: "Replied", interested: "Interested", big_order: "Big order", won: "Won", lost: "Lost" };
+const stageLabels: Record<string, string> = { new: "Profile created", contacted: "Catalog sent", replied: "Customer replied", interested: "Qualified interest", big_order: "Quote / bulk order", won: "Order confirmed", lost: "Closed / not proceeding" };
 const stageRanks: Record<string, number> = { new: 0, contacted: 1, replied: 2, interested: 3, big_order: 4, won: 5, lost: -1 };
 
 function atDay(value: string | Date) { const date = new Date(value); date.setHours(0, 0, 0, 0); return date; }
@@ -99,10 +99,10 @@ export function AnalyticsDashboard({ data }: { data: AnalyticsDashboardData }) {
     const won = (rows: typeof currentOpps) => rows.filter((row) => row.stage === "won").length;
     const funnel = (rows: typeof currentOpps) => [
       { label: "Incoming opportunities", count: rows.length },
-      { label: "Contacted", count: rows.filter((row) => stageRanks[row.stage] >= 1).length },
-      { label: "Replied", count: rows.filter((row) => stageRanks[row.stage] >= 2).length },
-      { label: "Interested / big order", count: rows.filter((row) => stageRanks[row.stage] >= 3).length },
-      { label: "Won", count: won(rows) },
+      { label: "Catalog sent", count: rows.filter((row) => stageRanks[row.stage] >= 1).length },
+      { label: "Customer replied", count: rows.filter((row) => stageRanks[row.stage] >= 2).length },
+      { label: "Qualified / quote", count: rows.filter((row) => stageRanks[row.stage] >= 3).length },
+      { label: "Order confirmed", count: won(rows) },
     ];
     const catalogCounts = (range: Range) => { const counts = new Map<string, number>(); for (const catalog of data.catalogs.filter((item) => inRange(item.createdAt, range) && filters.channels.includes(item.channel) && item.currency === filters.currency)) for (const sku of new Set(catalog.productSkus)) counts.set(sku, (counts.get(sku) ?? 0) + 1); return counts; };
     const currentCatalogs = catalogCounts(filters.range); const previousCatalogs = catalogCounts(previousRange);

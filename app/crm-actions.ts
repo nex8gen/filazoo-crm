@@ -198,7 +198,7 @@ export async function updateCompany(companyId: string, _state: CrmActionState, f
   const admin = createSupabaseAdmin();
   const [{ data: company }, { data: previousPipeline }] = await Promise.all([
     admin.from("companies").select("id,name,segment").eq("id", id.data).maybeSingle(),
-    admin.from("pipeline").select("stage").eq("company_id", id.data).maybeSingle(),
+    admin.from("pipeline").select("stage,owner_id").eq("company_id", id.data).maybeSingle(),
   ]);
   if (!company) return { error: "The company no longer exists." };
   const tags = (parsed.data.tags || "").split(",").map((tag) => tag.trim()).filter(Boolean).slice(0, 50);
@@ -227,7 +227,19 @@ export async function updateCompany(companyId: string, _state: CrmActionState, f
       : await admin.from("contacts").insert({ company_id: id.data, ...contactValues, verification_status: "unverified" });
     if (contactResult.error) return { error: "Company details were saved, but the contact email could not be updated." };
   }
+  const followupNote = "Scheduled from intelligent next follow-up recommendation.";
+  const { data: existingFollowupTask } = await admin.from("crm_tasks").select("id").eq("company_id", id.data).eq("status", "open").eq("notes", followupNote).order("created_at").limit(1).maybeSingle();
+  const followupDueAt = parsed.data.nextFollowupAt ? new Date(parsed.data.nextFollowupAt).toISOString() : null;
+  const followupTaskResult = followupDueAt
+    ? existingFollowupTask
+      ? await admin.from("crm_tasks").update({ title: `Follow up ${parsed.data.name}`, assigned_to: previousPipeline?.owner_id ?? viewer.id, due_at: followupDueAt, updated_at: new Date().toISOString() }).eq("id", existingFollowupTask.id)
+      : await admin.from("crm_tasks").insert({ company_id: id.data, contact_id: primaryContact?.id ?? null, assigned_to: previousPipeline?.owner_id ?? viewer.id, title: `Follow up ${parsed.data.name}`, notes: followupNote, priority: ["replied", "interested", "big_order"].includes(parsed.data.stage) ? "high" : "normal", due_at: followupDueAt })
+    : existingFollowupTask
+      ? await admin.from("crm_tasks").update({ status: "cancelled", updated_at: new Date().toISOString() }).eq("id", existingFollowupTask.id)
+      : { error: null };
+  if (followupTaskResult.error) return { error: "Company details were saved, but the follow-up task could not be scheduled." };
   await admin.from("events").insert({ company_id: id.data, actor_id: viewer.id, type: "company_updated", data: { summary: `${parsed.data.name} details were updated.` } });
+  if (followupDueAt) await admin.from("events").insert({ company_id: id.data, actor_id: viewer.id, type: "followup_scheduled", data: { summary: `Next follow-up scheduled for ${new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Shanghai" }).format(new Date(followupDueAt))}.` } });
   const { data: automationContact } = await admin.from("contacts").select("id").eq("company_id", id.data).order("created_at").limit(1).maybeSingle();
   if (company.segment !== parsed.data.segment) await enrollCompanyEvent({ type: "company_segment_changed", conversationId: `company:${id.data}`, companyId: id.data, contactId: automationContact?.id ?? null, segment: parsed.data.segment });
   if (previousPipeline?.stage !== parsed.data.stage) await enrollCompanyEvent({ type: "pipeline_stage_changed", conversationId: `company:${id.data}:pipeline`, companyId: id.data, contactId: automationContact?.id ?? null, stage: parsed.data.stage });

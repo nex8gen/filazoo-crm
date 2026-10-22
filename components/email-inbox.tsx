@@ -52,6 +52,7 @@ export type EmailWorkspaceItem = {
 };
 
 type Folder = "inbox" | "all" | "drafts" | "scheduled" | "sent" | "starred" | "archive" | "trash";
+type SourceFilter = "all" | "shopify" | "replies" | "unread";
 type Category = "Needs follow-up" | "Waiting on customer" | "Interested" | "Big order" | "No action";
 type Automation = { enabled: boolean; queueCount: number; steps: Array<{ id: string; title: string; delay: string; action: string; enabled: boolean }> };
 type ComposerAttachment = { id: string; filename: string; content: string; contentType: string; size: number };
@@ -210,6 +211,7 @@ export function EmailInboxWorkspace({
   const [selectedId, setSelectedId] = useState(sourceEmails[0]?.id ?? "");
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<Category | null>(null);
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [draft, setDraft] = useState("");
   const [composeOpen, setComposeOpen] = useState(false);
   const [composeTo, setComposeTo] = useState("");
@@ -227,6 +229,8 @@ export function EmailInboxWorkspace({
   const [aiDraft, setAiDraft] = useState("");
   const [aiDraftSource, setAiDraftSource] = useState("");
   const [aiWriting, setAiWriting] = useState(false);
+  const [aiWritingError, setAiWritingError] = useState<string | null>(null);
+  const [aiRetryNonce, setAiRetryNonce] = useState(0);
   const [translations, setTranslations] = useState<Record<string, string>>({});
   const [translating, setTranslating] = useState<Set<string>>(new Set());
   const [translationErrors, setTranslationErrors] = useState<Record<string, string>>({});
@@ -244,6 +248,8 @@ export function EmailInboxWorkspace({
   const [syncError, setSyncError] = useState<string | null>(inboxError);
   const [syncing, setSyncing] = useState(false);
   const syncInProgress = useRef(false);
+  const aiRequestId = useRef(0);
+  const conversationScroll = useRef<HTMLDivElement>(null);
   const replyFileInput = useRef<HTMLInputElement>(null);
   const composeFileInput = useRef<HTMLInputElement>(null);
 
@@ -300,10 +306,14 @@ export function EmailInboxWorkspace({
     return conversations.filter((conversation) => {
       const matchesFolder = conversation.messages.some((email) => emailMatchesFolder(email, folder, folderStates, starred));
       const matchesCategory = !categoryFilter || conversation.messages.some((email) => categories[email.id] === categoryFilter);
+      const matchesSource = sourceFilter === "all"
+        || (sourceFilter === "shopify" && conversation.messages.some((email) => email.source === "shopify"))
+        || (sourceFilter === "replies" && conversation.messages.some((email) => email.direction === "inbound" && email.source !== "shopify"))
+        || (sourceFilter === "unread" && conversation.messages.some((email) => email.direction === "inbound" && !readMessages.has(email.id)));
       const searchable = conversation.messages.map((email) => `${email.subject} ${email.contactName || ""} ${email.contact} ${email.company} ${email.preview}`).join(" ").toLowerCase();
-      return matchesFolder && matchesCategory && (!query || searchable.includes(query));
+      return matchesFolder && matchesCategory && matchesSource && (!query || searchable.includes(query));
     }).sort((a, b) => new Date(b.latest.timestamp).getTime() - new Date(a.latest.timestamp).getTime());
-  }, [categories, categoryFilter, conversations, folder, folderStates, search, starred]);
+  }, [categories, categoryFilter, conversations, folder, folderStates, readMessages, search, sourceFilter, starred]);
   const selectedConversation = visible.find((item) => item.messages.some((email) => email.id === selectedId)) ?? visible[0];
   const selected = selectedConversation?.latest;
   const conversation = useMemo(() => selectedConversation?.messages ?? [], [selectedConversation]);
@@ -339,13 +349,17 @@ export function EmailInboxWorkspace({
   }, [conversation, translating, translationErrors, translationOn, translations]);
 
   useEffect(() => {
-    if (!aiReplyOn || !aiConfigured || draft.trim().length < 2) {
+    const requestId = ++aiRequestId.current;
+    const source = draft.trim();
+    if (!aiReplyOn || !aiConfigured || source.length < 2) {
       return;
     }
+
     const controller = new AbortController();
-    const source = draft.trim();
     const timer = window.setTimeout(() => {
       setAiWriting(true);
+      setAiWritingError(null);
+      setAiDraft("");
       void fetch("/api/email/assist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -354,18 +368,31 @@ export function EmailInboxWorkspace({
       }).then(async (response) => {
         const result = await response.json().catch(() => ({ ok: false, error: "Unable to write this email." }));
         if (!response.ok || !result.output) throw new Error(result.error || "Unable to write this email.");
-        setAiDraft(result.output);
-        setAiDraftSource(source);
+        if (aiRequestId.current === requestId) {
+          setAiDraft(result.output);
+          setAiDraftSource(source);
+        }
       }).catch((error) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
-        setNotice(error instanceof Error ? error.message : "Unable to write this email.");
-      }).finally(() => setAiWriting(false));
+        if (aiRequestId.current === requestId) {
+          setAiWritingError(error instanceof Error ? error.message : "Unable to write this email.");
+          setAiDraft("");
+          setAiDraftSource("");
+        }
+      }).finally(() => {
+        if (aiRequestId.current === requestId) setAiWriting(false);
+      });
     }, 700);
     return () => {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [aiConfigured, aiReplyOn, draft, selected?.body, selected?.contact]);
+  }, [aiConfigured, aiReplyOn, aiRetryNonce, draft, selected?.body, selected?.contact]);
+
+  useEffect(() => {
+    if (!aiReplyOn || (!aiWriting && !aiDraft && !aiWritingError)) return;
+    conversationScroll.current?.scrollTo({ top: conversationScroll.current.scrollHeight, behavior: "smooth" });
+  }, [aiDraft, aiReplyOn, aiWriting, aiWritingError]);
 
   const folderCounts = useMemo(() => {
     const counts: Record<Folder, number> = { inbox: 0, all: 0, drafts: 0, scheduled: 0, sent: 0, starred: 0, archive: 0, trash: 0 };
@@ -410,8 +437,41 @@ export function EmailInboxWorkspace({
     void persistState(id, { starred: nextValue }).catch((error) => setNotice(error.message));
   }
 
+  function clearReplyComposer() {
+    aiRequestId.current += 1;
+    setDraft("");
+    setAiDraft("");
+    setAiDraftSource("");
+    setAiWriting(false);
+    setAiWritingError(null);
+    setReplyAttachments([]);
+  }
+
+  function updateDraft(value: string) {
+    setDraft(value);
+    setAiWritingError(null);
+    if (value.trim().length >= 2) return;
+    aiRequestId.current += 1;
+    setAiDraft("");
+    setAiDraftSource("");
+    setAiWriting(false);
+    setAiWritingError(null);
+  }
+
+  function toggleAiWriting() {
+    if (aiReplyOn) {
+      aiRequestId.current += 1;
+      setAiDraft("");
+      setAiDraftSource("");
+      setAiWriting(false);
+      setAiWritingError(null);
+    }
+    setAiReplyOn((value) => !value);
+  }
+
   function openConversation(item: EmailConversation) {
     const email = item.latest;
+    if (item.id !== selectedConversation?.id) clearReplyComposer();
     setSelectedId(email.id);
     if (email.direction !== "inbound" || readMessages.has(email.id)) return;
     setReadMessages((current) => new Set(current).add(email.id));
@@ -626,6 +686,12 @@ export function EmailInboxWorkspace({
     { id: "sent", label: "Sent", icon: Send }, { id: "starred", label: "Starred", icon: Star },
     { id: "archive", label: "Archive", icon: Archive }, { id: "trash", label: "Trash", icon: Trash2 },
   ];
+  const sourceFilters: Array<{ id: SourceFilter; label: string }> = [
+    { id: "all", label: "All relevant" },
+    { id: "shopify", label: "Shopify leads" },
+    { id: "replies", label: "Customer replies" },
+    { id: "unread", label: "Unread" },
+  ];
 
   return (
     <div className="email-workspace messenger-workspace -mx-5 -my-7 flex h-[calc(100dvh-3rem)] flex-col overflow-hidden bg-[#f7f8fa] dark:bg-background sm:-mx-7 lg:-mx-10 lg:-my-10">
@@ -645,9 +711,9 @@ export function EmailInboxWorkspace({
           <span className="ml-auto hidden items-center gap-1.5 text-muted-foreground sm:flex"><ShieldCheck className="size-3.5" />{dataMode === "live" ? "Live CRM data" : "CRM connection unavailable"}</span>
         </div>
         <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-blue-200/70 bg-blue-50/60 px-3 py-2 text-[11px] text-blue-900 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-200">
-          <span className="font-semibold">Unified customer inbox</span>
-          <span>Shopify form enquiries appear automatically.</span>
-          <span className="text-blue-700/70 dark:text-blue-200/70">Import history collects up to 250 past email replies from the connected mailbox.</span>
+          <span className="font-semibold">Filtered customer inbox</span>
+          <span>Shopify leads and replies from CRM contacts appear automatically; unrelated team mail stays out.</span>
+          <span className="text-blue-700/70 dark:text-blue-200/70">Import history checks up to 1,000 recent messages for customer replies.</span>
         </div>
       </header>
 
@@ -662,7 +728,11 @@ export function EmailInboxWorkspace({
         </aside>
 
         <section className="flex min-h-0 flex-col border-r" aria-label="Email list">
-          <div className="border-b p-3"><div className="mb-3 flex items-center justify-between px-1"><div><h2 className="text-base font-semibold">{folderItems.find((item) => item.id === folder)?.label}</h2><p className="mt-0.5 text-[11px] text-muted-foreground">{visible.length} conversations{categoryFilter ? ` · ${categoryFilter}` : ""}</p></div><DropdownMenu><DropdownMenuTrigger aria-label="Filter email by category" className={`rounded-md p-2 outline-none hover:bg-muted ${categoryFilter ? "text-primary" : "text-muted-foreground"}`}><Filter className="size-4" /></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-52"><DropdownMenuLabel>Filter by category</DropdownMenuLabel><DropdownMenuItem onClick={() => setCategoryFilter(null)}>{!categoryFilter ? <Check /> : <span className="size-4" />}All categories</DropdownMenuItem><DropdownMenuSeparator />{categoryOptions.map((category) => <DropdownMenuItem key={category} onClick={() => setCategoryFilter(category)}>{categoryFilter === category ? <Check /> : <span className="size-4" />}{category}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu></div><label className="flex h-9 items-center gap-2 rounded-md border bg-muted/30 px-2.5 focus-within:border-primary/50"><Search className="size-4 text-muted-foreground" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search mail" className="min-w-0 flex-1 bg-transparent text-xs outline-none" /></label></div>
+          <div className="border-b p-3">
+            <div className="mb-3 flex items-center justify-between px-1"><div><h2 className="text-base font-semibold">{folderItems.find((item) => item.id === folder)?.label}</h2><p className="mt-0.5 text-[11px] text-muted-foreground">{visible.length} conversations{categoryFilter ? ` · ${categoryFilter}` : ""}</p></div><DropdownMenu><DropdownMenuTrigger aria-label="Filter email by category" className={`rounded-md p-2 outline-none hover:bg-muted ${categoryFilter ? "text-primary" : "text-muted-foreground"}`}><Filter className="size-4" /></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-52"><DropdownMenuLabel>Filter by category</DropdownMenuLabel><DropdownMenuItem onClick={() => setCategoryFilter(null)}>{!categoryFilter ? <Check /> : <span className="size-4" />}All categories</DropdownMenuItem><DropdownMenuSeparator />{categoryOptions.map((category) => <DropdownMenuItem key={category} onClick={() => setCategoryFilter(category)}>{categoryFilter === category ? <Check /> : <span className="size-4" />}{category}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu></div>
+            <label className="flex h-9 items-center gap-2 rounded-md border bg-muted/30 px-2.5 focus-within:border-primary/50"><Search className="size-4 text-muted-foreground" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search customer mail" className="min-w-0 flex-1 bg-transparent text-xs outline-none" /></label>
+            <div className="mt-2 flex gap-1 overflow-x-auto pb-0.5" aria-label="Filter inbox by message source">{sourceFilters.map((item) => <button key={item.id} type="button" aria-pressed={sourceFilter === item.id} onClick={() => setSourceFilter(item.id)} className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold transition-colors ${sourceFilter === item.id ? "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-500/40 dark:bg-blue-500/10 dark:text-blue-300" : "bg-background text-muted-foreground hover:bg-muted"}`}>{item.label}</button>)}</div>
+          </div>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain scroll-smooth p-2">
             {visible.length ? visible.map((item) => {
               const email = item.latest;
@@ -679,8 +749,26 @@ export function EmailInboxWorkspace({
         <main className="hidden min-h-0 flex-col bg-[#fbfbfc] dark:bg-background md:flex" aria-label="Email reader">
           {selected ? <>
             <div className="flex min-h-16 items-center justify-between gap-3 border-b bg-background px-5"><div className="min-w-0"><h2 className="truncate text-base font-semibold">{selected.subject}</h2><p className="mt-1 text-xs text-muted-foreground">{selected.direction === "inbound" ? "From" : "To"} {selected.contact} · {selected.company}</p></div><div className="flex items-center gap-3"><AssignedOwner name={selected.ownerName || "Unassigned"} initials={selected.ownerInitials || "—"} assigned={Boolean(selected.ownerId)} compact className="hidden lg:inline-flex" /><div className="flex items-center gap-1"><button type="button" title={starred.has(selected.id) ? "Remove star" : "Star email"} onClick={() => toggleStar(selected.id)} className={`rounded-md p-2 hover:bg-muted ${starred.has(selected.id) ? "text-amber-500" : "text-muted-foreground"}`}><Star className="size-4" fill={starred.has(selected.id) ? "currentColor" : "none"} /></button><button type="button" title="Archive" onClick={() => moveSelected("archive")} className="rounded-md p-2 text-muted-foreground hover:bg-muted"><Archive className="size-4" /></button><DropdownMenu><DropdownMenuTrigger aria-label="More email actions" className="rounded-md p-2 text-muted-foreground outline-none hover:bg-muted"><MoreHorizontal className="size-4" /></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-48"><DropdownMenuLabel>Email actions</DropdownMenuLabel><DropdownMenuItem onClick={() => setNotice("Reply composer opened.")}><Reply />Reply</DropdownMenuItem><DropdownMenuItem onClick={() => setNotice("Forward draft created.")}><Forward />Forward</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem variant="destructive" onClick={() => moveSelected("trash")}><Trash2 />Move to trash</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div></div></div>
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain scroll-smooth px-6 py-6"><div className="mx-auto max-w-3xl space-y-6">{conversation.map((message) => <article key={message.id} className={`flex items-start gap-3 ${message.direction === "outbound" ? "flex-row-reverse" : ""}`}><div className={`flex size-10 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${message.direction === "outbound" ? "bg-primary text-primary-foreground" : "bg-[#e8eef7] text-[#38536f] dark:bg-muted dark:text-foreground"}`}>{initials(message.direction === "outbound" ? message.from || defaultMailboxEmail || "Me" : message.contact)}</div><div className={`min-w-0 flex-1 ${message.direction === "outbound" ? "max-w-[88%]" : ""}`}><div className={`flex flex-wrap items-baseline justify-between gap-2 ${message.direction === "outbound" ? "flex-row-reverse" : ""}`}><div className={message.direction === "outbound" ? "text-right" : ""}><p className="text-sm font-semibold">{message.direction === "outbound" ? message.from || defaultMailboxEmail || "You" : message.contact}</p><p className="mt-0.5 text-xs text-muted-foreground">{message.direction === "outbound" ? `To ${message.contact}` : message.company}</p></div><time className="text-xs text-muted-foreground">{formatTime(message.timestamp)}</time></div><div className={`mt-3 overflow-hidden rounded-xl border shadow-[0_1px_2px_rgba(15,23,42,0.03)] ${message.direction === "outbound" ? "border-primary/20 bg-primary/5 p-5" : message.html ? "bg-background p-0" : "bg-background p-5"}`}><EmailBody email={message} /></div>{translationOn && message.direction === "inbound" ? <div className="mt-2 rounded-xl border border-violet-200/70 bg-violet-50/60 p-4 dark:bg-violet-500/5"><p className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-violet-700 dark:text-violet-300"><Languages className="size-3.5" />Chinese translation</p>{translations[message.id] ? <p className="whitespace-pre-wrap text-sm leading-6">{translations[message.id]}</p> : translating.has(message.id) ? <p className="flex items-center gap-2 text-xs text-muted-foreground"><LoaderCircle className="size-3.5 animate-spin" />Translating customer email...</p> : translationErrors[message.id] ? <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-amber-700 dark:text-amber-300"><span>{translationErrors[message.id]}</span><button type="button" onClick={() => setTranslationErrors((current) => { const next = { ...current }; delete next[message.id]; return next; })} className="rounded-md border border-amber-300/70 px-2 py-1 font-semibold hover:bg-amber-100/70 dark:hover:bg-amber-500/10">Retry</button></div> : <p className="text-xs text-muted-foreground">Waiting for the free translator...</p>}</div> : null}</div></article>)}</div></div>
-            <div className="border-t bg-background p-4"><div className="mx-auto max-w-3xl"><div className="mb-2 flex flex-wrap items-center gap-2"><div className="flex items-center gap-2 rounded-md border bg-violet-50 px-2.5 py-1.5 text-xs text-violet-700 dark:bg-violet-500/10 dark:text-violet-300"><Languages className="size-4" />Auto-translate<Toggle checked={translationOn} onChange={() => setTranslationOn((value) => !value)} label="Toggle email translation" /></div><div className="flex items-center gap-2 rounded-md border bg-emerald-50 px-2.5 py-1.5 text-xs text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"><Bot className="size-4" />AI writing<Toggle checked={aiReplyOn} onChange={() => setAiReplyOn((value) => !value)} label="Toggle AI writing" /></div>{!aiConfigured ? <span className="text-[11px] text-amber-700">AI provider not configured — suggestions remain available</span> : null}</div>{aiReplyOn ? <div className="mb-2 flex gap-2 overflow-x-auto"><span className="flex shrink-0 items-center gap-1 text-xs font-semibold text-violet-600"><Sparkles className="size-3.5" />Suggestions</span>{["Send pricing + MOQ", "Confirm shipping details", "Schedule a follow-up"].map((item) => <button key={item} type="button" onClick={() => setDraft(item === "Send pricing + MOQ" ? `Hi ${selected.contact.split(" ")[0]},\n\nThanks for your message. I’ll send our current wholesale pricing and minimum order quantities for your review.\n\nBest,\n${defaultMailboxEmail || "Filazoo"}` : item === "Confirm shipping details" ? `Hi ${selected.contact.split(" ")[0]},\n\nWe can prepare a shipping quote. Could you confirm the delivery postcode and expected quantity?\n\nBest,\n${defaultMailboxEmail || "Filazoo"}` : `Hi ${selected.contact.split(" ")[0]},\n\nI’ll follow up with you shortly with the latest availability and next steps.\n\nBest,\n${defaultMailboxEmail || "Filazoo"}`)} className="shrink-0 rounded-full border px-3 py-1.5 text-[11px] text-muted-foreground hover:border-primary/40 hover:text-foreground">{item}</button>)}</div> : null}<div className="mb-3 flex items-center justify-between rounded-md border bg-muted/30 px-2.5 py-2 text-[11px] text-muted-foreground"><span>From</span><span className="font-medium text-foreground">{defaultMailboxEmail || "No mailbox selected"}</span></div><div className="overflow-hidden rounded-xl border bg-background focus-within:border-primary/50"><textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={`Write in Chinese or English to reply to ${selected.contact}…`} className="min-h-24 w-full resize-none bg-transparent p-3.5 text-sm leading-6 outline-none" />{aiReplyOn && (aiWriting || aiDraft) ? <div className="border-t border-violet-200/70 bg-violet-50/60 p-3 dark:bg-violet-500/5"><p className="mb-1.5 flex items-center gap-2 text-[11px] font-semibold text-violet-700 dark:text-violet-300">{aiWriting ? <LoaderCircle className="size-3.5 animate-spin" /> : <WandSparkles className="size-3.5" />}Professional English preview</p>{aiDraft ? <p className="whitespace-pre-wrap text-sm leading-6">{aiDraft}</p> : <p className="text-xs text-muted-foreground">Rewriting as you type…</p>}<p className="mt-2 text-[10px] text-muted-foreground">The current preview will be sent automatically. Edit your original draft to update it.</p></div> : null}<AttachmentChips attachments={replyAttachments} onRemove={(id) => setReplyAttachments((current) => current.filter((item) => item.id !== id))} /><div className="flex items-center justify-between border-t px-2 py-2"><div className="flex gap-1"><input ref={replyFileInput} type="file" multiple accept=".pdf,.csv,.txt,.jpg,.jpeg,.png,.webp,.gif,.doc,.docx,.xls,.xlsx" className="hidden" onChange={(event) => { void addFiles(event.target.files, "reply"); event.target.value = ""; }} /><button type="button" disabled={attachmentBusy} title="Attach files" onClick={() => replyFileInput.current?.click()} className="rounded-md p-2 text-muted-foreground hover:bg-muted disabled:opacity-40"><Paperclip className="size-4" /></button><button type="button" title="Attach product catalog" onClick={() => openCatalogPicker("reply")} className="rounded-md p-2 text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-500/10"><Library className="size-4" /></button><button type="button" title="Add emoji" onClick={() => setDraft((value) => `${value}${value ? " " : ""}😊`)} className="rounded-md p-2 text-muted-foreground hover:bg-muted"><Smile className="size-4" /></button><button type="button" title="Start an AI-written reply" onClick={() => setDraft((value) => value || `你好，${selected.contact.split(" ")[0]}，\n\n感谢您的来信。我们很乐意为您提供帮助。\n\n此致\nFilazoo`)} className="rounded-md p-2 text-violet-600 hover:bg-violet-50"><WandSparkles className="size-4" /></button></div><button type="button" onClick={saveReply} disabled={!draft.trim() || sending || aiWriting} className="inline-flex h-9 items-center gap-2 rounded-md bg-foreground px-3 text-xs font-semibold text-background disabled:opacity-40"><Send className="size-4" />{sending ? "Sending..." : aiWriting ? "Writing..." : "Send email"}</button></div></div>{notice ? <p className="mt-2 text-xs text-muted-foreground" role="status">{notice}</p> : null}</div></div>
+            <div ref={conversationScroll} className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain scroll-smooth px-6 py-6"><div className="mx-auto max-w-3xl space-y-6">{conversation.map((message) => <article key={message.id} className={`flex items-start gap-3 ${message.direction === "outbound" ? "flex-row-reverse" : ""}`}><div className={`flex size-10 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${message.direction === "outbound" ? "bg-primary text-primary-foreground" : "bg-[#e8eef7] text-[#38536f] dark:bg-muted dark:text-foreground"}`}>{initials(message.direction === "outbound" ? message.from || defaultMailboxEmail || "Me" : message.contact)}</div><div className={`min-w-0 flex-1 ${message.direction === "outbound" ? "max-w-[88%]" : ""}`}><div className={`flex flex-wrap items-baseline justify-between gap-2 ${message.direction === "outbound" ? "flex-row-reverse" : ""}`}><div className={message.direction === "outbound" ? "text-right" : ""}><p className="text-sm font-semibold">{message.direction === "outbound" ? message.from || defaultMailboxEmail || "You" : message.contact}</p><p className="mt-0.5 text-xs text-muted-foreground">{message.direction === "outbound" ? `To ${message.contact}` : message.company}</p></div><time className="text-xs text-muted-foreground">{formatTime(message.timestamp)}</time></div><div className={`mt-3 overflow-hidden rounded-xl border shadow-[0_1px_2px_rgba(15,23,42,0.03)] ${message.direction === "outbound" ? "border-primary/20 bg-primary/5 p-5" : message.html ? "bg-background p-0" : "bg-background p-5"}`}><EmailBody email={message} /></div>{translationOn && message.direction === "inbound" ? <div className="mt-2 rounded-xl border border-violet-200/70 bg-violet-50/60 p-4 dark:bg-violet-500/5"><p className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-violet-700 dark:text-violet-300"><Languages className="size-3.5" />Chinese translation</p>{translations[message.id] ? <p className="whitespace-pre-wrap text-sm leading-6">{translations[message.id]}</p> : translating.has(message.id) ? <p className="flex items-center gap-2 text-xs text-muted-foreground"><LoaderCircle className="size-3.5 animate-spin" />Translating customer email...</p> : translationErrors[message.id] ? <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-amber-700 dark:text-amber-300"><span>{translationErrors[message.id]}</span><button type="button" onClick={() => setTranslationErrors((current) => { const next = { ...current }; delete next[message.id]; return next; })} className="rounded-md border border-amber-300/70 px-2 py-1 font-semibold hover:bg-amber-100/70 dark:hover:bg-amber-500/10">Retry</button></div> : <p className="text-xs text-muted-foreground">Waiting for the free translator...</p>}</div> : null}</div></article>)}
+              {aiReplyOn && (aiWriting || (aiDraft && aiDraftSource === draft.trim()) || aiWritingError) ? <article className="flex items-start gap-3" aria-live="polite"><div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-600 to-fuchsia-500 text-white shadow-sm"><Bot className="size-4.5" /></div><div className="min-w-0 max-w-[88%] flex-1"><div><p className="flex items-center gap-2 text-sm font-semibold">AI writing<span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300">Draft only</span></p><p className="mt-0.5 text-xs text-muted-foreground">Preparing your professional English reply</p></div><div className="mt-3 overflow-hidden rounded-xl border border-violet-200/80 bg-gradient-to-br from-violet-50 via-background to-fuchsia-50/60 p-5 shadow-[0_4px_18px_rgba(124,58,237,0.08)] dark:border-violet-500/30 dark:from-violet-500/10 dark:via-background dark:to-fuchsia-500/5">{aiWriting ? <div className="flex items-center gap-3 text-sm text-violet-700 dark:text-violet-300"><span className="flex items-center gap-1" aria-label="AI is writing"><span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.3s]" /><span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.15s]" /><span className="size-1.5 animate-bounce rounded-full bg-current" /></span><span>AI is writing your reply…</span></div> : aiWritingError ? <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-amber-700 dark:text-amber-300"><span>{aiWritingError}</span><button type="button" onClick={() => setAiRetryNonce((value) => value + 1)} className="rounded-md border border-amber-300/70 bg-background px-2.5 py-1.5 text-xs font-semibold hover:bg-amber-50 dark:hover:bg-amber-500/10">Try again</button></div> : <><p className="whitespace-pre-wrap text-sm leading-6">{aiDraft}</p><p className="mt-3 flex items-center gap-1.5 text-[10px] font-medium text-violet-700/80 dark:text-violet-300"><WandSparkles className="size-3" />This AI draft will be sent. Edit your message below to regenerate it.</p></>}</div></div></article> : null}
+            </div></div>
+            <div className="border-t bg-background p-4">
+              <div className="mx-auto max-w-3xl">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-2 rounded-md border bg-violet-50 px-2.5 py-1.5 text-xs text-violet-700 dark:bg-violet-500/10 dark:text-violet-300"><Languages className="size-4" />Auto-translate<Toggle checked={translationOn} onChange={() => setTranslationOn((value) => !value)} label="Toggle email translation" /></div>
+                  <div className="flex items-center gap-2 rounded-md border bg-emerald-50 px-2.5 py-1.5 text-xs text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"><Bot className="size-4" />AI writing<Toggle checked={aiReplyOn} onChange={toggleAiWriting} label="Toggle AI writing" /></div>
+                  {!aiConfigured ? <span className="text-[11px] text-amber-700">AI provider not configured — suggestions remain available</span> : null}
+                </div>
+                {aiReplyOn ? <div className="mb-2 flex gap-2 overflow-x-auto"><span className="flex shrink-0 items-center gap-1 text-xs font-semibold text-violet-600"><Sparkles className="size-3.5" />Suggestions</span>{["Send pricing + MOQ", "Confirm shipping details", "Schedule a follow-up"].map((item) => <button key={item} type="button" onClick={() => setDraft(item === "Send pricing + MOQ" ? `Hi ${selected.contact.split(" ")[0]},\n\nThanks for your message. I’ll send our current wholesale pricing and minimum order quantities for your review.\n\nBest,\n${defaultMailboxEmail || "Filazoo"}` : item === "Confirm shipping details" ? `Hi ${selected.contact.split(" ")[0]},\n\nWe can prepare a shipping quote. Could you confirm the delivery postcode and expected quantity?\n\nBest,\n${defaultMailboxEmail || "Filazoo"}` : `Hi ${selected.contact.split(" ")[0]},\n\nI’ll follow up with you shortly with the latest availability and next steps.\n\nBest,\n${defaultMailboxEmail || "Filazoo"}`)} className="shrink-0 rounded-full border px-3 py-1.5 text-[11px] text-muted-foreground hover:border-primary/40 hover:text-foreground">{item}</button>)}</div> : null}
+                <div className="mb-3 flex items-center justify-between rounded-md border bg-muted/30 px-2.5 py-2 text-[11px] text-muted-foreground"><span>From</span><span className="font-medium text-foreground">{defaultMailboxEmail || "No mailbox selected"}</span></div>
+                <div className="overflow-hidden rounded-xl border bg-background focus-within:border-primary/50">
+                  <textarea value={draft} onChange={(event) => updateDraft(event.target.value)} placeholder={`Write in Chinese or English to reply to ${selected.contact}…`} className="min-h-24 w-full resize-none bg-transparent p-3.5 text-sm leading-6 outline-none" />
+                  <AttachmentChips attachments={replyAttachments} onRemove={(id) => setReplyAttachments((current) => current.filter((item) => item.id !== id))} />
+                  <div className="flex items-center justify-between border-t px-2 py-2"><div className="flex gap-1"><input ref={replyFileInput} type="file" multiple accept=".pdf,.csv,.txt,.jpg,.jpeg,.png,.webp,.gif,.doc,.docx,.xls,.xlsx" className="hidden" onChange={(event) => { void addFiles(event.target.files, "reply"); event.target.value = ""; }} /><button type="button" disabled={attachmentBusy} title="Attach files" onClick={() => replyFileInput.current?.click()} className="rounded-md p-2 text-muted-foreground hover:bg-muted disabled:opacity-40"><Paperclip className="size-4" /></button><button type="button" title="Attach product catalog" onClick={() => openCatalogPicker("reply")} className="rounded-md p-2 text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-500/10"><Library className="size-4" /></button><button type="button" title="Add emoji" onClick={() => setDraft((value) => `${value}${value ? " " : ""}😊`)} className="rounded-md p-2 text-muted-foreground hover:bg-muted"><Smile className="size-4" /></button><button type="button" title="Start an AI-written reply" onClick={() => setDraft((value) => value || `你好，${selected.contact.split(" ")[0]}，\n\n感谢您的来信。我们很乐意为您提供帮助。\n\n此致\nFilazoo`)} className="rounded-md p-2 text-violet-600 hover:bg-violet-50"><WandSparkles className="size-4" /></button></div><button type="button" onClick={saveReply} disabled={!draft.trim() || sending || aiWriting} className="inline-flex h-9 items-center gap-2 rounded-md bg-foreground px-3 text-xs font-semibold text-background disabled:opacity-40"><Send className="size-4" />{sending ? "Sending..." : aiWriting ? "Writing..." : aiDraft && aiDraftSource === draft.trim() ? "Send AI draft" : "Send email"}</button></div>
+                </div>
+                {notice ? <p className="mt-2 text-xs text-muted-foreground" role="status">{notice}</p> : null}
+              </div>
+            </div>
           </> : <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">Select an email to read it.</div>}
         </main>
 

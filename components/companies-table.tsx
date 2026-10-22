@@ -21,12 +21,12 @@ import { TablePagination } from "@/components/ui/table-pagination";
 import type { Company, DataMode } from "@/lib/types";
 
 const statusClass: Record<Company["stage"], string> = {
-  New: "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900 dark:bg-sky-950/60 dark:text-sky-300",
-  Contacted: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/60 dark:text-amber-300",
-  Replied: "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-900 dark:bg-violet-950/60 dark:text-violet-300",
-  Interested: "border-primary/30 bg-brand-soft text-primary", "Big order": "border-primary/30 bg-brand-soft text-primary",
-  Won: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300",
-  Lost: "border-border bg-muted text-muted-foreground",
+  "Profile created": "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900 dark:bg-sky-950/60 dark:text-sky-300",
+  "Catalog sent": "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/60 dark:text-amber-300",
+  "Customer replied": "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-900 dark:bg-violet-950/60 dark:text-violet-300",
+  "Qualified interest": "border-primary/30 bg-brand-soft text-primary", "Quote / bulk order": "border-primary/30 bg-brand-soft text-primary",
+  "Order confirmed": "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300",
+  "Closed / not proceeding": "border-border bg-muted text-muted-foreground",
 };
 
 function ShopifyMark({ compact = false }: { compact?: boolean }) {

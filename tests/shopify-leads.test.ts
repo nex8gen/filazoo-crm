@@ -115,9 +115,12 @@ test("prefers a submitted country and parses estimated monthly volume", () => {
 test("turns Shopify form submissions into replyable inbox conversations", () => {
   const [message] = buildShopifyFormInboxItems([{
     webhook_id: "form:abc-123",
+    customer_id: "form:abc-123",
     email: "buyer@example3d.com",
     full_name: "Grace Hopper",
     company_name: "Example 3D",
+    phone: null,
+    tags: ["b2b-lead"],
     raw_payload: {
       "contact[body]": "Please send wholesale pricing.",
       "contact[Estimated monthly volume]": "200-499 kg",
@@ -130,4 +133,23 @@ test("turns Shopify form submissions into replyable inbox conversations", () => 
   assert.equal(message.contactName, "Grace Hopper");
   assert.match(message.body, /wholesale pricing/);
   assert.match(message.body, /200-499 kg/);
+});
+
+test("turns tagged Shopify customer webhooks into inbox leads too", () => {
+  const [message] = buildShopifyFormInboxItems([{
+    webhook_id: "webhook-123",
+    customer_id: "7654321",
+    email: "buyer@acme3d.com",
+    full_name: "Ada Lovelace",
+    company_name: "Acme 3D",
+    phone: "+44 20 0000 0000",
+    tags: ["newsletter", "B2B-Lead"],
+    raw_payload: {},
+    created_at: "2026-10-21T08:00:00Z",
+  }]);
+
+  assert.equal(message.source, "shopify");
+  assert.equal(message.status, "Shopify lead");
+  assert.match(message.subject, /Shopify lead/);
+  assert.match(message.body, /B2B-Lead/);
 });

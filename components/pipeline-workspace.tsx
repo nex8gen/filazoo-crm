@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { pipelineStageLabels, pipelineStageValues } from "@/lib/types";
 import type { Company } from "@/lib/types";
 import type { BdSalesManager } from "@/lib/data/members";
 
@@ -26,7 +27,7 @@ export function PipelineWorkspace({ companies, managers, canWrite, canAssign }: 
       />
       {showFilters ? <div className="mb-4 flex flex-col gap-2 rounded-lg border bg-card p-3 sm:flex-row sm:items-center">
         <div className="relative flex-1 sm:max-w-sm"><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input className="pl-9" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search company or country" /></div>
-        <Select value={stage} onValueChange={(value) => setStage(value ?? "all")}><SelectTrigger className="w-full sm:w-44"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All stages</SelectItem><SelectItem value="new">New</SelectItem><SelectItem value="contacted">Contacted</SelectItem><SelectItem value="replied">Replied</SelectItem><SelectItem value="interested">Interested</SelectItem><SelectItem value="big_order">Big order</SelectItem><SelectItem value="won">Won</SelectItem><SelectItem value="lost">Lost</SelectItem></SelectContent></Select>
+        <Select value={stage} onValueChange={(value) => setStage(value ?? "all")}><SelectTrigger className="w-full sm:w-52"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All stages</SelectItem>{pipelineStageValues.map((value) => <SelectItem key={value} value={value}>{pipelineStageLabels[value]}</SelectItem>)}</SelectContent></Select>
         {filtering ? <Button variant="ghost" size="sm" onClick={() => { setQuery(""); setStage("all"); }}>Clear</Button> : null}
       </div> : null}
       <KanbanBoard companies={companies} managers={managers} canWrite={canWrite} canAssign={canAssign} query={query} stageFilter={stage} />

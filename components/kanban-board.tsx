@@ -11,20 +11,12 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { Company, PipelineStageValue } from "@/lib/types";
+import { pipelineStageLabels, pipelineStageValues, type Company, type PipelineStageValue } from "@/lib/types";
 import type { BdSalesManager } from "@/lib/data/members";
 
 type PipelineCard = { id: string; company: string; country: string; ownerId: string | null; ownerName: string; ownerInitials: string; stage: PipelineStageValue };
 
-const stages: { id: PipelineStageValue; label: string }[] = [
-  { id: "new", label: "New" },
-  { id: "contacted", label: "Contacted" },
-  { id: "replied", label: "Replied" },
-  { id: "interested", label: "Interested" },
-  { id: "big_order", label: "Big order" },
-  { id: "won", label: "Won" },
-  { id: "lost", label: "Lost" },
-];
+const stages: { id: PipelineStageValue; label: string }[] = pipelineStageValues.map((id) => ({ id, label: pipelineStageLabels[id] }));
 
 const stageByLabel = Object.fromEntries(stages.map((stage) => [stage.label, stage.id])) as Record<Company["stage"], PipelineStageValue>;
 

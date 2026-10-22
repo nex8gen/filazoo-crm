@@ -297,7 +297,6 @@ export async function saveShopifyLead(lead: ShopifyLead, webhookId: string, shop
       if (result.error) throw result.error;
       company = result.data;
     }
-    const isNewCompany = !company;
     if (!company) {
       const result = await admin.from("companies").insert({
         name: lead.companyName,
@@ -327,17 +326,33 @@ export async function saveShopifyLead(lead: ShopifyLead, webhookId: string, shop
     const quantity = estimatedOrderQuantity(
       typeof lead.details.estimatedMonthlyVolume === "string" ? lead.details.estimatedMonthlyVolume : null,
     );
-    const assignedOwnerId = isNewCompany ? await claimNextBdSalesManager(admin) : null;
-    const pipelineResult = isNewCompany
-      ? await admin.from("pipeline").insert({
-          company_id: company.id,
-          stage: "new",
-          owner_id: assignedOwnerId,
-          ...(quantity == null ? {} : { estimated_order_quantity: quantity }),
-        })
-      : quantity == null
-        ? { error: null }
-        : await admin.from("pipeline").update({ estimated_order_quantity: quantity }).eq("company_id", company.id);
+    const existingPipelineResult = await admin
+      .from("pipeline")
+      .select("owner_id")
+      .eq("company_id", company.id)
+      .maybeSingle();
+    if (existingPipelineResult.error) throw existingPipelineResult.error;
+
+    const existingOwnerId = existingPipelineResult.data?.owner_id ?? null;
+    const assignedOwnerId = existingOwnerId ?? await claimNextBdSalesManager(admin);
+    const claimedAutomatically = !existingOwnerId && Boolean(assignedOwnerId);
+    let pipelineResult: { error: { message: string } | null };
+    if (!existingPipelineResult.data) {
+      pipelineResult = await admin.from("pipeline").insert({
+        company_id: company.id,
+        stage: "new",
+        owner_id: assignedOwnerId,
+        ...(quantity == null ? {} : { estimated_order_quantity: quantity }),
+      });
+    } else {
+      const pipelineUpdates = {
+        ...(claimedAutomatically ? { owner_id: assignedOwnerId } : {}),
+        ...(quantity == null ? {} : { estimated_order_quantity: quantity }),
+      };
+      pipelineResult = Object.keys(pipelineUpdates).length
+        ? await admin.from("pipeline").update(pipelineUpdates).eq("company_id", company.id)
+        : { error: null };
+    }
     if (pipelineResult.error) throw pipelineResult.error;
 
     let contactId = existingContact?.id ?? null;
@@ -380,7 +395,7 @@ export async function saveShopifyLead(lead: ShopifyLead, webhookId: string, shop
       status: "processed",
       company_id: company.id,
       contact_id: contactId,
-      ...(assignedOwnerId ? { owner_id: assignedOwnerId, assignment_method: "automatic" } : {}),
+      ...(assignedOwnerId ? { owner_id: assignedOwnerId, assignment_method: claimedAutomatically ? "automatic" : "manual" } : {}),
       processed_at: new Date().toISOString(),
     }).eq("webhook_id", webhookId);
     if (completion.error) throw completion.error;

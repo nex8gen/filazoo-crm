@@ -203,7 +203,7 @@ async function queryCompanies(): Promise<Company[]> {
 }
 
 type CompanyEventRow = { id: string; type: string; data: Record<string, unknown> | null; actor_id: string | null; created_at: string };
-type CompanyEmailRow = { id: string; subject: string | null; status: string; direction: string; approved_by: string | null; sent_at: string | null; created_at: string; contacts: Relation<{ name: string | null; email: string }> };
+type CompanyEmailRow = { id: string; subject: string | null; body: string | null; status: string; direction: string; approved_by: string | null; sent_at: string | null; created_at: string; contacts: Relation<{ name: string | null; email: string }> };
 type CompanyCatalogRow = { id: string; version: number; product_skus: string[] | null; created_at: string };
 
 export async function getCompanyDetails(id: string): Promise<{ mode: DataMode; details: CompanyDetails | null }> {
@@ -215,7 +215,7 @@ export async function getCompanyDetails(id: string): Promise<{ mode: DataMode; d
     admin.from("companies").select("id,name,website,domain,country,city,segment,source,status,company_profiles(summary,fit_score,interest_tags),contacts(id,name,role,email,verification_status,emails(status,direction,created_at)),pipeline(stage,next_followup_at,estimated_order_quantity,estimated_value,currency,owner_id)").eq("id", id).maybeSingle(),
     admin.from("contacts").select("id,name,role,email,verification_status").eq("company_id", id).order("created_at"),
     admin.from("events").select("id,type,data,actor_id,created_at").eq("company_id", id).order("created_at", { ascending: false }).limit(200),
-    admin.from("emails").select("id,subject,status,direction,approved_by,sent_at,created_at,contacts!inner(name,email,company_id)").eq("contacts.company_id", id).order("created_at", { ascending: false }).limit(200),
+    admin.from("emails").select("id,subject,body,status,direction,approved_by,sent_at,created_at,contacts!inner(name,email,company_id)").eq("contacts.company_id", id).order("created_at", { ascending: false }).limit(200),
     admin.from("catalogs").select("id,version,product_skus,created_at").eq("company_id", id).order("created_at", { ascending: false }).limit(100),
   ]);
   if (companyResult.error) throw new Error(`Unable to load company: ${companyResult.error.message}`);
@@ -248,6 +248,8 @@ export async function getCompanyDetails(id: string): Promise<{ mode: DataMode; d
         type: "email" as const,
         title: email.direction === "received" ? "Email received" : `Email ${email.status.replaceAll("_", " ")}`,
         detail: `${email.subject || "Untitled email"}${contact ? ` · ${contact.name || contact.email}` : ""}`,
+        body: email.body || undefined,
+        direction: email.direction === "received" ? "received" as const : "sent" as const,
         actor: email.direction === "received" ? contact?.email || "Contact" : email.approved_by ? memberNames.get(email.approved_by) || "Workspace member" : "AI automation",
         createdAt: email.sent_at || email.created_at,
       };
