@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 export async function GET(request: NextRequest) {
   const tokenHash = request.nextUrl.searchParams.get("token_hash");
   const type = request.nextUrl.searchParams.get("type") as EmailOtpType | null;
-  const fallback = type === "recovery" || type === "invite" ? "/update-password" : "/";
+  const fallback = type === "recovery" || type === "invite" ? "/accept-invitation" : "/";
   const next = safeInternalPath(request.nextUrl.searchParams.get("next"), fallback);
 
   if (tokenHash && type) {

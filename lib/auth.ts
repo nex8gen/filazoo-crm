@@ -45,11 +45,11 @@ export const getWorkspaceViewer = cache(async (): Promise<WorkspaceViewer | null
 
   const { data, error } = await createSupabaseAdmin()
     .from("workspace_members")
-    .select("role,display_name")
+    .select("role,display_name,activated_at")
     .eq("user_id", viewer.id)
     .maybeSingle();
 
-  if (error || !data) return null;
+  if (error || !data?.activated_at) return null;
   return {
     ...viewer,
     role: data.role as WorkspaceRole,

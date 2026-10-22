@@ -80,10 +80,12 @@ export async function inviteMember(_state: SettingsActionState, formData: FormDa
   }
 
   const existingUser = authUsers.find((user) => user.email?.toLowerCase() === parsed.data.email);
+  let existingMembership: { user_id: string; activated_at: string | null } | null = null;
   if (existingUser) {
-    const { data: existingMembership, error: membershipLookupError } = await admin.from("workspace_members").select("user_id").eq("user_id", existingUser.id).maybeSingle();
+    const { data, error: membershipLookupError } = await admin.from("workspace_members").select("user_id,activated_at").eq("user_id", existingUser.id).maybeSingle();
     if (membershipLookupError) return { error: "The existing workspace access could not be checked." };
-    if (existingMembership) return { error: "This email already belongs to an active workspace member." };
+    existingMembership = data;
+    if (existingMembership?.activated_at) return { error: "This email already belongs to an active workspace member." };
   }
 
   const { data, error } = existingUser
@@ -97,11 +99,16 @@ export async function inviteMember(_state: SettingsActionState, formData: FormDa
 
   const [{ error: metadataError }, { error: memberError }] = await Promise.all([
     admin.auth.admin.updateUserById(data.user.id, { app_metadata: { role: parsed.data.role } }),
-    admin.from("workspace_members").upsert({ user_id: data.user.id, display_name: parsed.data.displayName, role: parsed.data.role, auto_assign_leads: parsed.data.role === "bd_manager", updated_at: new Date().toISOString() }, { onConflict: "user_id" }),
+    admin.from("workspace_members").upsert({ user_id: data.user.id, display_name: parsed.data.displayName, role: parsed.data.role, auto_assign_leads: parsed.data.role === "bd_manager", activated_at: null, updated_at: new Date().toISOString() }, { onConflict: "user_id" }),
   ]);
   if (metadataError || memberError) return { error: "The user was invited, but workspace access could not be assigned. Review the user in Supabase." };
 
-  const confirmationUrl = buildInvitationConfirmationUrl(env.NEXT_PUBLIC_APP_URL, data.properties.hashed_token, data.properties.verification_type);
+  let confirmationUrl: string;
+  try {
+    confirmationUrl = buildInvitationConfirmationUrl(env.NEXT_PUBLIC_APP_URL, data.properties.hashed_token, data.properties.verification_type);
+  } catch (linkError) {
+    return { error: linkError instanceof Error ? linkError.message : "The invitation link could not be created." };
+  }
   const invitation = buildInvitationEmail(parsed.data.displayName, confirmationUrl);
   try {
     await sendMailboxEmail(

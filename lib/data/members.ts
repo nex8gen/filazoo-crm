@@ -8,8 +8,8 @@ export type WorkspaceMemberRecord = {
   displayName: string | null;
   role: WorkspaceRole;
   autoAssignLeads: boolean;
-  confirmed: boolean;
-  confirmedAt: string | null;
+  activated: boolean;
+  activatedAt: string | null;
   lastSignInAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -37,6 +37,7 @@ export async function listBdSalesManagers(): Promise<BdSalesManager[]> {
     .select("user_id,display_name")
     .eq("role", "bd_manager")
     .eq("auto_assign_leads", true)
+    .not("activated_at", "is", null)
     .order("display_name");
   if (error) throw new Error(`Unable to load BD Sales Managers: ${error.message}`);
   return (data ?? []).map((member) => ({ id: member.user_id, name: member.display_name || "BD Sales Manager" }));
@@ -46,7 +47,7 @@ export async function listWorkspaceMembers(): Promise<WorkspaceMemberRecord[]> {
   await requireWorkspaceMember(["admin"]);
   const admin = createSupabaseAdmin();
   const [{ data: memberships, error: membershipError }, authUsers] = await Promise.all([
-    admin.from("workspace_members").select("user_id,role,display_name,auto_assign_leads,created_at,updated_at").order("created_at"),
+    admin.from("workspace_members").select("user_id,role,display_name,auto_assign_leads,activated_at,created_at,updated_at").order("created_at"),
     listAllAuthUsers(),
   ]);
 
@@ -62,8 +63,8 @@ export async function listWorkspaceMembers(): Promise<WorkspaceMemberRecord[]> {
       displayName: membership.display_name,
       role: membership.role as WorkspaceRole,
       autoAssignLeads: Boolean(membership.auto_assign_leads),
-      confirmed: Boolean(user.email_confirmed_at),
-      confirmedAt: user.email_confirmed_at ?? null,
+      activated: Boolean(membership.activated_at),
+      activatedAt: membership.activated_at ?? null,
       lastSignInAt: user.last_sign_in_at ?? null,
       createdAt: membership.created_at,
       updatedAt: membership.updated_at,

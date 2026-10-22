@@ -17,6 +17,7 @@ create table public.workspace_members (
   role text not null default 'viewer' check (role in ('admin','operator','bd_manager','viewer')),
   display_name text,
   auto_assign_leads boolean not null default false,
+  activated_at timestamptz,
   last_lead_assigned_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -384,8 +385,7 @@ begin
   perform pg_advisory_xact_lock(hashtext('filazoo_bd_lead_assignment'));
   select member.user_id into selected_user_id
   from public.workspace_members member
-  join auth.users account on account.id = member.user_id
-  where member.role = 'bd_manager' and member.auto_assign_leads = true and account.email_confirmed_at is not null
+  where member.role = 'bd_manager' and member.auto_assign_leads = true and member.activated_at is not null
   order by member.last_lead_assigned_at asc nulls first, member.created_at asc, member.user_id asc limit 1 for update;
   if selected_user_id is not null then
     update public.workspace_members set last_lead_assigned_at = clock_timestamp() where user_id = selected_user_id;

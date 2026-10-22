@@ -30,12 +30,16 @@ export async function login(_state: LoginState, formData: FormData): Promise<Log
 
     const { data: membership, error: membershipError } = await createSupabaseAdmin()
       .from("workspace_members")
-      .select("role")
+      .select("role,activated_at")
       .eq("user_id", data.user.id)
       .maybeSingle();
     if (membershipError || !membership) {
       await supabase.auth.signOut();
       return { error: "This account has not been invited to the Filazoo workspace.", email };
+    }
+    if (!membership.activated_at) {
+      await supabase.auth.signOut();
+      return { error: "Finish setting up this account from the invitation email before signing in.", email };
     }
   } catch {
     return { error: "Authentication is temporarily unavailable. Try again shortly.", email };

@@ -26,6 +26,7 @@ export async function updateSession(request: NextRequest) {
     "/lead-channel/ai-agent/qa",
     "/login",
     "/forgot-password",
+    "/accept-invitation",
     "/update-password",
     "/privacy",
     "/data-deletion",

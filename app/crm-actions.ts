@@ -309,7 +309,7 @@ export async function assignPipelineOwner(companyId: string, ownerId: string | n
   if (!company) return { error: "The company no longer exists." };
   let ownerName = "Unassigned";
   if (parsed.data.ownerId) {
-    const { data: member } = await admin.from("workspace_members").select("display_name").eq("user_id", parsed.data.ownerId).eq("role", "bd_manager").eq("auto_assign_leads", true).maybeSingle();
+    const { data: member } = await admin.from("workspace_members").select("display_name").eq("user_id", parsed.data.ownerId).eq("role", "bd_manager").eq("auto_assign_leads", true).not("activated_at", "is", null).maybeSingle();
     if (!member) return { error: "Choose an active BD Sales Manager." };
     ownerName = member.display_name || "BD Sales Manager";
   }

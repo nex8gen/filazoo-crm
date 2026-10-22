@@ -95,6 +95,7 @@ const allItems = navigation.flatMap((group) => group.items);
 const authPaths = [
   "/login",
   "/forgot-password",
+  "/accept-invitation",
   "/update-password",
   "/auth/",
   "/access-denied",

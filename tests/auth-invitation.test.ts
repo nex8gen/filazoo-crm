@@ -9,7 +9,14 @@ test("builds invite acceptance links on the configured application origin", () =
   assert.equal(url.pathname, "/auth/confirm");
   assert.equal(url.searchParams.get("token_hash"), "secret token");
   assert.equal(url.searchParams.get("type"), "invite");
-  assert.equal(url.searchParams.get("next"), "/update-password");
+  assert.equal(url.searchParams.get("next"), "/accept-invitation");
+});
+
+test("rejects protected Vercel deployment URLs for invitations", () => {
+  assert.throws(
+    () => buildInvitationConfirmationUrl("https://filazoo-example.vercel.app", "secret token", "invite"),
+    /public custom-domain/,
+  );
 });
 
 test("escapes invitation content used in HTML email", () => {
