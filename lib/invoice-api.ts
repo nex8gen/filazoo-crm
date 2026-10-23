@@ -23,6 +23,14 @@ export async function invoiceAccess(write = false) {
 
 export function invoiceError(error: unknown) {
   const value = error as { code?: string; message?: string };
+  if (value.code === "23503")
+    return Response.json(
+      {
+        error:
+          "A linked customer or contact was removed. Reload the customer details and try again.",
+      },
+      { status: 409 },
+    );
   if (value.code === "P0001")
     return Response.json({ error: value.message }, { status: 409 });
   console.error("Invoice operation failed", error);

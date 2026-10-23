@@ -6,7 +6,7 @@ import { b2bProducts } from "@/lib/data/b2b-products";
 
 export default async function EmailsPage({ searchParams }: PageProps<"/emails">) {
   const params = await searchParams;
-  await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
+  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   const [{ emails, mailboxConfigured, sendConfigured, inboxConfigured, inboxError, aiConfigured, defaultMailboxEmail, mode, automation }, productResult, catalogResult] = await Promise.all([
     getEmailInboxBackendData({ syncMailbox: false }),
     listProducts().catch(() => ({ products: [] })),
@@ -15,6 +15,7 @@ export default async function EmailsPage({ searchParams }: PageProps<"/emails">)
 
   return (
     <EmailInboxWorkspace
+      canCreateInvoices={viewer.role === "admin" || viewer.role === "operator"}
       initialEmails={emails}
       initialThreadId={typeof params.thread === "string" ? params.thread : undefined}
       mailboxConfigured={mailboxConfigured}

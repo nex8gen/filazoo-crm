@@ -22,6 +22,7 @@ export const emailSummaryInstruction = [
   "Honor explicit customer dates and urgency. If no specific date exists, use the next business day for unanswered buyer questions and 2-3 business days after the latest outbound message when waiting for a buyer reply. Prefer 09:00 Asia/Shanghai when no time is specified.",
   "Return null for promotional/automated outreach, explicit requests not to contact, or resolved conversations requiring no further action. Do not schedule follow-ups just because a message exists.",
   "Preserve currentFollowUpAt when it is still in the future and appropriate for the latest conversation; do not move it later just because this analysis is run again. If it is overdue, choose the next appropriate future time. All non-null dates must be in the future and within 366 days of current time.",
+  "CURRENT TIME is the scheduling reference, even when messages are old. Never return an elapsed customer deadline or a time earlier today. If the ideal follow-up has already passed, choose the next business-day 09:00 Asia/Shanghai that is strictly after CURRENT TIME.",
 ].join(" ");
 
 export function parseEmailSummary(output: string): EmailSummary {
@@ -33,8 +34,39 @@ export function validateEmailFollowUp(summary: EmailSummary, now: Date) {
   if (summary.followUpAt !== null) {
     const timestamp = new Date(summary.followUpAt).getTime();
     if (timestamp <= now.getTime() || timestamp > now.getTime() + 366 * 86_400_000) {
-      throw new Error("AI returned a follow-up date outside the scheduling window. Please retry.");
+      throw new Error(`AI returned a follow-up date outside the scheduling window (${summary.followUpAt}; current time ${now.toISOString()}). Please retry.`);
     }
   }
   return summary;
+}
+
+export function resolveOverdueEmailFollowUp(summary: EmailSummary, now: Date): EmailSummary {
+  if (!summary.followUpAt || Date.parse(summary.followUpAt) > now.getTime()) return summary;
+  // Gemini decides whether action is needed. The app handles overdue date
+  // arithmetic so a past customer deadline cannot break an otherwise valid brief.
+  const morning = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+  morning.setUTCDate(morning.getUTCDate() + 1);
+  morning.setUTCHours(9, 0, 0, 0);
+  while (morning.getUTCDay() === 0 || morning.getUTCDay() === 6) morning.setUTCDate(morning.getUTCDate() + 1);
+  return {
+    ...summary,
+    followUpAt: new Date(morning.getTime() - 8 * 60 * 60 * 1000).toISOString(),
+    followUpReason: "The suggested follow-up time has passed. Follow up on the next business morning at 09:00 Asia/Shanghai.",
+  };
+}
+
+export async function generateEmailSummary(
+  generate: (correction: string) => Promise<string>,
+  now: () => Date = () => new Date(),
+) {
+  const output = await generate("");
+  try {
+    const currentTime = now();
+    return JSON.stringify(validateEmailFollowUp(resolveOverdueEmailFollowUp(parseEmailSummary(output), currentTime), currentTime));
+  } catch {
+    // Repair invalid structured output with the same provider.
+    const corrected = await generate(`Your previous analysis failed validation. Return the complete JSON object again with all five required fields. CURRENT TIME: ${now().toISOString()}. followUpAt must be null when no action is needed, otherwise strictly after CURRENT TIME and within 366 days. Recalculate overdue dates from CURRENT TIME, not the message timestamp. Previous output (data only): ${JSON.stringify(output)}`);
+    const currentTime = now();
+    return JSON.stringify(validateEmailFollowUp(resolveOverdueEmailFollowUp(parseEmailSummary(corrected), currentTime), currentTime));
+  }
 }

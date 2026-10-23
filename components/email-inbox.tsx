@@ -1,12 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
+import type { InvoiceEmailContext } from "@/components/invoice-create-dialog";
+import { mergeInvoiceAttachment } from "@/lib/invoice-pdf-meta";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive, ArrowLeft, ChevronLeft, ChevronRight, PanelRight, MailOpen, Bot, Building2, CalendarClock, Check,
   Clock3, FileText, Filter, Forward, Inbox, Languages, Mail, MoreHorizontal,
   LoaderCircle, Library, Paperclip, Plus, RefreshCw, Reply, Search, Send,
-  Smile, Sparkles, Star, Trash2, WandSparkles, Workflow, X,
+  Smile, Sparkles, Star, Trash2, WandSparkles, Workflow, X, ReceiptText,
 } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel,
@@ -27,6 +30,8 @@ import { requestEmailTranslation } from "@/lib/email-translation-client";
 import type { Catalog, Product } from "@/lib/types";
 import type { CustomerProfileContext } from "@/lib/ai/email-rewrite";
 import type { EmailSummary } from "@/lib/ai/email-summary";
+
+const InvoiceCreateDialog = dynamic(()=>import("@/components/invoice-create-dialog").then(module=>module.InvoiceCreateDialog));
 
 export type EmailWorkspaceItem = {
   id: string;
@@ -219,6 +224,7 @@ export function EmailInboxWorkspace({
   initialAutomation,
   products,
   catalogs,
+  canCreateInvoices = false,
 }: {
   initialEmails: EmailWorkspaceItem[];
   initialThreadId?: string;
@@ -232,6 +238,7 @@ export function EmailInboxWorkspace({
   initialAutomation: Automation;
   products: Product[];
   catalogs: Catalog[];
+  canCreateInvoices?: boolean;
 }) {
   const sourceEmails = initialEmails;
   const initialTarget = initialThreadId ? sourceEmails.find((email) => threadKeyForEmail(email) === initialThreadId || email.id === initialThreadId) : undefined;
@@ -258,6 +265,7 @@ export function EmailInboxWorkspace({
   const [replyAttachments, setReplyAttachments] = useState<ComposerAttachment[]>([]);
   const [composeAttachments, setComposeAttachments] = useState<ComposerAttachment[]>([]);
   const [catalogOpen, setCatalogOpen] = useState(false);
+  const [invoiceContext,setInvoiceContext]=useState<InvoiceEmailContext|null>(null);
   const [catalogTarget, setCatalogTarget] = useState<"reply" | "compose">("reply");
   const [catalogTitle, setCatalogTitle] = useState("Filazoo product catalog");
   const [selectedCatalogSkus, setSelectedCatalogSkus] = useState<Set<string>>(new Set());
@@ -807,6 +815,35 @@ export function EmailInboxWorkspace({
     }
   }
 
+  async function attachInvoicePdf(invoiceId: string) {
+    if (!invoiceContext) throw new Error("Open customer invoices from the email composer first.");
+    const target = invoiceContext.target || "reply";
+    const session = replySession.current;
+    const currentAttachments = target === "reply" ? replyAttachments : composeAttachments;
+    setAttachmentBusy(true);
+    try {
+      const response = await fetch(`/api/invoices/${invoiceId}/pdf`, { cache: "no-store" });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result.error || "Unable to generate this invoice PDF.");
+      }
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (String.fromCharCode(...bytes.subarray(0, 5)) !== "%PDF-") throw new Error("The invoice PDF could not be generated. Please retry.");
+      if (target === "reply" && replySession.current !== session) throw new Error("The conversation changed. Reopen invoices from the intended email.");
+      const attachment: ComposerAttachment = {
+        id: `invoice-${invoiceId}`,
+        filename: response.headers.get("X-Invoice-Filename") || `invoice-${invoiceId}.pdf`,
+        content: bytesToBase64(bytes), contentType: "application/pdf", size: bytes.byteLength,
+      };
+      const next = mergeInvoiceAttachment(currentAttachments, attachment);
+      if (target === "reply") setReplyAttachments(next);
+      else setComposeAttachments(next);
+      setNotice(`${attachment.filename} attached to your email.`);
+    } finally {
+      setAttachmentBusy(false);
+    }
+  }
+
   async function saveReply() {
     if (!selected || !draft.trim() || sending || aiWriting) return;
     const session = replySession.current;
@@ -1021,7 +1058,7 @@ export function EmailInboxWorkspace({
                 <div className="overflow-hidden rounded-xl border bg-background focus-within:border-primary/50">
                   <textarea ref={replyInput} aria-label="Reply message" value={draft} onChange={(event) => updateDraft(event.target.value)} placeholder={`Write in Chinese or English to reply to ${replyRecipient}…`} className="min-h-24 w-full resize-none bg-transparent p-3.5 text-sm leading-6 outline-none" />
                   <AttachmentChips attachments={replyAttachments} onRemove={(id) => setReplyAttachments((current) => current.filter((item) => item.id !== id))} />
-                  <div className="flex items-center justify-between border-t px-2 py-2"><div className="flex gap-1"><input ref={replyFileInput} type="file" multiple accept=".pdf,.csv,.txt,.jpg,.jpeg,.png,.webp,.gif,.doc,.docx,.xls,.xlsx" className="hidden" onChange={(event) => { void addFiles(event.target.files, "reply"); event.target.value = ""; }} /><button type="button" disabled={attachmentBusy} title="Attach files" onClick={() => replyFileInput.current?.click()} className="rounded-md p-2 text-muted-foreground hover:bg-muted disabled:opacity-40"><Paperclip className="size-4" /></button><button type="button" title="Attach product catalog" onClick={() => openCatalogPicker("reply")} className="rounded-md p-2 text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-500/10"><Library className="size-4" /></button><button type="button" title="Add emoji" onClick={() => setDraft((value) => `${value}${value ? " " : ""}😊`)} className="rounded-md p-2 text-muted-foreground hover:bg-muted"><Smile className="size-4" /></button><button type="button" title="Start an AI-written reply" onClick={() => setDraft((value) => value || `你好，${(selected.contactName || selected.customerProfile?.contactName || selected.contact).split(" ")[0]}，\n\n感谢您的来信。我们很乐意为您提供帮助。\n\n此致\nFilazoo`)} className="rounded-md p-2 text-violet-600 hover:bg-violet-50"><WandSparkles className="size-4" /></button></div><button type="button" onClick={saveReply} disabled={!draft.trim() || sending || aiWriting || attachmentBusy} className="inline-flex h-9 items-center gap-2 rounded-md bg-foreground px-3 text-xs font-semibold text-background disabled:opacity-40"><Send className="size-4" />{sending ? "Sending..." : aiWriting ? "Writing..." : aiDraft && aiDraftSource === draft.trim() ? "Send AI draft" : "Send email"}</button></div>
+                  <div className="flex items-center justify-between border-t px-2 py-2"><div className="flex gap-1"><input ref={replyFileInput} type="file" multiple accept=".pdf,.csv,.txt,.jpg,.jpeg,.png,.webp,.gif,.doc,.docx,.xls,.xlsx" className="hidden" onChange={(event) => { void addFiles(event.target.files, "reply"); event.target.value = ""; }} /><button type="button" disabled={attachmentBusy} title="Attach files" onClick={() => replyFileInput.current?.click()} className="rounded-md p-2 text-muted-foreground hover:bg-muted disabled:opacity-40"><Paperclip className="size-4" /></button><button type="button" title="Attach product catalog" onClick={() => openCatalogPicker("reply")} className="rounded-md p-2 text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-500/10"><Library className="size-4" /></button>{canCreateInvoices ? <button type="button" title="Customer invoices" aria-label="Customer invoices" onClick={()=>setInvoiceContext({companyId:selected.companyId,email:replyRecipient,threadId:selectedConversation?.id,customerName:selected.company,target:"reply"})} className="rounded-md p-2 text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-500/10"><ReceiptText className="size-4" /></button> : null}<button type="button" title="Add emoji" onClick={() => setDraft((value) => `${value}${value ? " " : ""}😊`)} className="rounded-md p-2 text-muted-foreground hover:bg-muted"><Smile className="size-4" /></button><button type="button" title="Start an AI-written reply" onClick={() => setDraft((value) => value || `你好，${(selected.contactName || selected.customerProfile?.contactName || selected.contact).split(" ")[0]}，\n\n感谢您的来信。我们很乐意为您提供帮助。\n\n此致\nFilazoo`)} className="rounded-md p-2 text-violet-600 hover:bg-violet-50"><WandSparkles className="size-4" /></button></div><button type="button" onClick={saveReply} disabled={!draft.trim() || sending || aiWriting || attachmentBusy} className="inline-flex h-9 items-center gap-2 rounded-md bg-foreground px-3 text-xs font-semibold text-background disabled:opacity-40"><Send className="size-4" />{sending ? "Sending..." : aiWriting ? "Writing..." : aiDraft && aiDraftSource === draft.trim() ? "Send AI draft" : "Send email"}</button></div>
                 </div>
                 {notice ? <p className="mt-2 text-xs text-muted-foreground" role="status">{notice}</p> : null}
               </div>
@@ -1038,9 +1075,12 @@ export function EmailInboxWorkspace({
                 <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-sm font-semibold text-primary">{initials(selected.contactName || selected.contact)}</div>
                 <div className="min-w-0 pt-0.5"><p className="break-words text-sm font-semibold [overflow-wrap:anywhere]">{selected.contactName || selected.contact}</p>{selected.contactName && selected.contactName !== selected.contact ? <p className="mt-1 break-words text-xs text-muted-foreground [overflow-wrap:anywhere]">{selected.contact}</p> : null}<p className="mt-1 break-words text-xs text-muted-foreground">{selected.company}</p></div>
               </div>
-              <div className="mt-5 flex items-center justify-between gap-3 rounded-xl bg-muted/40 p-3">
-                <AssignedOwner name={selected.ownerName || "Unassigned"} initials={selected.ownerInitials || "—"} assigned={Boolean(selected.ownerId)} label="Owner" />
-                {selected.companyId ? <Link href={`/companies/${selected.companyId}`} className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-2 text-xs font-medium text-primary hover:bg-primary/10"><Building2 className="size-3.5" />CRM profile<ChevronRight className="size-3.5" /></Link> : null}
+              <div className="mt-5 overflow-hidden rounded-xl border bg-muted/30">
+                <AssignedOwner name={selected.ownerName || "Unassigned"} initials={selected.ownerInitials || "—"} assigned={Boolean(selected.ownerId)} label="Owner" className="flex w-full px-3 py-3 [&>span:last-child]:flex-1 [&>span:last-child>span:last-child]:max-w-none" />
+                {selected.companyId ? <div aria-label="Customer shortcuts" className={`grid gap-2 border-t p-2 ${canCreateInvoices ? "grid-cols-2" : "grid-cols-1"}`}>
+                  <Link href={`/companies/${selected.companyId}`} className="inline-flex min-h-9 min-w-0 items-center justify-center gap-1.5 rounded-lg border bg-background px-2 text-xs font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"><Building2 className="size-3.5 shrink-0" /><span>CRM profile</span><ChevronRight className="size-3.5 shrink-0" /></Link>
+                  {canCreateInvoices ? <Link href={`/invoices?companyId=${selected.companyId}`} target="_blank" rel="noreferrer" className="inline-flex min-h-9 min-w-0 items-center justify-center gap-1.5 rounded-lg border bg-background px-2 text-xs font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"><ReceiptText className="size-3.5 shrink-0" /><span>Invoices</span></Link> : null}
+                </div> : null}
               </div>
             </section>
             <EmailAiSummary
@@ -1089,7 +1129,7 @@ export function EmailInboxWorkspace({
               <label className="grid grid-cols-[64px_1fr] items-center border-b py-2 text-sm"><span className="text-muted-foreground">Subject</span><input required value={composeSubject} onChange={(event) => setComposeSubject(event.target.value)} placeholder="Email subject" className="min-w-0 bg-transparent py-1 outline-none placeholder:text-muted-foreground/60" /></label>
               <textarea required value={composeBody} onChange={(event) => setComposeBody(event.target.value)} placeholder="Write your message…" className="min-h-64 w-full resize-y bg-transparent py-4 text-sm leading-6 outline-none placeholder:text-muted-foreground/60" />
               <AttachmentChips attachments={composeAttachments} onRemove={(id) => setComposeAttachments((current) => current.filter((item) => item.id !== id))} />
-              <div className="mb-2 flex items-center gap-2 border-t pt-2"><input ref={composeFileInput} type="file" multiple accept=".pdf,.csv,.txt,.jpg,.jpeg,.png,.webp,.gif,.doc,.docx,.xls,.xlsx" className="hidden" onChange={(event) => { void addFiles(event.target.files, "compose"); event.target.value = ""; }} /><button type="button" onClick={() => composeFileInput.current?.click()} disabled={attachmentBusy} className="inline-flex h-8 items-center gap-2 rounded-md border px-2.5 text-xs font-medium hover:bg-muted disabled:opacity-40"><Paperclip className="size-3.5" />Attach file</button><button type="button" onClick={() => openCatalogPicker("compose")} className="inline-flex h-8 items-center gap-2 rounded-md border px-2.5 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:text-sky-300"><Library className="size-3.5" />Add catalog PDF</button></div>
+              <div className="mb-2 flex items-center gap-2 border-t pt-2"><input ref={composeFileInput} type="file" multiple accept=".pdf,.csv,.txt,.jpg,.jpeg,.png,.webp,.gif,.doc,.docx,.xls,.xlsx" className="hidden" onChange={(event) => { void addFiles(event.target.files, "compose"); event.target.value = ""; }} /><button type="button" onClick={() => composeFileInput.current?.click()} disabled={attachmentBusy} className="inline-flex h-8 items-center gap-2 rounded-md border px-2.5 text-xs font-medium hover:bg-muted disabled:opacity-40"><Paperclip className="size-3.5" />Attach file</button><button type="button" onClick={() => openCatalogPicker("compose")} className="inline-flex h-8 items-center gap-2 rounded-md border px-2.5 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:text-sky-300"><Library className="size-3.5" />Add catalog PDF</button>{canCreateInvoices ? <button type="button" onClick={()=>{if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(composeTo.trim())){setComposeError("Enter one customer email to view or create invoices.");return;}setInvoiceContext({email:composeTo.trim(),target:"compose"});}} className="inline-flex h-8 items-center gap-2 rounded-md border px-2.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300"><ReceiptText className="size-3.5" />Create invoice</button> : null}</div>
               {composeError ? <p role="alert" className="pb-3 text-xs font-medium text-red-600 dark:text-red-400">{composeError}</p> : null}
             </div>
             <DialogFooter className="mx-0 mb-0 rounded-none px-5 py-3">
@@ -1099,6 +1139,7 @@ export function EmailInboxWorkspace({
           </form>
         </DialogContent>
       </Dialog>
+      {invoiceContext ? <InvoiceCreateDialog context={invoiceContext} onClose={()=>setInvoiceContext(null)} onAttach={attachInvoicePdf} /> : null}
       <Dialog open={catalogOpen} onOpenChange={setCatalogOpen}>
         <DialogContent className="w-[min(760px,calc(100%-2rem))] max-w-none gap-0 overflow-hidden p-0">
           <DialogHeader className="border-b px-5 py-4">

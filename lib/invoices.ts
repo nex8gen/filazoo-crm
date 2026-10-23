@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { invoiceBankAccountSchema } from "./invoice-banks.ts";
 
 // All supported currencies use two decimal places. Store money as integer minor units.
 export const invoiceCurrencies = [
@@ -21,12 +22,17 @@ export const invoiceDocumentSchema = z
     customerEmail: z.union([z.email(), z.literal("")]),
     customerAddress: z.string().trim().max(2000),
     customerTaxId: z.string().trim().max(100),
+    companyId: z.uuid().optional(),
+    contactId: z.uuid().optional(),
+    sourceThreadId: z.string().trim().max(1000).optional(),
     currency: z.enum(invoiceCurrencies),
     issueDate: date,
     dueDate: date,
     reference: z.string().trim().max(200),
     notes: z.string().trim().max(4000),
     paymentInstructions: z.string().trim().max(2000),
+    bankAccountId: z.uuid().optional(),
+    bankAccount: invoiceBankAccountSchema.optional(),
     discountMinor: money,
     shippingMinor: money,
     items: z
@@ -36,12 +42,36 @@ export const invoiceDocumentSchema = z
           quantity: z.number().int().min(1).max(1_000_000),
           unitPriceMinor: money,
           taxBps: z.number().int().min(0).max(10000),
+          productSku: z.string().trim().min(1).max(200).optional(),
+          variantId: z.string().trim().min(1).max(200).optional(),
+          variantSku: z.string().trim().max(200).optional(),
+          pricingMode: z.enum(["catalog", "manual"]).optional(),
         }),
       )
       .min(1)
       .max(100),
   })
   .superRefine((doc, ctx) => {
+    if (doc.bankAccount && doc.bankAccount.id !== doc.bankAccountId)
+      ctx.addIssue({ code: "custom", message: "Select a saved bank account.", path: ["bankAccountId"] });
+    if (doc.bankAccount?.currency && doc.bankAccount.currency !== doc.currency)
+      ctx.addIssue({ code: "custom", message: "Choose a bank account that matches the invoice currency.", path: ["bankAccountId"] });
+    if (doc.contactId && !doc.companyId)
+      ctx.addIssue({
+        code: "custom",
+        message: "Select the contact’s company.",
+        path: ["contactId"],
+      });
+    for (const item of doc.items)
+      if (
+        (item.variantId || item.pricingMode === "catalog") &&
+        !item.productSku
+      )
+        ctx.addIssue({
+          code: "custom",
+          message: "Select a product for each linked line item.",
+          path: ["items"],
+        });
     if (doc.dueDate < doc.issueDate)
       ctx.addIssue({
         code: "custom",
@@ -79,6 +109,13 @@ export type InvoicePayment = {
   reference: string;
   created_at: string;
 };
+export type InvoiceReceivable = {
+  currency: string;
+  issued_minor: number;
+  paid_minor: number;
+  outstanding_minor: number;
+  overdue_minor: number;
+};
 export type Invoice = {
   id: string;
   number: number;
@@ -87,10 +124,37 @@ export type Invoice = {
   total_minor: number;
   paid_minor: number;
   revision: number;
+  creator_name?: string | null;
   created_at: string;
   updated_at: string;
   invoice_payments?: InvoicePayment[];
+  company_id?: string | null;
+  contact_id?: string | null;
+  source_thread_id?: string | null;
 };
+
+export function blankInvoiceDocument(today: string): InvoiceDocument {
+  const due = new Date(`${today}T00:00:00Z`);
+  due.setUTCDate(due.getUTCDate() + 30);
+  return {
+    sellerName: "Filazoo",
+    sellerAddress: "",
+    sellerTaxId: "",
+    customerName: "",
+    customerEmail: "",
+    customerAddress: "",
+    customerTaxId: "",
+    currency: "USD",
+    issueDate: today,
+    dueDate: due.toISOString().slice(0, 10),
+    reference: "",
+    notes: "",
+    paymentInstructions: "",
+    discountMinor: 0,
+    shippingMinor: 0,
+    items: [{ description: "", quantity: 1, unitPriceMinor: 0, taxBps: 0 }],
+  };
+}
 
 /** Allocate invoice discount proportionally before calculating line tax. Shipping is untaxed. */
 export function invoiceTotals(doc: InvoiceDocument) {
@@ -105,11 +169,15 @@ export function invoiceTotals(doc: InvoiceDocument) {
     cumulative += gross;
     // An editor can temporarily contain fractional quantities before validation.
     // Keep its preview usable; validated documents always take the exact path.
-    const exact = [doc.discountMinor, cumulative, subtotal].every(Number.isSafeInteger);
+    const exact = [doc.discountMinor, cumulative, subtotal].every(
+      Number.isSafeInteger,
+    );
     const target = subtotal
       ? exact
-        ? Number((BigInt(doc.discountMinor) * BigInt(cumulative)) / BigInt(subtotal))
-        : Math.floor(doc.discountMinor * cumulative / subtotal)
+        ? Number(
+            (BigInt(doc.discountMinor) * BigInt(cumulative)) / BigInt(subtotal),
+          )
+        : Math.floor((doc.discountMinor * cumulative) / subtotal)
       : 0;
     const discount = target - allocated;
     allocated += discount;

@@ -11,7 +11,7 @@ import {
 } from "@/lib/ai/email-rewrite";
 import { getEmailTranslationProvider, looksLikeEnglish, translateEmailSegments, translateEnglishEmail } from "@/lib/email-translation";
 import { z } from "zod";
-import { emailSummaryInstruction, parseEmailSummary, validateEmailFollowUp } from "@/lib/ai/email-summary";
+import { emailSummaryInstruction, generateEmailSummary } from "@/lib/ai/email-summary";
 
 const requestSchema = z.object({
   mode: z.enum(["rewrite", "translate", "summary"]),
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
 
   const parsed = requestSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
-    return Response.json({ ok: false, error: "Enter text to translate or rewrite." }, { status: 400 });
+    return Response.json({ ok: false, error: "Invalid AI request. Check the message and conversation details." }, { status: 400 });
   }
 
   const { mode, text, context, recipient, assignedManagerName, customerProfile, conversationHistory } = parsed.data;
@@ -97,15 +97,15 @@ export async function POST(request: Request) {
     conversationHistory,
     legacyContext: context,
   });
-  const finalizeOutput = (output: string) => mode === "summary"
-    ? JSON.stringify(validateEmailFollowUp(parseEmailSummary(output), new Date()))
-    : applyEmailSignature(output, signature);
+  const finalizeOutput = async (generate: (correction: string) => Promise<string>) => mode === "summary"
+    ? generateEmailSummary(generate)
+    : applyEmailSignature(await generate(""), signature);
 
-  const generateWithGateway = () => generateGatewayText({
+  const generateWithGateway = (correction: string) => generateGatewayText({
     token: gatewayToken!,
     model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim(),
     systemInstruction: system,
-    prompt: userContent,
+    prompt: correction ? `${userContent}\n\nVALIDATION CORRECTION:\n${correction}` : userContent,
   });
 
   if (!apiKey && !gatewayToken) {
@@ -114,7 +114,7 @@ export async function POST(request: Request) {
 
   if (!apiKey && gatewayToken) {
     try {
-      const output = finalizeOutput(await generateWithGateway());
+      const output = await finalizeOutput(generateWithGateway);
       return Response.json({ ok: true, output, provider: "vercel-ai-gateway" }, { headers: { "Cache-Control": "no-store" } });
     } catch (error) {
       return Response.json({ ok: false, error: error instanceof Error ? error.message : "AI assistance is temporarily unavailable." }, { status: 502 });
@@ -122,20 +122,21 @@ export async function POST(request: Request) {
   }
 
   try {
-    const output = finalizeOutput(await generateGeminiText({
+    const output = await finalizeOutput((correction) => generateGeminiText({
       apiKey: apiKey!,
       model: process.env.GEMINI_EMAIL_MODEL?.trim(),
       systemInstruction: system,
-      prompt: userContent,
+      prompt: correction ? `${userContent}\n\nVALIDATION CORRECTION:\n${correction}` : userContent,
     }));
     return Response.json({ ok: true, output, provider: "gemini" }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (gatewayToken && isGeminiRegionError(error)) {
       try {
-        const output = finalizeOutput(await generateWithGateway());
+        const output = await finalizeOutput(generateWithGateway);
         return Response.json({ ok: true, output, provider: "vercel-ai-gateway" }, { headers: { "Cache-Control": "no-store" } });
       } catch (fallbackError) {
-        return Response.json({ ok: false, error: fallbackError instanceof Error ? fallbackError.message : "AI assistance is temporarily unavailable." }, { status: 502 });
+        const detail = fallbackError instanceof Error ? fallbackError.message : "AI assistance is temporarily unavailable.";
+        return Response.json({ ok: false, error: `Gemini is unavailable in this server's region. The AI Gateway fallback also failed: ${detail}` }, { status: 502 });
       }
     }
     return Response.json({ ok: false, error: error instanceof Error ? error.message : "AI assistance is temporarily unavailable." }, { status: 502 });

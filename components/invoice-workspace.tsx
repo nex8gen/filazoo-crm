@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Plus, Printer, RefreshCw, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { InvoiceEditor, blankInvoice } from "@/components/invoice-editor";
+import { InvoiceEditor } from "@/components/invoice-editor";
+import { invoiceRequest as api, invoiceContextUrl } from "@/lib/invoice-client";
 import { InvoicePaper } from "@/components/invoice-paper";
 import {
   formatMoney,
@@ -13,39 +14,29 @@ import {
   invoiceStatus,
   type Invoice,
   type InvoiceDocument,
+  type InvoiceReceivable,
 } from "@/lib/invoices";
 import "@/app/invoices/invoices.css";
 
-type Listing = { invoices: Invoice[]; count: number };
-async function api(url: string, body?: unknown, method = "PATCH") {
-  const response = await fetch(
-    url,
-    body === undefined
-      ? { cache: "no-store" }
-      : {
-          method,
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        },
-  );
-  const data = await response
-    .json()
-    .catch(() => ({
-      error: "Unexpected server response. Please sign in again or retry.",
-    }));
-  if (!response.ok) throw new Error(data.error ?? "Invoice request failed.");
-  return data;
-}
+type Listing = {
+  invoices: Invoice[];
+  count: number;
+  summary?: InvoiceReceivable[];
+};
 
 export function InvoiceWorkspace({
   initial,
   initialSelected = null,
+  initialEditor = null,
+  companyId,
   initialError,
   canWrite,
   today,
 }: {
   initial: Listing;
   initialSelected?: Invoice | null;
+  initialEditor?: InvoiceDocument | null;
+  companyId?: string;
   initialError: string;
   canWrite: boolean;
   today: string;
@@ -53,7 +44,7 @@ export function InvoiceWorkspace({
   const router = useRouter();
   const [listing, setListing] = useState(initial);
   const [selected, setSelected] = useState<Invoice | null>(initialSelected);
-  const [editor, setEditor] = useState<InvoiceDocument | null>(null);
+  const [editor, setEditor] = useState<InvoiceDocument | null>(initialEditor);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(0);
@@ -77,7 +68,7 @@ export function InvoiceWorkspace({
   }
   async function load(nextPage = page) {
     const result = await api(
-      `/api/invoices?page=${nextPage}&search=${encodeURIComponent(search)}&status=${status}`,
+      `/api/invoices?page=${nextPage}&search=${encodeURIComponent(search)}&status=${status}${companyId ? `&companyId=${companyId}` : ""}`,
     );
     setListing(result);
     setPage(nextPage);
@@ -100,6 +91,7 @@ export function InvoiceWorkspace({
       setSelected(result.invoice);
       setEditor(null);
       setNotice("Draft saved.");
+      if (initialEditor) router.replace(`/invoices/${result.invoice.id}`);
     });
   }
   async function transition(action: "issue" | "void" | "delete") {
@@ -125,15 +117,12 @@ export function InvoiceWorkspace({
     });
   }
   const selectedStatus = selected ? invoiceStatus(selected, today) : "";
-  const balances = new Map<string, number>();
-  for (const invoice of listing.invoices)
-    if (invoice.status === "issued")
-      balances.set(
-        invoice.document.currency,
-        (balances.get(invoice.document.currency) ?? 0) +
-          invoice.total_minor -
-          invoice.paid_minor,
-      );
+  const summary = listing.summary ?? [];
+  function cancelEditor() {
+    if (initialEditor && !selected)
+      router.push(companyId ? `/invoices?companyId=${companyId}` : "/invoices");
+    else setEditor(null);
+  }
   return (
     <div className="invoice-workspace mx-auto w-full max-w-7xl space-y-6 p-5 pb-12 sm:p-8">
       <header className="flex flex-wrap items-start justify-between gap-4 border-b pb-6">
@@ -165,10 +154,13 @@ export function InvoiceWorkspace({
               disabled={busy}
               onClick={() => {
                 if (editor) {
-                  setEditor(null);
+                  cancelEditor();
                   if (!selected) void run(() => load());
                 } else {
-                  if (initialSelected) { router.push("/invoices"); return; }
+                  if (initialSelected) {
+                    router.push("/invoices");
+                    return;
+                  }
                   setSelected(null);
                   setConfirm(null);
                   void run(() => load());
@@ -191,12 +183,13 @@ export function InvoiceWorkspace({
               {canWrite ? (
                 <Button
                   disabled={busy}
-                  onClick={() => {
-                    setSelected(null);
-                    setError("");
-                    setNotice("");
-                    setEditor(blankInvoice(today));
-                  }}
+                  onClick={() =>
+                    void run(async () => {
+                      setSelected(null);
+                      const seed = await api(invoiceContextUrl({ companyId }));
+                      setEditor(seed.document);
+                    })
+                  }
                 >
                   <Plus />
                   New invoice
@@ -224,15 +217,52 @@ export function InvoiceWorkspace({
           initial={editor}
           busy={busy}
           onSave={save}
-          onCancel={() => setEditor(null)}
+          onCancel={cancelEditor}
         />
       ) : selected ? (
         <>
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/20 p-3 text-sm">
+            <span className="font-medium">
+              {selected.document.customerName}
+            </span>
+            {selected.company_id ? (
+              <>
+                <Link
+                  href={`/companies/${selected.company_id}`}
+                  className="text-primary underline"
+                >
+                  Customer profile
+                </Link>
+                <Link
+                  href={`/invoices?companyId=${selected.company_id}`}
+                  className="text-primary underline"
+                >
+                  Customer invoice history
+                </Link>
+              </>
+            ) : null}
+            {selected.source_thread_id ? (
+              <Link
+                href={`/emails?thread=${encodeURIComponent(selected.source_thread_id)}`}
+                className="text-primary underline"
+              >
+                Email conversation
+              </Link>
+            ) : null}
+            <Link
+              href={`/invoices/${selected.id}`}
+              className="ml-auto text-primary underline"
+            >
+              Permanent invoice link
+            </Link>
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             <Status value={selectedStatus} />
             <span className="mr-auto text-sm text-muted-foreground">
               {formatMoney(
-                selected.total_minor - selected.paid_minor,
+                selected.status === "void"
+                  ? 0
+                  : selected.total_minor - selected.paid_minor,
                 selected.document.currency,
               )}{" "}
               outstanding
@@ -392,22 +422,24 @@ export function InvoiceWorkspace({
               detail="Matching current search & status"
             />
             <Metric
-              label="Outstanding on this page"
+              label="Outstanding"
               value={
-                [...balances.entries()]
-                  .map(([currency, amount]) => formatMoney(amount, currency))
+                summary
+                  .map((row) =>
+                    formatMoney(row.outstanding_minor, row.currency),
+                  )
                   .join(" · ") || "—"
               }
-              detail="Issued balances, grouped by currency"
+              detail="All matching invoices, grouped by currency"
             />
             <Metric
-              label="Overdue on this page"
-              value={String(
-                listing.invoices.filter(
-                  (invoice) => invoiceStatus(invoice, today) === "overdue",
-                ).length,
-              )}
-              detail="Unpaid invoices past their due date"
+              label="Overdue balance"
+              value={
+                summary
+                  .map((row) => formatMoney(row.overdue_minor, row.currency))
+                  .join(" · ") || "—"
+              }
+              detail="All matching unpaid invoices past their due date"
             />
           </div>
           <form

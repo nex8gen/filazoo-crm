@@ -1,7 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { InvoiceConnections } from "@/components/invoice-connections";
+import { InvoiceBankSelect } from "@/components/invoice-bank-select";
+import { productUnitPrice, type InvoiceProduct } from "@/lib/invoice-links";
 import {
   invoiceCurrencies,
   invoiceDocumentSchema,
@@ -9,29 +12,6 @@ import {
   formatMoney,
   type InvoiceDocument,
 } from "@/lib/invoices";
-
-export function blankInvoice(today: string): InvoiceDocument {
-  const due = new Date(`${today}T00:00:00Z`);
-  due.setUTCDate(due.getUTCDate() + 30);
-  return {
-    sellerName: "Filazoo",
-    sellerAddress: "",
-    sellerTaxId: "",
-    customerName: "",
-    customerEmail: "",
-    customerAddress: "",
-    customerTaxId: "",
-    currency: "USD",
-    issueDate: today,
-    dueDate: due.toISOString().slice(0, 10),
-    reference: "",
-    notes: "",
-    paymentInstructions: "",
-    discountMinor: 0,
-    shippingMinor: 0,
-    items: [{ description: "", quantity: 1, unitPriceMinor: 0, taxBps: 0 }],
-  };
-}
 
 export function InvoiceEditor({
   initial,
@@ -46,10 +26,26 @@ export function InvoiceEditor({
 }) {
   const [doc, setDoc] = useState(initial);
   const [error, setError] = useState("");
+  const [connectionsBusy, setConnectionsBusy] = useState(false);
+  const productCache = useRef(new Map<string, InvoiceProduct>());
+  const rememberProducts = useCallback((products: InvoiceProduct[]) => {
+    for (const product of products)
+      productCache.current.set(product.sku, product);
+  }, []);
   function field<K extends keyof InvoiceDocument>(
     key: K,
     value: InvoiceDocument[K],
   ) {
+    if (
+      key === "currency" &&
+      value !== doc.currency &&
+      doc.items.some((item) => item.productSku)
+    ) {
+      setError(
+        "Remove or unlink catalog products before changing currency. Prices are never converted automatically.",
+      );
+      return;
+    }
     setDoc((old) => ({ ...old, [key]: value }));
   }
   function itemField(
@@ -59,9 +55,28 @@ export function InvoiceEditor({
   ) {
     setDoc((old) => ({
       ...old,
-      items: old.items.map((item, i) =>
-        i === index ? { ...item, [key]: value } : item,
-      ),
+      items: old.items.map((item, i) => {
+        if (i !== index) return item;
+        const updated = { ...item, [key]: value };
+        if (key === "unitPriceMinor" && item.productSku)
+          updated.pricingMode = "manual";
+        if (
+          key === "quantity" &&
+          item.productSku &&
+          item.pricingMode === "catalog"
+        ) {
+          const product = productCache.current.get(item.productSku);
+          if (product) {
+            const price = productUnitPrice(
+              product,
+              Number(value),
+              item.variantId,
+            );
+            if (price !== null) updated.unitPriceMinor = price;
+          }
+        }
+        return updated;
+      }),
     }));
   }
   const totals = invoiceTotals(doc);
@@ -106,8 +121,15 @@ export function InvoiceEditor({
   );
   return (
     <form
+      autoComplete="off"
       onSubmit={async (event) => {
         event.preventDefault();
+        if (connectionsBusy) {
+          setError(
+            "Wait for customer and catalog changes to finish before saving.",
+          );
+          return;
+        }
         const parsed = invoiceDocumentSchema.safeParse(doc);
         if (!parsed.success) {
           setError(
@@ -121,6 +143,12 @@ export function InvoiceEditor({
       className="space-y-7"
     >
       <fieldset disabled={busy} className="space-y-7 disabled:opacity-60">
+        <InvoiceConnections
+          doc={doc}
+          onChange={setDoc}
+          onProducts={rememberProducts}
+          onBusyChange={setConnectionsBusy}
+        />
         <div className="grid gap-6 lg:grid-cols-2">
           {(["seller", "customer"] as const).map((party) => (
             <section key={party} className="space-y-4 rounded-xl border p-5">
@@ -193,85 +221,154 @@ export function InvoiceEditor({
             </Button>
           </div>
           {doc.items.map((item, index) => (
-            <div
-              key={index}
-              className="grid items-end gap-3 border-b pb-4 sm:grid-cols-2 lg:grid-cols-[3fr_1fr_1.5fr_1fr_auto]"
-            >
-              <label className="grid gap-2 text-sm">
-                Description
-                <input
-                  required
-                  maxLength={500}
-                  value={item.description}
-                  onChange={(event) =>
-                    itemField(index, "description", event.target.value)
-                  }
-                />
-              </label>
-              <label className="grid gap-2 text-sm">
-                Quantity
-                <input
-                  type="number"
-                  required
-                  min="1"
-                  max="1000000"
-                  step="1"
-                  value={item.quantity}
-                  onChange={(event) =>
-                    itemField(index, "quantity", Number(event.target.value))
-                  }
-                />
-              </label>
-              <label className="grid gap-2 text-sm">
-                Unit price ({doc.currency})
-                <input
-                  type="number"
-                  required
-                  min="0"
-                  max="1000000"
-                  step="0.01"
-                  value={item.unitPriceMinor / 100}
-                  onChange={(event) =>
-                    itemField(
-                      index,
-                      "unitPriceMinor",
-                      Math.round(Number(event.target.value) * 100),
+            <div key={index} className="space-y-3 border-b pb-4">
+              {item.productSku ? (
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="rounded border bg-muted px-2 py-1">
+                    SKU: {item.variantSku || item.productSku} ·{" "}
+                    {item.pricingMode === "catalog"
+                      ? "Automatic quantity pricing"
+                      : "Manual agreed price"}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      const product = productCache.current.get(
+                        item.productSku!,
+                      );
+                      const price = product
+                        ? productUnitPrice(
+                            product,
+                            item.quantity,
+                            item.variantId,
+                          )
+                        : null;
+                      if (price === null) {
+                        setError(
+                          "No current catalog quote is available. Enter an agreed manual price.",
+                        );
+                        return;
+                      }
+                      field(
+                        "items",
+                        doc.items.map((line, i) =>
+                          i === index
+                            ? {
+                                ...line,
+                                unitPriceMinor: price,
+                                pricingMode: "catalog",
+                              }
+                            : line,
+                        ),
+                      );
+                    }}
+                  >
+                    Refresh catalog price
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      field(
+                        "items",
+                        doc.items.map((line, i) =>
+                          i === index
+                            ? {
+                                ...line,
+                                productSku: undefined,
+                                variantId: undefined,
+                                variantSku: undefined,
+                                pricingMode: undefined,
+                              }
+                            : line,
+                        ),
+                      )
+                    }
+                  >
+                    Unlink / custom line
+                  </Button>
+                </div>
+              ) : null}
+              <div className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-[3fr_1fr_1.5fr_1fr_auto]">
+                <label className="grid gap-2 text-sm">
+                  Description
+                  <input
+                    required
+                    maxLength={500}
+                    value={item.description}
+                    onChange={(event) =>
+                      itemField(index, "description", event.target.value)
+                    }
+                  />
+                </label>
+                <label className="grid gap-2 text-sm">
+                  Quantity
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    max="1000000"
+                    step="1"
+                    value={item.quantity}
+                    onChange={(event) =>
+                      itemField(index, "quantity", Number(event.target.value))
+                    }
+                  />
+                </label>
+                <label className="grid gap-2 text-sm">
+                  Unit price ({doc.currency})
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    max="1000000"
+                    step="0.01"
+                    value={item.unitPriceMinor / 100}
+                    onChange={(event) =>
+                      itemField(
+                        index,
+                        "unitPriceMinor",
+                        Math.round(Number(event.target.value) * 100),
+                      )
+                    }
+                  />
+                </label>
+                <label className="grid gap-2 text-sm">
+                  Tax %
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={item.taxBps / 100}
+                    onChange={(event) =>
+                      itemField(
+                        index,
+                        "taxBps",
+                        Math.round(Number(event.target.value) * 100),
+                      )
+                    }
+                  />
+                </label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  aria-label={`Remove item ${index + 1}`}
+                  disabled={doc.items.length === 1}
+                  onClick={() =>
+                    field(
+                      "items",
+                      doc.items.filter((_, i) => i !== index),
                     )
                   }
-                />
-              </label>
-              <label className="grid gap-2 text-sm">
-                Tax %
-                <input
-                  type="number"
-                  required
-                  min="0"
-                  max="100"
-                  step="0.01"
-                  value={item.taxBps / 100}
-                  onChange={(event) =>
-                    itemField(
-                      index,
-                      "taxBps",
-                      Math.round(Number(event.target.value) * 100),
-                    )
-                  }
-                />
-              </label>
-              <Button
-                type="button"
-                variant="ghost"
-                aria-label={`Remove item ${index + 1}`}
-                disabled={doc.items.length === 1}
-                onClick={() =>
-                  field(
-                    "items",
-                    doc.items.filter((_, i) => i !== index),
-                  )
-                }
-              >
-                Remove
-              </Button>
+                >
+                  Remove
+                </Button>
+              </div>
             </div>
           ))}
           <p className="text-xs text-muted-foreground">
@@ -281,8 +378,9 @@ export function InvoiceEditor({
         </section>
         <div className="grid gap-6 lg:grid-cols-2">
           <section className="space-y-4 rounded-xl border p-5">
+            <InvoiceBankSelect doc={doc} onChange={setDoc} />
             {areaField(
-              "Payment instructions / bank details",
+              "Additional payment instructions / manual bank details",
               "paymentInstructions",
             )}
             {areaField("Notes & payment terms", "notes")}
@@ -336,7 +434,7 @@ export function InvoiceEditor({
         >
           Cancel
         </Button>
-        <Button type="submit" disabled={busy}>
+        <Button type="submit" disabled={busy || connectionsBusy}>
           {busy ? "Saving…" : "Save draft"}
         </Button>
       </div>

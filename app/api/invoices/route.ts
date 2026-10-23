@@ -11,6 +11,9 @@ export async function GET(request: Request) {
   const access = await invoiceAccess();
   if (access.response) return access.response;
   const url = new URL(request.url);
+  const companyId = url.searchParams.get("companyId") || undefined;
+  if (companyId && !z.uuid().safeParse(companyId).success)
+    return Response.json({ error: "Invalid customer." }, { status: 400 });
   const page = z.coerce
     .number()
     .int()
@@ -25,6 +28,7 @@ export async function GET(request: Request) {
         page.data,
         (url.searchParams.get("search") ?? "").slice(0, 200),
         url.searchParams.get("status") ?? "",
+        companyId,
       ),
       { headers: { "Cache-Control": "no-store" } },
     );
