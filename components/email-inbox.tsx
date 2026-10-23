@@ -35,6 +35,8 @@ import { requestEmailTranslation } from "@/lib/email-translation-client";
 import type { Catalog, Product } from "@/lib/types";
 import type { CustomerProfileContext } from "@/lib/ai/email-rewrite";
 import type { EmailSummary } from "@/lib/ai/email-summary";
+import { emailReplyPlanSchema } from "@/lib/ai/email-reply";
+import { prepareReplyInvoice } from "@/lib/email-reply-client";
 
 const InvoiceCreateDialog = dynamic(()=>import("@/components/invoice-create-dialog").then(module=>module.InvoiceCreateDialog));
 
@@ -281,6 +283,10 @@ export function EmailInboxWorkspace({
   const [translationErrors, setTranslationErrors] = useState<Record<string, string>>({});
   const [translationOn, setTranslationOn] = useState(true);
   const [aiReplyOn, setAiReplyOn] = useState(true);
+  const [aiReplyBusy, setAiReplyBusy] = useState(false);
+  const aiReplyInProgress = useRef(false);
+  const aiReplyInvoices = useRef(new Map<string, string>());
+  const [aiReplyInvoiceId, setAiReplyInvoiceId] = useState<string | null>(null);
   const [starred, setStarred] = useState<Set<string>>(() => new Set(sourceEmails.filter((email) => email.starred).map((email) => email.id)));
   const [readMessages, setReadMessages] = useState<Set<string>>(() => new Set(sourceEmails.filter((email) => email.read || email.direction === "outbound").map((email) => email.id)));
   const [categories, setCategories] = useState<Record<string, Category>>(() => Object.fromEntries(sourceEmails.flatMap((email) => email.category ? [[email.id, email.category]] : [])));
@@ -439,6 +445,7 @@ export function EmailInboxWorkspace({
     setAiWriting(false);
     setAiWritingError(null);
     setReplyAttachments([]);
+    setAiReplyInvoiceId(null);
     setNotice(null);
   }
   const conversation = useMemo(() => selectedConversation?.messages ?? [], [selectedConversation]);
@@ -850,6 +857,80 @@ export function EmailInboxWorkspace({
     }
   }
 
+  async function generateAiReply() {
+    if (!selected || aiReplyInProgress.current || attachmentBusy || sending || draft.trim()) return;
+    const session = replySession.current;
+    const isCurrent = () => replySession.current === session;
+    aiReplyInProgress.current = true;
+    setAiReplyBusy(true);
+    setAttachmentBusy(true);
+    setAiReplyOn(false);
+    setAiDraft("");
+    setAiDraftSource("");
+    setAiWriting(false);
+    setAiWritingError(null);
+    startReply();
+    setNotice("Reading the conversation and preparing your reply…");
+    try {
+      // IMAP list rows can contain only a preview. Load original bodies first.
+      const history = await Promise.all(conversation.slice(-8).map(async (message) => {
+        if (message.bodyLoaded !== false) return message;
+        if (!message.uid || !message.uidValidity || !message.mailboxKey) throw new Error("Load the conversation messages before generating a reply.");
+        const params = new URLSearchParams({ uid: String(message.uid), validity: String(message.uidValidity), mailbox: message.mailboxKey });
+        const response = await fetch(`/api/email/message?${params}`, { cache: "no-store" });
+        const result = await response.json();
+        if (!response.ok || !result.email) throw new Error(result.error || "Unable to read the conversation.");
+        return { ...message, ...result.email } as EmailWorkspaceItem;
+      }));
+      if (!isCurrent()) return;
+      const response = await fetch("/api/email/reply", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          recipient: selected.contactName || selected.customerProfile?.contactName || replyRecipient,
+          companyName: selected.company,
+          assignedManagerName: selected.ownerId ? selected.ownerName : undefined,
+          customerProfile: selected.customerProfile,
+          conversationHistory: history.map((message) => ({ direction: message.direction, subject: message.subject, body: message.body.slice(0, 4_000), timestamp: message.timestamp })),
+          products: products.slice(0, 500).map((product) => ({ sku: product.sku, name: `${product.name} ${product.material} ${product.color} ${product.diameter} ${product.weight}`, variants: product.variants.map(({ id, name }) => ({ id, name })) })),
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Unable to generate a reply.");
+      const plan = emailReplyPlanSchema.parse(result.plan);
+      if (!isCurrent()) return;
+      if (replyAttachments.length + Number(plan.attachCatalog) + Number(plan.invoiceItems.length > 0) > 10) throw new Error("Remove some attachments before generating this reply. An email supports up to 10 files.");
+      const prepared: ComposerAttachment[] = [];
+      if (plan.attachCatalog) {
+        setNotice("Preparing the catalog PDF…");
+        const saved = catalogs.filter((catalog) => catalog.company === selected.company).sort((a, b) => b.version - a.version)[0];
+        const catalogProducts = saved ? products.filter((product) => saved.productSkus.includes(product.sku)) : products;
+        if (!catalogProducts.length) throw new Error("No catalog products are available. Add products before generating a catalog reply.");
+        const bytes = await buildCatalogPdfWithImages(catalogProducts, { title: "Filazoo product catalog", customer: selected.company });
+        if (!isCurrent()) return;
+        if (bytes.byteLength > 7_500_000) throw new Error("The catalog PDF exceeds 7.5 MB. Attach a smaller catalog manually.");
+        prepared.push({ id: `catalog-${crypto.randomUUID()}`, filename: "filazoo-catalog.pdf", content: bytesToBase64(bytes), contentType: "application/pdf", size: bytes.byteLength });
+      }
+      if (plan.invoiceItems.length) {
+        if (!canCreateInvoices) throw new Error("Your role cannot create invoices. Ask an operator to prepare the invoice.");
+        setNotice("Creating a draft invoice with current CRM pricing…");
+        const pdf = await prepareReplyInvoice({ items: plan.invoiceItems, email: replyRecipient, companyId: selected.companyId, threadId: selectedConversation?.id, sourceMessageId: history.filter((message) => message.direction === "inbound").at(-1)?.id || selected.id, customerName: selected.company, cache: aiReplyInvoices.current, isCurrent });
+        if (!isCurrent()) return;
+        setAiReplyInvoiceId(pdf.invoiceId);
+        prepared.push({ id: pdf.id, filename: pdf.filename, content: bytesToBase64(pdf.bytes), contentType: "application/pdf", size: pdf.bytes.byteLength });
+      }
+      if (!isCurrent()) return;
+      setReplyAttachments((current) => [...current, ...prepared]);
+      setDraft(plan.body);
+      setNotice("AI reply is ready. Review the message and PDFs before sending.");
+    } catch (error) {
+      if (isCurrent()) setNotice(error instanceof Error ? error.message : "Unable to prepare this AI reply. Please retry.");
+    } finally {
+      aiReplyInProgress.current = false;
+      setAiReplyBusy(false);
+      setAttachmentBusy(false);
+    }
+  }
+
   async function saveReply() {
     if (!selected || !draft.trim() || sending || aiWriting) return;
     const session = replySession.current;
@@ -1090,19 +1171,20 @@ export function EmailInboxWorkspace({
               ) : null}
             </div></div>
             <div className="max-h-[55%] shrink-0 overflow-y-auto border-t bg-background p-3">
-              {!replyExpanded ? <div className="flex items-center gap-2"><button type="button" onClick={startReply} className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-md border bg-muted/20 px-3 text-left text-xs text-muted-foreground"><Reply className="size-4 shrink-0" /><span className="truncate">Quick reply to {replyRecipient}</span></button><button type="button" onClick={() => { setAiReplyOn(true); startReply(); }} className="inline-flex h-11 items-center gap-2 rounded-md border px-3 text-xs text-violet-600"><WandSparkles className="size-4" />AI reply</button></div> : <>
+              {!replyExpanded ? <div className="flex items-center gap-2"><button type="button" onClick={startReply} className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-md border bg-muted/20 px-3 text-left text-xs text-muted-foreground"><Reply className="size-4 shrink-0" /><span className="truncate">Quick reply to {replyRecipient}</span></button><button type="button" onClick={() => void generateAiReply()} disabled={aiReplyBusy || attachmentBusy || sending} className="inline-flex h-11 items-center gap-2 rounded-md border px-3 text-xs text-violet-600"><WandSparkles className="size-4" />AI reply</button></div> : <>
               <div className="mb-2 flex items-center justify-between text-xs"><span className="font-semibold">Reply</span><button type="button" aria-label="Collapse reply" onClick={() => setReplyExpanded(false)} className="rounded p-1 hover:bg-muted"><X className="size-4" /></button></div>
               <div className="mx-auto max-w-3xl">
                 <div className="mb-2 flex flex-wrap items-center gap-2">
-                  <div className="flex items-center gap-2 rounded-md border bg-emerald-50 px-2.5 py-1.5 text-xs text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"><Bot className="size-4" />AI writing<Toggle checked={aiReplyOn} onChange={toggleAiWriting} label="Toggle AI writing" /></div>
+                  <div className="flex items-center gap-2 rounded-md border bg-emerald-50 px-2.5 py-1.5 text-xs text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"><Bot className="size-4" />AI writing<Toggle checked={aiReplyOn} onChange={() => { if (!aiReplyBusy) toggleAiWriting(); }} label="Toggle AI writing" /></div>
                   {!aiConfigured ? <span className="text-xs text-amber-700">AI provider not configured — suggestions remain available</span> : null}
                 </div>
                 {aiReplyOn ? <div className="mb-2 flex gap-2 overflow-x-auto"><span className="flex shrink-0 items-center gap-1 text-xs font-semibold text-violet-600"><Sparkles className="size-3.5" />Suggestions</span>{["Send pricing + MOQ", "Confirm shipping details", "Schedule a follow-up"].map((item) => <button key={item} type="button" onClick={() => setDraft(item === "Send pricing + MOQ" ? `Hi ${(selected.contactName || selected.customerProfile?.contactName || selected.contact).split(" ")[0]},\n\nThanks for your message. I’ll send our current wholesale pricing and minimum order quantities for your review.\n\nBest,\n${defaultMailboxEmail || "Filazoo"}` : item === "Confirm shipping details" ? `Hi ${(selected.contactName || selected.customerProfile?.contactName || selected.contact).split(" ")[0]},\n\nWe can prepare a shipping quote. Could you confirm the delivery postcode and expected quantity?\n\nBest,\n${defaultMailboxEmail || "Filazoo"}` : `Hi ${(selected.contactName || selected.customerProfile?.contactName || selected.contact).split(" ")[0]},\n\nI’ll follow up with you shortly with the latest availability and next steps.\n\nBest,\n${defaultMailboxEmail || "Filazoo"}`)} className="shrink-0 rounded-full border px-3 py-1.5 text-xs text-muted-foreground hover:border-primary/40 hover:text-foreground">{item}</button>)}</div> : null}
+                <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><button type="button" disabled={aiReplyBusy || attachmentBusy || sending || Boolean(draft.trim())} onClick={() => void generateAiReply()} className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-violet-600 disabled:opacity-40">{aiReplyBusy ? <LoaderCircle className="size-3.5 animate-spin" /> : <WandSparkles className="size-3.5" />}{aiReplyBusy ? "Preparing reply & PDFs?" : "AI reply"}</button><span>Reads this conversation and prepares catalog or draft invoice PDFs.</span>{aiReplyInvoiceId ? <Link href={`/invoices/${aiReplyInvoiceId}`} target="_blank" className="font-medium text-emerald-700 underline">Review draft invoice</Link> : null}</div>
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-2.5 py-2 text-xs text-muted-foreground"><span>From <span className="font-medium text-foreground">{defaultMailboxEmail || "No mailbox selected"}</span></span><span>To <span className="font-medium text-foreground">{replyRecipient}</span></span></div>
                 <div className="overflow-hidden rounded-xl border bg-background focus-within:border-primary/50">
-                  <textarea ref={replyInput} aria-label="Reply message" value={draft} onChange={(event) => updateDraft(event.target.value)} placeholder={`Write in Chinese or English to reply to ${replyRecipient}…`} className="min-h-24 w-full resize-none bg-transparent p-3.5 text-sm leading-6 outline-none" />
+                  <textarea ref={replyInput} readOnly={aiReplyBusy} aria-busy={aiReplyBusy} aria-label="Reply message" value={draft} onChange={(event) => updateDraft(event.target.value)} placeholder={`Write in Chinese or English to reply to ${replyRecipient}…`} className="min-h-24 w-full resize-none bg-transparent p-3.5 text-sm leading-6 outline-none" />
                   <AttachmentChips attachments={replyAttachments} onRemove={(id) => setReplyAttachments((current) => current.filter((item) => item.id !== id))} />
-                  <div className="flex items-center justify-between border-t px-2 py-2"><div className="flex gap-1"><input ref={replyFileInput} type="file" multiple accept=".pdf,.csv,.txt,.jpg,.jpeg,.png,.webp,.gif,.doc,.docx,.xls,.xlsx" className="hidden" onChange={(event) => { void addFiles(event.target.files, "reply"); event.target.value = ""; }} /><button type="button" disabled={attachmentBusy} title="Attach files" onClick={() => replyFileInput.current?.click()} className="rounded-md p-2 text-muted-foreground hover:bg-muted disabled:opacity-40"><Paperclip className="size-4" /></button><button type="button" title="Attach product catalog" onClick={() => openCatalogPicker("reply")} className="rounded-md p-2 text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-500/10"><Library className="size-4" /></button>{canCreateInvoices ? <button type="button" title="Customer invoices" aria-label="Customer invoices" onClick={()=>setInvoiceContext({companyId:selected.companyId,email:replyRecipient,threadId:selectedConversation?.id,customerName:selected.company,target:"reply"})} className="rounded-md p-2 text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-500/10"><ReceiptText className="size-4" /></button> : null}<button type="button" title="Add emoji" onClick={() => setDraft((value) => `${value}${value ? " " : ""}😊`)} className="rounded-md p-2 text-muted-foreground hover:bg-muted"><Smile className="size-4" /></button><button type="button" title="Start an AI-written reply" onClick={() => setDraft((value) => value || `你好，${(selected.contactName || selected.customerProfile?.contactName || selected.contact).split(" ")[0]}，\n\n感谢您的来信。我们很乐意为您提供帮助。\n\n此致\nFilazoo`)} className="rounded-md p-2 text-violet-600 hover:bg-violet-50"><WandSparkles className="size-4" /></button><InboxCalculator /></div><button type="button" onClick={saveReply} disabled={!draft.trim() || sending || aiWriting || attachmentBusy} className="inline-flex h-9 items-center gap-2 rounded-md bg-foreground px-3 text-xs font-semibold text-background disabled:opacity-40"><Send className="size-4" />{sending ? "Sending..." : aiWriting ? "Writing..." : aiDraft && aiDraftSource === draft.trim() ? "Send AI draft" : "Send email"}</button></div>
+                  <div className="flex items-center justify-between border-t px-2 py-2"><div className="flex gap-1"><input ref={replyFileInput} type="file" multiple accept=".pdf,.csv,.txt,.jpg,.jpeg,.png,.webp,.gif,.doc,.docx,.xls,.xlsx" className="hidden" onChange={(event) => { void addFiles(event.target.files, "reply"); event.target.value = ""; }} /><button type="button" disabled={attachmentBusy} title="Attach files" onClick={() => replyFileInput.current?.click()} className="rounded-md p-2 text-muted-foreground hover:bg-muted disabled:opacity-40"><Paperclip className="size-4" /></button><button type="button" title="Attach product catalog" onClick={() => openCatalogPicker("reply")} className="rounded-md p-2 text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-500/10"><Library className="size-4" /></button>{canCreateInvoices ? <button type="button" title="Customer invoices" aria-label="Customer invoices" onClick={()=>setInvoiceContext({companyId:selected.companyId,email:replyRecipient,threadId:selectedConversation?.id,customerName:selected.company,target:"reply"})} className="rounded-md p-2 text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-500/10"><ReceiptText className="size-4" /></button> : null}<button type="button" title="Add emoji" onClick={() => setDraft((value) => `${value}${value ? " " : ""}😊`)} className="rounded-md p-2 text-muted-foreground hover:bg-muted"><Smile className="size-4" /></button><button type="button" title={draft.trim() ? "Clear the message to generate a new AI reply" : "Generate reply from conversation with relevant PDFs"} disabled={aiReplyBusy || attachmentBusy || sending || Boolean(draft.trim())} onClick={() => void generateAiReply()} className="rounded-md p-2 text-violet-600 hover:bg-violet-50 disabled:opacity-40">{aiReplyBusy ? <LoaderCircle className="size-4 animate-spin" /> : <WandSparkles className="size-4" />}</button><InboxCalculator /></div><button type="button" onClick={saveReply} disabled={!draft.trim() || sending || aiWriting || attachmentBusy} className="inline-flex h-9 items-center gap-2 rounded-md bg-foreground px-3 text-xs font-semibold text-background disabled:opacity-40"><Send className="size-4" />{sending ? "Sending..." : aiWriting ? "Writing..." : aiDraft && aiDraftSource === draft.trim() ? "Send AI draft" : "Send email"}</button></div>
                 </div>
                 {notice ? <p className="mt-2 text-xs text-muted-foreground" role="status">{notice}</p> : null}
               </div>

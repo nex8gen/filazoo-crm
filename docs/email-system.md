@@ -41,6 +41,12 @@ Both cache tables have RLS enabled and deny direct anon/authenticated access. Se
 
 ## Verification and limits
 
+AI reply is separate from AI writing. AI writing rewrites the manager's input; AI reply calls `/api/email/reply` to draft a response from the last eight original messages and the customer company profile, without requiring typed input. Header-only messages are loaded before generation. The existing Gemini provider and regional AI Gateway fallback must be configured and funded.
+
+Catalog requests prepare a PDF using the latest saved company catalog selection, or the complete available product catalog. Explicit order requests return exact product/variant selections and quantities. The client then loads current billing context and prices through the existing invoice APIs, applies quantity tiers, validates MOQ and currency, saves a draft invoice, and downloads its draft PDF. Only roles already allowed to create invoices can perform this step. Unknown products, ambiguous variants, missing prices and mixed currencies require review. Shipping and tax amounts are not inferred.
+
+The reply is installed only after all requested PDFs are ready. Users review the message and attachments and click Send email themselves. Generation never issues an invoice or sends an email. PDF retries reuse the saved draft for the same source customer message, and switching conversations prevents subsequent invoice writes and stale composer updates. The draft invoice review link opens the existing invoice editor.
+
 Run `npm test`, `npm run lint`, and `npm run build`. Receive-only checks:
 
 ```powershell
