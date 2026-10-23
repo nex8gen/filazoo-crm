@@ -21,12 +21,16 @@ function ActionMessage({ state }: { state: CrmActionState }) {
 function useActionDialog(actionHandler: (state: CrmActionState, formData: FormData) => Promise<CrmActionState>) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState(async (previousState: CrmActionState, formData: FormData) => {
-    const result = await actionHandler(previousState, formData);
-    if (result?.success) {
-      toast.success(result.success);
-      setOpen(false);
+    try {
+      const result = await actionHandler(previousState, formData);
+      if (result?.success) {
+        toast.success(result.success);
+        setOpen(false);
+      }
+      return result;
+    } catch {
+      return { error: "Unable to save this change. Please retry." };
     }
-    return result;
   }, undefined);
   return { open, setOpen, state, action, pending };
 }

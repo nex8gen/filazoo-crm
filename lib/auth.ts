@@ -25,12 +25,14 @@ export const getViewer = cache(async (): Promise<AuthViewer | null> => {
   const connection = await getConnection();
   if (connection) await connection();
   const supabase = await createClient();
-  const { data, error } = await supabase.auth.getClaims();
-  if (error || !data?.claims?.sub) return null;
-  const metadata = data.claims.user_metadata;
+  // Profile metadata can change without the access token being renewed (and
+  // from another session). Read the current Auth user rather than JWT claims.
+  const { data, error } = await supabase.auth.getUser();
+  if (error || !data.user) return null;
+  const metadata = data.user.user_metadata;
   return {
-    id: data.claims.sub,
-    email: typeof data.claims.email === "string" ? data.claims.email : null,
+    id: data.user.id,
+    email: data.user.email ?? null,
     avatarPath: typeof metadata?.avatar_path === "string" ? metadata.avatar_path : undefined,
     avatarPreset: isAvatarPreset(metadata?.avatar_preset) ? metadata.avatar_preset : "male",
   };

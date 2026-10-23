@@ -40,7 +40,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const originError = checkInvoiceOrigin(request);
   if (originError) return originError;
-  const access = await invoiceAccess(true);
+  const access = await invoiceAccess("draft");
   if (access.response) return access.response;
   const parsed = invoiceDocumentSchema.safeParse(
     await request.json().catch(() => null),

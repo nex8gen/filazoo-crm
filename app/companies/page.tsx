@@ -12,7 +12,7 @@ export default async function CompaniesPage({ searchParams }: { searchParams: Pr
   const { companies, mode } = await listCompanies();
   const visibleCompanies = selectedSegment ? companies.filter((company) => company.segment === selectedSegment) : companies;
   return (
-    <div className="flex min-h-0 flex-col pb-8 md:h-full md:pb-0">
+    <div className="flex min-w-0 flex-col pb-8">
       <div>
         <PageHeader
           title="Companies"

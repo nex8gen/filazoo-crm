@@ -5,13 +5,33 @@ import { Select as SelectPrimitive } from "@base-ui/react/select"
 import { cn } from "cn"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
 
-const Select = SelectPrimitive.Root
+function Select<Value, Multiple extends boolean | undefined = false>({
+  children,
+  items,
+  ...props
+}: SelectPrimitive.Root.Props<Value, Multiple>) {
+  // Register labels before the portal opens, including empty-value choices.
+  // Otherwise a closed trigger can show an internal ID instead of its label.
+  const options: { value: Value; label: React.ReactNode }[] = []
+  function collectOptions(nodes: React.ReactNode) {
+    React.Children.forEach(nodes, (node) => {
+      if (!React.isValidElement<{ value: Value; children?: React.ReactNode }>(node)) return
+      if (node.type === SelectItem) {
+        options.push({ value: node.props.value, label: node.props.children })
+      } else {
+        collectOptions(node.props.children)
+      }
+    })
+  }
+  if (!items) collectOptions(children)
+  return <SelectPrimitive.Root {...props} items={items ?? options}>{children}</SelectPrimitive.Root>
+}
 
 function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
   return (
     <SelectPrimitive.Group
       data-slot="select-group"
-      className={cn("scroll-my-1 p-1", className)}
+      className={cn("scroll-my-1", className)}
       {...props}
     />
   )
@@ -82,7 +102,7 @@ function SelectContent({
         <SelectPrimitive.Popup
           data-slot="select-content"
           data-align-trigger={alignItemWithTrigger}
-          className={cn("scroll-surface relative isolate z-50 max-h-[min(var(--available-height),20rem)] w-(--anchor-width) min-w-40 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-xl border border-border/80 bg-popover p-1.5 text-popover-foreground shadow-xl shadow-black/8 duration-150 data-[align-trigger=true]:animate-none data-[side=bottom]:slide-in-from-top-1 data-[side=inline-end]:slide-in-from-left-1 data-[side=inline-start]:slide-in-from-right-1 data-[side=left]:slide-in-from-right-1 data-[side=right]:slide-in-from-left-1 data-[side=top]:slide-in-from-bottom-1 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-98 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-98", className )}
+          className={cn("overscroll-contain touch-pan-y relative isolate z-50 max-h-[min(var(--available-height),20rem)] w-(--anchor-width) min-w-40 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-xl border border-border/80 bg-popover p-1.5 text-popover-foreground shadow-xl shadow-black/8 duration-150 data-[align-trigger=true]:animate-none data-[side=bottom]:slide-in-from-top-1 data-[side=inline-end]:slide-in-from-left-1 data-[side=inline-start]:slide-in-from-right-1 data-[side=left]:slide-in-from-right-1 data-[side=right]:slide-in-from-left-1 data-[side=top]:slide-in-from-bottom-1 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-98 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-98", className )}
           {...props}
         >
           <SelectScrollUpButton />
@@ -121,7 +141,7 @@ function SelectItem({
       )}
       {...props}
     >
-      <SelectPrimitive.ItemText className="flex flex-1 shrink-0 gap-2 whitespace-nowrap">
+      <SelectPrimitive.ItemText className="flex min-w-0 flex-1 gap-2 whitespace-normal break-words">
         {children}
       </SelectPrimitive.ItemText>
       <SelectPrimitive.ItemIndicator

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Link from "next/link";
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, type DragEndEvent, useDroppable, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
@@ -21,21 +21,44 @@ const stages: { id: PipelineStageValue; label: string }[] = pipelineStageValues.
 
 const stageByLabel = Object.fromEntries(stages.map((stage) => [stage.label, stage.id])) as Record<Company["stage"], PipelineStageValue>;
 
+async function saveOwner(companyId: string, ownerId: string | null | undefined) {
+  if (ownerId === undefined) return { error: "Choose a manager or Unassigned." };
+  try {
+    return await assignPipelineOwner(companyId, ownerId);
+  } catch {
+    return { error: "Unable to update the lead owner. Please retry." };
+  }
+}
+
 export function KanbanBoard({ companies, managers, canWrite, canAssign, query = "", stageFilter = "all" }: { companies: Company[]; managers: BdSalesManager[]; canWrite: boolean; canAssign: boolean; query?: string; stageFilter?: string }) {
   const [cards, setCards] = useState<PipelineCard[]>(() => companies.map((company) => ({ id: company.id, company: company.name, country: company.country, ownerId: company.ownerId, ownerName: company.ownerName, ownerInitials: company.ownerInitials, stage: stageByLabel[company.stage] })));
+  const [previousCompanies, setPreviousCompanies] = useState(companies);
+  if (previousCompanies !== companies) {
+    setPreviousCompanies(companies);
+    setCards(companies.map((company) => ({ id: company.id, company: company.name, country: company.country, ownerId: company.ownerId, ownerName: company.ownerName, ownerInitials: company.ownerInitials, stage: stageByLabel[company.stage] })));
+  }
+  const moving = useRef(new Set<string>());
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
   const [mobileStage, setMobileStage] = useState<PipelineStageValue>(stages[0].id);
 
   async function changeStage(id: string, nextStage: PipelineStageValue) {
     const card = cards.find((item) => item.id === id);
-    if (!card || !canWrite || card.stage === nextStage) return;
+    if (!card || !canWrite || card.stage === nextStage || moving.current.has(id)) return;
+    moving.current.add(id);
     const previousStage = card.stage;
     setCards((current) => current.map((item) => item.id === id ? { ...item, stage: nextStage } : item));
-    const result = await updatePipelineStage(id, nextStage);
-    if (result?.error) {
+    try {
+      const result = await updatePipelineStage(id, nextStage);
+      if (result?.error) {
+        setCards((current) => current.map((item) => item.id === id ? { ...item, stage: previousStage } : item));
+        toast.error(result.error);
+      } else toast.success("Pipeline stage updated.");
+    } catch {
       setCards((current) => current.map((item) => item.id === id ? { ...item, stage: previousStage } : item));
-      toast.error(result.error);
-    } else toast.success("Pipeline stage updated.");
+      toast.error("Unable to update the pipeline stage. Please retry.");
+    } finally {
+      moving.current.delete(id);
+    }
   }
 
   const onDragEnd = async ({ active, over }: DragEndEvent) => {
@@ -54,14 +77,14 @@ export function KanbanBoard({ companies, managers, canWrite, canAssign, query = 
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
       <div className="space-y-3 md:hidden">
         <label className="flex flex-col gap-2 text-sm font-medium">Pipeline stage
-          <select value={stageFilter === "all" ? mobileStage : stageFilter} disabled={stageFilter !== "all"} onChange={(event) => setMobileStage(event.target.value as PipelineStageValue)} className="w-full rounded-lg border bg-background px-3 py-2">{stages.map((stage) => <option key={stage.id} value={stage.id}>{stage.label} ({visibleCards.filter((card) => card.stage === stage.id).length})</option>)}</select>
+          <Select value={stageFilter === "all" ? mobileStage : stageFilter} disabled={stageFilter !== "all"} onValueChange={(value) => { if (value === null) return; return setMobileStage(value as PipelineStageValue); }}><SelectTrigger className="w-full rounded-lg border bg-background px-3 py-2"><SelectValue /></SelectTrigger><SelectContent>{stages.map((stage) => <SelectItem key={stage.id} value={stage.id}>{stage.label} ({visibleCards.filter((card) => card.stage === stage.id).length})</SelectItem>)}</SelectContent></Select>
         </label>
         <p className="text-xs text-muted-foreground">Open a company or use Move to stage to update a deal.</p>
         {visibleCards.filter((card) => card.stage === (stageFilter === "all" ? mobileStage : stageFilter)).map((card) => <Card key={card.id} className="gap-3 p-4 shadow-none">
           <div className="flex items-start justify-between gap-3"><div className="min-w-0"><Link href={`/companies/${card.id}`} className="text-sm font-semibold text-primary hover:underline">{card.company}</Link><p className="mt-1 text-xs text-muted-foreground">{card.country}</p></div><Avatar className="size-8" title={card.ownerName}><AvatarFallback className="text-xs">{card.ownerInitials}</AvatarFallback></Avatar></div>
           <p className="text-xs text-muted-foreground">Owner: {card.ownerName}</p>
-          {canWrite ? <label className="flex flex-col gap-1.5 text-xs text-muted-foreground">Move to stage<select aria-label={`Move ${card.company} to stage`} value={card.stage} onChange={(event) => void changeStage(card.id, event.target.value as PipelineStageValue)} className="w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground">{stages.map((stage) => <option key={stage.id} value={stage.id}>{stage.label}</option>)}</select></label> : null}
-          {canAssign ? <label className="flex flex-col gap-1.5 text-xs text-muted-foreground">Assigned manager<select aria-label={`Assign ${card.company}`} value={card.ownerId || "unassigned"} onChange={async (event) => { const ownerId = event.target.value === "unassigned" ? null : event.target.value; const result = await assignPipelineOwner(card.id, ownerId); if (result?.error) toast.error(result.error); else { setCards((current) => current.map((item) => item.id === card.id ? { ...item, ownerId, ownerName: managers.find((manager) => manager.id === ownerId)?.name || "Unassigned", ownerInitials: ownerId ? initials(managers.find((manager) => manager.id === ownerId)?.name || "BD") : "—" } : item)); toast.success("Lead owner updated."); } }} className="w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground"><option value="unassigned">Unassigned</option>{managers.map((manager) => <option key={manager.id} value={manager.id}>{manager.name}</option>)}</select></label> : null}
+          {canWrite ? <label className="flex flex-col gap-1.5 text-xs text-muted-foreground">Move to stage<Select value={card.stage} onValueChange={(value) => { if (value === null) return; return void changeStage(card.id, value as PipelineStageValue); }}><SelectTrigger aria-label={`Move ${card.company} to stage`} className="w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground"><SelectValue /></SelectTrigger><SelectContent>{stages.map((stage) => <SelectItem key={stage.id} value={stage.id}>{stage.label}</SelectItem>)}</SelectContent></Select></label> : null}
+          {canAssign ? <label className="flex flex-col gap-1.5 text-xs text-muted-foreground">Assigned manager<Select value={card.ownerId || "unassigned"} onValueChange={async (value) => { if (value === null) return;  const ownerId = value === "unassigned" ? null : value; const result = await saveOwner(card.id, ownerId); if (result?.error) toast.error(result.error); else { setCards((current) => current.map((item) => item.id === card.id ? { ...item, ownerId, ownerName: managers.find((manager) => manager.id === ownerId)?.name || "Unassigned", ownerInitials: ownerId ? initials(managers.find((manager) => manager.id === ownerId)?.name || "BD") : "—" } : item)); toast.success("Lead owner updated."); }  }}><SelectTrigger aria-label={`Assign ${card.company}`} className="w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="unassigned">Unassigned</SelectItem>{managers.map((manager) => <SelectItem key={manager.id} value={manager.id}>{manager.name}</SelectItem>)}</SelectContent></Select></label> : null}
         </Card>)}
         {!visibleCards.some((card) => card.stage === (stageFilter === "all" ? mobileStage : stageFilter)) ? <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No companies in this stage.</p> : null}
       </div>
@@ -94,7 +117,7 @@ function SortableCard({ card, managers, canWrite, canAssign, onOwnerChanged }: {
         <div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="truncate text-sm font-medium">{card.company}</p><p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><MapPin className="size-3" />{card.country}</p></div><GripVertical className="size-4 shrink-0 text-muted-foreground" /></div>
         <div className="flex items-center justify-between gap-2 border-t pt-3" onPointerDown={(event) => event.stopPropagation()}>
           <span className="truncate text-xs text-muted-foreground">{card.ownerName}</span>
-          {canAssign ? <Select value={card.ownerId || "unassigned"} onValueChange={async (value) => { const ownerId = value === "unassigned" ? null : value; const previous = card.ownerId; onOwnerChanged(card.id, ownerId); const result = await assignPipelineOwner(card.id, ownerId); if (result?.error) { onOwnerChanged(card.id, previous); toast.error(result.error); } else toast.success(result?.success || "Lead owner updated."); }}><SelectTrigger size="sm" className="h-7 w-24 text-xs" aria-label={`Assign ${card.company}`}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="unassigned">Unassigned</SelectItem>{managers.map((manager) => <SelectItem key={manager.id} value={manager.id}>{manager.name}</SelectItem>)}</SelectContent></Select> : <Avatar className="size-6" title={card.ownerName}><AvatarFallback className="bg-muted text-xs">{card.ownerInitials}</AvatarFallback></Avatar>}
+          {canAssign ? <Select value={card.ownerId || "unassigned"} onValueChange={async (value) => { const ownerId = value === "unassigned" ? null : value; const previous = card.ownerId; onOwnerChanged(card.id, ownerId); const result = await saveOwner(card.id, ownerId); if (result?.error) { onOwnerChanged(card.id, previous); toast.error(result.error); } else toast.success(result?.success || "Lead owner updated."); }}><SelectTrigger size="sm" className="h-7 w-24 text-xs" aria-label={`Assign ${card.company}`}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="unassigned">Unassigned</SelectItem>{managers.map((manager) => <SelectItem key={manager.id} value={manager.id}>{manager.name}</SelectItem>)}</SelectContent></Select> : <Avatar className="size-6" title={card.ownerName}><AvatarFallback className="bg-muted text-xs">{card.ownerInitials}</AvatarFallback></Avatar>}
         </div>
       </CardContent>
     </Card>

@@ -10,7 +10,7 @@ export default async function InvoicePage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const viewer = await requireWorkspaceMember(["admin", "operator", "viewer"]);
+  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) notFound();
   const invoice = await getInvoice(id);
@@ -21,6 +21,7 @@ export default async function InvoicePage({
       initialSelected={invoice}
       initialError=""
       canWrite={viewer.role !== "viewer"}
+      invoiceViewer={{ id: viewer.id, role: viewer.role }}
       today={new Date().toISOString().slice(0, 10)}
     />
   );

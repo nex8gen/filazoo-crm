@@ -6,10 +6,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type SortingState, flexRender } from "@tanstack/react-table";
 import { type LegacyColumnDef as ColumnDef, getCoreRowModel, getPaginationRowModel, getSortedRowModel, useLegacyTable as useReactTable } from "@tanstack/react-table/legacy";
-import { Building2, ChevronsUpDown, CircleAlert, Globe2, Mail, MapPin, MessageCircle, PackageCheck, Search, Trash2, UserRoundCheck } from "lucide-react";
+import { Building2, ChevronsUpDown, CircleAlert, Globe2, Mail, MapPin, MessageCircle, PackageCheck, Trash2, UserRoundCheck } from "lucide-react";
 import { toast } from "sonner";
 import { bulkUpdateCompanies } from "@/app/crm-actions";
 import { AssignedOwner } from "@/components/assigned-owner";
+import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { EmptyState } from "@/components/data-state";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +19,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TableFilters, TableFilter } from "@/components/ui/table-filters";
 import { TablePagination } from "@/components/ui/table-pagination";
 import type { Company, DataMode } from "@/lib/types";
 
@@ -47,13 +49,13 @@ function CompanyIdentity({ company }: { company: Company }) {
   return (
     <div className="flex min-w-0 items-center gap-3.5 md:min-w-60">
       <div className="relative shrink-0">
-        <Avatar className="size-11 rounded-full bg-gradient-to-br from-primary/35 via-brand-soft to-sky-100 p-px shadow-[0_3px_12px_rgb(0_0_0/0.08)] ring-1 ring-primary/15 transition-transform duration-200 group-hover:scale-[1.04] dark:to-sky-950">
+        <Avatar className="size-7 rounded-full bg-muted">
           <AvatarFallback className="rounded-full bg-card/85 text-xs font-bold tracking-wide text-foreground backdrop-blur-sm">{company.initials}</AvatarFallback>
         </Avatar>
         <SourceMark company={company} />
       </div>
       <div className="min-w-0">
-        <p className="truncate text-sm font-semibold leading-5 text-foreground">{company.name}</p>
+        <p className="truncate text-sm font-semibold leading-5 text-primary">{company.name}</p>
         <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
           <p className="max-w-40 truncate text-xs text-muted-foreground">{company.domain}</p>
           {isShopify ? <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#95bf47]/12 px-1.5 py-0.5 text-xs font-semibold text-[#5c7f18] dark:text-[#b5d66e]"><span className="size-1 rounded-full bg-[#78a832]" />Shopify</span> : null}
@@ -68,9 +70,11 @@ export function CompaniesTable({ companies, mode, canWrite, canDelete }: { compa
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [country, setCountry] = useState("all");
+  const [draft, setDraft] = useState({ query: "", status: "all", country: "all" });
   const [sorting, setSorting] = useState<SortingState>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [pending, startTransition] = useTransition();
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const countries = useMemo(() => [...new Set(companies.map((company) => company.country))].sort(), [companies]);
   const filtered = useMemo(() => companies.filter((company) => {
@@ -99,7 +103,7 @@ export function CompaniesTable({ companies, mode, canWrite, canDelete }: { compa
     },
     {
       accessorKey: "name", header: "Company / customer",
-      cell: ({ row }) => <CompanyIdentity company={row.original} />,
+      cell: ({ row }) => <Link href={`/companies/${row.original.id}`} className="text-primary underline-offset-4 hover:underline"><CompanyIdentity company={row.original} /></Link>,
     },
     { accessorKey: "email", header: "Email", cell: ({ getValue }) => <span className="flex max-w-52 items-center gap-1.5 truncate"><Mail className="size-3.5 shrink-0 text-muted-foreground/70" />{getValue<string>() || "No email"}</span> },
     { accessorKey: "ownerName", header: "Assigned manager", cell: ({ row }) => <AssignedOwner name={row.original.ownerName} initials={row.original.ownerInitials} assigned={Boolean(row.original.ownerId)} compact /> },
@@ -119,22 +123,33 @@ export function CompaniesTable({ companies, mode, canWrite, canDelete }: { compa
   const table = useReactTable({
     data: filtered, columns, state: { sorting }, onSortingChange: setSorting, getRowId: (row) => row.id,
     getCoreRowModel: getCoreRowModel(), getSortedRowModel: getSortedRowModel(), getPaginationRowModel: getPaginationRowModel(),
-    initialState: { pagination: { pageIndex: 0, pageSize: 10 } },
+    initialState: { pagination: { pageIndex: 0, pageSize: 25 } },
   });
 
   const runBulkAction = (action: "contacted" | "interested" | "delete") => {
     if (!selectedIds.size) return;
-    if (action === "delete" && !window.confirm(`Delete ${selectedIds.size} selected ${selectedIds.size === 1 ? "company" : "companies"}? This cannot be undone.`)) return;
+    if (pending) return;
     startTransition(async () => {
-      const result = await bulkUpdateCompanies([...selectedIds], action);
-      if (result?.error) toast.error(result.error);
-      if (result?.success) { toast.success(result.success); setSelectedIds(new Set()); router.refresh(); }
+      try {
+        const result = await bulkUpdateCompanies([...selectedIds], action);
+        if (result?.error) toast.error(result.error);
+        if (result?.success) { toast.success(result.success); setSelectedIds(new Set()); router.refresh(); }
+      } catch {
+        toast.error("Unable to update the selected companies. Please retry.");
+      }
     });
   };
 
   if (companies.length === 0) return <EmptyState title={mode === "live" ? "No companies yet" : "Supabase setup required"} description={mode === "live" ? "Your Supabase companies table is connected and empty. Add or import the first company to begin." : "Add a valid project secret key to the server environment, then redeploy the app."} />;
 
-  return <div className="flex min-h-0 flex-1 flex-col gap-5">
+  return <div className="flex min-w-0 flex-col gap-6">
+    <ConfirmActionDialog open={deleteOpen} onOpenChange={setDeleteOpen} title="Delete selected companies?" description={`Delete ${selectedIds.size} selected companies and their contacts, catalogs, and pipeline history? This cannot be undone.`} onConfirm={async () => {
+      const result = await bulkUpdateCompanies([...selectedIds], "delete");
+      if (!result?.success) throw new Error(result?.error || "Unable to delete the selected companies.");
+      toast.success(result.success);
+      setSelectedIds(new Set());
+      router.refresh();
+    }} />
     <div className="crm-company-summary grid shrink-0 grid-cols-2 gap-3 xl:grid-cols-4">
       {[
         { label: "Total companies", value: companies.length, detail: "Accounts and prospects", icon: Building2, tone: "bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300" },
@@ -144,44 +159,22 @@ export function CompaniesTable({ companies, mode, canWrite, canDelete }: { compa
       ].map((metric) => <Card key={metric.label} className="gap-0 border-border/70 p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-medium text-muted-foreground">{metric.label}</p><p className="mt-1 text-2xl font-semibold tracking-tight">{metric.value.toLocaleString()}</p><p className="mt-1 text-xs text-muted-foreground">{metric.detail}</p></div><span className={`grid size-9 place-items-center rounded-xl ${metric.tone}`}><metric.icon className="size-4" /></span></div></Card>)}
     </div>
 
-    <Card className="crm-table-frame min-h-0 flex-1 gap-0 overflow-hidden border-border/70 py-0 shadow-sm">
-      <div className="crm-table-toolbar flex-col lg:flex-row">
-      <div className="relative flex-1 lg:max-w-md"><Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" /><Input aria-label="Search companies" value={query} onChange={(event) => { setQuery(event.target.value); table.setPageIndex(0); }} placeholder="Search company, email, domain, or segment…" className="h-10 bg-background pl-9" /></div>
-      <div className="flex flex-wrap gap-2">
-        <Select value={status} onValueChange={(value) => { setStatus(value ?? "all"); table.setPageIndex(0); }}><SelectTrigger aria-label="Filter by status" className="h-10 min-w-40 bg-background"><SelectValue>{status === "all" ? "All statuses" : status}</SelectValue></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem>{Object.keys(statusClass).map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select>
-        <Select value={country} onValueChange={(value) => { setCountry(value ?? "all"); table.setPageIndex(0); }}><SelectTrigger aria-label="Filter by country" className="h-10 min-w-40 bg-background"><SelectValue>{country === "all" ? "All countries" : country}</SelectValue></SelectTrigger><SelectContent><SelectItem value="all">All countries</SelectItem>{countries.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select>
-      </div>
-      <p className="whitespace-nowrap text-xs font-medium text-muted-foreground lg:ml-auto">Showing {filtered.length} of {companies.length}</p>
-    </div>
-
-    {selectedIds.size > 0 && <div className="flex flex-wrap items-center gap-2 border-b bg-brand-soft px-4 py-3"><p className="mr-auto text-sm font-semibold text-primary">{selectedIds.size} selected</p><Button size="sm" variant="outline" disabled={!canWrite || pending} onClick={() => runBulkAction("contacted")}><UserRoundCheck />Mark contacted</Button><Button size="sm" variant="outline" disabled={!canWrite || pending} onClick={() => runBulkAction("interested")}>Mark interested</Button><Button size="sm" variant="destructive" disabled={!canDelete || pending} title={canDelete ? "Delete selected companies" : "Only admins can delete companies"} onClick={() => runBulkAction("delete")}><Trash2 />Delete</Button></div>}
+    
+    <TableFilters onApply={() => { setQuery(draft.query); setStatus(draft.status); setCountry(draft.country); table.setPageIndex(0); }}>
+      <TableFilter label="Search company" search><Input value={draft.query} onChange={(event) => setDraft({ ...draft, query: event.target.value })} placeholder="Company, email, domain, or segment" /></TableFilter>
+      <TableFilter label="Status"><Select value={draft.status} onValueChange={(value) => setDraft({ ...draft, status: value ?? "all" })}><SelectTrigger><SelectValue>{draft.status === "all" ? "All statuses" : draft.status}</SelectValue></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem>{Object.keys(statusClass).map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></TableFilter>
+      <TableFilter label="Country"><Select value={draft.country} onValueChange={(value) => setDraft({ ...draft, country: value ?? "all" })}><SelectTrigger><SelectValue>{draft.country === "all" ? "All countries" : draft.country}</SelectValue></SelectTrigger><SelectContent><SelectItem value="all">All countries</SelectItem>{countries.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></TableFilter>
+    </TableFilters>
+    <Card className="crm-table-frame gap-0 py-0">
+    {selectedIds.size > 0 && <div className="flex flex-wrap items-center gap-2 border-b bg-brand-soft px-4 py-3"><p className="mr-auto text-sm font-semibold text-primary">{selectedIds.size} selected</p><Button size="sm" variant="outline" disabled={!canWrite || pending} onClick={() => runBulkAction("contacted")}><UserRoundCheck />Mark contacted</Button><Button size="sm" variant="outline" disabled={!canWrite || pending} onClick={() => runBulkAction("interested")}>Mark interested</Button><Button size="sm" variant="destructive" disabled={!canDelete || pending} title={canDelete ? "Delete selected companies" : "Only admins can delete companies"} onClick={() => setDeleteOpen(true)}><Trash2 />Delete</Button></div>}
 
     {filtered.length === 0 ? <div className="p-8"><EmptyState title="No companies found" description="Try changing your search or filters to see more results." /></div> : <>
-      <div className="divide-y md:hidden">
-        <div className="flex items-center justify-between gap-2 bg-muted/30 px-4 py-2">
-          <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" className="size-4 accent-current" aria-label="Select this page" checked={table.getRowModel().rows.length > 0 && table.getRowModel().rows.every((row) => selectedIds.has(row.original.id))} onChange={(event) => setSelectedIds((current) => { const next = new Set(current); for (const row of table.getRowModel().rows) { if (event.target.checked) next.add(row.original.id); else next.delete(row.original.id); } return next; })} />Select page</label>
-          <select aria-label="Sort companies" value={sorting[0]?.id === "name" ? (sorting[0].desc ? "name-desc" : "name-asc") : "default"} onChange={(event) => setSorting(event.target.value === "default" ? [] : [{ id: "name", desc: event.target.value === "name-desc" }])} className="min-w-0 max-w-40 bg-background px-2 text-xs"><option value="default">Default order</option><option value="name-asc">Name A–Z</option><option value="name-desc">Name Z–A</option></select>
-        </div>
-        {table.getRowModel().rows.map(({ original: company }) => <article key={company.id} className="space-y-3 p-4">
-          <div className="flex min-w-0 items-start gap-3">
-            <label className="flex min-h-11 shrink-0 items-center"><input aria-label={`Select ${company.name}`} type="checkbox" checked={selectedIds.has(company.id)} className="size-4 accent-current" onChange={(event) => toggleOne(company.id, event.target.checked)} /></label>
-            <Link href={`/companies/${company.id}`} className="min-w-0 flex-1 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"><CompanyIdentity company={company} /></Link>
-          </div>
-          <div className="flex flex-wrap items-center gap-2"><Badge variant="outline" className={statusClass[company.stage]}>{company.stage}</Badge><span className="text-xs text-muted-foreground">{company.country}</span></div>
-          <dl className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
-            <dt className="text-muted-foreground">Email</dt><dd className="break-all">{company.email || "No email"}</dd>
-            <dt className="text-muted-foreground">Owner</dt><dd><AssignedOwner name={company.ownerName} initials={company.ownerInitials} assigned={Boolean(company.ownerId)} compact /></dd>
-            <dt className="text-muted-foreground">Next action</dt><dd className="break-words">{company.nextAction || "Not set"}</dd>
-          </dl>
-          <Link href={`/companies/${company.id}`} className="inline-flex min-h-11 items-center text-sm font-semibold text-primary hover:underline">View company →</Link>
-        </article>)}
-      </div>
-      <div className="crm-table-flex-body scroll-surface hidden md:block"><Table>
-        <TableHeader className="sticky top-0 z-10 backdrop-blur">{table.getHeaderGroups().map((group) => <TableRow key={group.id} className="hover:bg-transparent">{group.headers.map((header) => <TableHead key={header.id} className="h-11 whitespace-nowrap text-xs font-medium text-muted-foreground">{header.isPlaceholder ? null : header.column.getCanSort() ? <button className="flex items-center gap-1 hover:text-foreground" onClick={header.column.getToggleSortingHandler()}>{flexRender(header.column.columnDef.header, header.getContext())}<ChevronsUpDown className="size-3" /></button> : flexRender(header.column.columnDef.header, header.getContext())}</TableHead>)}</TableRow>)}</TableHeader>
-        <TableBody>{table.getRowModel().rows.map((row) => <TableRow key={row.id} className="group cursor-pointer" tabIndex={0} onClick={(event) => { if (!(event.target as HTMLElement).closest("button,a,input,[role=checkbox]")) router.push(`/companies/${row.original.id}`); }} onKeyDown={(event) => { if (event.key === "Enter") router.push(`/companies/${row.original.id}`); }}>{row.getVisibleCells().map((cell) => <TableCell key={cell.id} className="text-xs text-muted-foreground">{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}</TableRow>)}</TableBody>
+      <div className="crm-table-flex-body"><Table>
+        <TableHeader>{table.getHeaderGroups().map((group) => <TableRow key={group.id} className="hover:bg-transparent">{group.headers.map((header) => <TableHead key={header.id} aria-sort={header.column.getIsSorted() === "asc" ? "ascending" : header.column.getIsSorted() === "desc" ? "descending" : undefined}>{header.isPlaceholder ? null : header.column.getCanSort() ? <button className="flex items-center gap-1 hover:text-foreground" onClick={header.column.getToggleSortingHandler()}>{flexRender(header.column.columnDef.header, header.getContext())}<ChevronsUpDown className="size-3" /></button> : flexRender(header.column.columnDef.header, header.getContext())}</TableHead>)}</TableRow>)}</TableHeader>
+        <TableBody>{table.getRowModel().rows.map((row) => <TableRow key={row.id} className="group cursor-pointer" tabIndex={0} onClick={(event) => { if (!(event.target as HTMLElement).closest("button,a,input,[role=checkbox]")) router.push(`/companies/${row.original.id}`); }} onKeyDown={(event) => { if (event.target === event.currentTarget && event.key === "Enter") router.push(`/companies/${row.original.id}`); }}>{row.getVisibleCells().map((cell) => <TableCell key={cell.id} >{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}</TableRow>)}</TableBody>
       </Table></div>
-      <TablePagination page={table.getState().pagination.pageIndex + 1} pageCount={table.getPageCount()} start={table.getRowModel().rows.length ? table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1 : 0} end={Math.min((table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize, filtered.length)} total={filtered.length} itemLabel="companies" onPrevious={() => table.previousPage()} onNext={() => table.nextPage()} onPageChange={(page) => table.setPageIndex(page - 1)} />
     </>}
     </Card>
+      <TablePagination page={table.getState().pagination.pageIndex + 1} pageCount={table.getPageCount()} start={table.getRowModel().rows.length ? table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1 : 0} end={Math.min((table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize, filtered.length)} total={filtered.length} itemLabel="companies" onPrevious={() => table.previousPage()} onNext={() => table.nextPage()} onPageChange={(page) => table.setPageIndex(page - 1)} />
   </div>;
 }

@@ -14,11 +14,7 @@
   overflow-y: auto;
 }
 
-.crm-product-desktop > .crm-table-viewport {
-  min-height: 0;
-  max-height: none;
-  flex: 1 1 0%;
-}
+
 
 @media (max-width: 47.999rem) {
   .crm-company-summary [data-slot="card"] { padding: 0.875rem; }
@@ -45,8 +41,6 @@
   .messenger-composer[data-tools-open="false"] .messenger-reply-tools { display: none; }
   .messenger-composer { max-height: 60%; overflow-y: auto; padding-bottom: max(0.75rem, env(safe-area-inset-bottom)); }
 
-  [data-slot="table-pagination"] button[aria-label^="Go to page"]:not([aria-current="page"]) { display: none; }
-  [data-slot="table-pagination"] nav > div::after { content: attr(aria-label); padding-inline: 0.5rem; }
 }
 
 @media (max-width: 47.999rem) and (pointer: coarse) {

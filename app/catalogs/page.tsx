@@ -10,7 +10,7 @@ export default async function CatalogsPage() {
   const { mode, products } = await listProducts();
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-5">
+    <div className="flex min-w-0 flex-col gap-5 pb-8">
       <h1 className="shrink-0 text-xl font-semibold tracking-tight">Products</h1>
       <DataModeBanner mode={mode} />
       {products.length === 0 ? (

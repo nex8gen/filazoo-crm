@@ -3,6 +3,7 @@ import { requireWorkspaceMember } from "@/lib/auth";
 import { getEmailInboxBackendData } from "@/lib/email-inbox";
 import { listCatalogs, listProducts } from "@/lib/data/crm";
 import { b2bProducts } from "@/lib/data/b2b-products";
+import { canCreateInvoices } from "@/lib/invoice-permissions";
 
 export default async function EmailsPage({ searchParams }: PageProps<"/emails">) {
   const params = await searchParams;
@@ -15,7 +16,8 @@ export default async function EmailsPage({ searchParams }: PageProps<"/emails">)
 
   return (
     <EmailInboxWorkspace
-      canCreateInvoices={viewer.role === "admin" || viewer.role === "operator"}
+      canCreateInvoices={canCreateInvoices(viewer.role)}
+      invoiceViewer={{ id: viewer.id, role: viewer.role }}
       initialEmails={emails}
       initialThreadId={typeof params.thread === "string" ? params.thread : undefined}
       mailboxConfigured={mailboxConfigured}

@@ -34,17 +34,17 @@ export async function saveProfileAvatar(formData: FormData): Promise<{ error?: s
     path = null;
   }
 
-  const supabase = await createClient();
-  const { error } = await supabase.auth.updateUser({ data: { avatar_path: path, avatar_preset: preset } });
-  if (error) {
-    if (path && path !== previousPath) await admin.storage.from(PROFILE_AVATAR_BUCKET).remove([path]);
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.auth.updateUser({ data: { avatar_path: path, avatar_preset: preset } });
+    if (error) throw error;
+  } catch {
+    if (path && path !== previousPath) await admin.storage.from(PROFILE_AVATAR_BUCKET).remove([path]).catch(() => {});
     return { error: "Your avatar could not be saved. Please try again." };
   }
-  if (previousPath && previousPath !== path) await admin.storage.from(PROFILE_AVATAR_BUCKET).remove([previousPath]);
-  // updateUser saves metadata but keeps the old access token. Refresh its claims
-  // so the server-rendered sidebar can display the new avatar immediately.
-  const { error: refreshError } = await supabase.auth.refreshSession();
+  // Cleanup is best effort: a failure here must not turn a committed save into
+  // an error. Profile readers use getUser, so token rotation is unnecessary.
+  if (previousPath && previousPath !== path) await admin.storage.from(PROFILE_AVATAR_BUCKET).remove([previousPath]).catch(() => {});
   revalidatePath("/", "layout");
-  if (refreshError) return { error: "Your avatar was saved. Sign in again to display the update." };
   return { success: "Profile photo updated." };
 }

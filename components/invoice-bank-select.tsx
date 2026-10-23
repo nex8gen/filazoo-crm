@@ -1,4 +1,5 @@
 "use client";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import { invoiceRequest } from "@/lib/invoice-client";
@@ -25,16 +26,16 @@ export function InvoiceBankSelect({ doc, onChange }: {
     <div className="space-y-3">
       <label className="grid gap-2 text-sm">
         Receiving bank account
-        <select value={doc.bankAccountId || ""} disabled={loading || !!error} onChange={(event) => {
-          const account = accounts.find((item) => item.id === event.target.value);
+        <Select value={doc.bankAccountId || ""} disabled={loading || !!error} onValueChange={(value) => { if (value === null) return;
+          const account = accounts.find((item) => item.id === value);
           onChange((old) => ({ ...old, bankAccountId: account?.id, bankAccount: account }));
-        }}>
-          <option value="">{loading ? "Loading bank accounts…" : "No saved bank account / manual instructions"}</option>
-          {doc.bankAccountId && !accounts.some((item) => item.id === doc.bankAccountId) ? <option value={doc.bankAccountId}>{doc.bankAccount?.label || "Previously selected account"}</option> : null}
-          {accounts.map((account) => <option key={account.id} value={account.id} disabled={!!account.currency && account.currency !== doc.currency}>
+         }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>
+          <SelectItem value="">{loading ? "Loading bank accounts…" : "No saved bank account / manual instructions"}</SelectItem>
+          {doc.bankAccountId && !accounts.some((item) => item.id === doc.bankAccountId) ? <SelectItem value={doc.bankAccountId}>{doc.bankAccount?.label || "Previously selected account"}</SelectItem> : null}
+          {accounts.map((account) => <SelectItem key={account.id} value={account.id} disabled={!!account.currency && account.currency !== doc.currency}>
             {account.label} · ending {account.accountNumber.slice(-4)}{account.currency && account.currency !== doc.currency ? ` · ${account.currency} invoices only` : ""}
-          </option>)}
-        </select>
+          </SelectItem>)}
+        </SelectContent></Select>
       </label>
       {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
       {mismatch ? <p role="alert" className="text-sm text-destructive">Choose an account for {doc.currency}, or remove the current selection.</p> : null}

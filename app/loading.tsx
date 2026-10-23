@@ -1,5 +1,1 @@
-import { DataSkeleton } from "@/components/data-state";
-
-export default function Loading() {
-  return <DataSkeleton />;
-}
+export { DashboardSkeleton as default } from "@/components/workspace-skeletons";

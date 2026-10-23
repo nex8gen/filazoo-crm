@@ -2,7 +2,6 @@ import type { LucideIcon } from "lucide-react";
 import { CircleAlert, Inbox } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 
 export function EmptyState({
   title,
@@ -39,8 +38,4 @@ export function ErrorState({ retry }: { retry?: () => void }) {
       </CardContent>
     </Card>
   );
-}
-
-export function DataSkeleton() {
-  return <div className="space-y-4"><Skeleton className="h-20 w-full" /><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-32" />)}</div><Skeleton className="h-80 w-full" /></div>;
 }

@@ -14,7 +14,7 @@ export function UserMenuClient({ userId, name, email, role, imageUrl, preset }: 
       <DropdownMenuTrigger aria-label={`Open account menu for ${name}`} render={<Button variant="ghost" className="size-12 rounded-xl p-2 data-popup-open:bg-muted" />}>
         <UserAvatar userId={userId} name={name} imageUrl={imageUrl} preset={preset} className="size-8" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent side="top" align="start" sideOffset={8} className="w-64 rounded-[20px] p-2 shadow-lg">
+      <DropdownMenuContent side="top" align="start" sideOffset={8} className="w-64">
         <DropdownMenuGroup>
           <DropdownMenuLabel className="sr-only">Account</DropdownMenuLabel>
           <DropdownMenuItem onClick={() => router.push("/settings/profile")} className="gap-3 px-3 py-3">

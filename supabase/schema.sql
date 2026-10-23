@@ -680,12 +680,17 @@ declare
   operation text := p_input->>'action';
   payment jsonb := p_input->'payment';
   amount bigint;
+  actor_role text;
 begin
-  if not exists(select 1 from public.workspace_members where user_id = p_actor and activated_at is not null and role in ('admin','operator')) then
+  select role into actor_role from public.workspace_members where user_id = p_actor and activated_at is not null;
+  if actor_role is null or actor_role not in ('admin','operator','bd_manager') then
     raise exception 'Billing access denied.';
   end if;
   select * into inv from public.invoices where id = p_id for update;
   if not found then raise exception 'Invoice not found.'; end if;
+  if actor_role = 'bd_manager' and (operation is distinct from 'save' or inv.created_by is distinct from p_actor or inv.status <> 'draft') then
+    raise exception 'BD managers can only edit draft invoices they created.';
+  end if;
   if operation = 'payment' then
     select * into prior from public.invoice_payments where id = (payment->>'id')::uuid;
     if found then

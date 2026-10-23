@@ -1,8 +1,9 @@
 "use client";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 
 import { useActionState, useMemo, useState } from "react";
 import Image from "next/image";
-import { Box, ChevronLeft, ChevronRight, Clipboard, Download, FileDown, ImageIcon, Plus, Search, SlidersHorizontal } from "lucide-react";
+import { Box, ChevronLeft, ChevronRight, Clipboard, Download, FileDown, ImageIcon, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { createProduct, type CrmActionState } from "@/app/crm-actions";
 import { Badge } from "@/components/ui/badge";
@@ -12,10 +13,11 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TableFilters, TableFilter } from "@/components/ui/table-filters";
 import { TablePagination } from "@/components/ui/table-pagination";
 import type { Product } from "@/lib/types";
 
-const pageSize = 20;
+const pageSize = 25;
 
 function formatUpdatedAt(value: string | null) {
   if (!value) return "Not synced";
@@ -49,7 +51,7 @@ function AddProductDialog({ canWrite }: { canWrite: boolean }) {
             <Field label="Stock status" id="product-stock"><Input id="product-stock" name="stockStatus" placeholder="In stock" /></Field>
             <Field label="Lead time" id="product-lead"><Input id="product-lead" name="leadTime" placeholder="Ships in 3–5 days" /></Field>
             <div className="sm:col-span-2"><Field label="Image URL (optional)" id="product-image"><Input id="product-image" name="imageUrl" type="url" placeholder="https://..." /></Field></div>
-            <div className="sm:col-span-2 border-t pt-4"><div className="flex items-end justify-between"><div><p className="text-sm font-medium">Volume pricing</p><p className="text-xs text-muted-foreground">Tier one is required; add tiers two and three when available.</p></div><label className="space-y-1 text-xs text-muted-foreground">Currency<select name="currency" defaultValue="USD" className="ml-2 h-8 rounded-md border bg-background px-2 text-foreground"><option>USD</option><option>EUR</option><option>GBP</option><option>CNY</option></select></label></div></div>
+            <div className="sm:col-span-2 border-t pt-4"><div className="flex items-end justify-between"><div><p className="text-sm font-medium">Volume pricing</p><p className="text-xs text-muted-foreground">Tier one is required; add tiers two and three when available.</p></div><label className="space-y-1 text-xs text-muted-foreground">Currency<Select name="currency" defaultValue="USD"><SelectTrigger className="ml-2 h-8 rounded-md border bg-background px-2 text-foreground"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="USD">USD</SelectItem><SelectItem value="EUR">EUR</SelectItem><SelectItem value="GBP">GBP</SelectItem><SelectItem value="CNY">CNY</SelectItem></SelectContent></Select></label></div></div>
             {[1, 2, 3].map((tier) => (
               <div key={tier} className="grid grid-cols-2 gap-3 rounded-lg border bg-muted/20 p-3 sm:col-span-2">
                 <Field label={`Tier ${tier} minimum`} id={`minimum-${tier}`}><Input id={`minimum-${tier}`} name={`minimum${tier}`} type="number" min="1" required={tier === 1} /></Field>
@@ -69,6 +71,7 @@ export function ProductsCatalog({ products, canWrite }: { products: Product[]; c
   const [query, setQuery] = useState("");
   const [material, setMaterial] = useState("all");
   const [status, setStatus] = useState("all");
+  const [draft, setDraft] = useState({ query: "", material: "all", status: "all" });
   const [page, setPage] = useState(1);
   const materials = useMemo(() => [...new Set(products.map((product) => product.material))].sort(), [products]);
   const filtered = useMemo(() => {
@@ -102,19 +105,12 @@ export function ProductsCatalog({ products, canWrite }: { products: Product[]; c
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 rounded-lg border bg-card p-3 lg:flex-row lg:items-center">
-        <div className="relative min-w-0 flex-1"><Search className="pointer-events-none absolute left-2.5 top-2 size-4 text-muted-foreground" /><Input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} className="pl-8" placeholder="Search name, SKU, material, or color…" aria-label="Search products" /></div>
-        <div className="flex flex-wrap items-center gap-2">
-          <SlidersHorizontal className="size-4 text-muted-foreground" />
-          <select value={material} onChange={(event) => { setMaterial(event.target.value); setPage(1); }} className="h-8 rounded-md border bg-background px-2 text-xs" aria-label="Filter by material"><option value="all">All materials</option>{materials.map((value) => <option key={value} value={value}>{value}</option>)}</select>
-          <select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }} className="h-8 rounded-md border bg-background px-2 text-xs" aria-label="Filter by status"><option value="all">All statuses</option><option value="Active">Active</option><option value="Inactive">Inactive</option></select>
-          <Button size="sm" variant="outline" onClick={exportCsv} disabled={!filtered.length}><Download />CSV</Button>
-          <Button nativeButton={false} size="sm" variant="outline" render={<a href="/downloads/filazoo-b2b-catalog.pdf" download />}><FileDown />Catalog PDF</Button>
-          <AddProductDialog canWrite={canWrite} />
-        </div>
-      </div>
-
+    <div className="space-y-6">
+    <TableFilters onApply={() => { setQuery(draft.query); setMaterial(draft.material); setStatus(draft.status); setPage(1); }} actions={<><Button type="button" variant="outline" onClick={exportCsv} disabled={!filtered.length}><Download />CSV</Button><Button nativeButton={false} variant="outline" render={<a href="/downloads/filazoo-b2b-catalog.pdf" download />}><FileDown />Catalog PDF</Button><AddProductDialog canWrite={canWrite} /></>}>
+      <TableFilter label="Search product" search><Input value={draft.query} onChange={(event) => setDraft({ ...draft, query: event.target.value })} placeholder="Name, SKU, material, or variant" /></TableFilter>
+      <TableFilter label="Material"><Select value={draft.material} onValueChange={(value) => setDraft({ ...draft, material: value ?? "all" })}><SelectTrigger><SelectValue>{draft.material === "all" ? "All materials" : draft.material}</SelectValue></SelectTrigger><SelectContent><SelectItem value="all">All materials</SelectItem>{materials.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select></TableFilter>
+      <TableFilter label="Status"><Select value={draft.status} onValueChange={(value) => setDraft({ ...draft, status: value ?? "all" })}><SelectTrigger><SelectValue>{draft.status === "all" ? "All statuses" : draft.status}</SelectValue></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem><SelectItem value="Active">Active</SelectItem><SelectItem value="Inactive">Inactive</SelectItem></SelectContent></Select></TableFilter>
+    </TableFilters>
       <Card className="crm-table-frame crm-table-page-wide gap-0 py-0 shadow-none">
         <Table>
           <TableHeader><TableRow className="hover:bg-transparent"><TableHead className="min-w-72 pl-4">Product</TableHead><TableHead>Specifications</TableHead><TableHead className="min-w-64">EXW volume pricing</TableHead><TableHead>Availability</TableHead><TableHead>Status</TableHead><TableHead className="pr-4 text-right">Options</TableHead></TableRow></TableHeader>
@@ -132,8 +128,9 @@ export function ProductsCatalog({ products, canWrite }: { products: Product[]; c
             {!visibleProducts.length ? <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">No products match these filters.</TableCell></TableRow> : null}
           </TableBody>
         </Table>
-        <TablePagination page={currentPage} pageCount={pages} start={visibleProducts.length ? (currentPage - 1) * pageSize + 1 : 0} end={Math.min(currentPage * pageSize, filtered.length)} total={filtered.length} itemLabel="products" previousIcon={ChevronLeft} nextIcon={ChevronRight} onPrevious={() => setPage(currentPage - 1)} onNext={() => setPage(currentPage + 1)} onPageChange={setPage} />
+        
       </Card>
+<TablePagination page={currentPage} pageCount={pages} start={visibleProducts.length ? (currentPage - 1) * pageSize + 1 : 0} end={Math.min(currentPage * pageSize, filtered.length)} total={filtered.length} itemLabel="products" previousIcon={ChevronLeft} nextIcon={ChevronRight} onPrevious={() => setPage(currentPage - 1)} onNext={() => setPage(currentPage + 1)} onPageChange={setPage} />
     </div>
   );
 }

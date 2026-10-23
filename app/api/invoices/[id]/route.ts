@@ -6,6 +6,7 @@ import {
 } from "@/lib/invoice-api";
 import { getInvoice, mutateInvoice } from "@/lib/data/invoices";
 import { invoiceMutationSchema, invoiceTotals } from "@/lib/invoices";
+import { canMutateInvoice } from "@/lib/invoice-permissions";
 
 type Context = { params: Promise<{ id: string }> };
 export async function GET(_request: Request, context: Context) {
@@ -27,7 +28,7 @@ export async function GET(_request: Request, context: Context) {
 export async function PATCH(request: Request, context: Context) {
   const originError = checkInvoiceOrigin(request);
   if (originError) return originError;
-  const access = await invoiceAccess(true);
+  const access = await invoiceAccess("draft");
   if (access.response) return access.response;
   const { id } = await context.params;
   if (!z.uuid().safeParse(id).success)
@@ -42,6 +43,10 @@ export async function PATCH(request: Request, context: Context) {
     );
   const input = parsed.data;
   try {
+    const existing = await getInvoice(id);
+    if (!existing) return Response.json({ error: "Invoice not found." }, { status: 404 });
+    if (!canMutateInvoice(access.viewer, existing, input.action))
+      return Response.json({ error: "BD managers can only edit draft invoices they created. Issuing invoices and managing payments require an admin or operator." }, { status: 403 });
     const invoice = await mutateInvoice(
       id,
       access.viewer.id,

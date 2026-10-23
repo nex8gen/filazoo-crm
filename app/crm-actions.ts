@@ -266,10 +266,13 @@ export async function bulkUpdateCompanies(companyIds: string[], action: string):
   const viewer = await requireWorkspaceMember(parsed.data.action === "delete" ? ["admin"] : ["admin", "operator", "bd_manager"]);
   const admin = createSupabaseAdmin();
   if (parsed.data.action === "delete") {
-    const { error } = await admin.from("companies").delete().in("id", parsed.data.ids);
+    const { data, error } = await admin.from("companies").delete().in("id", parsed.data.ids).select("id");
     if (error) return { error: "The selected companies could not be deleted." };
+    if (!data?.length) return { error: "The selected companies no longer exist. Refresh the list and try again." };
     refreshCrm();
-    return { success: `${parsed.data.ids.length} ${parsed.data.ids.length === 1 ? "company" : "companies"} deleted.` };
+    parsed.data.ids.forEach((id) => revalidatePath(`/companies/${id}`));
+    revalidatePath("/invoices");
+    return { success: `${data.length} ${data.length === 1 ? "company" : "companies"} deleted.` };
   }
   const rows = parsed.data.ids.map((companyId) => ({ company_id: companyId, stage: parsed.data.action, updated_at: new Date().toISOString() }));
   const { error } = await admin.from("pipeline").upsert(rows, { onConflict: "company_id" });

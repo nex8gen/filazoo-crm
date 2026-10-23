@@ -33,6 +33,10 @@
 .invoice-workspace input:disabled {
   opacity: 0.6;
 }
+.invoice-workspace [data-slot="select-trigger"] {
+  width: 100%;
+  min-width: 0;
+}
 .invoice-workspace,
 .invoice-workspace fieldset,
 .invoice-workspace .grid,

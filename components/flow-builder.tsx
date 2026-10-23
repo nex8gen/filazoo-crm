@@ -1,12 +1,15 @@
 "use client";
 
+import { AiIcon } from "@/components/ai-icon";
+
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 import {
   AlertTriangle, ArrowDown, ArrowLeft, ArrowUp, Bell, Check, CheckCircle2, ChevronRight,
   CircleStop, Clock3, Copy, Eye, GitBranch, History, ListFilter, Mail, MoreHorizontal,
-  GripVertical, Maximize2, Minus, Pause, Play, Plus, Save, Search, Settings2, Sparkles, Tag, Trash2, UserRoundCheck, Workflow,
+  GripVertical, Maximize2, Minus, Pause, Play, Plus, Save, Search, Settings2, Tag, Trash2, UserRoundCheck, Workflow,
 } from "lucide-react";
 import { toast } from "sonner";
+import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { FlowInsights } from "@/components/flow-insights";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -176,7 +179,7 @@ function FlowActionPalette({ canEdit, query, onQueryChange, actions, onAdd, onAu
       })}
       {!actions.length ? <p role="status" className="py-4 text-sm text-muted-foreground">No matching actions.</p> : null}
       <Button variant="secondary" onClick={onAudit} className="mt-4 w-full text-violet-700 dark:text-violet-300">
-        <Sparkles />Audit this flow
+        <AiIcon  />Audit this flow
       </Button>
     </aside>
   );
@@ -362,6 +365,8 @@ function FlowCanvas({ draft, selection, insertAt, canEdit, setSelection, setInse
 
 export function FlowBuilder({ initialFlows, mailboxOptions, memberOptions, initialFlowId, canEdit, filterOptions }: { initialFlows: AutomationFlow[]; mailboxOptions: Option[]; memberOptions: Option[]; initialFlowId?: string; canEdit: boolean; filterOptions: FilterOptions }) {
   const [flows, setFlows] = useState(initialFlows);
+  const [deletingFlow, setDeletingFlow] = useState<AutomationFlow | null>(null);
+  const actionBusy = useRef(false);
   const initial = initialFlowId === "default" ? initialFlows.find((flow) => flow.name === "3-step follow-up") : initialFlows.find((flow) => flow.id === initialFlowId);
   const [draft, setDraft] = useState<DraftFlow | null>(initial ? toDraft(initial) : null);
   const [view, setView] = useState<"list" | "builder">(initial ? "builder" : "list");
@@ -411,15 +416,57 @@ export function FlowBuilder({ initialFlows, mailboxOptions, memberOptions, initi
     try { const response = await fetch(draft.id ? `/api/flows/${draft.id}` : "/api/flows", { method: draft.id ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(parsed.data) }); const result = await response.json().catch(() => ({ ok: false, error: "The server returned an invalid response." })); if (!response.ok || !result.ok) throw new Error(result.error || "Unable to save flow."); const flow = result.flow as AutomationFlow; setFlows((current) => current.some((item) => item.id === flow.id) ? current.map((item) => item.id === flow.id ? flow : item) : [flow, ...current]); setDraft(toDraft(flow)); setSelection(selectedIndex >= 0 ? flow.steps[selectedIndex]?.id || "trigger" : "trigger"); setNotice(status === "live" ? "Flow is live." : status === "paused" ? "Flow paused." : "All changes saved."); toast.success(status === "live" ? "Automation turned on" : status === "paused" ? "Automation paused" : "Flow saved"); } catch (error) { setNotice(error instanceof Error ? error.message : "Unable to save flow."); } finally { setSaving(false); }
   }
 
-  async function removeFlow(flow: AutomationFlow) { if (!canEdit || !window.confirm(`Delete “${flow.name}”? This also removes its run history.`)) return; const response = await fetch(`/api/flows/${flow.id}`, { method: "DELETE" }); const result = await response.json().catch(() => ({ ok: false })); if (!response.ok || !result.ok) return toast.error(result.error || "Unable to delete flow."); setFlows((current) => current.filter((item) => item.id !== flow.id)); if (draft?.id === flow.id) { setDraft(null); setView("list"); } toast.success("Flow deleted"); }
-  async function duplicateFlow(flow: AutomationFlow) { if (!canEdit) return; const payload = { ...toDraft(flow), id: undefined, name: `${flow.name} copy`, status: "draft" as const, steps: flow.steps.map((step) => ({ type: step.type, config: step.config })) }; const response = await fetch("/api/flows", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); const result = await response.json().catch(() => ({ ok: false })); if (!response.ok || !result.ok) return toast.error(result.error || "Unable to duplicate flow."); setFlows((current) => [result.flow, ...current]); openFlow(result.flow); toast.success("Flow duplicated"); }
-  async function changeStatus(flow: AutomationFlow, status: FlowStatus) { if (!canEdit) return; const payload = { ...toDraft(flow), status, steps: flow.steps.map((step) => ({ id: step.id, type: step.type, config: step.config })) }; const response = await fetch(`/api/flows/${flow.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); const result = await response.json().catch(() => ({ ok: false })); if (!response.ok || !result.ok) return toast.error(result.error || "Unable to update flow."); setFlows((current) => current.map((item) => item.id === flow.id ? result.flow : item)); if (draft?.id === flow.id) setDraft(toDraft(result.flow)); toast.success(status === "live" ? "Automation turned on" : "Automation paused"); }
+  async function removeFlow(flow: AutomationFlow) {
+    if (!canEdit) return;
+    const response = await fetch(`/api/flows/${flow.id}`, { method: "DELETE" });
+    const result = await response.json().catch(() => ({ ok: false }));
+    if (!response.ok || !result.ok) throw new Error(result.error || "Unable to delete flow.");
+    setFlows((current) => current.filter((item) => item.id !== flow.id));
+    if (draft?.id === flow.id) { setDraft(null); setView("list"); }
+    toast.success("Flow deleted");
+  }
 
-  if (view === "list" || !draft) return <FlowListView flows={flows} canEdit={canEdit} onCreate={() => { setDraft(newDraft()); setSelection("trigger"); setView("builder"); }} onOpen={openFlow} onDuplicate={duplicateFlow} onChangeStatus={changeStatus} onRemove={removeFlow} />;
+  async function duplicateFlow(flow: AutomationFlow) {
+    if (!canEdit || actionBusy.current) return;
+    actionBusy.current = true;
+    try {
+      const payload = { ...toDraft(flow), id: undefined, name: `${flow.name} copy`, status: "draft" as const, steps: flow.steps.map((step) => ({ type: step.type, config: step.config })) };
+      const response = await fetch("/api/flows", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const result = await response.json().catch(() => ({ ok: false }));
+      if (!response.ok || !result.ok) throw new Error(result.error || "Unable to duplicate flow.");
+      setFlows((current) => [result.flow, ...current]);
+      openFlow(result.flow);
+      toast.success("Flow duplicated");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to duplicate flow. Please retry.");
+    } finally {
+      actionBusy.current = false;
+    }
+  }
+
+  async function changeStatus(flow: AutomationFlow, status: FlowStatus) {
+    if (!canEdit || actionBusy.current) return;
+    actionBusy.current = true;
+    try {
+      const payload = { ...toDraft(flow), status, steps: flow.steps.map((step) => ({ id: step.id, type: step.type, config: step.config })) };
+      const response = await fetch(`/api/flows/${flow.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const result = await response.json().catch(() => ({ ok: false }));
+      if (!response.ok || !result.ok) throw new Error(result.error || "Unable to update flow.");
+      setFlows((current) => current.map((item) => item.id === flow.id ? result.flow : item));
+      if (draft?.id === flow.id) setDraft(toDraft(result.flow));
+      toast.success(status === "live" ? "Automation turned on" : "Automation paused");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to update flow. Please retry.");
+    } finally {
+      actionBusy.current = false;
+    }
+  }
+
+  if (view === "list" || !draft) return <><FlowListView flows={flows} canEdit={canEdit} onCreate={() => { setDraft(newDraft()); setSelection("trigger"); setView("builder"); }} onOpen={openFlow} onDuplicate={duplicateFlow} onChangeStatus={changeStatus} onRemove={async (flow) => { setDeletingFlow(flow); }} /><ConfirmActionDialog open={Boolean(deletingFlow)} onOpenChange={(open) => { if (!open) setDeletingFlow(null); }} title="Delete flow?" description={`Delete “${deletingFlow?.name ?? ""}” and its run history? This cannot be undone.`} onConfirm={async () => { if (deletingFlow) await removeFlow(deletingFlow); }} /></>;
 
   const selectedStep = selectedIndex >= 0 ? draft.steps[selectedIndex] : null;
   return <div className="flex h-full min-h-0 flex-col overflow-hidden bg-muted/20 [&>header]:static! [&>header]:shrink-0">
-    <header className="sticky top-12 z-20 flex min-h-14 flex-wrap items-center gap-3 border-b bg-background/95 px-4 py-2 backdrop-blur"><button type="button" onClick={() => setView("list")} className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"><ArrowLeft className="size-3.5" />Flows</button><ChevronRight className="size-3.5 text-muted-foreground" /><Input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} aria-label="Flow name" className="h-8 min-w-0 flex-1 sm:w-64 sm:flex-none border-transparent px-2 text-sm font-semibold hover:border-input focus:border-input" disabled={!canEdit} /><Badge variant={statusVariant(draft.status)} className="capitalize">{draft.status}</Badge><span className="hidden text-xs text-muted-foreground xl:inline">{draft.steps.length} actions · {draft.activeRuns || 0} active</span><div className="ml-auto flex w-full flex-wrap items-center gap-2 sm:w-auto"><Button variant="ghost" size="sm" onClick={() => setAuditOpen(true)}><Sparkles />Audit flow</Button><Button variant="outline" size="sm" onClick={() => setPreviewOpen(true)}><Eye />Preview</Button><Button variant="outline" size="sm" onClick={() => void persist(draft.status)} disabled={!canEdit || saving}><Save />{saving ? "Saving…" : "Save"}</Button>{draft.status === "live" ? <Button size="sm" variant="secondary" onClick={() => void persist("paused")} disabled={!canEdit || saving}><Pause />Pause</Button> : <Button size="sm" onClick={() => void persist("live")} disabled={!canEdit || saving}><Play />Turn on</Button>}</div></header>
+    <header className="sticky top-12 z-20 flex min-h-14 flex-wrap items-center gap-3 border-b bg-background/95 px-4 py-2 backdrop-blur"><button type="button" onClick={() => setView("list")} className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"><ArrowLeft className="size-3.5" />Flows</button><ChevronRight className="size-3.5 text-muted-foreground" /><Input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} aria-label="Flow name" className="h-8 min-w-0 flex-1 sm:w-64 sm:flex-none border-transparent px-2 text-sm font-semibold hover:border-input focus:border-input" disabled={!canEdit} /><Badge variant={statusVariant(draft.status)} className="capitalize">{draft.status}</Badge><span className="hidden text-xs text-muted-foreground xl:inline">{draft.steps.length} actions · {draft.activeRuns || 0} active</span><div className="ml-auto flex w-full flex-wrap items-center gap-2 sm:w-auto"><Button variant="ghost" size="sm" onClick={() => setAuditOpen(true)}><AiIcon  />Audit flow</Button><Button variant="outline" size="sm" onClick={() => setPreviewOpen(true)}><Eye />Preview</Button><Button variant="outline" size="sm" onClick={() => void persist(draft.status)} disabled={!canEdit || saving}><Save />{saving ? "Saving…" : "Save"}</Button>{draft.status === "live" ? <Button size="sm" variant="secondary" onClick={() => void persist("paused")} disabled={!canEdit || saving}><Pause />Pause</Button> : <Button size="sm" onClick={() => void persist("live")} disabled={!canEdit || saving}><Play />Turn on</Button>}</div></header>
     {!canEdit ? <div className="border-b bg-amber-50 px-4 py-2 text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">Viewer access is read-only.</div> : null}
     <div className="flex shrink-0 gap-2 border-b bg-background px-4 py-2 md:hidden" role="group" aria-label="Flow workspace view">
       <Button variant={mobileBuilderPanel === "canvas" ? "secondary" : "ghost"} className="flex-1" aria-pressed={mobileBuilderPanel === "canvas"} onClick={() => setMobileBuilderPanel("canvas")}><Workflow />Canvas</Button>
@@ -438,7 +485,7 @@ export function FlowBuilder({ initialFlows, mailboxOptions, memberOptions, initi
       <aside className="scroll-surface min-h-0 overflow-y-auto border-t bg-background lg:w-80 lg:shrink-0 lg:border-l lg:border-t-0 xl:w-[360px]"><Tabs value={inspectorTab} onValueChange={setInspectorTab} className="min-h-full gap-0"><TabsList variant="line" className="sticky top-0 z-10 h-12 w-full justify-start border-b bg-background px-4"><TabsTrigger value="configure"><Settings2 />Configure</TabsTrigger><TabsTrigger value="insights"><History />Insights</TabsTrigger></TabsList><TabsContent value="configure" className="p-4 sm:p-5">{selection === "trigger" ? <><TriggerInspector draft={draft} setDraft={setDraft} filterOptions={filterOptions} disabled={!canEdit} />{errors.triggerConfig ? <p className="mt-4 text-xs text-destructive">{errors.triggerConfig}</p> : null}</> : selectedStep ? <><StepInspector type={selectedStep.type} config={selectedStep.config} onChange={(config) => updateStep(selectedIndex, config)} mailboxes={mailboxes} members={memberOptions} disabled={!canEdit} />{errors[`step-${selectedIndex}`] ? <p className="mt-4 text-xs text-destructive">{errors[`step-${selectedIndex}`]}</p> : null}<div className="mt-6 flex gap-2 border-t pt-4"><Button variant="outline" size="sm" onClick={() => { if (!draft) return; const copy = { ...selectedStep, id: crypto.randomUUID(), config: { ...selectedStep.config } }; const steps = [...draft.steps]; steps.splice(selectedIndex + 1, 0, copy); setDraft({ ...draft, steps }); setSelection(copy.id!); }} disabled={!canEdit}><Copy />Duplicate</Button><Button variant="destructive" size="sm" onClick={() => removeStep(selectedIndex)} disabled={!canEdit}><Trash2 />Remove</Button></div></> : null}</TabsContent><TabsContent value="insights" className="p-4 sm:p-5"><FlowInsights key={draft.id} flowId={draft.id} /></TabsContent></Tabs>{notice ? <div className="sticky bottom-0 border-t bg-background px-5 py-3 text-xs text-muted-foreground" role="status">{notice}</div> : null}</aside>
     </div>
     <Dialog open={previewOpen} onOpenChange={setPreviewOpen}><DialogContent className="sm:max-w-2xl"><DialogHeader><DialogTitle>Preview · {draft.name}</DialogTitle><DialogDescription>Review the customer journey before turning it on.</DialogDescription></DialogHeader><div className="max-h-[60vh] space-y-2 overflow-auto rounded-lg bg-muted/30 p-4"><PreviewRow icon={Workflow} title="Trigger" detail={formatTrigger(draft.triggerType, draft.triggerConfig)} />{draft.steps.map((step, index) => <PreviewRow key={step.id || index} icon={stepMeta[step.type].icon} title={`${index + 1}. ${stepLabels[step.type]}`} detail={stepSummary(step.type, step.config)} />)}</div><DialogFooter showCloseButton><Button onClick={() => { setPreviewOpen(false); void persist("live"); }} disabled={!canEdit}><Play />Turn on flow</Button></DialogFooter></DialogContent></Dialog>
-    <Dialog open={auditOpen} onOpenChange={setAuditOpen}><DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle className="flex items-center gap-2"><Sparkles className="size-4 text-violet-600" />Flow audit</DialogTitle><DialogDescription>Checks configuration, safety, and customer experience.</DialogDescription></DialogHeader><div className="space-y-2"><AuditRow ok={Boolean(draft.name.trim())} label="Flow has a clear name" /><AuditRow ok={draft.steps.length > 0} label={`${draft.steps.length} action${draft.steps.length === 1 ? "" : "s"} configured`} /><AuditRow ok={draft.steps.some((step) => step.type === "wait")} label="Includes pacing between messages" /><AuditRow ok={!draft.steps.some((step) => step.type === "send_email") || draft.steps.filter((step) => step.type === "send_email").every((step) => step.config.stopOnReply !== false)} label="Email steps stop when a customer replies" /><AuditRow ok={Boolean(audit?.success)} label={audit?.success ? "All required settings are complete" : "Some required settings need attention"} /></div>{notice ? <p role="status" className="text-xs text-muted-foreground">{notice}</p> : null}<DialogFooter showCloseButton><Button onClick={() => { setAuditOpen(false); if (!audit?.success) setNotice("Review the highlighted step settings."); }}><Check />Review complete</Button></DialogFooter></DialogContent></Dialog>
+    <Dialog open={auditOpen} onOpenChange={setAuditOpen}><DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle className="flex items-center gap-2"><AiIcon className="size-4 text-violet-600" />Flow audit</DialogTitle><DialogDescription>Checks configuration, safety, and customer experience.</DialogDescription></DialogHeader><div className="space-y-2"><AuditRow ok={Boolean(draft.name.trim())} label="Flow has a clear name" /><AuditRow ok={draft.steps.length > 0} label={`${draft.steps.length} action${draft.steps.length === 1 ? "" : "s"} configured`} /><AuditRow ok={draft.steps.some((step) => step.type === "wait")} label="Includes pacing between messages" /><AuditRow ok={!draft.steps.some((step) => step.type === "send_email") || draft.steps.filter((step) => step.type === "send_email").every((step) => step.config.stopOnReply !== false)} label="Email steps stop when a customer replies" /><AuditRow ok={Boolean(audit?.success)} label={audit?.success ? "All required settings are complete" : "Some required settings need attention"} /></div>{notice ? <p role="status" className="text-xs text-muted-foreground">{notice}</p> : null}<DialogFooter showCloseButton><Button onClick={() => { setAuditOpen(false); if (!audit?.success) setNotice("Review the highlighted step settings."); }}><Check />Review complete</Button></DialogFooter></DialogContent></Dialog>
   </div>;
 }
 
@@ -456,7 +503,7 @@ function FlowListView({ flows, canEdit, onCreate, onOpen, onDuplicate, onChangeS
   const completedRuns = flows.reduce((total, flow) => total + (flow.completedRuns || 0), 0);
   const dateFormatter = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" });
   const [page, setPage] = useState(1);
-  const pageSize = 10;
+  const pageSize = 25;
   const pageCount = Math.max(1, Math.ceil(flows.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const visibleFlows = flows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
@@ -477,24 +524,26 @@ function FlowListView({ flows, canEdit, onCreate, onOpen, onDuplicate, onChangeS
         <FlowSummary icon={CheckCircle2} label="Completed" value={completedRuns} detail="All-time journeys" tone="bg-violet-500/10 text-violet-600 dark:text-violet-400" />
       </div>
 
-      <Card className="crm-table-frame crm-table-page-wide mt-5 gap-0 overflow-hidden py-0 shadow-none">
-        <div className="flex items-center justify-between border-b px-4 py-3.5 sm:px-5">
+      
+        <div className="mt-6 mb-3 flex items-center justify-between">
           <div><h2 className="text-sm font-semibold">All flows</h2><p className="mt-0.5 text-xs text-muted-foreground">Select a flow to open its canvas and configuration.</p></div>
           <Badge variant="secondary" className="tabular-nums">{flows.length}</Badge>
         </div>
 
+      <Card className="crm-table-frame crm-table-page-wide gap-0 py-0">
         {flows.length ? <>
-          <div className="hidden md:block">
+          <div>
             <Table className="min-w-[880px]">
               <TableHeader><TableRow className="bg-muted/30 hover:bg-muted/30"><TableHead className="pl-5">Flow</TableHead><TableHead>Trigger</TableHead><TableHead>Status</TableHead><TableHead className="text-center">Active</TableHead><TableHead className="text-center">Completed</TableHead><TableHead>Last updated</TableHead><TableHead className="w-12" /></TableRow></TableHeader>
               <TableBody>{visibleFlows.map((flow) => <TableRow key={flow.id} className="group cursor-pointer" onClick={() => onOpen(flow)}><TableCell className="pl-5"><div className="flex items-center gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary"><Workflow className="size-4" /></span><div><p className="font-semibold group-hover:text-primary">{flow.name}</p><p className="mt-0.5 text-xs text-muted-foreground">{flow.steps.length} action{flow.steps.length === 1 ? "" : "s"}</p></div></div></TableCell><TableCell><p className="max-w-64 truncate text-sm">{formatTrigger(flow.triggerType, flow.triggerConfig)}</p></TableCell><TableCell><FlowStatusBadge status={flow.status} /></TableCell><TableCell className="text-center font-medium tabular-nums">{flow.activeRuns || 0}</TableCell><TableCell className="text-center font-medium tabular-nums">{flow.completedRuns || 0}</TableCell><TableCell className="whitespace-nowrap text-xs text-muted-foreground">{dateFormatter.format(new Date(flow.updatedAt))}</TableCell><TableCell><FlowActions flow={flow} canEdit={canEdit} onOpen={onOpen} onDuplicate={onDuplicate} onChangeStatus={onChangeStatus} onRemove={onRemove} /></TableCell></TableRow>)}</TableBody>
             </Table>
           </div>
 
-          <div className="divide-y md:hidden">{visibleFlows.map((flow) => <article key={flow.id} role="button" tabIndex={0} onClick={() => onOpen(flow)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(flow); } }} className="group p-4 outline-none hover:bg-muted/35 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"><div className="flex items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"><Workflow className="size-4" /></span><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><h3 className="truncate font-semibold group-hover:text-primary">{flow.name}</h3><p className="mt-1 truncate text-xs text-muted-foreground">{formatTrigger(flow.triggerType, flow.triggerConfig)}</p></div><FlowActions flow={flow} canEdit={canEdit} onOpen={onOpen} onDuplicate={onDuplicate} onChangeStatus={onChangeStatus} onRemove={onRemove} /></div><div className="mt-3 flex flex-wrap items-center gap-2"><FlowStatusBadge status={flow.status} /><span className="text-xs text-muted-foreground">{flow.steps.length} actions</span><span className="text-muted-foreground/40">·</span><span className="text-xs text-muted-foreground">{flow.activeRuns || 0} active</span></div><p className="mt-3 text-xs text-muted-foreground">Updated {dateFormatter.format(new Date(flow.updatedAt))}</p></div></div></article>)}</div>
-          <TablePagination page={currentPage} pageCount={pageCount} start={(currentPage - 1) * pageSize + 1} end={Math.min(currentPage * pageSize, flows.length)} total={flows.length} itemLabel="flows" onPrevious={() => setPage(currentPage - 1)} onNext={() => setPage(currentPage + 1)} onPageChange={setPage} />
+
+
         </> : <div className="grid min-h-64 place-items-center px-6 py-12 text-center"><div><span className="mx-auto grid size-12 place-items-center rounded-2xl bg-primary/10 text-primary"><Workflow className="size-5" /></span><h3 className="mt-4 font-semibold">Create your first flow</h3><p className="mx-auto mt-1 max-w-sm text-sm leading-6 text-muted-foreground">Automate timely follow-ups, internal tasks, and customer journey decisions.</p><Button className="mt-5" onClick={onCreate} disabled={!canEdit}><Plus />Create flow</Button></div></div>}
       </Card>
+      <TablePagination className="mt-6" page={currentPage} pageCount={pageCount} total={flows.length} itemLabel="flows" onPrevious={() => setPage(currentPage - 1)} onNext={() => setPage(currentPage + 1)} />
     </div>
   </section>;
 }

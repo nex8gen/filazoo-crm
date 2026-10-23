@@ -4,6 +4,7 @@ import { generateGeminiText } from "@/lib/ai/gemini";
 import { generateGatewayText, isGeminiRegionError } from "@/lib/ai/gateway";
 import { emailReplyInstruction, parseEmailReplyPlan, replyProductSchema } from "@/lib/ai/email-reply";
 import { applyEmailSignature, DEFAULT_EMAIL_COMPANY, DEFAULT_EMAIL_TITLE, normalizeSignatureName } from "@/lib/ai/email-rewrite";
+import { canCreateInvoices } from "@/lib/invoice-permissions";
 
 export const maxDuration = 60;
 const schema = z.object({
@@ -28,7 +29,7 @@ export async function POST(request: Request) {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   const token = process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
   if (!apiKey && !token) return Response.json({ error: "AI reply is not configured. Add an AI provider in the server settings." }, { status: 503 });
-  const canCreateInvoice = ["admin", "operator"].includes(viewer.role);
+  const canCreateInvoice = canCreateInvoices(viewer.role);
   const prompt = JSON.stringify({ ...input.data, canCreateInvoice, seller: DEFAULT_EMAIL_COMPANY });
   const gateway = () => generateGatewayText({ token: token!, model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim(), systemInstruction: emailReplyInstruction, prompt, maxOutputTokens: 8192 });
   try {

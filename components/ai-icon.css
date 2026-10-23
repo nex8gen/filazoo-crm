@@ -1,0 +1,63 @@
+.ai-icon {
+  position: relative;
+  container-type: inline-size;
+  pointer-events: none;
+  --flow-speed: 9s;
+}
+
+.ai-icon[data-state="thinking"] {
+  --flow-speed: 4.5s;
+}
+
+.ai-icon-mist {
+  position: relative;
+  display: block;
+  width: 95%;
+  height: 95%;
+  overflow: hidden;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(186 243 255 / 35%), transparent 72%);
+  mask-image: radial-gradient(circle, #000 35%, rgb(0 0 0 / 85%) 50%, transparent 72%);
+  filter: blur(1.25cqw);
+}
+
+.ai-icon-mist > span {
+  position: absolute;
+  display: block;
+  width: 80%;
+  height: 85%;
+  border-radius: 42% 58% 65% 35% / 55% 40% 60% 45%;
+  filter: blur(10cqw);
+  animation: ai-icon-flow var(--flow-speed) ease-in-out infinite alternate;
+}
+
+.ai-icon-pink {
+  top: -20%;
+  left: 20%;
+  background: radial-gradient(ellipse, #d74af0 8%, #e898f6 38%, transparent 70%);
+  transform: rotate(-25deg);
+}
+
+.ai-icon-mist > .ai-icon-blue {
+  top: 10%;
+  right: -10%;
+  background: radial-gradient(ellipse, #648cf5 8%, #6bc7f4 45%, transparent 72%);
+  animation-delay: -3s;
+}
+
+.ai-icon-mist > .ai-icon-cyan {
+  bottom: -10%;
+  left: -10%;
+  background: radial-gradient(ellipse, #a6fff1 10%, #51d5f0 44%, transparent 72%);
+  animation-delay: -6s;
+}
+
+@keyframes ai-icon-flow {
+  0% { transform: translate(-8%, 5%) rotate(-30deg) scale(0.95, 1.05); }
+  50% { transform: translate(15%, -12%) rotate(40deg) scale(1.15, 0.9); }
+  100% { transform: translate(-10%, 15%) rotate(110deg) scale(0.9, 1.15); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-icon-mist > span { animation: none; }
+}

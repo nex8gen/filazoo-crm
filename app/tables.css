@@ -1,0 +1,97 @@
+/* Shared CRM tables follow the invoice list: muted headers, roomy cells,
+   horizontal separators, and a rounded outer border. Add `crm-table` to
+   native tables; the shared Table component includes it automatically. */
+/* These rules intentionally sit outside Tailwind cascade layers. That keeps
+   page-level utility classes from silently changing the shared appearance. */
+.crm-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  text-align: left;
+  font-size: var(--text-sm);
+}
+
+.crm-table thead {
+  background: color-mix(in oklch, var(--muted) 40%, var(--background));
+}
+
+.crm-table thead tr {
+  background: transparent;
+}
+
+.crm-table thead th {
+  padding: 1rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  line-height: var(--text-xs--line-height);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.crm-table tbody tr {
+  background: var(--background);
+  transition: background-color 150ms ease;
+}
+
+.crm-table tbody td,
+.crm-table tfoot td {
+  padding: 1rem;
+  border-bottom: 1px solid var(--border);
+  line-height: 1.25rem;
+}
+
+.crm-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.crm-table tbody tr:hover {
+  background: color-mix(in oklch, var(--muted) 30%, var(--background));
+}
+
+.crm-table tbody tr:is([data-state="selected"], [aria-selected="true"]) {
+  background: color-mix(in oklch, var(--muted) 60%, var(--background));
+}
+
+.crm-table tbody tr:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+/* Lists grow with their rows, just like invoices. Only wide columns scroll. */
+.crm-table-viewport {
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.crm-table-frame {
+  min-width: 0;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--background);
+  box-shadow: none;
+}
+
+.crm-table-flex-body { min-width: 0; }
+.crm-table-page-wide { width: 100%; min-width: 0; max-width: 100%; margin-inline: 0; }
+
+.crm-table-filter-bar { display: flex; flex-wrap: wrap; align-items: end; gap: 0.75rem; }
+.crm-table-filters { display: flex; flex: 1 1 32rem; flex-wrap: wrap; align-items: end; gap: 0.75rem; }
+.crm-table-filter { display: grid; min-width: 0; gap: 0.5rem; font-size: var(--text-sm); }
+.crm-table-filter-search { flex: 1 1 16rem; }
+.crm-table-filter :is(input, [data-slot="select-trigger"]) { width: 100%; min-height: 2.5rem; }
+.crm-table-filter [data-slot="select-trigger"] { min-width: 7.5rem; }
+.crm-table-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; font-size: var(--text-sm); }
+.crm-table-pagination p { margin: 0; }
+
+/* Status pills share the invoice list's shape, size and spacing. */
+.crm-table [data-slot="badge"] { height: auto; border-radius: 9999px; padding: 0.25rem 0.625rem; font-size: var(--text-xs); line-height: 1.25rem; font-weight: 500; }
+.crm-table tbody td { font-size: var(--text-sm); color: var(--foreground); }
+[data-slot="card"]:has(.crm-table) { border: 1px solid var(--border); border-radius: 0.75rem; box-shadow: none; }
+

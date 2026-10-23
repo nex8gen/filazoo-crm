@@ -2,7 +2,7 @@ import "server-only";
 
 import { validateFlowResources } from "./flow-runtime.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
-import { defaultFlowInput, type AutomationFlow, type FlowInput, type FlowStep, type FlowStepType, type JsonConfig, type TriggerType, type FlowStatus } from "../flows.ts";
+import { type AutomationFlow, type FlowInput, type FlowStep, type FlowStepType, type JsonConfig, type TriggerType, type FlowStatus } from "../flows.ts";
 
 type FlowRow = {
   id: string;
@@ -44,15 +44,7 @@ async function insertFlow(userId: string, input: FlowInput) {
   return data as string;
 }
 
-async function ensureDefaultFlow(userId: string) {
-  const admin = createSupabaseAdmin();
-  const { data, error } = await admin.from("flows").select("id").eq("user_id", userId).limit(1);
-  if (error) throw new Error(`Unable to load flows: ${error.message}`);
-  if (!data?.length) await insertFlow(userId, defaultFlowInput);
-}
-
 export async function listFlows(userId: string): Promise<AutomationFlow[]> {
-  await ensureDefaultFlow(userId);
   const admin = createSupabaseAdmin();
   const { data: rows, error } = await admin.from("flows")
     .select("id,name,trigger_type,trigger_config,status,created_by,created_at,updated_at")

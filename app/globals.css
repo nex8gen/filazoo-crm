@@ -233,6 +233,21 @@ body,
   touch-action: pan-x pan-y;
 }
 
+/* Popups must not use .scroll-surface: its stable scrollbar gutter adds an
+   empty strip to short menus. Keep their shared surface outside cascade layers. */
+:is([data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="select-content"], [data-slot="popover-content"]) {
+  scrollbar-gutter: auto;
+  border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+  border-radius: calc(var(--radius) + 0.25rem);
+  background-color: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: 0 10px 24px rgb(0 0 0 / 8%);
+}
+
+:is([data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="select-content"]) {
+  padding: 0.375rem;
+}
+
 .scrollbar-hidden {
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -240,213 +255,6 @@ body,
 
 .scrollbar-hidden::-webkit-scrollbar {
   display: none;
-}
-
-/* Shared CRM tables follow the invoice list: muted headers, roomy cells,
-   horizontal separators, and a rounded outer border. Add `crm-table` to
-   native tables; the shared Table component includes it automatically. */
-/* These rules intentionally sit outside Tailwind cascade layers. That keeps
-   page-level utility classes from silently changing the shared appearance. */
-.crm-table {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
-  text-align: left;
-  font-size: var(--text-sm);
-}
-
-.crm-table thead {
-  background: color-mix(in oklch, var(--muted) 40%, var(--background));
-}
-
-.crm-table thead tr {
-  background: transparent;
-}
-
-.crm-table thead th {
-  padding: 1rem;
-  border-bottom: 1px solid var(--border);
-  color: var(--muted-foreground);
-  font-size: var(--text-xs);
-  font-weight: 700;
-  line-height: var(--text-xs--line-height);
-  letter-spacing: 0;
-  text-transform: none;
-}
-
-.crm-table tbody tr {
-  background: var(--background);
-  transition: background-color 150ms ease;
-}
-
-.crm-table tbody td,
-.crm-table tfoot td {
-  padding: 1rem;
-  border-bottom: 1px solid var(--border);
-  line-height: 1.25rem;
-}
-
-.crm-table tbody tr:last-child td {
-  border-bottom: 0;
-}
-
-.crm-table tbody tr:hover {
-  background: color-mix(in oklch, var(--muted) 30%, var(--background));
-}
-
-.crm-table tbody tr:is([data-state="selected"], [aria-selected="true"]) {
-  background: color-mix(in oklch, var(--muted) 60%, var(--background));
-}
-
-.crm-table tbody tr:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: -2px;
-}
-
-.crm-table-viewport {
-  max-height: min(64vh, 44rem);
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-}
-
-.crm-table-viewport .crm-table thead {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-}
-
-.crm-table-frame {
-  min-width: 0;
-  max-width: 100%;
-  display: flex;
-  min-height: 0;
-  flex-direction: column;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 0.75rem;
-}
-
-.crm-table-frame > .crm-table-viewport {
-  min-height: 0;
-  flex: 1 1 auto;
-}
-
-.crm-table-frame > [data-slot="table-pagination"] {
-  margin-top: 0 !important;
-  border-bottom: 0;
-}
-
-/* Reserve the footer's full height while the product rows use the remaining
-   viewport space, including when filters wrap or the browser is zoomed. */
-.crm-products-catalog > :not(.crm-table-frame) {
-  flex-shrink: 0;
-}
-
-.crm-products-catalog > div:not(.crm-table-toolbar):not(.crm-table-frame) {
-  margin-block: 0.75rem;
-}
-
-.crm-products-catalog > .crm-table-frame {
-  flex: 1 1 0%;
-  margin-block: 0;
-}
-
-.crm-products-catalog > .crm-table-frame > .crm-table-viewport {
-  max-height: none;
-}
-
-/* In full-height table cards, only the table body scrolls. This prevents rows
-   from overflowing across the pagination footer. */
-.crm-table-flex-body {
-  min-height: 18rem;
-  flex: 1 1 auto;
-  overflow: hidden;
-}
-
-@media (min-width: 48rem) {
-  .crm-table-flex-body {
-    min-height: 0;
-  }
-
-  .crm-table-flex-body > .crm-table-viewport {
-    height: 100%;
-    max-height: none;
-  }
-}
-
-.crm-table-toolbar {
-  display: flex;
-  min-height: 3.75rem;
-  align-items: center;
-  gap: 0.75rem;
-  border-bottom: 1px solid var(--border);
-  background: var(--background);
-  padding: 0.75rem 1rem;
-}
-
-.crm-table-toolbar :is(input, select, [data-slot="select-trigger"]) {
-  min-height: 2.5rem;
-}
-
-.crm-table-toolbar > :last-child:is(p) {
-  margin-left: auto;
-  white-space: nowrap;
-  color: var(--muted-foreground);
-  font-size: var(--text-xs);
-  font-weight: 500;
-}
-
-/* Keep each data grid, its toolbar, and its pager as one continuous section. */
-.crm-table-toolbar + [data-slot="card"].crm-table-page-wide,
-[data-slot="card"].crm-table-page-wide + [data-slot="table-pagination"] {
-  margin-top: 0 !important;
-}
-
-[data-slot="card"].crm-table-page-wide + [data-slot="table-pagination"] {
-  border-top: 0;
-}
-
-:where(.space-y-4):has(> [data-slot="card"].crm-table-page-wide) > div:first-child:not(.crm-table-toolbar) + [data-slot="card"].crm-table-page-wide {
-  margin-top: 0 !important;
-}
-
-/* Legacy data views expose their toolbar as the first sibling of the shared
-   table card. Normalize it until every page is migrated to the named class. */
-:where(.space-y-4):has(> [data-slot="card"].crm-table-page-wide) > div:first-child:not(.crm-table-toolbar) {
-  width: 100%;
-  min-height: 3.75rem;
-  margin-inline: 0;
-  padding: 0.75rem 1rem;
-  border-right-width: 0;
-  border-left-width: 0;
-  border-radius: 0;
-  background: var(--background);
-}
-
-:where(.space-y-4):has(> [data-slot="card"].crm-table-page-wide) > div:first-child:not(.crm-table-toolbar) :is(input, select, [data-slot="select-trigger"]) {
-  min-height: 2.5rem;
-}
-
-@media (max-width: 63.999rem) {
-  .crm-table-toolbar {
-    flex-wrap: wrap;
-  }
-}
-
-/* Match the invoice list's outer frame on shared table cards as well. */
-[data-slot="card"]:has(.crm-table) {
-  border: 1px solid var(--border);
-  border-radius: 0.75rem;
-  box-shadow: none;
-}
-
-/* Keep tables, toolbars, and pagers inside the standard page padding,
-   matching the invoice list. Wide columns scroll within the table viewport. */
-.crm-table-page-wide {
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-  margin-inline: 0;
 }
 
 @media (prefers-reduced-motion: no-preference) {

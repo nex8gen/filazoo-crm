@@ -16,7 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { TablePagination } from "@/components/ui/table-pagination";
 import type { WorkspaceMemberRecord } from "@/lib/data/members";
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 25;
 
 function formatDate(value: string | null) {
   return value ? new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "Never";
@@ -77,12 +77,15 @@ export function MembersTable({ members, viewerId }: { members: WorkspaceMemberRe
   const visibleMembers = members.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   return (
+    <div className="space-y-6">
     <Card className="crm-table-frame crm-table-page-wide gap-0 overflow-hidden py-0 shadow-none">
       <Table>
         <TableHeader><TableRow><TableHead>Member</TableHead><TableHead>Role</TableHead><TableHead>Status</TableHead><TableHead>Activity</TableHead><TableHead className="w-12"><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader>
         <TableBody>{visibleMembers.map((member) => <TableRow key={member.id}><TableCell><p className="text-sm font-medium">{member.displayName || "Unnamed member"}</p><p className="text-xs text-muted-foreground">{member.email}</p></TableCell><TableCell><Badge variant="outline" className="capitalize">{member.role.replace("_", " ")}</Badge>{member.autoAssignLeads && member.activated ? <p className="mt-1 text-xs text-muted-foreground">Auto-assign on</p> : null}</TableCell><TableCell><Badge variant={member.activated ? "secondary" : "outline"}>{member.activated ? "Active" : "Invited"}</Badge><p className="mt-1 text-xs text-muted-foreground">{member.activatedAt ? `Activated ${formatDate(member.activatedAt)}` : `Invited ${formatDate(member.createdAt)}`}</p></TableCell><TableCell className="text-xs"><p>Last sign-in: {formatDate(member.lastSignInAt)}</p><p className="mt-1 text-xs text-muted-foreground">Member since {formatDate(member.createdAt)}</p><p className="mt-1 text-xs text-muted-foreground">Updated {formatDate(member.updatedAt)}</p></TableCell><TableCell>{member.id === viewerId ? <Badge variant="outline">You</Badge> : <MemberActions member={member} />}</TableCell></TableRow>)}</TableBody>
       </Table>
-      <TablePagination page={currentPage} pageCount={pageCount} start={visibleMembers.length ? (currentPage - 1) * PAGE_SIZE + 1 : 0} end={Math.min(currentPage * PAGE_SIZE, members.length)} total={members.length} itemLabel="members" onPrevious={() => setPage(currentPage - 1)} onNext={() => setPage(currentPage + 1)} onPageChange={setPage} />
+      
     </Card>
+<TablePagination page={currentPage} pageCount={pageCount} start={visibleMembers.length ? (currentPage - 1) * PAGE_SIZE + 1 : 0} end={Math.min(currentPage * PAGE_SIZE, members.length)} total={members.length} itemLabel="members" onPrevious={() => setPage(currentPage - 1)} onNext={() => setPage(currentPage + 1)} onPageChange={setPage} />
+    </div>
   );
 }

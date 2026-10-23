@@ -1,10 +1,10 @@
 # Invoice system
 
-Open **Workspace → Invoices** (`/invoices`). Admins and operators create and manage billing; viewers can read and print. BD managers do not have billing access. Each invoice has an authenticated detail URL at `/invoices/<id>`.
+Open **Workspace → Invoices** (`/invoices`). Admins and operators create and manage billing; viewers can read and print. BD managers can view and download all invoices, create drafts, and edit only drafts they created. Issuing, voiding, deleting, payments and shared billing settings remain restricted to admins and operators. Each invoice has an authenticated detail URL at `/invoices/<id>`.
 
 Create a draft with seller and customer billing details, tax IDs, currency, dates, PO reference, line items, terms, and bank instructions. Search CRM customers by company name or email, then choose their billing contact. Save reusable customer billing details and payment terms, and shared seller defaults. Save the draft, review, and issue it. Issuing locks the document and does not send an email. Use **Print / Save PDF** to download a copy through the browser print dialog.
 
-In the email inbox, the invoice icon sits beside the catalog icon in the expanded reply toolbar. It opens an invoice dialog for the selected correspondent and conversation while preserving the email draft. Compose also offers **Create invoice** beside **Add catalog PDF** for a single entered recipient. Exact contact email matches resolve the CRM company; company names are never used to guess an identity. Invoice creation is available to admins and operators, matching existing billing permissions.
+In the email inbox, the invoice icon sits beside the catalog icon in the expanded reply toolbar. It opens an invoice dialog for the selected correspondent and conversation while preserving the email draft. Compose also offers **Create invoice** beside **Add catalog PDF** for a single entered recipient. Exact contact email matches resolve the CRM company; company names are never used to guess an identity. Invoice creation, including AI reply invoice PDFs, is available to admins, operators and BD managers.
 
 Company profiles show invoice history and balances, with a **Create customer invoice** shortcut. Linked invoices point back to the company and source email conversation. Issuing, recording payments, and voiding add events to the company timeline. Billing activity does not automatically change sales pipeline stages.
 

@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import type { ComponentType } from "react";
+import { AiIcon } from "@/components/ai-icon";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -16,7 +18,6 @@ import {
   Search,
   Settings,
   Tags,
-  Workflow,
 } from "lucide-react";
 import { BrandMark } from "@/components/brand-mark";
 import { LanguageSwitcher } from "@/components/language-switcher";
@@ -29,7 +30,7 @@ const WorkspaceCommandMenu = dynamic(() => import("@/components/workspace-comman
 type NavigationItem = {
   label: string;
   href: string;
-  icon: typeof LayoutDashboard;
+  icon: ComponentType<{ className?: string }>;
   description: string;
   exact?: boolean;
 };
@@ -37,7 +38,7 @@ type NavigationItem = {
 type NavigationGroup = {
   label: string;
   eyebrow: string;
-  icon: typeof LayoutDashboard;
+  icon: ComponentType<{ className?: string }>;
   direct?: boolean;
   items: NavigationItem[];
 };
@@ -87,10 +88,10 @@ const navigation: NavigationGroup[] = [
   {
     label: "AI Automation",
     eyebrow: "Automation",
-    icon: Workflow,
+    icon: AiIcon,
     direct: true,
     items: [
-      { label: "AI Automation", href: "/lead-channel/ai-agent", icon: Workflow, description: "Email follow-up flows and automation rules" },
+      { label: "AI Automation", href: "/lead-channel/ai-agent", icon: AiIcon, description: "Email follow-up flows and automation rules" },
     ],
   },
   {
@@ -209,8 +210,6 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
   const router = useRouter();
   const isMessenger = pathname === "/messenger" || pathname.startsWith("/messenger/");
   const isFlowBuilder = pathname === "/lead-channel/ai-agent" || pathname.startsWith("/lead-channel/ai-agent/");
-  const isCompanies = pathname === "/companies";
-  const isProducts = pathname === "/catalogs";
   const isEmails = pathname === "/emails";
   const isSettings = pathname === "/settings" || pathname.startsWith("/settings/");
   const usesViewportCanvas = isMessenger || isFlowBuilder || isEmails;
@@ -239,7 +238,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
   };
 
   return (
-    <div className={`${usesViewportCanvas || isProducts ? "h-svh overflow-hidden" : isCompanies ? "min-h-svh md:h-svh md:overflow-hidden" : "min-h-svh"} bg-background text-foreground`}>
+    <div className={`${usesViewportCanvas ? "h-svh overflow-hidden" : "min-h-svh"} bg-background text-foreground`}>
       <a href="#workspace-content" className="sr-only fixed left-4 top-2 z-[100] rounded-md bg-primary px-4 py-2 text-primary-foreground focus:not-sr-only">Skip to content</a>
       <header className="fixed inset-x-0 top-0 z-50 flex h-12 items-center border-b bg-background/95 px-3 backdrop-blur md:px-4">
         <Button ref={navigationTriggerRef} aria-label="Open navigation" aria-expanded={mobileOpen} variant="ghost" size="icon-sm" className="mr-2 lg:hidden" onClick={() => setMobileOpen(true)}>
@@ -290,7 +289,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
       </Sheet>
 
       <div className={`min-w-0 pt-12 ${activeGroup.direct ? "lg:pl-16" : "lg:pl-80"}`}>
-        <main id="workspace-content" tabIndex={-1} className={`${pathname === "/emails" || isSettings ? "" : "crm-workspace-content"} outline-none ${usesViewportCanvas ? "h-[calc(100dvh-3rem)] min-h-0 w-full overflow-hidden p-0" : isSettings ? "min-h-[calc(100dvh-3rem)] w-full" : isProducts ? "h-[calc(100dvh-3rem)] min-h-0 w-full overflow-hidden px-5 pt-7 sm:px-7 lg:px-10 lg:pt-10" : isCompanies ? "min-h-[calc(100svh-3rem)] w-full px-5 py-7 sm:px-7 lg:px-10 md:h-[calc(100dvh-3rem)] md:min-h-0 md:overflow-hidden lg:py-8" : "min-h-[calc(100svh-3rem)] w-full px-5 py-7 sm:px-7 lg:px-10 lg:py-10"}`}>{children}</main>
+        <main id="workspace-content" tabIndex={-1} className={`${pathname === "/emails" || isSettings ? "" : "crm-workspace-content"} outline-none ${usesViewportCanvas ? "h-[calc(100dvh-3rem)] min-h-0 w-full overflow-hidden p-0" : isSettings ? "min-h-[calc(100dvh-3rem)] w-full" : "min-h-[calc(100svh-3rem)] w-full px-5 py-7 sm:px-7 lg:px-10 lg:py-10"}`}>{children}</main>
       </div>
 
       {commandOpen ? (

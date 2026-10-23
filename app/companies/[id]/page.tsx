@@ -3,11 +3,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Building2, History, ReceiptText } from "lucide-react";
 import { CompanyDetails } from "@/components/company-details";
+import { CompanyDetailsSkeleton } from "@/components/page-skeletons";
+import { CompanyBillingSkeleton } from "@/components/workspace-skeletons";
 import { CompanyTimeline } from "@/components/company-timeline";
 import { AssignedOwner } from "@/components/assigned-owner";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { requireWorkspaceMember } from "@/lib/auth";
 import { getCompanyDetails } from "@/lib/data/crm";
@@ -16,7 +17,7 @@ import { CompanyInvoices } from "@/components/company-invoices";
 export const instant = false;
 
 export default function CompanyPage({ params }: { params: Promise<{ id: string }> }) {
-  return <Suspense fallback={<CompanyPageSkeleton />}><CompanyPageContent params={params} /></Suspense>;
+  return <Suspense fallback={<CompanyDetailsSkeleton />}><CompanyPageContent params={params} /></Suspense>;
 }
 
 async function CompanyPageContent({ params }: { params: Promise<{ id: string }> }) {
@@ -42,15 +43,11 @@ async function CompanyPageContent({ params }: { params: Promise<{ id: string }> 
         <CompanyDetails details={details} canWrite={viewer.role !== "viewer"} />
       </TabsContent>
       {viewer.role !== "bd_manager" && <TabsContent value="invoices" keepMounted>
-        <Suspense fallback={<Skeleton className="h-44 w-full" />}><CompanyInvoices companyId={id} canWrite={viewer.role === "admin" || viewer.role === "operator"} /></Suspense>
+        <Suspense fallback={<CompanyBillingSkeleton />}><CompanyInvoices companyId={id} canWrite={viewer.role !== "viewer"} /></Suspense>
       </TabsContent>}
       <TabsContent value="history" keepMounted>
         <CompanyTimeline companyId={id} activity={details.activity} canWrite={viewer.role !== "viewer"} viewerName={viewer.displayName || viewer.email || "Staff"} />
       </TabsContent>
     </Tabs>
   </div>;
-}
-
-function CompanyPageSkeleton() {
-  return <div className="space-y-6"><Skeleton className="h-8 w-32" /><Skeleton className="h-20 w-full" /><div className="grid gap-6 xl:grid-cols-[1.35fr_.65fr]"><Skeleton className="h-[620px] w-full" /><Skeleton className="h-[520px] w-full" /></div></div>;
 }

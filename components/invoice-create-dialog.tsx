@@ -3,10 +3,12 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { InvoiceEditor } from "@/components/invoice-editor";
+import { CustomerInvoicesSkeleton } from "@/components/workspace-skeletons";
 import { Button } from "@/components/ui/button";
 import { invoiceContextUrl, invoiceRequest } from "@/lib/invoice-client";
 import { formatMoney, invoiceLabel, invoiceStatus, type Invoice, type InvoiceDocument } from "@/lib/invoices";
 import "@/app/invoices/invoices.css";
+import { canEditInvoice } from "@/lib/invoice-permissions";
 
 export type InvoiceEmailContext = {
   companyId?: string | null;
@@ -16,8 +18,9 @@ export type InvoiceEmailContext = {
   target?: "reply" | "compose";
 };
 
-export function InvoiceCreateDialog({ context, onClose, onAttach }: {
+export function InvoiceCreateDialog({ context, invoiceViewer, onClose, onAttach }: {
   context: InvoiceEmailContext;
+  invoiceViewer?: { id: string; role: string };
   onClose: () => void;
   onAttach: (invoiceId: string) => Promise<void>;
 }) {
@@ -54,8 +57,8 @@ export function InvoiceCreateDialog({ context, onClose, onAttach }: {
       // Read the current status and revision before allowing an edit.
       const { invoice } = await invoiceRequest(`/api/invoices/${id}`) as { invoice: Invoice };
       setInvoices((old) => old.map((item) => item.id === id ? invoice : item));
-      if (invoice.status !== "draft") {
-        setError("This invoice has been issued or voided. Only drafts can be edited.");
+      if (!invoiceViewer || !canEditInvoice(invoiceViewer, invoice)) {
+        setError("You can only edit permitted draft invoices. BD managers can edit their own drafts.");
         setView("list");
         return;
       }
@@ -121,7 +124,7 @@ export function InvoiceCreateDialog({ context, onClose, onAttach }: {
         <div className="invoice-workspace min-w-0 space-y-4">
           {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
           {!seed ? error ? <Button type="button" onClick={() => { setError(""); setAttempt((old) => old + 1); }}>Retry loading invoices</Button> :
-            <p role="status" className="p-6 text-sm text-muted-foreground">Loading customer invoices…</p> : null}
+            <CustomerInvoicesSkeleton /> : null}
 
           {seed && view === "list" ? (
             <>
@@ -142,7 +145,7 @@ export function InvoiceCreateDialog({ context, onClose, onAttach }: {
                     <div className="flex flex-wrap gap-2">
                       <Button type="button" disabled={busy} onClick={() => void attachPdf(invoice.id)} aria-label={`Attach PDF ${invoiceLabel(invoice)}`}>{attachingId === invoice.id ? "Preparing PDF…" : "Attach PDF"}</Button>
                       <Link href={`/invoices/${invoice.id}`} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center rounded-lg border px-3 text-sm font-medium hover:bg-muted">View invoice</Link>
-                      {invoice.status === "draft" ? <Button type="button" variant="outline" disabled={busy} onClick={() => void editInvoice(invoice.id)} aria-label={`Edit draft ${invoiceLabel(invoice)}`}>Edit draft</Button> : null}
+                      {invoiceViewer && canEditInvoice(invoiceViewer, invoice) ? <Button type="button" variant="outline" disabled={busy} onClick={() => void editInvoice(invoice.id)} aria-label={`Edit draft ${invoiceLabel(invoice)}`}>Edit draft</Button> : null}
                     </div>
                   </li>
                 ))}

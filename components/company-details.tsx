@@ -1,8 +1,10 @@
 "use client";
 
+import { AiIcon } from "@/components/ai-icon";
+
 import Link from "next/link";
 import { useActionState, useMemo, useState } from "react";
-import { Building2, CheckCircle2, Clock3, Save, Sparkles, UsersRound, Workflow } from "lucide-react";
+import { Building2, CheckCircle2, Clock3, Save, UsersRound, Workflow } from "lucide-react";
 import { updateCompany, type CrmActionState } from "@/app/crm-actions";
 import { AssignedOwner } from "@/components/assigned-owner";
 import { Badge } from "@/components/ui/badge";
@@ -63,7 +65,7 @@ export function CompanyDetails({ details, canWrite }: { details: CompanyDetailsT
   return <div className="space-y-6">
     <div className="grid gap-4 lg:grid-cols-3">
       <Card className="lg:col-span-2">
-        <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between"><div><CardTitle className="flex items-center gap-2"><Sparkles className="size-4 text-violet-600" />AI insight</CardTitle><CardDescription>Short customer summary based on the connected profile and communication history.</CardDescription></div><Badge variant="secondary" className="w-fit">Updated from activity</Badge></CardHeader>
+        <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between"><div><CardTitle className="flex items-center gap-2"><AiIcon className="size-4 text-violet-600" />AI insight</CardTitle><CardDescription>Short customer summary based on the connected profile and communication history.</CardDescription></div><Badge variant="secondary" className="w-fit">Updated from activity</Badge></CardHeader>
         <CardContent><p className="text-sm leading-6">{aiInsight}</p><div className="mt-4 flex flex-wrap gap-2">{company.tags.map((tag) => <Badge key={tag} variant="outline">{tag}</Badge>)}{!company.tags.length ? <span className="text-xs text-muted-foreground">Interest tags will appear as the conversation develops.</span> : null}</div></CardContent>
       </Card>
       <Card>
@@ -108,7 +110,7 @@ export function CompanyDetails({ details, canWrite }: { details: CompanyDetailsT
         <div className="space-y-6">
           <Card className="border-violet-200/70 bg-violet-50/40 dark:border-violet-500/20 dark:bg-violet-500/5">
             <CardHeader><div className="flex items-center justify-between gap-3"><CardTitle className="flex items-center gap-2"><Clock3 className="size-4 text-violet-600" />Next follow-up</CardTitle><Badge variant="secondary">Intelligent</Badge></div><CardDescription>{recommendation.reason}</CardDescription></CardHeader>
-            <CardContent className="space-y-4"><Field label="Scheduled date and time" id="company-followup"><Input id="company-followup" name="nextFollowupAt" type="datetime-local" value={nextFollowup} onChange={(event) => setNextFollowup(event.target.value)} /></Field><Button type="button" variant="outline" size="sm" onClick={() => setNextFollowup(recommendation.value)}><Sparkles />Use suggested time</Button><div className="flex gap-2 rounded-lg border bg-background/80 p-3 text-xs leading-5 text-muted-foreground"><Workflow className="mt-0.5 size-4 shrink-0 text-primary" /><span>Saving the date enrolls this profile in follow-up tracking. Stage and no-reply flows can act on the same customer history.</span></div></CardContent>
+            <CardContent className="space-y-4"><Field label="Scheduled date and time" id="company-followup"><Input id="company-followup" name="nextFollowupAt" type="datetime-local" value={nextFollowup} onChange={(event) => setNextFollowup(event.target.value)} /></Field><Button type="button" variant="outline" size="sm" onClick={() => setNextFollowup(recommendation.value)}><AiIcon  />Use suggested time</Button><div className="flex gap-2 rounded-lg border bg-background/80 p-3 text-xs leading-5 text-muted-foreground"><Workflow className="mt-0.5 size-4 shrink-0 text-primary" /><span>Saving the date enrolls this profile in follow-up tracking. Stage and no-reply flows can act on the same customer history.</span></div></CardContent>
           </Card>
 
           <Card>

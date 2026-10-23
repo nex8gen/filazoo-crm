@@ -9,6 +9,7 @@ import { LanguageProvider } from "@/components/language-provider";
 import { UserMenu } from "@/components/user-menu";
 import "./globals.css";
 import "./responsive.css";
+import "./tables.css";
 
 export const metadata: Metadata = {
   title: { default: "Filazoo", template: "%s · Filazoo" },

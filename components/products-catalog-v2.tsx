@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { Box, CheckSquare2, ChevronLeft, ChevronRight, Clipboard, Download, FileDown, ImageIcon, PackagePlus, Plus, Search, Trash2 } from "lucide-react";
+import { Box, CheckSquare2, ChevronLeft, ChevronRight, Clipboard, Download, FileDown, ImageIcon, PackagePlus, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { createProduct, updateProduct } from "@/app/crm-actions";
 import { downloadCatalogPdf } from "@/lib/catalog-pdf";
@@ -18,10 +18,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TableFilters, TableFilter } from "@/components/ui/table-filters";
 import { TablePagination } from "@/components/ui/table-pagination";
 import { ProductImagePicker } from "@/components/product-image-picker";
 
-const pageSize = 20;
+const pageSize = 25;
 const amount = (value: string) => parseCurrencyAmount(value).toFixed(2);
 
 function formatUpdatedAt(value: string | null) {
@@ -124,7 +125,7 @@ function ProductDialog({ product, open, onOpenChange, canWrite, mode, onSaved }:
         <Field label="Product name" id="product-name"><Input id="product-name" name="name" defaultValue={product?.name} required disabled={!canWrite} /></Field>
         <Field label="SKU" id="product-sku"><Input id="product-sku" name="sku" defaultValue={product?.sku} placeholder="PLA-CUSTOM" required disabled={!canWrite} /></Field>
         <Field label="Material" id="product-material"><Input id="product-material" name="material" defaultValue={product?.material} placeholder="PLA" required disabled={!canWrite} /></Field>
-        <Field label="Status" id="product-status"><select id="product-status" name="active" defaultValue={product?.status === "Inactive" ? "false" : "true"} disabled={!canWrite} className="h-8 w-full rounded-md border bg-background px-2 text-sm"><option value="true">Active</option><option value="false">Inactive</option></select></Field>
+        <Field label="Status" id="product-status"><Select name="active" defaultValue={product?.status === "Inactive" ? "false" : "true"} disabled={!canWrite}><SelectTrigger id="product-status" className="h-8 w-full rounded-md border bg-background px-2 text-sm"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="true">Active</SelectItem><SelectItem value="false">Inactive</SelectItem></SelectContent></Select></Field>
         <Field label="Diameter" id="product-diameter"><Input id="product-diameter" name="diameter" defaultValue={product?.diameter === "Not specified" ? "" : product?.diameter} placeholder="1.75 mm" disabled={!canWrite} /></Field>
         <Field label="Pack weight" id="product-weight"><Input id="product-weight" name="weight" defaultValue={product?.weight === "Not specified" ? "" : product?.weight} placeholder="1 kg" disabled={!canWrite} /></Field>
         <Field label="Stock status" id="product-stock"><Input id="product-stock" name="stockStatus" defaultValue={product?.stockStatus} placeholder="In stock" disabled={!canWrite} /></Field>
@@ -132,7 +133,7 @@ function ProductDialog({ product, open, onOpenChange, canWrite, mode, onSaved }:
         <div className="sm:col-span-2"><input type="hidden" name="imageUrl" value={imageUrl ?? ""} /><ProductImagePicker id="product-image" label="Product image" value={imageUrl} onChange={setImageUrl} disabled={!canWrite || saving || uploading} mode={mode} onBusyChange={onImageBusyChange} /></div>
 
         <section className="space-y-3 border-t pt-4 sm:col-span-2">
-          <div className="flex items-center justify-between"><div><p className="font-medium">Volume pricing</p><p className="text-xs text-muted-foreground">Set up to three quantity breaks.</p></div><label className="text-xs text-muted-foreground">Currency <select name="currency" defaultValue="USD" disabled={!canWrite} className="ml-2 h-8 rounded-md border bg-background px-2 text-foreground"><option>USD</option><option>EUR</option><option>GBP</option><option>CNY</option></select></label></div>
+          <div className="flex items-center justify-between"><div><p className="font-medium">Volume pricing</p><p className="text-xs text-muted-foreground">Set up to three quantity breaks.</p></div><label className="text-xs text-muted-foreground">Currency <Select name="currency" defaultValue="USD" disabled={!canWrite}><SelectTrigger className="ml-2 h-8 rounded-md border bg-background px-2 text-foreground"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="USD">USD</SelectItem><SelectItem value="EUR">EUR</SelectItem><SelectItem value="GBP">GBP</SelectItem><SelectItem value="CNY">CNY</SelectItem></SelectContent></Select></label></div>
           <div className="grid gap-3 sm:grid-cols-3">{[1, 2, 3].map((tier) => <div key={tier} className="grid grid-cols-2 gap-2 rounded-lg border bg-muted/20 p-3">
             <Field label={`Tier ${tier} qty`} id={`minimum-${tier}`}><Input id={`minimum-${tier}`} name={`minimum${tier}`} type="number" min="1" defaultValue={product?.priceTiers[tier - 1]?.minimumQuantity ?? (tier === 1 ? 1 : "")} required={tier === 1} disabled={!canWrite} /></Field>
             <Field label="Unit price" id={`price-${tier}`}><Input id={`price-${tier}`} name={`price${tier}`} type="number" min="0" step="0.01" defaultValue={product?.priceTiers[tier - 1] ? amount(product.priceTiers[tier - 1].price) : (tier === 1 ? amount(product?.price ?? "0") : "")} required={tier === 1} disabled={!canWrite} /></Field>
@@ -163,7 +164,7 @@ function CatalogDownloadDialog({ products, open, onOpenChange }: { products: Pro
   const [downloading, setDownloading] = useState(false);
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="sm:max-w-lg">
     <DialogHeader><DialogTitle>Download custom catalog</DialogTitle><DialogDescription>Landscape quotation with {products.length} selected products, current CRM pricing, and every variant. Missing images use a default photo.</DialogDescription></DialogHeader>
-    <div className="space-y-4"><Field label="Catalog title" id="catalog-title"><Input id="catalog-title" value={title} onChange={(event) => setTitle(event.target.value)} /></Field><Field label="Prepared for (optional)" id="catalog-customer"><Input id="catalog-customer" value={customer} onChange={(event) => setCustomer(event.target.value)} placeholder="Customer or company name" /></Field><div className="max-h-32 overflow-y-auto rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground"><p className="font-medium text-foreground">Selected products</p><p className="mt-1">{products.map((product) => product.name).join(", ")}</p></div></div>
+    <div className="space-y-6"><Field label="Catalog title" id="catalog-title"><Input id="catalog-title" value={title} onChange={(event) => setTitle(event.target.value)} /></Field><Field label="Prepared for (optional)" id="catalog-customer"><Input id="catalog-customer" value={customer} onChange={(event) => setCustomer(event.target.value)} placeholder="Customer or company name" /></Field><div className="max-h-32 overflow-y-auto rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground"><p className="font-medium text-foreground">Selected products</p><p className="mt-1">{products.map((product) => product.name).join(", ")}</p></div></div>
     <DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={downloading} onClick={async () => { setDownloading(true); try { await downloadCatalogPdf(products, { title, customer }); toast.success("Custom catalog downloaded."); onOpenChange(false); } catch (error) { toast.error(error instanceof Error ? error.message : "Could not generate catalog. Please try again."); } finally { setDownloading(false); } }}><FileDown />{downloading ? "Preparing PDF…" : "Download PDF"}</Button></DialogFooter>
   </DialogContent></Dialog>;
 }
@@ -173,6 +174,7 @@ export function ProductsCatalogV2({ products: initialProducts, canWrite, mode }:
   const [query, setQuery] = useState("");
   const [material, setMaterial] = useState("all");
   const [status, setStatus] = useState("all");
+  const [draft, setDraft] = useState({ query: "", material: "all", status: "all" });
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -207,40 +209,14 @@ export function ProductsCatalogV2({ products: initialProducts, canWrite, mode }:
     toast.success(`${filtered.length} products exported.`);
   }
 
-  return <><div className="crm-products-catalog flex min-h-0 flex-1 flex-col">
-    <div className="crm-table-toolbar crm-table-page-wide shrink-0 flex-wrap">
-      <div className="relative min-w-0 basis-full sm:min-w-64 sm:flex-1 sm:basis-64">
-        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} className="pl-9" placeholder="Search name, SKU, material, or variant…" aria-label="Search products" />
-      </div>
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <Select value={material} onValueChange={(value) => { setMaterial(value ?? "all"); setPage(1); }}>
-          <SelectTrigger aria-label="Filter by material" className="w-40 shrink-0">
-            <SelectValue className="truncate">{material === "all" ? "All materials" : material}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All materials</SelectItem>
-            {materials.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select value={status} onValueChange={(value) => { setStatus(value ?? "all"); setPage(1); }}>
-          <SelectTrigger aria-label="Filter by status" className="w-36 shrink-0">
-            <SelectValue>{status === "all" ? "All statuses" : status}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            <SelectItem value="Active">Active</SelectItem>
-            <SelectItem value="Inactive">Inactive</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <Button variant="outline" onClick={exportCsv} disabled={!filtered.length}><Download />CSV</Button>
-        <Button onClick={() => { setEditingProduct(null); setEditorOpen(true); }} disabled={!canWrite} title={canWrite ? "Add a product" : "Viewer access is read-only"}><Plus />Add product</Button>
-      </div>
-    </div>
+  return <><div className="crm-products-catalog flex min-w-0 flex-col gap-6">
+    <TableFilters onApply={() => { setQuery(draft.query); setMaterial(draft.material); setStatus(draft.status); setPage(1); }} actions={<><Button type="button" variant="outline" onClick={exportCsv} disabled={!filtered.length}><Download />CSV</Button><Button type="button" onClick={() => { setEditingProduct(null); setEditorOpen(true); }} disabled={!canWrite}><Plus />Add product</Button></>}>
+      <TableFilter label="Search product" search><Input value={draft.query} onChange={(event) => setDraft({ ...draft, query: event.target.value })} placeholder="Name, SKU, material, or variant" /></TableFilter>
+      <TableFilter label="Material"><Select value={draft.material} onValueChange={(value) => setDraft({ ...draft, material: value ?? "all" })}><SelectTrigger><SelectValue>{draft.material === "all" ? "All materials" : draft.material}</SelectValue></SelectTrigger><SelectContent><SelectItem value="all">All materials</SelectItem>{materials.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select></TableFilter>
+      <TableFilter label="Status"><Select value={draft.status} onValueChange={(value) => setDraft({ ...draft, status: value ?? "all" })}><SelectTrigger><SelectValue>{draft.status === "all" ? "All statuses" : draft.status}</SelectValue></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem><SelectItem value="Active">Active</SelectItem><SelectItem value="Inactive">Inactive</SelectItem></SelectContent></Select></TableFilter>
+    </TableFilters>
     {selected.size ? <div className="flex flex-col gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-2"><CheckSquare2 className="size-4 text-primary" /><p className="text-sm font-medium">{selected.size} product{selected.size === 1 ? "" : "s"} selected</p><Button variant="ghost" size="xs" onClick={() => setSelected(new Set())}>Clear</Button></div><Button size="sm" onClick={() => setDownloadOpen(true)}><PackagePlus />Create custom catalog</Button></div> : null}
-    <Card className="crm-table-frame crm-table-page-wide gap-0 overflow-hidden py-0 shadow-none"><div className="crm-product-desktop hidden min-h-0 flex-1 md:flex md:flex-col"><Table className="min-w-[1180px] table-fixed"><colgroup><col className="w-10" /><col className="w-[280px]" /><col className="w-[280px]" /><col className="w-[250px]" /><col className="w-[165px]" /><col className="w-[85px]" /><col className="w-[120px]" /></colgroup><TableHeader><TableRow className="hover:bg-transparent"><TableHead className="pl-4"><Checkbox checked={visibleSelected} onCheckedChange={() => setSelected((current) => { const next = new Set(current); visibleProducts.forEach((product) => visibleSelected ? next.delete(product.sku) : next.add(product.sku)); return next; })} aria-label="Select visible products" /></TableHead><TableHead>Product</TableHead><TableHead>Specifications</TableHead><TableHead>EXW volume pricing</TableHead><TableHead>Availability</TableHead><TableHead>Status</TableHead><TableHead className="pr-4 text-right">Updated</TableHead></TableRow></TableHeader><TableBody>
+    <Card className="crm-table-frame crm-table-page-wide gap-0 overflow-hidden py-0 shadow-none"><div className="crm-product-desktop"><Table className="min-w-[1180px] table-fixed"><colgroup><col className="w-10" /><col className="w-[280px]" /><col className="w-[280px]" /><col className="w-[250px]" /><col className="w-[165px]" /><col className="w-[85px]" /><col className="w-[120px]" /></colgroup><TableHeader><TableRow className="hover:bg-transparent"><TableHead className="pl-4"><Checkbox checked={visibleSelected} onCheckedChange={() => setSelected((current) => { const next = new Set(current); visibleProducts.forEach((product) => visibleSelected ? next.delete(product.sku) : next.add(product.sku)); return next; })} aria-label="Select visible products" /></TableHead><TableHead>Product</TableHead><TableHead>Specifications</TableHead><TableHead>EXW volume pricing</TableHead><TableHead>Availability</TableHead><TableHead>Status</TableHead><TableHead className="pr-4 text-right">Updated</TableHead></TableRow></TableHeader><TableBody>
       {visibleProducts.map((product) => <TableRow key={product.sku} className="cursor-pointer" onClick={() => { setEditingProduct(product); setEditorOpen(true); }}>
         <TableCell className="pl-4" onClick={(event) => event.stopPropagation()}><Checkbox checked={selected.has(product.sku)} onCheckedChange={() => toggleSelected(product.sku)} aria-label={`Select ${product.name}`} /></TableCell>
         <TableCell className="overflow-hidden"><button type="button" className="flex w-full min-w-0 items-center gap-3 overflow-hidden text-left" onClick={() => { setEditingProduct(product); setEditorOpen(true); }}><div className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-md border bg-muted/50">{product.imageUrl ? <Image src={product.imageUrl} alt="" width={48} height={48} unoptimized className="size-full object-cover" /> : <ImageIcon className="size-4 text-muted-foreground" />}</div><div className="min-w-0 overflow-hidden"><p className="truncate font-medium hover:text-primary" title={product.name}>{product.name}</p><p className="truncate font-mono text-xs text-muted-foreground" title={product.sku}>{product.sku}</p><p className="mt-1 truncate text-xs text-muted-foreground">{product.variants.length} variant{product.variants.length === 1 ? "" : "s"} · Click to view</p></div></button></TableCell>
@@ -252,25 +228,10 @@ export function ProductsCatalogV2({ products: initialProducts, canWrite, mode }:
       </TableRow>)}
       {!visibleProducts.length ? <TableRow><TableCell colSpan={7} className="h-32 text-center text-muted-foreground">No products match these filters.</TableCell></TableRow> : null}
     </TableBody></Table></div>
-    <section className="min-h-0 flex-1 overflow-y-auto md:hidden" aria-label="Products">
-      <label className="flex min-h-11 items-center gap-3 border-b bg-muted/30 px-4 py-2 text-sm"><Checkbox checked={visibleSelected} onCheckedChange={() => setSelected((current) => { const next = new Set(current); visibleProducts.forEach((product) => visibleSelected ? next.delete(product.sku) : next.add(product.sku)); return next; })} aria-label="Select visible products" />Select page</label>
-      <div className="divide-y">{visibleProducts.map((product) => <article key={product.sku} className="space-y-3 p-4">
-        <div className="flex items-start gap-3">
-          <div className="flex min-h-11 items-center"><Checkbox checked={selected.has(product.sku)} onCheckedChange={() => toggleSelected(product.sku)} aria-label={`Select ${product.name}`} /></div>
-          <button type="button" className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={() => { setEditingProduct(product); setEditorOpen(true); }}>
-            <span className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-lg border bg-muted/40">{product.imageUrl ? <Image src={product.imageUrl} alt="" width={48} height={48} unoptimized className="size-full object-cover" /> : <ImageIcon className="size-5 text-muted-foreground" />}</span>
-            <span className="min-w-0"><span className="block text-sm font-semibold">{product.name}</span><span className="block break-all font-mono text-xs text-muted-foreground">{product.sku}</span></span>
-          </button>
-        </div>
-        <div className="flex flex-wrap items-center gap-2"><Badge variant={product.status === "Active" ? "secondary" : "outline"}>{product.status}</Badge><span className="text-xs text-muted-foreground">{product.material} · {product.variants.length} variants</span></div>
-        <div className="flex flex-wrap gap-2" aria-label="EXW volume pricing">{product.priceTiers.length ? product.priceTiers.map((tier) => <span key={`${tier.minimumQuantity}-${tier.price}`} className="rounded-md border bg-muted/30 px-2 py-1 text-sm"><span className="text-muted-foreground">{tier.minimumQuantity}+ </span><strong className="font-semibold">{tier.price}</strong></span>) : <span className="text-sm text-muted-foreground">Price unavailable</span>}</div>
-        <p className="text-xs text-muted-foreground">{product.stockStatus} · {product.leadTime}</p>
-        <Button variant="outline" className="w-full" onClick={() => { setEditingProduct(product); setEditorOpen(true); }}>View product & variants</Button>
-      </article>)}</div>
-      {!visibleProducts.length ? <p className="p-6 text-center text-sm text-muted-foreground">No products match these filters.</p> : null}
-    </section>
-    <TablePagination page={currentPage} pageCount={pages} start={visibleProducts.length ? (currentPage - 1) * pageSize + 1 : 0} end={Math.min(currentPage * pageSize, filtered.length)} total={filtered.length} itemLabel="products" previousIcon={ChevronLeft} nextIcon={ChevronRight} onPrevious={() => setPage(currentPage - 1)} onNext={() => setPage(currentPage + 1)} onPageChange={setPage} />
+
+    
     </Card>
+<TablePagination page={currentPage} pageCount={pages} start={visibleProducts.length ? (currentPage - 1) * pageSize + 1 : 0} end={Math.min(currentPage * pageSize, filtered.length)} total={filtered.length} itemLabel="products" previousIcon={ChevronLeft} nextIcon={ChevronRight} onPrevious={() => setPage(currentPage - 1)} onNext={() => setPage(currentPage + 1)} onPageChange={setPage} />
   </div>
     {editorOpen ? <ProductDialog key={editingProduct?.sku ?? "new"} product={editingProduct} open={editorOpen} onOpenChange={setEditorOpen} canWrite={canWrite} mode={mode} onSaved={saveLocal} /> : null}
     {downloadOpen ? <CatalogDownloadDialog products={selectedProducts} open={downloadOpen} onOpenChange={setDownloadOpen} /> : null}

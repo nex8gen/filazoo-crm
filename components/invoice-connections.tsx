@@ -1,4 +1,5 @@
 "use client";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import Link from "next/link";
 import {
   useEffect,
@@ -316,24 +317,20 @@ export function InvoiceConnections({
           </label>
           <label className="grid gap-2 text-sm">
             CRM customer
-            <select
-              value={doc.companyId ?? ""}
-              disabled={busy}
-              onChange={(event) => void chooseCustomer(event.target.value)}
-            >
-              <option value="">Custom customer / no CRM link</option>
+            <Select value={doc.companyId ?? ""} disabled={busy} onValueChange={(value) => { if (value === null) return; return void chooseCustomer(value); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>
+              <SelectItem value="">Custom customer / no CRM link</SelectItem>
               {doc.companyId &&
               !customers.some((item) => item.id === doc.companyId) ? (
-                <option value={doc.companyId}>
+                <SelectItem value={doc.companyId}>
                   {currentBilling?.customer.name ?? doc.customerName} (selected)
-                </option>
+                </SelectItem>
               ) : null}
               {customers.map((customer) => (
-                <option key={customer.id} value={customer.id}>
+                <SelectItem key={customer.id} value={customer.id}>
                   {customer.name} · {customer.contacts[0]?.email ?? "No email"}
-                </option>
+                </SelectItem>
               ))}
-            </select>
+            </SelectContent></Select>
           </label>
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <Button
@@ -360,26 +357,23 @@ export function InvoiceConnections({
             <>
               <label className="grid gap-2 text-sm">
                 Billing contact
-                <select
-                  value={doc.contactId ?? ""}
-                  onChange={(event) => {
+                <Select value={doc.contactId ?? ""} onValueChange={(value) => { if (value === null) return;
                     const contact = currentBilling.customer.contacts.find(
-                      (item) => item.id === event.target.value,
+                      (item) => item.id === value,
                     );
                     onChange({
                       ...doc,
                       contactId: contact?.id,
                       customerEmail: contact?.email ?? doc.customerEmail,
                     });
-                  }}
-                >
-                  <option value="">Company billing / custom email</option>
+                   }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>
+                  <SelectItem value="">Company billing / custom email</SelectItem>
                   {currentBilling.customer.contacts.map((contact) => (
-                    <option key={contact.id} value={contact.id}>
+                    <SelectItem key={contact.id} value={contact.id}>
                       {contact.name || contact.email} · {contact.email}
-                    </option>
+                    </SelectItem>
                   ))}
-                </select>
+                </SelectContent></Select>
               </label>
               <Link
                 href={`/companies/${doc.companyId}`}
@@ -444,25 +438,21 @@ export function InvoiceConnections({
           {currentBilling?.catalogs.length ? (
             <label className="grid gap-2 text-sm">
               Add from this customer’s saved catalog
-              <select
-                value=""
-                disabled={busy}
-                onChange={(event) => {
+              <Select value="" disabled={busy} onValueChange={(value) => { if (value === null) return;
                   const catalog = currentBilling.catalogs.find(
-                    (item) => item.id === event.target.value,
+                    (item) => item.id === value,
                   );
                   if (catalog) void importCatalog(catalog);
-                }}
-              >
-                <option value="">Choose a catalog to add its products</option>
+                 }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>
+                <SelectItem value="">Choose a catalog to add its products</SelectItem>
                 {currentBilling.catalogs.map((catalog) => (
-                  <option key={catalog.id} value={catalog.id}>
+                  <SelectItem key={catalog.id} value={catalog.id}>
                     v{catalog.version} · {catalog.currency} ·{" "}
                     {catalog.price_date} · {catalog.product_skus.length}{" "}
                     products
-                  </option>
+                  </SelectItem>
                 ))}
-              </select>
+              </SelectContent></Select>
             </label>
           ) : null}
         </div>
@@ -509,22 +499,17 @@ export function InvoiceConnections({
             </div>
             <div className="flex flex-wrap gap-2">
               {product.variants.length ? (
-                <select
-                  aria-label={`Add variant of ${product.name}`}
-                  className="!w-48"
-                  value=""
-                  onChange={(event) => {
-                    if (event.target.value)
-                      addProduct(product, event.target.value);
-                  }}
-                >
-                  <option value="">Choose variant to add</option>
+                <Select value="" onValueChange={(value) => { if (value === null) return;
+                    if (value)
+                      addProduct(product, value);
+                   }}><SelectTrigger aria-label={`Add variant of ${product.name}`} className="!w-48"><SelectValue /></SelectTrigger><SelectContent>
+                  <SelectItem value="">Choose variant to add</SelectItem>
                   {product.variants.map((variant) => (
-                    <option key={variant.id} value={variant.id}>
+                    <SelectItem key={variant.id} value={variant.id}>
                       {variant.name} · {variant.sku}
-                    </option>
+                    </SelectItem>
                   ))}
-                </select>
+                </SelectContent></Select>
               ) : null}
               <Button
                 type="button"

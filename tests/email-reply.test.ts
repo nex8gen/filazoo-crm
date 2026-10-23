@@ -18,6 +18,8 @@ test("AI reply handles catalog requests and order intent separately from rewriti
   assert.match(emailReplyInstruction, /500 pieces PLA basic black/);
   assert.match(emailReplyInstruction, /DRAFT invoice/);
   assert.match(emailReplyInstruction, /untrusted data/);
+  assert.match(emailReplyInstruction, /latest message supplies shipping or billing details/);
+  assert.match(emailReplyInstruction, /Never defer it to a sales colleague/);
 });
 
 test("reply plans reject incomplete or invalid order quantities", () => {

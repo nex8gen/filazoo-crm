@@ -1,5 +1,8 @@
 "use client";
 
+import { AiIcon } from "@/components/ai-icon";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -14,13 +17,13 @@ import {
   RefreshCw,
   Search,
   ShieldAlert,
-  Sparkles,
   X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TablePagination } from "@/components/ui/table-pagination";
+import { EmailQueueSkeleton } from "@/components/workspace-skeletons";
 
 export type EmailStatusKey = "draft" | "needs_approval" | "scheduled" | "sent" | "failed";
 
@@ -107,14 +110,7 @@ function EmptyState({ title, description }: { title: string; description: string
 }
 
 function EmailTableSkeleton() {
-  return (
-    <div className="space-y-3">
-      <div className="h-10 animate-pulse rounded-lg bg-muted" />
-      {Array.from({ length: 4 }).map((_, index) => (
-        <div key={index} className="h-12 animate-pulse rounded-lg bg-muted/70" />
-      ))}
-    </div>
-  );
+  return <EmailQueueSkeleton />;
 }
 
 function EmailTabBar({ activeTab, onChange, countByTab }: { activeTab: EmailStatusKey; onChange: (tab: EmailStatusKey) => void; countByTab: Record<EmailStatusKey, number> }) {
@@ -161,19 +157,14 @@ function EmailToolbar({
     <div className="flex flex-col gap-3 border-b pb-3 xl:flex-row xl:items-center xl:justify-between">
       <div className="flex flex-1 items-center gap-2">
         <div className="relative min-w-[10rem] flex-1 xl:max-w-[11rem]">
-          <select
-            aria-label="Filter emails"
-            value={filterLabel}
-            onChange={(event) => onFilterChange(event.target.value)}
-            className="h-8 w-full rounded-lg border border-input bg-background px-2.5 pr-8 text-sm text-foreground outline-none focus-visible:border-ring"
-          >
-            <option value="All">Filter</option>
-            <option value="Owner">Owner</option>
-            <option value="Sequence">Sequence</option>
-            <option value="Company">Company</option>
-            <option value="Material">Material</option>
-            <option value="Date range">Date range</option>
-          </select>
+          <Select value={filterLabel} onValueChange={(value) => { if (value === null) return; return onFilterChange(value); }}><SelectTrigger aria-label="Filter emails" className="h-8 w-full rounded-lg border border-input bg-background px-2.5 pr-8 text-sm text-foreground outline-none focus-visible:border-ring"><SelectValue /></SelectTrigger><SelectContent>
+            <SelectItem value="All">Filter</SelectItem>
+            <SelectItem value="Owner">Owner</SelectItem>
+            <SelectItem value="Sequence">Sequence</SelectItem>
+            <SelectItem value="Company">Company</SelectItem>
+            <SelectItem value="Material">Material</SelectItem>
+            <SelectItem value="Date range">Date range</SelectItem>
+          </SelectContent></Select>
           <Filter className="pointer-events-none absolute right-2 top-2 size-3.5 text-muted-foreground" />
         </div>
         <div className="relative flex-1 xl:max-w-[18rem]">
@@ -208,13 +199,14 @@ function EmailToolbar({
 
 function EmailTable({ rows, selectedIds, onToggleRow, onOpenRow, onSort }: { rows: EmailRowData[]; selectedIds: Set<string>; onToggleRow: (id: string) => void; onOpenRow: (row: EmailRowData) => void; onSort: (field: "updatedAt" | "scheduledFor" | "subject") => void; }) {
   const [page, setPage] = useState(1);
-  const pageSize = 10;
+  const pageSize = 25;
   const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const visibleRows = rows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   return (
-    <div className="crm-table-frame crm-table-page-wide overflow-hidden border-y border-border bg-background">
+    <div className="space-y-6">
+    <div className="crm-table-frame crm-table-page-wide bg-background">
       <div className="crm-table-viewport">
         <table className="crm-table min-w-[980px] w-full">
           <thead>
@@ -257,6 +249,8 @@ function EmailTable({ rows, selectedIds, onToggleRow, onOpenRow, onSort }: { row
           </tbody>
         </table>
       </div>
+      </div>
+
       <TablePagination page={currentPage} pageCount={pageCount} start={(currentPage - 1) * pageSize + 1} end={Math.min(currentPage * pageSize, rows.length)} total={rows.length} itemLabel="emails" onPrevious={() => setPage(currentPage - 1)} onNext={() => setPage(currentPage + 1)} onPageChange={setPage} />
     </div>
   );
@@ -463,7 +457,7 @@ export function EmailsDashboard({ initialEmails }: { initialEmails: Array<Partia
           <p className="max-w-xl text-sm text-muted-foreground">Review personalized drafts and keep every outbound message controlled.</p>
         </div>
         <Button size="sm" className="w-fit gap-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-400">
-          <Sparkles className="size-3.5" />
+          <AiIcon className="size-3.5" />
           New sequence
         </Button>
       </div>
@@ -508,7 +502,7 @@ export function DeliverabilityDashboard() {
     if (activeTab === "warnings") return row.severity === "warning";
     return row.severity === "info";
   });
-  const pageSize = 10;
+  const pageSize = 25;
   const pageCount = Math.max(1, Math.ceil(visibleRows.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const pagedRows = visibleRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
@@ -543,7 +537,7 @@ export function DeliverabilityDashboard() {
         ))}
       </div>
 
-      <div className="crm-table-frame crm-table-page-wide overflow-hidden border-y border-border bg-background">
+      <div className="crm-table-frame crm-table-page-wide bg-background">
         <div className="crm-table-viewport">
           <table className="crm-table min-w-full">
             <thead>
@@ -570,8 +564,9 @@ export function DeliverabilityDashboard() {
             </tbody>
           </table>
         </div>
+        </div>
+
         <TablePagination page={currentPage} pageCount={pageCount} start={pagedRows.length ? (currentPage - 1) * pageSize + 1 : 0} end={Math.min(currentPage * pageSize, visibleRows.length)} total={visibleRows.length} itemLabel="issues" onPrevious={() => setPage(currentPage - 1)} onNext={() => setPage(currentPage + 1)} onPageChange={setPage} />
-      </div>
     </div>
   );
 }

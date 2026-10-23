@@ -1,4 +1,5 @@
 "use client";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 
 import { useCallback, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -182,19 +183,14 @@ export function InvoiceEditor({
           {textField("Due date", "dueDate", "date", true)}
           <label className="grid gap-2 text-sm">
             Currency
-            <select
-              value={doc.currency}
-              onChange={(event) =>
-                field(
+            <Select value={doc.currency} onValueChange={(value) => { if (value === null) return; return field(
                   "currency",
-                  event.target.value as InvoiceDocument["currency"],
-                )
-              }
-            >
+                  value as InvoiceDocument["currency"],
+                ); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>
               {invoiceCurrencies.map((currency) => (
-                <option key={currency}>{currency}</option>
+                <SelectItem key={currency} value={currency}>{currency}</SelectItem>
               ))}
-            </select>
+            </SelectContent></Select>
           </label>
           {textField("Reference / purchase order", "reference")}
         </section>

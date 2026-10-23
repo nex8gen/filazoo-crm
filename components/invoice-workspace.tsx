@@ -1,14 +1,18 @@
 "use client";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Plus, Printer, RefreshCw, Search } from "lucide-react";
+import { ArrowLeft, Plus, Printer, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { TablePagination } from "@/components/ui/table-pagination";
+import { TableFilters, TableFilter } from "@/components/ui/table-filters";
 import { InvoiceEditor } from "@/components/invoice-editor";
 import { invoiceRequest as api, invoiceContextUrl } from "@/lib/invoice-client";
 import { InvoicePaper } from "@/components/invoice-paper";
 import { InvoiceCreator } from "@/components/invoice-creator";
+import { canEditInvoice, canManageBilling } from "@/lib/invoice-permissions";
 import {
   formatMoney,
   invoiceLabel,
@@ -32,6 +36,7 @@ export function InvoiceWorkspace({
   companyId,
   initialError,
   canWrite,
+  invoiceViewer,
   today,
 }: {
   initial: Listing;
@@ -40,6 +45,7 @@ export function InvoiceWorkspace({
   companyId?: string;
   initialError: string;
   canWrite: boolean;
+  invoiceViewer: { id: string; role: string };
   today: string;
 }) {
   const router = useRouter();
@@ -48,6 +54,7 @@ export function InvoiceWorkspace({
   const [editor, setEditor] = useState<InvoiceDocument | null>(initialEditor);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
+  const [appliedFilters, setAppliedFilters] = useState({ search: "", status: "" });
   const [page, setPage] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(initialError);
@@ -67,12 +74,13 @@ export function InvoiceWorkspace({
       setBusy(false);
     }
   }
-  async function load(nextPage = page) {
+  async function load(nextPage = page, filters = appliedFilters) {
     const result = await api(
-      `/api/invoices?page=${nextPage}&search=${encodeURIComponent(search)}&status=${status}${companyId ? `&companyId=${companyId}` : ""}`,
+      `/api/invoices?page=${nextPage}&search=${encodeURIComponent(filters.search)}&status=${filters.status}${companyId ? `&companyId=${companyId}` : ""}`,
     );
     setListing(result);
     setPage(nextPage);
+    setAppliedFilters(filters);
   }
   async function open(id: string) {
     const result = await api(`/api/invoices/${id}`);
@@ -118,6 +126,8 @@ export function InvoiceWorkspace({
     });
   }
   const selectedStatus = selected ? invoiceStatus(selected, today) : "";
+  const canEditSelected = Boolean(selected && canEditInvoice(invoiceViewer, selected));
+  const canManage = canWrite && canManageBilling(invoiceViewer.role);
   const summary = listing.summary ?? [];
   function cancelEditor() {
     if (initialEditor && !selected)
@@ -279,15 +289,17 @@ export function InvoiceWorkspace({
               <Printer />
               Print / Save PDF
             </Button>
-            {canWrite && selected.status === "draft" ? (
+            {canWrite && canEditSelected ? (
+              <Button
+                variant="outline"
+                disabled={busy}
+                onClick={() => setEditor(selected.document)}
+              >
+                Edit draft
+              </Button>
+            ) : null}
+            {canManage && selected.status === "draft" ? (
               <>
-                <Button
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => setEditor(selected.document)}
-                >
-                  Edit draft
-                </Button>
                 <Button disabled={busy} onClick={() => setConfirm("issue")}>
                   Issue invoice
                 </Button>
@@ -300,7 +312,7 @@ export function InvoiceWorkspace({
                 </Button>
               </>
             ) : null}
-            {canWrite &&
+            {canManage &&
             selected.status === "issued" &&
             selected.paid_minor === 0 ? (
               <Button
@@ -392,7 +404,7 @@ export function InvoiceWorkspace({
                 No payments recorded.
               </p>
             )}
-            {canWrite &&
+            {canManage &&
             selected.status === "issued" &&
             selected.paid_minor < selected.total_minor ? (
               <PaymentForm
@@ -443,41 +455,10 @@ export function InvoiceWorkspace({
               detail="All matching unpaid invoices past their due date"
             />
           </div>
-          <form
-            className="flex flex-wrap items-end gap-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void run(() => load(0));
-            }}
-          >
-            <label className="grid flex-[1_1_16rem] gap-2 text-sm">
-              Search customer
-              <input
-                value={search}
-                maxLength={200}
-                placeholder="Customer or company name"
-                onChange={(event) => setSearch(event.target.value)}
-              />
-            </label>
-            <label className="grid gap-2 text-sm">
-              Status
-              <select
-                value={status}
-                onChange={(event) => setStatus(event.target.value)}
-              >
-                <option value="">All invoices</option>
-                <option value="draft">Drafts</option>
-                <option value="issued">
-                  Issued / partial / overdue / paid
-                </option>
-                <option value="void">Void</option>
-              </select>
-            </label>
-            <Button disabled={busy} type="submit" variant="outline">
-              <Search />
-              Apply
-            </Button>
-          </form>
+          <TableFilters disabled={busy} onApply={() => void run(() => load(0, { search, status }))}>
+            <TableFilter label="Search customer" search><input value={search} maxLength={200} placeholder="Customer or company name" onChange={(event) => setSearch(event.target.value)} /></TableFilter>
+            <TableFilter label="Status"><Select value={status} onValueChange={(value) => { if (value !== null) setStatus(value); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="">All invoices</SelectItem><SelectItem value="draft">Drafts</SelectItem><SelectItem value="issued">Issued / partial / overdue / paid</SelectItem><SelectItem value="void">Void</SelectItem></SelectContent></Select></TableFilter>
+          </TableFilters>
           <div className="crm-table-frame overflow-x-auto">
             <table className="crm-table min-w-[840px]">
               <thead className="border-b bg-muted/40 text-xs text-muted-foreground">
@@ -556,27 +537,7 @@ export function InvoiceWorkspace({
               </div>
             ) : null}
           </div>
-          <div className="flex items-center justify-between gap-3 text-sm">
-            <p className="text-muted-foreground">
-              Page {page + 1} · {listing.count} invoices
-            </p>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                disabled={busy || page === 0}
-                onClick={() => void run(() => load(page - 1))}
-              >
-                Previous
-              </Button>
-              <Button
-                variant="outline"
-                disabled={busy || (page + 1) * 25 >= listing.count}
-                onClick={() => void run(() => load(page + 1))}
-              >
-                Next
-              </Button>
-            </div>
-          </div>
+          <TablePagination page={page + 1} pageCount={Math.ceil(listing.count / 25)} total={listing.count} itemLabel="invoices" disabled={busy} onPrevious={() => void run(() => load(page - 1))} onNext={() => void run(() => load(page + 1))} />
         </>
       )}
     </div>
@@ -677,16 +638,12 @@ function PaymentForm({
       </label>
       <label className="grid gap-2 text-sm">
         Method
-        <select
-          value={method}
-          disabled={busy}
-          onChange={(event) => setMethod(event.target.value)}
-        >
-          <option value="bank_transfer">Bank transfer</option>
-          <option value="cash">Cash</option>
-          <option value="card">Card</option>
-          <option value="other">Other</option>
-        </select>
+        <Select value={method} disabled={busy} onValueChange={(value) => { if (value === null) return; return setMethod(value); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>
+          <SelectItem value="bank_transfer">Bank transfer</SelectItem>
+          <SelectItem value="cash">Cash</SelectItem>
+          <SelectItem value="card">Card</SelectItem>
+          <SelectItem value="other">Other</SelectItem>
+        </SelectContent></Select>
       </label>
       <label className="grid gap-2 text-sm">
         Reference

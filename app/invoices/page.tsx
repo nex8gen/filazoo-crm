@@ -10,7 +10,7 @@ export default async function InvoicesPage({
 }: {
   searchParams: Promise<{ companyId?: string }>;
 }) {
-  const viewer = await requireWorkspaceMember(["admin", "operator", "viewer"]);
+  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   const { companyId } = await searchParams;
   if (companyId && !z.uuid().safeParse(companyId).success) notFound();
   let initial;
@@ -27,6 +27,7 @@ export default async function InvoicesPage({
       initialError={error}
       companyId={companyId}
       canWrite={viewer.role !== "viewer"}
+      invoiceViewer={{ id: viewer.id, role: viewer.role }}
       today={new Date().toISOString().slice(0, 10)}
     />
   );

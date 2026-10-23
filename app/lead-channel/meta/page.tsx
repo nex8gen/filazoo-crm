@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
+import { MetaLeadsTable } from "@/components/meta-leads-table";
 import { MetaLeadRefresh } from "@/components/meta-lead-refresh";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireWorkspaceMember } from "@/lib/auth";
@@ -60,7 +61,7 @@ export default async function MetaLeadsPage() {
       </CardContent>
     </Card> : null}
     <Card><CardHeader><CardTitle>Latest submissions</CardTitle></CardHeader><CardContent>
-      {loadError ? <p role="alert" className="text-sm text-destructive">{loadError}</p> : leads.length ? <div className="crm-table-frame overflow-x-auto"><table className="crm-table"><caption className="sr-only">Latest 100 Meta form submissions</caption><thead><tr className="border-b">{["Name", "Email", "Phone", "Owner", "Form / Ad", "Submitted (UTC)"].map((label) => <th key={label} scope="col" className="p-3">{label}</th>)}</tr></thead><tbody>{leads.map((lead) => <tr key={lead.leadgen_id} className="border-b"><td className="p-3">{lead.full_name || "Name not provided"}</td><td className="p-3">{lead.email || "—"}</td><td className="p-3">{lead.phone || "—"}</td><td className="p-3">{lead.owner_id ? ownerNames.get(lead.owner_id) || "Assigned" : "Unassigned"}</td><td className="p-3">{lead.form_id || "—"} / {lead.ad_id || "—"}</td><td className="whitespace-nowrap p-3">{new Date(lead.created_at).toISOString().replace("T", " ").slice(0, 19)}</td></tr>)}</tbody></table></div> : <p className="text-sm text-muted-foreground">No Meta leads received yet. Send a test submission after connecting your form.</p>}
+      {loadError ? <p role="alert" className="text-sm text-destructive">{loadError}</p> : <MetaLeadsTable leads={leads.map((lead) => ({ ...lead, owner: lead.owner_id ? ownerNames.get(lead.owner_id) || "Assigned" : "Unassigned" }))} />}
       <p className="mt-4 text-xs text-muted-foreground">Form submissions are lead records. They do not open a Messenger conversation. <Link href="/messenger" className="underline">Open Messenger</Link></p>
     </CardContent></Card>
   </div>;

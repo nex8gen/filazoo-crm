@@ -1,7 +1,9 @@
 "use client";
 
+import { AiIcon } from "@/components/ai-icon";
+
 import { useEffect, useEffectEvent, useState } from "react";
-import { Check, LoaderCircle, RefreshCw, Sparkles } from "lucide-react";
+import { Check, RefreshCw, } from "lucide-react";
 import { parseEmailSummary, type EmailSummary } from "@/lib/ai/email-summary";
 
 export function EmailAiSummary({ context, configured, ready, currentFollowUpAt, onAnalyzed }: {
@@ -75,7 +77,7 @@ export function EmailAiSummary({ context, configured, ready, currentFollowUpAt, 
 
   return <section className="mx-6 mb-6" aria-labelledby="email-ai-summary">
     <div className="mb-3 flex items-center justify-between gap-2">
-      <h3 id="email-ai-summary" className="flex items-center gap-2 text-sm font-semibold text-primary"><Sparkles className="size-4" />AI summary</h3>
+      <h3 id="email-ai-summary" className="flex items-center gap-2 text-sm font-semibold text-primary"><AiIcon state={loading ? "thinking" : "idle"} />AI summary</h3>
       <button type="button" disabled={loading || !configured || !ready} onClick={() => setAttempt((value) => value + 1)} aria-label="Regenerate AI summary" className="rounded-md p-2 text-muted-foreground hover:bg-muted disabled:opacity-40"><RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} /></button>
     </div>
     <p className="mb-3 text-xs leading-5 text-muted-foreground">Based on this conversation and available contact details.</p>
@@ -84,9 +86,9 @@ export function EmailAiSummary({ context, configured, ready, currentFollowUpAt, 
       <div aria-live="polite" aria-busy={loading}>
         {!configured ? <p className="text-xs leading-5 text-muted-foreground">Connect an AI provider in Settings to generate conversation summaries.</p>
           : !ready ? <p className="text-xs leading-5 text-muted-foreground">Waiting for the message to load before analysis.</p>
-          : loading && !summary ? <p className="flex items-center gap-2 text-xs text-violet-700 dark:text-violet-300"><LoaderCircle className="size-4 animate-spin" />Analyzing conversation…</p>
+          : loading && !summary ? <p className="flex items-center gap-2 text-xs text-violet-700 dark:text-violet-300"><AiIcon state="thinking" />Analyzing conversation…</p>
           : error ? <div><p className="text-xs leading-5 text-muted-foreground">{error}</p><button type="button" onClick={() => setAttempt((value) => value + 1)} className="mt-2 text-xs font-semibold text-primary hover:underline">Try again</button></div>
-          : summary ? <><h4 className="flex items-start gap-2 text-sm font-semibold"><Sparkles className="mt-0.5 size-4 shrink-0 text-violet-600 dark:text-violet-300" />{summary.title}</h4><p className="mt-3 whitespace-pre-wrap text-sm leading-6">{summary.summary}</p><div className="mt-4 border-t border-violet-200/70 pt-3 dark:border-violet-500/20"><p className="text-xs font-semibold text-violet-700 dark:text-violet-300">Suggested next step</p><p className="mt-1 text-xs leading-5">{summary.nextStep}</p></div></> : null}
+          : summary ? <><h4 className="flex items-start gap-2 text-sm font-semibold"><AiIcon className="mt-0.5 size-4 shrink-0 text-violet-600 dark:text-violet-300" />{summary.title}</h4><p className="mt-3 whitespace-pre-wrap text-sm leading-6">{summary.summary}</p><div className="mt-4 border-t border-violet-200/70 pt-3 dark:border-violet-500/20"><p className="text-xs font-semibold text-violet-700 dark:text-violet-300">Suggested next step</p><p className="mt-1 text-xs leading-5">{summary.nextStep}</p></div></> : null}
       </div>
       {saveError ? <div role="status" className="mt-3 border-t border-violet-200/70 pt-3"><p className="text-xs leading-5 text-destructive">The summary is ready, but the follow-up could not be saved: {saveError}</p><button type="button" disabled={loading} onClick={() => void retrySaving()} className="mt-2 text-xs font-semibold text-primary hover:underline disabled:opacity-40">Retry saving follow-up</button></div> : null}
       {loading && summary ? <p role="status" className="mt-3 text-xs text-muted-foreground">Saving follow-up…</p> : null}

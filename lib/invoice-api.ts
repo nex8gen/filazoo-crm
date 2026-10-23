@@ -1,7 +1,8 @@
 import "server-only";
 import { getWorkspaceViewer } from "./auth";
+import { canCreateInvoices, canManageBilling, canReadInvoices } from "./invoice-permissions";
 
-export async function invoiceAccess(write = false) {
+export async function invoiceAccess(write: boolean | "draft" = false) {
   const viewer = await getWorkspaceViewer();
   if (!viewer)
     return {
@@ -10,8 +11,8 @@ export async function invoiceAccess(write = false) {
         { status: 401 },
       ),
     };
-  const roles = write ? ["admin", "operator"] : ["admin", "operator", "viewer"];
-  if (!roles.includes(viewer.role))
+  const allowed = write === "draft" ? canCreateInvoices(viewer.role) : write ? canManageBilling(viewer.role) : canReadInvoices(viewer.role);
+  if (!allowed)
     return {
       response: Response.json(
         { error: "Your role does not have access to billing." },
