@@ -1,18 +1,34 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { ChevronDown, LogOut, Settings, UserRound } from "lucide-react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
+import { ChevronRight, LogOut, Settings, UserRound } from "lucide-react";
+import { UserAvatar } from "@/components/user-avatar";
+import type { AvatarPreset } from "@/lib/profile-avatar";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
-export function UserMenuClient({ name, email, role, initials }: { name: string; email: string; role: string; initials: string }) {
+export function UserMenuClient({ userId, name, email, role, imageUrl, preset }: { userId: string; name: string; email: string; role: string; imageUrl?: string; preset?: AvatarPreset }) {
   const router = useRouter();
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger aria-label={`Open account menu for ${name}`} render={<Button variant="ghost" className="h-9 gap-2 rounded-lg px-1.5 sm:pr-2.5" />}><Avatar className="size-7"><AvatarFallback className="bg-gradient-to-br from-brand-soft to-muted text-xs font-semibold text-primary">{initials}</AvatarFallback></Avatar><span className="hidden max-w-32 truncate text-xs font-medium sm:inline">{name}</span><ChevronDown className="hidden size-3.5 text-muted-foreground transition-transform duration-150 in-data-popup-open:rotate-180 sm:block" /></DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-72"><DropdownMenuGroup><DropdownMenuLabel className="p-2.5 normal-case tracking-normal"><span className="flex items-center gap-3"><Avatar className="size-10"><AvatarFallback className="bg-gradient-to-br from-brand-soft to-muted text-sm font-semibold text-primary">{initials}</AvatarFallback></Avatar><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-foreground">{name}</span><span className="mt-0.5 block truncate text-xs font-normal text-muted-foreground">{email}</span></span><Badge variant="outline" className="capitalize">{role}</Badge></span></DropdownMenuLabel></DropdownMenuGroup><DropdownMenuSeparator /><DropdownMenuItem onClick={() => router.push("/settings")}><UserRound className="text-muted-foreground" />Profile</DropdownMenuItem><DropdownMenuItem onClick={() => router.push("/settings")}><Settings className="text-muted-foreground" />Workspace settings</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem variant="destructive" onClick={async () => { await fetch("/auth/signout", { method: "POST" }); router.push("/login"); router.refresh(); }}><LogOut />Sign out</DropdownMenuItem></DropdownMenuContent>
+      <DropdownMenuTrigger aria-label={`Open account menu for ${name}`} render={<Button variant="ghost" className="size-12 rounded-xl p-2 data-popup-open:bg-muted" />}>
+        <UserAvatar userId={userId} name={name} imageUrl={imageUrl} preset={preset} className="size-8" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="top" align="start" sideOffset={8} className="w-64 rounded-[20px] p-2 shadow-lg">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="sr-only">Account</DropdownMenuLabel>
+          <DropdownMenuItem onClick={() => router.push("/settings/profile")} className="gap-3 px-3 py-3">
+            <UserAvatar userId={userId} name={name} imageUrl={imageUrl} preset={preset} className="size-7" />
+            <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{name}</span><span className="block truncate text-xs capitalize text-muted-foreground">{role}</span><span className="block truncate text-xs text-muted-foreground">{email}</span></span>
+            <ChevronRight className="size-4 text-muted-foreground" />
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator className="mx-2 my-2" />
+        <DropdownMenuItem className="min-h-10 px-3" onClick={() => router.push("/settings/profile")}><UserRound />Profile</DropdownMenuItem>
+        <DropdownMenuItem className="min-h-10 px-3" onClick={() => router.push("/settings")}><Settings />Settings</DropdownMenuItem>
+        <DropdownMenuSeparator className="mx-2 my-2" />
+        <DropdownMenuItem className="min-h-10 px-3" onClick={async () => { await fetch("/auth/signout", { method: "POST" }); router.push("/login"); router.refresh(); }}><LogOut />Log out</DropdownMenuItem>
+      </DropdownMenuContent>
     </DropdownMenu>
   );
 }

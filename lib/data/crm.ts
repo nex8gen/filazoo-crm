@@ -8,6 +8,7 @@ import { metaOrderLabel } from "../order-estimate.ts";
 import { billingActivity, sentMailActivity, mergeCompanyActivity, type ActivityInvoice, type ActivityInvoiceEvent, type ActivityPayment, type ActivitySentMail } from "../company-activity.ts";
 import { readActivityHistory } from "./activity-history.ts";
 import { literalInvoiceEmail } from "../invoice-related.ts";
+import { AVATAR_PRESETS, ownAvatarPath, PROFILE_AVATAR_BUCKET } from "../profile-avatar.ts";
 
 type Relation<T> = T | T[] | null;
 
@@ -256,15 +257,31 @@ export async function getCompanyDetails(id: string): Promise<{ mode: DataMode; d
     const { data: members } = await admin.from("workspace_members").select("user_id,display_name").in("user_id", actorIds);
     for (const member of members ?? []) memberNames.set(member.user_id, member.display_name || "Workspace member");
   }
+  // Resolve only the actors in this authorized history. Auth metadata stays on
+  // the server; private uploaded photos use short-lived Storage URLs.
+  const actorAvatars = new Map<string, string>();
+  await Promise.allSettled(actorIds.map(async (actorId) => {
+    const { data } = await admin.auth.admin.getUserById(actorId);
+    const metadata = data.user?.user_metadata;
+    if (!metadata) return;
+    const preset = AVATAR_PRESETS.find((option) => option.id === metadata.avatar_preset);
+    if (preset) actorAvatars.set(actorId, preset.image);
+    const path = ownAvatarPath(actorId, metadata.avatar_path);
+    if (path) {
+      const { data: photo } = await admin.storage.from(PROFILE_AVATAR_BUCKET).createSignedUrl(path, 3600);
+      if (photo?.signedUrl) actorAvatars.set(actorId, photo.signedUrl);
+    }
+  }));
 
   const activity: CompanyActivity[] = mergeCompanyActivity([
     // Billing audit rows and payments provide one detailed entry per action.
-    ...events.filter((event) => !invoices.some((invoice) => invoice.id === event.data?.invoiceId && event.type.startsWith("invoice_"))).map((event) => ({
+    ...events.filter((event) => !invoices.some((invoice) => invoice.id === event.data?.invoiceId && event.type.startsWith("invoice_")) && !(event.type === "catalog_created" && (catalogsResult as CompanyCatalogRow[]).some((catalog) => catalog.id === event.data?.catalogId))).map((event) => ({
       id: `event-${event.id}`,
       type: "event" as const,
       title: event.type.replaceAll("_", " "),
       detail: typeof event.data?.summary === "string" ? event.data.summary : "Company activity recorded.",
       actor: event.actor_id ? memberNames.get(event.actor_id) || "Workspace member" : "Automation",
+      actorId: event.actor_id,
       createdAt: event.created_at,
       metadata: Object.entries(event.data ?? {}).filter(([key, value]) => key !== "summary" && value != null).map(([key, value]) => ({ label: key.replace(/([a-z])([A-Z])/g, "$1 $2").replaceAll("_", " "), value: typeof value === "object" ? JSON.stringify(value, null, 2) : String(value) })),
     })),
@@ -279,21 +296,26 @@ export async function getCompanyDetails(id: string): Promise<{ mode: DataMode; d
         messageId: email.message_id,
         metadata: [{ label: "Subject", value: email.subject || "Untitled email" }, { label: email.direction === "received" ? "From" : "To", value: contact?.email || "Unknown contact" }, { label: "Status", value: email.status.replaceAll("_", " ") }],
         direction: email.direction === "received" ? "received" as const : "sent" as const,
-        actor: email.direction === "received" ? contact?.email || "Contact" : email.approved_by ? memberNames.get(email.approved_by) || "Workspace member" : "AI automation",
+        actor: email.direction === "received" ? contact?.name || contact?.email || "Contact" : email.approved_by ? memberNames.get(email.approved_by) || "Workspace member" : "AI automation",
+        actorId: email.direction === "received" ? null : email.approved_by,
         createdAt: email.sent_at || email.created_at,
       };
     }),
-    ...(catalogsResult as CompanyCatalogRow[]).map((catalog) => ({
-      id: `catalog-${catalog.id}`,
-      type: "catalog" as const,
-      title: `Catalog v${catalog.version} created`,
-      detail: `${catalog.product_skus?.length ?? 0} products included.`,
-      actor: "Workspace",
-      createdAt: catalog.created_at,
-    })),
+    ...(catalogsResult as CompanyCatalogRow[]).map((catalog) => {
+      const creatorId = events.find((event) => event.type === "catalog_created" && event.data?.catalogId === catalog.id)?.actor_id;
+      return {
+        id: `catalog-${catalog.id}`,
+        type: "catalog" as const,
+        title: `Catalog v${catalog.version} created`,
+        detail: `${catalog.product_skus?.length ?? 0} products included.`,
+        actor: creatorId ? memberNames.get(creatorId) || "Workspace member" : "Creator not recorded",
+        actorId: creatorId,
+        createdAt: catalog.created_at,
+      };
+    }),
     ...sentMailActivity(sentMail, memberNames),
     ...billingActivity(invoices, payments, invoiceEvents, memberNames),
-  ]);
+  ]).map((item) => ({ ...item, actorAvatarUrl: item.actorId ? actorAvatars.get(item.actorId) : undefined }));
 
   const companyRow = companyResult.data as unknown as CompanyRow;
   const ownerId = first(companyRow.pipeline)?.owner_id;

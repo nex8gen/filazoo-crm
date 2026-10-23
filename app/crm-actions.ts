@@ -374,9 +374,9 @@ export async function createCatalog(_state: CrmActionState, formData: FormData):
   }
   const { data: latest } = await admin.from("catalogs").select("version").eq("company_id", company.id).order("version", { ascending: false }).limit(1).maybeSingle();
   const version = (latest?.version ?? 0) + 1;
-  const { error } = await admin.from("catalogs").insert({ company_id: company.id, product_skus: parsed.data.productSkus, currency: parsed.data.currency, version });
+  const { data: catalog, error } = await admin.from("catalogs").insert({ company_id: company.id, product_skus: parsed.data.productSkus, currency: parsed.data.currency, version }).select("id").single();
   if (error) return { error: "The catalog selection could not be saved." };
-  await admin.from("events").insert({ company_id: company.id, actor_id: viewer.id, type: "catalog_created", data: { summary: `Catalog v${version} created with ${parsed.data.productSkus.length} products.` } });
+  await admin.from("events").insert({ company_id: company.id, actor_id: viewer.id, type: "catalog_created", data: { catalogId: catalog.id, summary: `Catalog v${version} created with ${parsed.data.productSkus.length} products.` } });
   refreshCrm();
   return { success: `Catalog v${version} saved for ${company.name}.` };
 }

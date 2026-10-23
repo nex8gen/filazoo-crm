@@ -125,6 +125,8 @@ export type Invoice = {
   paid_minor: number;
   revision: number;
   creator_name?: string | null;
+  created_by?: string | null;
+  creator_avatar_url?: string;
   created_at: string;
   updated_at: string;
   invoice_payments?: InvoicePayment[];

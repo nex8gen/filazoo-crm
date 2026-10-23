@@ -135,7 +135,7 @@ export function CompaniesTable({ companies, mode, canWrite, canDelete }: { compa
   if (companies.length === 0) return <EmptyState title={mode === "live" ? "No companies yet" : "Supabase setup required"} description={mode === "live" ? "Your Supabase companies table is connected and empty. Add or import the first company to begin." : "Add a valid project secret key to the server environment, then redeploy the app."} />;
 
   return <div className="flex min-h-0 flex-1 flex-col gap-5">
-    <div className="crm-company-summary mx-5 grid shrink-0 grid-cols-2 gap-3 sm:mx-7 lg:mx-10 xl:grid-cols-4">
+    <div className="crm-company-summary grid shrink-0 grid-cols-2 gap-3 xl:grid-cols-4">
       {[
         { label: "Total companies", value: companies.length, detail: "Accounts and prospects", icon: Building2, tone: "bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300" },
         { label: "Shopify leads", value: shopifyCount, detail: "Captured from your store", icon: PackageCheck, tone: "bg-[#95bf47]/12 text-[#5c7f18] dark:text-[#b5d66e]" },

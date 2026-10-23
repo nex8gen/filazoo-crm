@@ -7,6 +7,7 @@ import {
   type InvoiceReceivable,
 } from "../invoices";
 import { validateInvoiceConnections } from "./invoice-connections";
+import { AVATAR_PRESETS, ownAvatarPath, PROFILE_AVATAR_BUCKET } from "../profile-avatar";
 
 export async function listInvoices(
   page = 0,
@@ -14,7 +15,8 @@ export async function listInvoices(
   status = "",
   companyId?: string,
 ) {
-  let query = createSupabaseAdmin()
+  const admin = createSupabaseAdmin();
+  let query = admin
     .from("invoices")
     .select("*", { count: "exact" })
     .order("number", { ascending: false });
@@ -36,8 +38,34 @@ export async function listInvoices(
   ]);
   if (error) throw error;
   if (summary.error) throw summary.error;
+  const invoices = (data ?? []) as Invoice[];
+  const creatorIds = [...new Set(invoices.flatMap((invoice) => invoice.created_by ? [invoice.created_by] : []))];
+  const creators = new Map<string, { name?: string; avatarUrl?: string }>();
+  if (creatorIds.length) {
+    const { data: members, error: membersError } = await admin.from("workspace_members").select("user_id,display_name").in("user_id", creatorIds);
+    if (membersError) throw membersError;
+    for (const member of members ?? []) creators.set(member.user_id, { name: member.display_name || undefined });
+    // Photo failures must not prevent the invoice list from loading. Resolve
+    // each distinct creator once, and keep Auth metadata on the server.
+    await Promise.allSettled(creatorIds.map(async (creatorId) => {
+      const { data: user } = await admin.auth.admin.getUserById(creatorId);
+      const metadata = user.user?.user_metadata;
+      if (!metadata) return;
+      const profile = creators.get(creatorId) ?? {};
+      profile.avatarUrl = AVATAR_PRESETS.find((preset) => preset.id === metadata.avatar_preset)?.image;
+      creators.set(creatorId, profile);
+      const path = ownAvatarPath(creatorId, metadata.avatar_path);
+      if (path) {
+        const { data: photo } = await admin.storage.from(PROFILE_AVATAR_BUCKET).createSignedUrl(path, 3600);
+        if (photo?.signedUrl) profile.avatarUrl = photo.signedUrl;
+      }
+    }));
+  }
   return {
-    invoices: data as Invoice[],
+    invoices: invoices.map((invoice) => {
+      const creator = invoice.created_by ? creators.get(invoice.created_by) : undefined;
+      return { ...invoice, creator_name: invoice.creator_name || creator?.name || (invoice.created_by ? "Workspace member" : "Creator not recorded"), creator_avatar_url: creator?.avatarUrl };
+    }),
     count: count ?? 0,
     summary: summary.data as InvoiceReceivable[],
   };

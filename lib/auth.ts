@@ -2,6 +2,7 @@ import { cache } from "react";
 import { hasSupabaseAuthConfig, hasSupabaseConfig } from "./env.ts";
 import { createSupabaseAdmin } from "./supabase/admin.ts";
 import { createClient } from "./supabase/server.ts";
+import { isAvatarPreset, type AvatarPreset } from "./profile-avatar.ts";
 
 async function getRedirect() {
   const mod = await import("next/navigation");
@@ -13,7 +14,7 @@ async function getConnection() {
   return mod.connection;
 }
 
-export type AuthViewer = { id: string; email: string | null };
+export type AuthViewer = { id: string; email: string | null; avatarPath?: string; avatarPreset?: AvatarPreset };
 export type WorkspaceRole = "admin" | "operator" | "bd_manager" | "viewer";
 export type WorkspaceViewer = AuthViewer & { role: WorkspaceRole; displayName: string | null };
 
@@ -26,7 +27,13 @@ export const getViewer = cache(async (): Promise<AuthViewer | null> => {
   const supabase = await createClient();
   const { data, error } = await supabase.auth.getClaims();
   if (error || !data?.claims?.sub) return null;
-  return { id: data.claims.sub, email: typeof data.claims.email === "string" ? data.claims.email : null };
+  const metadata = data.claims.user_metadata;
+  return {
+    id: data.claims.sub,
+    email: typeof data.claims.email === "string" ? data.claims.email : null,
+    avatarPath: typeof metadata?.avatar_path === "string" ? metadata.avatar_path : undefined,
+    avatarPreset: isAvatarPreset(metadata?.avatar_preset) ? metadata.avatar_preset : "male",
+  };
 });
 
 export async function requireViewer(): Promise<AuthViewer> {

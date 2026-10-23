@@ -362,7 +362,7 @@ function FlowCanvas({ draft, selection, insertAt, canEdit, setSelection, setInse
 
 export function FlowBuilder({ initialFlows, mailboxOptions, memberOptions, initialFlowId, canEdit, filterOptions }: { initialFlows: AutomationFlow[]; mailboxOptions: Option[]; memberOptions: Option[]; initialFlowId?: string; canEdit: boolean; filterOptions: FilterOptions }) {
   const [flows, setFlows] = useState(initialFlows);
-  const initial = initialFlowId === "default" ? initialFlows.find((flow) => flow.name === "3-step follow-up") : initialFlows.find((flow) => flow.id === initialFlowId) || initialFlows[0];
+  const initial = initialFlowId === "default" ? initialFlows.find((flow) => flow.name === "3-step follow-up") : initialFlows.find((flow) => flow.id === initialFlowId);
   const [draft, setDraft] = useState<DraftFlow | null>(initial ? toDraft(initial) : null);
   const [view, setView] = useState<"list" | "builder">(initial ? "builder" : "list");
   const [selection, updateSelection] = useState<Selection>("trigger");

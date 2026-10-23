@@ -10,6 +10,12 @@ const invoice: ActivityInvoice = {
 };
 const names = new Map([["staff", "Sourav"]]);
 
+test("automated billing actions do not inherit a staff identity", () => {
+  const [entry] = billingActivity([{ ...invoice, created_by: null }], [], [], names);
+  assert.equal(entry.actor, "System");
+  assert.equal(entry.actorId, null);
+});
+
 test("billing timeline preserves each partial payment, reference, actor, and recorded time", () => {
   const payments = [
     { id: "p1", invoice_id: invoice.id, amount_minor: 333400, paid_on: "2026-10-22", method: "bank_transfer", reference: "WIRE-1", created_by: "staff", created_at: "2026-10-23T03:12:00Z" },
@@ -23,6 +29,9 @@ test("billing timeline preserves each partial payment, reference, actor, and rec
   assert.equal(activity.length, 4);
   const payment = activity.find((item) => item.id === "payment-p1")!;
   assert.equal(payment.actor, "Sourav");
+  assert.equal(payment.actorId, "staff");
+  assert.equal(activity.find((item) => item.id === "invoice-invoice-1")?.actorId, "staff");
+  assert.equal(activity.find((item) => item.id === "invoice-event-1")?.actorId, "staff");
   assert.equal(payment.createdAt, payments[0].created_at);
   assert.equal(payment.metadata?.find((field) => field.label === "Payment reference")?.value, "WIRE-1");
   assert.equal(payment.metadata?.find((field) => field.label === "Payment date")?.value, "2026-10-22");
@@ -39,6 +48,7 @@ test("mailbox and CRM copies deduplicate by message ID while unrelated emails re
   const merged = mergeCompanyActivity([crm, other, ...mailbox]);
   assert.deepEqual(merged.map((item) => item.id), ["email-2", "mailbox-m1"]);
   assert.equal(merged[1].body, "Complete email copy");
+  assert.equal(merged[1].actorId, "staff");
   assert.ok(merged[1].metadata?.some((field) => field.value === "invoice.pdf"));
   assert.equal(mergeCompanyActivity([{ ...crm, messageId: null }, { ...other, messageId: null }]).length, 2);
 });

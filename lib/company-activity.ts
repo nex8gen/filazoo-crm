@@ -37,16 +37,16 @@ export function billingActivity(invoices: ActivityInvoice[], payments: ActivityP
     ];
     const base = { type: "invoice" as const, href: `/invoices/${invoice.id}`, metadata };
     return [
-      { ...base, id: `invoice-${invoice.id}`, title: "Invoice created", detail: `${number} · ${money(invoice.total_minor)}`, actor: actor(invoice.created_by), createdAt: invoice.created_at },
+      { ...base, id: `invoice-${invoice.id}`, title: "Invoice created", detail: `${number} · ${money(invoice.total_minor)}`, actor: actor(invoice.created_by), actorId: invoice.created_by, createdAt: invoice.created_at },
       ...events.filter((event) => event.invoice_id === invoice.id && event.action !== "payment").map((event) => ({
         ...base, id: `invoice-event-${event.id}`,
         title: ({ issue: "Invoice issued", save: "Invoice updated", void: "Invoice voided" } as Record<string, string>)[event.action] || `Invoice ${event.action.replaceAll("_", " ")}`,
-        detail: number, actor: actor(event.actor_id), createdAt: event.created_at,
+        detail: number, actor: actor(event.actor_id), actorId: event.actor_id, createdAt: event.created_at,
       })),
       ...payments.filter((payment) => payment.invoice_id === invoice.id).map((payment) => ({
         ...base, type: "payment" as const, id: `payment-${payment.id}`, title: "Payment recorded",
         detail: `${money(payment.amount_minor)} via ${payment.method.replaceAll("_", " ")} · ${number}`,
-        actor: actor(payment.created_by), createdAt: payment.created_at,
+        actor: actor(payment.created_by), actorId: payment.created_by, createdAt: payment.created_at,
         metadata: [
           { label: "Payment amount", value: money(payment.amount_minor) },
           { label: "Payment date", value: payment.paid_on },
@@ -64,7 +64,7 @@ export function sentMailActivity(messages: ActivitySentMail[], names: Map<string
   return messages.map((mail) => ({
     id: `mailbox-${mail.id}`, type: "email", title: mail.status === "failed" ? "Email failed" : "Email sent",
     detail: `${mail.subject || "Untitled email"} · ${mail.to_email}`, body: mail.body,
-    direction: "sent", actor: names.get(mail.user_id) || mail.from_email,
+    direction: "sent", actor: names.get(mail.user_id) || mail.from_email, actorId: mail.user_id,
     createdAt: mail.sent_at, messageId: mail.message_id,
     metadata: [
       { label: "From", value: mail.from_email }, { label: "To", value: mail.to_email },

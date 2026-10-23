@@ -31,7 +31,7 @@ export async function manageMailbox(_state: SettingsActionState, formData: FormD
   if (error) return { error: "The mailbox could not be changed. Please try again." };
   if (!data) return { error: "Mailbox not found or you do not have permission to manage it." };
 
-  revalidatePath("/settings");
+  revalidatePath("/settings", "layout");
   revalidatePath("/emails");
   revalidatePath("/flows");
   return { success: parsed.data.operation === "delete" ? "Mailbox connection deleted. Email history is preserved." : parsed.data.operation === "stop" ? "Mailbox stopped. Sending and syncing are disabled." : "Mailbox resumed." };
@@ -83,7 +83,7 @@ export async function updateProfile(_state: SettingsActionState, formData: FormD
     admin.auth.admin.updateUserById(viewer.id, { user_metadata: { display_name: parsed.data.displayName } }),
   ]);
   if (memberError || authError) return { error: "The profile could not be updated." };
-  revalidatePath("/settings");
+  revalidatePath("/", "layout");
   return { success: "Profile updated." };
 }
 
@@ -143,7 +143,7 @@ export async function inviteMember(_state: SettingsActionState, formData: FormDa
     return { error: "The account was created, but the invitation email could not be sent. Check the workspace SMTP connection before trying again." };
   }
 
-  revalidatePath("/settings");
+  revalidatePath("/settings", "layout");
   return { success: `Invitation sent to ${parsed.data.email}.` };
 }
 
@@ -163,7 +163,7 @@ export async function updateMemberRole(_state: SettingsActionState, formData: Fo
   ]);
   if (memberError || metadataError) return { error: "The workspace role could not be updated." };
 
-  revalidatePath("/settings");
+  revalidatePath("/settings", "layout");
   return { success: "Role updated." };
 }
 
@@ -195,7 +195,7 @@ export async function updateMember(_state: SettingsActionState, formData: FormDa
   }
 
   await admin.from("events").insert({ actor_id: viewer.id, type: "workspace_member_updated", data: { target_user_id: parsed.data.userId, summary: `${parsed.data.displayName}'s member details were updated.` } });
-  revalidatePath("/settings");
+  revalidatePath("/settings", "layout");
   return { success: "Member details updated." };
 }
 
@@ -228,7 +228,7 @@ export async function deleteMember(_state: SettingsActionState, formData: FormDa
   if (deleteError) return { error: "The member's workspace access could not be deleted." };
 
   await admin.from("events").insert({ actor_id: viewer.id, type: "workspace_member_deleted", data: { target_user_id: parsed.data.userId, target_email: target.user.email, summary: `${membership.display_name || target.user.email || "A member"} was removed from the workspace.` } });
-  revalidatePath("/settings");
+  revalidatePath("/settings", "layout");
   revalidatePath("/companies");
   revalidatePath("/pipeline");
   return { success: "Member deleted and workspace access removed." };
@@ -309,7 +309,7 @@ export async function saveWorkspaceMailbox(_state: SettingsActionState, formData
     }, { onConflict: parsed.data.mailboxId ? "id" : "email" });
     if (upsertError) throw new Error(upsertError.message);
 
-    revalidatePath("/settings");
+    revalidatePath("/settings", "layout");
     revalidatePath("/emails");
     return { success: "Workspace mailbox connected and saved. SMTP and IMAP authentication succeeded." };
   } catch (error) {
@@ -393,7 +393,7 @@ export async function savePersonalMailbox(_state: SettingsActionState, formData:
     }, { onConflict: parsed.data.mailboxId ? "id" : "email" });
     if (upsertError) throw new Error(upsertError.message);
 
-    revalidatePath("/settings");
+    revalidatePath("/settings", "layout");
     revalidatePath("/emails");
     return { success: "Personal mailbox connected and saved. SMTP and IMAP authentication succeeded." };
   } catch (error) {

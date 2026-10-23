@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { listInvoices } from "@/lib/data/invoices";
 import { formatMoney, invoiceLabel, invoiceStatus } from "@/lib/invoices";
+import { InvoiceCreator } from "@/components/invoice-creator";
 
 export async function CompanyInvoices({
   companyId,
@@ -69,6 +70,7 @@ export async function CompanyInvoices({
               >
                 {invoiceLabel(invoice)}
               </Link>
+              <InvoiceCreator invoice={invoice} />
               <span className="capitalize text-muted-foreground">
                 {invoiceStatus(invoice, today)} · due {invoice.document.dueDate}
               </span>

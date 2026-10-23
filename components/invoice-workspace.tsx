@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { InvoiceEditor } from "@/components/invoice-editor";
 import { invoiceRequest as api, invoiceContextUrl } from "@/lib/invoice-client";
 import { InvoicePaper } from "@/components/invoice-paper";
+import { InvoiceCreator } from "@/components/invoice-creator";
 import {
   formatMoney,
   invoiceLabel,
@@ -477,13 +478,14 @@ export function InvoiceWorkspace({
               Apply
             </Button>
           </form>
-          <div className="overflow-x-auto rounded-xl border">
-            <table className="w-full min-w-[680px] text-left text-sm">
+          <div className="crm-table-frame overflow-x-auto">
+            <table className="crm-table min-w-[840px]">
               <thead className="border-b bg-muted/40 text-xs text-muted-foreground">
                 <tr>
                   {[
                     "Invoice",
                     "Customer",
+                    "Created by",
                     "Due date",
                     "Status",
                     "Total",
@@ -511,6 +513,9 @@ export function InvoiceWorkspace({
                     </td>
                     <td className="max-w-64 break-words p-4">
                       {invoice.document.customerName}
+                    </td>
+                    <td className="p-4">
+                      <InvoiceCreator invoice={invoice} />
                     </td>
                     <td className="whitespace-nowrap p-4">
                       {invoice.document.dueDate}

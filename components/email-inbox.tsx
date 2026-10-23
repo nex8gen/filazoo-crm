@@ -7,7 +7,7 @@ import type { InvoiceEmailContext } from "@/components/invoice-create-dialog";
 import { mergeInvoiceAttachment } from "@/lib/invoice-pdf-meta";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Archive, ArrowLeft, ChevronLeft, ChevronRight, PanelRight, MailOpen, Bot, Building2, CalendarClock, Check,
+  Archive, ArrowLeft, ChevronLeft, ChevronRight, PanelRight, MailOpen, Bot, CalendarClock, Check,
   Clock3, FileText, Filter, Forward, Inbox, Languages, Mail, MoreHorizontal,
   LoaderCircle, Library, Paperclip, Plus, RefreshCw, Reply, Search, Send,
   Smile, Sparkles, Star, Trash2, WandSparkles, Workflow, X, ReceiptText,
@@ -19,12 +19,14 @@ import {
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { InboxCalculator } from "@/components/inbox-calculator";
 import { EmailMessageList } from "@/components/email-message-list";
 import { EmailAiSummary } from "@/components/email-ai-summary";
 import { EmailAiTypewriter } from "@/components/email-ai-typewriter";
 import "./email-workspace.css";
 import "./email-ai-writing.css";
 import { AssignedOwner } from "@/components/assigned-owner";
+import { ContactSummary } from "@/components/contact-summary";
 import { groupEmailConversations, replyReferences, replyTarget, threadKeyForEmail } from "@/lib/email-threading";
 import { buildCatalogPdfWithImages } from "@/lib/catalog-pdf";
 import { splitQuotedEmail } from "@/lib/email-content";
@@ -94,10 +96,6 @@ const categoryStyles: Record<Category, string> = {
   "Big order": "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300",
   "No action": "border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-500/30 dark:bg-slate-500/10 dark:text-slate-300",
 };
-
-function initials(name: string) {
-  return name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
-}
 
 function formatTime(value: string) {
   const date = new Date(value);
@@ -1104,7 +1102,7 @@ export function EmailInboxWorkspace({
                 <div className="overflow-hidden rounded-xl border bg-background focus-within:border-primary/50">
                   <textarea ref={replyInput} aria-label="Reply message" value={draft} onChange={(event) => updateDraft(event.target.value)} placeholder={`Write in Chinese or English to reply to ${replyRecipient}…`} className="min-h-24 w-full resize-none bg-transparent p-3.5 text-sm leading-6 outline-none" />
                   <AttachmentChips attachments={replyAttachments} onRemove={(id) => setReplyAttachments((current) => current.filter((item) => item.id !== id))} />
-                  <div className="flex items-center justify-between border-t px-2 py-2"><div className="flex gap-1"><input ref={replyFileInput} type="file" multiple accept=".pdf,.csv,.txt,.jpg,.jpeg,.png,.webp,.gif,.doc,.docx,.xls,.xlsx" className="hidden" onChange={(event) => { void addFiles(event.target.files, "reply"); event.target.value = ""; }} /><button type="button" disabled={attachmentBusy} title="Attach files" onClick={() => replyFileInput.current?.click()} className="rounded-md p-2 text-muted-foreground hover:bg-muted disabled:opacity-40"><Paperclip className="size-4" /></button><button type="button" title="Attach product catalog" onClick={() => openCatalogPicker("reply")} className="rounded-md p-2 text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-500/10"><Library className="size-4" /></button>{canCreateInvoices ? <button type="button" title="Customer invoices" aria-label="Customer invoices" onClick={()=>setInvoiceContext({companyId:selected.companyId,email:replyRecipient,threadId:selectedConversation?.id,customerName:selected.company,target:"reply"})} className="rounded-md p-2 text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-500/10"><ReceiptText className="size-4" /></button> : null}<button type="button" title="Add emoji" onClick={() => setDraft((value) => `${value}${value ? " " : ""}😊`)} className="rounded-md p-2 text-muted-foreground hover:bg-muted"><Smile className="size-4" /></button><button type="button" title="Start an AI-written reply" onClick={() => setDraft((value) => value || `你好，${(selected.contactName || selected.customerProfile?.contactName || selected.contact).split(" ")[0]}，\n\n感谢您的来信。我们很乐意为您提供帮助。\n\n此致\nFilazoo`)} className="rounded-md p-2 text-violet-600 hover:bg-violet-50"><WandSparkles className="size-4" /></button></div><button type="button" onClick={saveReply} disabled={!draft.trim() || sending || aiWriting || attachmentBusy} className="inline-flex h-9 items-center gap-2 rounded-md bg-foreground px-3 text-xs font-semibold text-background disabled:opacity-40"><Send className="size-4" />{sending ? "Sending..." : aiWriting ? "Writing..." : aiDraft && aiDraftSource === draft.trim() ? "Send AI draft" : "Send email"}</button></div>
+                  <div className="flex items-center justify-between border-t px-2 py-2"><div className="flex gap-1"><input ref={replyFileInput} type="file" multiple accept=".pdf,.csv,.txt,.jpg,.jpeg,.png,.webp,.gif,.doc,.docx,.xls,.xlsx" className="hidden" onChange={(event) => { void addFiles(event.target.files, "reply"); event.target.value = ""; }} /><button type="button" disabled={attachmentBusy} title="Attach files" onClick={() => replyFileInput.current?.click()} className="rounded-md p-2 text-muted-foreground hover:bg-muted disabled:opacity-40"><Paperclip className="size-4" /></button><button type="button" title="Attach product catalog" onClick={() => openCatalogPicker("reply")} className="rounded-md p-2 text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-500/10"><Library className="size-4" /></button>{canCreateInvoices ? <button type="button" title="Customer invoices" aria-label="Customer invoices" onClick={()=>setInvoiceContext({companyId:selected.companyId,email:replyRecipient,threadId:selectedConversation?.id,customerName:selected.company,target:"reply"})} className="rounded-md p-2 text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-500/10"><ReceiptText className="size-4" /></button> : null}<button type="button" title="Add emoji" onClick={() => setDraft((value) => `${value}${value ? " " : ""}😊`)} className="rounded-md p-2 text-muted-foreground hover:bg-muted"><Smile className="size-4" /></button><button type="button" title="Start an AI-written reply" onClick={() => setDraft((value) => value || `你好，${(selected.contactName || selected.customerProfile?.contactName || selected.contact).split(" ")[0]}，\n\n感谢您的来信。我们很乐意为您提供帮助。\n\n此致\nFilazoo`)} className="rounded-md p-2 text-violet-600 hover:bg-violet-50"><WandSparkles className="size-4" /></button><InboxCalculator /></div><button type="button" onClick={saveReply} disabled={!draft.trim() || sending || aiWriting || attachmentBusy} className="inline-flex h-9 items-center gap-2 rounded-md bg-foreground px-3 text-xs font-semibold text-background disabled:opacity-40"><Send className="size-4" />{sending ? "Sending..." : aiWriting ? "Writing..." : aiDraft && aiDraftSource === draft.trim() ? "Send AI draft" : "Send email"}</button></div>
                 </div>
                 {notice ? <p className="mt-2 text-xs text-muted-foreground" role="status">{notice}</p> : null}
               </div>
@@ -1116,19 +1114,7 @@ export function EmailInboxWorkspace({
         {selected ? <aside key={`details-${selectedConversation?.id}`} className="mail-details border-l bg-background" aria-label="Email follow-up details">
           <div className="flex h-16 items-center justify-between border-b px-5"><h2 className="text-sm font-semibold">Contact & follow-up</h2><button type="button" aria-label="Close contact details" onClick={() => setDetailsOpen(false)} className="rounded p-1 hover:bg-muted"><X className="size-4" /></button></div>
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <section className="p-6" aria-label="Contact">
-              <div className="flex items-start gap-3">
-                <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-sm font-semibold text-primary">{initials(selected.contactName || selected.contact)}</div>
-                <div className="min-w-0 pt-0.5"><p className="break-words text-sm font-semibold [overflow-wrap:anywhere]">{selected.contactName || selected.contact}</p>{selected.contactName && selected.contactName !== selected.contact ? <p className="mt-1 break-words text-xs text-muted-foreground [overflow-wrap:anywhere]">{selected.contact}</p> : null}<p className="mt-1 break-words text-xs text-muted-foreground">{selected.company}</p></div>
-              </div>
-              <div className="mt-5 overflow-hidden rounded-xl border bg-muted/30">
-                <AssignedOwner name={selected.ownerName || "Unassigned"} initials={selected.ownerInitials || "—"} assigned={Boolean(selected.ownerId)} label="Owner" className="flex w-full px-3 py-3 [&>span:last-child]:flex-1 [&>span:last-child>span:last-child]:max-w-none" />
-                {selected.companyId ? <div aria-label="Customer shortcuts" className={`grid gap-2 border-t p-2 ${canCreateInvoices ? "grid-cols-2" : "grid-cols-1"}`}>
-                  <Link href={`/companies/${selected.companyId}`} className="inline-flex min-h-9 min-w-0 items-center justify-center gap-1.5 rounded-lg border bg-background px-2 text-xs font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"><Building2 className="size-3.5 shrink-0" /><span>CRM profile</span><ChevronRight className="size-3.5 shrink-0" /></Link>
-                  {canCreateInvoices ? <Link href={`/invoices?companyId=${selected.companyId}`} target="_blank" rel="noreferrer" className="inline-flex min-h-9 min-w-0 items-center justify-center gap-1.5 rounded-lg border bg-background px-2 text-xs font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"><ReceiptText className="size-3.5 shrink-0" /><span>Invoices</span></Link> : null}
-                </div> : null}
-              </div>
-            </section>
+            <ContactSummary name={selected.contactName || selected.contact} email={selected.contact} company={selected.company} companyId={selected.companyId} ownerName={selected.ownerName} ownerInitials={selected.ownerInitials} ownerId={selected.ownerId} canCreateInvoices={canCreateInvoices} />
             <EmailAiSummary
               key={JSON.stringify([selected.id, selected.body, conversationContext, selected.customerProfile])}
               configured={aiConfigured}

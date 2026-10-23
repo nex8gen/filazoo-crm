@@ -71,6 +71,8 @@ export type CompanyActivity = {
   body?: string;
   direction?: "received" | "sent";
   actor: string;
+  actorId?: string | null;
+  actorAvatarUrl?: string;
   createdAt: string;
   metadata?: { label: string; value: string }[];
   href?: string;
