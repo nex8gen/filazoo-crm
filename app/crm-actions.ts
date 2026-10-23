@@ -11,6 +11,19 @@ import { claimNextBdSalesManager } from "@/lib/lead-assignment";
 
 export type CrmActionState = { error?: string; success?: string } | undefined;
 
+export async function addCompanyComment(companyId: string, _state: CrmActionState, formData: FormData): Promise<CrmActionState> {
+  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
+  const parsed = z.object({ companyId: z.uuid(), comment: z.string().trim().min(1).max(5000) }).safeParse({ companyId, comment: formData.get("comment") });
+  if (!parsed.success) return { error: "Enter a comment of up to 5,000 characters." };
+  const admin = createSupabaseAdmin();
+  const { data: company, error: companyError } = await admin.from("companies").select("id").eq("id", parsed.data.companyId).maybeSingle();
+  if (companyError || !company) return { error: "This customer profile could not be found." };
+  const { error } = await admin.from("events").insert({ company_id: company.id, actor_id: viewer.id, type: "staff_comment", data: { summary: parsed.data.comment } });
+  if (error) return { error: "Your comment could not be posted. Please try again." };
+  revalidatePath(`/companies/${company.id}`);
+  return { success: "Comment posted." };
+}
+
 const optionalText = (max: number) => z.string().trim().max(max).optional().or(z.literal(""));
 const optionalDateTime = z.union([
   z.literal(""),

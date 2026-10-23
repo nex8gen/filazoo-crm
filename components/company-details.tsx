@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useActionState, useMemo, useState } from "react";
-import { Bot, Building2, CheckCircle2, Clock3, FileText, Mail, Save, Sparkles, UserRound, UsersRound, Workflow } from "lucide-react";
+import { Building2, CheckCircle2, Clock3, Save, Sparkles, UsersRound, Workflow } from "lucide-react";
 import { updateCompany, type CrmActionState } from "@/app/crm-actions";
 import { AssignedOwner } from "@/components/assigned-owner";
 import { Badge } from "@/components/ui/badge";
@@ -46,12 +46,6 @@ function suggestedFollowup(stage: PipelineStageValue, activity: CompanyActivity[
     lost: "Place the profile into a light 30-day re-engagement cycle.",
   };
   return { value: toLocalDateTime(next.toISOString()), reason: reason[stage] };
-}
-
-function ActivityIcon({ item }: { item: CompanyActivity }) {
-  if (item.type === "email") return <Mail className="size-4" />;
-  if (item.type === "catalog") return <FileText className="size-4" />;
-  return item.actor === "Automation" ? <Bot className="size-4" /> : <UserRound className="size-4" />;
 }
 
 export function CompanyDetails({ details, canWrite }: { details: CompanyDetailsType; canWrite: boolean }) {
@@ -130,9 +124,5 @@ export function CompanyDetails({ details, canWrite }: { details: CompanyDetailsT
       </fieldset>
     </form>
 
-    <Card>
-      <CardHeader className="sm:flex-row sm:items-end sm:justify-between"><div><CardTitle>Activity</CardTitle><CardDescription>Complete email, reply, catalog, automation, and profile history in one timeline.</CardDescription></div><Badge variant="outline">{details.activity.length} events</Badge></CardHeader>
-      <CardContent>{details.activity.length ? <ol className="grid gap-0 lg:grid-cols-2 lg:gap-x-8">{details.activity.map((item) => <li key={item.id} className="relative flex gap-3 border-b py-4 first:pt-0 last:border-0"><span className="grid size-7 shrink-0 place-items-center rounded-full border bg-card text-muted-foreground"><ActivityIcon item={item} /></span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-medium capitalize">{item.title}</p>{item.direction ? <Badge variant={item.direction === "received" ? "default" : "secondary"} className="text-xs">{item.direction === "received" ? "Reply" : "Sent"}</Badge> : null}<Badge variant="outline" className="text-xs">{item.actor}</Badge></div><p className="mt-1 text-xs leading-5 text-muted-foreground">{item.detail}</p>{item.body ? <p className="mt-2 line-clamp-3 whitespace-pre-wrap rounded-md bg-muted/60 p-2 text-xs leading-5 text-muted-foreground">{item.body}</p> : null}<time className="mt-2 block text-xs text-muted-foreground" dateTime={item.createdAt}>{new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.createdAt))}</time></div></li>)}</ol> : <p className="text-sm text-muted-foreground">No activity has been recorded yet.</p>}</CardContent>
-    </Card>
   </div>;
 }

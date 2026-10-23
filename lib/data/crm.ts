@@ -5,6 +5,9 @@ import { createSupabaseAdmin } from "../supabase/admin.ts";
 import type { ActivityItem, Catalog, Company, CompanyActivity, CompanyDetails, ContactOption, DataMode, EmailDraft, Product, Reply } from "../types.ts";
 import { variantsFromTags } from "../product-utils.ts";
 import { metaOrderLabel } from "../order-estimate.ts";
+import { billingActivity, sentMailActivity, mergeCompanyActivity, type ActivityInvoice, type ActivityInvoiceEvent, type ActivityPayment, type ActivitySentMail } from "../company-activity.ts";
+import { readActivityHistory } from "./activity-history.ts";
+import { literalInvoiceEmail } from "../invoice-related.ts";
 
 type Relation<T> = T | T[] | null;
 
@@ -143,7 +146,7 @@ export function getCrmDataMode(): DataMode {
 
 async function authorizeLiveRead() {
   if (getCrmDataMode() === "live" && env.authRequired) {
-    await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
+    return await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   }
 }
 
@@ -209,43 +212,61 @@ async function queryCompanies(): Promise<Company[]> {
 }
 
 type CompanyEventRow = { id: string; type: string; data: Record<string, unknown> | null; actor_id: string | null; created_at: string };
-type CompanyEmailRow = { id: string; subject: string | null; body: string | null; status: string; direction: string; approved_by: string | null; sent_at: string | null; created_at: string; contacts: Relation<{ name: string | null; email: string }> };
+type CompanyEmailRow = { id: string; message_id: string | null; subject: string | null; body: string | null; status: string; direction: string; approved_by: string | null; sent_at: string | null; created_at: string; contacts: Relation<{ name: string | null; email: string }> };
 type CompanyCatalogRow = { id: string; version: number; product_skus: string[] | null; created_at: string };
 
 export async function getCompanyDetails(id: string): Promise<{ mode: DataMode; details: CompanyDetails | null }> {
   const mode = getCrmDataMode();
   if (mode === "demo") return { mode, details: null };
-  await authorizeLiveRead();
+  const viewer = await authorizeLiveRead();
   const admin = createSupabaseAdmin();
   const [companyResult, contactsResult, eventsResult, emailsResult, catalogsResult] = await Promise.all([
     admin.from("companies").select("id,name,website,domain,country,city,segment,source,status,meta_leads(created_at,field_data),company_profiles(summary,fit_score,interest_tags),contacts(id,name,role,email,verification_status,emails(status,direction,created_at)),pipeline(stage,next_followup_at,estimated_order_quantity,estimated_value,currency,owner_id)").eq("id", id).maybeSingle(),
     admin.from("contacts").select("id,name,role,email,verification_status").eq("company_id", id).order("created_at"),
-    admin.from("events").select("id,type,data,actor_id,created_at").eq("company_id", id).order("created_at", { ascending: false }).limit(200),
-    admin.from("emails").select("id,subject,body,status,direction,approved_by,sent_at,created_at,contacts!inner(name,email,company_id)").eq("contacts.company_id", id).order("created_at", { ascending: false }).limit(200),
-    admin.from("catalogs").select("id,version,product_skus,created_at").eq("company_id", id).order("created_at", { ascending: false }).limit(100),
+    readActivityHistory((from, to) => admin.from("events").select("id,type,data,actor_id,created_at").eq("company_id", id).order("created_at", { ascending: false }).order("id").range(from, to)),
+    readActivityHistory((from, to) => admin.from("emails").select("id,message_id,subject,body,status,direction,approved_by,sent_at,created_at,contacts!inner(name,email,company_id)").eq("contacts.company_id", id).order("created_at", { ascending: false }).order("id").range(from, to)),
+    readActivityHistory((from, to) => admin.from("catalogs").select("id,version,product_skus,created_at").eq("company_id", id).order("created_at", { ascending: false }).order("id").range(from, to)),
   ]);
   if (companyResult.error) throw new Error(`Unable to load company: ${companyResult.error.message}`);
   if (!companyResult.data) return { mode, details: null };
-  const failures = [contactsResult.error, eventsResult.error, emailsResult.error, catalogsResult.error].filter(Boolean);
+  const failures = [contactsResult.error].filter(Boolean);
   if (failures.length) throw new Error(`Unable to load company activity: ${failures[0]?.message}`);
 
-  const events = (eventsResult.data ?? []) as CompanyEventRow[];
-  const emails = (emailsResult.data ?? []) as unknown as CompanyEmailRow[];
-  const actorIds = [...new Set([...events.map((event) => event.actor_id), ...emails.map((email) => email.approved_by)].filter((value): value is string => Boolean(value)))];
+  const events = eventsResult as CompanyEventRow[];
+  const emails = emailsResult as unknown as CompanyEmailRow[];
+  const addresses = [...new Set((contactsResult.data ?? []).map((contact) => contact.email))];
+  const [sentMail, invoiceGroups] = await Promise.all([
+    addresses.length ? readActivityHistory<ActivitySentMail>((from, to) => admin.from("mailbox_sent_messages").select("id,user_id,from_email,to_email,subject,body,status,sent_at,message_id,attachments").in("to_email", addresses).order("sent_at", { ascending: false }).order("id").range(from, to)) : Promise.resolve([]),
+    // Keep the invoice workspace's existing role boundary. Legacy invoices
+    // match exact customer emails only when not linked to another company.
+    viewer?.role === "bd_manager" ? Promise.resolve([]) : Promise.all([
+      readActivityHistory<ActivityInvoice>((from, to) => admin.from("invoices").select("id,number,status,total_minor,paid_minor,created_by,created_at,document").eq("company_id", id).order("id").range(from, to)),
+      ...addresses.map((email) => readActivityHistory<ActivityInvoice>((from, to) => admin.from("invoices").select("id,number,status,total_minor,paid_minor,created_by,created_at,document").is("company_id", null).ilike("document->>customerEmail", literalInvoiceEmail(email)).order("id").range(from, to))),
+    ]),
+  ]);
+  const invoices = [...new Map(invoiceGroups.flat().map((invoice) => [invoice.id, invoice])).values()];
+  const invoiceIds = invoices.map((invoice) => invoice.id);
+  const [payments, invoiceEvents] = invoiceIds.length ? await Promise.all([
+    readActivityHistory<ActivityPayment>((from, to) => admin.from("invoice_payments").select("*").in("invoice_id", invoiceIds).order("id").range(from, to)),
+    readActivityHistory<ActivityInvoiceEvent>((from, to) => admin.from("invoice_events").select("*").in("invoice_id", invoiceIds).order("id").range(from, to)),
+  ]) : [[], []];
+  const actorIds = [...new Set([...events.map((event) => event.actor_id), ...emails.map((email) => email.approved_by), ...sentMail.map((mail) => mail.user_id), ...invoices.map((invoice) => invoice.created_by), ...payments.map((payment) => payment.created_by), ...invoiceEvents.map((event) => event.actor_id)].filter((value): value is string => Boolean(value)))];
   const memberNames = new Map<string, string>();
   if (actorIds.length) {
     const { data: members } = await admin.from("workspace_members").select("user_id,display_name").in("user_id", actorIds);
     for (const member of members ?? []) memberNames.set(member.user_id, member.display_name || "Workspace member");
   }
 
-  const activity: CompanyActivity[] = [
-    ...events.map((event) => ({
+  const activity: CompanyActivity[] = mergeCompanyActivity([
+    // Billing audit rows and payments provide one detailed entry per action.
+    ...events.filter((event) => !invoices.some((invoice) => invoice.id === event.data?.invoiceId && event.type.startsWith("invoice_"))).map((event) => ({
       id: `event-${event.id}`,
       type: "event" as const,
       title: event.type.replaceAll("_", " "),
       detail: typeof event.data?.summary === "string" ? event.data.summary : "Company activity recorded.",
       actor: event.actor_id ? memberNames.get(event.actor_id) || "Workspace member" : "Automation",
       createdAt: event.created_at,
+      metadata: Object.entries(event.data ?? {}).filter(([key, value]) => key !== "summary" && value != null).map(([key, value]) => ({ label: key.replace(/([a-z])([A-Z])/g, "$1 $2").replaceAll("_", " "), value: typeof value === "object" ? JSON.stringify(value, null, 2) : String(value) })),
     })),
     ...emails.map((email) => {
       const contact = first(email.contacts);
@@ -255,12 +276,14 @@ export async function getCompanyDetails(id: string): Promise<{ mode: DataMode; d
         title: email.direction === "received" ? "Email received" : `Email ${email.status.replaceAll("_", " ")}`,
         detail: `${email.subject || "Untitled email"}${contact ? ` · ${contact.name || contact.email}` : ""}`,
         body: email.body || undefined,
+        messageId: email.message_id,
+        metadata: [{ label: "Subject", value: email.subject || "Untitled email" }, { label: email.direction === "received" ? "From" : "To", value: contact?.email || "Unknown contact" }, { label: "Status", value: email.status.replaceAll("_", " ") }],
         direction: email.direction === "received" ? "received" as const : "sent" as const,
         actor: email.direction === "received" ? contact?.email || "Contact" : email.approved_by ? memberNames.get(email.approved_by) || "Workspace member" : "AI automation",
         createdAt: email.sent_at || email.created_at,
       };
     }),
-    ...((catalogsResult.data ?? []) as CompanyCatalogRow[]).map((catalog) => ({
+    ...(catalogsResult as CompanyCatalogRow[]).map((catalog) => ({
       id: `catalog-${catalog.id}`,
       type: "catalog" as const,
       title: `Catalog v${catalog.version} created`,
@@ -268,7 +291,9 @@ export async function getCompanyDetails(id: string): Promise<{ mode: DataMode; d
       actor: "Workspace",
       createdAt: catalog.created_at,
     })),
-  ].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+    ...sentMailActivity(sentMail, memberNames),
+    ...billingActivity(invoices, payments, invoiceEvents, memberNames),
+  ]);
 
   const companyRow = companyResult.data as unknown as CompanyRow;
   const ownerId = first(companyRow.pipeline)?.owner_id;

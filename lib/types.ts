@@ -65,13 +65,16 @@ export type CompanyContact = {
 
 export type CompanyActivity = {
   id: string;
-  type: "event" | "email" | "catalog";
+  type: "event" | "email" | "catalog" | "invoice" | "payment";
   title: string;
   detail: string;
   body?: string;
   direction?: "received" | "sent";
   actor: string;
   createdAt: string;
+  metadata?: { label: string; value: string }[];
+  href?: string;
+  messageId?: string | null;
 };
 
 export type CompanyDetails = {

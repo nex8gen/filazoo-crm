@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import dynamic from "next/dynamic";
+import { Orb } from "orb-ui";
 import type { InvoiceEmailContext } from "@/components/invoice-create-dialog";
 import { mergeInvoiceAttachment } from "@/lib/invoice-pdf-meta";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -20,7 +21,9 @@ import {
 } from "@/components/ui/dialog";
 import { EmailMessageList } from "@/components/email-message-list";
 import { EmailAiSummary } from "@/components/email-ai-summary";
+import { EmailAiTypewriter } from "@/components/email-ai-typewriter";
 import "./email-workspace.css";
+import "./email-ai-writing.css";
 import { AssignedOwner } from "@/components/assigned-owner";
 import { groupEmailConversations, replyReferences, replyTarget, threadKeyForEmail } from "@/lib/email-threading";
 import { buildCatalogPdfWithImages } from "@/lib/catalog-pdf";
@@ -528,7 +531,6 @@ export function EmailInboxWorkspace({
     const timer = window.setTimeout(() => {
       setAiWriting(true);
       setAiWritingError(null);
-      setAiDraft("");
       void fetch("/api/email/assist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -552,8 +554,6 @@ export function EmailInboxWorkspace({
         if (error instanceof DOMException && error.name === "AbortError") return;
         if (aiRequestId.current === requestId) {
           setAiWritingError(error instanceof Error ? error.message : "Unable to write this email.");
-          setAiDraft("");
-          setAiDraftSource("");
         }
       }).finally(() => {
         if (aiRequestId.current === requestId) setAiWriting(false);
@@ -570,10 +570,18 @@ export function EmailInboxWorkspace({
     conversationScroll.current?.scrollTo({ top: 0 });
   }, [selectedConversation?.id]);
 
+  const aiPreviewVisible = aiReplyOn && draft.trim().length >= 2 && Boolean(aiWriting || aiDraft || aiWritingError || aiConfigured);
+  const aiUpdating = aiReplyOn && aiConfigured && draft.trim().length >= 2
+    && (aiWriting || (!aiWritingError && aiDraftSource !== draft.trim()));
+
   useEffect(() => {
-    if (!aiReplyOn || (!aiWriting && !aiDraft && !aiWritingError)) return;
-    conversationScroll.current?.scrollTo({ top: conversationScroll.current.scrollHeight, behavior: "smooth" });
-  }, [aiDraft, aiReplyOn, aiWriting, aiWritingError]);
+    // Reveal once; refreshing the draft must not move the reader.
+    if (!aiPreviewVisible) return;
+    conversationScroll.current?.scrollTo({
+      top: conversationScroll.current.scrollHeight,
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+    });
+  }, [aiPreviewVisible]);
 
   const folderCounts = useMemo(() => {
     const counts: Record<Folder, number> = { inbox: 0, unread: 0, followup: 0, all: 0, drafts: 0, scheduled: 0, sent: 0, starred: 0, archive: 0, trash: 0 };
@@ -1043,7 +1051,45 @@ export function EmailInboxWorkspace({
             <div className="flex min-h-20 shrink-0 items-center justify-between gap-3 border-b bg-background px-5"><div className="min-w-0"><h2 className="text-base font-semibold">{selected.subject}</h2><p className="mt-1 text-xs text-muted-foreground">{selected.direction === "inbound" ? "From" : "To"} {selected.contact} · {selected.company}</p></div><div className="flex items-center gap-3"><AssignedOwner name={selected.ownerName || "Unassigned"} initials={selected.ownerInitials || "—"} assigned={Boolean(selected.ownerId)} compact className="hidden lg:inline-flex" /><div className="flex items-center gap-1"><button type="button" title={starred.has(selected.id) ? "Remove star" : "Star email"} onClick={() => toggleStar(selected.id)} className={`rounded-md p-2 hover:bg-muted ${starred.has(selected.id) ? "text-amber-500" : "text-muted-foreground"}`}><Star className="size-4" fill={starred.has(selected.id) ? "currentColor" : "none"} /></button><button type="button" title="Archive" onClick={() => void moveSelected("archive")} className="rounded-md p-2 text-muted-foreground hover:bg-muted"><Archive className="size-4" /></button><DropdownMenu><DropdownMenuTrigger aria-label="More email actions" className="rounded-md p-2 text-muted-foreground outline-none hover:bg-muted"><MoreHorizontal className="size-4" /></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-48"><DropdownMenuGroup><DropdownMenuLabel>Email actions</DropdownMenuLabel></DropdownMenuGroup><DropdownMenuItem onClick={startReply}><Reply />Reply</DropdownMenuItem><DropdownMenuItem onClick={forwardSelected}><Forward />Forward</DropdownMenuItem><DropdownMenuSeparator />{conversation.some((message) => folderStates[message.id] && folderStates[message.id] !== "inbox") ? <DropdownMenuItem onClick={() => void moveSelected("inbox")}><Inbox />Move to inbox</DropdownMenuItem> : null}<DropdownMenuItem variant="destructive" onClick={() => void moveSelected("trash")}><Trash2 />Move to trash</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div></div></div>
             <div className="flex shrink-0 items-center gap-2 border-b bg-muted/20 px-5 py-2 text-xs text-muted-foreground"><Languages className="size-3.5" /><span>Auto-translate to Chinese</span><Toggle checked={translationOn} onChange={() => setTranslationOn((value) => !value)} label="Toggle email translation" /></div>
             <div ref={conversationScroll} className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain scroll-smooth px-5 py-5"><div className="mx-auto max-w-3xl space-y-6">{conversation.map((message) => <article key={message.id} className="border-b pb-6"><div className="min-w-0"><div className="flex flex-wrap items-baseline justify-between gap-2"><div><p className="text-sm font-semibold">{message.direction === "outbound" ? message.from || defaultMailboxEmail || "You" : message.contact}</p><p className="mt-0.5 text-xs text-muted-foreground">{message.direction === "outbound" ? `To ${message.contact}` : message.company}</p></div><time className="text-xs text-muted-foreground">{formatTime(message.timestamp)}</time></div><div className="mt-5 overflow-hidden bg-background"><EmailBody email={translationOn && message.direction === "inbound" && translations[message.id] ? { ...message, ...translations[message.id] } : message} onLoad={() => void loadMessage(message)} loading={loadingBodies.has(message.id)} error={bodyErrors[message.id]} /></div><SentAttachments email={message} />{translationOn && message.direction === "inbound" && message.bodyLoaded !== false && !translations[message.id] ? <div className="mt-2 text-xs text-muted-foreground" role="status">{translationErrors[message.id] ? <div className="flex flex-wrap items-center gap-2"><span>{translationErrors[message.id]}</span><button type="button" onClick={() => setTranslationErrors((current) => { const next = { ...current }; delete next[message.id]; return next; })} className="rounded-md border px-2 py-1 font-semibold hover:bg-muted">Retry translation</button></div> : <span className="inline-flex items-center gap-2"><LoaderCircle className="size-3.5 animate-spin" />Translating email...</span>}</div> : null}</div></article>)}
-              {aiReplyOn && (aiWriting || (aiDraft && aiDraftSource === draft.trim()) || aiWritingError) ? <article className="flex items-start gap-3" aria-live="polite"><div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-600 to-fuchsia-500 text-white shadow-sm"><Bot className="size-4.5" /></div><div className="min-w-0 max-w-[88%] flex-1"><div><p className="flex items-center gap-2 text-sm font-semibold">AI writing<span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300">Draft only</span></p><p className="mt-0.5 text-xs text-muted-foreground">Preparing your professional English reply</p></div><div className="mt-3 overflow-hidden rounded-xl border border-violet-200/80 bg-gradient-to-br from-violet-50 via-background to-fuchsia-50/60 p-5 shadow-[0_4px_18px_rgba(124,58,237,0.08)] dark:border-violet-500/30 dark:from-violet-500/10 dark:via-background dark:to-fuchsia-500/5">{aiWriting ? <div className="flex items-center gap-3 text-sm text-violet-700 dark:text-violet-300"><span className="flex items-center gap-1" aria-label="AI is writing"><span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.3s]" /><span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.15s]" /><span className="size-1.5 animate-bounce rounded-full bg-current" /></span><span>AI is writing your reply…</span></div> : aiWritingError ? <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-amber-700 dark:text-amber-300"><span>{aiWritingError}</span><button type="button" onClick={() => setAiRetryNonce((value) => value + 1)} className="rounded-md border border-amber-300/70 bg-background px-2.5 py-1.5 text-xs font-semibold hover:bg-amber-50 dark:hover:bg-amber-500/10">Try again</button></div> : <><p className="whitespace-pre-wrap text-sm leading-6">{aiDraft}</p><p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-violet-700/80 dark:text-violet-300"><WandSparkles className="size-3" />This AI draft will be sent. Edit your message below to regenerate it.</p></>}</div></div></article> : null}
+              {aiPreviewVisible ? (
+                <article className="flex items-start gap-3" aria-label="AI reply draft">
+                  <div className="size-10 shrink-0" aria-hidden="true">
+                    <Orb
+                      state={aiUpdating ? "thinking" : aiWritingError ? "error" : "idle"}
+                      theme="circle"
+                      size={40}
+                      interactive={false}
+                      className={"email-ai-avatar"}
+                      renderTheme={({ rootProps, state }) => (
+                        <div {...rootProps} data-state={state}>
+                          <span className={"email-ai-orbMist"}>
+                            <span className={"email-ai-orbPink"} />
+                            <span className={"email-ai-orbBlue"} />
+                            <span className={"email-ai-orbCyan"} />
+                          </span>
+                        </div>
+                      )}
+                    />
+                  </div>
+                  <div className="min-w-0 max-w-[88%] flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-semibold">AI writing</p>
+                      <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300">Draft only</span>
+                    </div>
+                    <p className="mt-0.5 text-xs text-muted-foreground">Your professional English reply</p>
+                    <div className="mt-4">
+                      <div className="flex flex-col gap-1">
+                        <EmailAiTypewriter text={aiDraft} updating={aiUpdating} />
+                        <div className="mt-5 flex min-h-5 items-center gap-2 text-xs text-violet-700/80 dark:text-violet-300" role="status" aria-live="polite">
+                          <Sparkles className={"size-3.5 shrink-0 " + (aiUpdating ? "email-ai-sparkle" : "")} aria-hidden="true" />
+                          <span>{aiUpdating ? (aiDraft ? "Refining your latest changes…" : "Crafting your reply…") : aiWritingError ? "Couldn't update this draft" : "Ready to send · Updates as you type"}</span>
+                        </div>
+                        {aiWritingError ? <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-amber-700 dark:text-amber-300"><span>{aiWritingError}</span><button type="button" onClick={() => setAiRetryNonce((value) => value + 1)} className="rounded-md border border-amber-300/70 bg-background px-2.5 py-1.5 font-semibold hover:bg-amber-50 dark:hover:bg-amber-500/10">Try again</button></div> : null}
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              ) : null}
             </div></div>
             <div className="max-h-[55%] shrink-0 overflow-y-auto border-t bg-background p-3">
               {!replyExpanded ? <div className="flex items-center gap-2"><button type="button" onClick={startReply} className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-md border bg-muted/20 px-3 text-left text-xs text-muted-foreground"><Reply className="size-4 shrink-0" /><span className="truncate">Quick reply to {replyRecipient}</span></button><button type="button" onClick={() => { setAiReplyOn(true); startReply(); }} className="inline-flex h-11 items-center gap-2 rounded-md border px-3 text-xs text-violet-600"><WandSparkles className="size-4" />AI reply</button></div> : <>

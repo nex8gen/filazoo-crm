@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TablePagination } from "@/components/ui/table-pagination";
+import { ProductImagePicker } from "@/components/product-image-picker";
 
 const pageSize = 20;
 const amount = (value: string) => parseCurrencyAmount(value).toFixed(2);
@@ -77,6 +78,10 @@ function ProductDialog({ product, open, onOpenChange, canWrite, mode, onSaved }:
   const [variants, setVariants] = useState<ProductVariant[]>(() => product?.variants.length ? product.variants.map((variant) => ({ ...variant })) : [emptyVariant(product?.sku)]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [imageUrl, setImageUrl] = useState(product?.imageUrl ?? null);
+  const [uploadCount, setUploadCount] = useState(0);
+  const uploading = uploadCount > 0;
+  const onImageBusyChange = (busy: boolean) => setUploadCount((count) => count + (busy ? 1 : -1));
 
   const updateVariant = (index: number, patch: Partial<ProductVariant>) => {
     setVariants((current) => current.map((variant, position) => position === index ? { ...variant, ...patch } : variant));
@@ -84,7 +89,7 @@ function ProductDialog({ product, open, onOpenChange, canWrite, mode, onSaved }:
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!canWrite) return;
+    if (!canWrite || saving || uploading) return;
     if (!variants.length || variants.some((variant) => !variant.name.trim() || !variant.sku.trim())) {
       setError("Every variant needs a name and SKU.");
       return;
@@ -104,12 +109,14 @@ function ProductDialog({ product, open, onOpenChange, canWrite, mode, onSaved }:
       onSaved(saved, product?.sku);
       onOpenChange(false);
       toast.success(mode === "demo" ? `${saved.name} saved for this demo session.` : `${saved.name} saved.`);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Could not save this product. Please try again.");
     } finally {
       setSaving(false);
     }
   }
 
-  return <Dialog open={open} onOpenChange={onOpenChange}>
+  return <Dialog open={open} onOpenChange={(nextOpen) => { if (!saving && !uploading) onOpenChange(nextOpen); }}>
     <DialogContent className="max-h-[92svh] overflow-y-auto sm:max-w-4xl">
       <DialogHeader><DialogTitle>{product ? product.name : "Add product"}</DialogTitle><DialogDescription>{canWrite ? "Edit product details and manage every variant individually." : "View product details and variants."}</DialogDescription></DialogHeader>
       <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
@@ -122,7 +129,7 @@ function ProductDialog({ product, open, onOpenChange, canWrite, mode, onSaved }:
         <Field label="Pack weight" id="product-weight"><Input id="product-weight" name="weight" defaultValue={product?.weight === "Not specified" ? "" : product?.weight} placeholder="1 kg" disabled={!canWrite} /></Field>
         <Field label="Stock status" id="product-stock"><Input id="product-stock" name="stockStatus" defaultValue={product?.stockStatus} placeholder="In stock" disabled={!canWrite} /></Field>
         <Field label="Lead time" id="product-lead"><Input id="product-lead" name="leadTime" defaultValue={product?.leadTime} placeholder="Ships in 3–5 days" disabled={!canWrite} /></Field>
-        <div className="sm:col-span-2"><Field label="Product image URL" id="product-image"><Input id="product-image" name="imageUrl" type="url" defaultValue={product?.imageUrl ?? ""} placeholder="https://..." disabled={!canWrite} /></Field></div>
+        <div className="sm:col-span-2"><input type="hidden" name="imageUrl" value={imageUrl ?? ""} /><ProductImagePicker id="product-image" label="Product image" value={imageUrl} onChange={setImageUrl} disabled={!canWrite || saving || uploading} mode={mode} onBusyChange={onImageBusyChange} /></div>
 
         <section className="space-y-3 border-t pt-4 sm:col-span-2">
           <div className="flex items-center justify-between"><div><p className="font-medium">Volume pricing</p><p className="text-xs text-muted-foreground">Set up to three quantity breaks.</p></div><label className="text-xs text-muted-foreground">Currency <select name="currency" defaultValue="USD" disabled={!canWrite} className="ml-2 h-8 rounded-md border bg-background px-2 text-foreground"><option>USD</option><option>EUR</option><option>GBP</option><option>CNY</option></select></label></div>
@@ -139,12 +146,12 @@ function ProductDialog({ product, open, onOpenChange, canWrite, mode, onSaved }:
             <Input value={variant.sku} onChange={(event) => updateVariant(index, { sku: event.target.value })} placeholder="Variant SKU" aria-label={`Variant ${index + 1} SKU`} disabled={!canWrite} />
             <Input value={variant.price.replace(/[^0-9.-]/g, "")} onChange={(event) => updateVariant(index, { price: event.target.value })} type="number" min="0" step="0.01" placeholder="Price" aria-label={`Variant ${index + 1} price`} disabled={!canWrite} />
             <Input value={variant.stockStatus} onChange={(event) => updateVariant(index, { stockStatus: event.target.value })} placeholder="Availability" aria-label={`Variant ${index + 1} availability`} disabled={!canWrite} />
-            {canWrite ? <Button type="button" variant="ghost" size="icon-sm" disabled={variants.length === 1} onClick={() => setVariants((current) => current.filter((_, position) => position !== index))} aria-label={`Remove ${variant.name || "variant"}`}><Trash2 /></Button> : null}
-            <div className="sm:col-span-full"><Input value={variant.imageUrl ?? ""} onChange={(event) => updateVariant(index, { imageUrl: event.target.value || null })} type="url" placeholder="Variant image URL (optional)" aria-label={`Variant ${index + 1} image URL`} disabled={!canWrite} /></div>
+            {canWrite ? <Button type="button" variant="ghost" size="icon-sm" disabled={variants.length === 1 || saving || uploading} onClick={() => setVariants((current) => current.filter((_, position) => position !== index))} aria-label={`Remove ${variant.name || "variant"}`}><Trash2 /></Button> : null}
+            <div className="sm:col-span-full"><ProductImagePicker id={`variant-image-${variant.id}`} label={`Variant ${index + 1} image (optional)`} value={variant.imageUrl} onChange={(imageUrl) => updateVariant(index, { imageUrl })} disabled={!canWrite || saving || uploading} mode={mode} onBusyChange={onImageBusyChange} /></div>
           </div>)}</div>
         </section>
         {error ? <p role="alert" className="text-xs text-destructive sm:col-span-2">{error}</p> : null}
-        <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Close</Button>{canWrite ? <Button type="submit" disabled={saving}>{saving ? "Saving…" : product ? "Save changes" : "Add product"}</Button> : null}</DialogFooter>
+        <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" disabled={saving || uploading} onClick={() => onOpenChange(false)}>Close</Button>{canWrite ? <Button type="submit" disabled={saving || uploading}>{uploading ? "Uploading image…" : saving ? "Saving…" : product ? "Save changes" : "Add product"}</Button> : null}</DialogFooter>
       </form>
     </DialogContent>
   </Dialog>;
