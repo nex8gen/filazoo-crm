@@ -109,10 +109,24 @@ export function InvoicePaper({ invoice, today }: { invoice: Invoice; today: stri
               <tr key={index}>
                 <td>{String(index + 1).padStart(2, "0")}</td>
                 <td>
-                  <span className="invoice-paper-description">{item.description}</span>
-                  {item.variantSku || item.productSku ? (
-                    <span className="invoice-paper-sku">SKU: {item.variantSku || item.productSku}</span>
-                  ) : null}
+                  <div className="invoice-paper-product">
+                    {item.imageUrl ? (
+                      <Image
+                        className="invoice-paper-product-image"
+                        src={item.imageUrl}
+                        alt={item.description}
+                        width={52}
+                        height={52}
+                        unoptimized
+                      />
+                    ) : null}
+                    <span>
+                      <span className="invoice-paper-description">{item.description}</span>
+                      {item.variantSku || item.productSku ? (
+                        <span className="invoice-paper-sku">SKU: {item.variantSku || item.productSku}</span>
+                      ) : null}
+                    </span>
+                  </div>
                 </td>
                 <td>{item.quantity}</td>
                 <td>{money(item.unitPriceMinor)}</td>

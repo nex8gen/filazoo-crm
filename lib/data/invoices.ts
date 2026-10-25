@@ -6,7 +6,15 @@ import {
   type InvoiceDocument,
   type InvoiceReceivable,
 } from "../invoices";
-import { validateInvoiceConnections } from "./invoice-connections";
+import {
+  invoiceProductSelect,
+  validateInvoiceConnections,
+} from "./invoice-connections";
+import {
+  invoiceProduct,
+  withInvoiceProductImages,
+  type InvoiceProductRow,
+} from "../invoice-links";
 import { AVATAR_PRESETS, ownAvatarPath, PROFILE_AVATAR_BUCKET } from "../profile-avatar";
 
 export async function listInvoices(
@@ -72,13 +80,35 @@ export async function listInvoices(
 }
 
 export async function getInvoice(id: string) {
-  const { data, error } = await createSupabaseAdmin()
+  const admin = createSupabaseAdmin();
+  const { data, error } = await admin
     .from("invoices")
     .select("*,invoice_payments(*)")
     .eq("id", id)
     .maybeSingle();
   if (error) throw error;
-  return data as Invoice | null;
+  if (!data) return null;
+  const invoice = data as Invoice;
+  const skus = [
+    ...new Set(
+      invoice.document.items.flatMap((item) =>
+        !item.imageUrl && item.productSku ? [item.productSku] : [],
+      ),
+    ),
+  ];
+  if (!skus.length) return invoice;
+  const products = await admin
+    .from("products")
+    .select(invoiceProductSelect)
+    .in("sku", skus);
+  if (products.error) throw products.error;
+  return {
+    ...invoice,
+    document: withInvoiceProductImages(
+      invoice.document,
+      ((products.data as InvoiceProductRow[]) ?? []).map(invoiceProduct),
+    ),
+  };
 }
 
 export async function createInvoice(document: InvoiceDocument, userId: string) {

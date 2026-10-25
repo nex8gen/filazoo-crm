@@ -1,0 +1,53 @@
+.agent-pixel {
+  opacity: .2;
+  animation: crm-agent-pixel-on 650ms cubic-bezier(.23, 1, .32, 1) infinite;
+}
+
+.agent-shimmer {
+  background-image: linear-gradient(90deg, var(--muted-foreground) 35%, var(--foreground) 50%, var(--muted-foreground) 65%);
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: crm-agent-shimmer 1.5s linear infinite;
+}
+
+.agent-response-trace,
+.agent-streaming-text {
+  animation: crm-agent-fade 280ms cubic-bezier(.23, 1, .32, 1) both;
+}
+
+.agent-trace-spinner { animation: crm-agent-spin 1s linear infinite; }
+
+.agent-writing-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-inline-start: 3px;
+  vertical-align: -.12em;
+  background: currentColor;
+  animation: crm-agent-cursor 900ms steps(2, jump-none) infinite;
+}
+
+@keyframes crm-agent-pixel-on {
+  0%, 100% { opacity: .15; transform: scale(.9); }
+  50% { opacity: .95; transform: scale(1.1); }
+}
+@keyframes crm-agent-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+@keyframes crm-agent-fade {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes crm-agent-spin { to { transform: rotate(360deg); } }
+@keyframes crm-agent-cursor { 50% { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-pixel, .agent-shimmer, .agent-response-trace,
+  .agent-streaming-text, .agent-trace-spinner, .agent-writing-cursor { animation: none; }
+  .agent-trace-details { transition: none; }
+  .agent-shimmer { background: none; color: inherit; }
+  .agent-pixel { opacity: .7; }
+}

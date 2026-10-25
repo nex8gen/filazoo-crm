@@ -50,7 +50,10 @@ export async function requireViewer(): Promise<AuthViewer> {
 
 export const getWorkspaceViewer = cache(async (): Promise<WorkspaceViewer | null> => {
   const viewer = await getViewer();
-  if (!viewer || !hasSupabaseConfig()) return null;
+  if (!viewer) return null;
+  if (!hasSupabaseConfig()) {
+    throw new Error("Supabase server authentication is not configured. Set SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY.");
+  }
 
   const { data, error } = await createSupabaseAdmin()
     .from("workspace_members")
@@ -58,7 +61,8 @@ export const getWorkspaceViewer = cache(async (): Promise<WorkspaceViewer | null
     .eq("user_id", viewer.id)
     .maybeSingle();
 
-  if (error || !data?.activated_at) return null;
+  if (error) throw new Error(`Workspace membership lookup failed: ${error.message}`);
+  if (!data?.activated_at) return null;
   return {
     ...viewer,
     role: data.role as WorkspaceRole,

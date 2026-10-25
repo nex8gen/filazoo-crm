@@ -136,6 +136,9 @@
 .invoice-paper tbody tr:nth-child(even) { background: var(--invoice-stripe); }
 .invoice-paper td { border-bottom: 1px solid var(--invoice-rule); }
 .invoice-paper-description { white-space: pre-wrap; }
+.invoice-paper-product { display: flex; align-items: flex-start; gap: 10px; }
+.invoice-paper-product > span { min-width: 0; }
+.invoice-paper-product-image { width: 52px; height: 52px; flex: 0 0 52px; border: 1px solid var(--invoice-rule); border-radius: 4px; background: white; object-fit: cover; }
 .invoice-paper-sku { display: block; margin-top: 4px; color: var(--invoice-muted); font-size: 12px; }
 .invoice-paper-settlement { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 36px; padding: 24px 36px; }
 .invoice-paper-payment p { color: var(--invoice-muted); white-space: pre-line; font-size: 13px; }

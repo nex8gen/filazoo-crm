@@ -16,8 +16,8 @@ export class InvoiceConnectionError extends Error {
   code = "P0001";
 }
 const customerSelect = "id,name,city,country,contacts(id,name,email)";
-const productSelect =
-  "sku,name,currency,price,moq,color,tags,stock_status,active";
+export const invoiceProductSelect =
+  "sku,name,image_url,currency,price,moq,color,tags,stock_status,active";
 function searchText(value: string) {
   return value.replace(/[^\p{L}\p{N}\s@._-]/gu, "").slice(0, 100);
 }
@@ -57,7 +57,7 @@ export async function invoiceProducts(
 ) {
   let query = createSupabaseAdmin()
     .from("products")
-    .select(productSelect, { count: "exact" })
+    .select(invoiceProductSelect, { count: "exact" })
     .eq("active", true)
     .not("sku", "like", "SAMPLE-%")
     .order("name")
@@ -179,7 +179,7 @@ export async function validateInvoiceConnections(document: InvoiceDocument) {
           .maybeSingle()
       : Promise.resolve(null),
     skus.length
-      ? db.from("products").select(productSelect).in("sku", skus)
+      ? db.from("products").select(invoiceProductSelect).in("sku", skus)
       : Promise.resolve(null),
   ]);
   if (company?.error || contact?.error || products?.error)

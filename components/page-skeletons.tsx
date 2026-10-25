@@ -79,10 +79,6 @@ function FlowNodeSkeleton() {
   return <div className="w-full shrink-0 space-y-4 rounded-2xl border bg-card p-4 shadow-sm"><div className="flex items-center gap-3"><Skeleton className="size-9 shrink-0 rounded-xl" /><Skeleton className="h-5 w-32 max-w-full" /></div><Skeleton className="h-4 w-full" /><Skeleton className="h-4 w-2/3" /></div>;
 }
 
-function ProfilePanelSkeleton({ fields = 4 }: { fields?: number }) {
-  return <div className="space-y-5 rounded-xl border bg-card p-6"><div><Skeleton className="h-5 w-40 max-w-full" /><Skeleton className="mt-2 h-4 w-full" /></div><div className="grid gap-4 sm:grid-cols-2">{Array.from({ length: fields }, (_, index) => <div key={index} className="space-y-2"><Skeleton className="h-4 w-24 max-w-full" /><Skeleton className="h-9 w-full border" /></div>)}</div></div>;
-}
-
 export function FlowEditorSkeleton() {
   return <LoadingRegion label="Loading flow editor" className="flex h-full min-h-0 flex-col overflow-hidden bg-muted/20">
     <div className="flex min-h-14 shrink-0 flex-wrap items-center gap-3 border-b bg-background px-4 py-2">
@@ -111,14 +107,13 @@ export function FlowEditorSkeleton() {
 export function CompanyDetailsSkeleton() {
   return <LoadingRegion label="Loading company details">
     <Skeleton className="mb-4 h-8 w-36" />
-    <div className="mb-7 flex flex-col gap-3 border-b pb-6 sm:flex-row sm:items-end sm:justify-between">
-      <div><div className="mb-3 flex gap-2"><Skeleton className="h-5 w-24 rounded-full" /><Skeleton className="h-5 w-16 rounded-full" /></div><Skeleton className="h-8 w-64 max-w-full" /><Skeleton className="mt-1 h-5 w-48" /></div>
-      <Skeleton className="h-16 w-52 rounded-xl" />
+    <div className="mb-6 flex min-w-0 flex-col gap-3 border-b pb-1 sm:flex-row sm:items-center sm:justify-between sm:gap-5">
+      <div className="order-2 flex min-w-0 gap-2 overflow-hidden sm:order-1"><Skeleton className="h-10 w-14 shrink-0" /><Skeleton className="h-10 w-20 shrink-0" /><Skeleton className="h-10 w-20 shrink-0" /><Skeleton className="h-10 w-28 shrink-0" /></div>
+      <div className="order-1 flex items-center gap-3 pb-2 sm:order-2 sm:shrink-0 sm:pb-0"><Skeleton className="size-8 shrink-0 rounded-full" /><Skeleton className="h-5 w-20" /><Skeleton className="h-8 w-28" /></div>
     </div>
-    <div className="mb-6 flex h-10 gap-4 border-b pb-1"><Skeleton className="h-8 w-24" /><Skeleton className="h-8 w-24" /><Skeleton className="h-8 w-32" /></div>
-    <div className="space-y-6">
-      <div className="grid gap-4 lg:grid-cols-3"><div className="space-y-4 rounded-xl border bg-card p-6 lg:col-span-2"><Skeleton className="h-5 w-32" /><Skeleton className="h-4 w-3/4" /><Skeleton className="h-5 w-full" /><Skeleton className="h-5 w-5/6" /><div className="flex gap-2"><Skeleton className="h-5 w-24 rounded-full" /><Skeleton className="h-5 w-20 rounded-full" /></div></div><div className="space-y-4 rounded-xl border bg-card p-6"><Skeleton className="h-5 w-32" /><Skeleton className="h-4 w-full" /><Skeleton className="h-12 w-full border" /><Skeleton className="h-4 w-3/4" /></div></div>
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,.65fr)]"><div className="space-y-6"><ProfilePanelSkeleton fields={8} /><ProfilePanelSkeleton /></div><div className="space-y-6"><ProfilePanelSkeleton fields={6} /><ProfilePanelSkeleton fields={2} /></div></div>
+    <div className="flex h-[min(48rem,calc(100dvh-5rem))] min-h-[32rem] flex-col rounded-lg border bg-card p-6">
+      <div className="flex flex-1 flex-col items-center justify-center gap-4"><Skeleton className="size-14 rounded-2xl" /><Skeleton className="h-6 w-48" /><Skeleton className="h-4 w-64 max-w-full" /><div className="grid w-full max-w-lg gap-2 sm:grid-cols-2">{Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-12 rounded-xl" />)}</div></div>
+      <Skeleton className="mt-6 h-36 w-full shrink-0 rounded-[20px]" />
     </div>
   </LoadingRegion>;
 }

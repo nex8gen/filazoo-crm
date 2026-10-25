@@ -277,6 +277,7 @@ export function InvoiceEditor({
                                 productSku: undefined,
                                 variantId: undefined,
                                 variantSku: undefined,
+                                imageUrl: undefined,
                                 pricingMode: undefined,
                               }
                             : line,

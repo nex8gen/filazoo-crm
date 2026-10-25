@@ -10,6 +10,7 @@ import {
   productInvoiceLine,
   productUnitPrice,
   quotedMinor,
+  withInvoiceProductImages,
   withBillingCustomer,
   type BillingCustomer,
   type InvoiceProductRow,
@@ -19,6 +20,7 @@ import { variantTag } from "../lib/product-utils.ts";
 const row: InvoiceProductRow = {
   sku: "PLA",
   name: "PLA Basic",
+  image_url: "https://example.com/pla.jpg",
   currency: "USD",
   price: "5.31",
   moq: 1,
@@ -51,7 +53,47 @@ test("quantity tiers use the highest eligible break and retain variant identity"
   assert.equal(line.productSku, "PLA");
   assert.equal(line.pricingMode, "catalog");
   assert.equal(line.unitPriceMinor, 479);
+  assert.equal(line.imageUrl, row.image_url);
   assert.ok(line.description.includes("Black"));
+});
+test("invoice lines prefer the selected variant image", () => {
+  const product = invoiceProduct({
+    ...row,
+    tags: [
+      variantTag([
+        {
+          id: "blue",
+          name: "Blue",
+          sku: "PLA-BLUE",
+          price: "$5.31",
+          stockStatus: "Available",
+          imageUrl: "https://example.com/blue.jpg",
+        },
+      ]),
+    ],
+  });
+  assert.equal(
+    productInvoiceLine(product, 1, "blue").imageUrl,
+    "https://example.com/blue.jpg",
+  );
+});
+test("legacy linked invoice lines resolve their current product image", () => {
+  const product = invoiceProduct(row);
+  const doc = blankInvoiceDocument("2026-10-23");
+  doc.items = [
+    {
+      productSku: product.sku,
+      description: product.name,
+      quantity: 1,
+      unitPriceMinor: 531,
+      taxBps: 0,
+    },
+  ];
+  const hydrated = withInvoiceProductImages(doc, [product]);
+  assert.equal(hydrated.items[0].imageUrl, row.image_url);
+  assert.equal(withInvoiceProductImages(hydrated, [
+    { ...product, imageUrl: "https://example.com/new.jpg" },
+  ]), hydrated);
 });
 test("individually priced variants are not overwritten by parent quantity tiers", () => {
   const product = invoiceProduct({
@@ -74,8 +116,10 @@ test("individually priced variants are not overwritten by parent quantity tiers"
   assert.equal(productUnitPrice(product, 500, "missing"), null);
 });
 test("unknown catalog prices become explicit manual lines", () => {
-  const product = invoiceProduct({ ...row, price: null, tags: [] });
-  assert.equal(productInvoiceLine(product, 1).pricingMode, "manual");
+  const product = invoiceProduct({ ...row, image_url: null, price: null, tags: [] });
+  const line = productInvoiceLine(product, 1);
+  assert.equal(line.pricingMode, "manual");
+  assert.equal(line.imageUrl, "/catalog-default-product.jpg");
 });
 const customer: BillingCustomer = {
   id: "11111111-1111-4111-8111-111111111111",

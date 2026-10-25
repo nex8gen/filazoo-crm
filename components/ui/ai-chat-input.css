@@ -1,0 +1,88 @@
+.customer-chat-beam {
+  min-width: 0;
+  isolation: isolate;
+  /* Keep the package's original radial edge glow and 28px inward fade.
+     Compensate for its softer light-theme opacity, without coloring the center. */
+  --beam-stroke-opacity: 2;
+  --beam-inner-opacity: 2.8;
+  --beam-bloom-opacity: 1;
+}
+
+.dark .customer-chat-beam {
+  --beam-stroke-opacity: 1.5;
+  --beam-inner-opacity: 1.6;
+}
+
+.customer-chatbox {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 20px;
+  background: var(--card);
+  color: var(--foreground);
+  color-scheme: light;
+  box-shadow: inset 0 0 0 1px var(--border), 0 4px 18px color-mix(in srgb, var(--foreground) 3%, transparent);
+}
+
+.dark .customer-chatbox { color-scheme: dark; background: var(--muted); }
+
+.customer-chatbox-inner {
+  position: relative;
+  /* Controls sit above the package's glow layers; its center stays neutral. */
+  z-index: 4;
+  display: flex;
+  min-height: 148px;
+  flex-direction: column;
+  padding: 9px 9px 10px;
+}
+
+.customer-chat-chip {
+  display: inline-flex;
+  height: 26px;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 36px;
+  background: color-mix(in srgb, var(--foreground) 4%, var(--card));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: var(--foreground);
+  font-size: 12px;
+  line-height: 14px;
+  transition: background 150ms, color 150ms;
+}
+
+button.customer-chat-chip:hover:not(:disabled) { background: color-mix(in srgb, var(--foreground) 9%, var(--card)); }
+button.customer-chat-chip:focus-visible { outline: 2px solid var(--foreground); outline-offset: 3px; }
+button.customer-chat-chip:disabled { cursor: not-allowed; opacity: .4; }
+
+.customer-chat-textarea {
+  width: 100%;
+  min-height: 64px;
+  max-height: 200px;
+  flex: 1;
+  resize: vertical;
+  border: 0;
+  background: transparent;
+  padding: 14px 5px 10px;
+  color: var(--foreground);
+  font-size: 14px;
+  line-height: 22px;
+  outline: none;
+  caret-color: var(--foreground);
+  color-scheme: inherit;
+}
+.customer-chat-textarea::placeholder { color: var(--muted-foreground); }
+.customer-chat-textarea:disabled { opacity: .55; }
+.customer-chatbox:focus-within { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--foreground) 45%, var(--border)); }
+.customer-chat-send:not(:disabled),
+button.customer-chat-send:hover:not(:disabled) { background: var(--foreground); color: var(--background); }
+
+@media (prefers-reduced-motion: reduce) {
+  .customer-chat-beam,
+  .customer-chat-beam::before,
+  .customer-chat-beam::after,
+  .customer-chat-beam [data-beam-bloom] { animation: none !important; }
+  .customer-chat-chip { transition: none; }
+}

@@ -2,6 +2,8 @@ import { z } from "zod";
 import { invoiceCurrencies, type InvoiceDocument } from "./invoices.ts";
 import { variantsFromTags } from "./product-utils.ts";
 
+export const DEFAULT_INVOICE_PRODUCT_IMAGE = "/catalog-default-product.jpg";
+
 export type BillingCustomer = {
   id: string;
   name: string;
@@ -28,6 +30,7 @@ export type SellerSettings = z.infer<typeof sellerSettingsSchema>;
 export type InvoiceProduct = {
   sku: string;
   name: string;
+  imageUrl: string | null;
   currency: string;
   priceMinor: number | null;
   moq: number;
@@ -39,6 +42,7 @@ export type InvoiceProduct = {
     sku: string;
     priceMinor: number | null;
     stockStatus: string;
+    imageUrl: string | null;
   }[];
 };
 export type InvoiceProductRow = {
@@ -50,6 +54,7 @@ export type InvoiceProductRow = {
   color: string | null;
   tags: string[];
   stock_status: string | null;
+  image_url: string | null;
   active: boolean;
 };
 
@@ -87,6 +92,7 @@ export function invoiceProduct(row: InvoiceProductRow): InvoiceProduct {
   return {
     sku: row.sku,
     name: row.name,
+    imageUrl: row.image_url,
     currency: row.currency.trim(),
     priceMinor,
     moq: Math.max(1, row.moq ?? 1),
@@ -98,6 +104,7 @@ export function invoiceProduct(row: InvoiceProductRow): InvoiceProduct {
       sku: variant.sku,
       priceMinor: quotedMinor(variant.price),
       stockStatus: variant.stockStatus,
+      imageUrl: variant.imageUrl,
     })),
   };
 }
@@ -130,12 +137,35 @@ export function productInvoiceLine(
   return {
     productSku: product.sku,
     ...(variant ? { variantId: variant.id, variantSku: variant.sku } : {}),
+    imageUrl:
+      variant?.imageUrl || product.imageUrl || DEFAULT_INVOICE_PRODUCT_IMAGE,
     description: `${product.name}${variant ? ` — ${variant.name}` : ""}`,
     quantity,
     unitPriceMinor: price ?? 0,
     taxBps: 0,
     pricingMode: price === null ? "manual" : "catalog",
   };
+}
+
+export function withInvoiceProductImages(
+  doc: InvoiceDocument,
+  products: InvoiceProduct[],
+): InvoiceDocument {
+  const bySku = new Map(products.map((product) => [product.sku, product]));
+  let changed = false;
+  const items = doc.items.map((item) => {
+    if (item.imageUrl || !item.productSku) return item;
+    const product = bySku.get(item.productSku);
+    const variant = product?.variants.find((value) => value.id === item.variantId);
+    const imageUrl =
+      variant?.imageUrl ||
+      product?.imageUrl ||
+      (product ? DEFAULT_INVOICE_PRODUCT_IMAGE : undefined);
+    if (!imageUrl) return item;
+    changed = true;
+    return { ...item, imageUrl };
+  });
+  return changed ? { ...doc, items } : doc;
 }
 export function withBillingCustomer(
   doc: InvoiceDocument,

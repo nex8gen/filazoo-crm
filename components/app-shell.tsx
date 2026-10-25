@@ -22,6 +22,7 @@ import {
 import { BrandMark } from "@/components/brand-mark";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { WorkspaceAiAssistant } from "@/components/workspace-ai-assistant";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
@@ -159,7 +160,7 @@ function SidebarNavigation({ pathname, onNavigate, userMenu }: { pathname: strin
                 onClick={() => { setRailExpanded(false); onNavigate?.(); }}
                 className={`relative flex h-12 w-12 shrink-0 items-center gap-3 overflow-hidden rounded-md px-[13px] outline-none transition-[width,background-color,color] focus-visible:ring-2 focus-visible:ring-ring group-data-[expanded=true]/rail:w-48 ${group.label === "Settings" ? "mt-auto" : ""} ${active ? "bg-primary/10 font-medium text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
               >
-                <group.icon className={`mx-0.5 size-[18px] shrink-0 ${active ? "text-primary" : ""}`} />
+                <group.icon className={`mx-0.5 shrink-0 ${group.label === "AI Automation" ? "size-5" : "size-[18px]"} ${active ? "text-primary" : ""}`} />
                 <span className="whitespace-nowrap text-sm opacity-0 transition-opacity duration-150 group-data-[expanded=true]/rail:opacity-100">{group.label}</span>
               </Link>
             );
@@ -215,6 +216,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
   const usesViewportCanvas = isMessenger || isFlowBuilder || isEmails;
   const [commandOpen, setCommandOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
   const navigationTriggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -240,7 +242,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
   return (
     <div className={`${usesViewportCanvas ? "h-svh overflow-hidden" : "min-h-svh"} bg-background text-foreground`}>
       <a href="#workspace-content" className="sr-only fixed left-4 top-2 z-[100] rounded-md bg-primary px-4 py-2 text-primary-foreground focus:not-sr-only">Skip to content</a>
-      <header className="fixed inset-x-0 top-0 z-50 flex h-12 items-center border-b bg-background/95 px-3 backdrop-blur md:px-4">
+      <header className={`fixed left-0 top-0 z-50 flex h-12 items-center border-b bg-background/95 px-3 backdrop-blur transition-[right] duration-300 ease-out md:px-4 ${aiOpen ? "right-0 lg:right-[31rem]" : "right-0"}`}>
         <Button ref={navigationTriggerRef} aria-label="Open navigation" aria-expanded={mobileOpen} variant="ghost" size="icon-sm" className="mr-2 lg:hidden" onClick={() => setMobileOpen(true)}>
           <Menu />
         </Button>
@@ -276,7 +278,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
             <SheetDescription>Accounts, conversations, and sales tools</SheetDescription>
           </SheetHeader>
           <nav aria-label="Workspace navigation" className="space-y-5 p-4">
-            {navigation.map((group) => group.direct ? <Link key={group.label} href={group.items[0].href} onClick={() => setMobileOpen(false)} aria-current={itemIsActive(pathname, group.items[0]) ? "page" : undefined} className={`flex min-h-11 items-center gap-3 rounded-lg px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring ${itemIsActive(pathname, group.items[0]) ? "bg-brand-soft font-semibold text-primary" : "hover:bg-muted"}`}><group.icon className="size-4 shrink-0" />{group.label}</Link> : <div key={group.label}>
+            {navigation.map((group) => group.direct ? <Link key={group.label} href={group.items[0].href} onClick={() => setMobileOpen(false)} aria-current={itemIsActive(pathname, group.items[0]) ? "page" : undefined} className={`flex min-h-11 items-center gap-3 rounded-lg px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring ${itemIsActive(pathname, group.items[0]) ? "bg-brand-soft font-semibold text-primary" : "hover:bg-muted"}`}><group.icon className={`${group.label === "AI Automation" ? "size-5" : "size-4"} shrink-0`} />{group.label}</Link> : <div key={group.label}>
               <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{group.label}</p>
               <ul className="space-y-1">{group.items.map((item) => <li key={item.href}>
                 <Link href={item.href} onClick={() => setMobileOpen(false)} aria-current={itemIsActive(pathname, item) ? "page" : undefined} className={`flex min-h-11 items-center gap-3 rounded-lg px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring ${itemIsActive(pathname, item) ? "bg-brand-soft font-semibold text-primary" : "hover:bg-muted"}`}>
@@ -288,13 +290,15 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
         </SheetContent>
       </Sheet>
 
-      <div className={`min-w-0 pt-12 ${activeGroup.direct ? "lg:pl-16" : "lg:pl-80"}`}>
+      <div className={`min-w-0 pt-12 transition-[margin,transform] duration-300 ease-out ${activeGroup.direct ? "lg:pl-16" : "lg:pl-80"} ${aiOpen ? "max-lg:-translate-x-full lg:mr-[31rem]" : "translate-x-0 lg:mr-0"}`}>
         <main id="workspace-content" tabIndex={-1} className={`${pathname === "/emails" || isSettings ? "" : "crm-workspace-content"} outline-none ${usesViewportCanvas ? "h-[calc(100dvh-3rem)] min-h-0 w-full overflow-hidden p-0" : isSettings ? "min-h-[calc(100dvh-3rem)] w-full" : "min-h-[calc(100svh-3rem)] w-full px-5 py-7 sm:px-7 lg:px-10 lg:py-10"}`}>{children}</main>
       </div>
 
       {commandOpen ? (
         <WorkspaceCommandMenu navigation={navigation} open={commandOpen} onOpenChange={setCommandOpen} onNavigate={navigate} />
       ) : null}
+      <button type="button" aria-label="Open Filazoo AI" aria-expanded={aiOpen} title="Ask Filazoo AI" onClick={() => setAiOpen(true)} className={`fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-5 z-[55] grid size-20 place-items-center text-violet-700 transition duration-200 hover:scale-110 focus-visible:rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring sm:right-7 dark:text-violet-300 ${aiOpen ? "pointer-events-none scale-90 opacity-0" : "opacity-100"}`}><span aria-hidden="true" className="absolute inset-0 rounded-full bg-background/30 backdrop-blur-md" style={{ WebkitMaskImage: "radial-gradient(circle, #000 0%, #000 40%, rgba(0,0,0,.65) 58%, transparent 80%)", maskImage: "radial-gradient(circle, #000 0%, #000 40%, rgba(0,0,0,.65) 58%, transparent 80%)" }} /><span aria-hidden="true" className="absolute inset-2 rounded-full border border-border/80 bg-background/55 shadow-sm" /><AiIcon className="relative z-10 size-12" /></button>
+      <WorkspaceAiAssistant open={aiOpen} onOpenChange={setAiOpen} />
     </div>
   );
 }

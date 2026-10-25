@@ -1,20 +1,15 @@
 "use client";
 
-import { AiIcon } from "@/components/ai-icon";
-
-import Link from "next/link";
-import { useActionState, useMemo, useState } from "react";
-import { Building2, CheckCircle2, Clock3, Save, UsersRound, Workflow } from "lucide-react";
+import { useActionState, useState } from "react";
+import { Clock3, Save, Workflow } from "lucide-react";
 import { updateCompany, type CrmActionState } from "@/app/crm-actions";
-import { AssignedOwner } from "@/components/assigned-owner";
-import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { pipelineStageLabels, pipelineStageValues, type CompanyActivity, type CompanyDetails as CompanyDetailsType, type PipelineStageValue } from "@/lib/types";
+import { pipelineStageLabels, pipelineStageValues, type CompanyDetails as CompanyDetailsType, type PipelineStageValue } from "@/lib/types";
 
 const stageOptions = pipelineStageValues.map((value) => [value, pipelineStageLabels[value]] as const);
 const stageValue = Object.fromEntries(stageOptions.map(([value, label]) => [label, value])) as Record<string, PipelineStageValue>;
@@ -30,50 +25,14 @@ function toLocalDateTime(value: string | null) {
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
 
-function suggestedFollowup(stage: PipelineStageValue, activity: CompanyActivity[]) {
-  const latest = activity[0]?.createdAt ? new Date(activity[0].createdAt) : new Date();
-  const dayDelay: Record<PipelineStageValue, number> = { new: 0, contacted: 3, replied: 1, interested: 2, big_order: 2, won: 14, lost: 30 };
-  const next = new Date(Math.max(Date.now(), latest.getTime()));
-  next.setDate(next.getDate() + dayDelay[stage]);
-  next.setHours(10, 0, 0, 0);
-  if (next.getDay() === 0) next.setDate(next.getDate() + 1);
-  if (next.getDay() === 6) next.setDate(next.getDate() + 2);
-  const reason: Record<PipelineStageValue, string> = {
-    new: "Review the new profile today and prepare the first outreach.",
-    contacted: "No reply after a catalog is best followed up in 3 business days.",
-    replied: "A customer reply is high intent; respond within one business day.",
-    interested: "Keep momentum with a focused follow-up in 2 business days.",
-    big_order: "Confirm quote details and purchasing timing within 2 business days.",
-    won: "Check delivery and satisfaction after the order is confirmed.",
-    lost: "Place the profile into a light 30-day re-engagement cycle.",
-  };
-  return { value: toLocalDateTime(next.toISOString()), reason: reason[stage] };
-}
-
 export function CompanyDetails({ details, canWrite }: { details: CompanyDetailsType; canWrite: boolean }) {
   const company = details.company;
   const updateWithId = updateCompany.bind(null, company.id);
   const [state, action, pending] = useActionState<CrmActionState, FormData>(updateWithId, undefined);
   const [stage, setStage] = useState<PipelineStageValue>(stageValue[company.stage] || "new");
-  const recommendation = useMemo(() => suggestedFollowup(stage, details.activity), [stage, details.activity]);
-  const [nextFollowup, setNextFollowup] = useState(toLocalDateTime(company.nextFollowupAt) || recommendation.value);
-  const latestEmail = details.activity.find((item) => item.type === "email");
-  const aiInsight = company.summary === "This company has not been profiled yet."
-    ? `${company.contact} at ${company.name} is currently in “${pipelineStageLabels[stage]}”. ${latestEmail ? `The latest email activity was “${latestEmail.detail}”.` : "No email conversation has been recorded yet."} Recommended next step: ${recommendation.reason}`
-    : company.summary;
+  const [nextFollowup, setNextFollowup] = useState(toLocalDateTime(company.nextFollowupAt));
 
   return <div className="space-y-6">
-    <div className="grid gap-4 lg:grid-cols-3">
-      <Card className="lg:col-span-2">
-        <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between"><div><CardTitle className="flex items-center gap-2"><AiIcon className="size-4 text-violet-600" />AI insight</CardTitle><CardDescription>Short customer summary based on the connected profile and communication history.</CardDescription></div><Badge variant="secondary" className="w-fit">Updated from activity</Badge></CardHeader>
-        <CardContent><p className="text-sm leading-6">{aiInsight}</p><div className="mt-4 flex flex-wrap gap-2">{company.tags.map((tag) => <Badge key={tag} variant="outline">{tag}</Badge>)}{!company.tags.length ? <span className="text-xs text-muted-foreground">Interest tags will appear as the conversation develops.</span> : null}</div></CardContent>
-      </Card>
-      <Card>
-        <CardHeader><CardTitle className="flex items-center gap-2"><Building2 className="size-4" />Unified profile</CardTitle><CardDescription>Customer records are matched to this company profile.</CardDescription></CardHeader>
-        <CardContent className="space-y-3"><div className="flex items-center justify-between rounded-lg border p-3"><span className="text-sm">Connected contacts</span><Badge variant="secondary">{details.contacts.length}</Badge></div><div className="flex items-center gap-2 text-xs text-muted-foreground"><CheckCircle2 className="size-4 text-emerald-600" />Email and reply history is linked automatically.</div></CardContent>
-      </Card>
-    </div>
-
     <form action={action}>
       <fieldset disabled={!canWrite || pending} className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,.65fr)] disabled:opacity-70">
         <div className="space-y-6">
@@ -100,7 +59,7 @@ export function CompanyDetails({ details, canWrite }: { details: CompanyDetailsT
               <Field label="Currency" id="company-currency"><Select name="currency" defaultValue={company.currency}><SelectTrigger id="company-currency" className="w-full"><SelectValue /></SelectTrigger><SelectContent>{["USD", "EUR", "GBP", "CNY"].map((currency) => <SelectItem key={currency} value={currency}>{currency}</SelectItem>)}</SelectContent></Select></Field>
               <Field label="Fit score (1–10)" id="company-fit"><Input id="company-fit" name="fitScore" type="number" min="1" max="10" defaultValue={company.fitScore || ""} /></Field>
               <div className="sm:col-span-2"><Field label="Interest tags (comma separated)" id="company-tags"><Input id="company-tags" name="tags" defaultValue={company.tags.join(", ")} /></Field></div>
-              <div className="sm:col-span-2"><Field label="Profile notes / AI summary" id="company-summary"><Textarea id="company-summary" name="summary" className="min-h-28" defaultValue={company.summary === "This company has not been profiled yet." ? "" : company.summary} placeholder="Add a durable summary of customer needs, preferences, objections, and buying intent." /></Field></div>
+              <div className="sm:col-span-2"><Field label="Profile notes" id="company-summary"><Textarea id="company-summary" name="summary" className="min-h-28" defaultValue={company.summary === "This company has not been profiled yet." ? "" : company.summary} placeholder="Add a durable summary of customer needs, preferences, objections, and buying intent." /></Field></div>
             </CardContent>
           </Card>
 
@@ -108,20 +67,11 @@ export function CompanyDetails({ details, canWrite }: { details: CompanyDetailsT
         </div>
 
         <div className="space-y-6">
-          <Card className="border-violet-200/70 bg-violet-50/40 dark:border-violet-500/20 dark:bg-violet-500/5">
-            <CardHeader><div className="flex items-center justify-between gap-3"><CardTitle className="flex items-center gap-2"><Clock3 className="size-4 text-violet-600" />Next follow-up</CardTitle><Badge variant="secondary">Intelligent</Badge></div><CardDescription>{recommendation.reason}</CardDescription></CardHeader>
-            <CardContent className="space-y-4"><Field label="Scheduled date and time" id="company-followup"><Input id="company-followup" name="nextFollowupAt" type="datetime-local" value={nextFollowup} onChange={(event) => setNextFollowup(event.target.value)} /></Field><Button type="button" variant="outline" size="sm" onClick={() => setNextFollowup(recommendation.value)}><AiIcon  />Use suggested time</Button><div className="flex gap-2 rounded-lg border bg-background/80 p-3 text-xs leading-5 text-muted-foreground"><Workflow className="mt-0.5 size-4 shrink-0 text-primary" /><span>Saving the date enrolls this profile in follow-up tracking. Stage and no-reply flows can act on the same customer history.</span></div></CardContent>
+          <Card>
+            <CardHeader><CardTitle className="flex items-center gap-2"><Clock3 className="size-4" />Follow-up schedule</CardTitle><CardDescription>Set the confirmed follow-up date here. Explore recommendations in the AI tab.</CardDescription></CardHeader>
+            <CardContent className="space-y-4"><Field label="Scheduled date and time" id="company-followup"><Input id="company-followup" name="nextFollowupAt" type="datetime-local" value={nextFollowup} onChange={(event) => setNextFollowup(event.target.value)} /></Field><div className="flex gap-2 rounded-lg border bg-background/80 p-3 text-xs leading-5 text-muted-foreground"><Workflow className="mt-0.5 size-4 shrink-0 text-primary" /><span>Saving the date enrolls this profile in follow-up tracking. Stage and no-reply flows can act on the same customer history.</span></div></CardContent>
           </Card>
 
-          <Card>
-            <CardHeader><CardTitle>Ownership</CardTitle><CardDescription>Automatic assignment uses the active BD Manager with the fewest company profiles. Admins can change it manually from the pipeline.</CardDescription></CardHeader>
-            <CardContent className="space-y-4"><div className="rounded-lg border p-3"><AssignedOwner name={company.ownerName} initials={company.ownerInitials} assigned={Boolean(company.ownerId)} label="Assigned BD Manager" /></div><Link href="/pipeline" className={buttonVariants({ variant: "outline", size: "sm" })}><UsersRound />Manage assignment</Link></CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader><CardTitle>Connected customer profiles</CardTitle><CardDescription>Every contact belongs to the main company profile.</CardDescription></CardHeader>
-            <CardContent className="space-y-2">{details.contacts.length ? details.contacts.map((contact) => <div key={contact.id} className="rounded-lg border p-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-medium">{contact.name}</p><p className="truncate text-xs text-muted-foreground">{contact.role} · {contact.email}</p></div><Badge variant="outline" className="text-xs capitalize">{contact.verificationStatus}</Badge></div></div>) : <p className="text-sm text-muted-foreground">No customer contact is connected yet.</p>}</CardContent>
-          </Card>
         </div>
       </fieldset>
     </form>

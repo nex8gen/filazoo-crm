@@ -6,9 +6,14 @@ import QRCode from "qrcode";
 import { BrandMark } from "../components/brand-mark";
 import { invoiceBankFields } from "./invoice-banks";
 import { formatMoney, invoiceLabel, invoiceStatus, invoiceTotals, type Invoice } from "./invoices";
+import { DEFAULT_INVOICE_PRODUCT_IMAGE } from "./invoice-links";
 
 const font = (filename: string) => path.join(process.cwd(), "public", "fonts", filename);
 const paidStamp = { data: readFileSync(path.join(process.cwd(), "public", "paid-stamp.png")), format: "png" as const };
+const defaultProductImage = {
+  data: readFileSync(path.join(process.cwd(), "public", "catalog-default-product.jpg")),
+  format: "jpg" as const,
+};
 Font.register({ family: "Inter", fonts: [
   { src: font("inter-regular.woff"), fontWeight: 400 },
   { src: font("inter-semibold.woff"), fontWeight: 600 },
@@ -40,7 +45,9 @@ const s = StyleSheet.create({
   row: { flexDirection: "row", paddingVertical: 9, paddingHorizontal: 10, borderBottomWidth: 0.5, borderBottomColor: "#dedede", alignItems: "flex-start" },
   tableHead: { backgroundColor: "#151515", color: "#ffffff", fontWeight: 600, fontSize: 9 },
   serial: { width: "6%" },
-  description: { width: "36%", paddingRight: 10 },
+  description: { width: "36%", paddingRight: 10, flexDirection: "row", gap: 7 },
+  productImage: { width: 34, height: 34, objectFit: "cover", borderWidth: 0.5, borderColor: "#dedede", borderRadius: 2 },
+  productCopy: { flex: 1 },
   qty: { width: "9%", textAlign: "right" },
   unit: { width: "17%", textAlign: "right" },
   tax: { width: "11%", textAlign: "right" },
@@ -109,7 +116,7 @@ function InvoicePdfDocument({ invoice, today, qr }: { invoice: Invoice; today: s
       </View>
       <View style={[s.row, s.tableHead]} minPresenceAhead={35}><Text style={s.serial}>No.</Text><Text style={s.description}>Description</Text><Text style={s.qty}>Qty</Text><Text style={s.unit}>Unit price</Text><Text style={s.tax}>Tax</Text><Text style={s.amount}>Amount</Text></View>
       {doc.items.map((item, index) => <View key={index} style={[s.row, { backgroundColor: index % 2 ? "#f3f3f3" : "#ffffff" }]} wrap={false}>
-        <Text style={s.serial}>{String(index + 1).padStart(2, "0")}</Text><View style={s.description}><ContentText value={item.description} />{item.variantSku || item.productSku ? <ContentText value={`SKU: ${item.variantSku || item.productSku}`} style={s.sku} /> : null}</View><Text style={s.qty}>{item.quantity}</Text><Text style={s.unit}>{money(item.unitPriceMinor)}</Text><Text style={s.tax}>{item.taxBps / 100}%</Text><Text style={s.amount}>{money(totals.lines[index].gross)}</Text>
+        <Text style={s.serial}>{String(index + 1).padStart(2, "0")}</Text><View style={s.description}>{item.imageUrl ? <PdfImage src={item.imageUrl === DEFAULT_INVOICE_PRODUCT_IMAGE ? defaultProductImage : item.imageUrl} style={s.productImage} /> : null}<View style={s.productCopy}><ContentText value={item.description} />{item.variantSku || item.productSku ? <ContentText value={`SKU: ${item.variantSku || item.productSku}`} style={s.sku} /> : null}</View></View><Text style={s.qty}>{item.quantity}</Text><Text style={s.unit}>{money(item.unitPriceMinor)}</Text><Text style={s.tax}>{item.taxBps / 100}%</Text><Text style={s.amount}>{money(totals.lines[index].gross)}</Text>
       </View>)}
       <Text style={s.caption}>All amounts in {doc.currency}. Line amounts are before tax and discount.</Text>
       <View style={s.settlement}>

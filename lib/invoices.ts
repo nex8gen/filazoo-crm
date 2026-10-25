@@ -43,6 +43,16 @@ export const invoiceDocumentSchema = z
           unitPriceMinor: money,
           taxBps: z.number().int().min(0).max(10000),
           productSku: z.string().trim().min(1).max(200).optional(),
+          imageUrl: z
+            .string()
+            .max(1000)
+            .refine(
+              (value) =>
+                z.url().safeParse(value).success ||
+                /^\/[A-Za-z0-9/_-]+\.[A-Za-z0-9]+$/.test(value),
+              "Invalid product image URL",
+            )
+            .optional(),
           variantId: z.string().trim().min(1).max(200).optional(),
           variantSku: z.string().trim().max(200).optional(),
           pricingMode: z.enum(["catalog", "manual"]).optional(),
