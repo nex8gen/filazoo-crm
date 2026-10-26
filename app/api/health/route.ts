@@ -10,6 +10,6 @@ export async function GET(){
       database=error?"error":"connected";
     }catch{database="error"}
   }
-  const healthy=database!=="error";
+  const healthy=database==="connected";
   return NextResponse.json({status:healthy?"ok":"degraded",service:"filazoo-crm",database,dryRun:process.env.DRY_RUN!=="false",timestamp:new Date().toISOString()},{status:healthy?200:503});
 }

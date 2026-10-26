@@ -1,0 +1,10 @@
+.customer-portal { color: var(--foreground); }
+.customer-invoice-preview { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; background: white; }
+.customer-invoice-preview .invoice-paper { margin-inline: auto; border: 0; box-shadow: none; }
+@media (max-width: 700px) {
+  .customer-invoice-preview .invoice-paper { min-width: 650px; }
+}
+@media print {
+  .customer-portal > header, .customer-portal > div > :not(.customer-invoice-preview) { display: none !important; }
+  .customer-invoice-preview { overflow: visible; border: 0; }
+}

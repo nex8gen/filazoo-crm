@@ -1,5 +1,11 @@
 # CRM email receiving and replies
 
+## Company Email tab
+
+Company profiles include an Email tab (`/companies/[id]?tab=email`) using the existing mailbox reader and reply composer. It starts in All mail so incoming messages and saved sent replies appear together. Messages match the company's primary and additional saved contact email addresses exactly, ignoring case and surrounding whitespace; company names and shared domains never expand the match. Companies without an email address show guidance to add one.
+
+The initial server response and `/api/email/inbox?companyId=...` refresh responses both filter messages to those contacts. The client also filters snapshots before updating the list. The company view has two columns: a conversation list with search, All/Unread filters, refresh and New email; and a reader with the same reply composer as the main mailbox. The composer opens expanded for company conversations, with AI writing enabled, AI reply, suggestions, attachments, catalogs, permitted invoice tools, emoji and calculator. AI draft previews and generation use the existing shared implementation. Narrow screens show the list or reader with a Conversations back button. Mailbox folders, bulk controls, automation, repeated account details, stars and category/source filters are omitted. Translation is optional and starts off. New conversations offer only the company's saved contact addresses. The tab uses the viewer's existing authorized mailbox and saved-history limits; it does not import a separate company mailbox or send messages automatically.
+
 ## Mailbox structure review — October 22, 2026
 
 The supplied OKKI reference has three states: a full-width mailbox overview; a selected message with a compact list, reader, and contact context; and an expanded inline reply. Persistent folder navigation, small date-grouped rows, unread emphasis, message actions, and independent scrolling make those states usable together.
@@ -59,6 +65,10 @@ On October 22, 2026, both default mailboxes passed SMTP/IMAP authentication. Wor
 The inbox cache intentionally shows at most 1,000 recent mailbox messages; it is not a complete mailbox archive. Attachments are downloaded only on demand and capped at 25 MB per MIME part. Full external delivery and provider spam placement were not tested by sending customer email: MIME sending checks use Nodemailer's local stream transport.
 
 The database migration is `supabase/migrations/20261022055049_mailbox_incremental_sync.sql`; equivalent table definitions are in `supabase/schema.sql`. Application changes require deployment to affect the hosted CRM.
+
+## BD manager email visibility
+
+The email page and inbox API restrict BD managers to saved contact addresses on companies currently assigned to them through `pipeline.owner_id`. This includes automatic and manual assignments and every contact on each company. Other managers' customers, unassigned customers, and unknown senders are excluded from every inbox folder and the automation queue count. Matching uses exact email addresses, never company names or domains. Message bodies and attachment downloads enforce the same ownership check. Assignment lookup errors deny access; they do not fall back to the shared inbox. Admin, operator, and viewer access is unchanged.
 
 ## Sources
 

@@ -2,6 +2,8 @@ import "server-only";
 import { createSupabaseAdmin } from "../supabase/admin";
 import { blankInvoiceDocument, type InvoiceDocument } from "../invoices";
 import { relatedInvoices } from "./invoice-related";
+import { purchaseOrderSchema } from "../purchase-orders.ts";
+import { orderInvoiceProductMatches } from "../purchase-order-links.ts";
 import {
   invoiceProduct,
   productUnitPrice,
@@ -9,7 +11,7 @@ import {
   type BillingCustomer,
   type BillingProfile,
   type InvoiceProductRow,
-  type SellerSettings,
+  sellerSettingsSchema,
 } from "../invoice-links";
 
 export class InvoiceConnectionError extends Error {
@@ -138,7 +140,7 @@ export async function invoiceBootstrap(input: {
   if (settings.error) throw settings.error;
   let document = {
     ...blankInvoiceDocument(new Date().toISOString().slice(0, 10)),
-    ...(settings.data?.settings as SellerSettings | undefined),
+    ...sellerSettingsSchema.partial().parse(settings.data?.settings ?? {}),
     ...(input.threadId ? { sourceThreadId: input.threadId } : {}),
     ...(input.email ? { customerEmail: input.email } : {}),
   };
@@ -190,6 +192,19 @@ export async function validateInvoiceConnections(document: InvoiceDocument) {
     throw new InvoiceConnectionError(
       "The selected contact does not belong to this customer.",
     );
+  if (document.purchaseOrderId) {
+    const order = await db.from("purchase_orders").select("company_id,document").eq("id", document.purchaseOrderId).maybeSingle();
+    if (order.error) throw order.error;
+    if (!order.data || order.data.company_id !== document.companyId) throw new InvoiceConnectionError("Select an order belonging to this customer.");
+    const po = purchaseOrderSchema.parse(order.data.document);
+    if (po.currency !== document.currency) throw new InvoiceConnectionError("Invoice currency must match the saved order.");
+    for (const item of document.items) {
+      const match = /^line-([1-9]\d*)$/.exec(item.purchaseOrderLineId ?? "");
+      const source = match ? po.items[Number(match[1]) - 1] : undefined;
+      if (!source || !orderInvoiceProductMatches(item, source)) throw new InvoiceConnectionError("Keep the saved order product, variant, description, and agreed price on its invoice.");
+    }
+    return;
+  }
   const bySku = new Map(
     ((products?.data as InvoiceProductRow[]) ?? []).map((row) => [
       row.sku,

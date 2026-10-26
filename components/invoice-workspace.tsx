@@ -1,7 +1,7 @@
 "use client";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Plus, Printer, RefreshCw } from "lucide-react";
@@ -11,6 +11,7 @@ import { TableFilters, TableFilter } from "@/components/ui/table-filters";
 import { InvoiceEditor } from "@/components/invoice-editor";
 import { invoiceRequest as api, invoiceContextUrl } from "@/lib/invoice-client";
 import { InvoicePaper } from "@/components/invoice-paper";
+import { InvoicePortalShortcut } from "@/components/invoice-portal-shortcut";
 import { InvoiceCreator } from "@/components/invoice-creator";
 import { canEditInvoice, canManageBilling } from "@/lib/invoice-permissions";
 import {
@@ -59,6 +60,15 @@ export function InvoiceWorkspace({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(initialError);
   const [notice, setNotice] = useState("");
+  useEffect(() => {
+    const controller = new AbortController();
+    const refresh = () => {
+      void api(`/api/invoices?page=${page}&search=${encodeURIComponent(appliedFilters.search)}&status=${appliedFilters.status}${companyId ? `&companyId=${companyId}` : ""}`, undefined, "GET", controller.signal).then(setListing).catch(() => {});
+      if (selected?.id) void api(`/api/invoices/${selected.id}`, undefined, "GET", controller.signal).then((result) => setSelected(result.invoice)).catch(() => {});
+    };
+    window.addEventListener("filazoo:agent-action", refresh);
+    return () => { controller.abort(); window.removeEventListener("filazoo:agent-action", refresh); };
+  }, [page, appliedFilters, companyId, selected?.id]);
   const [confirm, setConfirm] = useState<"issue" | "void" | "delete" | null>(
     null,
   );
@@ -135,7 +145,7 @@ export function InvoiceWorkspace({
     else setEditor(null);
   }
   return (
-    <div className="invoice-workspace mx-auto w-full max-w-7xl space-y-6 p-5 pb-12 sm:p-8">
+    <div data-ai-invoice-id={selected?.id} data-ai-company-id={selected?.document.companyId || editor?.companyId || companyId} className="invoice-workspace mx-auto w-full max-w-7xl space-y-6 p-5 pb-12 sm:p-8">
       <header className="flex flex-wrap items-start justify-between gap-4 border-b pb-6">
         <div>
           <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
@@ -210,6 +220,7 @@ export function InvoiceWorkspace({
           )}
         </div>
       </header>
+      {(selected?.document.purchaseOrderId || editor?.purchaseOrderId) && <div className="rounded-lg border bg-muted/30 p-4 text-sm">Linked customer order: <Link className="font-medium text-primary underline" href={`/companies/${(editor ?? selected?.document)?.companyId}?tab=purchase-orders`}>{(editor ?? selected?.document)?.reference || "View order"}</Link>. Invoice quantities and payments are tracked against this order.</div>}
       {error ? (
         <div
           role="alert"
@@ -366,6 +377,7 @@ export function InvoiceWorkspace({
             </section>
           ) : null}
           <InvoicePaper invoice={selected} today={today} />
+          {selected.status !== "draft" && <InvoicePortalShortcut key={selected.id} id={selected.id} companyId={selected.company_id} customerName={selected.document.customerName} canWrite={canWrite && invoiceViewer.role !== "viewer"} />}
           <section className="rounded-xl border p-5">
             <h2 className="font-semibold">Payments</h2>
             <p className="mt-1 text-sm text-muted-foreground">

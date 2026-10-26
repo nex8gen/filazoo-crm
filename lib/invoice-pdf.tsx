@@ -1,10 +1,13 @@
 import path from "node:path";
 import { readFileSync } from "node:fs";
 import { Children, isValidElement, type SVGProps } from "react";
-import { Document, Page, Text, View, Image as PdfImage, Svg, Path, G, Defs, ClipPath, Rect, Font, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
+import { Document, Page, Text, View, Link, Image as PdfImage, Svg, Path, G, Defs, ClipPath, Rect, Font, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
 import QRCode from "qrcode";
+import { customerPortalUrl } from "./customer-portal-links";
 import { BrandMark } from "../components/brand-mark";
 import { invoiceBankFields } from "./invoice-banks";
+import { paymentMethodDetails, paymentMethodTitle } from "./invoice-payment-methods";
+import { PAYPAL_ICON_PATH } from "./payment-icons";
 import { formatMoney, invoiceLabel, invoiceStatus, invoiceTotals, type Invoice } from "./invoices";
 import { DEFAULT_INVOICE_PRODUCT_IMAGE } from "./invoice-links";
 
@@ -111,8 +114,9 @@ function InvoicePdfDocument({ invoice, today, qr }: { invoice: Invoice; today: s
       </View>
       <View style={s.customerRow} wrap={false}>
         <View style={s.half}><Text style={s.heading}>Bill to</Text><ContentText value={doc.customerName} style={s.name} /><ContentText value={doc.customerEmail} style={s.muted} /><ContentText value={doc.customerAddress} style={s.muted} />{doc.customerTaxId ? <ContentText value={`Tax ID: ${doc.customerTaxId}`} /> : null}
+          {doc.shippingAddress ? <View style={{ marginTop: 10 }}><Text style={s.heading}>Ship to</Text>{doc.shippingRecipient ? <ContentText value={doc.shippingRecipient} /> : null}<ContentText value={doc.shippingAddress} style={s.muted} />{doc.shippingPhone ? <ContentText value={doc.shippingPhone} style={s.muted} /> : null}</View> : null}
         </View>
-        <View style={s.qr}><PdfImage src={qr} style={s.qrImage} /><Text style={s.qrLabel}>Scan to view invoice</Text><Text style={s.qrHint}>CRM sign-in required</Text></View>
+        {qr ? <View style={s.qr}><PdfImage src={qr} style={s.qrImage} /><Text style={s.qrLabel}>Your customer portal</Text><Text style={s.qrHint}>{invoice.status === "draft" ? "Activates when invoice is issued" : "Invoice · Tracking · Chat"}</Text></View> : null}
       </View>
       <View style={[s.row, s.tableHead]} minPresenceAhead={35}><Text style={s.serial}>No.</Text><Text style={s.description}>Description</Text><Text style={s.qty}>Qty</Text><Text style={s.unit}>Unit price</Text><Text style={s.tax}>Tax</Text><Text style={s.amount}>Amount</Text></View>
       {doc.items.map((item, index) => <View key={index} style={[s.row, { backgroundColor: index % 2 ? "#f3f3f3" : "#ffffff" }]} wrap={false}>
@@ -120,7 +124,17 @@ function InvoicePdfDocument({ invoice, today, qr }: { invoice: Invoice; today: s
       </View>)}
       <Text style={s.caption}>All amounts in {doc.currency}. Line amounts are before tax and discount.</Text>
       <View style={s.settlement}>
-        <View style={s.bank}><Text style={s.heading}>Payment details</Text>{doc.bankAccount ? invoiceBankFields(doc.bankAccount, false).map(([label, value]) => <View key={label} style={s.bankRow} wrap={false}><Text style={s.bankLabel}>{label}</Text><ContentText value={value} style={s.bankValue} /></View>) : null}{doc.paymentInstructions || !doc.bankAccount ? <ContentText value={doc.paymentInstructions || "Please contact us to confirm payment arrangements."} style={s.instructions} /> : null}<Text style={s.paymentReference}>Payment reference: {invoiceLabel(invoice)}</Text></View>
+        <View style={s.bank}><Text style={s.heading}>Payment details</Text>
+          {doc.paymentMethods?.map((method) => <View key={method.id} style={{ marginBottom: 10 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+              {method.type === "paypal" ? <Svg viewBox="0 0 16 16" width={13} height={13}><Path d={PAYPAL_ICON_PATH} fill="#0070ba" /></Svg> : null}
+              <ContentText value={paymentMethodTitle(method)} style={s.name} />
+            </View>
+            {paymentMethodDetails(method) ? <ContentText value={paymentMethodDetails(method)} style={s.instructions} /> : null}
+            {method.paymentUrl ? <Link src={method.paymentUrl} style={s.instructions}>{method.paymentUrl}</Link> : null}
+          </View>)}
+          {doc.bankAccount ? invoiceBankFields(doc.bankAccount, false).map(([label, value]) => <View key={label} style={s.bankRow} wrap={false}><Text style={s.bankLabel}>{label}</Text><ContentText value={value} style={s.bankValue} /></View>) : null}
+          {doc.paymentInstructions || (!doc.bankAccount && !doc.paymentMethods?.length) ? <ContentText value={doc.paymentInstructions || "Please contact us to confirm payment arrangements."} style={s.instructions} /> : null}<Text style={s.paymentReference}>Payment reference: {invoiceLabel(invoice)}</Text></View>
         <View style={s.totals} wrap={false}>{rows.map(([label, value]) => <View key={label} style={s.totalRow}><Text style={s.muted}>{label}</Text><Text>{value}</Text></View>)}<View style={[s.totalRow, s.totalRule]}><Text>Total</Text><Text>{money(totals.total)}</Text></View>{invoice.paid_minor ? <View style={s.totalRow}><Text style={s.muted}>Payments received</Text><Text>−{money(invoice.paid_minor)}</Text></View> : null}<View style={s.balance}><View><Text style={s.name}>{invoice.status === "void" ? "Voided balance" : "Amount due"}</Text><Text style={s.sku}>{doc.currency}</Text></View><Text style={[s.balanceValue, { color: balance > 0 ? "#b91c1c" : "#161616" }]}>{money(balance)}</Text>{status === "paid" ? <PdfImage src={paidStamp} style={s.paidSeal} /> : null}</View></View>
       </View>
       <View style={s.footer}>
@@ -132,7 +146,8 @@ function InvoicePdfDocument({ invoice, today, qr }: { invoice: Invoice; today: s
   </Document>;
 }
 
-export async function renderInvoicePdf(invoice: Invoice, today: string, invoiceUrl: string) {
-  const qr = await QRCode.toDataURL(invoiceUrl, { width: 396, margin: 4, errorCorrectionLevel: "M" });
+export async function renderInvoicePdf(invoice: Invoice, today: string) {
+  const portalUrl = customerPortalUrl(invoice);
+  const qr = portalUrl ? await QRCode.toDataURL(portalUrl, { width: 396, margin: 4, errorCorrectionLevel: "M" }) : "";
   return renderToBuffer(<InvoicePdfDocument invoice={invoice} today={today} qr={qr} />);
 }

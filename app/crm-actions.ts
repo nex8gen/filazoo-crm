@@ -8,6 +8,8 @@ import { pipelineStageValues } from "@/lib/types";
 import { variantTag } from "@/lib/product-utils";
 import { enrollMatchingFlows } from "@/lib/data/flow-runtime";
 import { claimNextBdSalesManager } from "@/lib/lead-assignment";
+import { commerceSchema } from "@/lib/company-commerce";
+import { ensureCompanyCatalogPdf } from "@/lib/data/catalog-pdfs";
 
 export type CrmActionState = { error?: string; success?: string } | undefined;
 
@@ -198,6 +200,8 @@ export async function createCompany(_state: CrmActionState, formData: FormData):
 export async function updateCompany(companyId: string, _state: CrmActionState, formData: FormData): Promise<CrmActionState> {
   const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
   const id = z.string().uuid().safeParse(companyId);
+  const commerce = commerceSchema.safeParse(Object.fromEntries(Object.keys(commerceSchema.shape).map((key) => [key, formData.get(`commerce.${key}`) ?? ""])));
+  if (!commerce.success) return { error: "Review the billing email, payment terms, and shipping details." };
   const parsed = companyUpdateSchema.safeParse({
     name: formData.get("name"), website: formData.get("website"), country: formData.get("country"), city: formData.get("city"),
     segment: formData.get("segment"), contactName: formData.get("contactName"), contactRole: formData.get("contactRole"), contactEmail: formData.get("contactEmail"),
@@ -209,13 +213,17 @@ export async function updateCompany(companyId: string, _state: CrmActionState, f
   if (parsed.data.website && !website) return { error: "Enter a valid company website." };
 
   const admin = createSupabaseAdmin();
-  const [{ data: company }, { data: previousPipeline }] = await Promise.all([
+  const [{ data: company }, { data: previousPipeline, error: pipelineReadError }] = await Promise.all([
     admin.from("companies").select("id,name,segment").eq("id", id.data).maybeSingle(),
-    admin.from("pipeline").select("stage,owner_id").eq("company_id", id.data).maybeSingle(),
+    admin.from("pipeline").select("stage,owner_id,next_followup_at").eq("company_id", id.data).maybeSingle(),
   ]);
   if (!company) return { error: "The company no longer exists." };
+  if (pipelineReadError) return { error: "The pipeline could not be loaded. Please try again." };
   const tags = (parsed.data.tags || "").split(",").map((tag) => tag.trim()).filter(Boolean).slice(0, 50);
+  const existingBilling = await admin.from("customer_billing_profiles").select("profile").eq("company_id", id.data).maybeSingle();
+  if (existingBilling.error) return { error: "Billing details could not be loaded. Please try again." };
   const writes = await Promise.all([
+    admin.from("customer_billing_profiles").upsert({ company_id: id.data, profile: { ...existingBilling.data?.profile, ...commerce.data }, updated_by: viewer.id, updated_at: new Date().toISOString() }),
     admin.from("companies").update({
       name: parsed.data.name, website, domain: domainFromWebsite(website), country: parsed.data.country, city: parsed.data.city || null,
       segment: parsed.data.segment, status: parsed.data.stage === "won" ? "customer" : parsed.data.stage === "lost" ? "disqualified" : "engaged",
@@ -232,7 +240,7 @@ export async function updateCompany(companyId: string, _state: CrmActionState, f
   ]);
   if (writes.some((result) => result.error)) return { error: "The company could not be updated." };
 
-  const { data: primaryContact } = await admin.from("contacts").select("id").eq("company_id", id.data).order("created_at").limit(1).maybeSingle();
+  const { data: primaryContact } = await admin.from("contacts").select("id").eq("company_id", id.data).order("created_at").order("id").limit(1).maybeSingle();
   if (parsed.data.contactEmail) {
     const contactValues = { name: parsed.data.contactName || null, role: parsed.data.contactRole || null, email: parsed.data.contactEmail };
     const contactResult = primaryContact
@@ -240,19 +248,9 @@ export async function updateCompany(companyId: string, _state: CrmActionState, f
       : await admin.from("contacts").insert({ company_id: id.data, ...contactValues, verification_status: "unverified" });
     if (contactResult.error) return { error: "Company details were saved, but the contact email could not be updated." };
   }
-  const followupNote = "Scheduled from intelligent next follow-up recommendation.";
-  const { data: existingFollowupTask } = await admin.from("crm_tasks").select("id").eq("company_id", id.data).eq("status", "open").eq("notes", followupNote).order("created_at").limit(1).maybeSingle();
   const followupDueAt = parsed.data.nextFollowupAt ? new Date(parsed.data.nextFollowupAt).toISOString() : null;
-  const followupTaskResult = followupDueAt
-    ? existingFollowupTask
-      ? await admin.from("crm_tasks").update({ title: `Follow up ${parsed.data.name}`, assigned_to: previousPipeline?.owner_id ?? viewer.id, due_at: followupDueAt, updated_at: new Date().toISOString() }).eq("id", existingFollowupTask.id)
-      : await admin.from("crm_tasks").insert({ company_id: id.data, contact_id: primaryContact?.id ?? null, assigned_to: previousPipeline?.owner_id ?? viewer.id, title: `Follow up ${parsed.data.name}`, notes: followupNote, priority: ["replied", "interested", "big_order"].includes(parsed.data.stage) ? "high" : "normal", due_at: followupDueAt })
-    : existingFollowupTask
-      ? await admin.from("crm_tasks").update({ status: "cancelled", updated_at: new Date().toISOString() }).eq("id", existingFollowupTask.id)
-      : { error: null };
-  if (followupTaskResult.error) return { error: "Company details were saved, but the follow-up task could not be scheduled." };
   await admin.from("events").insert({ company_id: id.data, actor_id: viewer.id, type: "company_updated", data: { summary: `${parsed.data.name} details were updated.` } });
-  if (followupDueAt) await admin.from("events").insert({ company_id: id.data, actor_id: viewer.id, type: "followup_scheduled", data: { summary: `Next follow-up scheduled for ${new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Shanghai" }).format(new Date(followupDueAt))}.` } });
+  if (followupDueAt && followupDueAt !== previousPipeline?.next_followup_at) await admin.from("events").insert({ company_id: id.data, actor_id: viewer.id, type: "followup_scheduled", data: { summary: `Next follow-up scheduled for ${new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Shanghai" }).format(new Date(followupDueAt))}.` } });
   const { data: automationContact } = await admin.from("contacts").select("id").eq("company_id", id.data).order("created_at").limit(1).maybeSingle();
   if (company.segment !== parsed.data.segment) await enrollCompanyEvent({ type: "company_segment_changed", conversationId: `company:${id.data}`, companyId: id.data, contactId: automationContact?.id ?? null, segment: parsed.data.segment });
   if (previousPipeline?.stage !== parsed.data.stage) await enrollCompanyEvent({ type: "pipeline_stage_changed", conversationId: `company:${id.data}:pipeline`, companyId: id.data, contactId: automationContact?.id ?? null, stage: parsed.data.stage });
@@ -308,7 +306,7 @@ export async function createOpportunity(_state: CrmActionState, formData: FormDa
   }, { onConflict: "company_id" });
   if (error) return { error: "The opportunity could not be saved." };
   await admin.from("events").insert({ company_id: company.id, actor_id: viewer.id, type: "opportunity_updated", data: { summary: `${company.name} moved to ${parsed.data.stage.replaceAll("_", " ")}.` } });
-  refreshCrm();
+  refreshCompany(company.id);
   return { success: `Opportunity saved for ${company.name}.` };
 }
 
@@ -324,7 +322,7 @@ export async function updatePipelineStage(companyId: string, stage: string): Pro
   await admin.from("events").insert({ company_id: company.id, actor_id: viewer.id, type: "pipeline_stage_changed", data: { summary: `${company.name} moved to ${parsed.data.stage.replaceAll("_", " ")}.` } });
   const { data: contact } = await admin.from("contacts").select("id").eq("company_id", company.id).order("created_at").limit(1).maybeSingle();
   await enrollCompanyEvent({ type: "pipeline_stage_changed", conversationId: `company:${company.id}:pipeline`, companyId: company.id, contactId: contact?.id ?? null, stage: parsed.data.stage });
-  refreshCrm();
+  refreshCompany(company.id);
   return { success: "Pipeline stage updated." };
 }
 
@@ -333,20 +331,31 @@ export async function assignPipelineOwner(companyId: string, ownerId: string | n
   const parsed = z.object({ companyId: z.string().uuid(), ownerId: z.string().uuid().nullable() }).safeParse({ companyId, ownerId });
   if (!parsed.success) return { error: "Invalid lead assignment." };
   const admin = createSupabaseAdmin();
-  const { data: company } = await admin.from("companies").select("id,name").eq("id", parsed.data.companyId).maybeSingle();
-  if (!company) return { error: "The company no longer exists." };
-  let ownerName = "Unassigned";
-  if (parsed.data.ownerId) {
-    const { data: member } = await admin.from("workspace_members").select("display_name").eq("user_id", parsed.data.ownerId).eq("role", "bd_manager").eq("auto_assign_leads", true).not("activated_at", "is", null).maybeSingle();
-    if (!member) return { error: "Choose an active BD Sales Manager." };
-    ownerName = member.display_name || "BD Sales Manager";
-  }
-  const { error } = await admin.from("pipeline").upsert({ company_id: company.id, owner_id: parsed.data.ownerId, updated_at: new Date().toISOString() }, { onConflict: "company_id" });
+  const { data: ownerName, error } = await admin.rpc("assign_company_owner", {
+    p_company_id: parsed.data.companyId, p_owner_id: parsed.data.ownerId, p_actor_id: viewer.id,
+  });
   if (error) return { error: "The lead owner could not be updated." };
-  await admin.from("shopify_leads").update({ owner_id: parsed.data.ownerId, assignment_method: parsed.data.ownerId ? "manual" : null }).eq("company_id", company.id);
-  await admin.from("events").insert({ company_id: company.id, actor_id: viewer.id, type: "lead_owner_changed", data: { summary: parsed.data.ownerId ? `${company.name} was manually assigned to ${ownerName}.` : `${company.name} was returned to the unassigned queue.` } });
-  refreshCompany(company.id);
+  refreshCompany(parsed.data.companyId);
   return { success: parsed.data.ownerId ? `Assigned to ${ownerName}.` : "Lead unassigned." };
+}
+
+export async function scheduleCompanyFollowup(companyId: string, dueAt: string): Promise<CrmActionState> {
+  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
+  const parsed = z.object({ companyId: z.uuid(), dueAt: z.union([z.literal(""), z.iso.datetime({ offset: true })]) }).safeParse({ companyId, dueAt });
+  if (!parsed.success) return { error: "Choose a valid follow-up date and time." };
+  const admin = createSupabaseAdmin();
+  const { data: company, error: readError } = await admin.from("companies").select("id").eq("id", parsed.data.companyId).maybeSingle();
+  if (readError || !company) return { error: "The company could not be loaded. Please refresh and retry." };
+  // The database trigger saves/cancels the owner's task in this transaction.
+  const { error } = await admin.from("pipeline").upsert({ company_id: company.id, next_followup_at: parsed.data.dueAt || null }, { onConflict: "company_id" });
+  if (error) return { error: "The follow-up could not be saved. Please retry." };
+  const { error: auditError } = await admin.from("events").insert({ company_id: company.id, actor_id: viewer.id,
+    type: parsed.data.dueAt ? "followup_scheduled" : "followup_cancelled",
+    data: { summary: parsed.data.dueAt ? `Next follow-up scheduled for ${parsed.data.dueAt}.` : "Scheduled follow-up cancelled.", dueAt: parsed.data.dueAt || null },
+  });
+  refreshCompany(company.id);
+  if (auditError) return { error: "The follow-up was saved, but its activity entry could not be recorded. Refresh before retrying." };
+  return { success: parsed.data.dueAt ? "Follow-up scheduled." : "Follow-up cancelled." };
 }
 
 export async function createEmailDraft(_state: CrmActionState, formData: FormData): Promise<CrmActionState> {
@@ -377,11 +386,16 @@ export async function createCatalog(_state: CrmActionState, formData: FormData):
   }
   const { data: latest } = await admin.from("catalogs").select("version").eq("company_id", company.id).order("version", { ascending: false }).limit(1).maybeSingle();
   const version = (latest?.version ?? 0) + 1;
-  const { data: catalog, error } = await admin.from("catalogs").insert({ company_id: company.id, product_skus: parsed.data.productSkus, currency: parsed.data.currency, version }).select("id").single();
+  const { data: catalog, error } = await admin.from("catalogs").insert({ company_id: company.id, product_skus: parsed.data.productSkus, currency: parsed.data.currency, version }).select("id,price_date,created_at").single();
   if (error) return { error: "The catalog selection could not be saved." };
   await admin.from("events").insert({ company_id: company.id, actor_id: viewer.id, type: "catalog_created", data: { catalogId: catalog.id, summary: `Catalog v${version} created with ${parsed.data.productSkus.length} products.` } });
+  let pdfReady = false;
+  try {
+    await ensureCompanyCatalogPdf({ id: catalog.id, company: company.name, productSkus: parsed.data.productSkus, currency: parsed.data.currency, version, priceDate: catalog.price_date, createdAt: catalog.created_at, pdfUrl: null });
+    pdfReady = true;
+  } catch (error) { console.error("New catalog PDF generation failed", catalog.id, error); }
   refreshCrm();
-  return { success: `Catalog v${version} saved for ${company.name}.` };
+  return { success: `Catalog v${version} saved for ${company.name}. ${pdfReady ? "PDF ready to preview and download." : "PDF preparation is pending; use Preview to retry."}` };
 }
 
 export async function createProduct(_state: CrmActionState, formData: FormData): Promise<CrmActionState> {

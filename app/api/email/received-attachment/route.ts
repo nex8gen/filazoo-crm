@@ -1,6 +1,8 @@
 import { requireWorkspaceMember } from "@/lib/auth";
 import { getEffectiveMailbox, mailboxHasImap } from "@/lib/data/mailboxes";
-import { mailboxSyncKey } from "@/lib/data/mailbox-sync";
+import { mailboxSyncKey, loadMailboxMessageContent } from "@/lib/data/mailbox-sync";
+import { getAssignedEmailContacts } from "@/lib/data/email-access";
+import { canViewEmail } from "@/lib/email-access";
 import { downloadMailboxAttachment } from "@/lib/mailbox-imap";
 
 export const maxDuration = 240;
@@ -14,6 +16,10 @@ export async function GET(request: Request) {
   const mailbox = await getEffectiveMailbox(viewer.id);
   if (!mailbox || !mailboxHasImap(mailbox) || params.get("mailbox") !== mailboxSyncKey(mailbox)) return new Response("Attachment not found.", { status: 404 });
   try {
+    if (viewer.role === "bd_manager") {
+      const email = await loadMailboxMessageContent(mailbox, uid, validity);
+      if (!canViewEmail(viewer, email.contact, await getAssignedEmailContacts(viewer))) return new Response("Attachment not found.", { status: 404 });
+    }
     const attachment = await downloadMailboxAttachment(mailbox, uid, validity, part);
     const filename = attachment.filename.replace(/[\r\n"\\]/g, "_");
     const safeInline = /^(image\/(png|jpeg|gif|webp)|application\/pdf)$/.test(attachment.contentType);

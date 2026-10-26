@@ -8,7 +8,7 @@ import { metaOrderLabel } from "../order-estimate.ts";
 import { billingActivity, sentMailActivity, mergeCompanyActivity, type ActivityInvoice, type ActivityInvoiceEvent, type ActivityPayment, type ActivitySentMail } from "../company-activity.ts";
 import { readActivityHistory } from "./activity-history.ts";
 import { literalInvoiceEmail } from "../invoice-related.ts";
-import { AVATAR_PRESETS, ownAvatarPath, PROFILE_AVATAR_BUCKET } from "../profile-avatar.ts";
+import { resolveMemberAvatars } from "./member-avatars.ts";
 
 type Relation<T> = T | T[] | null;
 
@@ -151,7 +151,7 @@ async function authorizeLiveRead() {
   }
 }
 
-function mapCompany(row: CompanyRow, ownerNames = new Map<string, string>()): Company {
+function mapCompany(row: CompanyRow, ownerNames = new Map<string, string>(), ownerAvatars = new Map<string, string>()): Company {
   const profile = first(row.company_profiles);
   const contact = first(row.contacts);
   const pipeline = first(row.pipeline);
@@ -164,6 +164,7 @@ function mapCompany(row: CompanyRow, ownerNames = new Map<string, string>()): Co
     initials: getInitials(row.name),
     ownerId,
     ownerName,
+    ownerAvatarUrl: ownerId ? ownerAvatars.get(ownerId) : undefined,
     ownerInitials: ownerId ? getInitials(ownerName) : "—",
     website: row.website || "",
     domain,
@@ -209,7 +210,8 @@ async function queryCompanies(): Promise<Company[]> {
   const ownerIds = [...new Set(rows.map((row) => first(row.pipeline)?.owner_id).filter((value): value is string => Boolean(value)))];
   const { data: owners } = ownerIds.length ? await createSupabaseAdmin().from("workspace_members").select("user_id,display_name").in("user_id", ownerIds) : { data: [] };
   const ownerNames = new Map((owners ?? []).map((owner) => [owner.user_id, owner.display_name || "BD Sales Manager"]));
-  return rows.map((row) => mapCompany(row, ownerNames));
+  const ownerAvatars = await resolveMemberAvatars(createSupabaseAdmin(), ownerIds);
+  return rows.map((row) => mapCompany(row, ownerNames, ownerAvatars));
 }
 
 type CompanyEventRow = { id: string; type: string; data: Record<string, unknown> | null; actor_id: string | null; created_at: string };
@@ -219,18 +221,19 @@ type CompanyCatalogRow = { id: string; version: number; product_skus: string[] |
 export async function getCompanyDetails(id: string): Promise<{ mode: DataMode; details: CompanyDetails | null }> {
   const mode = getCrmDataMode();
   if (mode === "demo") return { mode, details: null };
-  const viewer = await authorizeLiveRead();
+  await authorizeLiveRead();
   const admin = createSupabaseAdmin();
-  const [companyResult, contactsResult, eventsResult, emailsResult, catalogsResult] = await Promise.all([
+  const [companyResult, contactsResult, eventsResult, emailsResult, catalogsResult, commerceResult] = await Promise.all([
     admin.from("companies").select("id,name,website,domain,country,city,segment,source,status,meta_leads(created_at,field_data),company_profiles(summary,fit_score,interest_tags),contacts(id,name,role,email,verification_status,emails(status,direction,created_at)),pipeline(stage,next_followup_at,estimated_order_quantity,estimated_value,currency,owner_id)").eq("id", id).maybeSingle(),
-    admin.from("contacts").select("id,name,role,email,verification_status").eq("company_id", id).order("created_at"),
+    admin.from("contacts").select("id,name,role,email,verification_status").eq("company_id", id).order("created_at").order("id"),
     readActivityHistory((from, to) => admin.from("events").select("id,type,data,actor_id,created_at").eq("company_id", id).order("created_at", { ascending: false }).order("id").range(from, to)),
     readActivityHistory((from, to) => admin.from("emails").select("id,message_id,subject,body,status,direction,approved_by,sent_at,created_at,contacts!inner(name,email,company_id)").eq("contacts.company_id", id).order("created_at", { ascending: false }).order("id").range(from, to)),
     readActivityHistory((from, to) => admin.from("catalogs").select("id,version,product_skus,created_at").eq("company_id", id).order("created_at", { ascending: false }).order("id").range(from, to)),
+    admin.from("customer_billing_profiles").select("profile").eq("company_id", id).maybeSingle(),
   ]);
   if (companyResult.error) throw new Error(`Unable to load company: ${companyResult.error.message}`);
   if (!companyResult.data) return { mode, details: null };
-  const failures = [contactsResult.error].filter(Boolean);
+  const failures = [contactsResult.error, commerceResult.error].filter(Boolean);
   if (failures.length) throw new Error(`Unable to load company activity: ${failures[0]?.message}`);
 
   const events = eventsResult as CompanyEventRow[];
@@ -238,9 +241,9 @@ export async function getCompanyDetails(id: string): Promise<{ mode: DataMode; d
   const addresses = [...new Set((contactsResult.data ?? []).map((contact) => contact.email))];
   const [sentMail, invoiceGroups] = await Promise.all([
     addresses.length ? readActivityHistory<ActivitySentMail>((from, to) => admin.from("mailbox_sent_messages").select("id,user_id,from_email,to_email,subject,body,status,sent_at,message_id,attachments").in("to_email", addresses).order("sent_at", { ascending: false }).order("id").range(from, to)) : Promise.resolve([]),
-    // Keep the invoice workspace's existing role boundary. Legacy invoices
+    // Legacy invoices
     // match exact customer emails only when not linked to another company.
-    viewer?.role === "bd_manager" ? Promise.resolve([]) : Promise.all([
+    Promise.all([
       readActivityHistory<ActivityInvoice>((from, to) => admin.from("invoices").select("id,number,status,total_minor,paid_minor,created_by,created_at,document").eq("company_id", id).order("id").range(from, to)),
       ...addresses.map((email) => readActivityHistory<ActivityInvoice>((from, to) => admin.from("invoices").select("id,number,status,total_minor,paid_minor,created_by,created_at,document").is("company_id", null).ilike("document->>customerEmail", literalInvoiceEmail(email)).order("id").range(from, to))),
     ]),
@@ -257,21 +260,9 @@ export async function getCompanyDetails(id: string): Promise<{ mode: DataMode; d
     const { data: members } = await admin.from("workspace_members").select("user_id,display_name").in("user_id", actorIds);
     for (const member of members ?? []) memberNames.set(member.user_id, member.display_name || "Workspace member");
   }
-  // Resolve only the actors in this authorized history. Auth metadata stays on
-  // the server; private uploaded photos use short-lived Storage URLs.
-  const actorAvatars = new Map<string, string>();
-  await Promise.allSettled(actorIds.map(async (actorId) => {
-    const { data } = await admin.auth.admin.getUserById(actorId);
-    const metadata = data.user?.user_metadata;
-    if (!metadata) return;
-    const preset = AVATAR_PRESETS.find((option) => option.id === metadata.avatar_preset);
-    if (preset) actorAvatars.set(actorId, preset.image);
-    const path = ownAvatarPath(actorId, metadata.avatar_path);
-    if (path) {
-      const { data: photo } = await admin.storage.from(PROFILE_AVATAR_BUCKET).createSignedUrl(path, 3600);
-      if (photo?.signedUrl) actorAvatars.set(actorId, photo.signedUrl);
-    }
-  }));
+  const companyRow = companyResult.data as unknown as CompanyRow;
+  const ownerId = first(companyRow.pipeline)?.owner_id;
+  const actorAvatars = await resolveMemberAvatars(admin, ownerId ? [...actorIds, ownerId] : actorIds);
 
   const activity: CompanyActivity[] = mergeCompanyActivity([
     // Billing audit rows and payments provide one detailed entry per action.
@@ -317,15 +308,14 @@ export async function getCompanyDetails(id: string): Promise<{ mode: DataMode; d
     ...billingActivity(invoices, payments, invoiceEvents, memberNames),
   ]).map((item) => ({ ...item, actorAvatarUrl: item.actorId ? actorAvatars.get(item.actorId) : undefined }));
 
-  const companyRow = companyResult.data as unknown as CompanyRow;
-  const ownerId = first(companyRow.pipeline)?.owner_id;
   const { data: owner } = ownerId ? await admin.from("workspace_members").select("display_name").eq("user_id", ownerId).maybeSingle() : { data: null };
   const ownerNames = new Map<string, string>();
   if (ownerId) ownerNames.set(ownerId, owner?.display_name || "BD Sales Manager");
   return {
     mode,
     details: {
-      company: mapCompany(companyRow, ownerNames),
+      commerce: commerceResult.data?.profile,
+      company: { ...mapCompany(companyRow, ownerNames, actorAvatars), ...(contactsResult.data?.[0] ? { contact: contactsResult.data[0].name || "No contact yet", contactRole: contactsResult.data[0].role || "Role not confirmed", email: contactsResult.data[0].email } : {}) },
       contacts: (contactsResult.data ?? []).map((contact) => ({
         id: contact.id,
         name: contact.name || "No name",
@@ -467,16 +457,17 @@ export async function listReplies(): Promise<{ mode: DataMode; replies: Reply[] 
   };
 }
 
-export async function listProducts(): Promise<{ mode: DataMode; products: Product[] }> {
+export async function listProducts(skus?: string[]): Promise<{ mode: DataMode; products: Product[] }> {
   const mode = getCrmDataMode();
   if (mode === "demo") return { mode, products: [] };
   await authorizeLiveRead();
 
-  const { data, error } = await createSupabaseAdmin()
+  const query = createSupabaseAdmin()
     .from("products")
     .select("sku,name,image_url,material,color,diameter,weight,price,currency,moq,stock_status,lead_time,tags,active,sheet_updated_at")
     .order("name")
     .limit(500);
+  const { data, error } = await (skus ? query.in("sku", skus) : query);
   if (error) throw new Error(`Unable to load products: ${error.message}`);
   const syncedProducts = (data ?? []).filter((row) => !row.sku.startsWith("SAMPLE-") && !row.name.toLowerCase().startsWith("[sample]")).map((row) => {
       const price = row.price == null ? "—" : new Intl.NumberFormat("en", { style: "currency", currency: row.currency }).format(Number(row.price));

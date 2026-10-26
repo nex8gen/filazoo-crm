@@ -1,6 +1,7 @@
 "use client";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import Link from "next/link";
+import { Check } from "lucide-react";
 import {
   useEffect,
   useRef,
@@ -14,6 +15,7 @@ import { formatMoney, type InvoiceDocument } from "@/lib/invoices";
 import {
   withBillingCustomer,
   productInvoiceLine,
+  productUnitPrice,
   type BillingCustomer,
   type BillingProfile,
   type InvoiceProduct,
@@ -49,8 +51,11 @@ export function InvoiceConnections({
   const [productPage, setProductPage] = useState(0);
   const [products, setProducts] = useState<InvoiceProduct[]>([]);
   const [productCount, setProductCount] = useState(0);
+  const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>(
+    {},
+  );
   const [billing, setBilling] = useState<Billing | null>(null);
-  const [termsDays, setTermsDays] = useState(30);
+  const [termsDays, setTermsDays] = useState(0);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(true);
@@ -146,7 +151,7 @@ export function InvoiceConnections({
     )
       .then((result) => {
         setBilling(result);
-        setTermsDays(result.profile?.termsDays ?? 30);
+        setTermsDays(result.profile?.termsDays ?? 0);
       })
       .catch((err) => {
         if (!controller.signal.aborted) setError(err.message);
@@ -178,7 +183,7 @@ export function InvoiceConnections({
         `/api/invoices/context?kind=customer&companyId=${companyId}`,
       );
       setBilling(result);
-      setTermsDays(result.profile?.termsDays ?? 30);
+      setTermsDays(result.profile?.termsDays ?? 0);
       onChange((current) => ({
         ...withBillingCustomer(current, result.customer, result.profile),
         sourceThreadId: undefined,
@@ -203,7 +208,7 @@ export function InvoiceConnections({
           : [...current.items, line],
     }));
     setNotice(
-      `${product.name} added.${line.pricingMode === "manual" ? " Enter an agreed unit price; no catalog quote is available." : " Quantity pricing updates automatically."}`,
+      `${line.description} added.${line.pricingMode === "manual" ? " Enter an agreed unit price; no catalog quote is available." : " Quantity pricing updates automatically."}`,
     );
   }
   async function saveProfile(kind: "customer" | "seller") {
@@ -471,58 +476,128 @@ export function InvoiceConnections({
           }}
         />
       </label>
+      <p className="text-xs text-muted-foreground">
+        Choose a variant, then click Add product. Products already on this
+        invoice stay marked below.
+      </p>
       <div className="max-h-72 space-y-2 overflow-y-auto" aria-busy={loading}>
-        {products.map((product) => (
-          <div
-            key={product.sku}
-            className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-background p-3"
-          >
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">{product.name}</p>
-              <p className="text-xs text-muted-foreground">
-                {product.sku} · MOQ {product.moq} ·{" "}
-                {product.priceMinor === null
-                  ? "Price on request"
-                  : formatMoney(product.priceMinor, product.currency)}{" "}
-                · {product.stockStatus}
-              </p>
-              {product.tiers.length ? (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {product.tiers
-                    .map(
-                      (tier) =>
-                        `${tier.minimumQuantity}+: ${formatMoney(tier.priceMinor, product.currency)}`,
-                    )
-                    .join(" · ")}
+        {products.map((product) => {
+          const selectedVariant = product.variants.find(
+            (variant) => variant.id === selectedVariants[product.sku],
+          );
+          const addedItems = doc.items.filter(
+            (item) => item.productSku === product.sku,
+          );
+          const selectedAdded = addedItems.some(
+            (item) => item.variantId === selectedVariant?.id,
+          );
+          const price = productUnitPrice(product, product.moq, selectedVariant?.id);
+          const addedVariants = new Map<
+            string,
+            { name: string; quantity: number }
+          >();
+          for (const item of addedItems) {
+            const key = item.variantId ?? "";
+            const existing = addedVariants.get(key);
+            addedVariants.set(key, {
+              name: item.variantId
+                ? product.variants.find((variant) => variant.id === item.variantId)
+                    ?.name || item.variantSku || item.description
+                : "Base product",
+              quantity: (existing?.quantity ?? 0) + item.quantity,
+            });
+          }
+          return (
+            <div
+              key={product.sku}
+              className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 transition-colors ${
+                addedItems.length
+                  ? "border-emerald-500/50 bg-emerald-500/5"
+                  : selectedVariant
+                    ? "border-primary/50 bg-primary/5"
+                    : "bg-background"
+              }`}
+            >
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-medium">{product.name}</p>
+                  {addedItems.length > 0 && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                      <Check className="size-3" aria-hidden="true" />
+                      Added to invoice
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {selectedVariant?.sku || product.sku} · MOQ {product.moq} ·{" "}
+                  {price === null
+                    ? "Price on request"
+                    : formatMoney(price, product.currency)}{" "}
+                  · {selectedVariant?.stockStatus || product.stockStatus}
                 </p>
-              ) : null}
+                {product.tiers.length ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {product.tiers
+                      .map(
+                        (tier) =>
+                          `${tier.minimumQuantity}+: ${formatMoney(tier.priceMinor, product.currency)}`,
+                      )
+                      .join(" · ")}
+                  </p>
+                ) : null}
+                {selectedVariant && (
+                  <p role="status" className="mt-2 text-xs font-medium text-primary">
+                    Selected: {selectedVariant.name} · {selectedVariant.sku}
+                    {!selectedAdded && " · Ready to add"}
+                  </p>
+                )}
+                {addedVariants.size > 0 && (
+                  <ul aria-label={`${product.name} items on invoice`} className="mt-2 flex flex-wrap gap-2">
+                    {Array.from(addedVariants, ([key, item]) => (
+                      <li key={key} className="inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-background px-2 py-1 text-xs text-emerald-700 dark:text-emerald-400">
+                        <Check className="size-3" aria-hidden="true" />
+                        {item.name} · Qty {item.quantity}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="flex max-w-full flex-wrap items-center gap-2">
+                {product.variants.length ? (
+                  <Select
+                    value={selectedVariant?.id ?? ""}
+                    onValueChange={(value) => {
+                      if (value === null) return;
+                      setSelectedVariants((current) => ({ ...current, [product.sku]: value }));
+                    }}
+                  >
+                    <SelectTrigger aria-label={`Variant of ${product.name}`} className="w-60 max-w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Choose variant (optional)</SelectItem>
+                      {product.variants.map((variant) => (
+                        <SelectItem key={variant.id} value={variant.id}>
+                          {variant.name} · {variant.sku}
+                          {addedItems.some((item) => item.variantId === variant.id) && " · Added"}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : null}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={doc.items.length >= 100}
+                  onClick={() => addProduct(product, selectedVariant?.id)}
+                >
+                  {selectedAdded ? <><Check aria-hidden="true" /> Add again</> : "Add product"}
+                </Button>
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {product.variants.length ? (
-                <Select value="" onValueChange={(value) => { if (value === null) return;
-                    if (value)
-                      addProduct(product, value);
-                   }}><SelectTrigger aria-label={`Add variant of ${product.name}`} className="!w-48"><SelectValue /></SelectTrigger><SelectContent>
-                  <SelectItem value="">Choose variant to add</SelectItem>
-                  {product.variants.map((variant) => (
-                    <SelectItem key={variant.id} value={variant.id}>
-                      {variant.name} · {variant.sku}
-                    </SelectItem>
-                  ))}
-                </SelectContent></Select>
-              ) : null}
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={doc.items.length >= 100}
-                onClick={() => addProduct(product)}
-              >
-                Add product
-              </Button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
         {!products.length && !loading ? (
           <p className="p-3 text-sm text-muted-foreground">
             No active products match this currency and search. You can add an

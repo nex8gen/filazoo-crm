@@ -3,6 +3,15 @@ import { NextResponse, type NextRequest } from "next/server";
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
+  // Customer access is validated by its own invoice-scoped cookie and QR key.
+  // Never run the staff session gate (or refresh staff cookies) for this surface.
+  const customerRoute = request.nextUrl.pathname.startsWith("/customer/") || request.nextUrl.pathname.startsWith("/api/customer/");
+  if (customerRoute) {
+    response.headers.set("Referrer-Policy", "no-referrer");
+    response.headers.set("Cache-Control", "private, no-store");
+    response.headers.set("X-Robots-Tag", "noindex, nofollow");
+    return response;
+  }
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !key) return response;
@@ -35,6 +44,7 @@ export async function updateSession(request: NextRequest) {
     "/api/flows/track",
     "/api/cron/flows",
     "/api/meta/webhook",
+    "/api/twilio/webhook",
     // Make authenticates this receiver with its own bearer secret.
     "/api/meta/lead-bridge",
     "/api/shopify/webhook",
@@ -42,9 +52,17 @@ export async function updateSession(request: NextRequest) {
   ];
   const isPublic = publicPaths.includes(request.nextUrl.pathname) || request.nextUrl.pathname.startsWith("/auth/");
   if (process.env.AUTH_REQUIRED === "true" && !data?.claims && !isPublic) {
+    const invoiceQr = /^\/invoices\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/?$/i.exec(request.nextUrl.pathname);
+    if (invoiceQr) {
+      const customerUrl = request.nextUrl.clone();
+      customerUrl.pathname = `/customer/legacy/${invoiceQr[1]}`;
+      customerUrl.search = "";
+      return NextResponse.redirect(customerUrl, { headers: { "Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer" } });
+    }
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
-    loginUrl.searchParams.set("next", request.nextUrl.pathname);
+    loginUrl.search = "";
+    loginUrl.searchParams.set("next", request.nextUrl.pathname + request.nextUrl.search);
     const redirect = NextResponse.redirect(loginUrl);
     response.cookies.getAll().forEach(cookie => redirect.cookies.set(cookie));
     return redirect;

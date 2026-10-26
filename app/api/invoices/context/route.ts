@@ -8,10 +8,11 @@ import {
 } from "@/lib/data/invoice-connections";
 import { invoiceCurrencies } from "@/lib/invoices";
 import { invoiceBankAccounts } from "@/lib/data/invoice-banks";
+import { invoicePaymentMethods } from "@/lib/data/invoice-payment-methods";
 
 const querySchema = z.object({
   kind: z
-    .enum(["bootstrap", "customers", "products", "customer", "banks"])
+    .enum(["bootstrap", "customers", "products", "customer", "banks", "payments"])
     .default("bootstrap"),
   search: z.string().max(200).default(""),
   page: z.coerce.number().int().min(0).max(100000).default(0),
@@ -54,6 +55,8 @@ export async function GET(request: Request) {
       { status: 400 },
     );
   try {
+    if (query.kind === "payments")
+      return Response.json({ paymentMethods: await invoicePaymentMethods() }, { headers: { "Cache-Control": "no-store" } });
     if (query.kind === "banks")
       return Response.json({ accounts: await invoiceBankAccounts() }, { headers: { "Cache-Control": "no-store" } });
     const result =

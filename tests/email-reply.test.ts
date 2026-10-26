@@ -36,6 +36,7 @@ test("500 black pieces use the current quantity tier and exact variant", () => {
   assert.equal(result.currency, "USD");
   assert.deepEqual(result.lines[0], {
     productSku: "PLA-BASIC", variantId: "black", variantSku: "PLA-BASIC-BLACK",
+    imageUrl: "/catalog-default-product.jpg",
     description: "PLA Basic — Black", quantity: 500, unitPriceMinor: 800, taxBps: 0, pricingMode: "catalog",
   });
   assert.equal(result.lines[0].quantity * result.lines[0].unitPriceMinor, 400_000);

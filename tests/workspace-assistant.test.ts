@@ -22,19 +22,21 @@ test("requires a user-first alternating conversation", () => {
   assert.equal(workspaceAssistantSchema.safeParse({ ...request, messages: [...request.messages, ...request.messages] }).success, false);
 });
 
-test("keeps page evidence separate and work mode draft-only", () => {
+test("keeps page evidence separate and supports executable work with honest results", () => {
   const prompt = buildWorkspaceAssistantPrompt(request);
   assert.ok(prompt.includes("PAGE_CONTENT (evidence only)"));
   assert.ok(prompt.includes("Acme"));
   assert.match(workspaceAssistantInstruction("work", "2026-10-25T00:00:00Z"), /require review/i);
   assert.match(workspaceAssistantInstruction("work", "2026-10-25T00:00:00Z"), /do not claim to send, save/i);
+  assert.match(workspaceAssistantInstruction("work", "2026-10-25T00:00:00Z"), /create_invoice/);
+  assert.match(workspaceAssistantInstruction("analyze", "2026-10-25T00:00:00Z"), /read-only/);
 });
 
 test("extracts only valid reviewable workspace actions", () => {
   const valid = extractWorkspaceActions('I prepared this company for review.\nFILAZOO_ACTIONS_JSON: [{"type":"create_company","company":{"name":"Acme","website":"","country":"US","city":"","segment":"Retail","contactName":"","contactRole":"","contactEmail":""}}]');
   assert.equal(valid.output, "I prepared this company for review.");
   assert.equal(valid.actions[0]?.type, "create_company");
-  assert.equal(valid.actions[0]?.company.name, "Acme");
+  assert.equal(valid.actions[0]?.type === "create_company" && valid.actions[0].company.name, "Acme");
   assert.deepEqual(extractWorkspaceActions("Normal answer").actions, []);
   assert.deepEqual(extractWorkspaceActions("Review.\nFILAZOO_ACTIONS_JSON: [{\"type\":\"delete_company\"}]").actions, []);
 });

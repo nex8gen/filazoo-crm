@@ -32,9 +32,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   const gatewayToken = process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
   if (!apiKey && !gatewayToken) return Response.json({ error: "AI assistance is not configured. Ask your administrator to connect an AI provider." }, { status: 503, headers });
-  const { context, sources } = buildCompanyChatContext(details, viewer.role !== "bd_manager");
+  const { context, sources } = buildCompanyChatContext(details, true);
   const options = {
-    systemInstruction: companyChatInstruction(new Date().toISOString()),
+    systemInstruction: companyChatInstruction(new Date().toISOString(), parsed.data.language),
     prompt: buildCompanyChatPrompt(context, parsed.data.messages),
     maxOutputTokens: 1_600,
     fetcher: ((input, init) => fetch(input, {

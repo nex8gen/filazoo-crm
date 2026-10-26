@@ -1,12 +1,13 @@
 "use client";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 
+import { useLanguage } from "@/components/language-provider";
+import type { AppLanguage } from "@/lib/i18n";
 import { useMemo, useState } from "react";
-import { ExternalLink } from "lucide-react";
 import { filterCompanyCatalogs } from "@/lib/company-catalogs";
 import type { Catalog } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { CompanyCatalogPdfActions } from "@/components/company-catalog-pdf-actions";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -15,11 +16,12 @@ import { TablePagination } from "@/components/ui/table-pagination";
 
 const PAGE_SIZE = 25;
 
-function formatCatalogDate(value: string) {
-  return new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(value));
+function formatCatalogDate(value: string, language: AppLanguage) {
+  return new Intl.DateTimeFormat(language, { dateStyle: "medium" }).format(new Date(value));
 }
 
 export function CompanyCatalogsTable({ catalogs }: { catalogs: Catalog[] }) {
+  const { language } = useLanguage();
   const [query, setQuery] = useState("");
   const [currency, setCurrency] = useState("all");
   const [draft, setDraft] = useState({ query: "", currency: "all" });
@@ -94,17 +96,12 @@ export function CompanyCatalogsTable({ catalogs }: { catalogs: Catalog[] }) {
                 </TableCell>
 
                 <TableCell>
-                  {catalog.pdfUrl ? (
-                    <Button nativeButton={false} size="sm" variant="outline" render={<a href={catalog.pdfUrl} target="_blank" rel="noreferrer" />}>
-                      <ExternalLink />Open PDF
-                    </Button>
-                  ) : (
-                    <Badge variant="secondary">No PDF</Badge>
-                  )}
+                  <CompanyCatalogPdfActions catalog={catalog} />
+                  {catalog.pdfUrl && !catalog.pdfUrl.startsWith("/api/catalogs/") ? <a className="mt-2 block text-xs text-primary underline" href={catalog.pdfUrl} target="_blank" rel="noreferrer">Original PDF</a> : null}
                 </TableCell>
 
                 <TableCell className="pr-4 text-right text-sm text-muted-foreground">
-                  {formatCatalogDate(catalog.priceDate)}
+                  {formatCatalogDate(catalog.priceDate, language)}
                 </TableCell>
               </TableRow>
             ))}

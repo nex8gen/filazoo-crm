@@ -2,6 +2,8 @@ import { BrandMark } from "@/components/brand-mark";
 import Image from "next/image";
 import { QRCodeSVG } from "qrcode.react";
 import { invoiceBankFields } from "@/lib/invoice-banks";
+import { paymentMethodDetails, paymentMethodTitle } from "@/lib/invoice-payment-methods";
+import { PaymentMethodIcon } from "@/components/payment-method-icon";
 import {
   formatMoney,
   invoiceLabel,
@@ -19,21 +21,17 @@ function invoiceDate(value: string) {
   return Number.isNaN(date.getTime()) ? value : dateFormatter.format(date);
 }
 
-export function InvoicePaper({ invoice, today }: { invoice: Invoice; today: string }) {
+export function InvoicePaper({ invoice, today, customerView = false }: { invoice: Invoice; today: string; customerView?: boolean }) {
   const doc = invoice.document;
   const totals = invoiceTotals(doc);
   const money = (value: number) => formatMoney(value, doc.currency);
   const status = invoiceStatus(invoice, today);
   const balanceDue = invoice.status === "void" ? 0 : totals.total - invoice.paid_minor;
   // Keep printed QR codes reachable from phones, including PDFs made in local development.
-  const configuredOrigin = process.env.NEXT_PUBLIC_APP_URL || "https://crm.filazoosupply.com";
-  const origin = /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(configuredOrigin)
-    ? "https://crm.filazoosupply.com"
-    : configuredOrigin;
-  const invoiceUrl = new URL(`/invoices/${invoice.id}`, origin).href;
+  const invoiceUrl = invoice.customer_portal_url;
 
   return (
-    <article className="invoice-paper" aria-label={`${invoiceLabel(invoice)} invoice`}>
+    <article className="invoice-paper" lang="en" translate="no" data-no-translate aria-label={`${invoiceLabel(invoice)} invoice`}>
       <header className="invoice-paper-header">
         <div className="invoice-paper-heading">
           <h2>{invoiceLabel(invoice)}</h2>
@@ -74,9 +72,10 @@ export function InvoicePaper({ invoice, today }: { invoice: Invoice; today: stri
           {doc.customerEmail ? <p>{doc.customerEmail}</p> : null}
           <p className="invoice-paper-address">{doc.customerAddress}</p>
           {doc.customerTaxId ? <p>Tax ID: {doc.customerTaxId}</p> : null}
+          {doc.shippingAddress ? <div className="mt-4"><h3>Ship to</h3>{doc.shippingRecipient ? <p>{doc.shippingRecipient}</p> : null}<p className="invoice-paper-address">{doc.shippingAddress}</p>{doc.shippingPhone ? <p>{doc.shippingPhone}</p> : null}</div> : null}
         </section>
-        <figure className="invoice-paper-qr">
-          <a href={invoiceUrl} aria-label={`Open ${invoiceLabel(invoice)} in the CRM`}>
+        {!customerView && invoiceUrl ? <figure className="invoice-paper-qr">
+          <a href={invoiceUrl} aria-label={`Open customer portal for ${invoiceLabel(invoice)}`}>
             <QRCodeSVG
               value={invoiceUrl}
               size={132}
@@ -87,8 +86,8 @@ export function InvoicePaper({ invoice, today }: { invoice: Invoice; today: stri
               fgColor="#000000"
             />
           </a>
-          <figcaption>Scan to view invoice<span>CRM sign-in required</span></figcaption>
-        </figure>
+          <figcaption>Scan for your customer portal<span>{invoice.status === "draft" ? "Activates when invoice is issued" : "Invoice · Tracking · Chat"}</span></figcaption>
+        </figure> : null}
       </div>
 
       <div className="invoice-paper-items" role="region" aria-label="Invoice items" tabIndex={0}>
@@ -141,10 +140,15 @@ export function InvoicePaper({ invoice, today }: { invoice: Invoice; today: stri
       <div className="invoice-paper-settlement">
         <section className="invoice-paper-payment">
           <h3>Payment details</h3>
+          {doc.paymentMethods?.map((method) => <div key={method.id} className="invoice-paper-payment-method">
+            <h4><PaymentMethodIcon type={method.type} />{paymentMethodTitle(method)}</h4>
+            {paymentMethodDetails(method) ? <p>{paymentMethodDetails(method)}</p> : null}
+            {method.paymentUrl ? <a href={method.paymentUrl} target="_blank" rel="noreferrer">{method.paymentUrl}</a> : null}
+          </div>)}
           {doc.bankAccount ? <dl className="invoice-paper-bank-details">
             {invoiceBankFields(doc.bankAccount, false).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
           </dl> : null}
-          {doc.paymentInstructions || !doc.bankAccount ? <p>{doc.paymentInstructions || "Please contact us to confirm payment arrangements."}</p> : null}
+          {doc.paymentInstructions || (!doc.bankAccount && !doc.paymentMethods?.length) ? <p>{doc.paymentInstructions || "Please contact us to confirm payment arrangements."}</p> : null}
           <p className="invoice-paper-payment-reference">Payment reference: <strong>{invoiceLabel(invoice)}</strong></p>
         </section>
         <dl className="invoice-paper-totals">

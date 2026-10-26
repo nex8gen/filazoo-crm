@@ -3,10 +3,11 @@ import crypto from "node:crypto";
 import { env, hasSupabaseConfig } from "./env.ts";
 import { createSupabaseAdmin } from "./supabase/admin.ts";
 import { claimNextBdSalesManager } from "./lead-assignment.ts";
+import { twilioClient } from "./twilio-messaging.ts";
 
 const graphApiVersion = env.META_GRAPH_API_VERSION;
 type UnknownRecord = Record<string, unknown>;
-export type MetaChannel = "facebook" | "instagram";
+export type MetaChannel = "facebook" | "instagram" | "whatsapp";
 
 export type FacebookMessageRecord = {
   id: string;
@@ -80,6 +81,9 @@ export type MetaConnectionStatus = {
   missing: string[];
   error: string | null;
   facebookConfigured: boolean;
+  whatsappConfigured: boolean;
+  whatsappSender: string | null;
+  whatsappSandbox: boolean;
   instagramConfigured: boolean;
   instagramAccountId: string | null;
   instagramName: string | null;
@@ -264,7 +268,7 @@ type MetaMessageInsert = {
   channel: MetaChannel;
 };
 
-export async function saveMetaMessage(input: MetaMessageInsert) {
+export async function saveMetaMessage(input: MetaMessageInsert, ignoreDuplicates = false) {
   if (!hasSupabaseConfig()) return { ok: false as const, saved: false, error: "Supabase is not configured." };
   const { error } = await createSupabaseAdmin().from("meta_messages").upsert({
     message_id: input.messageId,
@@ -277,10 +281,10 @@ export async function saveMetaMessage(input: MetaMessageInsert) {
     body: input.body,
     message_type: input.messageType,
     status: input.status,
-    source: input.channel === "instagram" ? "instagram_messaging" : "facebook_messenger",
+    source: input.channel === "whatsapp" ? "twilio_whatsapp" : input.channel === "instagram" ? "instagram_messaging" : "facebook_messenger",
     raw_payload: input.rawPayload,
     created_at: input.createdAt,
-  }, { onConflict: "message_id" });
+  }, { onConflict: "message_id", ignoreDuplicates });
   if (error) return { ok: false as const, saved: false, error: error.message };
   return { ok: true as const, saved: true };
 }
@@ -346,6 +350,37 @@ export async function saveMetaLead(event: FacebookLeadEvent) {
 }
 
 export async function sendMetaTextMessage({ to, text, channel = "facebook" }: { to: string; text: string; channel?: MetaChannel }) {
+  const from = channel === "whatsapp" ? env.TWILIO_WHATSAPP_FROM : channel === "facebook" ? env.TWILIO_FACEBOOK_FROM : undefined;
+  if (channel === "whatsapp" || from) {
+    if (!from || !env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN) return { ok: false as const, error: "Twilio sender is not configured." };
+    const prefix = channel === "whatsapp" ? "whatsapp:" : "messenger:";
+    // Replies are limited to existing conversations within the customer service window.
+    if (!hasSupabaseConfig()) return { ok: false as const, error: "CRM storage is not configured." };
+    const { data: inbound, error } = await createSupabaseAdmin().from("meta_messages")
+      .select("created_at").eq("thread_id", to).eq("page_id", from.slice(prefix.length))
+      .eq("source", channel === "whatsapp" ? "twilio_whatsapp" : "facebook_messenger")
+      .eq("direction", "inbound").order("created_at", { ascending: false }).limit(1).maybeSingle();
+    if (error || !inbound || new Date(inbound.created_at).getTime() < Date.now() - 86_400_000) {
+      return { ok: false as const, error: "The 24-hour reply window is closed. Wait for a new customer message." };
+    }
+    try {
+      const message = await twilioClient(env.TWILIO_ACCOUNT_SID, env.TWILIO_AUTH_TOKEN).messages.create({ from, to: `${prefix}${to}`, body: text });
+      const createdAt = message.dateCreated?.toISOString() ?? new Date().toISOString();
+      const saved = await saveMetaMessage({ messageId: message.sid, threadId: to,
+        pageId: from.slice(prefix.length), senderId: from.slice(prefix.length), recipientId: to,
+        customerName: to, direction: "outbound", body: text, messageType: "text", status: "sent",
+        createdAt, rawPayload: { provider: "twilio", status: message.status }, channel });
+      return { ok: true as const, messageId: message.sid, createdAt, saved: saved.ok };
+    } catch (error) {
+      const failure = error as { code?: number; status?: number; name?: string };
+      console.error("Twilio reply failed", { code: failure.code, status: failure.status, name: failure.name });
+      if (failure.code === 21654) {
+        return { ok: false as const, error: "Twilio requires an approved message template (21654). Your Twilio trial cannot send this typed reply. Upgrade your Twilio account to enable free-text messaging." };
+      }
+      const code = typeof failure.code === "number" ? ` (Twilio ${failure.code})` : "";
+      return { ok: false as const, error: `Twilio could not accept the reply${code}. Check the sender and Twilio message logs.` };
+    }
+  }
   const accountId = env.META_FACEBOOK_PAGE_ID;
   const token = env.META_FACEBOOK_PAGE_ACCESS_TOKEN;
   if (!token || !accountId) {
@@ -389,12 +424,14 @@ async function getMetaConnectionStatus(): Promise<MetaConnectionStatus> {
   const facebook = hasFacebookCredentials
     ? await graphRequest(`${encodeURIComponent(env.META_FACEBOOK_PAGE_ID!)}?fields=id,name,instagram_business_account{id,name,username}`)
     : null;
-  const facebookConfigured = Boolean(facebook?.ok);
+  const twilioConfigured = Boolean(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN && env.TWILIO_WEBHOOK_URL);
+  const whatsappConfigured = Boolean(twilioConfigured && env.TWILIO_WHATSAPP_FROM);
+  const facebookConfigured = Boolean(facebook?.ok || (twilioConfigured && env.TWILIO_FACEBOOK_FROM));
   const instagramAccount = facebook?.ok ? asRecord(facebook.payload.instagram_business_account) : null;
   const instagramConfigured = Boolean(instagramAccount?.id);
   const errors = [facebook && !facebook.ok ? `Meta: ${facebook.error}` : null].filter(Boolean);
   return {
-    configured: missing.length === 0 && (facebookConfigured || instagramConfigured),
+    configured: whatsappConfigured || Boolean(twilioConfigured && env.TWILIO_FACEBOOK_FROM) || (missing.length === 0 && (facebookConfigured || instagramConfigured)),
     pageId: env.META_FACEBOOK_PAGE_ID || null,
     pageName: facebook?.ok ? asString(facebook.payload.name) : null,
     graphApiVersion,
@@ -402,6 +439,9 @@ async function getMetaConnectionStatus(): Promise<MetaConnectionStatus> {
     missing,
     error: errors.length ? errors.join(" ") : null,
     facebookConfigured,
+    whatsappConfigured,
+    whatsappSender: env.TWILIO_WHATSAPP_FROM?.replace(/^whatsapp:/, "") || null,
+    whatsappSandbox: env.TWILIO_WHATSAPP_FROM === "whatsapp:+14155238886",
     instagramConfigured,
     instagramAccountId: asString(instagramAccount?.id),
     instagramName: asString(instagramAccount?.username) ?? asString(instagramAccount?.name),
@@ -412,8 +452,8 @@ function mapThreadRows(rows: UnknownRecord[]): MetaConversationThread[] {
   const byThread = new Map<string, MetaConversationThread>();
   for (const row of [...rows].reverse()) {
     const threadId = String(row.thread_id ?? row.id);
-    const channel: MetaChannel = row.source === "instagram_messaging" ? "instagram" : "facebook";
-    const inboxThreadId = `${channel}:${threadId}`;
+    const channel: MetaChannel = row.source === "twilio_whatsapp" ? "whatsapp" : row.source === "instagram_messaging" ? "instagram" : "facebook";
+    const inboxThreadId = `${channel}:${row.page_id}:${threadId}`;
     const direction = row.direction === "outbound" ? "outbound" : "inbound";
     const createdAt = String(row.created_at ?? new Date().toISOString());
     const existing = byThread.get(inboxThreadId);

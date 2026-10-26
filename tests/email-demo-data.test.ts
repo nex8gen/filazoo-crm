@@ -32,10 +32,10 @@ test("CRM drafts and replies become an inbox-ready timeline", () => {
 
 test("team inbox filtering keeps CRM contacts and replies to CRM-sent mail", () => {
   const inbound = buildInboxEmailItems({ inbound: [
-    { id: "known", contact: "buyer@example.com", subject: "Pricing", body: "Please quote", messageId: "<known@example.com>" },
-    { id: "threaded", contact: "alias@example.net", subject: "Re: Quote", body: "Thank you", inReplyTo: "<sent@example.com>" },
-    { id: "sent-recipient", contact: "prospect@example.io", subject: "Re: Introduction", body: "Interested" },
-    { id: "noise", contact: "newsletter@example.org", subject: "Weekly digest", body: "News" },
+    { id: "known", contact: "buyer@example.com", subject: "Pricing", body: "Please quote", messageId: "<known@example.com>", timestamp: "2026-10-21T11:00:00Z" },
+    { id: "threaded", contact: "alias@example.net", subject: "Re: Quote", body: "Thank you", inReplyTo: "<sent@example.com>", timestamp: "2026-10-21T10:00:00Z" },
+    { id: "sent-recipient", contact: "prospect@example.io", subject: "Re: Introduction", body: "Interested", timestamp: "2026-10-21T09:00:00Z" },
+    { id: "noise", contact: "newsletter@example.org", subject: "Weekly digest", body: "News", timestamp: "2026-10-21T08:00:00Z" },
   ] }).filter((message) => message.direction === "inbound");
   const sent = [{
     id: "sent", direction: "outbound" as const, status: "Sent", subject: "Quote", contact: "buyer@example.com",

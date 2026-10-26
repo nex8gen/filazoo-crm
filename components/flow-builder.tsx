@@ -1,5 +1,7 @@
 "use client";
 
+import { useLanguage } from "@/components/language-provider";
+
 import { AiIcon } from "@/components/ai-icon";
 
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
@@ -498,10 +500,11 @@ function FlowListView({ flows, canEdit, onCreate, onOpen, onDuplicate, onChangeS
   onChangeStatus: (flow: AutomationFlow, status: FlowStatus) => Promise<unknown>;
   onRemove: (flow: AutomationFlow) => Promise<unknown>;
 }) {
+  const { language, t } = useLanguage();
   const liveFlows = flows.filter((flow) => flow.status === "live").length;
   const activeRuns = flows.reduce((total, flow) => total + (flow.activeRuns || 0), 0);
   const completedRuns = flows.reduce((total, flow) => total + (flow.completedRuns || 0), 0);
-  const dateFormatter = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" });
+  const dateFormatter = new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" });
   const [page, setPage] = useState(1);
   const pageSize = 25;
   const pageCount = Math.max(1, Math.ceil(flows.length / pageSize));
@@ -535,7 +538,7 @@ function FlowListView({ flows, canEdit, onCreate, onOpen, onDuplicate, onChangeS
           <div>
             <Table className="min-w-[880px]">
               <TableHeader><TableRow className="bg-muted/30 hover:bg-muted/30"><TableHead className="pl-5">Flow</TableHead><TableHead>Trigger</TableHead><TableHead>Status</TableHead><TableHead className="text-center">Active</TableHead><TableHead className="text-center">Completed</TableHead><TableHead>Last updated</TableHead><TableHead className="w-12" /></TableRow></TableHeader>
-              <TableBody>{visibleFlows.map((flow) => <TableRow key={flow.id} className="group cursor-pointer" onClick={() => onOpen(flow)}><TableCell className="pl-5"><div className="flex items-center gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary"><Workflow className="size-4" /></span><div><p className="font-semibold group-hover:text-primary">{flow.name}</p><p className="mt-0.5 text-xs text-muted-foreground">{flow.steps.length} action{flow.steps.length === 1 ? "" : "s"}</p></div></div></TableCell><TableCell><p className="max-w-64 truncate text-sm">{formatTrigger(flow.triggerType, flow.triggerConfig)}</p></TableCell><TableCell><FlowStatusBadge status={flow.status} /></TableCell><TableCell className="text-center font-medium tabular-nums">{flow.activeRuns || 0}</TableCell><TableCell className="text-center font-medium tabular-nums">{flow.completedRuns || 0}</TableCell><TableCell className="whitespace-nowrap text-xs text-muted-foreground">{dateFormatter.format(new Date(flow.updatedAt))}</TableCell><TableCell><FlowActions flow={flow} canEdit={canEdit} onOpen={onOpen} onDuplicate={onDuplicate} onChangeStatus={onChangeStatus} onRemove={onRemove} /></TableCell></TableRow>)}</TableBody>
+              <TableBody>{visibleFlows.map((flow) => <TableRow key={flow.id} className="group cursor-pointer" onClick={() => onOpen(flow)}><TableCell className="pl-5"><div className="flex items-center gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary"><Workflow className="size-4" /></span><div><p className="font-semibold group-hover:text-primary">{flow.name}</p><p className="mt-0.5 text-xs text-muted-foreground">{t(`${flow.steps.length} actions`)}</p></div></div></TableCell><TableCell><p className="max-w-64 truncate text-sm">{formatTrigger(flow.triggerType, flow.triggerConfig)}</p></TableCell><TableCell><FlowStatusBadge status={flow.status} /></TableCell><TableCell className="text-center font-medium tabular-nums">{flow.activeRuns || 0}</TableCell><TableCell className="text-center font-medium tabular-nums">{flow.completedRuns || 0}</TableCell><TableCell className="whitespace-nowrap text-xs text-muted-foreground">{dateFormatter.format(new Date(flow.updatedAt))}</TableCell><TableCell><FlowActions flow={flow} canEdit={canEdit} onOpen={onOpen} onDuplicate={onDuplicate} onChangeStatus={onChangeStatus} onRemove={onRemove} /></TableCell></TableRow>)}</TableBody>
             </Table>
           </div>
 

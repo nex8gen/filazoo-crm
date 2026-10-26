@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Filter, Search } from "lucide-react";
 import { AddOpportunityButton } from "@/components/crm-action-dialogs";
 import { KanbanBoard } from "@/components/kanban-board";
@@ -12,11 +12,13 @@ import { pipelineStageLabels, pipelineStageValues } from "@/lib/types";
 import type { Company } from "@/lib/types";
 import type { BdSalesManager } from "@/lib/data/members";
 
-export function PipelineWorkspace({ companies, managers, canWrite, canAssign }: { companies: Company[]; managers: BdSalesManager[]; canWrite: boolean; canAssign: boolean }) {
+export function PipelineWorkspace({ companies, managers, canWrite, canAssign, initialCompanyId }: { companies: Company[]; managers: BdSalesManager[]; canWrite: boolean; canAssign: boolean; initialCompanyId?: string }) {
   const [showFilters, setShowFilters] = useState(false);
   const [query, setQuery] = useState("");
   const [stage, setStage] = useState("all");
-  const filtering = Boolean(query || stage !== "all");
+  const [companyId, setCompanyId] = useState(initialCompanyId);
+  const filtering = Boolean(query || stage !== "all" || companyId);
+  const visibleCompanies = useMemo(() => companyId ? companies.filter((company) => company.id === companyId) : companies, [companies, companyId]);
 
   return (
     <div>
@@ -25,12 +27,13 @@ export function PipelineWorkspace({ companies, managers, canWrite, canAssign }: 
         description="Move qualified companies through the outreach journey and keep high-value opportunities visible."
         actions={<><Button size="sm" variant={filtering ? "secondary" : "outline"} onClick={() => setShowFilters((value) => !value)}><Filter />Filter{filtering ? " active" : ""}</Button><AddOpportunityButton companies={companies} canWrite={canWrite} /></>}
       />
+      {companyId ? <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border bg-card p-3 text-sm"><span>{visibleCompanies[0]?.name || "Company unavailable"}</span><Button variant="outline" size="sm" onClick={() => setCompanyId(undefined)}>All companies</Button></div> : null}
       {showFilters ? <div className="mb-4 flex flex-col gap-2 rounded-lg border bg-card p-3 sm:flex-row sm:items-center">
         <div className="relative flex-1 sm:max-w-sm"><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input className="pl-9" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search company or country" /></div>
         <Select value={stage} onValueChange={(value) => setStage(value ?? "all")}><SelectTrigger className="w-full sm:w-52"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All stages</SelectItem>{pipelineStageValues.map((value) => <SelectItem key={value} value={value}>{pipelineStageLabels[value]}</SelectItem>)}</SelectContent></Select>
-        {filtering ? <Button variant="ghost" size="sm" onClick={() => { setQuery(""); setStage("all"); }}>Clear</Button> : null}
+        {filtering ? <Button variant="ghost" size="sm" onClick={() => { setQuery(""); setStage("all"); setCompanyId(undefined); }}>Clear</Button> : null}
       </div> : null}
-      <KanbanBoard companies={companies} managers={managers} canWrite={canWrite} canAssign={canAssign} query={query} stageFilter={stage} />
+      <KanbanBoard key={companyId || "all"} companies={visibleCompanies} managers={managers} canWrite={canWrite} canAssign={canAssign} query={query} stageFilter={stage} initialStage={companyId ? pipelineStageValues.find((value) => pipelineStageLabels[value] === visibleCompanies[0]?.stage) : undefined} />
     </div>
   );
 }

@@ -1,13 +1,15 @@
 import { z } from "zod";
+import { aiLanguageSchema } from "@/lib/ai/language";
 import { requireWorkspaceMember } from "@/lib/auth";
 import { generateGeminiText } from "@/lib/ai/gemini";
 import { generateGatewayText, isGeminiRegionError } from "@/lib/ai/gateway";
-import { emailReplyInstruction, parseEmailReplyPlan, replyProductSchema } from "@/lib/ai/email-reply";
+import { buildEmailReplyInstruction, parseEmailReplyPlan, replyProductSchema } from "@/lib/ai/email-reply";
 import { applyEmailSignature, DEFAULT_EMAIL_COMPANY, DEFAULT_EMAIL_TITLE, normalizeSignatureName } from "@/lib/ai/email-rewrite";
 import { canCreateInvoices } from "@/lib/invoice-permissions";
 
 export const maxDuration = 60;
 const schema = z.object({
+  language: aiLanguageSchema,
   recipient: z.string().max(300),
   assignedManagerName: z.string().max(200).optional(),
   customerProfile: z.record(z.string(), z.unknown()).optional(),
@@ -31,11 +33,11 @@ export async function POST(request: Request) {
   if (!apiKey && !token) return Response.json({ error: "AI reply is not configured. Add an AI provider in the server settings." }, { status: 503 });
   const canCreateInvoice = canCreateInvoices(viewer.role);
   const prompt = JSON.stringify({ ...input.data, canCreateInvoice, seller: DEFAULT_EMAIL_COMPANY });
-  const gateway = () => generateGatewayText({ token: token!, model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim(), systemInstruction: emailReplyInstruction, prompt, maxOutputTokens: 8192 });
+  const gateway = () => generateGatewayText({ token: token!, model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim(), systemInstruction: buildEmailReplyInstruction(input.data.language), prompt, maxOutputTokens: 8192 });
   try {
     let output: string;
     try {
-      output = apiKey ? await generateGeminiText({ apiKey, model: process.env.GEMINI_EMAIL_MODEL?.trim(), systemInstruction: emailReplyInstruction, prompt, maxOutputTokens: 8192 }) : await gateway();
+      output = apiKey ? await generateGeminiText({ apiKey, model: process.env.GEMINI_EMAIL_MODEL?.trim(), systemInstruction: buildEmailReplyInstruction(input.data.language), prompt, maxOutputTokens: 8192 }) : await gateway();
     } catch (error) {
       if (!apiKey || !token || !isGeminiRegionError(error)) throw error;
       output = await gateway();
@@ -48,9 +50,9 @@ export async function POST(request: Request) {
         throw new Error("AI could not match the requested product. Review the product and variant before retrying.");
     }
     plan.body = applyEmailSignature(plan.body, {
-      name: normalizeSignatureName(input.data.assignedManagerName, normalizeSignatureName(viewer.displayName)),
-      title: DEFAULT_EMAIL_TITLE, company: DEFAULT_EMAIL_COMPANY,
-    });
+      name: normalizeSignatureName(input.data.assignedManagerName, normalizeSignatureName(viewer.displayName, input.data.language === "zh-CN" ? "Filazoo 销售团队" : "Filazoo Sales Team")),
+      title: input.data.language === "zh-CN" ? "商务拓展经理" : DEFAULT_EMAIL_TITLE, company: DEFAULT_EMAIL_COMPANY,
+    }, input.data.language);
     return Response.json({ ok: true, plan }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("AI reply generation failed", error);

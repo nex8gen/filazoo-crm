@@ -10,7 +10,7 @@ const originalText = new WeakMap<Text, string>();
 const translatedText = new WeakMap<Text, string>();
 const originalAttributes = new WeakMap<Element, Map<string, string>>();
 const translatedAttributes = new WeakMap<Element, Map<string, string>>();
-const localizedAttributes = ["aria-label", "placeholder", "title"] as const;
+const localizedAttributes = ["aria-label", "aria-description", "aria-valuetext", "placeholder", "title", "alt"] as const;
 const languageChangeEvent = "filazoo-language-change";
 
 function subscribeToLanguage(onStoreChange: () => void) {
@@ -23,7 +23,11 @@ function subscribeToLanguage(onStoreChange: () => void) {
 }
 
 function getLanguageSnapshot(): AppLanguage {
-  return window.localStorage.getItem(LANGUAGE_STORAGE_KEY) === "zh-CN" ? "zh-CN" : "en";
+  try {
+    return window.localStorage.getItem(LANGUAGE_STORAGE_KEY) === "zh-CN" ? "zh-CN" : "en";
+  } catch {
+    return document.documentElement.lang === "zh-CN" ? "zh-CN" : "en";
+  }
 }
 
 function getServerLanguageSnapshot(): AppLanguage {
@@ -32,7 +36,7 @@ function getServerLanguageSnapshot(): AppLanguage {
 
 function shouldSkip(node: Text) {
   const parent = node.parentElement;
-  return !parent || Boolean(parent.closest("script, style, code, pre, [data-no-translate], [contenteditable='true']"));
+  return !parent || Boolean(parent.closest("script, style, code, pre, [data-no-translate], [translate='no'], [contenteditable]:not([contenteditable='false'])"));
 }
 
 function localizeTextNode(node: Text, language: AppLanguage) {
@@ -46,7 +50,7 @@ function localizeTextNode(node: Text, language: AppLanguage) {
 }
 
 function localizeAttributes(element: Element, language: AppLanguage) {
-  if (element.closest("[data-no-translate]")) return;
+  if (element.closest("[data-no-translate], [translate='no'], [contenteditable]:not([contenteditable='false'])")) return;
   let sources = originalAttributes.get(element);
   let translations = translatedAttributes.get(element);
   if (!sources) { sources = new Map(); originalAttributes.set(element, sources); }
@@ -77,7 +81,8 @@ function localizeTree(root: Node, language: AppLanguage) {
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const language = useSyncExternalStore(subscribeToLanguage, getLanguageSnapshot, getServerLanguageSnapshot);
   const setLanguage = useCallback((next: AppLanguage) => {
-    window.localStorage.setItem(LANGUAGE_STORAGE_KEY, next);
+    document.documentElement.lang = next;
+    try { window.localStorage.setItem(LANGUAGE_STORAGE_KEY, next); } catch { /* Keep language switching available when storage is blocked. */ }
     window.dispatchEvent(new Event(languageChangeEvent));
   }, []);
   const t = useCallback((value: string) => translateUiText(value, language), [language]);
@@ -87,6 +92,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     document.documentElement.lang = language === "zh-CN" ? "zh-CN" : "en";
     document.documentElement.dataset.language = language;
     localizeTree(document.body, language);
+    localizeTree(document.querySelector("title") ?? document.head, language);
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
         if (mutation.type === "characterData") localizeTextNode(mutation.target as Text, language);
@@ -95,6 +101,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
       }
     });
     observer.observe(document.body, { childList: true, characterData: true, attributes: true, attributeFilter: [...localizedAttributes], subtree: true });
+    observer.observe(document.head, { childList: true, characterData: true, subtree: true });
     return () => observer.disconnect();
   }, [language]);
 

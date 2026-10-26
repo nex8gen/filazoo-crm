@@ -5,6 +5,7 @@ export type CatalogOptions = {
   title?: string;
   customer?: string;
   date?: string;
+  note?: string;
   /** JPEG images, keyed by their CRM URL. Populated by the browser at export time. */
   images?: Map<string, CatalogImage>;
 };
@@ -188,7 +189,7 @@ export function buildCatalogPdf(products: Product[], options: CatalogOptions = {
   if (!products.length) text(page, "No products selected.", M + 12, TOP - 30, 10);
   pages.forEach((p, index) => {
     line(p, M, 30, W - M, 30);
-    text(p, "FILAZOO  |  Default photos are illustrative.  |  - = no additional CRM price tier.", M, 18, 6.5);
+    text(p, `FILAZOO  |  Default photos are illustrative.  |  - = no additional CRM price tier.${options.note ? `  |  ${options.note}` : ""}`, M, 18, 6.5);
     text(p, `${index + 1} / ${pages.length}`, W - M - 30, 18, 7);
   });
   return serializePdf(pages, images, imageNames);

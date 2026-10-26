@@ -13,6 +13,6 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const [{ next, message }, viewer] = await Promise.all([searchParams, getViewer()]);
   if (viewer) redirect("/");
   return (
-    <AuthShell><LoginForm next={next} message={message} /></AuthShell>
+    <AuthShell animatedBackground><LoginForm next={next} message={message} /></AuthShell>
   );
 }

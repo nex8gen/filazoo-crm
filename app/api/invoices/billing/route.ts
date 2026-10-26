@@ -5,6 +5,8 @@ import {
   checkInvoiceOrigin,
 } from "@/lib/invoice-api";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { patchInvoiceSettings } from "@/lib/data/invoice-payment-methods";
+import { invoicePaymentMethodsSchema } from "@/lib/invoice-payment-methods";
 import {
   billingProfileSchema,
   sellerSettingsSchema,
@@ -17,6 +19,7 @@ const inputSchema = z.discriminatedUnion("kind", [
     profile: billingProfileSchema,
   }),
   z.object({ kind: z.literal("seller"), settings: sellerSettingsSchema }),
+  z.object({ kind: z.literal("payments"), paymentMethods: invoicePaymentMethodsSchema }),
 ]);
 export async function PUT(request: Request) {
   const origin = checkInvoiceOrigin(request);
@@ -31,25 +34,27 @@ export async function PUT(request: Request) {
     );
   const db = createSupabaseAdmin();
   try {
+    if (input.data.kind !== "customer") {
+      await patchInvoiceSettings(input.data.kind === "payments"
+        ? { paymentMethods: input.data.paymentMethods } : input.data.settings, access.viewer.id);
+      return Response.json({ ok: true });
+    }
+    const existing = input.data.kind === "customer"
+      ? await db.from("customer_billing_profiles").select("profile").eq("company_id", input.data.companyId).maybeSingle()
+      : null;
+    if (existing?.error) throw existing.error;
     const result =
       input.data.kind === "customer"
         ? await db
             .from("customer_billing_profiles")
             .upsert({
               company_id: input.data.companyId,
-              profile: input.data.profile,
+              profile: { ...existing?.data?.profile, ...input.data.profile },
               updated_by: access.viewer.id,
               updated_at: new Date().toISOString(),
             })
-        : await db
-            .from("invoice_settings")
-            .upsert({
-              singleton: true,
-              settings: input.data.settings,
-              updated_by: access.viewer.id,
-              updated_at: new Date().toISOString(),
-            });
-    if (result.error) throw result.error;
+        : null;
+    if (result?.error) throw result.error;
     return Response.json({ ok: true });
   } catch (error) {
     return invoiceError(error);

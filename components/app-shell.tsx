@@ -115,6 +115,7 @@ const navigation: NavigationGroup[] = [
 
 const allItems = navigation.flatMap((group) => group.items);
 const authPaths = [
+  "/customer/",
   "/login",
   "/forgot-password",
   "/accept-invitation",
@@ -240,9 +241,9 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
   };
 
   return (
-    <div className={`${usesViewportCanvas ? "h-svh overflow-hidden" : "min-h-svh"} bg-background text-foreground`}>
+    <div data-workspace-shell className={`${usesViewportCanvas ? "h-svh overflow-hidden" : "min-h-svh"} bg-background text-foreground`}>
       <a href="#workspace-content" className="sr-only fixed left-4 top-2 z-[100] rounded-md bg-primary px-4 py-2 text-primary-foreground focus:not-sr-only">Skip to content</a>
-      <header className={`fixed left-0 top-0 z-50 flex h-12 items-center border-b bg-background/95 px-3 backdrop-blur transition-[right] duration-300 ease-out md:px-4 ${aiOpen ? "right-0 lg:right-[31rem]" : "right-0"}`}>
+      <header className={`fixed left-0 top-0 z-50 flex h-12 items-center border-b bg-background/95 px-3 backdrop-blur md:px-4 ${aiOpen ? "right-0 lg:right-[var(--workspace-ai-width)]" : "right-0"}`}>
         <Button ref={navigationTriggerRef} aria-label="Open navigation" aria-expanded={mobileOpen} variant="ghost" size="icon-sm" className="mr-2 lg:hidden" onClick={() => setMobileOpen(true)}>
           <Menu />
         </Button>
@@ -290,7 +291,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
         </SheetContent>
       </Sheet>
 
-      <div className={`min-w-0 pt-12 transition-[margin,transform] duration-300 ease-out ${activeGroup.direct ? "lg:pl-16" : "lg:pl-80"} ${aiOpen ? "max-lg:-translate-x-full lg:mr-[31rem]" : "translate-x-0 lg:mr-0"}`}>
+      <div className={`min-w-0 pt-12 transition-transform duration-300 ease-out ${activeGroup.direct ? "lg:pl-16" : "lg:pl-80"} ${aiOpen ? "max-lg:-translate-x-full lg:mr-[var(--workspace-ai-width)]" : "translate-x-0 lg:mr-0"}`}>
         <main id="workspace-content" tabIndex={-1} className={`${pathname === "/emails" || isSettings ? "" : "crm-workspace-content"} outline-none ${usesViewportCanvas ? "h-[calc(100dvh-3rem)] min-h-0 w-full overflow-hidden p-0" : isSettings ? "min-h-[calc(100dvh-3rem)] w-full" : "min-h-[calc(100svh-3rem)] w-full px-5 py-7 sm:px-7 lg:px-10 lg:py-10"}`}>{children}</main>
       </div>
 

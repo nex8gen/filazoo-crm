@@ -1,0 +1,45 @@
+"use client";
+
+import Link from "next/link";
+import { Check, ExternalLink, LoaderCircle, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { formatMoney, invoiceTotals } from "@/lib/invoices";
+import { invoiceBankFields } from "@/lib/invoice-banks";
+import type { AgentActionResult, AgentProposal } from "@/lib/ai/agent-actions";
+import { AgentWorkIcon } from "@/components/agent-work-icon";
+import { actionWorkProgress, type AgentWorkProgress } from "@/lib/ai/agent-progress";
+
+export function AgentActionCard({ proposal, result, executing, progress, disabled, onApprove, onDecline }: {
+  proposal: AgentProposal; result?: AgentActionResult; executing: boolean; disabled: boolean;
+  onApprove: () => void; onDecline: () => void;
+  progress?: AgentWorkProgress;
+}) {
+  const { action } = proposal;
+  const company = action.type === "create_company" ? action.company : null;
+  const document = action.type !== "create_company" ? action.document : null;
+  const email = action.type !== "create_company" ? action.email : null;
+  const title = company ? "Create company" : action.type === "create_invoice" ? "Create draft invoice" : action.type === "update_invoice" ? "Update draft invoice" : "Send invoice";
+  const finished = Boolean(result?.status || result?.success || result?.error);
+  return <div className="rounded-xl border bg-muted/30 p-3.5">
+    <div className="flex items-start gap-3">
+      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-background text-primary"><AgentWorkIcon area={actionWorkProgress(action).area} className="size-4" /></span>
+      <div className="min-w-0 flex-1"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</p><p className="mt-1 break-words text-sm font-semibold">{company?.name || document?.customerName}</p>
+        {company ? <><p className="mt-1 text-xs leading-5 text-muted-foreground">{company.country} · {company.city} · {company.segment}</p>{company.website ? <p className="break-all text-xs">{company.website}</p> : null}{company.contactEmail ? <p className="break-all text-xs">{company.contactName} · {company.contactRole} · {company.contactEmail}</p> : null}</> : null}
+      </div>
+    </div>
+    {document ? <div className="mt-3 space-y-3 text-xs">
+      <p className="text-muted-foreground">{document.currency} · {document.issueDate} · Due {document.dueDate}</p>
+      <div className="divide-y rounded-lg border bg-background px-3">{document.items.map((item, index) => <div key={index} className="py-2.5"><p className="font-medium">{item.description}</p><p className="mt-1 text-muted-foreground">{item.variantSku || item.productSku}</p><p className="mt-1">{item.quantity} × {formatMoney(item.unitPriceMinor, document.currency)} = {formatMoney(item.quantity * item.unitPriceMinor, document.currency)}{item.taxBps ? ` · ${item.taxBps / 100}% tax` : ""}</p></div>)}</div>
+      <div className="space-y-1">{document.discountMinor ? <p>Discount: {formatMoney(document.discountMinor, document.currency)}</p> : null}{document.shippingMinor ? <p>Shipping: {formatMoney(document.shippingMinor, document.currency)}</p> : null}<p>Tax: {formatMoney(invoiceTotals(document).tax, document.currency)}</p><p className="font-semibold">Total: {formatMoney(invoiceTotals(document).total, document.currency)}</p></div>
+      {document.bankAccount ? <div className="space-y-1 rounded-lg border p-2.5"><p className="font-medium">{document.bankAccount.label}</p>{invoiceBankFields(document.bankAccount).map(([label, value]) => <p key={label} className="break-words"><span className="text-muted-foreground">{label}: </span>{value}</p>)}</div> : null}
+      <details><summary className="cursor-pointer text-muted-foreground">Invoice details</summary><div className="mt-2 space-y-2 whitespace-pre-wrap break-words"><p>{document.sellerName}{"\n"}{document.sellerAddress}{"\n"}{document.sellerTaxId}</p><p>{document.customerName}{"\n"}{document.customerEmail}{"\n"}{document.customerAddress}{"\n"}{document.customerTaxId}</p>{document.shippingAddress ? <p>{document.shippingRecipient}{"\n"}{document.shippingAddress}{"\n"}{document.shippingPhone}</p> : null}<p>{document.reference}</p><p>{document.paymentInstructions}</p><p>{document.notes}</p></div></details>
+    </div> : null}
+    {email ? <div className="mt-3 space-y-2 rounded-lg border bg-background p-3 text-xs"><p className="font-medium">Email with invoice PDF</p><p className="break-all">To: {email.to}</p><p>Subject: {email.subject}</p><p className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words leading-5">{email.text}</p></div> : null}
+    {executing ? <p className="mt-3 flex items-center gap-2 text-xs"><LoaderCircle aria-hidden="true" className="size-3.5 animate-spin motion-reduce:animate-none" /><AgentWorkIcon area={(progress ?? actionWorkProgress(action)).area} />{(progress ?? actionWorkProgress(action)).label}</p> : null}
+    {result?.success ? <p className="mt-3 flex items-start gap-1.5 text-xs text-emerald-700 dark:text-emerald-300"><Check className="mt-0.5 size-3.5 shrink-0" />{result.success}</p> : null}
+    {result?.error ? <p role="alert" className="mt-2 text-xs leading-5 text-destructive">{result.error}</p> : null}
+    {result?.href ? <Link href={result.href} className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-primary underline underline-offset-4">Open result<ExternalLink className="size-3" /></Link> : null}
+    {!finished && !executing ? <div className="mt-3 flex gap-2"><Button type="button" size="sm" className="min-w-0 flex-1" disabled={disabled} onClick={onApprove}><Check />{email ? "Approve and send" : "Approve and apply"}</Button><Button type="button" variant="outline" size="sm" disabled={disabled} onClick={onDecline}><X />Decline</Button></div> : null}
+    {!finished && !executing ? <p className="mt-2 text-[10px] leading-4 text-muted-foreground">Review the details above. Approval expires after 30 minutes.</p> : null}
+  </div>;
+}

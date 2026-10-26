@@ -15,7 +15,8 @@ import {
   withInvoiceProductImages,
   type InvoiceProductRow,
 } from "../invoice-links";
-import { AVATAR_PRESETS, ownAvatarPath, PROFILE_AVATAR_BUCKET } from "../profile-avatar";
+import { resolveMemberAvatars } from "./member-avatars";
+import { customerPortalUrl } from "../customer-portal-links";
 
 export async function listInvoices(
   page = 0,
@@ -53,26 +54,13 @@ export async function listInvoices(
     const { data: members, error: membersError } = await admin.from("workspace_members").select("user_id,display_name").in("user_id", creatorIds);
     if (membersError) throw membersError;
     for (const member of members ?? []) creators.set(member.user_id, { name: member.display_name || undefined });
-    // Photo failures must not prevent the invoice list from loading. Resolve
-    // each distinct creator once, and keep Auth metadata on the server.
-    await Promise.allSettled(creatorIds.map(async (creatorId) => {
-      const { data: user } = await admin.auth.admin.getUserById(creatorId);
-      const metadata = user.user?.user_metadata;
-      if (!metadata) return;
-      const profile = creators.get(creatorId) ?? {};
-      profile.avatarUrl = AVATAR_PRESETS.find((preset) => preset.id === metadata.avatar_preset)?.image;
-      creators.set(creatorId, profile);
-      const path = ownAvatarPath(creatorId, metadata.avatar_path);
-      if (path) {
-        const { data: photo } = await admin.storage.from(PROFILE_AVATAR_BUCKET).createSignedUrl(path, 3600);
-        if (photo?.signedUrl) profile.avatarUrl = photo.signedUrl;
-      }
-    }));
+    const avatars = await resolveMemberAvatars(admin, creatorIds);
+    for (const [id, avatarUrl] of avatars) creators.set(id, { ...creators.get(id), avatarUrl });
   }
   return {
     invoices: invoices.map((invoice) => {
       const creator = invoice.created_by ? creators.get(invoice.created_by) : undefined;
-      return { ...invoice, creator_name: invoice.creator_name || creator?.name || (invoice.created_by ? "Workspace member" : "Creator not recorded"), creator_avatar_url: creator?.avatarUrl };
+      return { ...invoice, customer_portal_url: customerPortalUrl(invoice), creator_name: invoice.creator_name || creator?.name || (invoice.created_by ? "Workspace member" : "Creator not recorded"), creator_avatar_url: creator?.avatarUrl };
     }),
     count: count ?? 0,
     summary: summary.data as InvoiceReceivable[],
@@ -89,6 +77,7 @@ export async function getInvoice(id: string) {
   if (error) throw error;
   if (!data) return null;
   const invoice = data as Invoice;
+  invoice.customer_portal_url = customerPortalUrl(invoice);
   const skus = [
     ...new Set(
       invoice.document.items.flatMap((item) =>
@@ -111,11 +100,12 @@ export async function getInvoice(id: string) {
   };
 }
 
-export async function createInvoice(document: InvoiceDocument, userId: string) {
+export async function createInvoice(document: InvoiceDocument, userId: string, id?: string) {
   await validateInvoiceConnections(document);
   const { data, error } = await createSupabaseAdmin()
     .from("invoices")
     .insert({
+      ...(id ? { id } : {}),
       document,
       total_minor: invoiceTotals(document).total,
       created_by: userId,
@@ -123,7 +113,8 @@ export async function createInvoice(document: InvoiceDocument, userId: string) {
     .select()
     .single();
   if (error) throw error;
-  return data as Invoice;
+  const invoice = data as Invoice;
+  return { ...invoice, customer_portal_url: customerPortalUrl(invoice) };
 }
 
 export async function mutateInvoice(
@@ -139,5 +130,5 @@ export async function mutateInvoice(
     p_input: input,
   });
   if (error) throw error;
-  return data;
+  return data ? { ...data, customer_portal_url: customerPortalUrl(data as Invoice) } : data;
 }

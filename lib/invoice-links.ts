@@ -179,7 +179,7 @@ export function withBillingCustomer(
   const due = z.iso.date().safeParse(doc.issueDate).success
     ? new Date(`${doc.issueDate}T00:00:00Z`)
     : null;
-  if (due) due.setUTCDate(due.getUTCDate() + (profile?.termsDays ?? 30));
+  if (due) due.setUTCDate(due.getUTCDate() + (profile?.termsDays ?? 0));
   return {
     ...doc,
     companyId: customer.id,

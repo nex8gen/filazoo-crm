@@ -4,6 +4,16 @@
 
 @custom-variant dark (&:is(.dark *));
 
+[data-workspace-shell] { --workspace-ai-width: min(var(--workspace-ai-preferred-width, 31rem), calc(100vw - 600px)); }
+.column-resize-handle { position: absolute; top: 0; bottom: 0; z-index: 30; width: 10px; transform: translateX(-50%); cursor: col-resize; touch-action: none; user-select: none; }
+.column-resize-handle::after { content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 2px; background: var(--primary); opacity: 0; transition: opacity 120ms; }
+.column-resize-handle:hover::after, .column-resize-handle:focus-visible::after, .column-resize-handle[data-dragging]::after { opacity: 1; }
+.column-resize-handle:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+body:has(.column-resize-handle[data-dragging]) { cursor: col-resize; user-select: none; }
+body:has(.column-resize-handle[data-dragging]) iframe { pointer-events: none; }
+.ai-sidebar-resize { display: none; left: 0; }
+@media (min-width: 1024px) { .ai-sidebar-resize { display: block; } }
+
 :root {
   --radius: 0.375rem;
   --background: #ffffff;

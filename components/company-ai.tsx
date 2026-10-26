@@ -1,5 +1,7 @@
 "use client";
 
+import { useLanguage } from "@/components/language-provider";
+
 import { useEffect, useRef, useState } from "react";
 import { Clock3, Copy, FileText, RefreshCw, RotateCcw, SquarePen, Target } from "lucide-react";
 import { AiIcon } from "@/components/ai-icon";
@@ -7,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { StreamingText, ThinkingState } from "@/components/ui/ai-agent-response";
 import { AiChatInput } from "@/components/ui/ai-chat-input";
+import type { AppLanguage } from "@/lib/i18n";
 import type { Company } from "@/lib/types";
 import type { CompanyChatMessage, CompanyChatSource } from "@/lib/ai/company-chat";
 
@@ -19,11 +22,11 @@ const shortcuts = [
 
 type ChatEntry = CompanyChatMessage & { id: string; sources?: CompanyChatSource[]; omittedActivity?: number; durationMs?: number };
 
-async function requestCustomerReply(companyId: string, messages: ChatEntry[], signal: AbortSignal) {
+async function requestCustomerReply(companyId: string, messages: ChatEntry[], signal: AbortSignal, language: AppLanguage) {
   const started = performance.now();
   const response = await fetch(`/api/companies/${companyId}/chat`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages: messages.slice(-19).map(({ role, content }) => ({ role, content })) }),
+    body: JSON.stringify({ language, messages: messages.slice(-19).map(({ role, content }) => ({ role, content })) }),
     signal,
   });
   const result = await response.json().catch(() => null);
@@ -32,6 +35,7 @@ async function requestCustomerReply(companyId: string, messages: ChatEntry[], si
 }
 
 export function CompanyAi({ company }: { company: Company }) {
+  const { language, t } = useLanguage();
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   const [question, setQuestion] = useState("");
   const [pending, setPending] = useState(false);
@@ -44,7 +48,7 @@ export function CompanyAi({ company }: { company: Company }) {
   const thread = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => () => { request.current?.abort(); request.current = null; }, []);
+  useEffect(() => () => { request.current?.abort(); }, [language]);
   useEffect(() => {
     thread.current?.scrollTo({ top: thread.current.scrollHeight, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   }, [messages, pending, error]);
@@ -58,7 +62,7 @@ export function CompanyAi({ company }: { company: Company }) {
     setError(null);
     const timeout = setTimeout(() => controller.abort(), 55_000);
     try {
-      const result = await requestCustomerReply(company.id, next, controller.signal);
+      const result = await requestCustomerReply(company.id, next, controller.signal, language);
       if (controller.signal.aborted) return;
       const id = crypto.randomUUID();
       setMessages([...next, { id, role: "assistant", content: result.output, sources: result.sources, omittedActivity: result.coverage?.omittedActivity, durationMs: result.durationMs }]);
@@ -102,10 +106,10 @@ export function CompanyAi({ company }: { company: Company }) {
             <span className="mb-5 grid size-14 place-items-center rounded-2xl border border-violet-200/60 bg-violet-50 dark:border-violet-500/20 dark:bg-violet-500/10"><AiIcon className="size-7" /></span>
             <h2 className="text-lg font-semibold tracking-tight">Get to know {company.name}</h2>
             <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">Ask about their needs, review the relationship, or prepare your next conversation.</p>
-            <div className="mt-6 grid w-full max-w-lg gap-2 sm:grid-cols-2">{shortcuts.map(({ label, icon: Icon, prompt }) => <button key={label} type="button" onClick={() => send(prompt)} className="flex items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm transition-colors hover:border-primary/40 hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"><Icon className="size-4 text-muted-foreground" />{label}</button>)}</div>
+            <div className="mt-6 grid w-full max-w-lg gap-2 sm:grid-cols-2">{shortcuts.map(({ label, icon: Icon, prompt }) => <button key={label} type="button" onClick={() => send(t(prompt))} className="flex items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm transition-colors hover:border-primary/40 hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"><Icon className="size-4 text-muted-foreground" />{label}</button>)}</div>
           </div> : <div className="space-y-6">{messages.map((entry) => <div key={entry.id} className={entry.role === "user" ? "ml-auto max-w-[90%] rounded-2xl rounded-br-md bg-muted px-4 py-3 sm:max-w-[80%]" : "max-w-full"}>
             {entry.role === "assistant" ? <>
-              <ThinkingState working={false} writing={animation?.id === entry.id} durationMs={entry.durationMs} scope={company.name} steps={(entry.sources ?? []).map((source) => ({ id: source.id, label: `[${source.id}] ${source.label}`, detail: source.recordedAt ? new Date(source.recordedAt).toLocaleDateString("en", { timeZone: "Asia/Shanghai" }) : undefined }))} className="mb-2" />
+              <ThinkingState working={false} writing={animation?.id === entry.id} durationMs={entry.durationMs} scope={company.name} steps={(entry.sources ?? []).map((source) => ({ id: source.id, label: `[${source.id}] ${t(source.label)}`, detail: source.recordedAt ? new Date(source.recordedAt).toLocaleDateString(language, { timeZone: "Asia/Shanghai" }) : undefined }))} className="mb-2" />
               <StreamingText key={`${entry.id}-${animation?.id === entry.id ? animation.run : 0}`} text={entry.content} animate={animation?.id === entry.id} onProgress={followReply} onComplete={() => setAnimation((current) => current?.id === entry.id ? null : current)} />
               {animation?.id === entry.id ? <Button type="button" variant="ghost" size="xs" className="mt-2" onClick={() => setAnimation(null)}>Show full reply</Button> : <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                 <div className="min-w-0 flex-1 text-xs text-muted-foreground">{entry.sources?.length ? <span>{entry.sources.length} sources · Expand the response status to inspect</span> : null}{entry.omittedActivity ? <p className="mt-2 text-[11px]">Based on recent records; some older activity was outside this answer&apos;s context.</p> : null}</div>
@@ -117,7 +121,7 @@ export function CompanyAi({ company }: { company: Company }) {
           {error ? <div role="alert" className="mt-5 rounded-xl border border-destructive/20 bg-destructive/5 p-4"><p className="text-sm leading-6">{error}</p>{retryMessages ? <div className="mt-3 flex gap-2"><Button type="button" variant="outline" size="sm" disabled={pending} onClick={() => void generate(retryMessages)}>Try again</Button><Button type="button" variant="ghost" size="sm" disabled={pending} onClick={() => { const last = retryMessages.at(-1); setQuestion(last?.content || ""); setMessages((current) => current.slice(0, -1)); setRetryMessages(null); setError(null); input.current?.focus(); }}>Edit question</Button></div> : null}</div> : null}
         </div>
         <div className="sticky bottom-0 z-10 shrink-0 border-t bg-card px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-5 sm:px-6">
-          {messages.length ? <div className="mb-3 flex flex-wrap items-center gap-2">{shortcuts.map(({ label, prompt }) => <button key={label} type="button" disabled={busy || Boolean(retryMessages)} onClick={() => send(prompt)} className="rounded-full border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50">{label}</button>)}<Button type="button" variant="ghost" size="xs" className="ml-auto" disabled={pending} onClick={() => { setMessages([]); setError(null); setRetryMessages(null); setAnimation(null); setQuestion(""); input.current?.focus(); }}><RefreshCw />New chat</Button></div> : null}
+          {messages.length ? <div className="mb-3 flex flex-wrap items-center gap-2">{shortcuts.map(({ label, prompt }) => <button key={label} type="button" disabled={busy || Boolean(retryMessages)} onClick={() => send(t(prompt))} className="rounded-full border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50">{label}</button>)}<Button type="button" variant="ghost" size="xs" className="ml-auto" disabled={pending} onClick={() => { setMessages([]); setError(null); setRetryMessages(null); setAnimation(null); setQuestion(""); input.current?.focus(); }}><RefreshCw />New chat</Button></div> : null}
           <AiChatInput contextLabel={company.name} value={question} onChange={setQuestion} onSend={() => send()} inputRef={input} disabled={busy || Boolean(retryMessages)} busy={busy} shortcuts={shortcuts} />
           <p className="mt-3 text-center text-[11px] leading-5 text-muted-foreground">AI provides advice and drafts. Review before using. This chat lasts until you leave or refresh this page.</p>
         </div>

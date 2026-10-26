@@ -4,18 +4,21 @@ import { useEffect, useEffectEvent, useId, useState, useSyncExternalStore } from
 import { Check, ChevronDown, Database, FileText } from "lucide-react";
 import { cn } from "cn";
 import { ThinkingGlyph } from "@/components/ui/thinking-indicator";
+import { AgentWorkIcon } from "@/components/agent-work-icon";
+import { agentWorkAreaLabels, type AgentWorkProgress } from "@/lib/ai/agent-progress";
 import "./ai-agent-response.css";
 
 // Adapted from the supplied response design. Progress follows real request
 // state; there are no simulated reasoning, terminal or tool-execution traces.
 export type ResponseStep = { id: string; label: string; detail?: string };
 
-export function ThinkingState({ working, writing = false, durationMs, scope, steps = [], className }: {
+export function ThinkingState({ working, writing = false, durationMs, scope, steps = [], activity, className }: {
   working: boolean;
   writing?: boolean;
   durationMs?: number;
   scope: string;
   steps?: ResponseStep[];
+  activity?: AgentWorkProgress;
   className?: string;
 }) {
   const [manualExpanded, setManualExpanded] = useState<boolean | null>(null);
@@ -34,8 +37,9 @@ export function ThinkingState({ working, writing = false, durationMs, scope, ste
   return <div className={cn("agent-response-trace flex min-w-0 flex-col text-foreground", className)}>
     <button type="button" aria-expanded={expanded} aria-controls={id} onClick={() => setManualExpanded(!expanded)} className="group inline-flex min-h-8 w-fit max-w-full items-center gap-2 rounded-sm text-left text-[13px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring">
       {active ? <ThinkingGlyph className="size-3.5 text-violet-600 dark:text-violet-300" duration={2.4} /> : <Check aria-hidden="true" className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />}
+      {activity ? <AgentWorkIcon area={activity.area} /> : null}
       <span className={cn("min-w-0", active && "agent-shimmer")}>
-        {working ? "Thinking…" : writing ? "Writing reply…" : <>Answered in <span className="font-mono text-xs tabular-nums">{((durationMs ?? 0) / 1_000).toFixed(1)}s</span></>}
+        {working ? activity?.label || "Thinking…" : writing ? "Writing reply…" : <>Answered in <span className="font-mono text-xs tabular-nums">{((durationMs ?? 0) / 1_000).toFixed(1)}s</span></>}
       </span>
       {working && elapsed > 0 ? <span aria-hidden="true" className="font-mono text-[11px] tabular-nums opacity-60">{elapsed}s</span> : null}
       <ChevronDown aria-hidden="true" className={cn("size-3 shrink-0 opacity-40 transition-transform duration-300 group-hover:opacity-80", expanded && "rotate-180")} />
@@ -43,9 +47,16 @@ export function ThinkingState({ working, writing = false, durationMs, scope, ste
     <div id={id} inert={!expanded} aria-hidden={!expanded} className={cn("agent-trace-details grid transition-[grid-template-rows,opacity] duration-300", expanded ? "grid-rows-[1fr] opacity-100" : "pointer-events-none grid-rows-[0fr] opacity-0")}>
       <div className="min-h-0 overflow-hidden">
         <div className="mb-2 ml-1.5 mt-1 space-y-1 border-l border-border/70 py-1 pl-3">
-          <div className="flex min-h-7 min-w-0 items-center gap-2 text-xs"><Database aria-hidden="true" className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" /><span className="shrink-0 font-medium">Customer</span><span data-no-translate className="truncate rounded-md border border-border/40 bg-muted/70 px-1.5 py-0.5 text-[11px] text-muted-foreground">{scope}</span></div>
-          {working ? <div className="flex min-h-7 items-center gap-2 text-xs text-muted-foreground"><span aria-hidden="true" className="agent-trace-spinner size-3.5 shrink-0 rounded-full border-[1.5px] border-muted-foreground/30 border-t-foreground" /><span>Preparing an answer from saved customer records</span></div> : steps.map((step) => <div key={step.id} className="flex min-h-7 items-start gap-2 py-1 text-xs"><FileText aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" /><div className="min-w-0"><p className="break-words font-medium">{step.label}</p>{step.detail ? <p data-no-translate className="mt-0.5 break-words text-[11px] leading-5 text-muted-foreground">{step.detail}</p> : null}</div></div>)}
-          {!working && !steps.length ? <p className="py-1 text-xs leading-5 text-muted-foreground">Reply prepared using the available customer context.</p> : null}
+          {activity ? <>
+            <div className="flex min-h-7 flex-wrap items-center gap-1.5 text-xs"><span className="mr-1 text-muted-foreground">Working in</span>{[activity.area, ...(activity.relatedAreas ?? [])].map((area) => <span key={area} className="inline-flex items-center gap-1.5 rounded-md border border-violet-500/15 bg-violet-500/5 px-2 py-1 font-medium"><AgentWorkIcon area={area} />{agentWorkAreaLabels[area]}</span>)}</div>
+            <p data-no-translate className="break-words py-1 text-xs leading-5 text-muted-foreground">{activity.detail}</p>
+            <p className="text-[10px] text-muted-foreground"><span>Opened from</span>: {scope}</p>
+          </> : <>
+            <div className="flex min-h-7 min-w-0 items-center gap-2 text-xs"><Database aria-hidden="true" className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" /><span className="shrink-0 font-medium">Customer</span><span data-no-translate className="truncate rounded-md border border-border/40 bg-muted/70 px-1.5 py-0.5 text-[11px] text-muted-foreground">{scope}</span></div>
+            {working ? <div className="flex min-h-7 items-center gap-2 text-xs text-muted-foreground"><span aria-hidden="true" className="agent-trace-spinner size-3.5 shrink-0 rounded-full border-[1.5px] border-muted-foreground/30 border-t-foreground" /><span>Preparing an answer from saved customer records</span></div> : null}
+          </>}
+          {!working ? steps.map((step) => <div key={step.id} className="flex min-h-7 items-start gap-2 py-1 text-xs"><FileText aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" /><div className="min-w-0"><p className="break-words font-medium">{step.label}</p>{step.detail ? <p data-no-translate className="mt-0.5 break-words text-[11px] leading-5 text-muted-foreground">{step.detail}</p> : null}</div></div>) : null}
+          {!activity && !working && !steps.length ? <p className="py-1 text-xs leading-5 text-muted-foreground">Reply prepared using the available customer context.</p> : null}
         </div>
       </div>
     </div>

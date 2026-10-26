@@ -11,9 +11,11 @@ import {
 } from "@/lib/ai/email-rewrite";
 import { getEmailTranslationProvider, looksLikeEnglish, translateEmailSegments, translateEnglishEmail } from "@/lib/email-translation";
 import { z } from "zod";
-import { emailSummaryInstruction, generateEmailSummary } from "@/lib/ai/email-summary";
+import { aiLanguageSchema } from "@/lib/ai/language";
+import { buildEmailSummaryInstruction, generateEmailSummary } from "@/lib/ai/email-summary";
 
 const requestSchema = z.object({
+  language: aiLanguageSchema,
   mode: z.enum(["rewrite", "translate", "summary"]),
   text: z.string().trim().min(1).max(20_000),
   segments: z.array(z.string().trim().min(1).max(20_000)).min(1).max(500)
@@ -54,7 +56,7 @@ export async function POST(request: Request) {
     return Response.json({ ok: false, error: "Invalid AI request. Check the message and conversation details." }, { status: 400 });
   }
 
-  const { mode, text, context, recipient, assignedManagerName, customerProfile, conversationHistory } = parsed.data;
+  const { language, mode, text, context, recipient, assignedManagerName, customerProfile, conversationHistory } = parsed.data;
   if (mode === "translate") {
     if (parsed.data.segments) {
       try {
@@ -79,11 +81,11 @@ export async function POST(request: Request) {
   const gatewayToken = process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
 
   const signature = {
-    name: normalizeSignatureName(assignedManagerName, normalizeSignatureName(viewer.displayName)),
-    title: DEFAULT_EMAIL_TITLE,
+    name: normalizeSignatureName(assignedManagerName, normalizeSignatureName(viewer.displayName, language === "zh-CN" ? "Filazoo 销售团队" : "Filazoo Sales Team")),
+    title: language === "zh-CN" ? "商务拓展经理" : DEFAULT_EMAIL_TITLE,
     company: DEFAULT_EMAIL_COMPANY,
   };
-  const system = mode === "summary" ? `${emailSummaryInstruction}\nCURRENT TIME: ${new Date().toISOString()}\nWORKSPACE TIMEZONE: Asia/Shanghai` : buildEmailRewriteInstruction(signature);
+  const system = mode === "summary" ? `${buildEmailSummaryInstruction(language)}\nCURRENT TIME: ${new Date().toISOString()}\nWORKSPACE TIMEZONE: Asia/Shanghai` : buildEmailRewriteInstruction(signature, language);
   const userContent = mode === "summary" ? JSON.stringify({
     contact: recipient,
     customerProfile,
@@ -98,8 +100,8 @@ export async function POST(request: Request) {
     legacyContext: context,
   });
   const finalizeOutput = async (generate: (correction: string) => Promise<string>) => mode === "summary"
-    ? generateEmailSummary(generate)
-    : applyEmailSignature(await generate(""), signature);
+    ? generateEmailSummary(generate, undefined, language)
+    : applyEmailSignature(await generate(""), signature, language);
 
   const generateWithGateway = (correction: string) => generateGatewayText({
     token: gatewayToken!,

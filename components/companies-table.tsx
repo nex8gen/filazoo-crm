@@ -1,18 +1,17 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type SortingState, flexRender } from "@tanstack/react-table";
 import { type LegacyColumnDef as ColumnDef, getCoreRowModel, getPaginationRowModel, getSortedRowModel, useLegacyTable as useReactTable } from "@tanstack/react-table/legacy";
-import { Building2, ChevronsUpDown, CircleAlert, Globe2, Mail, MapPin, MessageCircle, PackageCheck, Trash2, UserRoundCheck } from "lucide-react";
+import { Building2, ChevronsUpDown, CircleAlert, Globe2, Mail, MapPin, PackageCheck, Trash2, UserRoundCheck } from "lucide-react";
 import { toast } from "sonner";
 import { bulkUpdateCompanies } from "@/app/crm-actions";
 import { AssignedOwner } from "@/components/assigned-owner";
 import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { EmptyState } from "@/components/data-state";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { CompanyAvatar } from "@/components/company-avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -32,33 +31,14 @@ const statusClass: Record<Company["stage"], string> = {
   "Closed / not proceeding": "border-border bg-muted text-muted-foreground",
 };
 
-function ShopifyMark({ compact = false }: { compact?: boolean }) {
-  const size = compact ? 16 : 24;
-  return <Image src="/shopify-mark.svg" alt="Shopify" title="Shopify lead" width={size} height={size} unoptimized className="shrink-0 object-contain" />;
-}
-
-function SourceMark({ company }: { company: Company }) {
-  const isShopify = company.source.includes("shopify");
-  const isMeta = company.source.includes("meta") || company.source.includes("facebook") || company.source.includes("messenger");
-  if (!isShopify && !isMeta) return null;
-  return <span aria-label={`Source: ${company.sourceLabel}`} title={`Source: ${company.sourceLabel}`} className="absolute -right-1 -bottom-1 grid size-[22px] place-items-center rounded-full border-[3px] border-card bg-card shadow-sm">{isShopify ? <ShopifyMark compact /> : <span className="grid size-4 place-items-center rounded-full bg-[#0866ff] text-white"><MessageCircle className="size-2.5" /></span>}</span>;
-}
-
 function CompanyIdentity({ company }: { company: Company }) {
-  const isShopify = company.source.includes("shopify");
   return (
     <div className="flex min-w-0 items-center gap-3.5 md:min-w-60">
-      <div className="relative shrink-0">
-        <Avatar className="size-7 rounded-full bg-muted">
-          <AvatarFallback className="rounded-full bg-card/85 text-xs font-bold tracking-wide text-foreground backdrop-blur-sm">{company.initials}</AvatarFallback>
-        </Avatar>
-        <SourceMark company={company} />
-      </div>
+      <CompanyAvatar company={company} />
       <div className="min-w-0">
         <p className="truncate text-sm font-semibold leading-5 text-primary">{company.name}</p>
         <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
           <p className="max-w-40 truncate text-xs text-muted-foreground">{company.domain}</p>
-          {isShopify ? <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#95bf47]/12 px-1.5 py-0.5 text-xs font-semibold text-[#5c7f18] dark:text-[#b5d66e]"><span className="size-1 rounded-full bg-[#78a832]" />Shopify</span> : null}
         </div>
       </div>
     </div>
@@ -103,10 +83,10 @@ export function CompaniesTable({ companies, mode, canWrite, canDelete }: { compa
     },
     {
       accessorKey: "name", header: "Company / customer",
-      cell: ({ row }) => <Link href={`/companies/${row.original.id}`} className="text-primary underline-offset-4 hover:underline"><CompanyIdentity company={row.original} /></Link>,
+      cell: ({ row }) => <Link href={`/companies/${row.original.id}`} className="text-primary no-underline hover:no-underline"><CompanyIdentity company={row.original} /></Link>,
     },
     { accessorKey: "email", header: "Email", cell: ({ getValue }) => <span className="flex max-w-52 items-center gap-1.5 truncate"><Mail className="size-3.5 shrink-0 text-muted-foreground/70" />{getValue<string>() || "No email"}</span> },
-    { accessorKey: "ownerName", header: "Assigned manager", cell: ({ row }) => <AssignedOwner name={row.original.ownerName} initials={row.original.ownerInitials} assigned={Boolean(row.original.ownerId)} compact /> },
+    { accessorKey: "ownerName", header: "Assigned manager", cell: ({ row }) => <AssignedOwner name={row.original.ownerName} initials={row.original.ownerInitials} imageUrl={row.original.ownerAvatarUrl} assigned={Boolean(row.original.ownerId)} compact /> },
     { accessorKey: "country", header: "Country", cell: ({ getValue }) => { const value = getValue<string>(); return <span className={`flex items-center gap-1.5 whitespace-nowrap ${value === "Unknown" ? "text-amber-600 dark:text-amber-400" : ""}`}><MapPin className="size-3.5" />{value}</span>; } },
     { accessorKey: "segment", header: "Segment", cell: ({ getValue }) => <span className="block max-w-44 truncate">{getValue<string>()}</span> },
     { accessorKey: "stage", header: "Status", cell: ({ getValue }) => { const value = getValue<Company["stage"]>(); return <Badge variant="outline" className={statusClass[value]}>{value}</Badge>; } },

@@ -6,11 +6,13 @@ import { EmptyState } from "@/components/data-state";
 import { PageHeader } from "@/components/page-header";
 import { requireWorkspaceMember } from "@/lib/auth";
 import { listCatalogs, listCompanies, listProducts } from "@/lib/data/crm";
+import { prepareCompanyCatalogPdfs } from "@/lib/data/catalog-pdfs";
 
 export default async function CompanyCatalogsPage() {
   const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   const [{ mode, catalogs }, { companies }, { products }] = await Promise.all([listCatalogs(), listCompanies(), listProducts()]);
   const canWrite = viewer.role !== "viewer";
+  await prepareCompanyCatalogPdfs(catalogs);
 
   return (
     <div className="space-y-5">

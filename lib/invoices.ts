@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { invoiceBankAccountSchema } from "./invoice-banks.ts";
+import { invoicePaymentMethodsSchema } from "./invoice-payment-methods.ts";
 
 // All supported currencies use two decimal places. Store money as integer minor units.
 export const invoiceCurrencies = [
@@ -23,6 +24,10 @@ export const invoiceDocumentSchema = z
     customerAddress: z.string().trim().max(2000),
     customerTaxId: z.string().trim().max(100),
     companyId: z.uuid().optional(),
+    purchaseOrderId: z.uuid().optional(),
+    shippingAddress: z.string().trim().max(2000).optional(),
+    shippingRecipient: z.string().trim().max(160).optional(),
+    shippingPhone: z.string().trim().max(80).optional(),
     contactId: z.uuid().optional(),
     sourceThreadId: z.string().trim().max(1000).optional(),
     currency: z.enum(invoiceCurrencies),
@@ -31,6 +36,7 @@ export const invoiceDocumentSchema = z
     reference: z.string().trim().max(200),
     notes: z.string().trim().max(4000),
     paymentInstructions: z.string().trim().max(2000),
+    paymentMethods: invoicePaymentMethodsSchema.optional(),
     bankAccountId: z.uuid().optional(),
     bankAccount: invoiceBankAccountSchema.optional(),
     discountMinor: money,
@@ -43,6 +49,7 @@ export const invoiceDocumentSchema = z
           unitPriceMinor: money,
           taxBps: z.number().int().min(0).max(10000),
           productSku: z.string().trim().min(1).max(200).optional(),
+          purchaseOrderLineId: z.string().trim().min(1).max(100).optional(),
           imageUrl: z
             .string()
             .max(1000)
@@ -62,6 +69,10 @@ export const invoiceDocumentSchema = z
       .max(100),
   })
   .superRefine((doc, ctx) => {
+    if (doc.paymentMethods?.some((method) => method.currency && method.currency !== doc.currency))
+      ctx.addIssue({ code: "custom", message: "Choose payment methods that match the invoice currency.", path: ["paymentMethods"] });
+    if (doc.purchaseOrderId && !doc.companyId) ctx.addIssue({ code: "custom", message: "An order invoice must have a customer.", path: ["companyId"] });
+    if (doc.items.some((item) => item.purchaseOrderLineId) && !doc.purchaseOrderId) ctx.addIssue({ code: "custom", message: "Order lines require a linked order.", path: ["purchaseOrderId"] });
     if (doc.bankAccount && doc.bankAccount.id !== doc.bankAccountId)
       ctx.addIssue({ code: "custom", message: "Select a saved bank account.", path: ["bankAccountId"] });
     if (doc.bankAccount?.currency && doc.bankAccount.currency !== doc.currency)
@@ -127,6 +138,7 @@ export type InvoiceReceivable = {
   overdue_minor: number;
 };
 export type Invoice = {
+  customer_portal_url?: string;
   id: string;
   number: number;
   document: InvoiceDocument;
@@ -147,7 +159,6 @@ export type Invoice = {
 
 export function blankInvoiceDocument(today: string): InvoiceDocument {
   const due = new Date(`${today}T00:00:00Z`);
-  due.setUTCDate(due.getUTCDate() + 30);
   return {
     sellerName: "Filazoo",
     sellerAddress: "",
@@ -160,7 +171,7 @@ export function blankInvoiceDocument(today: string): InvoiceDocument {
     issueDate: today,
     dueDate: due.toISOString().slice(0, 10),
     reference: "",
-    notes: "",
+    notes: "Payment terms: 100% payment before shipment unless otherwise agreed in writing.",
     paymentInstructions: "",
     discountMinor: 0,
     shippingMinor: 0,

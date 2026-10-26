@@ -1,5 +1,7 @@
 "use client";
 
+import { useLanguage } from "@/components/language-provider";
+
 import { AiIcon } from "@/components/ai-icon";
 
 import { useEffect, useEffectEvent, useState } from "react";
@@ -13,12 +15,13 @@ export function EmailAiSummary({ context, configured, ready, currentFollowUpAt, 
   currentFollowUpAt: string | null;
   onAnalyzed: (summary: EmailSummary) => Promise<void>;
 }) {
+  const { language } = useLanguage();
   const [summary, setSummary] = useState<EmailSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const getRequest = useEffectEvent(() => JSON.stringify({ ...JSON.parse(context), currentFollowUpAt }));
+  const getRequest = useEffectEvent(() => JSON.stringify({ ...JSON.parse(context), currentFollowUpAt, language }));
   const saveAnalysis = useEffectEvent((output: EmailSummary) => onAnalyzed(output));
 
   useEffect(() => {
@@ -60,7 +63,7 @@ export function EmailAiSummary({ context, configured, ready, currentFollowUpAt, 
     }
     void generate();
     return () => { active = false; clearTimeout(timeout); controller.abort(); };
-  }, [context, configured, ready, attempt]);
+  }, [context, configured, ready, attempt, language]);
 
   async function retrySaving() {
     if (!summary) return;

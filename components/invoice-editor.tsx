@@ -4,7 +4,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { useCallback, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { InvoiceConnections } from "@/components/invoice-connections";
-import { InvoiceBankSelect } from "@/components/invoice-bank-select";
+import { InvoicePaymentSelect } from "@/components/invoice-payment-select";
 import { productUnitPrice, type InvoiceProduct } from "@/lib/invoice-links";
 import {
   invoiceCurrencies,
@@ -144,12 +144,13 @@ export function InvoiceEditor({
       className="space-y-7"
     >
       <fieldset disabled={busy} className="space-y-7 disabled:opacity-60">
-        <InvoiceConnections
+        {doc.purchaseOrderId && <p className="rounded-lg border bg-muted/30 p-4 text-sm">This invoice is linked to customer PO {doc.reference}. Keep its customer, currency, descriptions, and agreed unit prices unchanged. Reduce quantities or remove lines for partial billing; remaining quantities can be invoiced from the order.</p>}
+        <fieldset disabled={Boolean(doc.purchaseOrderId)}><InvoiceConnections
           doc={doc}
           onChange={setDoc}
           onProducts={rememberProducts}
           onBusyChange={setConnectionsBusy}
-        />
+        /></fieldset>
         <div className="grid gap-6 lg:grid-cols-2">
           {(["seller", "customer"] as const).map((party) => (
             <section key={party} className="space-y-4 rounded-xl border p-5">
@@ -375,7 +376,7 @@ export function InvoiceEditor({
         </section>
         <div className="grid gap-6 lg:grid-cols-2">
           <section className="space-y-4 rounded-xl border p-5">
-            <InvoiceBankSelect doc={doc} onChange={setDoc} />
+            <InvoicePaymentSelect doc={doc} onChange={setDoc} />
             {areaField(
               "Additional payment instructions / manual bank details",
               "paymentInstructions",

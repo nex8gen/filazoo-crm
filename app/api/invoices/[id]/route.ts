@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { revalidatePath } from "next/cache";
 import {
   invoiceAccess,
   invoiceError,
@@ -54,7 +55,10 @@ export async function PATCH(request: Request, context: Context) {
         ? { ...input, totalMinor: invoiceTotals(input.document).total }
         : input,
     );
-    return Response.json({ invoice });
+    revalidatePath(`/invoices/${id}`);
+    revalidatePath("/invoices");
+    if (existing.company_id) revalidatePath(`/companies/${existing.company_id}`);
+    return Response.json({ invoice: input.action === "delete" ? invoice : await getInvoice(id) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return invoiceError(error);
   }

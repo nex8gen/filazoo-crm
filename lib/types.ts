@@ -32,6 +32,7 @@ export type Company = {
   ownerId: string | null;
   ownerName: string;
   ownerInitials: string;
+  ownerAvatarUrl?: string;
   website: string;
   domain: string;
   country: string;
@@ -80,6 +81,7 @@ export type CompanyActivity = {
 };
 
 export type CompanyDetails = {
+  commerce?: import("./company-commerce").CompanyCommerce;
   company: Company;
   contacts: CompanyContact[];
   activity: CompanyActivity[];

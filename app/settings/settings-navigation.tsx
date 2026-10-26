@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { Mail, Plug, Search, Settings, ShieldCheck, Sun, UserRound, UsersRound, Workflow } from "lucide-react";
+import { CreditCard, Mail, Plug, Search, Settings, ShieldCheck, Sun, UserRound, UsersRound, Workflow } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
 export function SettingsNavigation({ isAdmin }: { isAdmin: boolean }) {
@@ -19,6 +19,9 @@ export function SettingsNavigation({ isAdmin }: { isAdmin: boolean }) {
     { label: "Integrations", items: [
       { label: "My mailbox", href: "/settings/mailboxes", icon: Mail },
       { label: "Connected channels", href: "/settings/integrations", icon: Plug },
+    ] },
+    { label: "Billing", items: [
+      { label: "Payment methods", href: "/settings/payments", icon: CreditCard },
     ] },
     ...(isAdmin ? [{ label: "Workspace", items: [
       { label: "Team and access", href: "/settings/team", icon: UsersRound },

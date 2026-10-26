@@ -1,7 +1,9 @@
 import type { DataMode, EmailDraft, Reply } from "./types.ts";
 import { getEffectiveMailbox, mailboxHasImap, mailboxHasSmtp } from "./data/mailboxes.ts";
 import { getEmailAutomationSettings, listEmailInboxStates, listSentMailboxMessages, type EmailCategory, type EmailFolderState } from "./data/email-state.ts";
-import { getViewer } from "./auth.ts";
+import { requireWorkspaceMember } from "./auth.ts";
+import { canViewEmail } from "./email-access.ts";
+import { getAssignedEmailContacts } from "./data/email-access.ts";
 import { normalizeMessageId, normalizeReferences, threadKeyForEmail } from "./email-threading.ts";
 import type { CustomerProfileContext } from "./ai/email-rewrite.ts";
 
@@ -24,6 +26,7 @@ export type InboxEmailItem = {
   ownerId?: string | null;
   ownerName?: string;
   ownerInitials?: string;
+  ownerAvatarUrl?: string;
   customerProfile?: CustomerProfileContext;
   preview: string;
   body: string;
@@ -301,9 +304,8 @@ export function buildInboxEmailItems({
 
 export async function getEmailInboxBackendData({ syncMailbox = true, history = false }: { syncMailbox?: boolean; history?: boolean } = {}): Promise<EmailInboxBackendData> {
   const { listCompanies, listEmailDrafts, listReplies } = await import("./data/crm.ts");
-  const viewer = await getViewer();
-  if (!viewer) throw new Error("Authentication required.");
-  const [{ emails, mode }, { replies }, companyResult, defaultMailbox, sentMessages, states, shopifyMessages] = await Promise.all([
+  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
+  const [{ emails, mode }, { replies }, companyResult, defaultMailbox, sentMessages, states, shopifyMessages, assignedContacts] = await Promise.all([
     listEmailDrafts(),
     listReplies(),
     listCompanies(),
@@ -311,6 +313,7 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
     listSentMailboxMessages(viewer.id).catch(() => []),
     listEmailInboxStates(viewer.id).catch(() => new Map()),
     listShopifyFormInboxMessages().catch(() => []),
+    getAssignedEmailContacts(viewer),
   ]);
 
   let liveInbound: InboxEmailItem[] = [];
@@ -331,15 +334,20 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
 
   const companiesByEmail = new Map(companyResult.companies.filter((company) => company.email).map((company) => [company.email.toLowerCase(), company]));
   const companiesByName = new Map(companyResult.companies.map((company) => [company.name.toLowerCase(), company]));
+  const companiesById = new Map(companyResult.companies.map((company) => [company.id, company]));
   const inbox = [...buildInboxEmailItems({ drafts: emails, replies, inbound: [...shopifyMessages, ...liveInbound] }), ...sentMessages]
+    .filter((item) => canViewEmail(viewer, item.contact, assignedContacts))
     .map((item) => {
-      const company = companiesByEmail.get(item.contact.toLowerCase()) ?? companiesByName.get(item.company.toLowerCase());
+      const assignedCompanyId = assignedContacts?.get(item.contact.trim().toLowerCase());
+      const company = assignedCompanyId ? companiesById.get(assignedCompanyId)
+        : companiesByEmail.get(item.contact.toLowerCase()) ?? companiesByName.get(item.company.toLowerCase());
       return {
         ...item,
         ...(states.get(item.id) ?? {}),
-        companyId: company?.id ?? null,
-        ownerId: company?.ownerId ?? null,
-        ownerName: company?.ownerName ?? "Unassigned",
+        companyId: assignedCompanyId ?? company?.id ?? null,
+        ownerId: assignedCompanyId ? viewer.id : company?.ownerId ?? null,
+        ownerAvatarUrl: company?.ownerAvatarUrl,
+        ownerName: company?.ownerName ?? (assignedCompanyId ? viewer.displayName || "BD Sales Manager" : "Unassigned"),
         customerProfile: company ? {
           companyName: company.name,
           contactName: item.contactName || company.contact,

@@ -16,14 +16,18 @@ import { getDefaultWorkspaceMailbox, getUserMailbox, listMailboxes } from "@/lib
 import { listWorkspaceMembers } from "@/lib/data/members";
 import { InviteMemberForm, PersonalMailboxForm, ProfileForm, WorkspaceMailboxForm } from "./settings-forms";
 import { MailboxManager } from "./mailbox-manager";
+import { PaymentMethodsForm } from "./payment-methods-form";
+import { invoicePaymentMethods } from "@/lib/data/invoice-payment-methods";
+import { canManageBilling } from "@/lib/invoice-permissions";
 
 export default async function SettingsPage({ params }: { params?: Promise<{ section?: string }> }) {
   const section = (await params)?.section || "general";
-  const titles: Record<string, string> = { general: "General", appearance: "Appearance", profile: "Profile", security: "Security and login", mailboxes: "My mailbox", integrations: "Connected channels", team: "Team and access", advanced: "Assignment and automation" };
+  const titles: Record<string, string> = { general: "General", appearance: "Appearance", profile: "Profile", security: "Security and login", mailboxes: "My mailbox", integrations: "Connected channels", payments: "Payment methods", team: "Team and access", advanced: "Assignment and automation" };
   if (!titles[section]) notFound();
   const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   if ((section === "team" || section === "advanced") && viewer.role !== "admin") notFound();
   const members = viewer.role === "admin" && (section === "team" || section === "advanced") ? await listWorkspaceMembers() : [];
+  const paymentMethods = section === "payments" ? await invoicePaymentMethods() : [];
 
   const [defaultWorkspaceMailbox, personalMailbox, mailboxResult] = await Promise.all([
     section === "team" ? getDefaultWorkspaceMailbox().catch(() => null) : Promise.resolve(null),
@@ -39,6 +43,7 @@ export default async function SettingsPage({ params }: { params?: Promise<{ sect
       <SettingsNavigation isAdmin={viewer.role === "admin"} />
       <div className="min-w-0 flex-1 p-5 sm:p-8 lg:p-10">
       <PageHeader title={titles[section]} description="Manage your personal preferences and workspace." />
+      {section === "payments" ? <Card className="max-w-2xl shadow-none"><CardHeader><CardTitle>Customer payment methods</CardTitle><CardDescription>Add bank transfer, PayPal, and other payment instructions to offer on customer invoices.</CardDescription></CardHeader><CardContent><PaymentMethodsForm initial={paymentMethods} canManage={canManageBilling(viewer.role)} /></CardContent></Card> : null}
       {section === "integrations" ? <Card className="max-w-2xl shadow-none"><CardHeader><CardTitle>Meta lead connection</CardTitle><CardDescription>Connect Facebook and Instagram ad forms through Make and view incoming leads.</CardDescription></CardHeader><CardContent><Button nativeButton={false} render={<Link href="/lead-channel/meta" />}>Manage connection</Button></CardContent></Card> : null}
       {section === "general" ? <Card className="max-w-2xl shadow-none"><CardHeader><CardTitle>Account overview</CardTitle><CardDescription>Your Filazoo workspace account and preferences.</CardDescription></CardHeader><CardContent className="space-y-5"><div><p className="text-sm font-medium">{viewer.displayName || "Account"}</p><p className="mt-1 text-sm text-muted-foreground">{viewer.email}</p><Badge variant="outline" className="mt-3 capitalize">{viewer.role}</Badge></div><Separator /><div className="flex flex-wrap gap-3"><Button nativeButton={false} render={<Link href="/settings/profile" />}>Edit profile</Button><Button variant="outline" nativeButton={false} render={<Link href="/settings/appearance" />}>Appearance</Button></div></CardContent></Card> : null}
       {section === "appearance" ? <Card className="max-w-2xl shadow-none"><CardHeader><CardTitle>Color theme</CardTitle><CardDescription>Choose a theme or follow your device settings.</CardDescription></CardHeader><CardContent><AppearanceSettings /></CardContent></Card> : null}

@@ -132,6 +132,17 @@ npm run verify
 
 This runs ESLint, the Node test suite, TypeScript through the Next.js build, and a production build.
 
+Company follow-up reminders are synchronized by the database for profile edits,
+opportunity edits, and owner changes. Apply
+`supabase/migrations/20261026063746_crm_company_action_connections.sql` before
+deploying the company-action updates. Assignment updates the pipeline, Meta and
+Shopify source ownership, reminder owner, and activity history in one transaction.
+Run `tests/company-action-connections-database.sql` against the connected database
+to check scheduling, rescheduling, cancellation, assignment, and permissions. Its
+fixtures and changes are rolled back. `scripts/check-flow-mailbox.ts` checks SMTP
+and IMAP without sending mail; `scripts/verify-flows.ts` runs the existing dry-run
+automation integration checks and cleans up its disposable records.
+
 ## Current scope
 
 Implemented:

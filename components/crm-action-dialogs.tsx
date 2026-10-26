@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { pipelineStageLabels, pipelineStageValues, type Company, type ContactOption, type Product } from "@/lib/types";
+import { followupInstant } from "@/lib/company-followup";
 
 function ActionMessage({ state }: { state: CrmActionState }) {
   if (state?.error) return <p role="alert" className="text-xs text-destructive">{state.error}</p>;
@@ -85,6 +86,7 @@ export function ExportCompaniesButton({ companies }: { companies: Company[] }) {
 
 export function AddOpportunityButton({ companies, canWrite }: { companies: Company[]; canWrite: boolean }) {
   const dialog = useActionDialog(createOpportunity);
+  const [followup, setFollowup] = useState("");
   const enabled = canWrite && companies.length > 0;
   return (
     <>
@@ -93,10 +95,11 @@ export function AddOpportunityButton({ companies, canWrite }: { companies: Compa
         <DialogContent className="sm:max-w-lg">
           <DialogHeader><DialogTitle>Add opportunity</DialogTitle><DialogDescription>Set the pipeline stage, value, owner, and next follow-up.</DialogDescription></DialogHeader>
           <form action={dialog.action} className="space-y-4">
+            <input type="hidden" name="nextFollowupAt" value={followupInstant(followup)} />
             <Field label="Company" id="opportunity-company"><Select name="companyId" required><SelectTrigger id="opportunity-company" className="w-full"><SelectValue placeholder="Choose a company" /></SelectTrigger><SelectContent>{companies.map((company) => <SelectItem key={company.id} value={company.id}>{company.name}</SelectItem>)}</SelectContent></Select></Field>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Stage" id="opportunity-stage"><Select name="stage" defaultValue="new"><SelectTrigger id="opportunity-stage" className="w-full"><SelectValue /></SelectTrigger><SelectContent>{pipelineStageValues.map((value) => <SelectItem key={value} value={value}>{pipelineStageLabels[value]}</SelectItem>)}</SelectContent></Select></Field>
-              <Field label="Next follow-up" id="opportunity-followup"><Input id="opportunity-followup" name="nextFollowupAt" type="datetime-local" /></Field>
+              <Field label="Next follow-up" id="opportunity-followup"><Input id="opportunity-followup" type="datetime-local" value={followup} onChange={(event) => setFollowup(event.target.value)} /></Field>
               <Field label="Estimated value" id="opportunity-value"><Input id="opportunity-value" name="estimatedValue" type="number" min="0" step="0.01" /></Field>
               <Field label="Currency" id="opportunity-currency"><Select name="currency" defaultValue="USD"><SelectTrigger id="opportunity-currency" className="w-full"><SelectValue /></SelectTrigger><SelectContent>{["USD", "EUR", "GBP", "CNY"].map((currency) => <SelectItem key={currency} value={currency}>{currency}</SelectItem>)}</SelectContent></Select></Field>
             </div>
@@ -140,7 +143,7 @@ export function NewCatalogButton({ companies, products, canWrite, label = "New c
       <Button size="sm" disabled={!enabled} title={!canWrite ? "Viewer access is read-only" : companies.length ? "Create a catalog selection" : "Add a company first"} onClick={() => dialog.setOpen(true)}><FileText />{label}</Button>
       <Dialog open={dialog.open} onOpenChange={dialog.setOpen}>
         <DialogContent className="sm:max-w-2xl">
-          <DialogHeader><DialogTitle>Create catalog selection</DialogTitle><DialogDescription>Save the company, currency, and focused product set. PDF rendering remains unavailable until the catalog renderer is connected.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>Create catalog selection</DialogTitle><DialogDescription>Save the company, currency, and focused product set. A PDF is generated automatically, ready to preview and download from Company Catalogs. Prices keep their original product currency.</DialogDescription></DialogHeader>
           <form action={dialog.action} className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Company" id="catalog-company"><Select name="companyId" required><SelectTrigger id="catalog-company" className="w-full"><SelectValue placeholder="Choose a company" /></SelectTrigger><SelectContent>{companies.map((company) => <SelectItem key={company.id} value={company.id}>{company.name}</SelectItem>)}</SelectContent></Select></Field>

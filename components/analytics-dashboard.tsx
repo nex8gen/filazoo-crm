@@ -1,5 +1,6 @@
 "use client";
 
+import { useLanguage } from "@/components/language-provider";
 import { useMemo, useState } from "react";
 import { ArrowDownRight, ArrowUpRight, Check, Eye, LayoutGrid, X } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, Tooltip, XAxis, YAxis } from "recharts";
@@ -83,6 +84,8 @@ export function AnalyticsDashboard({ data }: { data: AnalyticsDashboardData }) {
   const minDate = atDay(`${data.minDate}T00:00:00`); const maxDate = atDay(`${data.maxDate}T00:00:00`);
   const initialFrom = new Date(Math.max(minDate.getTime(), addDays(maxDate, -29).getTime()));
   const [filters, setFilters] = useState<AnalyticsFiltersValue>({ range: { from: initialFrom, to: maxDate }, channels: ["meta", "store", "partner"], currency: data.currencies[0] ?? "USD", comparison: "previous_period" });
+  const { language } = useLanguage();
+  const locale = language === "zh-CN" ? "zh-CN" : "en-US";
   const [customizing, setCustomizing] = useState(false);
   const [visibleWidgets, setVisibleWidgets] = useState<DashboardWidgetId[]>(dashboardLayout.chartWidgets.map((widget) => widget.id));
   const computed = useMemo(() => {
@@ -94,8 +97,8 @@ export function AnalyticsDashboard({ data }: { data: AnalyticsDashboardData }) {
     const currentDates = datesIn(filters.range); const previousDates = datesIn(previousRange);
     const daily = (rows: typeof currentOpps, dates: Date[], field: "value" | "count") => dates.map((date) => { const matches = rows.filter((row) => dateKey(row.createdAt) === dateKey(date)); return field === "value" ? sum(matches.map((row) => row.estimatedValue)) : matches.length; });
     const dailyLeads = (rows: typeof currentLeads, dates: Date[]) => dates.map((date) => rows.filter((row) => dateKey(row.createdAt) === dateKey(date)).length);
-    const labels = currentDates.map((date) => date.toLocaleDateString("en-US", { month: "short", day: "numeric" }));
-    const previousLabels = previousDates.map((date) => date.toLocaleDateString("en-US", { month: "short", day: "numeric" }));
+    const labels = currentDates.map((date) => date.toLocaleDateString(locale, { month: "short", day: "numeric" }));
+    const previousLabels = previousDates.map((date) => date.toLocaleDateString(locale, { month: "short", day: "numeric" }));
     const won = (rows: typeof currentOpps) => rows.filter((row) => row.stage === "won").length;
     const funnel = (rows: typeof currentOpps) => [
       { label: "Incoming opportunities", count: rows.length },
@@ -122,13 +125,13 @@ export function AnalyticsDashboard({ data }: { data: AnalyticsDashboardData }) {
       breakdown: ["new", "contacted", "replied", "interested", "big_order", "won", "lost"].map((stage) => ({ stage, count: currentOpps.filter((row) => row.stage === stage).length, value: sum(currentOpps.filter((row) => row.stage === stage).map((row) => row.estimatedValue)) })),
       topProducts,
     };
-  }, [data, filters]);
+  }, [data, filters, locale]);
 
   const visible = (id: DashboardWidgetId) => visibleWidgets.includes(id);
   const toggleWidget = (id: DashboardWidgetId) => setVisibleWidgets((items) => items.includes(id) ? items.filter((item) => item !== id) : [...items, id]);
   const formatCard = (format: string, value: number) => format === "currency" ? money(value, filters.currency) : format === "percentage" ? `${value.toFixed(1)}%` : Math.round(value).toLocaleString();
   const channelDescription = filters.channels.length === 3 ? "All attributed channels" : filters.channels.map((item) => channelLabels[item]).join(", ");
-  const dateLabel = `${filters.range.from.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${filters.range.to.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+  const dateLabel = `${filters.range.from.toLocaleDateString(locale, { month: "short", day: "numeric" })} – ${filters.range.to.toLocaleDateString(locale, { month: "short", day: "numeric", year: "numeric" })}`;
 
   return <div className="mx-auto max-w-[1500px] space-y-6"><div className="rounded-xl border bg-card p-5 shadow-sm"><div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between"><div><div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground"><LayoutGrid className="size-3.5" /><span>Analytics</span><span>/</span><span>Executive overview</span></div><h1 className="text-2xl font-semibold tracking-tight">CRM performance</h1><p className="mt-1 text-sm text-muted-foreground">Live opportunity, pipeline, and acquisition data from your CRM.</p></div><div className="xl:max-w-[850px]"><AnalyticsFilters value={filters} minDate={minDate} maxDate={maxDate} currencies={data.currencies} onChange={setFilters} onCustomize={() => setCustomizing(true)} /></div></div></div>
     <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"><span className="font-medium text-foreground">{dateLabel}</span><span>{filters.comparison === "none" ? "No comparison" : filters.comparison === "previous_year" ? "compared with the same period last year" : `compared with the preceding ${daysIn(filters.range)} days`}</span><span>{channelDescription}</span><span className="ml-auto flex items-center gap-1.5"><i className="size-1.5 rounded-full bg-emerald-500" />Live CRM records</span></div>

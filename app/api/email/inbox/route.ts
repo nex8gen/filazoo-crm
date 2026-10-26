@@ -3,13 +3,24 @@ import { getEmailInboxBackendData } from "@/lib/email-inbox";
 import { after } from "next/server";
 import { getEffectiveMailbox, mailboxHasImap } from "@/lib/data/mailboxes";
 import { loadSyncedMailbox } from "@/lib/data/mailbox-sync";
+import { getCompanyDetails } from "@/lib/data/crm";
+import { filterCompanyEmails } from "@/lib/company-email";
 
 export const maxDuration = 240;
 
 export async function GET(request: Request) {
   const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
-  const history = new URL(request.url).searchParams.get("scope") === "history";
+  const params = new URL(request.url).searchParams;
+  const history = params.get("scope") === "history";
+  const companyId = params.get("companyId");
+  const company = companyId ? (await getCompanyDetails(companyId)).details : null;
+  if (companyId && !company) return Response.json({ error: "Company not found." }, { status: 404 });
   const data = await getEmailInboxBackendData({ syncMailbox: false });
+  if (company) data.emails = filterCompanyEmails(data.emails, {
+    id: company.company.id,
+    name: company.company.name,
+    emails: [company.company.email, ...company.contacts.map((contact) => contact.email)],
+  });
   // Return saved mail immediately. Provider login and importing older mail
   // continue after the response, with a shared lease across server instances.
   after(async () => {

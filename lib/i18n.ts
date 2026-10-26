@@ -1,3 +1,5 @@
+import { zhCNAdditional } from "./i18n-zh-cn.ts";
+
 export type AppLanguage = "en" | "zh-CN";
 
 export const LANGUAGE_STORAGE_KEY = "filazoo-language";
@@ -122,7 +124,7 @@ const zhCN: Record<string, string> = {
   "Configure": "配置", "Insights": "洞察", "Journey trigger": "客户旅程触发器",
   "Choose the real CRM event that enrolls a contact.": "选择让联系人加入流程的实际 CRM 事件。",
   "Flow canvas. Drag the background or use the mouse wheel to pan. Drag cards to reposition them.": "流程画布。拖动背景或使用鼠标滚轮平移，拖动卡片可调整位置。",
-  "Step": "步骤", "Enrollment:": "加入流程：", "No reply after": "无回复后",
+  "Step": "步骤", "Enrollment:": "加入流程：", "No reply after": "未回复时长",
   "Duration": "时长", "Unit": "单位", "Days": "天", "Count business days only": "仅计算工作日",
   "Company filters": "企业筛选条件", "Any segment": "任意细分市场", "Any country": "任意国家/地区",
   "Company status": "企业状态", "Any status": "任意状态", "Pipeline stage filter": "销售管道阶段筛选",
@@ -184,16 +186,79 @@ const zhCN: Record<string, string> = {
   "Updating…": "正在更新…", "No results": "没有结果", "Error": "错误", "Warning": "警告",
   "Success": "成功", "Required": "必填", "Optional": "选填", "Unknown": "未知", "Yes": "是", "No": "否",
   "Copied": "已复制", "Copy": "复制", "Page": "页", "of": "共",
+  ...zhCNAdditional,
 };
+
+const translated = (input: string) => translateUiText(input, "zh-CN");
+// Only match known UI sentence shapes; customer names, content and IDs stay intact.
+const patterns: Array<[RegExp, (...parts: string[]) => string]> = [
+    [/^(.+) · Filazoo$/, (page) => `${translated(page)} · Filazoo`],
+    [/^Estimated value and deal count in (.+)$/, (currency) => `预计金额与商机数量，币种：${currency}`],
+    [/^(\d+) leads$/, (count) => `${count} 条线索`],
+  [/^(\d+) (products?|companies|customers|conversations?|invoices?|purchase orders|actions?|steps?|channels|variants?|contacts|items|records|emails?|messages?)$/, (count, noun) => `${count} ${({ products: "个产品", product: "个产品", companies: "家企业", customers: "位客户", conversations: "个会话", conversation: "个会话", invoices: "张发票", invoice: "张发票", "purchase orders": "份采购订单", actions: "项操作", action: "项操作", steps: "个步骤", step: "个步骤", channels: "个渠道", variants: "种规格", variant: "种规格", contacts: "位联系人", items: "项", records: "条记录", emails: "封邮件", email: "封邮件", messages: "封邮件", message: "封邮件" } as Record<string, string>)[noun]}`],
+  [/^(\d+) (companies|products) exported\.$/, (count, noun) => `已导出 ${count} ${noun === "companies" ? "家企业" : "个产品"}。`],
+  [/^Page (\d+) · (\d+) (.+)$/, (page, count, noun) => `第 ${page} 页 · ${translated(`${count} ${noun}`)}`],
+  [/^(.+) pagination$/, (noun) => `${translated(noun)}分页`],
+  [/^Step (\d+) of (\d+)$/, (step, total) => `步骤 ${step}，共 ${total} 步`],
+  [/^(\d+) actions? · (\d+) active$/, (count, active) => `${count} 项操作 · ${active} 个运行中`],
+  [/^No reply after (\d+) (hours?|days?)( · business time)?$/, (count, unit, business) => `${count} ${unit.startsWith("hour") ? "小时" : business ? "个工作日" : "天"}后仍未回复`],
+  [/^Wait (\d+) (hours?|days?)( · business time)?$/, (count, unit, business) => `等待 ${count} ${unit.startsWith("hour") ? "小时" : business ? "个工作日" : "天"}`],
+  [/^Category changed to (.+)$/, (category) => `分类更改为${translated(category)}`],
+  [/^Company enters segment (.+)$/, (segment) => `企业进入细分：${segment}`],
+  [/^Pipeline stage changed to (.+)$/, (stage) => `销售管道阶段更改为${translated(stage)}`],
+  [/^(.+) · (\d+) actions?$/, (label, count) => `${translated(label)} · ${count} 项操作`],
+  [/^Open account menu for (.+)$/, (name) => `打开 ${name} 的账户菜单`],
+  [/^Options for (.+)$/, (label) => `${translated(label)}选项`],
+  [/^Assign (.+)$/, (name) => `为 ${name} 分配负责人`],
+  [/^Reply to (.+?)(…)?$/, (name, dots) => `回复 ${name}${dots ?? ""}`],
+  [/^Quick reply to (.+)$/, (name) => `快速回复 ${name}`],
+  [/^Email content from (.+)$/, (name) => `来自 ${name} 的邮件内容`],
+  [/^Email copy: (.+)$/, (subject) => `邮件副本：${subject}`],
+  [/^Select (.+)$/, (name) => `选择 ${name}`],
+  [/^Open (.+)$/, (name) => `打开 ${name}`],
+  [/^(Star|Unstar) (.+)$/, (action, subject) => `${action === "Star" ? "添加星标" : "取消星标"}：${subject}`],
+  [/^Copy (.+)$/, (name) => `复制 ${name}`],
+  [/^Remove (.+)$/, (name) => `移除 ${name}`],
+  [/^Edit (.+)$/, (name) => `编辑 ${name}`],
+  [/^(.+) copied\.$/, (name) => `已复制 ${name}。`],
+  [/^(.+) saved\.$/, (name) => `${name}已保存。`],
+  [/^(.+) saved for this demo session\.$/, (name) => `${name}已保存至本次演示会话。`],
+  [/^(.+) is now assigned to you\.$/, (name) => `${name}现已分配给您。`],
+  [/^Customer ID: (.+)$/, (id) => `客户 ID：${id}`],
+  [/^Reply submitted through (.+)\.$/, (channel) => `回复已通过 ${channel} 提交。`],
+  [/^Open until (.+)$/, (time) => `可回复至 ${time}`],
+  [/^Live · (.+)$/, (channel) => `已连接 · ${channel}`],
+    [/^Compared with (.+) in the comparison period$/, (amount) => `对比期间为 ${translated(amount)}`],
+    [/^Lead added to (.+)$/, (list) => `线索加入${translated(list)}`],
+    [/^Company enters (.+)$/, (segment) => `企业进入${translated(segment)}`],
+    [/^Ask about (.+)…$/, (page) => `咨询${translated(page)}…`],
+    [/^(.+): drag to resize, double-click to reset$/, (label) => `${translated(label)}：拖动调整大小，双击重置`],
+  [/^compared with the preceding (\d+) days$/, (count) => `与前 ${count} 天对比`],
+  [/^([\d.]+)% of opportunities$/, (percent) => `占商机的 ${percent}%`],
+  [/^from ([\d.,%\p{Sc}\sA-Z]+)$/u, (value) => `上期为 ${value}`],
+  [/^Ask about (.+), find patterns, or get a concise recommendation\.$/, (page) => `咨询${translated(page)}、发现规律，或获取简明建议。`],
+  [/^Give me a task in (.+)\. I’ll prepare the action and wait for your approval\.$/, (page) => `告诉我${translated(page)}中的任务，我将准备操作方案供您审核。`],
+  [/^([\d.]+)s$/, (seconds) => `${seconds} 秒`],
+  [/^([\d.]+) kg$/, (weight) => `${weight} 千克`],
+  [/^([\d.]+) mm$/, (diameter) => `${diameter} 毫米`],
+  [/^(.+) \((\d+) products\)$/, (label, count) => `${translated(label)}（${count} 个产品）`],
+  [/^\[([A-Z]\d*|P|C)\] (Customer profile|Connected contacts)$/, (id, label) => `[${id}] ${translated(label)}`],
+];
 
 export function translateUiText(value: string, language: AppLanguage): string {
   if (language === "en") return value;
   const leading = value.match(/^\s*/)?.[0] ?? "";
   const trailing = value.match(/\s*$/)?.[0] ?? "";
-  const text = value.trim();
+  const text = value.trim().replace(/\s+/g, " ");
   if (!text) return value;
-  const exact = zhCN[text];
+  const exact = Object.hasOwn(zhCN, text) ? zhCN[text] : undefined;
   if (exact) return `${leading}${exact}${trailing}`;
+  const date = translateEnglishDate(text);
+  if (date) return `${leading}${date}${trailing}`;
+  for (const [pattern, format] of patterns) {
+    const match = text.match(pattern);
+    if (match) return `${leading}${format(...match.slice(1))}${trailing}`;
+  }
   const page = text.match(/^Page (\d+) of (\d+)$/);
   if (page) return `${leading}第 ${page[1]} 页，共 ${page[2]} 页${trailing}`;
   const showing = text.match(/^Showing (\d+)–(\d+) of (\d+)$/);
@@ -217,4 +282,16 @@ export function translateUiText(value: string, language: AppLanguage): string {
   const draggableStep = text.match(/^(Wait|Send email|Create CRM task), step (\d+)\. Drag to reposition\.$/);
   if (draggableStep) return `${leading}${zhCN[draggableStep[1]] ?? draggableStep[1]}，步骤 ${draggableStep[2]}。拖动可调整位置。${trailing}`;
   return value;
+}
+
+const englishMonths = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+function translateEnglishDate(text: string) {
+  const time = (value: string) => value.replace(/(\d{1,2}:\d{2}(?::\d{2})?) (AM|PM)/, (_, clock: string, period: string) => `${period === "AM" ? "上午" : "下午"}${clock}`);
+  const date = text.match(/^(?:(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),? )?(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{1,2})(?:, (\d{4}))?(?:(?:, | at )(\d{1,2}:\d{2}(?::\d{2})? (?:AM|PM)(?: [A-Z+\d:]+)?))?$/);
+  if (date) {
+    const month = englishMonths.indexOf(date[2].slice(0, 3).toLowerCase()) + 1;
+    const weekday = date[1] ? ` ${({ Monday: "星期一", Tuesday: "星期二", Wednesday: "星期三", Thursday: "星期四", Friday: "星期五", Saturday: "星期六", Sunday: "星期日" } as Record<string, string>)[date[1]]}` : "";
+    return `${date[4] ? `${date[4]}年` : ""}${month}月${date[3]}日${weekday}${date[5] ? ` ${time(date[5])}` : ""}`;
+  }
+  if (/^\d{1,2}:\d{2}(?::\d{2})? (AM|PM)$/.test(text)) return time(text);
 }
