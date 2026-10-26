@@ -10,7 +10,7 @@ export const flowEmailTestSchema = z.object({
   emails: z.array(z.object({
     from: z.email().max(300),
     subject: z.string().trim().min(1).max(300),
-    body: z.string().trim().min(1).max(12000),
+    body: z.string().trim().min(1).max(6000),
   })).min(1).max(3),
 });
 

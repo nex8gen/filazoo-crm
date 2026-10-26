@@ -1,5 +1,8 @@
 // Shared professional Simplified Chinese copy for CRM screens and feedback.
 export const zhCNAdditional: Record<string, string> = {
+  "AI reply preview · Step": "AI 回复预览 · 步骤",
+  "Customer name": "客户姓名",
+  "Sample email": "示例邮件",
   "Test with emails": "使用邮件测试",
   "Test flow with emails": "使用邮件测试流程",
   "Try up to three sample incoming emails. Preview the journey, AI replies and catalog attachments. Nothing is sent or saved.": "最多可测试三封示例来信，预览流程、AI 回复及目录附件。不会发送邮件或保存记录。",

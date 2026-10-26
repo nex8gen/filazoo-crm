@@ -27,7 +27,7 @@ test("sample email tests bound inputs and require a valid flow", () => {
     { ...payload(), emails: Array(4).fill(payload().emails[0]) },
     { ...payload(), emails: [{ ...payload().emails[0], from: "invalid" }] },
     { ...payload(), emails: [{ ...payload().emails[0], body: " " }] },
-    { ...payload(), emails: [{ ...payload().emails[0], body: "x".repeat(12001) }] },
+    { ...payload(), emails: [{ ...payload().emails[0], body: "x".repeat(6001) }] },
   ]) assert.equal(flowEmailTestSchema.safeParse(input).success, false);
 });
 
