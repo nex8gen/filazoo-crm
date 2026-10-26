@@ -41,8 +41,9 @@ const starters: Record<Mode, Array<[string, string]>> = {
     ["Recommend next steps", "Based on what is visible here, what should I focus on next?"],
   ],
   agent: [
-    ["Create an invoice", "Create an invoice for this company. Ask me which products, quantities and payment bank to use."],
-    ["Send this invoice", "Help me send this invoice by email. Ask me to confirm the recipient, then draft the email with its PDF attached."],
+    ["Create an invoice", "Create an invoice using this email or customer profile. Use the conversation and saved customer details, and ask only for missing information."],
+    ["Email this invoice", "Prepare an email for this invoice using the customer's past correspondence and attach the invoice PDF in the inbox composer."],
+    ["Update customer details", "Help me fill in this customer's profile using the open email and saved information. Ask which fields to update if I haven't specified them."],
     ["Update invoice items", "Help me update this draft invoice's products, quantities and bank details. Ask me what to change."],
   ],
 };
@@ -59,6 +60,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
   const router = useRouter();
   const pageLabel = useMemo(() => pageNames.find(([pattern]) => pattern.test(pathname))?.[1] ?? "Workspace", [pathname]);
   const [mode, setMode] = useState<Mode>("chat");
+  const [recordScope, setRecordScope] = useState("");
   const [approvalMode, setApprovalMode] = useState<"ask" | "auto">("ask");
   const [question, setQuestion] = useState("");
   const [chats, setChats] = useState<Record<string, Message[]>>({});
@@ -74,9 +76,19 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
   const abort = useRef<AbortController | null>(null);
   const log = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
-  const chatKey = `${pathname}:${mode}`;
+  const chatKey = `${pathname}:${recordScope}:${mode}`;
   const messages = useMemo(() => chats[chatKey] ?? [], [chatKey, chats]);
   const busy = pending || Boolean(animation) || Boolean(applying);
+
+  useEffect(() => {
+    const main = document.querySelector("#workspace-content");
+    if (!main) return;
+    const readScope = () => setRecordScope(main.querySelector<HTMLElement>("[data-ai-email-id]")?.dataset.aiEmailId || main.querySelector<HTMLElement>("[data-ai-invoice-id]")?.dataset.aiInvoiceId || main.querySelector<HTMLElement>("[data-ai-company-id]")?.dataset.aiCompanyId || "");
+    readScope();
+    const observer = new MutationObserver(readScope);
+    observer.observe(main, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-ai-email-id", "data-ai-invoice-id", "data-ai-company-id"] });
+    return () => observer.disconnect();
+  }, [pathname]);
 
   useEffect(() => () => abort.current?.abort(), [language]);
   useEffect(() => {
@@ -123,8 +135,9 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
           language,
           mode: mode === "agent" ? "work" : "analyze",
           approvalMode,
-          completedActionIds: messages.flatMap((message) => message.actions ?? []).filter((proposal) => ["completed", "failed", "unknown"].includes(actionResults[proposal.id]?.status ?? "")).map((proposal) => proposal.id).slice(-20),
+          completedActionIds: Object.values(chats).flat().flatMap((message) => message.actions ?? []).filter((proposal) => ["completed", "failed", "unknown"].includes(actionResults[proposal.id]?.status ?? "")).map((proposal) => proposal.id).slice(-20),
           pageContext: {
+            emailId: document.querySelector<HTMLElement>("[data-ai-email-id]")?.dataset.aiEmailId || undefined,
             invoiceId: document.querySelector<HTMLElement>("[data-ai-invoice-id]")?.dataset.aiInvoiceId || undefined,
             companyId: document.querySelector<HTMLElement>("[data-ai-company-id]")?.dataset.aiCompanyId || new URLSearchParams(window.location.search).get("companyId") || undefined,
           },
@@ -208,7 +221,8 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
       setActionResults((current) => ({ ...current, [actionId]: result }));
       if (decision === "approve") {
         router.refresh();
-        window.dispatchEvent(new CustomEvent("filazoo:agent-action"));
+        window.dispatchEvent(new CustomEvent("filazoo:agent-action", { detail: { draftId: result.draft ? actionId : undefined } }));
+        if (result.draft && !document.querySelector(".email-workspace")) router.push(`/emails?agentDraft=${actionId}`);
       }
       return true;
     } catch (reason) {
@@ -238,7 +252,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
                 {mode === "agent" ? <AgentAvatar size="lg" color="violet" shape="squircle" glow={false} className="!size-20" /> : <AiIcon className="size-12" />}
               </motion.div>
               <h2 className="relative z-10 text-lg font-semibold tracking-tight">{mode === "chat" ? "What would you like to know?" : "What should I take care of?"}</h2>
-              <p className="relative z-10 mt-2 max-w-xs text-sm leading-6 text-muted-foreground">{mode === "chat" ? `Ask about ${pageLabel}, find patterns, or get a concise recommendation.` : approvalMode === "ask" ? "Create invoices, add products and payment details, or send invoice emails. Review each action before it runs." : "Create invoices, add products and payment details, or send invoice emails. Requested actions run automatically."}</p>
+              <p className="relative z-10 mt-2 max-w-xs text-sm leading-6 text-muted-foreground">{mode === "chat" ? `Ask about ${pageLabel}, find patterns, or get a concise recommendation.` : approvalMode === "ask" ? "Use the open email, invoice or customer profile to create invoices, prepare replies and update customer details. Review each action before it runs." : "Use the open email, invoice or customer profile to create invoices, prepare replies and update customer details. Requested actions run automatically."}</p>
             </div>
             <div className="relative z-10 mx-auto mt-7 grid w-full max-w-sm gap-2">{starters[mode].map(([label, prompt]) => <button key={label} type="button" onClick={() => void send(t(prompt))} className="group flex min-h-12 items-center justify-between rounded-2xl border bg-background/90 px-4 text-left text-sm shadow-[0_1px_3px_rgba(15,23,42,.03)] transition hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md focus-visible:outline-2 focus-visible:outline-ring"><span>{label}</span><ArrowUpRight className="size-3.5 text-muted-foreground opacity-0 transition group-hover:opacity-100" /></button>)}</div>
             <motion.button type="button" aria-label="Focus the AI message box" onClick={() => input.current?.focus()} animate={{ y: [0, 5, 0], opacity: [0.45, 1, 0.45] }} transition={{ duration: 1.8, ease: "easeInOut", repeat: Infinity }} className="mt-7 grid size-8 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"><ChevronDown className="size-5" /></motion.button>

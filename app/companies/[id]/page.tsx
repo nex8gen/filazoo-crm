@@ -35,7 +35,7 @@ async function CompanyPageContent({ params, searchParams }: CompanyPageProps) {
     viewer.role === "admin" ? listBdSalesManagers() : Promise.resolve([]),
   ]);
   if (!details) notFound();
-  return <div>
+  return <div data-ai-company-id={id}>
     <Link href="/companies" className={buttonVariants({ variant: "ghost", size: "sm", className: "mb-4 -ml-2" })}><ArrowLeft />Back to companies</Link>
     <Tabs key={`${id}:${tab || "profile"}:${compose || ""}`} defaultValue={tab === "customer-portal" ? "customer-portal" : tab === "email" ? "email" : tab === "purchase-orders" ? "purchase-orders" : tab === "invoices" ? "invoices" : tab === "history" ? "history" : "profile"} className="gap-6">
       <div className="sticky top-12 z-30 flex min-w-0 flex-col gap-3 border-b bg-background py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-5">

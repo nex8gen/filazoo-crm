@@ -4,11 +4,19 @@ import { invoiceDocumentSchema, type InvoiceDocument } from "../invoices.ts";
 import { productInvoiceLine, productUnitPrice, type InvoiceProduct } from "../invoice-links.ts";
 import type { InvoiceBankAccount } from "../invoice-banks.ts";
 
+export const preparedAgentEmailSchema = agentEmailSchema.extend({
+  threadId: z.string().min(1).max(1100).optional(),
+  inReplyTo: z.string().regex(/^<[^<>\s]+>$/).optional(),
+  references: z.array(z.string().regex(/^<[^<>\s]+>$/)).max(100).optional(),
+}).strict();
 export const preparedAgentActionSchema = z.discriminatedUnion("type", [
   workspaceActionSchema.options[0],
-  z.object({ type: z.literal("create_invoice"), document: invoiceDocumentSchema, email: agentEmailSchema.optional() }).strict(),
-  z.object({ type: z.literal("update_invoice"), invoiceId: z.uuid(), revision: z.number().int().positive(), document: invoiceDocumentSchema, email: agentEmailSchema.optional() }).strict(),
-  z.object({ type: z.literal("send_invoice"), invoiceId: z.uuid(), revision: z.number().int().positive(), document: invoiceDocumentSchema, email: agentEmailSchema }).strict(),
+  z.object({ type: z.literal("create_invoice"), document: invoiceDocumentSchema, email: preparedAgentEmailSchema.optional() }).strict(),
+  z.object({ type: z.literal("update_invoice"), invoiceId: z.uuid(), revision: z.number().int().positive(), document: invoiceDocumentSchema, email: preparedAgentEmailSchema.optional() }).strict(),
+  z.object({ type: z.literal("send_invoice"), invoiceId: z.uuid(), revision: z.number().int().positive(), document: invoiceDocumentSchema, email: preparedAgentEmailSchema }).strict(),
+  workspaceActionSchema.options[4].extend({ companyName: z.string(), fingerprint: z.string().length(64) }).strict(),
+  workspaceActionSchema.options[5].extend({ companyName: z.string() }).strict(),
+  z.object({ type: z.literal("write_email"), email: preparedAgentEmailSchema }).strict(),
 ]);
 export type PreparedAgentAction = z.infer<typeof preparedAgentActionSchema>;
 export type AgentProposal = { id: string; action: PreparedAgentAction; approvalMode: "ask" | "auto"; expiresAt: string };
@@ -17,7 +25,7 @@ export type AgentActionResult = { success?: string; error?: string; href?: strin
 /** Catalog prices and bank details are resolved by code, never supplied by the model. */
 export function buildAgentInvoice(
   base: InvoiceDocument,
-  selection: { items: { productSku: string; variantId?: string; quantity: number }[]; bankAccountId?: string },
+  selection: { items: { productSku: string; variantId?: string; quantity: number }[]; bankAccountId?: string; details?: Partial<Pick<InvoiceDocument, "customerEmail" | "customerAddress" | "customerTaxId" | "shippingRecipient" | "shippingAddress" | "shippingPhone" | "reference" | "notes" | "dueDate">> },
   products: InvoiceProduct[],
   banks: InvoiceBankAccount[],
 ) {
@@ -35,7 +43,7 @@ export function buildAgentInvoice(
   });
   const bank = selection.bankAccountId ? banks.find((account) => account.id === selection.bankAccountId) : undefined;
   if (selection.bankAccountId && !bank) throw new Error("Choose an active saved bank account.");
-  return invoiceDocumentSchema.parse({ ...base, items, ...(bank ? { bankAccountId: bank.id, bankAccount: bank } : {}) });
+  return invoiceDocumentSchema.parse({ ...base, ...selection.details, items, ...(bank ? { bankAccountId: bank.id, bankAccount: bank } : {}) });
 }
 
 export function agentApprovalAllowed(savedMode: "ask" | "auto", approval: "manual" | "auto") {

@@ -2,7 +2,11 @@
 
 Chat is read-only. The assistant route discards action output in chat mode and never creates proposals for it.
 
-Agent mode reads the selected company or invoice, billing defaults, current product variants and quantity prices, saved bank accounts, and its previous action results. It supports creating companies, creating draft invoices, updating catalog-based draft invoices, and emailing saved invoices with the actual PDF attached. A create/update request can include an email as a second step. It never issues invoices or records payments automatically. Custom-price and purchase-order invoices remain editable through the invoice editor.
+Agent mode reads the selected email conversation, company or invoice, billing defaults, current product variants and quantity prices, saved bank accounts, and its previous action results. Email selection is sent as an identifier; the server reloads the accessible conversation, full message bodies and customer profile. Exact contact addresses, including secondary contacts, identify the company. Ambiguous matches require clarification. Each open record has its own sidebar conversation; recent execution results remain available across page navigation.
+
+Supported actions include creating companies, updating existing customer/contact, pipeline, billing and shipping fields, appending customer notes, creating and updating catalog-based draft invoices, and drafting or sending emails. Invoice creation uses saved customer defaults and can carry explicit billing, shipping and PO references from email into its document. Customer updates preserve omitted fields and reject changed profile snapshots. The agent can fill existing fields; additional information without a supported field can be appended as a note. It does not create new database fields, issue invoices or record payments automatically. Custom-price and purchase-order invoices remain editable through the invoice editor.
+
+Email actions support `delivery: "draft"` or `"send"`. A draft is stored in the user's action result and opens through `/emails?agentDraft=<action-id>` in the inbox composer, with the actual invoice PDF attached when requested. The owner-only draft endpoint rechecks source email access and invoice revision. Draft preparation never requires SMTP and never sends mail. Existing unsent composer content is preserved. Reply recipients and threading headers are resolved from accessible source messages on the server. Invoice/profile pages also load recent customer correspondence so the agent can write relevant messages. Only an explicit send request should produce a send action. A create/update request can include drafting or sending its invoice email as a second step.
 
 The model chooses record IDs and quantities. The server constructs invoice documents using saved billing details, catalog prices and bank snapshots. Missing prices, ambiguous variants, currency conflicts, and quantities below the catalog minimum require clarification. Updating a catalog line preserves its saved tax rate.
 
@@ -24,7 +28,7 @@ The current provider flow tries Gemini and can fall back to Gateway for unsuppor
 
 ## Verification
 
-- `npm test` includes invoice construction, read-only chat enforcement, manual/auto approval, ownership, expiry, declines, concurrent execution and partial failures.
+- `npm test` includes invoice construction, email body loading, exact customer matching, reply threading, draft versus send execution, generated PDF attachment bytes, customer field preservation, stale updates, read-only chat enforcement, manual/auto approval, ownership, expiry, declines, concurrent execution and partial failures.
 - Run `tests/agent-actions-database.sql` in a transaction to check actual claim semantics and database privileges. It rolls back its test data.
 - `node --env-file=.env.local --experimental-strip-types scripts/verify-agent-provider.ts` checks model output using synthetic company/product/bank data. It never saves invoices or sends email.
 - Authenticated browser verification requires signing in to the local CRM. Live email delivery requires an explicit recipient and send request.

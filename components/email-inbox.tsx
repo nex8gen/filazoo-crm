@@ -262,10 +262,12 @@ export function EmailInboxWorkspace({
   canCreateInvoices = false,
   invoiceViewer,
   companyScope,
+  initialAgentDraft,
 }: {
   initialEmails: EmailWorkspaceItem[];
   initialThreadId?: string;
   initialComposeTo?: string;
+  initialAgentDraft?: string;
   mailboxConfigured: boolean;
   sendConfigured: boolean;
   inboxConfigured: boolean;
@@ -301,6 +303,9 @@ export function EmailInboxWorkspace({
   const [composeTo, setComposeTo] = useState(initialComposeTo || "");
   const [composeSubject, setComposeSubject] = useState("");
   const [composeBody, setComposeBody] = useState("");
+  const [composeThread, setComposeThread] = useState<{ to: string; threadId?: string; inReplyTo?: string; references?: string[] } | null>(null);
+  const loadedAgentDraft = useRef<string | null>(null);
+  const unsentDraft = useRef(false);
   const [composeError, setComposeError] = useState<string | null>(null);
   const [composeSending, setComposeSending] = useState(false);
   const [replyAttachments, setReplyAttachments] = useState<ComposerAttachment[]>([]);
@@ -348,6 +353,57 @@ export function EmailInboxWorkspace({
   const pendingStateWrites = useRef(0);
   const savedStates = useRef(new Map(sourceEmails.map((email) => [email.id, messageState(email)])));
   const stateWrites = useRef(new Map<string, Promise<void>>());
+
+  useEffect(() => { unsentDraft.current = Boolean(composeTo.trim() || composeSubject.trim() || composeBody.trim() || draft.trim() || composeAttachments.length || replyAttachments.length); }, [composeTo, composeSubject, composeBody, draft, composeAttachments.length, replyAttachments.length]);
+  useEffect(() => {
+    const controller = new AbortController();
+    let loading = false;
+    async function openAgentDraft(id: string, reopen = false) {
+      if ((!reopen && loadedAgentDraft.current === id) || loading) return;
+      if (unsentDraft.current) {
+        setNotice("You have an unsent draft. Finish or clear it, then open the agent's draft from its result link.");
+        return;
+      }
+      loading = true;
+      setAttachmentBusy(true);
+      try {
+        const response = await fetch(`/api/ai/assistant/draft?id=${encodeURIComponent(id)}`, { signal: controller.signal, cache: "no-store" });
+        const result = await response.json();
+        if (!response.ok || !result.draft) throw new Error(result.error || "Unable to open the agent draft.");
+        const prepared = result.draft;
+        const attachments: ComposerAttachment[] = [];
+        if (prepared.invoiceId) {
+          const pdf = await fetch(`/api/invoices/${prepared.invoiceId}/pdf`, { signal: controller.signal, cache: "no-store" });
+          if (!pdf.ok) throw new Error("Unable to attach the invoice PDF. Open the draft again to retry.");
+          const bytes = new Uint8Array(await pdf.arrayBuffer());
+          if (String.fromCharCode(...bytes.subarray(0, 5)) !== "%PDF-") throw new Error("The invoice PDF could not be generated.");
+          attachments.push({ id: `invoice-${prepared.invoiceId}`, filename: pdf.headers.get("X-Invoice-Filename") || `invoice-${prepared.invoiceId}.pdf`, content: bytesToBase64(bytes), contentType: "application/pdf", size: bytes.byteLength });
+        }
+        if (controller.signal.aborted) return;
+        if (unsentDraft.current) throw new Error("Your draft changed while the agent draft was loading. Open the result link after finishing it.");
+        loadedAgentDraft.current = id;
+        setComposeTo(prepared.to);
+        setComposeSubject(prepared.subject);
+        setComposeBody(prepared.text);
+        setComposeThread({ to: prepared.to, threadId: prepared.threadId, inReplyTo: prepared.inReplyTo, references: prepared.references });
+        setComposeAttachments(attachments);
+        setComposeError(null);
+        setComposeOpen(true);
+      } catch (reason) {
+        if (!controller.signal.aborted) setNotice(reason instanceof Error ? reason.message : "Unable to open the agent draft.");
+      } finally {
+        loading = false;
+        if (!controller.signal.aborted) setAttachmentBusy(false);
+      }
+    }
+    if (initialAgentDraft) void openAgentDraft(initialAgentDraft);
+    const onAction = (event: Event) => {
+      const detail = (event as CustomEvent<{ draftId?: string; reopen?: boolean }>).detail;
+      if (detail?.draftId) void openAgentDraft(detail.draftId, detail.reopen);
+    };
+    window.addEventListener("filazoo:agent-action", onAction);
+    return () => { controller.abort(); window.removeEventListener("filazoo:agent-action", onAction); };
+  }, [initialAgentDraft]);
 
   const applyMailboxSnapshot = useCallback((nextEmails: EmailWorkspaceItem[]) => {
     if (companyScope) nextEmails = filterCompanyEmails(nextEmails, companyScope);
@@ -1048,6 +1104,7 @@ export function EmailInboxWorkspace({
   function forwardSelected() {
     if (!selected) return;
     setComposeTo("");
+    setComposeThread(null);
     setComposeSubject(`Fwd: ${selected.subject.replace(/^(?:fwd?|re):\s*/i, "")}`);
     setComposeBody(`\n\n---------- Forwarded message ----------\nFrom: ${selected.from || selected.contact}\nDate: ${formatTime(selected.timestamp)}\nSubject: ${selected.subject}\n\n${selected.body}`);
     setComposeAttachments([]);
@@ -1084,7 +1141,7 @@ export function EmailInboxWorkspace({
       const response = await fetch("/api/email/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to, subject, text, attachments: composeAttachments.map(({ filename, content, contentType }) => ({ filename, content, contentType })) }),
+        body: JSON.stringify({ to, subject, text, ...(composeThread?.to === to ? { threadId: composeThread.threadId, inReplyTo: composeThread.inReplyTo, references: composeThread.references } : {}), attachments: composeAttachments.map(({ filename, content, contentType }) => ({ filename, content, contentType })) }),
       });
       const result = await response.json().catch(() => ({ ok: false, error: "Unable to send the email." }));
       if (!response.ok || !result.ok) throw new Error(result.error || "Unable to send the email.");
@@ -1099,6 +1156,7 @@ export function EmailInboxWorkspace({
       setComposeTo("");
       setComposeSubject("");
       setComposeBody("");
+      setComposeThread(null);
       setComposeAttachments([]);
       setComposeOpen(false);
       setNotice(result.saved ? `Email sent successfully from ${defaultMailboxEmail}.` : "Email sent, but its CRM history could not be saved. Check the recipient's mailbox for the attachment.");
@@ -1123,7 +1181,7 @@ export function EmailInboxWorkspace({
   ];
 
   return (
-    <div className={`email-workspace flex min-w-0 flex-col overflow-hidden bg-background ${companyScope ? "company-email-workspace h-[clamp(520px,calc(100dvh-14rem),900px)] rounded-xl border" : "h-[calc(100dvh-3rem)]"}`}>
+    <div data-ai-email-id={reading ? selected?.id : undefined} data-ai-company-id={reading ? selected?.companyId || undefined : companyScope?.id} className={`email-workspace flex min-w-0 flex-col overflow-hidden bg-background ${companyScope ? "company-email-workspace h-[clamp(520px,calc(100dvh-14rem),900px)] rounded-xl border" : "h-[calc(100dvh-3rem)]"}`}>
       {companyScope ? <h3 className="sr-only">Customer mailbox</h3> : <h1 className="sr-only">Email</h1>}
 
       <div className="mail-layout" data-reading={reading} data-details={detailsOpen}>

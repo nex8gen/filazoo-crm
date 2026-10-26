@@ -8,6 +8,8 @@ import { getInvoice } from "../data/invoices";
 import { getEffectiveMailbox, mailboxHasSmtp } from "../data/mailboxes";
 import { invoiceProduct, type InvoiceProductRow } from "../invoice-links";
 import type { WorkspaceAssistantInput } from "./workspace-assistant";
+import { loadAgentCompany, loadAgentEmails, presentAgentEmail } from "./agent-records";
+import { threadKeyForEmail } from "../email-threading";
 
 export async function loadAgentContext(input: WorkspaceAssistantInput, viewer: WorkspaceViewer) {
   const db = createSupabaseAdmin();
@@ -15,6 +17,8 @@ export async function loadAgentContext(input: WorkspaceAssistantInput, viewer: W
   const companyMatch = /^\/companies\/([^/?]+)/.exec(input.pathname)?.[1];
   const pageInvoiceId = input.pageContext?.invoiceId || (z.uuid().safeParse(invoiceMatch).success ? invoiceMatch : undefined);
   let companyId = input.pageContext?.companyId || (z.uuid().safeParse(companyMatch).success ? companyMatch : undefined);
+  const emailContext = input.pageContext?.emailId ? await loadAgentEmails(viewer, input.pageContext.emailId) : null;
+  if (emailContext) companyId = emailContext.companyId || undefined;
   const history = input.completedActionIds.length
     ? await db.from("workspace_agent_actions").select("id,status,result").eq("user_id", viewer.id).in("status", ["completed", "failed", "running"]).in("id", input.completedActionIds)
     : { data: [], error: null };
@@ -23,15 +27,20 @@ export async function loadAgentContext(input: WorkspaceAssistantInput, viewer: W
   const previousInvoiceId = completed.map((row) => row.result?.invoiceId as string | undefined).filter(Boolean).at(-1);
   const invoiceId = pageInvoiceId || previousInvoiceId;
   const candidateInvoice = invoiceId ? await getInvoice(invoiceId) : null;
-  const invoice = !pageInvoiceId && companyId && candidateInvoice?.document.companyId !== companyId ? null : candidateInvoice;
+  const invoice = !pageInvoiceId && ((companyId && candidateInvoice?.document.companyId !== companyId) || (emailContext && !companyId)) ? null : candidateInvoice;
   // An open company always takes precedence over the previous task's company.
   companyId ||= invoice?.document.companyId;
-  const terms = [...new Set(input.messages.filter((message) => message.role === "user").slice(-3).flatMap((message) => message.content.match(/[\p{L}\p{N}_-]{2,80}/gu) ?? []))].slice(-35);
+  const emailHistory = emailContext ?? (companyId ? await loadAgentEmails(viewer, undefined, companyId) : null);
+  const terms = [...new Set([
+    ...input.messages.filter((message) => message.role === "user").slice(-3).flatMap((message) => message.content.match(/[\p{L}\p{N}_-]{2,80}/gu) ?? []),
+    ...(emailHistory?.messages.slice(-6).flatMap((email) => `${email.subject} ${email.body}`.match(/[\p{L}\p{N}_-]{2,80}/gu) ?? []) ?? []),
+    ...(invoice?.document.items.flatMap((item) => [item.productSku || ""]) ?? []),
+  ].filter(Boolean))].slice(0, 150);
   let productsQuery = db.from("products").select(invoiceProductSelect, { count: "exact" }).eq("active", true).not("sku", "like", "SAMPLE-%");
   if (terms.length) productsQuery = productsQuery.or(terms.flatMap((term) => [`name.ilike.%${term}%`, `sku.ilike.%${term}%`]).join(","));
   const customerQuery = terms.length ? db.from("companies").select("id,name,city,country,contacts(id,name,email)", { count: "exact" }).or(terms.map((term) => `name.ilike.%${term}%`).join(",")).order("name").limit(25) : null;
   const [bootstrap, customers, products, banks, mailbox, matchingCustomers] = await Promise.all([
-    invoiceBootstrap({ companyId }),
+    invoiceBootstrap({ companyId, ...(emailContext?.current && companyId ? { email: emailContext.current.contact, threadId: threadKeyForEmail(emailContext.current) } : {}) }),
     invoiceCustomers(),
     productsQuery.order("name").limit(100),
     invoiceBankAccounts(),
@@ -48,6 +57,10 @@ export async function loadAgentContext(input: WorkspaceAssistantInput, viewer: W
   }));
   return {
     currentCompanyId: companyId ?? null,
+    currentCompany: companyId ? await loadAgentCompany(companyId) : null,
+    currentEmail: emailContext?.current ? presentAgentEmail(emailContext.current) : null,
+    emailHistory: emailHistory?.messages.map(presentAgentEmail) ?? [],
+    emailCoverage: { included: emailHistory?.messages.length ?? 0, scope: emailContext ? "selected conversation, up to 12 recent messages plus the selected email" : "up to 12 recent customer messages", maxCharactersPerMessage: 12000 },
     currentInvoice: invoice,
     invoiceDefaults: bootstrap.document,
     billing: bootstrap.billing,

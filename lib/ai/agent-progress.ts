@@ -32,6 +32,8 @@ export function requestedWorkProgress(request: string, page: string): AgentWorkP
 
 export function actionWorkProgress(action: PreparedAgentAction): AgentWorkProgress {
   if (action.type === "create_company") return { area: "company", label: "Creating company…", detail: action.company.name };
+  if (action.type === "update_company" || action.type === "add_company_note") return { area: "company", label: action.type === "update_company" ? "Updating customer profile…" : "Adding customer note…", detail: action.companyName };
+  if (action.type === "write_email") return { area: "email", label: action.email.delivery === "draft" ? "Preparing email draft…" : "Sending email…", detail: action.email.to };
   const detail = `${action.document.customerName}${action.email ? ` · ${action.email.to}` : ""}`;
   if (action.type === "send_invoice") return { area: "email", label: "Preparing invoice email…", detail, relatedAreas: ["invoice"] };
   return { area: "invoice", label: action.type === "create_invoice" ? "Creating draft invoice…" : "Updating draft invoice…", detail, relatedAreas: action.email ? ["email"] : [] };
