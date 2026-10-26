@@ -10,6 +10,7 @@ import { normalizeMailboxRow } from "../mailbox-utils.ts";
 import { evaluateSend } from "../outreach-policy.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 import { syncFlowMailboxMessages } from "./flow-mail-sync.ts";
+import { hasFlowReplyProvider, prepareFlowAiReply } from "./flow-ai-reply.ts";
 
 type RunRow = {
   id: string;
@@ -115,9 +116,14 @@ async function getMailbox(flow: FlowRow, mailboxId: unknown) {
 export async function validateFlowResources(userId: string, input: FlowInput) {
   const admin = createSupabaseAdmin();
   for (const step of input.steps) {
-    if (step.type === "send_email") {
+    if (step.type === "send_email" || step.type === "ai_auto_reply") {
       const mailbox = await getMailbox({ id: "", user_id: userId, trigger_type: input.triggerType, trigger_config: input.triggerConfig, status: input.status }, step.config.mailboxId);
       if (!mailbox?.smtpHost || !mailbox.smtpUsername || !mailbox.smtpPassword) throw new Error("The selected sender mailbox needs complete SMTP settings.");
+      if (step.type === "ai_auto_reply" && !hasFlowReplyProvider()) throw new Error("Configure an AI provider before enabling AI auto-reply.");
+      if (step.type === "ai_auto_reply" && step.config.attachCatalog) {
+        const { count } = await admin.from("products").select("sku", { count: "exact", head: true }).eq("active", true).not("sku", "like", "SAMPLE-%").not("name", "ilike", "[sample]%").throwOnError();
+        if (!count) throw new Error("Add active products before attaching an AI reply catalog.");
+      }
     }
     const memberId = step.type === "create_task" && step.config.assigneeType === "user" ? step.config.assigneeId : step.type === "internal_alert" && step.config.userId !== "owner" ? step.config.userId : null;
     if (memberId) {
@@ -128,7 +134,7 @@ export async function validateFlowResources(userId: string, input: FlowInput) {
 }
 
 async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: FlowFacts) {
-  if (step.config.stopOnReply !== false && facts.customerReplied) {
+  if (step.type === "send_email" && step.config.stopOnReply !== false && facts.customerReplied) {
     await logRun(run.id, step.id, { action: "cancelled", reason: "Customer replied" });
     await finishRun(run.id, "cancelled");
     return "terminal" as const;
@@ -152,32 +158,50 @@ async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: F
   const decision = evaluateSend({ email: contact.email, verified: contact.verification_status === "valid", unsubscribed: contact.unsubscribed, suppressed: Boolean(suppressed), sentToday: count ?? 0, dailyLimit: env.DAILY_SEND_LIMIT, bounceRate: 0, bouncePausePercent: env.BOUNCE_PAUSE_PERCENT, dryRun: env.dryRun });
   if (!decision.allowed) throw new Error(decision.reason);
   const template = emailTemplates[String(step.config.templateId)];
-  if (!template) throw new Error("The selected email template is unavailable.");
-  const subject = renderTemplate(String(step.config.subject || template.subject), contact);
-  const body = renderTemplate(String(step.config.body || template.body), contact);
+  if (step.type === "send_email" && !template) throw new Error("The selected email template is unavailable.");
+  let subject = step.type === "ai_auto_reply" ? "AI personalized reply" : renderTemplate(String(step.config.subject || template!.subject), contact);
+  let body = step.type === "ai_auto_reply" ? "" : renderTemplate(String(step.config.body || template!.body), contact);
   if (decision.mode === "dry-run") {
-    await logRun(run.id, step.id, { action: "email_dry_run", to: contact.email, subject, reason: decision.reason });
+    await logRun(run.id, step.id, { action: "email_dry_run", to: contact.email, subject, aiGenerated: step.type === "ai_auto_reply", catalogRequested: step.config.attachCatalog === true, reason: decision.reason });
     return "continue" as const;
   }
   const mailbox = await getMailbox(flow, step.config.mailboxId);
   if (!mailbox) throw new Error("The selected sender mailbox is unavailable.");
+  const aiReply = step.type === "ai_auto_reply" ? await prepareFlowAiReply({ userId: flow.user_id, contactId: contact.id, companyId: contact.company_id, conversationId: run.conversation_id, config: step.config }) : null;
+  if (aiReply) { subject = aiReply.subject; body = aiReply.body; }
   const { data: previous } = step.config.replyInThread !== false
-    ? await admin.from("emails").select("message_id").eq("contact_id", contact.id).eq("thread_id", run.conversation_id).not("message_id", "is", null).order("created_at", { ascending: false }).limit(1).maybeSingle()
+    ? await admin.from("emails").select("message_id").eq("contact_id", contact.id).eq("thread_id", run.conversation_id).or(`owner_id.is.null,owner_id.eq.${flow.user_id}`).not("message_id", "is", null).order("created_at", { ascending: false }).limit(1).maybeSingle().throwOnError()
     : { data: null };
-  const replyHeaders = previous?.message_id ? { inReplyTo: previous.message_id, references: [previous.message_id] } : {};
+  const inReplyTo = aiReply?.inReplyTo || previous?.message_id;
+  const threadId = aiReply?.threadId || run.conversation_id;
+  const replyHeaders = inReplyTo ? { inReplyTo, references: [inReplyTo] } : {};
   const content = buildFlowEmail({ body, config: step.config, runId: run.id, stepId: step.id, flowId: flow.id, appUrl: env.NEXT_PUBLIC_APP_URL, secret: env.supabaseSecretKey! });
-  const sent = await sendMailboxEmail({ host: mailbox.smtpHost, port: mailbox.smtpPort, user: mailbox.smtpUsername, pass: mailbox.smtpPassword, from: mailbox.email }, { to: contact.email, subject, ...content, ...replyHeaders });
+  const sentRecordId = randomUUID();
+  const storedAttachments: Array<{ filename: string; contentType: string; size: number; path: string }> = [];
+  let sent;
+  try {
+    for (const [index, attachment] of (aiReply?.attachments ?? []).entries()) {
+      const path = `${flow.user_id}/${sentRecordId}/${index}`;
+      const { error } = await admin.storage.from("mailbox-attachments").upload(path, attachment.content, { contentType: attachment.contentType, upsert: false });
+      if (error) throw new Error(`Could not store the AI reply catalog: ${error.message}`);
+      storedAttachments.push({ filename: attachment.filename, contentType: attachment.contentType, size: attachment.content.length, path });
+    }
+    sent = await sendMailboxEmail({ host: mailbox.smtpHost, port: mailbox.smtpPort, user: mailbox.smtpUsername, pass: mailbox.smtpPassword, from: mailbox.email }, { to: contact.email, subject, ...content, ...replyHeaders, attachments: aiReply?.attachments });
+  } catch (error) {
+    if (storedAttachments.length) await admin.storage.from("mailbox-attachments").remove(storedAttachments.map((attachment) => attachment.path));
+    throw error;
+  }
   await Promise.all([
-    admin.from("mailbox_sent_messages").insert({ user_id: flow.user_id, mailbox_id: mailbox.id, message_id: sent.messageId || null, thread_key: run.conversation_id, in_reply_to: previous?.message_id || null, reference_ids: previous?.message_id ? [previous.message_id] : [], from_email: mailbox.email, to_email: contact.email, subject, body, status: "sent" }).throwOnError(),
-    admin.from("emails").insert({ contact_id: contact.id, direction: "sent", subject, body, thread_id: run.conversation_id, message_id: sent.messageId || null, status: "sent", step: run.current_step + 1, sent_at: new Date().toISOString() }).throwOnError(),
-    logRun(run.id, step.id, { action: "email_sent", to: contact.email, subject, messageId: sent.messageId || null }),
+    admin.from("mailbox_sent_messages").insert({ id: sentRecordId, user_id: flow.user_id, mailbox_id: mailbox.id, message_id: sent.messageId || null, thread_key: threadId, in_reply_to: inReplyTo || null, reference_ids: inReplyTo ? [inReplyTo] : [], from_email: mailbox.email, to_email: contact.email, subject, body, status: "sent", attachments: storedAttachments }).throwOnError(),
+    admin.from("emails").insert({ contact_id: contact.id, direction: "sent", subject, body, thread_id: threadId, owner_id: flow.user_id, message_id: sent.messageId || null, status: "sent", step: run.current_step + 1, sent_at: new Date().toISOString() }).throwOnError(),
+    logRun(run.id, step.id, { action: "email_sent", to: contact.email, subject, messageId: sent.messageId || null, aiGenerated: Boolean(aiReply), catalogAttached: Boolean(aiReply?.attachments.length) }),
   ]);
   return "continue" as const;
 }
 
 async function executeAction(run: RunRow, flow: FlowRow, step: FlowStep, facts: FlowFacts) {
   const admin = createSupabaseAdmin();
-  if (step.type === "send_email") return executeEmail(run, flow, step, facts);
+  if (step.type === "send_email" || step.type === "ai_auto_reply") return executeEmail(run, flow, step, facts);
   if (step.type === "create_task") {
     const { data: pipeline } = run.company_id && step.config.assigneeType !== "user" ? await admin.from("pipeline").select("owner_id").eq("company_id", run.company_id).maybeSingle() : { data: null };
     await admin.from("crm_tasks").insert({ flow_run_id: run.id, company_id: run.company_id, contact_id: run.contact_id, assigned_to: step.config.assigneeType === "user" ? step.config.assigneeId : pipeline?.owner_id || flow.user_id, title: step.config.title, notes: step.config.notes || null, priority: step.config.priority || "normal", due_at: new Date(Date.now() + Number(step.config.dueInDays || 0) * 86_400_000).toISOString() }).throwOnError();
@@ -299,13 +323,31 @@ export async function enrollMatchingFlows(event: TriggerEvent) {
 
 export async function scanTimeBasedFlowTriggers(flowId?: string) {
   const admin = createSupabaseAdmin();
-  let query = admin.from("flows").select("id,user_id,trigger_type,trigger_config,status").eq("status", "live").in("trigger_type", ["email_received", "no_reply"]);
+  let query = admin.from("flows").select("id,user_id,trigger_type,trigger_config,status,lead_enrollment_started_at").eq("status", "live").in("trigger_type", ["new_lead", "email_received", "no_reply"]);
   if (flowId) query = query.eq("id", flowId);
   const { data: flows, error } = await query;
   if (error) throw new Error(`Unable to scan flow triggers: ${error.message}`);
   let enrolled = 0;
-  for (const flow of (flows ?? []) as FlowRow[]) {
-    if (flow.trigger_type === "email_received") {
+  for (const flow of (flows ?? []) as (FlowRow & { lead_enrollment_started_at: string | null })[]) {
+    if (flow.trigger_type === "new_lead") {
+      // The activation timestamp excludes existing leads and leads added while paused.
+      if (!flow.lead_enrollment_started_at) continue;
+      for (let offset = 0; ; offset += 500) {
+        const { data: contacts } = await admin.from("contacts").select("id,company_id,created_at")
+          .gte("created_at", flow.lead_enrollment_started_at).order("created_at").order("id").range(offset, offset + 499).throwOnError();
+        const eventKeys = (contacts ?? []).map((contact) => `new_lead:${contact.id}`);
+        const { data: existingRuns } = eventKeys.length ? await admin.from("flow_runs").select("event_key")
+          .eq("flow_id", flow.id).in("event_key", eventKeys).throwOnError() : { data: [] };
+        const enrolledKeys = new Set((existingRuns ?? []).map((run) => run.event_key));
+        for (const contact of contacts ?? []) {
+          if (enrolledKeys.has(`new_lead:${contact.id}`)) continue;
+          const result = await enrollMatchingFlows({ type: "new_lead", flowId: flow.id, contactId: contact.id, companyId: contact.company_id,
+            conversationId: `company:${contact.company_id}:lead:${contact.id}`, occurredAt: contact.created_at, eventKey: `new_lead:${contact.id}` });
+          enrolled += result.filter((item) => item.enrolled).length;
+        }
+        if (!contacts || contacts.length < 500) break;
+      }
+    } else if (flow.trigger_type === "email_received") {
       const { data: inbound } = await admin.from("emails").select("id,contact_id,thread_id,message_id,created_at,contacts(company_id)").eq("direction", "received").or(`owner_id.is.null,owner_id.eq.${flow.user_id}`).gte("created_at", new Date(Date.now() - 7 * 86_400_000).toISOString()).order("created_at", { ascending: false }).limit(1000).throwOnError();
       for (const email of inbound ?? []) {
         const relation = email.contacts as unknown as { company_id?: string } | Array<{ company_id?: string }> | null;

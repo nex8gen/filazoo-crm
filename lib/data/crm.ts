@@ -3,7 +3,7 @@ import { formatRelativeDate, getInitials, getPipelineStageLabel } from "../crm-m
 import { env, hasSupabaseConfig } from "../env.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 import type { ActivityItem, Catalog, Company, CompanyActivity, CompanyDetails, ContactOption, DataMode, EmailDraft, Product, Reply } from "../types.ts";
-import { variantsFromTags } from "../product-utils.ts";
+import { crmProduct } from "../product-utils.ts";
 import { metaOrderLabel } from "../order-estimate.ts";
 import { billingActivity, sentMailActivity, mergeCompanyActivity, type ActivityInvoice, type ActivityInvoiceEvent, type ActivityPayment, type ActivitySentMail } from "../company-activity.ts";
 import { readActivityHistory } from "./activity-history.ts";
@@ -469,33 +469,7 @@ export async function listProducts(skus?: string[]): Promise<{ mode: DataMode; p
     .limit(500);
   const { data, error } = await (skus ? query.in("sku", skus) : query);
   if (error) throw new Error(`Unable to load products: ${error.message}`);
-  const syncedProducts = (data ?? []).filter((row) => !row.sku.startsWith("SAMPLE-") && !row.name.toLowerCase().startsWith("[sample]")).map((row) => {
-      const price = row.price == null ? "—" : new Intl.NumberFormat("en", { style: "currency", currency: row.currency }).format(Number(row.price));
-      const priceTiers = (row.tags ?? []).flatMap((tag: string) => {
-        const match = /^price-tier:(\d+):(\d+(?:\.\d+)?)$/.exec(tag);
-        return match ? [{ minimumQuantity: Number(match[1]), price: new Intl.NumberFormat("en", { style: "currency", currency: row.currency }).format(Number(match[2])) }] : [];
-      }).sort((a: { minimumQuantity: number }, b: { minimumQuantity: number }) => a.minimumQuantity - b.minimumQuantity);
-      const colors = row.color ? row.color.split(",").map((color: string) => color.trim()).filter(Boolean) : [];
-      const stockStatus = row.stock_status || "Not specified";
-      return {
-        sku: row.sku,
-        name: row.name,
-        imageUrl: row.image_url,
-        material: row.material || "—",
-        color: row.color || "—",
-        colors,
-        diameter: row.diameter || "—",
-        weight: row.weight || "—",
-        price,
-        moq: row.moq,
-        priceTiers: priceTiers.length ? priceTiers : price === "—" ? [] : [{ minimumQuantity: row.moq ?? 1, price }],
-        stockStatus,
-        leadTime: row.lead_time || "Not specified",
-        status: row.active ? "Active" : "Inactive",
-        updatedAt: row.sheet_updated_at,
-        variants: variantsFromTags(row.tags ?? [], colors, row.sku, price, stockStatus),
-      };
-    });
+  const syncedProducts = (data ?? []).filter((row) => !row.sku.startsWith("SAMPLE-") && !row.name.toLowerCase().startsWith("[sample]")).map(crmProduct);
   return { mode, products: syncedProducts };
 }
 

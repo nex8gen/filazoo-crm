@@ -202,7 +202,7 @@ const patterns: Array<[RegExp, (...parts: string[]) => string]> = [
   [/^Step (\d+) of (\d+)$/, (step, total) => `步骤 ${step}，共 ${total} 步`],
   [/^(\d+) actions? · (\d+) active$/, (count, active) => `${count} 项操作 · ${active} 个运行中`],
   [/^No reply after (\d+) (hours?|days?)( · business time)?$/, (count, unit, business) => `${count} ${unit.startsWith("hour") ? "小时" : business ? "个工作日" : "天"}后仍未回复`],
-  [/^Wait (\d+) (hours?|days?)( · business time)?$/, (count, unit, business) => `等待 ${count} ${unit.startsWith("hour") ? "小时" : business ? "个工作日" : "天"}`],
+  [/^Wait (\d+) (minutes?|hours?|days?)( · business time)?$/, (count, unit, business) => `等待 ${count} ${unit.startsWith("minute") ? "分钟" : unit.startsWith("hour") ? "小时" : business ? "个工作日" : "天"}`],
   [/^Category changed to (.+)$/, (category) => `分类更改为${translated(category)}`],
   [/^Company enters segment (.+)$/, (segment) => `企业进入细分：${segment}`],
   [/^Pipeline stage changed to (.+)$/, (stage) => `销售管道阶段更改为${translated(stage)}`],
@@ -279,7 +279,7 @@ export function translateUiText(value: string, language: AppLanguage): string {
   if (stepLabel) return `${leading}步骤 ${stepLabel[1]}${trailing}`;
   const addPosition = text.match(/^Add action at position (\d+)$/);
   if (addPosition) return `${leading}在位置 ${addPosition[1]} 添加操作${trailing}`;
-  const draggableStep = text.match(/^(Wait|Send email|Create CRM task), step (\d+)\. Drag to reposition\.$/);
+  const draggableStep = text.match(/^(Wait|Send email|AI auto-reply|Create CRM task), step (\d+)\. Drag to reposition\.$/);
   if (draggableStep) return `${leading}${zhCN[draggableStep[1]] ?? draggableStep[1]}，步骤 ${draggableStep[2]}。拖动可调整位置。${trailing}`;
   return value;
 }

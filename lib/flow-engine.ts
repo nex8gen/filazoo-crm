@@ -39,7 +39,7 @@ function normalized(value: unknown) {
 }
 
 export function flowConversationPath(conversationId: string) {
-  const company = /^company:([\da-f-]{36})(?::pipeline)?$/i.exec(conversationId);
+  const company = /^company:([\da-f-]{36})(?::pipeline|:lead:[\da-f-]{36})?$/i.exec(conversationId);
   return company ? `/companies/${company[1]}` : `/emails?thread=${encodeURIComponent(conversationId)}`;
 }
 
@@ -137,6 +137,11 @@ export function simulateFlow(flow: FlowInput, facts: FlowFacts, from = new Date(
       continue;
     }
     if (step.type === "change_category") currentFacts.category = String(step.config.category);
+    if (step.type === "ai_auto_reply") {
+      trace.push({ step: index + 1, type: step.type, status: "would_run", detail: `Would read the latest email and draft a personalized reply${step.config.useProducts ? " using active CRM products" : ""}${step.config.usePrices ? " and verified prices" : ""}${step.config.attachCatalog ? "; attach a catalog PDF" + (step.config.catalogFirstMessageOnly ? " to the first automated message only" : "") : ""}. No AI request or email is sent in simulation.` });
+      index += 1;
+      continue;
+    }
     if (step.type === "send_email" && step.config.stopOnReply !== false && currentFacts.customerReplied) {
       trace.push({ step: index + 1, type: step.type, status: "stopped", detail: "Customer replied; run would be cancelled." });
       break;

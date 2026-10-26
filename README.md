@@ -18,6 +18,12 @@ For control over quotas, run your own [LibreTranslate server](https://docs.libre
 
 The builder at `/lead-channel/ai-agent` uses company segments from the CRM. Waits, both condition branches, email options, task assignment, category changes, alerts, and stop outcomes execute on the server. Times in wait and business-hour settings are UTC. Existing runs retain their enrolled steps when a flow is edited; pausing preserves waiting runs.
 
+For automatic lead replies, choose **New lead → Any segment → Wait 5 minutes → AI auto-reply**. The AI action reads the latest authorized conversation when it runs, uses active CRM product information, resolves quoted prices from current CRM quantity tiers and exact variants, and can attach a freshly generated product catalog PDF to the first automated message. Leads with no email history receive a welcome introduction. You can set writing instructions, reply language, sender mailbox and send window. Switching a wait to minutes or hours clears the day-based resume time and weekend restriction; these can still be set explicitly.
+
+Use **Test with emails** in the builder to paste up to three incoming emails or start with a pricing/catalog example. The test immediately simulates waits and shows the journey, generated AI replies, and catalog filename/size. Each email is an independent lead assumed to match trigger filters, with opens/clicks/later replies initially false. The first-message switch previews first or later automated replies. Tests use current CRM products and prices and the same reply generator as live flows, without requiring SMTP, saving CRM records, or sending email. Standard template steps are simulated; AI steps generate real previews.
+
+Apply `supabase/migrations/20261026101057_flow_ai_auto_reply.sql` for the new trigger and action. New-lead enrollment begins when the flow is enabled or resumed, excluding existing leads and leads created while paused. AI replies use the existing Gemini / AI Gateway server configuration. Live activation checks the provider and SMTP mailbox; unsubscribed, suppressed and unverified contacts remain blocked. Dry-run execution records the proposed action without making AI calls or sending emails.
+
 Apply `supabase/migrations/20261022040419_automation_atomic_save.sql` before using the updated flow API. Configure `NEXT_PUBLIC_APP_URL` to the public CRM origin for signed open/click links. Open tracking depends on the recipient loading images; mail privacy proxies and link scanners can affect engagement signals.
 
 The worker imports mailbox messages before scanning inbound/no-reply triggers and resuming due runs. `vercel.json` invokes `/api/cron/flows` every minute; configure a strong `CRON_SECRET` in the deployment environment. Vercel's per-minute cron requires Pro or Enterprise. On Hobby, use an external scheduler with `Authorization: Bearer <CRON_SECRET>` or a suitable hosting plan. A local `next dev` process does not run Vercel cron automatically. Keep `DRY_RUN=true` while testing; live sending also requires a verified contact and configured SMTP mailbox.
@@ -29,6 +35,8 @@ node --env-file=.env.local --conditions=react-server --experimental-strip-types 
 ```
 
 The integration script requires the local dev server at `http://localhost:3000` (or `FLOW_TEST_ORIGIN`) and cleans up its temporary CRM records.
+
+To verify AI lead enrollment, conversation lookup, PDF generation, first-message attachments and dry-run execution against the database, run `node --env-file=.env.local --conditions=react-server --experimental-strip-types scripts/verify-flow-ai-reply.ts`. This check intercepts AI provider requests, forces dry-run delivery, and removes its disposable records.
 
 ```bash
 npm install

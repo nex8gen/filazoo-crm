@@ -1,8 +1,8 @@
 import { z } from "zod";
 
 export const flowStatuses = ["draft", "live", "paused"] as const;
-export const triggerTypes = ["email_received", "category_changed", "no_reply", "lead_added_to_list", "company_segment_changed", "pipeline_stage_changed"] as const;
-export const stepTypes = ["wait", "if_condition", "send_email", "create_task", "change_category", "internal_alert", "stop"] as const;
+export const triggerTypes = ["new_lead", "email_received", "category_changed", "no_reply", "lead_added_to_list", "company_segment_changed", "pipeline_stage_changed"] as const;
+export const stepTypes = ["wait", "if_condition", "send_email", "ai_auto_reply", "create_task", "change_category", "internal_alert", "stop"] as const;
 export const emailCategories = ["Needs follow-up", "Waiting on customer", "Interested", "Big order", "No action"] as const;
 export const companyStatuses = ["new", "researching", "qualified", "contacted", "engaged", "customer", "disqualified"] as const;
 export const pipelineStages = ["new", "contacted", "replied", "interested", "big_order", "won", "lost"] as const;
@@ -34,6 +34,7 @@ export type AutomationFlow = {
 };
 
 export const triggerLabels: Record<TriggerType, string> = {
+  new_lead: "New lead",
   email_received: "Email received",
   category_changed: "Category changed to",
   no_reply: "No reply after",
@@ -43,6 +44,7 @@ export const triggerLabels: Record<TriggerType, string> = {
 };
 
 export const stepLabels: Record<FlowStepType, string> = {
+  ai_auto_reply: "AI auto-reply",
   wait: "Wait",
   if_condition: "If condition",
   send_email: "Send email",
@@ -64,6 +66,7 @@ const profileFilters = {
 };
 
 const triggerConfigSchemas: Record<TriggerType, z.ZodType<JsonConfig>> = {
+  new_lead: z.object({ ...profileFilters }),
   email_received: z.object({ ...profileFilters }),
   category_changed: z.object({ category: z.enum(emailCategories), ...profileFilters }),
   no_reply: z.object({ amount: z.number().int().min(1).max(365), unit: z.enum(["hours", "days"]), businessDays: z.boolean().optional(), ...profileFilters }),
@@ -73,6 +76,21 @@ const triggerConfigSchemas: Record<TriggerType, z.ZodType<JsonConfig>> = {
 };
 
 const stepConfigSchemas: Record<FlowStepType, z.ZodType<JsonConfig>> = {
+  ai_auto_reply: z.object({
+    mailboxId: z.string().trim().min(1),
+    replyInThread: z.boolean(),
+    useProducts: z.boolean(),
+    usePrices: z.boolean(),
+    attachCatalog: z.boolean(),
+    catalogFirstMessageOnly: z.boolean(),
+    instructions: z.string().trim().max(4000),
+    language: z.enum(["auto", "en", "zh-CN"]),
+    sendWindow: z.enum(["anytime", "business_hours"]),
+    trackOpens: z.boolean().optional(),
+    trackClicks: z.boolean().optional(),
+  }).superRefine((value, context) => {
+    if (value.usePrices && !value.useProducts) context.addIssue({ code: "custom", message: "Enable product information before using prices." });
+  }),
   wait: z.object({
     amount: z.number().int().min(1).max(525600),
     unit: z.enum(["minutes", "hours", "days"]),
@@ -156,6 +174,7 @@ export const defaultFlowInput: FlowInput = {
 export function blankStep(type: FlowStepType = "wait"): FlowInput["steps"][number] {
   const id = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `step-${Date.now()}`;
   const configs: Record<FlowStepType, JsonConfig> = {
+    ai_auto_reply: { mailboxId: "default", replyInThread: true, useProducts: true, usePrices: true, attachCatalog: true, catalogFirstMessageOnly: true, instructions: "", language: "auto", sendWindow: "anytime", trackOpens: true, trackClicks: true },
     wait: { amount: 1, unit: "days", businessDays: true, resumeAt: "09:00" },
     if_condition: { field: "customer_replied", action: "stop_flow", unmatchedAction: "continue", lookbackDays: 7 },
     send_email: { templateId: "", mailboxId: "default", replyInThread: true, subject: "", preheader: "", trackOpens: true, trackClicks: true, utmTracking: true, stopOnReply: true, sendWindow: "business_hours" },
