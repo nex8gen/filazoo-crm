@@ -1,5 +1,7 @@
 "use client";
 
+import { EmptyState } from "@/components/data-state";
+import { PackageSearch } from "lucide-react";
 import { useActionState, useState } from "react";
 import { Download, FileText, MailPlus, Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -149,7 +151,7 @@ export function NewCatalogButton({ companies, products, canWrite, label = "New c
               <Field label="Company" id="catalog-company"><Select name="companyId" required><SelectTrigger id="catalog-company" className="w-full"><SelectValue placeholder="Choose a company" /></SelectTrigger><SelectContent>{companies.map((company) => <SelectItem key={company.id} value={company.id}>{company.name}</SelectItem>)}</SelectContent></Select></Field>
               <Field label="Currency" id="catalog-currency"><Select name="currency" defaultValue="USD"><SelectTrigger id="catalog-currency" className="w-full"><SelectValue /></SelectTrigger><SelectContent>{["USD", "EUR", "GBP", "CNY"].map((currency) => <SelectItem key={currency} value={currency}>{currency}</SelectItem>)}</SelectContent></Select></Field>
             </div>
-            <div className="space-y-2"><Label>Products</Label>{products.length ? <div className="grid max-h-64 gap-2 overflow-y-auto rounded-lg border p-3 sm:grid-cols-2">{products.map((product) => <label key={product.sku} className="flex cursor-pointer items-start gap-2 rounded-md p-2 hover:bg-muted"><input className="mt-0.5 accent-current" type="checkbox" name="productSkus" value={product.sku} /><span><span className="block text-sm font-medium">{product.name}</span><span className="block text-xs text-muted-foreground">{product.sku} · {product.price}</span></span></label>)}</div> : <p className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground">No active products are available yet. You can save an empty catalog shell and populate it after product sync.</p>}</div>
+            <div className="space-y-2"><Label>Products</Label>{products.length ? <div className="grid max-h-64 gap-2 overflow-y-auto rounded-lg border p-3 sm:grid-cols-2">{products.map((product) => <label key={product.sku} className="flex cursor-pointer items-start gap-2 rounded-md p-2 hover:bg-muted"><input className="mt-0.5 accent-current" type="checkbox" name="productSkus" value={product.sku} /><span><span className="block text-sm font-medium">{product.name}</span><span className="block text-xs text-muted-foreground">{product.sku} · {product.price}</span></span></label>)}</div> : <EmptyState compact icon={PackageSearch} title="No products synced" description="No active products are available yet. You can save an empty catalog shell and populate it after product sync." />}</div>
             <ActionMessage state={dialog.state} />
             <DialogFooter><Button type="button" variant="outline" onClick={() => dialog.setOpen(false)}>Cancel</Button><Button type="submit" disabled={dialog.pending}>{dialog.pending ? "Saving…" : "Create catalog"}</Button></DialogFooter>
           </form>

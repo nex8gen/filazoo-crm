@@ -11,6 +11,7 @@ import * as commerce from "../lib/company-commerce.ts";
 import * as permissions from "../lib/invoice-permissions.ts";
 import * as progress from "../lib/ai/agent-progress.ts";
 import * as flows from "../lib/flows.ts";
+import * as crmTools from "../lib/ai/crm-tools.ts";
 import type { InvoicePaymentMethod } from "../lib/invoice-payment-methods.ts";
 import { workspaceActionSchema } from "../lib/ai/workspace-assistant.ts";
 import { buildInboxEmailItems } from "../lib/email-inbox.ts";
@@ -69,6 +70,8 @@ function executionFixture() {
   let bootstrapInput: { companyId?: string; email?: string; threadId?: string } | undefined;
   const company = { id: companyId, fields: { name: "Acme", city: "Old city", summary: "Keep existing summary", contactEmail: "buyer@example.com", "commerce.address": "Saved address", "commerce.taxId": "VAT-OLD" }, contacts: [], fingerprint };
   const dependencies = {
+    "./crm-execution": {},
+    "./crm-tools": crmTools,
     "next/cache": { revalidatePath() {} },
     "@/app/crm-actions": { createCompany() {}, updateCompany: async (_id: string, _state: unknown, form: FormData) => { savedForms.push(form); return { success: "Customer updated." }; }, addCompanyComment: async (_id: string, _state: unknown, form: FormData) => { savedForms.push(form); return { success: "Note added." }; } },
     "@/app/api/email/send/route": { POST: async (request: Request) => { sent.push(await request.json()); return Response.json({ ok: true, saved: true }); } },

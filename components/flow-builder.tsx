@@ -1,5 +1,6 @@
 "use client";
 
+import { EmptyState } from "@/components/data-state";
 import { useLanguage } from "@/components/language-provider";
 
 import { AiIcon } from "@/components/ai-icon";
@@ -195,7 +196,7 @@ function FlowActionPalette({ canEdit, query, onQueryChange, actions, onAdd, onAu
           </section>
         );
       })}
-      {!actions.length ? <p role="status" className="py-4 text-sm text-muted-foreground">No matching actions.</p> : null}
+      {!actions.length ? <EmptyState compact icon={Search} title="No matching actions." className="border-0 bg-transparent" /> : null}
       <Button variant="secondary" onClick={onAudit} className="mt-4 w-full text-violet-700 dark:text-violet-300">
         <AiIcon  />Audit this flow
       </Button>

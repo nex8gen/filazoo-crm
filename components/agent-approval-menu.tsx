@@ -15,7 +15,8 @@ export function AgentApprovalMenu({ value, onChange, disabled }: {
     <DropdownMenuTrigger disabled={disabled} aria-label={`${t("Action approval")}: ${t(label)}`} className="inline-flex h-6 w-fit items-center gap-1.5 rounded-full border border-border/60 bg-muted/40 px-2 text-[10px] leading-none text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50">
       {value === "ask" ? <ShieldCheck aria-hidden="true" className="size-3" /> : <Zap aria-hidden="true" className="size-3" />}<span>{label}</span><ChevronDown aria-hidden="true" className="size-2.5 opacity-60" />
     </DropdownMenuTrigger>
-    <DropdownMenuContent side="top" align="start" className="w-[300px] max-w-[calc(100vw-2rem)]">
+    {/* The portaled positioner must sit above the AI sidebar's z-[60] layer. */}
+    <DropdownMenuContent side="top" align="start" positionerClassName="z-[70]" className="w-[300px] max-w-[calc(100vw-2rem)]">
       <DropdownMenuGroup>
         <DropdownMenuLabel>How should agent actions be approved?</DropdownMenuLabel>
         <DropdownMenuRadioGroup aria-label="Action approval" value={value} disabled={disabled} onValueChange={(mode) => { if (mode === "ask" || mode === "auto") onChange(mode); }}>

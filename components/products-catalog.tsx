@@ -1,4 +1,6 @@
 "use client";
+import { PackageSearch } from "lucide-react";
+import { EmptyState } from "@/components/data-state";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 
 import { useActionState, useMemo, useState } from "react";
@@ -125,7 +127,7 @@ export function ProductsCatalog({ products, canWrite }: { products: Product[]; c
                 <TableCell className="pr-4"><div className="flex items-center justify-end gap-1"><span className="mr-2 text-xs text-muted-foreground">{formatUpdatedAt(product.updatedAt)}</span><Button variant="ghost" size="icon-sm" aria-label={`Copy ${product.sku}`} title="Copy SKU" onClick={() => copySku(product.sku)}><Clipboard /></Button></div></TableCell>
               </TableRow>
             ))}
-            {!visibleProducts.length ? <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">No products match these filters.</TableCell></TableRow> : null}
+            {!visibleProducts.length ? <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground"><EmptyState compact icon={PackageSearch} title="No products match these filters." description="Try another search or adjust your filters." className="border-0 bg-transparent" /></TableCell></TableRow> : null}
           </TableBody>
         </Table>
         

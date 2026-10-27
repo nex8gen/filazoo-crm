@@ -1,5 +1,7 @@
 "use client";
 
+import { PackageSearch } from "lucide-react";
+import { EmptyState } from "@/components/data-state";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
@@ -226,7 +228,7 @@ export function ProductsCatalogV2({ products: initialProducts, canWrite, mode }:
         <TableCell><Badge variant={product.status === "Active" ? "secondary" : "outline"}>{product.status}</Badge></TableCell>
         <TableCell className="overflow-hidden pr-4"><div className="flex items-center justify-end gap-1"><span className="truncate text-xs text-muted-foreground">{formatUpdatedAt(product.updatedAt)}</span><Button className="shrink-0" variant="ghost" size="icon-sm" aria-label={`Copy ${product.sku}`} onClick={async (event) => { event.stopPropagation(); await navigator.clipboard.writeText(product.sku); toast.success(`${product.sku} copied.`); }}><Clipboard /></Button></div></TableCell>
       </TableRow>)}
-      {!visibleProducts.length ? <TableRow><TableCell colSpan={7} className="h-32 text-center text-muted-foreground">No products match these filters.</TableCell></TableRow> : null}
+      {!visibleProducts.length ? <TableRow><TableCell colSpan={7} className="h-32 text-center text-muted-foreground"><EmptyState compact icon={PackageSearch} title="No products match these filters." description="Try another search or adjust your filters." className="border-0 bg-transparent" /></TableCell></TableRow> : null}
     </TableBody></Table></div>
 
     

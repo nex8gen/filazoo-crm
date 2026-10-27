@@ -1,4 +1,5 @@
 "use client";
+import { Search } from "lucide-react";
 
 import {
   CommandDialog,
@@ -31,7 +32,7 @@ export function WorkspaceCommandMenu({ navigation, open, onOpenChange, onNavigat
     <CommandDialog open={open} onOpenChange={onOpenChange}>
       <CommandInput placeholder="Search pages…" />
       <CommandList>
-        <CommandEmpty>No page found.</CommandEmpty>
+        <CommandEmpty><Search aria-hidden="true" className="mx-auto mb-3 size-6 text-muted-foreground" />No page found.</CommandEmpty>
         {navigation.map((group) => (
           <CommandGroup key={group.label} heading={group.label}>
             {group.items.map((item, index) => (

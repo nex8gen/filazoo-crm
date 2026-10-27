@@ -1,5 +1,7 @@
 "use client";
+import { Workflow } from "lucide-react";
 
+import { EmptyState } from "@/components/data-state";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 
@@ -37,7 +39,7 @@ export function FlowInsights({ flowId }: { flowId: string | null }) {
     <div className="flex items-center justify-between"><h3 className="text-sm font-semibold">Recent runs</h3><Button size="sm" variant="outline" disabled={loading} onClick={() => { setLoading(true); setRevision((value) => value + 1); }}>Refresh</Button></div>
     {loading ? <p role="status" className="text-xs text-muted-foreground">Loading run history…</p> : null}
     {error ? <p role="alert" className="text-xs text-destructive">{error}</p> : null}
-    {!loading && !error && !runs.length ? <p className="text-xs text-muted-foreground">No contacts have entered this flow yet.</p> : null}
+    {!loading && !error && !runs.length ? <EmptyState compact icon={Workflow} title="No contacts have entered this flow yet." /> : null}
     {runs.map((run) => <details key={run.id} className="rounded-lg border p-3">
       <summary className="cursor-pointer text-xs"><strong className="capitalize">{run.status}</strong> · Step {run.current_step + 1}<span className="mt-1 block text-muted-foreground">{new Date(run.started_at).toLocaleString()}</span></summary>
       {run.next_run_at ? <p className="mt-3 text-xs">Scheduled: {new Date(run.next_run_at).toLocaleString()}</p> : null}

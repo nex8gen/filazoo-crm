@@ -1,5 +1,6 @@
 "use client";
 
+import { EmptyState } from "@/components/data-state";
 import { AiIcon } from "@/components/ai-icon";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 
@@ -12,7 +13,6 @@ import {
   Eye,
   Filter,
   Flag,
-  Inbox,
   PencilLine,
   RefreshCw,
   Search,
@@ -93,20 +93,6 @@ function toEmailRow(email: Partial<EmailRowData> & { id: string; subject: string
       { label: "No recent email", ok: true },
     ],
   };
-}
-
-function EmptyState({ title, description }: { title: string; description: string }) {
-  return (
-    <div className="flex min-h-[24rem] flex-col items-center justify-center gap-4 border border-dashed border-border bg-muted/20 text-center">
-      <div className="grid size-12 place-items-center rounded-xl border bg-background">
-        <Inbox className="size-5 text-muted-foreground" />
-      </div>
-      <div className="space-y-1">
-        <h3 className="text-base font-semibold text-foreground">{title}</h3>
-        <p className="max-w-md text-sm text-muted-foreground">{description}</p>
-      </div>
-    </div>
-  );
 }
 
 function EmailTableSkeleton() {
@@ -549,7 +535,7 @@ export function DeliverabilityDashboard() {
             <tbody>
               {visibleRows.length === 0 ? (
                 <tr>
-                  <td colSpan={3} className="px-3 py-12 text-center text-sm text-muted-foreground">No deliverability issues in this category.</td>
+                  <td colSpan={3} className="px-3 py-12 text-center text-sm text-muted-foreground"><EmptyState compact icon={ShieldAlert} className="border-0 bg-transparent" title="No deliverability issues in this category." description="Your outreach is clear of issues in this view." /></td>
                 </tr>
               ) : (
                 pagedRows.map((row) => (

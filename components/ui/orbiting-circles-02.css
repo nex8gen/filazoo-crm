@@ -1,0 +1,88 @@
+.agent-orbit-scene {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2;
+  flex-shrink: 0;
+  isolation: isolate;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.agent-orbit-artwork {
+  position: absolute;
+  inset: 0;
+}
+
+.agent-orbit-ring {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  translate: -50% 50%;
+  aspect-ratio: 1;
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  border-radius: 50%;
+}
+
+.agent-orbit-traveler {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 28px;
+  height: 50%;
+  margin-left: -14px;
+  transform-origin: 50% 100%;
+  transform: rotate(var(--start-angle));
+  animation: agent-orbit var(--orbit-duration) linear infinite;
+}
+
+.agent-orbit-badge {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  margin-top: -14px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--card);
+  color: var(--muted-foreground);
+  box-shadow: 0 2px 5px color-mix(in srgb, var(--foreground) 4%, transparent);
+  transform: rotate(var(--counter-angle));
+  animation: agent-counter-orbit var(--orbit-duration) linear infinite;
+}
+
+.agent-orbit-particles {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 48%;
+  aspect-ratio: 1;
+  translate: -50% 50%;
+}
+
+.agent-orbit-invoice { color: #8b5cf6; }
+.agent-orbit-email { color: #3b82f6; }
+.agent-orbit-message { color: #14b8a6; }
+.agent-orbit-company { color: #f59e0b; }
+.agent-orbit-product { color: #10b981; }
+.agent-orbit-flow { color: #a855f7; }
+.agent-orbit-workspace { color: #6366f1; }
+
+.agent-orbit-scene[data-active="false"] .agent-orbit-traveler,
+.agent-orbit-scene[data-active="false"] .agent-orbit-badge {
+  animation-play-state: paused;
+}
+
+@keyframes agent-orbit {
+  from { transform: rotate(var(--start-angle)); }
+  to { transform: rotate(calc(var(--start-angle) + var(--orbit-turn))); }
+}
+
+@keyframes agent-counter-orbit {
+  from { transform: rotate(var(--counter-angle)); }
+  to { transform: rotate(calc(var(--counter-angle) - var(--orbit-turn))); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-orbit-traveler,
+  .agent-orbit-badge { animation: none; }
+}

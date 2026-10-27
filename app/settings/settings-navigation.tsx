@@ -1,4 +1,5 @@
 "use client";
+import { EmptyState } from "@/components/data-state";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -38,7 +39,7 @@ export function SettingsNavigation({ isAdmin }: { isAdmin: boolean }) {
       <div className="relative mb-4"><Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" /><Input aria-label="Search settings" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search" className="h-9 rounded-full border-0 bg-muted pl-9 shadow-none" /></div>
       <nav aria-label="Settings navigation" className="flex gap-5 overflow-x-auto pb-2 md:block md:space-y-6 md:overflow-visible">
         {filtered.map((group) => <div key={group.label} className="shrink-0"><p className="mb-2 px-3 text-xs font-medium text-muted-foreground">{group.label}</p><ul className="space-y-1">{group.items.map((item) => <li key={item.href}><Link href={item.href} aria-current={pathname === item.href ? "page" : undefined} className={`flex min-h-9 items-center gap-2.5 rounded-lg px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring ${pathname === item.href ? "bg-muted font-medium text-foreground" : "text-foreground/80 hover:bg-muted/60"}`}><item.icon className="size-[18px] shrink-0" />{item.label}</Link></li>)}</ul></div>)}
-        {!filtered.length ? <p role="status" className="px-3 text-sm text-muted-foreground">No settings found.</p> : null}
+        {!filtered.length ? <EmptyState compact icon={Search} title="No settings found." className="border-0 bg-transparent" /> : null}
       </nav>
     </aside>
   );

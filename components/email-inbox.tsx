@@ -1252,7 +1252,7 @@ export function EmailInboxWorkspace({
           {syncError ? <p role="alert" className="border-b px-3 py-2 text-xs text-amber-700 dark:text-amber-300">Inbox sync failed: {syncError}</p> : null}
           {notice ? <p role="status" className="border-b bg-muted/30 px-3 py-2 text-xs">{notice}</p> : null}
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
-            <EmailMessageList conversations={pageItems} compact={Boolean(companyScope) || reading} simple={Boolean(companyScope)} activeId={reading ? selectedConversation?.id : undefined} checked={checkedIds} readMessages={readMessages} starred={starred} onCheck={(id) => setCheckedIds((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; })} onOpen={openConversation} onStar={toggleStar} />
+            <EmailMessageList emptyIcon={folderItems.find((item) => item.id === folder)?.icon} conversations={pageItems} compact={Boolean(companyScope) || reading} simple={Boolean(companyScope)} activeId={reading ? selectedConversation?.id : undefined} checked={checkedIds} readMessages={readMessages} starred={starred} onCheck={(id) => setCheckedIds((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; })} onOpen={openConversation} onStar={toggleStar} />
           </div>
           <div className="flex min-h-12 items-center justify-end gap-3 border-t px-3 text-xs text-muted-foreground">
             <span>{visible.length ? (currentPage - 1) * pageSize + 1 : 0}–{Math.min(currentPage * pageSize, visible.length)} of {visible.length}</span>

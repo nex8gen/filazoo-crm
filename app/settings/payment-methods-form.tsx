@@ -1,4 +1,6 @@
 "use client";
+import { EmptyState } from "@/components/data-state";
+import { Wallet } from "lucide-react";
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -64,7 +66,7 @@ export function PaymentMethodsForm({ initial, canManage }: { initial: InvoicePay
         <label className="grid gap-2 text-sm">{method.type === "bank_transfer" ? method.bankDetails ? "Additional transfer instructions (optional)" : "Bank details" : method.type === "paypal" ? "PayPal email and instructions" : "Payment instructions"}<Textarea rows={4} required={method.type === "bank_transfer" ? !method.bankDetails : !method.paymentUrl.trim()} maxLength={2000} value={method.details} onChange={(event) => update(method.id, { details: event.target.value })} placeholder={method.type === "bank_transfer" ? method.bankDetails ? "Include your invoice number as the transfer reference" : "Beneficiary, bank name, account number / IBAN, SWIFT / BIC, and transfer instructions" : method.type === "paypal" ? "payments@example.com" : "Tell customers how to pay"} /></label>
         <label className="grid gap-2 text-sm">Payment link (optional)<Input type="url" maxLength={1000} value={method.paymentUrl} onChange={(event) => update(method.id, { paymentUrl: event.target.value })} placeholder={method.type === "paypal" ? "https://www.paypal.me/yourbusiness" : "https://"} /></label>
         </fieldset> : null}
-      </section>) : <p className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">No payment methods added yet. Add bank transfer, PayPal, or another way for customers to pay.</p>}
+      </section>) : <EmptyState compact icon={Wallet} title="No payment methods added yet" description="Add bank transfer, PayPal, or another way for customers to pay." />}
       {canManage ? <div className="flex flex-wrap gap-3"><Button type="button" variant="outline" disabled={methods.length >= 10} onClick={() => {
         const id = crypto.randomUUID();
         setMethods((old) => [...old, { id, type: "bank_transfer", label: "Bank transfer", currency: "", details: "", paymentUrl: "", bankDetails: { beneficiaryName: "", accountNumber: "", swift: "", bankName: "" } }]); setEditingId(id); setNotice("");

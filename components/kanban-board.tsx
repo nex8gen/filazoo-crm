@@ -1,5 +1,7 @@
 "use client";
 
+import { Building2 } from "lucide-react";
+import { EmptyState } from "@/components/data-state";
 import { useState, useRef } from "react";
 import Link from "next/link";
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, type DragEndEvent, useDroppable, useSensor, useSensors } from "@dnd-kit/core";
@@ -86,7 +88,7 @@ export function KanbanBoard({ companies, managers, canWrite, canAssign, query = 
           {canWrite ? <label className="flex flex-col gap-1.5 text-xs text-muted-foreground">Move to stage<Select value={card.stage} onValueChange={(value) => { if (value === null) return; return void changeStage(card.id, value as PipelineStageValue); }}><SelectTrigger aria-label={`Move ${card.company} to stage`} className="w-full"><SelectValue /></SelectTrigger><SelectContent>{stages.map((stage) => <SelectItem key={stage.id} value={stage.id}>{stage.label}</SelectItem>)}</SelectContent></Select></label> : null}
           {canAssign ? <label className="flex flex-col gap-1.5 text-xs text-muted-foreground">Assigned manager<Select value={card.ownerId || "unassigned"} onValueChange={async (value) => { if (value === null) return;  const ownerId = value === "unassigned" ? null : value; const result = await saveOwner(card.id, ownerId); if (result?.error) toast.error(result.error); else { setCards((current) => current.map((item) => item.id === card.id ? { ...item, ownerId, ownerAvatarUrl: managers.find((manager) => manager.id === ownerId)?.avatarUrl, ownerName: managers.find((manager) => manager.id === ownerId)?.name || "Unassigned", ownerInitials: ownerId ? initials(managers.find((manager) => manager.id === ownerId)?.name || "BD") : "—" } : item)); toast.success("Lead owner updated."); }  }}><SelectTrigger aria-label={`Assign ${card.company}`} className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="unassigned">Unassigned</SelectItem>{managers.map((manager) => <SelectItem key={manager.id} value={manager.id}>{manager.name}</SelectItem>)}</SelectContent></Select></label> : null}
         </Card>)}
-        {!visibleCards.some((card) => card.stage === (stageFilter === "all" ? mobileStage : stageFilter)) ? <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No companies in this stage.</p> : null}
+        {!visibleCards.some((card) => card.stage === (stageFilter === "all" ? mobileStage : stageFilter)) ? <EmptyState compact icon={Building2} title="No companies in this stage." /> : null}
       </div>
       <div className="hidden min-w-0 gap-4 overflow-x-auto pb-4 md:flex">
         {stages.filter((stage) => stageFilter === "all" || stage.id === stageFilter).map((stage) => <KanbanColumn key={stage.id} stage={stage} cards={visibleCards.filter((card) => card.stage === stage.id)} managers={managers} canWrite={canWrite} canAssign={canAssign} onOwnerChanged={(id, ownerId) => setCards((current) => current.map((card) => card.id === id ? { ...card, ownerId, ownerAvatarUrl: managers.find((manager) => manager.id === ownerId)?.avatarUrl, ownerName: managers.find((manager) => manager.id === ownerId)?.name || "Unassigned", ownerInitials: ownerId ? initials(managers.find((manager) => manager.id === ownerId)?.name || "BD") : "—" } : card))} />)}
@@ -103,7 +105,7 @@ function KanbanColumn({ stage, cards, managers, canWrite, canAssign, onOwnerChan
     <section ref={setNodeRef} className={`w-64 shrink-0 rounded-lg border bg-muted/30 p-3 transition-colors duration-150 ${isOver ? "border-primary bg-brand-soft" : ""}`}>
       <header className="mb-3 flex items-center justify-between"><div className="flex items-center gap-2"><span className={`size-2 rounded-full ${["interested", "big_order", "won"].includes(stage.id) ? "bg-primary" : "bg-muted-foreground/40"}`} /><h2 className="text-xs font-medium">{stage.label}</h2></div><Badge variant="secondary" className="h-5 min-w-5 justify-center px-1.5 text-xs">{cards.length}</Badge></header>
       <SortableContext items={cards.map((card) => card.id)} strategy={verticalListSortingStrategy}>
-        <div className="space-y-2">{cards.map((card) => <SortableCard key={card.id} card={card} managers={managers} canWrite={canWrite} canAssign={canAssign} onOwnerChanged={onOwnerChanged} />)}{cards.length === 0 && <div className="rounded-lg border border-dashed p-6 text-center text-xs text-muted-foreground">{canWrite ? "Drop a company here" : "No companies"}</div>}</div>
+        <div className="space-y-2">{cards.map((card) => <SortableCard key={card.id} card={card} managers={managers} canWrite={canWrite} canAssign={canAssign} onOwnerChanged={onOwnerChanged} />)}{cards.length === 0 && <EmptyState compact icon={Building2} title={canWrite ? "Drop a company here" : "No companies"} />}</div>
       </SortableContext>
     </section>
   );

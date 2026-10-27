@@ -1,5 +1,7 @@
 "use client";
 
+import { EmptyState } from "@/components/data-state";
+import { PackageSearch } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 import { useEffect, useState } from "react";
@@ -111,10 +113,7 @@ export function PurchaseOrderProductPicker({
             ))}
           </div>
           {!current.products.length && (
-            <p className="text-sm text-muted-foreground">
-              No active products match this currency and search. Try another
-              search or add a custom item.
-            </p>
+            <EmptyState compact icon={PackageSearch} title="No products found" description="No active products match this currency and search. Try another search or add a custom item." />
           )}
           <div className="flex items-center justify-between gap-2 text-sm">
             <span>

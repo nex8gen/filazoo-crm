@@ -1,4 +1,6 @@
 "use client";
+import { EmptyState } from "@/components/data-state";
+import { ReceiptText, Wallet } from "lucide-react";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 
 import { useEffect, useState } from "react";
@@ -412,9 +414,7 @@ export function InvoiceWorkspace({
                   ))}
               </ul>
             ) : (
-              <p className="my-4 text-sm text-muted-foreground">
-                No payments recorded.
-              </p>
+              <EmptyState compact icon={Wallet} title="No payments recorded." className="my-4" />
             )}
             {canManage &&
             selected.status === "issued" &&
@@ -535,18 +535,7 @@ export function InvoiceWorkspace({
               </tbody>
             </table>
             {!listing.invoices.length ? (
-              <div className="p-12 text-center">
-                <h2 className="font-semibold">
-                  {search || status
-                    ? "No matching invoices"
-                    : "Your invoices will appear here"}
-                </h2>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  {canWrite
-                    ? "Create a draft to start billing your customers."
-                    : "Invoices created by your team will appear here."}
-                </p>
-              </div>
+              <EmptyState icon={ReceiptText} className="m-5" title={search || status ? "No matching invoices" : "Your invoices will appear here"} description={search || status ? "Try another search or adjust your filters." : canWrite ? "Create a draft to start billing your customers." : "Invoices created by your team will appear here."} />
             ) : null}
           </div>
           <TablePagination page={page + 1} pageCount={Math.ceil(listing.count / 25)} total={listing.count} itemLabel="invoices" disabled={busy} onPrevious={() => void run(() => load(page - 1))} onNext={() => void run(() => load(page + 1))} />

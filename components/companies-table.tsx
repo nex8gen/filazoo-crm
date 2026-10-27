@@ -1,5 +1,6 @@
 "use client";
 
+
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -122,7 +123,7 @@ export function CompaniesTable({ companies, mode, canWrite, canDelete }: { compa
     });
   };
 
-  if (companies.length === 0) return <EmptyState title={mode === "live" ? "No companies yet" : "Supabase setup required"} description={mode === "live" ? "Your Supabase companies table is connected and empty. Add or import the first company to begin." : "Add a valid project secret key to the server environment, then redeploy the app."} />;
+  if (companies.length === 0) return <EmptyState icon={Building2} title={mode === "live" ? "No companies yet" : "Supabase setup required"} description={mode === "live" ? "Your Supabase companies table is connected and empty. Add or import the first company to begin." : "Add a valid project secret key to the server environment, then redeploy the app."} />;
 
   return <div className="flex min-w-0 flex-col gap-6">
     <ConfirmActionDialog open={deleteOpen} onOpenChange={setDeleteOpen} title="Delete selected companies?" description={`Delete ${selectedIds.size} selected companies and their contacts, catalogs, and pipeline history? This cannot be undone.`} onConfirm={async () => {
@@ -150,7 +151,7 @@ export function CompaniesTable({ companies, mode, canWrite, canDelete }: { compa
     <Card className="crm-table-frame gap-0 py-0">
     {selectedIds.size > 0 && <div className="flex flex-wrap items-center gap-2 border-b bg-brand-soft px-4 py-3"><p className="mr-auto text-sm font-semibold text-primary">{selectedIds.size} selected</p><Button size="sm" variant="outline" disabled={!canWrite || pending} onClick={() => runBulkAction("contacted")}><UserRoundCheck />Mark contacted</Button><Button size="sm" variant="outline" disabled={!canWrite || pending} onClick={() => runBulkAction("interested")}>Mark interested</Button><Button size="sm" variant="destructive" disabled={!canDelete || pending} title={canDelete ? "Delete selected companies" : "Only admins can delete companies"} onClick={() => setDeleteOpen(true)}><Trash2 />Delete</Button></div>}
 
-    {filtered.length === 0 ? <div className="p-8"><EmptyState title="No companies found" description="Try changing your search or filters to see more results." /></div> : <>
+    {filtered.length === 0 ? <div className="p-8"><EmptyState icon={Building2} title="No companies found" description="Try changing your search or filters to see more results." /></div> : <>
       <div className="crm-table-flex-body"><Table>
         <TableHeader>{table.getHeaderGroups().map((group) => <TableRow key={group.id} className="hover:bg-transparent">{group.headers.map((header) => <TableHead key={header.id} aria-sort={header.column.getIsSorted() === "asc" ? "ascending" : header.column.getIsSorted() === "desc" ? "descending" : undefined}>{header.isPlaceholder ? null : header.column.getCanSort() ? <button className="flex items-center gap-1 hover:text-foreground" onClick={header.column.getToggleSortingHandler()}>{flexRender(header.column.columnDef.header, header.getContext())}<ChevronsUpDown className="size-3" /></button> : flexRender(header.column.columnDef.header, header.getContext())}</TableHead>)}</TableRow>)}</TableHeader>
         <TableBody>{table.getRowModel().rows.map((row) => <TableRow key={row.id} className="group cursor-pointer" tabIndex={0} onClick={(event) => { if (!(event.target as HTMLElement).closest("button,a,input,[role=checkbox]")) router.push(`/companies/${row.original.id}`); }} onKeyDown={(event) => { if (event.target === event.currentTarget && event.key === "Enter") router.push(`/companies/${row.original.id}`); }}>{row.getVisibleCells().map((cell) => <TableCell key={cell.id} >{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}</TableRow>)}</TableBody>

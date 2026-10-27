@@ -1,4 +1,6 @@
 "use client";
+import { ReceiptText } from "lucide-react";
+import { EmptyState } from "@/components/data-state";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -149,7 +151,7 @@ export function InvoiceCreateDialog({ context, invoiceViewer, onClose, onAttach 
                     </div>
                   </li>
                 ))}
-              </ul> : <p className="rounded-lg border p-6 text-sm text-muted-foreground">No invoices found for this customer yet.</p>}
+              </ul> : <EmptyState compact icon={ReceiptText} title="No invoices found for this customer yet." />}
               {seed.companyId ? <Link href={`/invoices?companyId=${seed.companyId}`} target="_blank" rel="noreferrer" className="inline-block text-sm font-medium underline">View all customer invoices</Link> : null}
             </>
           ) : null}

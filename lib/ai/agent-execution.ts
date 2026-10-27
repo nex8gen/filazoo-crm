@@ -18,6 +18,8 @@ import type { WorkspaceAction } from "./workspace-assistant";
 import { actionWorkProgress, type AgentWorkProgress } from "./agent-progress";
 import { loadAgentCompany, loadAgentEmails, prepareAgentEmail } from "./agent-records";
 import { threadKeyForEmail } from "../email-threading";
+import { prepareCrmAction, executeCrmAction } from "./crm-execution";
+import { crmManualApproval } from "./crm-tools";
 
 async function validateCustomerEmailSource(action: { companyId: string; sourceEmailId?: string }, viewer: WorkspaceViewer) {
   if (!action.sourceEmailId) return;
@@ -32,7 +34,8 @@ export async function prepareAgentActions(actions: WorkspaceAction[], viewer: Wo
   const proposals: AgentProposal[] = [];
   for (const action of actions) {
     let prepared: PreparedAgentAction;
-    if (action.type === "create_company" || action.type === "create_flow") prepared = action;
+    if (action.type === "crm_action") prepared = await prepareCrmAction(action.operation, viewer);
+    else if (action.type === "create_company" || action.type === "create_flow") prepared = action;
     else if (action.type === "update_company" || action.type === "add_company_note") {
       await validateCustomerEmailSource(action, viewer);
       const company = await loadAgentCompany(action.companyId);
@@ -74,7 +77,7 @@ export async function prepareAgentActions(actions: WorkspaceAction[], viewer: Wo
           : { type: action.type, invoiceId: action.invoiceId, revision: existing!.revision, document, ...(action.email ? { email: await prepareAgentEmail(action.email, viewer) } : {}) };
       } else throw new Error("Invalid invoice action.");
     }
-    proposals.push({ id: crypto.randomUUID(), action: prepared, approvalMode, expiresAt: new Date(Date.now() + 30 * 60_000).toISOString() });
+    proposals.push({ id: crypto.randomUUID(), action: prepared, approvalMode: action.type === "crm_action" && crmManualApproval(action.operation) ? "ask" : approvalMode, expiresAt: new Date(Date.now() + 30 * 60_000).toISOString() });
   }
   if (proposals.length) {
     const { error } = await createSupabaseAdmin().from("workspace_agent_actions").insert(proposals.map((proposal) => ({
@@ -106,6 +109,10 @@ export async function executeAgentAction(id: string, action: PreparedAgentAction
   async function reportProgress(progress: AgentWorkProgress) {
     const { error } = await db.from("workspace_agent_actions").update({ result: { ...savedResult, progress } }).eq("id", id).eq("user_id", viewer.id).eq("status", "running");
     if (error) throw new Error("Unable to record action progress. Check the action result before retrying.");
+  }
+  if (action.type === "crm_action") {
+    await reportProgress(activity);
+    return executeCrmAction(action, viewer, id, request);
   }
   if (action.type === "create_flow") {
     await reportProgress(activity);

@@ -4,6 +4,7 @@ import { invoiceDocumentSchema, type InvoiceDocument } from "../invoices.ts";
 import { productInvoiceLine, productUnitPrice, type InvoiceProduct } from "../invoice-links.ts";
 import type { InvoiceBankAccount } from "../invoice-banks.ts";
 import type { InvoicePaymentMethod } from "../invoice-payment-methods.ts";
+import { preparedCrmActionSchema } from "./crm-tools.ts";
 
 export const preparedAgentEmailSchema = agentEmailSchema.extend({
   threadId: z.string().min(1).max(1100).optional(),
@@ -19,6 +20,7 @@ export const preparedAgentActionSchema = z.discriminatedUnion("type", [
   workspaceActionSchema.options[5].extend({ companyName: z.string() }).strict(),
   z.object({ type: z.literal("write_email"), email: preparedAgentEmailSchema }).strict(),
   workspaceActionSchema.options[7],
+  preparedCrmActionSchema,
 ]);
 export type PreparedAgentAction = z.infer<typeof preparedAgentActionSchema>;
 export type AgentProposal = { id: string; action: PreparedAgentAction; approvalMode: "ask" | "auto"; expiresAt: string };

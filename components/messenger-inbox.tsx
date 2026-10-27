@@ -1,5 +1,6 @@
 "use client";
 
+import { EmptyState } from "@/components/data-state";
 import { AiIcon } from "@/components/ai-icon";
 
 import { useLanguage } from "@/components/language-provider";
@@ -230,7 +231,7 @@ export function MessengerInbox({ data }: { data: MetaInboxData }) {
             {!isChannelConnected(activeOption.id) && filteredThreads.length === 0 ? (
               <div className="m-2 rounded-xl border border-dashed bg-muted/20 p-5 text-center"><div className="mx-auto w-fit"><ChannelMark channel={activeOption.id as Exclude<Channel, "all">} /></div><h3 className="mt-3 text-sm font-semibold">Connect {activeOption.label}</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">Bring messages into Filazoo and assign them to your CRM operators.</p><Link href="/settings" className="mt-4 inline-flex h-9 items-center gap-2 rounded-md bg-foreground px-3 text-xs font-medium text-background"><Wifi className="size-3.5" />Connect channel</Link></div>
             ) : filteredThreads.length === 0 ? (
-              <div className="m-2 rounded-lg border border-dashed p-5 text-center text-xs text-muted-foreground">No conversations match your search.</div>
+              <EmptyState compact icon={MessageCircleMore} title="No conversations match your search." className="m-2" />
             ) : filteredThreads.map((thread) => {
               const selected = selectedThread?.id === thread.id;
               return (

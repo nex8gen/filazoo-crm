@@ -1,4 +1,6 @@
 "use client";
+import { Library } from "lucide-react";
+import { EmptyState } from "@/components/data-state";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 
 import { useLanguage } from "@/components/language-provider";
@@ -110,7 +112,7 @@ export function CompanyCatalogsTable({ catalogs }: { catalogs: Catalog[] }) {
             {!filtered.length ? (
               <TableRow>
                 <TableCell colSpan={5} className="h-32 text-center text-muted-foreground">
-                  No catalogs match the current filters.
+                  <EmptyState compact icon={Library} title="No catalogs match the current filters." description="Try another search or adjust your filters." className="border-0 bg-transparent" />
                 </TableCell>
               </TableRow>
             ) : null}

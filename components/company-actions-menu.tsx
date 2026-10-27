@@ -1,4 +1,5 @@
 "use client";
+import { EmptyState } from "@/components/data-state";
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -155,7 +156,7 @@ export function CompanyActionsMenu({ companyId, ownerId, managers, canAssign, ca
               {managers.map((manager) => <SelectItem key={manager.id} value={manager.id}>{manager.name}</SelectItem>)}
             </SelectContent>
           </Select>
-          {!managers.length ? <p className="text-xs text-muted-foreground">No active BD Managers are available for assignment.</p> : null}
+          {!managers.length ? <EmptyState compact icon={UserRoundCog} title="No active BD Managers are available for assignment." /> : null}
         </div>
         <DialogFooter>
           <Button type="button" variant="outline" disabled={pending} onClick={() => setAssignmentOpen(false)}>Cancel</Button>

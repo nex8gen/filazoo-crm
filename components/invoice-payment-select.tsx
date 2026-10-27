@@ -1,4 +1,6 @@
 "use client";
+import { EmptyState } from "@/components/data-state";
+import { Wallet } from "lucide-react";
 
 import Link from "next/link";
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
@@ -36,7 +38,7 @@ export function InvoicePaymentSelect({ doc, onChange }: { doc: InvoiceDocument; 
         <span className="min-w-0 flex-1"><span className="font-medium">{paymentMethodTitle(method)}</span>{method.currency ? <span className="ml-2 text-xs text-muted-foreground">{method.currency} only</span> : null}{checked ? <><span className="mt-1 block whitespace-pre-line break-words text-xs text-muted-foreground">{paymentMethodDetails(method)}</span>{method.paymentUrl ? <span className="mt-1 block break-all text-xs text-muted-foreground">{method.paymentUrl}</span> : null}</> : null}</span>
       </label>;
     })}
-    {!loading && !options.length && !error ? <p className="text-xs text-muted-foreground">No saved payment methods. Add them in Settings, or use the manual instructions below.</p> : null}
+    {!loading && !options.length && !error ? <EmptyState compact icon={Wallet} title="No saved payment methods" description="Add them in Settings, or use the manual instructions below." /> : null}
     {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
     {selected.some((method) => method.currency && method.currency !== doc.currency) ? <p role="alert" className="text-sm text-destructive">Remove payment methods that do not support {doc.currency}.</p> : null}
     <Link href="/settings/payments" target="_blank" rel="noreferrer" className="inline-block text-xs text-primary underline">Manage payment methods in Settings</Link>

@@ -3,7 +3,8 @@
 import { useLanguage } from "@/components/language-provider";
 import type { AppLanguage } from "@/lib/i18n";
 import { Fragment } from "react";
-import { Paperclip, Reply, Star } from "lucide-react";
+import { Inbox, Paperclip, Reply, Star, type LucideIcon } from "lucide-react";
+import { EmptyState } from "@/components/data-state";
 import type { EmailWorkspaceItem } from "./email-inbox";
 
 type Conversation = { id: string; messages: EmailWorkspaceItem[]; latest: EmailWorkspaceItem };
@@ -19,10 +20,11 @@ function dateGroup(value: string, language: AppLanguage) {
   return date.toLocaleDateString(language, { month: "long", day: "numeric", year: "numeric" });
 }
 
-export function EmailMessageList({ conversations, compact, simple = false, activeId, checked, readMessages, starred, onCheck, onOpen, onStar }: {
+export function EmailMessageList({ conversations, compact, simple = false, emptyIcon = Inbox, activeId, checked, readMessages, starred, onCheck, onOpen, onStar }: {
   conversations: Conversation[];
   compact: boolean;
   simple?: boolean;
+  emptyIcon?: LucideIcon;
   activeId?: string;
   checked: Set<string>;
   readMessages: Set<string>;
@@ -32,7 +34,7 @@ export function EmailMessageList({ conversations, compact, simple = false, activ
   onStar: (id: string) => void;
 }) {
   const { language } = useLanguage();
-  if (!conversations.length) return <div className="m-5 rounded-lg border border-dashed p-6 text-center text-sm leading-6 text-muted-foreground">{simple ? "No conversations here yet. New messages from this customer's saved contacts will appear here." : "No conversations match this view. Try another folder or clear your filters."}</div>;
+  if (!conversations.length) return <EmptyState className="m-5" icon={emptyIcon} title={simple ? "No conversations here yet" : "No conversations match this view"} description={simple ? "New messages from this customer's saved contacts will appear here." : "Try another folder or clear your filters."} />;
   return <div className={compact ? "mail-rows mail-rows-compact" : "mail-rows"}>
     {conversations.map((item, index) => {
       const email = item.latest;

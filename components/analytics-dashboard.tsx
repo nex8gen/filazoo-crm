@@ -1,8 +1,9 @@
 "use client";
 
+import { EmptyState } from "@/components/data-state";
 import { useLanguage } from "@/components/language-provider";
 import { useMemo, useState } from "react";
-import { ArrowDownRight, ArrowUpRight, Check, Eye, LayoutGrid, X } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, ChartNoAxesCombined, Check, Eye, Funnel, LayoutGrid, Package, Users, X } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, Tooltip, XAxis, YAxis } from "recharts";
 import { AnalyticsFilters, type AnalyticsFiltersValue } from "@/components/analytics-filters";
 import { dashboardLayout, type AnalyticsChannel, type AnalyticsDashboardData, type DashboardWidgetId } from "@/lib/analytics-dashboard";
@@ -37,16 +38,11 @@ function Trend({ current, previous }: { current: number; previous: number }) {
   const Icon = positive ? ArrowUpRight : ArrowDownRight;
   return <span className={`inline-flex items-center gap-1 text-xs font-medium ${positive ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}><Icon className="size-3.5" />{Math.abs(change).toFixed(1)}%</span>;
 }
-
-function EmptyState({ children }: { children: React.ReactNode }) {
-  return <div className="grid min-h-44 place-items-center rounded-lg border border-dashed bg-muted/20 px-6 text-center text-sm text-muted-foreground">{children}</div>;
-}
-
 function LineChart({ current, previous, labels, previousLabels, metricLabel, showComparison, valueFormatter = compact, axisFormatter = compact }: { current: number[]; previous: number[]; labels: string[]; previousLabels: string[]; metricLabel: string; showComparison: boolean; valueFormatter?: (value: number) => string; axisFormatter?: (value: number) => string }) {
   const currentTotal = sum(current); const previousTotal = sum(previous);
   const chartData = current.map((value, index) => ({ date: labels[index], previousDate: previousLabels[index], current: value, previous: previous[index] ?? 0 }));
   const chartConfig = { current: { label: "Current period", color: "#0ea5e9" }, previous: { label: "Comparison period", color: "#bae6fd" } } satisfies ChartConfig;
-  return <div><div className="mb-3 flex flex-wrap items-end justify-between gap-4"><div><div className="flex items-center gap-2"><p className="text-2xl font-semibold tracking-tight">{valueFormatter(currentTotal)}</p>{showComparison ? <Trend current={currentTotal} previous={previousTotal} /> : null}</div><p className="mt-1 text-xs text-muted-foreground">{showComparison ? `Compared with ${valueFormatter(previousTotal)} in the comparison period` : "Comparison is turned off"}</p></div></div>{chartData.length ? <ChartContainer config={chartConfig} className="h-[320px] w-full aspect-auto"><AreaChart accessibilityLayer data={chartData} margin={{ top: 12, right: 10, left: 4, bottom: 4 }}><defs><linearGradient id={`fill-${metricLabel.replaceAll(" ", "-")}`} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="var(--color-current)" stopOpacity={0.2} /><stop offset="95%" stopColor="var(--color-current)" stopOpacity={0.01} /></linearGradient></defs><CartesianGrid vertical={false} /><XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={10} minTickGap={44} /><YAxis tickLine={false} axisLine={false} tickMargin={10} width={66} tickFormatter={axisFormatter} /><Tooltip cursor={{ stroke: "var(--border)", strokeWidth: 1 }} formatter={(value, name, item) => [valueFormatter(Number(value)), name === "current" ? item.payload.date : item.payload.previousDate]} contentStyle={{ borderRadius: 8, borderColor: "var(--border)", background: "var(--popover)", color: "var(--popover-foreground)", fontSize: 13 }} />{showComparison ? <Area dataKey="previous" type="monotone" stroke="var(--color-previous)" strokeWidth={2} strokeDasharray="5 5" fill="transparent" dot={false} isAnimationActive={false} /> : null}<Area dataKey="current" type="monotone" stroke="var(--color-current)" strokeWidth={2.5} fill={`url(#fill-${metricLabel.replaceAll(" ", "-")})`} dot={false} isAnimationActive={false} /></AreaChart></ChartContainer> : <EmptyState>No CRM records in this period.</EmptyState>}</div>;
+  return <div><div className="mb-3 flex flex-wrap items-end justify-between gap-4"><div><div className="flex items-center gap-2"><p className="text-2xl font-semibold tracking-tight">{valueFormatter(currentTotal)}</p>{showComparison ? <Trend current={currentTotal} previous={previousTotal} /> : null}</div><p className="mt-1 text-xs text-muted-foreground">{showComparison ? `Compared with ${valueFormatter(previousTotal)} in the comparison period` : "Comparison is turned off"}</p></div></div>{chartData.length ? <ChartContainer config={chartConfig} className="h-[320px] w-full aspect-auto"><AreaChart accessibilityLayer data={chartData} margin={{ top: 12, right: 10, left: 4, bottom: 4 }}><defs><linearGradient id={`fill-${metricLabel.replaceAll(" ", "-")}`} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="var(--color-current)" stopOpacity={0.2} /><stop offset="95%" stopColor="var(--color-current)" stopOpacity={0.01} /></linearGradient></defs><CartesianGrid vertical={false} /><XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={10} minTickGap={44} /><YAxis tickLine={false} axisLine={false} tickMargin={10} width={66} tickFormatter={axisFormatter} /><Tooltip cursor={{ stroke: "var(--border)", strokeWidth: 1 }} formatter={(value, name, item) => [valueFormatter(Number(value)), name === "current" ? item.payload.date : item.payload.previousDate]} contentStyle={{ borderRadius: 8, borderColor: "var(--border)", background: "var(--popover)", color: "var(--popover-foreground)", fontSize: 13 }} />{showComparison ? <Area dataKey="previous" type="monotone" stroke="var(--color-previous)" strokeWidth={2} strokeDasharray="5 5" fill="transparent" dot={false} isAnimationActive={false} /> : null}<Area dataKey="current" type="monotone" stroke="var(--color-current)" strokeWidth={2.5} fill={`url(#fill-${metricLabel.replaceAll(" ", "-")})`} dot={false} isAnimationActive={false} /></AreaChart></ChartContainer> : <EmptyState compact icon={ChartNoAxesCombined} title="No CRM records in this period." description="Try another date range to see activity." />}</div>;
 }
 
 function Widget({ title, subtitle, children, className = "", onOptions }: { title: string; subtitle: string; children: React.ReactNode; className?: string; onOptions: () => void }) {
@@ -55,24 +51,24 @@ function Widget({ title, subtitle, children, className = "", onOptions }: { titl
 
 function OpportunityChannels({ counts }: { counts: Array<{ channel: AnalyticsChannel; count: number }> }) {
   const total = sum(counts.map((item) => item.count));
-  if (!total) return <EmptyState>No attributed opportunities in this period.</EmptyState>;
+  if (!total) return <EmptyState compact icon={Users} title="No attributed opportunities in this period." />;
   const gradient = counts.filter((item) => item.count > 0).map((item, index, visible) => { const start = (sum(visible.slice(0, index).map((entry) => entry.count)) / total) * 100; const end = start + (item.count / total) * 100; return `${channelColors[item.channel]} ${start}% ${end}%`; }).join(", ");
   return <div className="flex flex-col items-center gap-6 sm:flex-row xl:flex-col 2xl:flex-row"><div className="relative size-44 shrink-0 rounded-full" style={{ background: `conic-gradient(${gradient})` }}><div className="absolute inset-6 grid place-items-center rounded-full bg-card text-center"><div><p className="text-xl font-semibold">{total}</p><p className="text-xs text-muted-foreground">opportunities</p></div></div></div><div className="w-full space-y-3">{counts.map((item) => <div key={item.channel} className="flex items-center gap-2"><i className="size-2.5 rounded-full" style={{ background: channelColors[item.channel] }} /><span className="min-w-0 flex-1 truncate text-xs">{channelLabels[item.channel]}</span><span className="text-xs font-medium">{item.count}</span></div>)}</div></div>;
 }
 
 function ConversionFunnel({ current, previous }: { current: Array<{ label: string; count: number }>; previous: number[] }) {
   const base = current[0]?.count ?? 0;
-  if (!base) return <EmptyState>No opportunities entered the CRM in this period.</EmptyState>;
+  if (!base) return <EmptyState compact icon={Funnel} title="No opportunities entered the CRM in this period." />;
   return <div className="space-y-4">{current.map((item, index) => { const width = Math.max(item.count ? 8 : 0, (item.count / base) * 100); return <div key={item.label}><div className="mb-1.5 flex items-end justify-between gap-3"><div><p className="text-xs font-medium">{item.label}</p><p className="mt-0.5 text-xs text-muted-foreground">{index === 0 ? "100%" : `${((item.count / base) * 100).toFixed(1)}% of opportunities`}</p></div><div className="text-right"><p className="text-sm font-semibold">{item.count}</p><Trend current={item.count} previous={previous[index] ?? 0} /></div></div><div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${width}%` }} /></div></div>; })}</div>;
 }
 
 function PipelineBreakdown({ rows, currency }: { rows: Array<{ stage: string; count: number; value: number }>; currency: string }) {
-  if (!rows.some((row) => row.count)) return <EmptyState>No pipeline records in this period.</EmptyState>;
+  if (!rows.some((row) => row.count)) return <EmptyState compact icon={Funnel} title="No pipeline records in this period." />;
   return <div className="space-y-1">{rows.map((row) => <div key={row.stage} className="flex items-center justify-between border-b py-2.5 last:border-0"><span className="text-sm">{stageLabels[row.stage] ?? row.stage}<small className="ml-2 text-muted-foreground">{row.count}</small></span><span className="font-mono text-sm">{money(row.value, currency)}</span></div>)}</div>;
 }
 
 function TopProducts({ rows }: { rows: Array<{ sku: string; name: string; current: number; previous: number }> }) {
-  if (!rows.length) return <EmptyState>No products were included in catalogs during this period.</EmptyState>;
+  if (!rows.length) return <EmptyState compact icon={Package} title="No products were included in catalogs during this period." />;
   return <div className="crm-table-frame overflow-x-auto"><table className="crm-table w-full min-w-[520px]"><thead><tr><th>Product</th><th className="text-right">Catalogs</th><th className="text-right">Change</th></tr></thead><tbody>{rows.map((product, index) => <tr key={product.sku}><td><div className="flex items-center gap-3"><span className="grid size-7 place-items-center rounded-md bg-muted text-xs font-semibold">{index + 1}</span><div><p className="text-sm font-medium">{product.name}</p><p className="text-xs text-muted-foreground">{product.sku}</p></div></div></td><td className="text-right text-sm">{product.current}</td><td className="text-right"><Trend current={product.current} previous={product.previous} /></td></tr>)}</tbody></table></div>;
 }
 

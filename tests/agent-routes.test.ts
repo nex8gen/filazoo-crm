@@ -11,6 +11,7 @@ import * as i18n from "../lib/i18n.ts";
 import * as research from "../lib/ai/customer-research.ts";
 import * as companyChat from "../lib/ai/company-chat.ts";
 import * as imageInput from "../lib/ai/image-input.ts";
+import * as crmTools from "../lib/ai/crm-tools.ts";
 
 const require = createRequire(import.meta.url);
 // Run the actual route handlers with isolated auth/provider/database boundaries.
@@ -18,7 +19,7 @@ const require = createRequire(import.meta.url);
 function route(file: string, dependencies: Record<string, unknown>, env: Record<string, string> = {}, method: "POST" | "GET" = "POST") {
   const exports: { POST?: (request: Request, context?: { params: Promise<{ id: string }> }) => Promise<Response>; GET?: (request: Request) => Promise<Response> } = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => dependencies[name] ?? (name === "@/lib/i18n" ? i18n : name === "@/lib/ai/customer-research" ? research : name === "@/lib/ai/image-input" ? imageInput : require(name)), Response, Request, URL, AbortSignal, Date, Error, crypto, console, process: { env } });
+  vm.runInNewContext(code, { exports, require: (name: string) => dependencies[name] ?? (name === "@/lib/ai/crm-tools" ? crmTools : name === "@/lib/ai/crm-records" ? {} : name === "@/lib/i18n" ? i18n : name === "@/lib/ai/customer-research" ? research : name === "@/lib/ai/image-input" ? imageInput : require(name)), Response, Request, URL, AbortSignal, Date, Error, crypto, console, process: { env } });
   return exports[method]!;
 }
 
@@ -144,6 +145,45 @@ test("email lookup failures, invalid requests and repeated reads never save part
     assert.equal(reads, scenario === "limit" ? 2 : scenario === "failure" ? 1 : 0);
     assert.ok(!body.output.includes("FILAZOO_"));
     assert.ok(!body.output.includes("Private mailbox detail"));
+  }
+});
+
+test("CRM lookups feed verified IDs back to planning before new actions enter approval", async () => {
+  let generated = 0;
+  let prepared = 0;
+  let read = 0;
+  const proposal = { type: "crm_action", operation: { op: "schedule_followup", companyId: id, dueAt: "2026-10-28T09:00:00+08:00" } };
+  const post = route("../app/api/ai/assistant/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant, "@/lib/ai/assistant-provider-error": providerError,
+    "@/lib/ai/gemini": { generateGeminiText: async ({ prompt }: { prompt: string }) => {
+      generated++;
+      if (generated === 1) return 'FILAZOO_CRM_READ_JSON: {"resource":"companies","query":"Acme"}';
+      assert.match(prompt, /CRM_READ_RESULTS/); assert.match(prompt, /Verified Acme/);
+      return `Ready for review.\nFILAZOO_ACTIONS_JSON: ${JSON.stringify([proposal])}`;
+    } }, "@/lib/ai/gateway": {}, "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
+    "@/lib/ai/crm-records": { readCrmRecords: async (actor: { id: string }, lookup: crmTools.CrmRead) => { read++; assert.equal(actor.id, viewer.id); assert.equal(lookup.resource, "companies"); assert.equal(prepared, 0); return { records: [{ id, name: "Verified Acme" }], coverage: { included: 1 } }; } },
+    "@/lib/ai/agent-execution": { prepareAgentActions: async (actions: unknown) => { prepared++; assert.equal(JSON.stringify(actions), JSON.stringify([proposal])); return []; } },
+  }, { GEMINI_API_KEY: "synthetic" });
+  const response = await post(request({ mode: "work", pathname: "/companies", pageLabel: "Companies", pageText: "", messages: [{ role: "user", content: "Schedule Acme follow-up tomorrow at 9am" }] }));
+  assert.equal(response.status, 200); assert.equal(read, 1); assert.equal(prepared, 1); assert.equal(generated, 2);
+  assert.ok(!(await response.json()).output.includes("FILAZOO_"));
+});
+
+test("CRM read failures and read budgets never create partial mutations or run in Chat mode", async () => {
+  for (const scenario of ["failure", "budget", "analyze"]) {
+    let reads = 0;
+    let preparations = 0;
+    const post = route("../app/api/ai/assistant/route.ts", {
+      "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant, "@/lib/ai/assistant-provider-error": providerError,
+      "@/lib/ai/gemini": { generateGeminiText: async () => 'FILAZOO_CRM_READ_JSON: {"resource":"products"}' }, "@/lib/ai/gateway": {},
+      "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
+      "@/lib/ai/crm-records": { readCrmRecords: async () => { reads++; if (scenario === "failure") throw new Error("Private connection error"); return { records: [] }; } },
+      "@/lib/ai/agent-execution": { prepareAgentActions: async () => { preparations++; return []; } },
+    }, { GEMINI_API_KEY: "synthetic" });
+    const response = await post(request({ mode: scenario === "analyze" ? "analyze" : "work", pathname: "/catalogs", pageLabel: "Products", pageText: "", messages: [{ role: "user", content: "Find PLA" }] }));
+    const body = await response.json();
+    assert.deepEqual(body.actions, []); assert.equal(preparations, 0); assert.equal(reads, scenario === "budget" ? 4 : scenario === "failure" ? 1 : 0);
+    assert.ok(!body.output.includes("Private connection error")); assert.ok(!body.output.includes("FILAZOO_"));
   }
 });
 

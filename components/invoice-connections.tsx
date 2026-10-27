@@ -1,4 +1,6 @@
 "use client";
+import { EmptyState } from "@/components/data-state";
+import { PackageSearch } from "lucide-react";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import Link from "next/link";
 import { Check } from "lucide-react";
@@ -599,10 +601,7 @@ export function InvoiceConnections({
           );
         })}
         {!products.length && !loading ? (
-          <p className="p-3 text-sm text-muted-foreground">
-            No active products match this currency and search. You can add an
-            agreed custom line below.
-          </p>
+          <EmptyState compact icon={PackageSearch} title="No products found" description="No active products match this currency and search. You can add an agreed custom line below." className="border-0 bg-transparent" />
         ) : null}
       </div>
       <div className="flex flex-wrap items-center gap-2 text-xs">

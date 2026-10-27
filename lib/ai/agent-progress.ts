@@ -1,4 +1,5 @@
 import type { PreparedAgentAction } from "./agent-actions.ts";
+import { crmOperationLabels } from "./crm-tools.ts";
 
 export type AgentWorkArea = "invoice" | "email" | "message" | "company" | "product" | "flow" | "workspace";
 export type AgentWorkProgress = { area: AgentWorkArea; label: string; detail: string; relatedAreas?: AgentWorkArea[] };
@@ -33,6 +34,7 @@ export function requestedWorkProgress(request: string, page: string): AgentWorkP
 }
 
 export function actionWorkProgress(action: PreparedAgentAction): AgentWorkProgress {
+  if (action.type === "crm_action") return { area: "workspace", label: `${crmOperationLabels[action.operation.op]}…`, detail: action.target };
   if (action.type === "create_flow") return { area: "flow", label: "Creating automation flow…", detail: action.flow.name };
   if (action.type === "create_company") return { area: "company", label: "Creating company…", detail: action.company.name };
   if (action.type === "update_company" || action.type === "add_company_note") return { area: "company", label: action.type === "update_company" ? "Updating customer profile…" : "Adding customer note…", detail: action.companyName };

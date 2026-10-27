@@ -1,5 +1,7 @@
 "use client";
 
+import { History } from "lucide-react";
+import { EmptyState } from "@/components/data-state";
 import Link from "next/link";
 import { useActionState, useRef, useState } from "react";
 import { ArrowUp, ChevronDown, Link2, LockKeyhole, Smile } from "lucide-react";
@@ -92,7 +94,7 @@ export function CompanyTimeline({ companyId, activity, canWrite, viewerName }: {
     {state?.success && <p role="status" className="mt-2 text-xs text-muted-foreground">{state.success}</p>}
     <div className="pt-8">
       {[...groups].map(([day, items]) => <div key={day} className="mb-8 last:mb-0"><div className="mb-5 flex items-center gap-3"><h3 className="shrink-0 text-xs font-medium text-muted-foreground">{day === today ? "Today" : day === yesterday ? "Yesterday" : day}</h3><div aria-hidden="true" className="h-px flex-1 bg-border/60" /></div><ol className="relative before:absolute before:bottom-4 before:left-4 before:top-2 before:w-px before:bg-border/70">{items.map((item) => <TimelineEntry key={item.id} item={item} />)}</ol></div>)}
-      {!activity.length && <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">No activity yet. Updates will appear here.</p>}
+      {!activity.length && <EmptyState compact icon={History} title="No activity yet" description="Updates will appear here." />}
     </div>
     {activity.length > visibleCount && <button type="button" onClick={() => setVisibleCount((count) => count + 50)} className="mt-6 w-full rounded-lg border py-2.5 text-xs font-medium transition-colors hover:bg-muted">Load older activity</button>}
     <p className="mt-6 text-[11px] text-muted-foreground/80">Times shown in China Standard Time · UTC+8</p>
