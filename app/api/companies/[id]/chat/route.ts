@@ -5,6 +5,7 @@ import { buildCompanyChatContext, buildCompanyChatPrompt, citedCompanySources, c
 import { generateGeminiText } from "@/lib/ai/gemini";
 import { generateGatewayText, isGeminiRegionError } from "@/lib/ai/gateway";
 import { researchCustomer } from "@/lib/ai/customer-research";
+import { ChatBodyTooLargeError, collectChatImages, readChatRequestBody } from "@/lib/ai/image-input";
 
 export const maxDuration = 120;
 const headers = { "Cache-Control": "private, no-store" };
@@ -18,8 +19,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!viewer) return Response.json({ error: "Sign in with an active workspace account." }, { status: 401, headers });
   const { id } = await params;
   if (!z.string().uuid().safeParse(id).success) return Response.json({ error: "Invalid customer." }, { status: 400, headers });
-  if (Number(request.headers.get("content-length")) > 140_000) return Response.json({ error: "Start a new chat to continue." }, { status: 413, headers });
-  const parsed = companyChatSchema.safeParse(await request.json().catch(() => null));
+  let body: unknown;
+  try { body = await readChatRequestBody(request); }
+  catch (error) {
+    return Response.json({ error: error instanceof ChatBodyTooLargeError ? error.message : "Unable to read this request." }, { status: error instanceof ChatBodyTooLargeError ? 413 : 400, headers });
+  }
+  const parsed = companyChatSchema.safeParse(body);
   if (!parsed.success) return Response.json({ error: parsed.error.issues[0]?.message || "Invalid chat request." }, { status: 400, headers });
 
   let details;
@@ -37,12 +42,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const options = {
     systemInstruction: companyChatInstruction(new Date().toISOString(), parsed.data.language, parsed.data.webSearch),
     prompt: buildCompanyChatPrompt(context, parsed.data.messages),
+    images: collectChatImages(parsed.data.messages),
     maxOutputTokens: parsed.data.webSearch ? 2_600 : 1_600,
     fetcher: ((input, init) => fetch(input, {
       ...init, signal: AbortSignal.any([request.signal, AbortSignal.timeout(45_000)]),
     })) as typeof fetch,
   };
-  const gateway = () => generateGatewayText({ ...options, token: gatewayToken!, model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim() });
+  const gateway = () => generateGatewayText({ ...options, token: gatewayToken!, model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim(), visionModel: process.env.AI_GATEWAY_VISION_MODEL?.trim() });
   try {
     const research = parsed.data.webSearch ? await researchCustomer({
       identity: { name: details.company.name, website: details.company.website, email: details.company.email, contact: details.company.contact, country: details.company.country, city: details.company.city },

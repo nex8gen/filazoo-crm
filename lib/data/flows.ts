@@ -1,8 +1,9 @@
 import "server-only";
 
+import { requireWorkspaceMember } from "../auth.ts";
 import { validateFlowResources } from "./flow-runtime.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
-import { type AutomationFlow, type FlowInput, type FlowStep, type FlowStepType, type JsonConfig, type TriggerType, type FlowStatus } from "../flows.ts";
+import { flowInputSchema, type FlowBulkAction, type FlowBulkResult, type AutomationFlow, type FlowInput, type FlowStep, type FlowStepType, type JsonConfig, type TriggerType, type FlowStatus } from "../flows.ts";
 
 type FlowRow = {
   id: string;
@@ -44,22 +45,48 @@ async function insertFlow(userId: string, input: FlowInput) {
   return data as string;
 }
 
+// Flows belong to this CRM workspace. Ownership supplies the mailbox/runtime
+// identity; owners and workspace administrators can manage the definition.
+export async function listWorkspaceFlows(): Promise<AutomationFlow[]> {
+  await requireWorkspaceMember();
+  return loadFlows();
+}
+
 export async function listFlows(userId: string): Promise<AutomationFlow[]> {
+  return loadFlows(userId);
+}
+
+async function loadFlowSteps(ids: string[]): Promise<StepRow[]> {
   const admin = createSupabaseAdmin();
-  const { data: rows, error } = await admin.from("flows")
+  const steps: StepRow[] = [];
+  // A bulk selection can exceed the Data API's per-request row limit. Never
+  // save a partial definition back over a flow's existing steps.
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await admin.from("flow_steps").select("id,flow_id,position,type,config")
+      .in("flow_id", ids).order("flow_id").order("position").range(offset, offset + 999);
+    if (error) throw new Error(`Unable to load flow steps: ${error.message}`);
+    steps.push(...((data ?? []) as StepRow[]));
+    if (!data || data.length < 1000) return steps;
+  }
+}
+
+async function loadFlows(userId?: string, flowIds?: string[]): Promise<AutomationFlow[]> {
+  const admin = createSupabaseAdmin();
+  let query = admin.from("flows")
     .select("id,name,trigger_type,trigger_config,status,created_by,created_at,updated_at")
-    .eq("user_id", userId)
     .order("updated_at", { ascending: false });
+  if (userId) query = query.eq("user_id", userId);
+  if (flowIds) query = query.in("id", flowIds);
+  const { data: rows, error } = await query;
   if (error) throw new Error(`Unable to load flows: ${error.message}`);
   const ids = (rows ?? []).map((row) => row.id);
   if (!ids.length) return [];
-  const [{ data: steps, error: stepError }, { data: runs, error: runError }] = await Promise.all([
-    admin.from("flow_steps").select("id,flow_id,position,type,config").in("flow_id", ids).order("position"),
+  const [steps, { data: runs, error: runError }] = await Promise.all([
+    loadFlowSteps(ids),
     admin.from("flow_runs").select("flow_id,status").in("flow_id", ids),
   ]);
-  if (stepError) throw new Error(`Unable to load flow steps: ${stepError.message}`);
   if (runError) throw new Error(`Unable to load flow runs: ${runError.message}`);
-  return mapFlows((rows ?? []) as FlowRow[], (steps ?? []) as StepRow[], (runs ?? []) as RunRow[]);
+  return mapFlows((rows ?? []) as FlowRow[], steps, (runs ?? []) as RunRow[]);
 }
 
 export async function createFlow(userId: string, input: FlowInput) {
@@ -67,17 +94,66 @@ export async function createFlow(userId: string, input: FlowInput) {
   return (await listFlows(userId)).find((flow) => flow.id === id)!;
 }
 
+async function requireFlowManager(userId: string) {
+  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
+  if (viewer.id !== userId) throw new Error("Access denied.");
+  return viewer;
+}
+
 export async function updateFlow(userId: string, flowId: string, input: FlowInput) {
-  if (input.status === "live") await validateFlowResources(userId, input);
-  const { error } = await createSupabaseAdmin().rpc("save_automation_flow", { p_user_id: userId, p_flow_id: flowId, p_input: input });
+  const viewer = await requireFlowManager(userId);
+  const admin = createSupabaseAdmin();
+  let query = admin.from("flows").select("user_id").eq("id", flowId);
+  if (viewer.role !== "admin") query = query.eq("user_id", viewer.id);
+  const { data: flow, error: lookupError } = await query.maybeSingle();
+  if (lookupError) throw new Error(`Unable to load flow: ${lookupError.message}`);
+  if (!flow) throw new Error("Flow not found.");
+  // Authorize the actor above, then save using the existing owner identity so
+  // admin edits retain the original sender, notifications, and runtime scope.
+  const ownerId = flow.user_id as string;
+  if (input.status === "live") await validateFlowResources(ownerId, input);
+  const { error } = await admin.rpc("save_automation_flow", { p_user_id: ownerId, p_flow_id: flowId, p_input: input });
   if (error) throw new Error(error.message);
-  return (await listFlows(userId)).find((flow) => flow.id === flowId)!;
+  return (await loadFlows(ownerId, [flowId]))[0]!;
 }
 
 export async function deleteFlow(userId: string, flowId: string) {
-  const { data, error } = await createSupabaseAdmin().from("flows").delete().eq("id", flowId).eq("user_id", userId).select("id").maybeSingle();
+  const viewer = await requireFlowManager(userId);
+  let query = createSupabaseAdmin().from("flows").delete().eq("id", flowId);
+  if (viewer.role !== "admin") query = query.eq("user_id", viewer.id);
+  const { data, error } = await query.select("id").maybeSingle();
   if (error) throw new Error(`Unable to delete flow: ${error.message}`);
   if (!data) throw new Error("Flow not found.");
+}
+
+export async function bulkUpdateFlows(userId: string, ids: string[], action: FlowBulkAction): Promise<FlowBulkResult[]> {
+  const viewer = await requireFlowManager(userId);
+  const uniqueIds = [...new Set(ids)];
+  // Use current saved definitions, rather than overwriting newer edits with
+  // definitions from the browser's list. Each write rechecks permissions.
+  const flows = action === "delete" ? [] : await loadFlows(viewer.role === "admin" ? undefined : viewer.id, uniqueIds);
+  const byId = new Map(flows.map((flow) => [flow.id, flow]));
+  const results: FlowBulkResult[] = [];
+  // Bound concurrency so large selections finish without flooding the database.
+  for (let offset = 0; offset < uniqueIds.length; offset += 5) {
+    const batch = await Promise.all(uniqueIds.slice(offset, offset + 5).map(async (id): Promise<FlowBulkResult> => {
+      try {
+        if (action === "delete") {
+          await deleteFlow(userId, id);
+          return { id, ok: true };
+        }
+        const flow = byId.get(id);
+        if (!flow) throw new Error("Flow not found.");
+        const parsed = flowInputSchema.safeParse({ ...flow, status: action });
+        if (!parsed.success) throw new Error(parsed.error.issues[0]?.message || "Invalid flow.");
+        return { id, ok: true, flow: await updateFlow(userId, id, parsed.data) };
+      } catch (error) {
+        return { id, ok: false, error: error instanceof Error ? error.message : "Unable to update flow." };
+      }
+    }));
+    results.push(...batch);
+  }
+  return results;
 }
 
 export type FlowMemberOption = { id: string; label: string };

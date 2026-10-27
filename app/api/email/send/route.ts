@@ -1,5 +1,5 @@
 import { requireWorkspaceMember } from "@/lib/auth";
-import { getEffectiveMailbox, mailboxHasSmtp } from "@/lib/data/mailboxes";
+import { getViewerMailbox, mailboxHasSmtp } from "@/lib/data/mailboxes";
 import { sendMailboxEmail } from "@/lib/mailer";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { referenceHeaderIds, threadKeyForEmail } from "@/lib/email-threading";
@@ -14,6 +14,7 @@ const attachmentSchema = z.object({
   cid: z.string().trim().max(255).optional(),
 });
 const sendSchema = z.object({
+  mailboxId: z.string().trim().min(1).max(200).optional(),
   to: z.string().trim().toLowerCase().email(),
   subject: z.string().trim().min(1).max(300),
   text: z.string().max(1_000_000).default(""),
@@ -52,7 +53,7 @@ export async function POST(request: Request) {
     if (decodedAttachments.some((attachment) => attachment.content.length > 7_500_000)) {
       return Response.json({ ok: false, error: "Each attachment must be 7.5 MB or smaller." }, { status: 400 });
     }
-    const mailbox = await getEffectiveMailbox(viewer.id).catch(() => null);
+    const mailbox = await getViewerMailbox(viewer.id, parsed.data.mailboxId);
     if (!mailboxHasSmtp(mailbox) || !mailbox) {
       return Response.json({ ok: false, error: "No valid mailbox is configured. Add SMTP details in Settings first." }, { status: 400 });
     }
@@ -130,6 +131,7 @@ export async function POST(request: Request) {
         id: saved?.id ? `sent-${saved.id}` : `sent-${sendResult.messageId || Date.now()}`,
         from: mailbox.email,
         direction: "outbound",
+        mailboxId: mailbox.id,
         status: "Sent",
         subject,
         contact: to,

@@ -47,6 +47,7 @@ import type { EmailSummary } from "@/lib/ai/email-summary";
 import { emailReplyPlanSchema } from "@/lib/ai/email-reply";
 import { prepareReplyInvoice } from "@/lib/email-reply-client";
 import { filterCompanyEmails, type CompanyEmailScope } from "@/lib/company-email";
+import type { MailboxOption } from "@/lib/mailbox-utils";
 
 const InvoiceCreateDialog = dynamic(()=>import("@/components/invoice-create-dialog").then(module=>module.InvoiceCreateDialog));
 
@@ -57,6 +58,7 @@ export type EmailWorkspaceItem = {
   uid?: number;
   uidValidity?: number;
   mailboxKey?: string;
+  mailboxId?: string | null;
   bodyLoaded?: boolean;
   contactName?: string;
   source?: "mailbox" | "shopify" | "crm";
@@ -249,15 +251,24 @@ function emailMatchesFolder(
   return folder === state;
 }
 
+function SenderSelect({ mailboxes, value, onChange, disabled, label }: { mailboxes: MailboxOption[]; value: string; onChange: (id: string) => void; disabled: boolean; label: string }) {
+  return <Select value={value} onValueChange={(selectedValue) => { if (selectedValue === null) return; onChange(selectedValue); }} disabled={disabled || !mailboxes.length}><SelectTrigger aria-label={label} size="sm" className="min-w-0 max-w-full"><SelectValue /></SelectTrigger><SelectContent>
+    {!value ? <SelectItem value="">No mailbox selected</SelectItem> : null}
+    {mailboxes.map((mailbox) => <SelectItem key={mailbox.id} value={mailbox.id} disabled={!mailbox.sendConfigured}>{mailbox.email} · {mailbox.type === "personal" ? "Personal" : "Workspace"}{!mailbox.sendConfigured ? " (sending unavailable)" : ""}</SelectItem>)}
+  </SelectContent></Select>;
+}
+
 export function EmailInboxWorkspace({
   initialEmails,
   initialThreadId,
   initialComposeTo,
-  sendConfigured,
   inboxConfigured,
   inboxError,
   aiConfigured,
   defaultMailboxEmail,
+  mailboxes,
+  selectedMailboxId,
+  defaultSenderId,
   initialAutomation,
   products,
   catalogs,
@@ -276,6 +287,9 @@ export function EmailInboxWorkspace({
   inboxError: string | null;
   aiConfigured: boolean;
   defaultMailboxEmail: string | null;
+  mailboxes: MailboxOption[];
+  selectedMailboxId: string | null;
+  defaultSenderId: string | null;
   dataMode: "demo" | "live";
   initialAutomation: Automation;
   products: Product[];
@@ -302,6 +316,10 @@ export function EmailInboxWorkspace({
   const [categoryFilter, setCategoryFilter] = useState<Category | null>(null);
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [draft, setDraft] = useState("");
+  const [replySenderId, setReplySenderId] = useState(defaultSenderId ?? "");
+  const [composeSenderId, setComposeSenderId] = useState(defaultSenderId ?? "");
+  const replySender = mailboxes.find((mailbox) => mailbox.id === replySenderId);
+  const composeSender = mailboxes.find((mailbox) => mailbox.id === composeSenderId);
   const [composeOpen, setComposeOpen] = useState(Boolean(initialComposeTo));
   const [composeTo, setComposeTo] = useState(initialComposeTo || "");
   const [composeSubject, setComposeSubject] = useState("");
@@ -438,6 +456,7 @@ export function EmailInboxWorkspace({
     const revision = stateRevision.current;
     try {
       const params = new URLSearchParams();
+      if (selectedMailboxId) params.set("mailboxId", selectedMailboxId);
       if (manual) params.set("scope", "history");
       if (companyScope) params.set("companyId", companyScope.id);
       const response = await fetch(`/api/email/inbox?${params}`, { cache: "no-store" });
@@ -458,7 +477,7 @@ export function EmailInboxWorkspace({
       syncInProgress.current = false;
       setSyncing(false);
     }
-  }, [applyMailboxSnapshot, companyScope, inboxConfigured]);
+  }, [applyMailboxSnapshot, companyScope, inboxConfigured, selectedMailboxId]);
 
   useEffect(() => {
     if (!inboxConfigured || !preferences.emailSyncSeconds) return;
@@ -1040,8 +1059,8 @@ export function EmailInboxWorkspace({
       return;
     }
 
-    if (!sendConfigured || !defaultMailboxEmail) {
-      setNotice("Add a default mailbox in Settings before sending from the CRM.");
+    if (!replySender?.sendConfigured) {
+      setNotice("Choose an active sender with SMTP configured, or update your mailbox in Settings.");
       return;
     }
 
@@ -1056,6 +1075,7 @@ export function EmailInboxWorkspace({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          mailboxId: replySenderId,
           to: recipient,
           subject: `Re: ${selected.subject.replace(/^Re:\s*/i, "")}`,
           text: withEmailSignature(trimmedDraft, preferences.emailSignature),
@@ -1084,13 +1104,13 @@ export function EmailInboxWorkspace({
         customerProfile: selected.customerProfile,
       };
       stateRevision.current += 1;
-      setEmails((current) => [reply, ...current]);
+      if (reply.mailboxId === selectedMailboxId) setEmails((current) => [reply, ...current]);
       if (session !== replySession.current) return;
       setDraft("");
       setAiDraft("");
       setAiDraftSource("");
       setReplyAttachments([]);
-      setNotice(result.saved ? `Email sent successfully from ${defaultMailboxEmail}.` : "Email sent, but its CRM history could not be saved. Check the recipient's mailbox for the attachment.");
+      setNotice(result.saved ? `Email sent successfully from ${result.sentVia}.` : "Email sent, but its CRM history could not be saved. Check the recipient's mailbox for the attachment.");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "The CRM could not send this email.");
     } finally {
@@ -1130,8 +1150,8 @@ export function EmailInboxWorkspace({
       setComposeError("This message says a catalog is attached. Add the catalog PDF before sending.");
       return;
     }
-    if (!sendConfigured || !defaultMailboxEmail) {
-      setComposeError("Add a default mailbox in Settings before sending from the CRM.");
+    if (!composeSender?.sendConfigured) {
+      setComposeError("Choose an active sender with SMTP configured, or update your mailbox in Settings.");
       return;
     }
     if (!to || !subject || !text) {
@@ -1145,25 +1165,27 @@ export function EmailInboxWorkspace({
       const response = await fetch("/api/email/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to, subject, text: withEmailSignature(text, preferences.emailSignature), ...(composeThread?.to === to ? { threadId: composeThread.threadId, inReplyTo: composeThread.inReplyTo, references: composeThread.references } : {}), attachments: composeAttachments.map(({ filename, content, contentType }) => ({ filename, content, contentType })) }),
+        body: JSON.stringify({ mailboxId: composeSenderId, to, subject, text: withEmailSignature(text, preferences.emailSignature), ...(composeThread?.to === to ? { threadId: composeThread.threadId, inReplyTo: composeThread.inReplyTo, references: composeThread.references } : {}), attachments: composeAttachments.map(({ filename, content, contentType }) => ({ filename, content, contentType })) }),
       });
       const result = await response.json().catch(() => ({ ok: false, error: "Unable to send the email." }));
       if (!response.ok || !result.ok) throw new Error(result.error || "Unable to send the email.");
 
       const sentEmail: EmailWorkspaceItem = result.email;
       stateRevision.current += 1;
-      setEmails((current) => [sentEmail, ...current]);
-      setFolderStates((current) => ({ ...current, [sentEmail.id]: "inbox" }));
-      setSelectedId(sentEmail.id);
-      setFolder("sent");
-      setMobileReading(true);
+      if (sentEmail.mailboxId === selectedMailboxId) {
+        setEmails((current) => [sentEmail, ...current]);
+        setFolderStates((current) => ({ ...current, [sentEmail.id]: "inbox" }));
+        setSelectedId(sentEmail.id);
+        setFolder("sent");
+        setMobileReading(true);
+      }
       setComposeTo("");
       setComposeSubject("");
       setComposeBody("");
       setComposeThread(null);
       setComposeAttachments([]);
       setComposeOpen(false);
-      setNotice(result.saved ? `Email sent successfully from ${defaultMailboxEmail}.` : "Email sent, but its CRM history could not be saved. Check the recipient's mailbox for the attachment.");
+      setNotice(result.saved ? `Email sent successfully from ${result.sentVia}.` : "Email sent, but its CRM history could not be saved. Check the recipient's mailbox for the attachment.");
     } catch (error) {
       setComposeError(error instanceof Error ? error.message : "The CRM could not send this email.");
     } finally {
@@ -1187,6 +1209,14 @@ export function EmailInboxWorkspace({
   return (
     <div data-ai-email-id={reading ? selected?.id : undefined} data-ai-company-id={reading ? selected?.companyId || undefined : companyScope?.id} className={`email-workspace flex min-w-0 flex-col overflow-hidden bg-background ${companyScope ? "company-email-workspace h-[clamp(520px,calc(100dvh-14rem),900px)] rounded-xl border" : "h-[calc(100dvh-3rem)]"}`}>
       {companyScope ? <h3 className="sr-only">Customer mailbox</h3> : <h1 className="sr-only">Email</h1>}
+      {!companyScope && mailboxes.length ? <nav aria-label="Email accounts" className="flex shrink-0 gap-1 overflow-x-auto border-b px-3 pt-2">
+        {mailboxes.map((mailbox) => <Link key={mailbox.id} href={`/emails?mailbox=${encodeURIComponent(mailbox.id)}`} prefetch={false} aria-current={selectedMailboxId === mailbox.id ? "page" : undefined} onClick={(event) => {
+          if (mailbox.id === selectedMailboxId) { event.preventDefault(); return; }
+          if (unsentDraft.current || sending || composeSending || attachmentBusy) { event.preventDefault(); setNotice("Finish or clear your draft before switching mailboxes."); }
+        }} className={`flex max-w-72 shrink-0 flex-col gap-0.5 border-b-2 px-3 py-2 text-xs ${selectedMailboxId === mailbox.id ? "border-primary bg-primary/5 text-primary" : "border-transparent text-muted-foreground hover:bg-muted"}`}>
+          <span className="font-semibold">{mailbox.type === "personal" ? "Personal email" : "Workspace email"}</span><span className="truncate">{mailbox.email}{!mailbox.inboxConfigured ? " · Sync unavailable" : ""}</span>
+        </Link>)}
+      </nav> : null}
 
       <div className="mail-layout" data-reading={reading} data-details={detailsOpen}>
         {!companyScope ? <ColumnResizeHandle label="Email folders width" variable="--mail-folder-width" container=".mail-layout" panel=".mail-folders" min={160} max={360} className="mail-folder-resize" /> : null}
@@ -1207,7 +1237,7 @@ export function EmailInboxWorkspace({
   <div className="mail-search" role="search"><Search className="size-4 shrink-0 text-muted-foreground" /><input aria-label="Search customer emails" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search conversations" />{search ? <button type="button" aria-label="Clear search" onClick={() => setSearch("")}><X className="size-3.5" /></button> : null}</div>
   <div className="flex gap-1" aria-label="Customer email filter">{([{ id: "all", label: "All" }, { id: "unread", label: "Unread" }] as const).map((item) => <button key={item.id} type="button" aria-pressed={folder === item.id} onClick={() => changeFolder(item.id)} className={"rounded-md px-3 py-1 text-xs font-medium " + (folder === item.id ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/50")}>{item.label}</button>)}</div>
 </div> : <>
-          <div className="border-b p-3"><label className="mail-folder-select mb-3 items-center gap-2 text-xs">Folder<Select value={folder} onValueChange={(value) => { if (value === null) return; return changeFolder(value as Folder); }}><SelectTrigger aria-label="Email folder" className="min-w-0 flex-1 rounded-md border bg-background p-2"><SelectValue /></SelectTrigger><SelectContent>{folderItems.map((item) => <SelectItem key={item.id} value={item.id}>{item.label} ({folderCounts[item.id]})</SelectItem>)}</SelectContent></Select></label>
+          <div className="border-b p-3"><label className="mail-folder-select mb-3 items-center gap-2 text-xs">Folder<Select value={folder} onValueChange={(value) => { if (value === null) return; return changeFolder(value as Folder); }}><SelectTrigger aria-label="Email folder" size="sm" className="min-w-0 flex-1"><SelectValue /></SelectTrigger><SelectContent>{folderItems.map((item) => <SelectItem key={item.id} value={item.id}>{item.label} ({folderCounts[item.id]})</SelectItem>)}</SelectContent></Select></label>
             <div className="mb-2 flex items-center justify-between px-1"><div><h2 className="text-sm font-semibold">{folderItems.find((item) => item.id === folder)?.label}</h2>{categoryFilter ? <p className="text-xs text-muted-foreground">{categoryFilter}</p> : null}</div><DropdownMenu><DropdownMenuTrigger aria-label="Filter email by category" className={`rounded-md p-2 outline-none hover:bg-muted ${categoryFilter ? "text-primary" : "text-muted-foreground"}`}><Filter className="size-4" /></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-52"><DropdownMenuGroup><DropdownMenuLabel>Filter by category</DropdownMenuLabel></DropdownMenuGroup><DropdownMenuItem onClick={() => setCategoryFilter(null)}>{!categoryFilter ? <Check /> : <span className="size-4" />}All categories</DropdownMenuItem><DropdownMenuSeparator />{categoryOptions.map((category) => <DropdownMenuItem key={category} onClick={() => setCategoryFilter(category)}>{categoryFilter === category ? <Check /> : <span className="size-4" />}{category}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu></div>
             <div className="mail-search" role="search" aria-label="Search mailbox"><Search className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" /><input aria-label="Search email" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search customer mail" />{search ? <button type="button" onClick={() => setSearch("")} aria-label="Clear email search" className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"><X className="size-3.5" /></button> : null}</div>
             <div className="mt-2 flex gap-1 overflow-x-auto pb-0.5" aria-label="Filter inbox by message source">{sourceFilters.map((item) => <button key={item.id} type="button" aria-pressed={sourceFilter === item.id} onClick={() => { setSourceFilter(item.id); setSelectedId(""); }} className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors ${sourceFilter === item.id ? "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-500/40 dark:bg-blue-500/10 dark:text-blue-300" : "bg-background text-muted-foreground hover:bg-muted"}`}>{item.label}</button>)}</div>
@@ -1291,7 +1321,7 @@ export function EmailInboxWorkspace({
                 <button type="button" aria-label="Collapse reply" onClick={() => setReplyExpanded(false)} className="rounded p-1 hover:bg-muted"><X className="size-4" /></button>
               </div></div>
               <div className="mail-reply-editor mx-auto max-w-3xl">
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-2.5 py-2 text-xs text-muted-foreground"><span>From <span className="font-medium text-foreground">{defaultMailboxEmail || "No mailbox selected"}</span></span><span>To <span className="font-medium text-foreground">{replyRecipient}</span></span></div>
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-2.5 py-2 text-xs text-muted-foreground"><label className="flex min-w-0 items-center gap-2">From <SenderSelect mailboxes={mailboxes} value={replySenderId} onChange={setReplySenderId} disabled={sending} label="Reply sender email" /></label><span>To <span className="font-medium text-foreground">{replyRecipient}</span></span></div>
                 <div className="mail-reply-input overflow-hidden rounded-xl border bg-background focus-within:border-primary/50">
                   <textarea ref={replyInput} readOnly={aiReplyBusy} aria-busy={aiReplyBusy} aria-label="Reply message" value={draft} onChange={(event) => updateDraft(event.target.value)} placeholder={`Write in Chinese or English to reply to ${replyRecipient}…`} className="min-h-24 w-full resize-none bg-transparent p-3.5 text-sm leading-6 outline-none" />
                   {preferences.emailSignature ? <div className="mb-3 max-h-28 overflow-y-auto rounded-md border bg-muted/20 p-3 text-xs"><p className="mb-1 text-muted-foreground">Your signature will be appended when sending.</p><p data-no-translate className="whitespace-pre-wrap break-words">{preferences.emailSignature}</p></div> : null}
@@ -1326,7 +1356,7 @@ export function EmailInboxWorkspace({
             />
             <section className="px-6 pb-6" aria-labelledby="contact-category">
               <h3 id="contact-category" className="text-xs font-medium text-muted-foreground">Category</h3>
-              <Select value={selectedCategory || ""} onValueChange={(value) => { if (value === null) return; return void setCategory(value as Category); }}><SelectTrigger aria-labelledby="contact-category" className={`mt-2.5 h-11 w-full rounded-lg border px-3 text-sm font-medium ${selectedCategory ? categoryStyles[selectedCategory] : "bg-background"}`}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="" disabled>Choose category</SelectItem>{categoryOptions.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}</SelectContent></Select>
+              <Select value={selectedCategory || ""} onValueChange={(value) => { if (value === null) return; return void setCategory(value as Category); }}><SelectTrigger aria-labelledby="contact-category" className={`mt-2.5 w-full font-medium ${selectedCategory ? categoryStyles[selectedCategory] : "bg-background"}`}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="" disabled>Choose category</SelectItem>{categoryOptions.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}</SelectContent></Select>
             </section>
             <section className="mx-6 rounded-xl border p-4" aria-labelledby="contact-followup">
               <div className="flex items-center justify-between gap-2"><h3 id="contact-followup" className="flex items-center gap-2 text-sm font-semibold"><CalendarClock className="size-4 text-primary" />Next follow-up</h3><span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-1 text-[10px] font-medium text-violet-700 dark:bg-violet-500/10 dark:text-violet-300"><AiIcon className="size-3" />AI managed</span></div>
@@ -1348,11 +1378,11 @@ export function EmailInboxWorkspace({
           <form onSubmit={sendNewEmail}>
             <DialogHeader className="border-b px-5 py-4">
               <DialogTitle>New email</DialogTitle>
-              <DialogDescription>Send a new conversation through {defaultMailboxEmail || "your default mailbox"}.</DialogDescription>
+              <DialogDescription>Send a new conversation through {composeSender?.email || "your selected mailbox"}.</DialogDescription>
             </DialogHeader>
             <div className="space-y-0 px-5 py-2">
-              <label className="grid grid-cols-[64px_1fr] items-center border-b py-2 text-sm"><span className="text-muted-foreground">From</span><span className="truncate font-medium">{defaultMailboxEmail || "No mailbox selected"}</span></label>
-              <label className="grid grid-cols-[64px_1fr] items-center border-b py-2 text-sm"><span className="text-muted-foreground">To</span>{companyScope ? <select required autoFocus value={composeTo} onChange={(event) => setComposeTo(event.target.value)} className="min-w-0 bg-background py-1 outline-none"><option value="">Choose customer contact</option>{companyScope.emails.filter((email) => email.trim()).map((email) => <option key={email} value={email}>{email}</option>)}</select> : <input type="email" required autoFocus value={composeTo} onChange={(event) => setComposeTo(event.target.value)} placeholder="customer@example.com" className="min-w-0 bg-transparent py-1 outline-none placeholder:text-muted-foreground/60" />}</label>
+              <label className="grid grid-cols-[64px_1fr] items-center border-b py-2 text-sm"><span className="text-muted-foreground">From</span><SenderSelect mailboxes={mailboxes} value={composeSenderId} onChange={setComposeSenderId} disabled={composeSending} label="New email sender" /></label>
+              <label className="grid grid-cols-[64px_1fr] items-center border-b py-2 text-sm"><span className="text-muted-foreground">To</span>{companyScope ? <Select required value={composeTo} onValueChange={(selectedValue) => { if (selectedValue === null) return; setComposeTo(selectedValue); }}><SelectTrigger autoFocus aria-label="Recipient" className="w-full min-w-0"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="">Choose customer contact</SelectItem>{companyScope.emails.filter((email) => email.trim()).map((email) => <SelectItem key={email} value={email}>{email}</SelectItem>)}</SelectContent></Select> : <input type="email" required autoFocus value={composeTo} onChange={(event) => setComposeTo(event.target.value)} placeholder="customer@example.com" className="min-w-0 bg-transparent py-1 outline-none placeholder:text-muted-foreground/60" />}</label>
               <label className="grid grid-cols-[64px_1fr] items-center border-b py-2 text-sm"><span className="text-muted-foreground">Subject</span><input required value={composeSubject} onChange={(event) => setComposeSubject(event.target.value)} placeholder="Email subject" className="min-w-0 bg-transparent py-1 outline-none placeholder:text-muted-foreground/60" /></label>
               <textarea required value={composeBody} onChange={(event) => setComposeBody(event.target.value)} placeholder="Write your message…" className="min-h-64 w-full resize-y bg-transparent py-4 text-sm leading-6 outline-none placeholder:text-muted-foreground/60" />
               {preferences.emailSignature ? <div className="mb-3 max-h-28 overflow-y-auto rounded-md border bg-muted/20 p-3 text-xs"><p className="mb-1 text-muted-foreground">Your signature will be appended when sending.</p><p data-no-translate className="whitespace-pre-wrap break-words">{preferences.emailSignature}</p></div> : null}

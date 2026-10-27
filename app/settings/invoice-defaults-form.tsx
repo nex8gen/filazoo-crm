@@ -1,5 +1,7 @@
 "use client";
 
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,7 +33,7 @@ export function InvoiceDefaultsForm({ initial, canManage }: { initial: InvoiceDe
       <div className="space-y-2"><Label htmlFor="sellerName">Seller / legal business name</Label><Input id="sellerName" name="sellerName" defaultValue={initial.seller.sellerName} required maxLength={200} /></div>
       <div className="space-y-2"><Label htmlFor="sellerAddress">Business address</Label><Textarea id="sellerAddress" name="sellerAddress" defaultValue={initial.seller.sellerAddress} maxLength={2000} /></div>
       <div className="space-y-2"><Label htmlFor="sellerTaxId">Tax / registration ID</Label><Input id="sellerTaxId" name="sellerTaxId" defaultValue={initial.seller.sellerTaxId} maxLength={100} /></div>
-      <div className="grid gap-4 sm:grid-cols-3"><div className="space-y-2"><Label htmlFor="invoiceCurrency">Currency</Label><select id="invoiceCurrency" name="currency" defaultValue={initial.defaults.currency} className="h-10 w-full rounded-md border bg-background px-3 text-sm">{invoiceCurrencies.map((currency) => <option key={currency}>{currency}</option>)}</select></div><div className="space-y-2"><Label htmlFor="termsDays">Due after (days)</Label><Input id="termsDays" name="termsDays" type="number" min={0} max={365} step={1} required defaultValue={initial.defaults.termsDays} /></div><div className="space-y-2"><Label htmlFor="taxPercent">Default tax (%)</Label><Input id="taxPercent" name="taxPercent" type="number" min={0} max={100} step="0.01" required defaultValue={initial.defaults.taxBps / 100} /></div></div>
+      <div className="grid gap-4 sm:grid-cols-3"><div className="space-y-2"><Label htmlFor="invoiceCurrency">Currency</Label><Select name="currency" defaultValue={initial.defaults.currency}><SelectTrigger id="invoiceCurrency" className="w-full min-w-0"><SelectValue /></SelectTrigger><SelectContent>{invoiceCurrencies.map((currency) => <SelectItem key={currency} value={currency}>{currency}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label htmlFor="termsDays">Due after (days)</Label><Input id="termsDays" name="termsDays" type="number" min={0} max={365} step={1} required defaultValue={initial.defaults.termsDays} /></div><div className="space-y-2"><Label htmlFor="taxPercent">Default tax (%)</Label><Input id="taxPercent" name="taxPercent" type="number" min={0} max={100} step="0.01" required defaultValue={initial.defaults.taxBps / 100} /></div></div>
       <p className="text-xs leading-5 text-muted-foreground">Zero days means due on the issue date. Tax initializes the first blank line; verify tax on each product line before issuing.</p>
       <div className="space-y-2"><Label htmlFor="paymentInstructions">Payment instructions</Label><Textarea id="paymentInstructions" name="paymentInstructions" defaultValue={initial.seller.paymentInstructions} maxLength={2000} /></div>
       <div className="space-y-2"><Label htmlFor="invoiceNotes">Invoice notes and terms</Label><Textarea id="invoiceNotes" name="notes" defaultValue={initial.seller.notes} maxLength={4000} rows={4} /></div>

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { defaultFlowInput, flowInputSchema } from "../lib/flows.ts";
-import { calculateWaitUntil, simulateFlow, triggerMatches, flowConversationPath, type FlowFacts } from "../lib/flow-engine.ts";
+import { calculateWaitUntil, simulateFlow, triggerMatches, flowConversationPath, nextBusinessWindow, type FlowFacts } from "../lib/flow-engine.ts";
 import { buildFlowEmail, signTracking, verifyTracking } from "../lib/flow-tracking.ts";
 
 const facts: FlowFacts = { customerReplied: false, openedEmail: false, clickedLink: false, category: "Interested", segment: "Print farm", country: "US", companyStatus: "qualified", pipelineStage: "interested", fitScore: 8 };
@@ -124,4 +124,25 @@ test("tracking toggles remove all tracking when disabled", () => {
   const content = buildFlowEmail({ body: "https://filazoo.com/catalog", config: { trackOpens: false, trackClicks: false, utmTracking: false }, runId, stepId, flowId: "flow", appUrl: "https://crm.example.com", secret: "secret" });
   assert.equal(content.text, "https://filazoo.com/catalog");
   assert.doesNotMatch(content.html, /<img|\/api\/flows\/track|utm_/);
+});
+
+test("minute, hour and calendar-day waits retain their configured durations", () => {
+  const from = new Date("2026-10-19T10:15:00Z");
+  for (const [unit, milliseconds] of [["minutes", 60_000], ["hours", 3600_000], ["days", 86400_000]] as const) {
+    assert.equal(calculateWaitUntil({ amount: 3, unit }, from).getTime() - from.getTime(), 3 * milliseconds);
+  }
+});
+
+test("business-time minute and hour waits exclude the whole weekend", () => {
+  assert.equal(calculateWaitUntil({ amount: 90, unit: "minutes", businessDays: true }, new Date("2026-10-23T23:00:00Z")).toISOString(), "2026-10-26T00:30:00.000Z");
+  assert.equal(calculateWaitUntil({ amount: 48, unit: "hours", businessDays: true }, new Date("2026-10-23T12:00:00Z")).toISOString(), "2026-10-27T12:00:00.000Z");
+});
+
+test("business windows use the same UTC boundaries in previews and live execution", () => {
+  assert.equal(nextBusinessWindow(new Date("2026-10-23T16:59:00Z")), null);
+  assert.equal(nextBusinessWindow(new Date("2026-10-23T17:00:00Z"))?.toISOString(), "2026-10-26T09:00:00.000Z");
+  for (const type of ["send_email", "ai_auto_reply"] as const) {
+    const config = type === "send_email" ? { ...defaultFlowInput.steps[1].config, sendWindow: "business_hours" } : { ...defaultFlowInput.steps[1].config, sendWindow: "business_hours" };
+    assert.equal(simulateFlow({ ...defaultFlowInput, steps: [{ type, config }] }, facts, new Date("2026-10-23T17:01:00Z")).trace[0].scheduledAt, "2026-10-26T09:00:00.000Z");
+  }
 });

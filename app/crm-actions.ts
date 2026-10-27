@@ -6,7 +6,7 @@ import { requireWorkspaceMember } from "@/lib/auth";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { pipelineStageValues } from "@/lib/types";
 import { variantTag } from "@/lib/product-utils";
-import { enrollMatchingFlows } from "@/lib/data/flow-runtime";
+import { enrollMatchingFlows, enrollNewLeadFlows } from "@/lib/data/flow-runtime";
 import { claimNextBdSalesManager } from "@/lib/lead-assignment";
 import { commerceSchema } from "@/lib/company-commerce";
 import { ensureCompanyCatalogPdf } from "@/lib/data/catalog-pdfs";
@@ -191,6 +191,7 @@ export async function createCompany(_state: CrmActionState, formData: FormData):
   }
 
   const { data: createdContact } = await admin.from("contacts").select("id").eq("company_id", company.id).order("created_at").limit(1).maybeSingle();
+  if (createdContact) await enrollNewLeadFlows(createdContact.id);
   await enrollCompanyEvent({ type: "company_segment_changed", conversationId: `company:${company.id}`, companyId: company.id, contactId: createdContact?.id ?? null, segment: parsed.data.segment });
 
   refreshCrm();
@@ -252,6 +253,7 @@ export async function updateCompany(companyId: string, _state: CrmActionState, f
   await admin.from("events").insert({ company_id: id.data, actor_id: viewer.id, type: "company_updated", data: { summary: `${parsed.data.name} details were updated.` } });
   if (followupDueAt && followupDueAt !== previousPipeline?.next_followup_at) await admin.from("events").insert({ company_id: id.data, actor_id: viewer.id, type: "followup_scheduled", data: { summary: `Next follow-up scheduled for ${new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Shanghai" }).format(new Date(followupDueAt))}.` } });
   const { data: automationContact } = await admin.from("contacts").select("id").eq("company_id", id.data).order("created_at").limit(1).maybeSingle();
+  if (!primaryContact && parsed.data.contactEmail && automationContact) await enrollNewLeadFlows(automationContact.id);
   if (company.segment !== parsed.data.segment) await enrollCompanyEvent({ type: "company_segment_changed", conversationId: `company:${id.data}`, companyId: id.data, contactId: automationContact?.id ?? null, segment: parsed.data.segment });
   if (previousPipeline?.stage !== parsed.data.stage) await enrollCompanyEvent({ type: "pipeline_stage_changed", conversationId: `company:${id.data}:pipeline`, companyId: id.data, contactId: automationContact?.id ?? null, stage: parsed.data.stage });
   refreshCompany(id.data);

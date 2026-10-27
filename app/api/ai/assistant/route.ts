@@ -7,6 +7,7 @@ import { loadAgentContext, searchAgentEmails } from "@/lib/ai/agent-context";
 import { prepareAgentActions } from "@/lib/ai/agent-execution";
 import { assistantProviderError } from "@/lib/ai/assistant-provider-error";
 import { researchCustomer } from "@/lib/ai/customer-research";
+import { ChatBodyTooLargeError, collectChatImages, readChatRequestBody } from "@/lib/ai/image-input";
 
 export const maxDuration = 120;
 const responseHeaders = { "Cache-Control": "private, no-store" };
@@ -18,10 +19,12 @@ export async function POST(request: Request) {
   }
   const viewer = await getWorkspaceViewer();
   if (!viewer) return Response.json({ error: "Sign in with an active workspace account." }, { status: 401, headers: responseHeaders });
-  if (Number(request.headers.get("content-length")) > 90_000) {
-    return Response.json({ error: "Start a new chat to continue." }, { status: 413, headers: responseHeaders });
+  let body: unknown;
+  try { body = await readChatRequestBody(request); }
+  catch (error) {
+    return Response.json({ error: error instanceof ChatBodyTooLargeError ? error.message : "Unable to read this request." }, { status: error instanceof ChatBodyTooLargeError ? 413 : 400, headers: responseHeaders });
   }
-  const parsed = workspaceAssistantSchema.safeParse(await request.json().catch(() => null));
+  const parsed = workspaceAssistantSchema.safeParse(body);
   if (!parsed.success) {
     return Response.json({ error: parsed.error.issues[0]?.message || "Invalid assistant request." }, { status: 400, headers: responseHeaders });
   }
@@ -35,6 +38,7 @@ export async function POST(request: Request) {
   const options = {
     systemInstruction: workspaceAssistantInstruction(parsed.data.mode, new Date().toISOString(), parsed.data.language, parsed.data.webSearch),
     prompt: buildWorkspaceAssistantPrompt(parsed.data),
+    images: collectChatImages(parsed.data.messages),
     maxOutputTokens: parsed.data.mode === "work" ? 5_000 : parsed.data.webSearch ? 2_600 : 1_400,
     fetcher: ((input, init) => fetch(input, {
       ...init,
@@ -44,7 +48,7 @@ export async function POST(request: Request) {
   const agentMode = parsed.data.mode === "work";
   const gatewayModel = (agentMode ? process.env.AI_GATEWAY_AGENT_MODEL?.trim() : process.env.AI_GATEWAY_CHAT_MODEL?.trim()) || process.env.AI_GATEWAY_EMAIL_MODEL?.trim();
   const geminiModel = (agentMode ? process.env.GEMINI_AGENT_MODEL?.trim() : process.env.GEMINI_CHAT_MODEL?.trim()) || process.env.GEMINI_EMAIL_MODEL?.trim();
-  const gateway = () => generateGatewayText({ ...options, token: gatewayToken!, model: gatewayModel });
+  const gateway = () => generateGatewayText({ ...options, token: gatewayToken!, model: gatewayModel, visionModel: process.env.AI_GATEWAY_VISION_MODEL?.trim() });
   let serverData: Awaited<ReturnType<typeof loadAgentContext>> | undefined;
   if (agentMode || parsed.data.webSearch) {
     try {

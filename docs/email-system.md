@@ -1,5 +1,11 @@
 # CRM email receiving and replies
 
+## Personal and workspace accounts
+
+The main Email page has an account tab for each workspace mailbox and each personal mailbox owned by the signed-in user. Selecting a tab loads that account's saved inbox and sent history; refresh and history import target the same account. Shared Shopify leads and CRM outreach history remain in the workspace view. Existing BD customer-assignment restrictions still apply. Other users' personal accounts are excluded from these tabs and from message, attachment, and sending access, including for admins.
+
+Both new-email and reply composers have a From selector. They start with the user's default personal mailbox, or their active personal connection if none is marked default, and use the workspace default when no personal connection is available. The sender choice is independent of the mailbox being read. Each send resolves the selected account again on the server, uses its SMTP credentials and From address, and saves its mailbox ID with sent history. Stopped, removed, or unauthorized selections fail without silently switching accounts. A stopped default also requires an explicit sender change. Tabs preserve an unfinished draft by requiring the user to finish or clear it before navigating away.
+
 ## Company Email tab
 
 Company profiles include an Email tab (`/companies/[id]?tab=email`) using the existing mailbox reader and reply composer. It starts in All mail so incoming messages and saved sent replies appear together. Messages match the company's primary and additional saved contact email addresses exactly, ignoring case and surrounding whitespace; company names and shared domains never expand the match. Companies without an email address show guidance to add one.

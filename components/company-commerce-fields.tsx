@@ -1,5 +1,7 @@
 "use client";
 
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
 import { useState } from "react";
 import { MapPin, CreditCard } from "lucide-react";
 import { commerceDefaults, type CompanyCommerce } from "@/lib/company-commerce";
@@ -83,16 +85,16 @@ export function CompanyCommerceFields({
             <Label htmlFor="billing-currency">
               Default order & invoice currency
             </Label>
-            <select
-              id="billing-currency"
-              name="commerce.currency"
-              defaultValue={values.currency}
-              className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-            >
-              {invoiceCurrencies.map((currency) => (
-                <option key={currency}>{currency}</option>
-              ))}
-            </select>
+            <Select name="commerce.currency" defaultValue={values.currency}>
+              <SelectTrigger id="billing-currency" className="w-full min-w-0">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {invoiceCurrencies.map((currency) => (
+                  <SelectItem key={currency} value={currency}>{currency}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>

@@ -330,7 +330,7 @@ export async function saveMetaLead(event: FacebookLeadEvent) {
   const admin = createSupabaseAdmin();
   const { data: existing } = await admin.from("meta_leads").select("owner_id,assignment_method").eq("leadgen_id", event.leadgenId).maybeSingle();
   const ownerId = existing?.owner_id ?? await claimNextBdSalesManager(admin);
-  const { error } = await admin.from("meta_leads").upsert({
+  const { data: savedLead, error } = await admin.from("meta_leads").upsert({
     leadgen_id: event.leadgenId,
     page_id: event.pageId,
     form_id: asString(detailPayload.form_id) ?? event.formId,
@@ -344,8 +344,12 @@ export async function saveMetaLead(event: FacebookLeadEvent) {
     field_data: detailPayload.field_data ?? [],
     raw_payload: { webhook: event.rawPayload, detail: detailPayload, detail_error: detail.ok ? null : detail.error },
     created_at: asString(detailPayload.created_time) ?? event.createdTime,
-  }, { onConflict: "leadgen_id" });
+  }, { onConflict: "leadgen_id" }).select("contact_id").single();
   if (error) return { ok: false as const, saved: false, error: error.message };
+  if (savedLead?.contact_id) {
+    const { enrollNewLeadFlows } = await import("./data/flow-runtime.ts");
+    await enrollNewLeadFlows(savedLead.contact_id);
+  }
   return { ok: true as const, saved: true, detailFetched: detail.ok };
 }
 

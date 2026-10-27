@@ -157,7 +157,7 @@ function EmailToolbar({
     <div className="flex flex-col gap-3 border-b pb-3 xl:flex-row xl:items-center xl:justify-between">
       <div className="flex flex-1 items-center gap-2">
         <div className="relative min-w-[10rem] flex-1 xl:max-w-[11rem]">
-          <Select value={filterLabel} onValueChange={(value) => { if (value === null) return; return onFilterChange(value); }}><SelectTrigger aria-label="Filter emails" className="h-8 w-full rounded-lg border border-input bg-background px-2.5 pr-8 text-sm text-foreground outline-none focus-visible:border-ring"><SelectValue /></SelectTrigger><SelectContent>
+          <Select value={filterLabel} onValueChange={(value) => { if (value === null) return; return onFilterChange(value); }}><SelectTrigger aria-label="Filter emails" size="sm" className="w-full"><Filter className="size-4 text-muted-foreground" /><SelectValue /></SelectTrigger><SelectContent>
             <SelectItem value="All">Filter</SelectItem>
             <SelectItem value="Owner">Owner</SelectItem>
             <SelectItem value="Sequence">Sequence</SelectItem>
@@ -165,7 +165,6 @@ function EmailToolbar({
             <SelectItem value="Material">Material</SelectItem>
             <SelectItem value="Date range">Date range</SelectItem>
           </SelectContent></Select>
-          <Filter className="pointer-events-none absolute right-2 top-2 size-3.5 text-muted-foreground" />
         </div>
         <div className="relative flex-1 xl:max-w-[18rem]">
           <Search className="pointer-events-none absolute left-2.5 top-2 size-3.5 text-muted-foreground" />

@@ -1,5 +1,7 @@
 "use client";
 
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
 import { useId, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { ArrowRight, CalendarClock, Check, Download, Package, Plus, RefreshCw, Sparkles } from "lucide-react";
@@ -27,7 +29,6 @@ const reminderNames = {
   history: ["Understand product needs", "了解产品需求"], monitor: ["Monitor usage", "跟进使用情况"],
 };
 const panelClass = "min-w-0 rounded-xl border bg-card";
-const selectClass = "h-9 rounded-lg border bg-background px-3 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring";
 function orderTotal(order: AnalysisOrder) { return order.items.reduce((sum, item) => sum + item.quantity * item.unitPriceMinor, 0); }
 function Status({ status, copy }: { status: AnalysisOrder["status"]; copy: Copy }) {
   return <span className={`inline-flex rounded-md px-2 py-1 text-[11px] font-medium ${status === "completed" || status === "shipped" ? "bg-brand-soft text-primary" : "bg-muted text-muted-foreground"}`}>{copy(statusNames[status][0], statusNames[status][1])}</span>;
@@ -116,7 +117,7 @@ export function CompanyAnalysisDashboard({ companyId, canWrite, preferredCurrenc
         <div role="group" aria-label={copy("Purchase date range", "采购日期范围")} className="flex rounded-lg border p-1">
           {(["all", "180", "90", "custom"] as const).map(value => <button key={value} type="button" aria-pressed={period === value} onClick={() => { if (value === "custom" && !custom.from) setCustom({ from: analysisDaysAgo(today, 179), to: today }); setPeriod(value); }} disabled={!data} className={`h-7 whitespace-nowrap rounded-md px-2.5 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 ${period === value ? "bg-brand-soft text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>{value === "all" ? copy("All time", "全部时间") : value === "custom" ? copy("Custom", "自定义") : copy(`${value} days`, `近${value}天`)}</button>)}
         </div>
-        <select aria-label={copy("Analysis currency", "分析币种")} value={currency} onChange={event => setCurrency(event.target.value)} disabled={!data} className={selectClass}>{[...new Set([currency, ...currencies])].map(value => <option key={value} value={value}>{value}</option>)}</select>
+        <Select value={currency} onValueChange={(selectedValue) => { if (selectedValue === null) return; setCurrency(selectedValue); }} disabled={!data}><SelectTrigger aria-label={copy("Analysis currency", "分析币种")} size="sm"><SelectValue /></SelectTrigger><SelectContent>{[...new Set([currency, ...currencies])].map(value => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select>
         <Button variant="outline" size="sm" onClick={exportOrders} disabled={!analysis?.orders.length || pending}><Download />{copy("Export orders", "导出订单")}</Button>
         <Button variant="outline" size="icon-sm" onClick={refresh} disabled={pending} aria-label={copy("Refresh analysis", "刷新分析")}><RefreshCw className={pending ? "animate-spin" : ""} /></Button>
       </div>

@@ -1,5 +1,7 @@
 "use client";
 
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
 import { useEffect, useState } from "react";
 import { searchPurchaseOrderProducts } from "@/app/purchase-order-actions";
 import { orderProductLine } from "@/lib/purchase-order-links";
@@ -174,17 +176,16 @@ function ProductChoice({
       {product.variants.length > 0 && (
         <label className="grid gap-1 text-xs">
           Variant / color for {product.sku}
-          <select
-            className="h-9 rounded-md border bg-background px-2 text-sm"
-            value={variantId}
-            onChange={(event) => setVariantId(event.target.value)}
-          >
-            {product.variants.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </select>
+          <Select value={variantId} onValueChange={(value) => { if (value !== null) setVariantId(value); }}>
+            <SelectTrigger size="sm" className="w-full min-w-0"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {product.variants.map((item) => (
+                <SelectItem key={item.id} value={item.id}>
+                  {item.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </label>
       )}
       <div className="flex flex-wrap items-center justify-between gap-2">

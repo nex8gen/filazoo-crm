@@ -1,16 +1,18 @@
 import "server-only";
+import { requireWorkspaceMember } from "../auth.ts";
 import { randomUUID } from "node:crypto";
 import { buildFlowEmail } from "../flow-tracking.ts";
+import { emailTemplates, renderFlowTemplate as renderTemplate } from "../flow-templates.ts";
 
-import { calculateWaitUntil, conditionMatches, triggerMatches, flowConversationPath, type FlowFacts, type TriggerEvent } from "../flow-engine.ts";
-import { flowInputSchema, type FlowInput, type FlowStep, type JsonConfig, type TriggerType } from "../flows.ts";
+import { calculateWaitUntil, conditionMatches, triggerMatches, flowConversationPath, nextBusinessWindow, type FlowFacts, type TriggerEvent } from "../flow-engine.ts";
+import { flowInputSchema, flowLeadListForSource, type FlowInput, type FlowStep, type JsonConfig, type TriggerType } from "../flows.ts";
 import { env } from "../env.ts";
 import { sendMailboxEmail } from "../mailer.ts";
 import { normalizeMailboxRow } from "../mailbox-utils.ts";
 import { evaluateSend } from "../outreach-policy.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 import { syncFlowMailboxMessages } from "./flow-mail-sync.ts";
-import { hasFlowReplyProvider, prepareFlowAiReply } from "./flow-ai-reply.ts";
+import { hasFlowReplyProvider, prepareFlowAiReply, prepareFlowTemplateCatalog } from "./flow-ai-reply.ts";
 
 type RunRow = {
   id: string;
@@ -26,33 +28,9 @@ type RunRow = {
 };
 
 type FlowRow = { id: string; user_id: string; trigger_type: TriggerType; trigger_config: JsonConfig; status: string };
-type ContactRow = { id: string; company_id: string; name: string | null; email: string; unsubscribed: boolean; verification_status: string };
+type ContactRow = { id: string; company_id: string; name: string | null; email: string; unsubscribed: boolean; verification_status: string; consent_source: string | null };
 
-const emailTemplates: Record<string, { subject: string; body: string }> = {
-  helpful_reminder: { subject: "Just checking in", body: "Hi {{first_name}},\n\nI wanted to follow up and see whether I can help with your filament requirements.\n\nBest,\nFilazoo" },
-  send_catalog: { subject: "Filazoo product catalog", body: "Hi {{first_name}},\n\nHere is the product information we discussed. Reply with the materials and volumes you need and we will prepare pricing.\n\nBest,\nFilazoo" },
-  quote_follow_up: { subject: "Following up on your quote", body: "Hi {{first_name}},\n\nDo you have any questions about the quote? I am happy to adjust quantities, materials, or delivery options.\n\nBest,\nFilazoo" },
-  welcome_intro: { subject: "Welcome to Filazoo", body: "Hi {{first_name}},\n\nThanks for getting in touch with Filazoo. Tell us what you print and we will recommend the best materials.\n\nBest,\nFilazoo" },
-  last_chance: { subject: "Should I close the loop?", body: "Hi {{first_name}},\n\nI have not heard back, so I will close the loop for now. If the project is still active, just reply and we will pick it up.\n\nBest,\nFilazoo" },
-};
-
-function firstName(name: string | null, email: string) {
-  return name?.trim().split(/\s+/)[0] || email.split("@")[0] || "there";
-}
-
-function renderTemplate(value: string, contact: ContactRow) {
-  return value.replaceAll("{{first_name}}", firstName(contact.name, contact.email));
-}
-
-function nextBusinessWindow(now = new Date()) {
-  const next = new Date(now);
-  const hour = next.getUTCHours();
-  if (next.getUTCDay() !== 0 && next.getUTCDay() !== 6 && hour >= 9 && hour < 17) return null;
-  if (hour >= 17) next.setUTCDate(next.getUTCDate() + 1);
-  next.setUTCHours(9, 0, 0, 0);
-  while (next.getUTCDay() === 0 || next.getUTCDay() === 6) next.setUTCDate(next.getUTCDate() + 1);
-  return next;
-}
+export { emailTemplates } from "../flow-templates.ts";
 
 async function resolveCompanyId(contactId?: string | null, companyId?: string | null) {
   if (companyId) return companyId;
@@ -61,11 +39,11 @@ async function resolveCompanyId(contactId?: string | null, companyId?: string | 
   return data?.company_id ?? null;
 }
 
-export async function loadFlowFacts({ userId, contactId, companyId, messageKey, lookbackDays = 365, conversationId, since: sinceDate, runId }: { userId: string; contactId?: string | null; companyId?: string | null; messageKey?: string | null; lookbackDays?: number; conversationId?: string; since?: string; runId?: string }): Promise<FlowFacts> {
+export async function loadFlowFacts({ userId, contactId, companyId, messageKey, lookbackDays = 365, conversationId, since: sinceDate, runId, fallbackCategory }: { userId: string; contactId?: string | null; companyId?: string | null; messageKey?: string | null; lookbackDays?: number; conversationId?: string; since?: string; runId?: string; fallbackCategory?: string | null }): Promise<FlowFacts> {
   const admin = createSupabaseAdmin();
   const resolvedCompanyId = await resolveCompanyId(contactId, companyId);
   const since = new Date(Math.max(Date.now() - lookbackDays * 86_400_000, sinceDate ? Date.parse(sinceDate) : 0)).toISOString();
-  let replyQuery = admin.from("emails").select("id", { count: "exact", head: true }).eq("contact_id", contactId || "00000000-0000-0000-0000-000000000000").eq("direction", "received").gt("created_at", since);
+  let replyQuery = admin.from("emails").select("id", { count: "exact", head: true }).eq("contact_id", contactId || "00000000-0000-0000-0000-000000000000").eq("direction", "received").or(`owner_id.is.null,owner_id.eq.${userId}`).gt("created_at", since);
   if (conversationId && !/^(company:|shopify:)/.test(conversationId)) replyQuery = replyQuery.eq("thread_id", conversationId);
   const engagement = runId ? await admin.from("flow_run_logs").select("result").eq("run_id", runId).gte("created_at", since).in("result->>action", ["email_opened", "link_clicked"]).throwOnError() : { data: [] };
   const [companyResult, pipelineResult, profileResult, replyResult, categoryResult] = await Promise.all([
@@ -77,7 +55,7 @@ export async function loadFlowFacts({ userId, contactId, companyId, messageKey, 
   ]);
   return {
     customerReplied: Boolean(replyResult.count), openedEmail: Boolean(engagement.data?.some((log) => log.result?.action === "email_opened")), clickedLink: Boolean(engagement.data?.some((log) => log.result?.action === "link_clicked")),
-    category: categoryResult.data?.category ?? null,
+    category: categoryResult.data ? categoryResult.data.category : fallbackCategory ?? null,
     segment: companyResult.data?.segment ?? null,
     country: companyResult.data?.country ?? null,
     companyStatus: companyResult.data?.status ?? null,
@@ -97,7 +75,7 @@ async function finishRun(runId: string, status: "done" | "cancelled" | "failed",
 
 async function getContact(contactId: string | null) {
   if (!contactId) return null;
-  const { data, error } = await createSupabaseAdmin().from("contacts").select("id,company_id,name,email,unsubscribed,verification_status").eq("id", contactId).maybeSingle();
+  const { data, error } = await createSupabaseAdmin().from("contacts").select("id,company_id,name,email,unsubscribed,verification_status,consent_source").eq("id", contactId).maybeSingle();
   if (error) throw error;
   return data as ContactRow | null;
 }
@@ -113,14 +91,23 @@ async function getMailbox(flow: FlowRow, mailboxId: unknown) {
   return normalizeMailboxRow(data);
 }
 
+// Real delivery tests resolve the sender with the same rules as live flows.
+export async function getFlowTestMailbox(userId: string, mailboxId: unknown) {
+  return getMailbox({ id: "", user_id: userId, trigger_type: "new_lead", trigger_config: {}, status: "draft" }, mailboxId);
+}
+
 export async function validateFlowResources(userId: string, input: FlowInput) {
   const admin = createSupabaseAdmin();
   for (const step of input.steps) {
+    if (step.type === "internal_alert" && step.config.channel === "email") {
+      const mailbox = await getMailbox({ id: "", user_id: userId, trigger_type: input.triggerType, trigger_config: input.triggerConfig, status: input.status }, "default");
+      if (!mailbox?.smtpHost || !mailbox.smtpUsername || !mailbox.smtpPassword) throw new Error("Configure the default workspace SMTP mailbox before enabling email alerts.");
+    }
     if (step.type === "send_email" || step.type === "ai_auto_reply") {
       const mailbox = await getMailbox({ id: "", user_id: userId, trigger_type: input.triggerType, trigger_config: input.triggerConfig, status: input.status }, step.config.mailboxId);
       if (!mailbox?.smtpHost || !mailbox.smtpUsername || !mailbox.smtpPassword) throw new Error("The selected sender mailbox needs complete SMTP settings.");
       if (step.type === "ai_auto_reply" && !hasFlowReplyProvider()) throw new Error("Configure an AI provider before enabling AI auto-reply.");
-      if (step.type === "ai_auto_reply" && step.config.attachCatalog) {
+      if ((step.type === "ai_auto_reply" && step.config.attachCatalog) || (step.type === "send_email" && step.config.templateId === "send_catalog")) {
         const { count } = await admin.from("products").select("sku", { count: "exact", head: true }).eq("active", true).not("sku", "like", "SAMPLE-%").not("name", "ilike", "[sample]%").throwOnError();
         if (!count) throw new Error("Add active products before attaching an AI reply catalog.");
       }
@@ -155,7 +142,14 @@ async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: F
   const today = new Date(); today.setUTCHours(0, 0, 0, 0);
   const { count } = await admin.from("mailbox_sent_messages").select("id", { count: "exact", head: true }).eq("user_id", flow.user_id).gte("sent_at", today.toISOString()).throwOnError();
   const { count: suppressed } = await admin.from("suppression").select("email", { count: "exact", head: true }).eq("email", contact.email).throwOnError();
-  const decision = evaluateSend({ email: contact.email, verified: contact.verification_status === "valid", unsubscribed: contact.unsubscribed, suppressed: Boolean(suppressed), sentToday: count ?? 0, dailyLimit: env.DAILY_SEND_LIMIT, bounceRate: 0, bouncePausePercent: env.BOUNCE_PAUSE_PERCENT, dryRun: env.dryRun });
+  // Form inquiries and received customer emails can be answered without a
+  // third-party address check. Never relabel those contacts as verified.
+  const formInquiry = ["shopify_b2b_form", "shopify_b2b_form_opt_in", "meta_lead_ads"].includes(contact.consent_source ?? "");
+  const { count: inboundCount } = !formInquiry && contact.verification_status !== "valid"
+    ? await admin.from("emails").select("id", { count: "exact", head: true }).eq("contact_id", contact.id).eq("direction", "received").or(`owner_id.is.null,owner_id.eq.${flow.user_id}`).throwOnError()
+    : { count: 0 };
+  const inquiryResponse = ["unverified", "unknown"].includes(contact.verification_status) && (formInquiry || Boolean(inboundCount));
+  const decision = evaluateSend({ email: contact.email, verified: contact.verification_status === "valid", inquiryResponse, unsubscribed: contact.unsubscribed, suppressed: Boolean(suppressed), sentToday: count ?? 0, dailyLimit: env.DAILY_SEND_LIMIT, bounceRate: 0, bouncePausePercent: env.BOUNCE_PAUSE_PERCENT, dryRun: env.dryRun });
   if (!decision.allowed) throw new Error(decision.reason);
   const template = emailTemplates[String(step.config.templateId)];
   if (step.type === "send_email" && !template) throw new Error("The selected email template is unavailable.");
@@ -167,34 +161,38 @@ async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: F
   }
   const mailbox = await getMailbox(flow, step.config.mailboxId);
   if (!mailbox) throw new Error("The selected sender mailbox is unavailable.");
-  const aiReply = step.type === "ai_auto_reply" ? await prepareFlowAiReply({ userId: flow.user_id, contactId: contact.id, companyId: contact.company_id, conversationId: run.conversation_id, config: step.config }) : null;
+  const aiReply = step.type === "ai_auto_reply" ? await prepareFlowAiReply({ userId: flow.user_id, contactId: contact.id, companyId: contact.company_id, conversationId: String(run.context?.emailThreadId || run.conversation_id), config: step.config }) : null;
+  const attachments = aiReply?.attachments ?? (step.config.templateId === "send_catalog" ? await prepareFlowTemplateCatalog() : []);
   if (aiReply) { subject = aiReply.subject; body = aiReply.body; }
+  const conversationId = String(run.context?.emailThreadId || run.conversation_id);
   const { data: previous } = step.config.replyInThread !== false
-    ? await admin.from("emails").select("message_id").eq("contact_id", contact.id).eq("thread_id", run.conversation_id).or(`owner_id.is.null,owner_id.eq.${flow.user_id}`).not("message_id", "is", null).order("created_at", { ascending: false }).limit(1).maybeSingle().throwOnError()
+    ? await admin.from("emails").select("message_id").eq("contact_id", contact.id).eq("thread_id", conversationId).or(`owner_id.is.null,owner_id.eq.${flow.user_id}`).not("message_id", "is", null).order("created_at", { ascending: false }).limit(1).maybeSingle().throwOnError()
     : { data: null };
   const inReplyTo = aiReply?.inReplyTo || previous?.message_id;
-  const threadId = aiReply?.threadId || run.conversation_id;
+  const threadId = step.config.replyInThread === false ? `flow:${randomUUID()}` : aiReply?.threadId || conversationId;
   const replyHeaders = inReplyTo ? { inReplyTo, references: [inReplyTo] } : {};
   const content = buildFlowEmail({ body, config: step.config, runId: run.id, stepId: step.id, flowId: flow.id, appUrl: env.NEXT_PUBLIC_APP_URL, secret: env.supabaseSecretKey! });
   const sentRecordId = randomUUID();
   const storedAttachments: Array<{ filename: string; contentType: string; size: number; path: string }> = [];
   let sent;
   try {
-    for (const [index, attachment] of (aiReply?.attachments ?? []).entries()) {
+    for (const [index, attachment] of attachments.entries()) {
       const path = `${flow.user_id}/${sentRecordId}/${index}`;
       const { error } = await admin.storage.from("mailbox-attachments").upload(path, attachment.content, { contentType: attachment.contentType, upsert: false });
       if (error) throw new Error(`Could not store the AI reply catalog: ${error.message}`);
       storedAttachments.push({ filename: attachment.filename, contentType: attachment.contentType, size: attachment.content.length, path });
     }
-    sent = await sendMailboxEmail({ host: mailbox.smtpHost, port: mailbox.smtpPort, user: mailbox.smtpUsername, pass: mailbox.smtpPassword, from: mailbox.email }, { to: contact.email, subject, ...content, ...replyHeaders, attachments: aiReply?.attachments });
+    sent = await sendMailboxEmail({ host: mailbox.smtpHost, port: mailbox.smtpPort, user: mailbox.smtpUsername, pass: mailbox.smtpPassword, from: mailbox.email }, { to: contact.email, subject, ...content, ...replyHeaders, attachments });
   } catch (error) {
     if (storedAttachments.length) await admin.storage.from("mailbox-attachments").remove(storedAttachments.map((attachment) => attachment.path));
     throw error;
   }
+  run.context = { ...run.context, emailThreadId: threadId, replySince: new Date().toISOString() };
   await Promise.all([
+    admin.from("flow_runs").update({ context: run.context }).eq("id", run.id).throwOnError(),
     admin.from("mailbox_sent_messages").insert({ id: sentRecordId, user_id: flow.user_id, mailbox_id: mailbox.id, message_id: sent.messageId || null, thread_key: threadId, in_reply_to: inReplyTo || null, reference_ids: inReplyTo ? [inReplyTo] : [], from_email: mailbox.email, to_email: contact.email, subject, body, status: "sent", attachments: storedAttachments }).throwOnError(),
     admin.from("emails").insert({ contact_id: contact.id, direction: "sent", subject, body, thread_id: threadId, owner_id: flow.user_id, message_id: sent.messageId || null, status: "sent", step: run.current_step + 1, sent_at: new Date().toISOString() }).throwOnError(),
-    logRun(run.id, step.id, { action: "email_sent", to: contact.email, subject, messageId: sent.messageId || null, aiGenerated: Boolean(aiReply), catalogAttached: Boolean(aiReply?.attachments.length) }),
+    logRun(run.id, step.id, { action: "email_sent", to: contact.email, subject, messageId: sent.messageId || null, aiGenerated: Boolean(aiReply), catalogAttached: Boolean(attachments.length) }),
   ]);
   return "continue" as const;
 }
@@ -203,13 +201,16 @@ async function executeAction(run: RunRow, flow: FlowRow, step: FlowStep, facts: 
   const admin = createSupabaseAdmin();
   if (step.type === "send_email" || step.type === "ai_auto_reply") return executeEmail(run, flow, step, facts);
   if (step.type === "create_task") {
-    const { data: pipeline } = run.company_id && step.config.assigneeType !== "user" ? await admin.from("pipeline").select("owner_id").eq("company_id", run.company_id).maybeSingle() : { data: null };
+    const { data: pipeline } = run.company_id && step.config.assigneeType !== "user" ? await admin.from("pipeline").select("owner_id").eq("company_id", run.company_id).maybeSingle().throwOnError() : { data: null };
     await admin.from("crm_tasks").insert({ flow_run_id: run.id, company_id: run.company_id, contact_id: run.contact_id, assigned_to: step.config.assigneeType === "user" ? step.config.assigneeId : pipeline?.owner_id || flow.user_id, title: step.config.title, notes: step.config.notes || null, priority: step.config.priority || "normal", due_at: new Date(Date.now() + Number(step.config.dueInDays || 0) * 86_400_000).toISOString() }).throwOnError();
     await logRun(run.id, step.id, { action: "task_created", title: step.config.title });
   } else if (step.type === "change_category") {
     const messageKey = String(run.context?.messageKey || run.conversation_id);
+    const { data: previous } = await admin.from("email_inbox_state").select("category").eq("user_id", flow.user_id).eq("message_key", messageKey).maybeSingle().throwOnError();
     await admin.from("email_inbox_state").upsert({ user_id: flow.user_id, message_key: messageKey, category: step.config.category, updated_at: new Date().toISOString() }, { onConflict: "user_id,message_key", ignoreDuplicates: false }).throwOnError();
     await logRun(run.id, step.id, { action: "category_changed", category: step.config.category, reason: step.config.reason || null });
+    if (previous?.category !== step.config.category) await enrollMatchingFlows({ type: "category_changed", conversationId: run.conversation_id, messageKey,
+      contactId: run.contact_id, companyId: run.company_id, category: String(step.config.category), eventKey: `category:${run.id}:${step.id}` });
   } else if (step.type === "internal_alert") {
     const { data: pipeline } = run.company_id ? await admin.from("pipeline").select("owner_id").eq("company_id", run.company_id).maybeSingle().throwOnError() : { data: null };
     const userId = String(step.config.userId === "owner" ? pipeline?.owner_id || flow.user_id : step.config.userId);
@@ -249,13 +250,18 @@ export async function processFlowRun(runId: string) {
   let processed = 0;
   try {
     const snapshot = typeof run.context?.definition === "string" ? JSON.parse(run.context.definition) as FlowStep[] : stepRows;
-    const steps = (snapshot ?? []) as FlowStep[];
-    flowInputSchema.parse({ name: "Runtime validation", triggerType: flow.trigger_type, triggerConfig: flow.trigger_config, status: "live", steps });
+    const savedSteps = (snapshot ?? []) as FlowStep[];
+    const validated = flowInputSchema.parse({ name: "Runtime validation", triggerType: flow.trigger_type, triggerConfig: flow.trigger_config, status: "live", steps: savedSteps });
+    const steps = savedSteps.map((step, index) => ({ ...step, config: validated.steps[index].config }));
     while (index < steps.length) {
       const step = steps[index]!;
-      const facts = await loadFlowFacts({ userId: flow.user_id, contactId: run.contact_id, companyId: run.company_id, messageKey: String(run.context?.messageKey || "") || run.conversation_id, lookbackDays: Number(step.config.lookbackDays || 365), conversationId: run.conversation_id, since: String(run.context?.replySince || run.started_at), runId: run.id });
+      const facts = await loadFlowFacts({ userId: flow.user_id, contactId: run.contact_id, companyId: run.company_id, messageKey: String(run.context?.messageKey || "") || run.conversation_id, lookbackDays: Number(step.config.lookbackDays || 365), conversationId: String(run.context?.emailThreadId || run.conversation_id), since: String(run.context?.replySince || run.started_at), runId: run.id, fallbackCategory: typeof run.context?.category === "string" ? run.context.category : null });
       if (step.type === "wait") {
-        const nextRunAt = calculateWaitUntil(step.config);
+        // The first delay starts at intake/receipt, including scanner recovery.
+        const firstEventAt = new Date(String(run.context?.replySince || run.started_at));
+        const waitFrom = index === 0 && Number.isFinite(firstEventAt.getTime())
+          ? new Date(Math.min(firstEventAt.getTime(), Date.now())) : new Date();
+        const nextRunAt = calculateWaitUntil(step.config, waitFrom);
         await Promise.all([
           admin.from("flow_runs").update({ current_step: index + 1, next_run_at: nextRunAt.toISOString(), locked_at: null }).eq("id", run.id).throwOnError(),
           logRun(run.id, step.id, { action: "waiting", nextRunAt: nextRunAt.toISOString() }),
@@ -297,7 +303,23 @@ export async function processFlowRun(runId: string) {
 export async function enrollMatchingFlows(event: TriggerEvent) {
   const admin = createSupabaseAdmin();
   let flowQuery = admin.from("flows").select("id,user_id,trigger_type,trigger_config,status").eq("status", "live").eq("trigger_type", event.type);
+  if (event.type === "new_lead" || event.type === "lead_added_to_list") {
+    if (!event.contactId) throw new Error("New-lead enrollment requires a CRM contact.");
+    const { data: contact } = await admin.from("contacts").select("id,company_id,created_at,consent_source").eq("id", event.contactId).maybeSingle().throwOnError();
+    if (!contact) throw new Error("New-lead contact was not found.");
+    // Direct intake and the recovery scanner must share the same activation
+    // boundary and event key, including when an existing contact submits again.
+    flowQuery = flowQuery.lte("lead_enrollment_started_at", contact.created_at);
+    const listId = event.type === "lead_added_to_list" ? flowLeadListForSource(contact.consent_source) : null;
+    if (event.type === "lead_added_to_list" && (!listId || event.listId !== listId)) return [];
+    event = { ...event, companyId: contact.company_id, conversationId: `company:${contact.company_id}:lead:${contact.id}`,
+      occurredAt: contact.created_at, eventKey: listId ? `list:${listId}:${contact.id}` : `new_lead:${contact.id}` };
+  }
   if (event.flowId) flowQuery = flowQuery.eq("id", event.flowId);
+  if (event.type === "email_received") {
+    if (!event.occurredAt) throw new Error("Email enrollment requires the message receipt time.");
+    flowQuery = flowQuery.lte("email_enrollment_started_at", event.occurredAt);
+  }
   const { data: flowRows, error } = await flowQuery;
   if (error) throw new Error(`Unable to load matching flows: ${error.message}`);
   const companyId = await resolveCompanyId(event.contactId, event.companyId);
@@ -321,84 +343,127 @@ export async function enrollMatchingFlows(event: TriggerEvent) {
   return results;
 }
 
+// Intake succeeds even if automation fails; the scanner can recover missed
+// enrollment using the same durable contact ID without duplicate deliveries.
+export async function enrollNewLeadFlows(contactId: string) {
+  try {
+    const results = await enrollMatchingFlows({ type: "new_lead", contactId, conversationId: "" });
+    const { data: contact } = await createSupabaseAdmin().from("contacts").select("consent_source").eq("id", contactId).maybeSingle().throwOnError();
+    const listId = flowLeadListForSource(contact?.consent_source);
+    if (listId) results.push(...await enrollMatchingFlows({ type: "lead_added_to_list", contactId, listId, conversationId: "" }));
+    return results;
+  } catch (error) {
+    console.error("Lead saved, but new-lead flow enrollment failed:", error);
+    return [];
+  }
+}
+
 export async function scanTimeBasedFlowTriggers(flowId?: string) {
   const admin = createSupabaseAdmin();
-  let query = admin.from("flows").select("id,user_id,trigger_type,trigger_config,status,lead_enrollment_started_at").eq("status", "live").in("trigger_type", ["new_lead", "email_received", "no_reply"]);
+  let query = admin.from("flows").select("id,user_id,trigger_type,trigger_config,status,lead_enrollment_started_at,email_enrollment_started_at").eq("status", "live").in("trigger_type", ["new_lead", "lead_added_to_list", "email_received", "no_reply"]);
   if (flowId) query = query.eq("id", flowId);
   const { data: flows, error } = await query;
   if (error) throw new Error(`Unable to scan flow triggers: ${error.message}`);
   let enrolled = 0;
-  for (const flow of (flows ?? []) as (FlowRow & { lead_enrollment_started_at: string | null })[]) {
-    if (flow.trigger_type === "new_lead") {
+  for (const flow of (flows ?? []) as (FlowRow & { lead_enrollment_started_at: string | null; email_enrollment_started_at: string | null })[]) {
+    if (flow.trigger_type === "new_lead" || flow.trigger_type === "lead_added_to_list") {
       // The activation timestamp excludes existing leads and leads added while paused.
       if (!flow.lead_enrollment_started_at) continue;
       for (let offset = 0; ; offset += 500) {
-        const { data: contacts } = await admin.from("contacts").select("id,company_id,created_at")
+        const { data: contacts } = await admin.from("contacts").select("id,company_id,created_at,consent_source")
           .gte("created_at", flow.lead_enrollment_started_at).order("created_at").order("id").range(offset, offset + 499).throwOnError();
-        const eventKeys = (contacts ?? []).map((contact) => `new_lead:${contact.id}`);
+        const eventKey = (id: string) => flow.trigger_type === "new_lead" ? `new_lead:${id}` : `list:${flow.trigger_config.listId}:${id}`;
+        const eventKeys = (contacts ?? []).map((contact) => eventKey(contact.id));
         const { data: existingRuns } = eventKeys.length ? await admin.from("flow_runs").select("event_key")
           .eq("flow_id", flow.id).in("event_key", eventKeys).throwOnError() : { data: [] };
         const enrolledKeys = new Set((existingRuns ?? []).map((run) => run.event_key));
         for (const contact of contacts ?? []) {
-          if (enrolledKeys.has(`new_lead:${contact.id}`)) continue;
-          const result = await enrollMatchingFlows({ type: "new_lead", flowId: flow.id, contactId: contact.id, companyId: contact.company_id,
+          if (enrolledKeys.has(eventKey(contact.id))) continue;
+          if (flow.trigger_type === "lead_added_to_list" && flowLeadListForSource(contact.consent_source) !== flow.trigger_config.listId) continue;
+          const result = await enrollMatchingFlows({ type: flow.trigger_type, listId: flow.trigger_type === "lead_added_to_list" ? String(flow.trigger_config.listId) : undefined, flowId: flow.id, contactId: contact.id, companyId: contact.company_id,
             conversationId: `company:${contact.company_id}:lead:${contact.id}`, occurredAt: contact.created_at, eventKey: `new_lead:${contact.id}` });
           enrolled += result.filter((item) => item.enrolled).length;
         }
         if (!contacts || contacts.length < 500) break;
       }
     } else if (flow.trigger_type === "email_received") {
-      const { data: inbound } = await admin.from("emails").select("id,contact_id,thread_id,message_id,created_at,contacts(company_id)").eq("direction", "received").or(`owner_id.is.null,owner_id.eq.${flow.user_id}`).gte("created_at", new Date(Date.now() - 7 * 86_400_000).toISOString()).order("created_at", { ascending: false }).limit(1000).throwOnError();
-      for (const email of inbound ?? []) {
-        const relation = email.contacts as unknown as { company_id?: string } | Array<{ company_id?: string }> | null;
-        const contactCompanyId = Array.isArray(relation) ? relation[0]?.company_id : relation?.company_id;
-        const result = await enrollMatchingFlows({ type: "email_received", flowId: flow.id, conversationId: email.thread_id || email.message_id || `email:${email.id}`, messageKey: email.message_id ? `imap-${email.message_id}` : undefined, occurredAt: email.created_at, eventKey: `email_received:${email.id}`, contactId: email.contact_id, companyId: contactCompanyId ?? null });
-        enrolled += result.filter((item) => item.enrolled).length;
+      if (!flow.email_enrollment_started_at) continue;
+      for (let offset = 0; ; offset += 500) {
+        const { data: inbound } = await admin.from("emails").select("id,contact_id,thread_id,message_id,created_at,contacts(company_id)").eq("direction", "received").or(`owner_id.is.null,owner_id.eq.${flow.user_id}`).gte("created_at", flow.email_enrollment_started_at).order("created_at").order("id").range(offset, offset + 499).throwOnError();
+        const eventKeys = (inbound ?? []).map((email) => `email_received:${email.id}`);
+        const { data: existingRuns } = eventKeys.length ? await admin.from("flow_runs").select("event_key").eq("flow_id", flow.id).in("event_key", eventKeys).throwOnError() : { data: [] };
+        const enrolledKeys = new Set((existingRuns ?? []).map((run) => run.event_key));
+        for (const email of inbound ?? []) {
+          if (enrolledKeys.has(`email_received:${email.id}`)) continue;
+          const relation = email.contacts as unknown as { company_id?: string } | Array<{ company_id?: string }> | null;
+          const contactCompanyId = Array.isArray(relation) ? relation[0]?.company_id : relation?.company_id;
+          const result = await enrollMatchingFlows({ type: "email_received", flowId: flow.id, conversationId: email.thread_id || email.message_id || `email:${email.id}`, messageKey: email.message_id ? `imap-${email.message_id}` : undefined, occurredAt: email.created_at, eventKey: `email_received:${email.id}`, contactId: email.contact_id, companyId: contactCompanyId ?? null });
+          enrolled += result.filter((item) => item.enrolled).length;
+        }
+        if (!inbound || inbound.length < 500) break;
       }
     } else {
-      const { data: outbound } = await admin.from("emails").select("id,contact_id,thread_id,message_id,sent_at,created_at,contacts(company_id)").eq("direction", "sent").eq("status", "sent").or(`owner_id.is.null,owner_id.eq.${flow.user_id}`).order("sent_at", { ascending: false }).limit(1000).throwOnError();
+      const ownRunIds: string[] = [];
+      for (let offset = 0; ; offset += 500) {
+        const { data: runs } = await admin.from("flow_runs").select("id").eq("flow_id", flow.id).order("id").range(offset, offset + 499).throwOnError();
+        ownRunIds.push(...(runs ?? []).map(run => run.id));
+        if (!runs || runs.length < 500) break;
+      }
       const seen = new Set<string>();
-      for (const email of outbound ?? []) {
-        const conversationId = email.thread_id || email.message_id || `email:${email.id}`;
-        const key = `${email.contact_id}:${conversationId}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        const sentAt = email.sent_at || email.created_at;
-        if (calculateWaitUntil(flow.trigger_config, new Date(sentAt)).getTime() > Date.now()) continue;
-        if (email.message_id) {
-          const { count: automated } = await admin.from("flow_run_logs").select("id", { count: "exact", head: true }).eq("result->>action", "email_sent").eq("result->>messageId", email.message_id).throwOnError();
-          if (automated) continue;
+      for (let offset = 0; ; offset += 500) {
+        const { data: outbound } = await admin.from("emails").select("id,contact_id,thread_id,message_id,sent_at,created_at,contacts(company_id)").eq("direction", "sent").eq("status", "sent").or(`owner_id.is.null,owner_id.eq.${flow.user_id}`).order("sent_at", { ascending: false }).order("id").range(offset, offset + 499).throwOnError();
+        const automatedIds = new Set<string>();
+        const messageIds = (outbound ?? []).flatMap(email => email.message_id ? [email.message_id] : []);
+        for (let index = 0; messageIds.length && index < ownRunIds.length; index += 500) {
+          const { data: logs } = await admin.from("flow_run_logs").select("result").in("run_id", ownRunIds.slice(index, index + 500)).eq("result->>action", "email_sent").in("result->>messageId", messageIds).throwOnError();
+          for (const log of logs ?? []) if (typeof log.result?.messageId === "string") automatedIds.add(log.result.messageId);
         }
-        let repliesQuery = admin.from("emails").select("id", { count: "exact", head: true }).eq("contact_id", email.contact_id).eq("direction", "received").gt("created_at", sentAt);
-        if (email.thread_id) repliesQuery = repliesQuery.eq("thread_id", email.thread_id);
-        const { count: replies } = await repliesQuery.throwOnError();
-        if (replies) continue;
-        const relation = email.contacts as unknown as { company_id?: string } | Array<{ company_id?: string }> | null;
-        const contactCompanyId = Array.isArray(relation) ? relation[0]?.company_id : relation?.company_id;
-        const result = await enrollMatchingFlows({ type: "no_reply", flowId: flow.id, conversationId, occurredAt: sentAt, eventKey: `no_reply:${email.id}`, contactId: email.contact_id, companyId: contactCompanyId ?? null });
-        enrolled += result.filter((item) => item.enrolled).length;
+        for (const email of outbound ?? []) {
+          const conversationId = email.thread_id || email.message_id || `email:${email.id}`;
+          const key = `${email.contact_id}:${conversationId}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const sentAt = email.sent_at || email.created_at;
+          if (calculateWaitUntil(flow.trigger_config, new Date(sentAt)).getTime() > Date.now()) continue;
+          if (email.message_id && automatedIds.has(email.message_id)) continue;
+          let repliesQuery = admin.from("emails").select("id", { count: "exact", head: true }).eq("contact_id", email.contact_id).eq("direction", "received").or(`owner_id.is.null,owner_id.eq.${flow.user_id}`).gt("created_at", sentAt);
+          if (email.thread_id) repliesQuery = repliesQuery.eq("thread_id", email.thread_id);
+          const { count: replies } = await repliesQuery.throwOnError();
+          if (replies) continue;
+          const relation = email.contacts as unknown as { company_id?: string } | Array<{ company_id?: string }> | null;
+          const contactCompanyId = Array.isArray(relation) ? relation[0]?.company_id : relation?.company_id;
+          const result = await enrollMatchingFlows({ type: "no_reply", flowId: flow.id, conversationId, occurredAt: sentAt, eventKey: `no_reply:${email.id}`, contactId: email.contact_id, companyId: contactCompanyId ?? null });
+          enrolled += result.filter((item) => item.enrolled).length;
+        }
+        if (!outbound || outbound.length < 500) break;
       }
     }
   }
   return enrolled;
 }
 
-export async function processDueFlowRuns(limit = 50) {
+export async function processDueFlowRuns(limit = 50, options: { syncMailbox?: boolean } = {}) {
   const admin = createSupabaseAdmin();
   const { data: interrupted } = await admin.from("flow_runs").select("id").eq("status", "active").lt("locked_at", new Date(Date.now() - 15 * 60000).toISOString()).throwOnError();
   for (const run of interrupted ?? []) await finishRun(run.id, "failed", "Execution was interrupted. Review the last action before restarting to avoid duplicate delivery.");
-  await syncFlowMailboxMessages();
-  await scanTimeBasedFlowTriggers();
   const { data, error } = await admin.from("flow_runs").select("id").eq("status", "active").is("locked_at", null).or(`next_run_at.is.null,next_run_at.lte.${new Date().toISOString()}`).order("next_run_at").limit(limit);
   if (error) throw new Error(`Unable to load due flow runs: ${error.message}`);
   const results = [];
-  for (const run of data ?? []) results.push({ runId: run.id, ...(await processFlowRun(run.id)) });
+  for (const run of data ?? []) {
+    try { results.push({ runId: run.id, ...(await processFlowRun(run.id)) }); }
+    catch (error) { results.push({ runId: run.id, status: "error", error: error instanceof Error ? error.message : "Unable to process this run." }); }
+  }
+  // A separate minute tick resumes waits without waiting for slow IMAP logins.
+  if (options.syncMailbox !== false) await syncFlowMailboxMessages();
+  await scanTimeBasedFlowTriggers();
   return results;
 }
 
-export async function listFlowRunInsights(flowId: string, userId: string) {
+export async function listFlowRunInsights(flowId: string) {
+  await requireWorkspaceMember();
   const admin = createSupabaseAdmin();
-  const { data: flow } = await admin.from("flows").select("id").eq("id", flowId).eq("user_id", userId).maybeSingle();
+  const { data: flow, error: flowError } = await admin.from("flows").select("id").eq("id", flowId).maybeSingle();
+  if (flowError) throw new Error(`Unable to load flow: ${flowError.message}`);
   if (!flow) throw new Error("Flow not found.");
   const { data, error } = await admin.from("flow_runs").select("id,status,current_step,started_at,finished_at,next_run_at,conversation_id,flow_run_logs(id,result,error,created_at)").eq("flow_id", flowId).order("started_at", { ascending: false }).limit(25);
   if (error) throw new Error(`Unable to load flow insights: ${error.message}`);

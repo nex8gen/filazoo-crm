@@ -1,3 +1,5 @@
+import type { ProviderImage } from "./image-input.ts";
+
 type GatewayResponse = {
   choices?: Array<{ message?: { content?: string | Array<{ type?: string; text?: string }> } }>;
   error?: { message?: string };
@@ -8,6 +10,8 @@ export type GenerateGatewayTextOptions = {
   model?: string;
   systemInstruction: string;
   prompt: string;
+  images?: ProviderImage[];
+  visionModel?: string;
   maxOutputTokens?: number;
   fetcher?: typeof fetch;
 };
@@ -17,6 +21,8 @@ export async function generateGatewayText({
   model = "alibaba/qwen-3-14b",
   systemInstruction,
   prompt,
+  images = [],
+  visionModel,
   maxOutputTokens = 1_200,
   fetcher = fetch,
 }: GenerateGatewayTextOptions) {
@@ -27,10 +33,16 @@ export async function generateGatewayText({
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model,
+      model: images.length ? visionModel || "alibaba/qwen3.5-flash" : model,
       messages: [
         { role: "system", content: systemInstruction },
-        { role: "user", content: prompt },
+        { role: "user", content: images.length ? [
+          { type: "text", text: prompt },
+          ...images.flatMap((image) => [
+            { type: "text", text: `${image.label}: ${JSON.stringify(image.name)} (user-supplied image evidence)` },
+            { type: "image_url", image_url: { url: image.dataUrl } },
+          ]),
+        ] : prompt },
       ],
       max_tokens: maxOutputTokens,
       temperature: 0.2,

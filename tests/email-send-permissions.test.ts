@@ -16,7 +16,7 @@ test("read-only viewers cannot send email, even by calling the HTTP handler dire
       if (!roles.includes(role)) throw new Error("Access denied");
       return { id: "actor", role };
     } },
-    "@/lib/data/mailboxes": { getEffectiveMailbox: () => { mailboxReads++; throw new Error("No mailbox should be contacted"); } },
+    "@/lib/data/mailboxes": { getViewerMailbox: () => { mailboxReads++; throw new Error("No mailbox should be contacted"); } },
     "@/lib/mailer": { sendMailboxEmail: () => { throw new Error("Tests must not send emails"); } },
     "@/lib/supabase/admin": {},
     "@/lib/email-threading": {},

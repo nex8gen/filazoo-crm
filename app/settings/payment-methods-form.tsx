@@ -1,5 +1,7 @@
 "use client";
 
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
 import { useState, type FormEvent } from "react";
 import { ChevronUp, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -49,13 +51,13 @@ export function PaymentMethodsForm({ initial, canManage }: { initial: InvoicePay
         </div>
         {editingId === method.id ? <fieldset disabled={!canManage} id={`payment-method-${method.id}`} className="space-y-4 border-t pt-4">
         <div className="grid gap-4 sm:grid-cols-2">
-          <label className="grid gap-2 text-sm">Payment type<select className="h-9 w-full rounded-md border bg-background px-3" value={method.type} onChange={(event) => {
-            const type = event.target.value as InvoicePaymentMethod["type"];
+          <label className="grid gap-2 text-sm">Payment type<Select value={method.type} onValueChange={(selectedValue) => { if (selectedValue === null) return;
+            const type = selectedValue as InvoicePaymentMethod["type"];
             update(method.id, { type, bankDetails: type === "bank_transfer" ? method.bankDetails ?? { beneficiaryName: "", accountNumber: "", swift: "", bankName: "" } : undefined, label: method.label === paymentMethodLabels[method.type] ? paymentMethodLabels[type] : method.label });
-          }}>{Object.entries(paymentMethodLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+           }}><SelectTrigger className="w-full min-w-0"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(paymentMethodLabels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></label>
           <label className="grid gap-2 text-sm">Display name<Input required maxLength={100} value={method.label} onChange={(event) => update(method.id, { label: event.target.value })} placeholder="e.g. USD bank account" /></label>
         </div>
-        <label className="grid gap-2 text-sm">Currency<select className="h-9 w-full rounded-md border bg-background px-3" value={method.currency} onChange={(event) => update(method.id, { currency: event.target.value as InvoicePaymentMethod["currency"] })}><option value="">All invoice currencies</option>{invoiceCurrencies.map((currency) => <option key={currency} value={currency}>{currency}</option>)}</select></label>
+        <label className="grid gap-2 text-sm">Currency<Select value={method.currency} onValueChange={(selectedValue) => { if (selectedValue === null) return; update(method.id, { currency: selectedValue as InvoicePaymentMethod["currency"] }); }}><SelectTrigger className="w-full min-w-0"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="">All invoice currencies</SelectItem>{invoiceCurrencies.map((currency) => <SelectItem key={currency} value={currency}>{currency}</SelectItem>)}</SelectContent></Select></label>
         {method.type === "bank_transfer" && method.bankDetails ? <div className="grid gap-4 sm:grid-cols-2">
           {([["beneficiaryName", "Beneficiary", 200], ["accountNumber", "Account number", 100], ["swift", "SWIFT / BIC code", 11], ["bankName", "Bank name", 200]] as const).map(([key, label, maxLength]) => <label key={key} className="grid gap-2 text-sm">{label}<Input required maxLength={maxLength} value={method.bankDetails![key]} onChange={(event) => update(method.id, { bankDetails: { ...method.bankDetails!, [key]: key === "swift" ? event.target.value.toUpperCase() : event.target.value } })} /></label>)}
         </div> : null}

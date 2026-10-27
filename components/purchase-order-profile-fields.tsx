@@ -1,5 +1,7 @@
 "use client";
 
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
 import Link from "next/link";
 import type {
   OrderProfile,
@@ -96,13 +98,12 @@ export function PurchaseOrderProfileFields({
         {field("companyName", "Company name")}
         <div className="space-y-2">
           <Label htmlFor="po-company-contact">Company contact</Label>
-          <select
-            id="po-company-contact"
-            className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+          <Select
             value={customer.contactId ?? ""}
-            onChange={(event) => {
+            onValueChange={(selectedValue) => {
+              if (selectedValue === null) return;
               const contact = profile.contacts.find(
-                (item) => item.id === event.target.value,
+                (item) => item.id === selectedValue,
               );
               onChange({
                 ...document,
@@ -117,22 +118,25 @@ export function PurchaseOrderProfileFields({
               });
             }}
           >
-            <option value="">No linked contact</option>
+            <SelectTrigger id="po-company-contact" className="w-full min-w-0"><SelectValue /></SelectTrigger>
+            <SelectContent>
+            <SelectItem value="">No linked contact</SelectItem>
             {customer.contactId &&
               !profile.contacts.some(
                 (item) => item.id === customer.contactId,
               ) && (
-                <option value={customer.contactId}>
+                <SelectItem value={customer.contactId}>
                   {customer.contactName || customer.contactEmail} (saved
                   contact)
-                </option>
+                </SelectItem>
               )}
             {profile.contacts.map((contact) => (
-              <option key={contact.id} value={contact.id}>
+              <SelectItem key={contact.id} value={contact.id}>
                 {contact.name || contact.email} · {contact.email}
-              </option>
+              </SelectItem>
             ))}
-          </select>
+            </SelectContent>
+          </Select>
         </div>
         {field("contactName", "Contact name")}
         {field("contactRole", "Job title")}

@@ -7,6 +7,7 @@ import ts from "typescript";
 import * as engine from "../lib/flow-engine.ts";
 import { blankStep, defaultFlowInput } from "../lib/flows.ts";
 import { flowEmailTestSchema } from "../lib/flow-email-test.ts";
+import * as templates from "../lib/flow-templates.ts";
 
 const require = createRequire(import.meta.url);
 function moduleUnderTest(file: string, dependencies: Record<string, unknown>) {
@@ -53,6 +54,7 @@ function service(failFirst = false) {
   const calls: Array<{ previousAutomatedMessages: number; messages: Array<{ direction: string; body: string }>; contact: { email: string } }> = [];
   let reads = 0;
   const exports = moduleUnderTest("../lib/data/flow-email-test.ts", {
+    "../flow-templates.ts": templates,
     "../flow-engine.ts": engine,
     "./flow-ai-reply.ts": {
       loadFlowReplyProducts: async () => { reads++; return []; },

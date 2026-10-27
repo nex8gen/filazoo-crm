@@ -1,6 +1,7 @@
 import { bridgeLeadRow, bridgeLeadSchema, getBridgeSecret, verifyBridgeAuthorization } from "@/lib/meta-lead-bridge";
 import { env, hasSupabaseConfig } from "@/lib/env";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { enrollNewLeadFlows } from "@/lib/data/flow-runtime";
 
 export async function POST(request: Request) {
   const secret = getBridgeSecret(env.supabaseSecretKey, process.env.META_LEAD_BRIDGE_SECRET);
@@ -44,6 +45,7 @@ export async function POST(request: Request) {
     if (error) throw error;
     if (!data?.length) return respond({ ok: true, duplicate: true, leadId: parsed.data.lead_id }, 200);
     // The database creates/matches company, contact and pipeline atomically.
+    if (data[0].contact_id) await enrollNewLeadFlows(data[0].contact_id);
     return respond({ ok: true, duplicate: false, leadId: parsed.data.lead_id, companyId: data[0].company_id, contactId: data[0].contact_id }, 201);
   } catch {
     // Let Make retry failures; never return form answers or credentials in errors.

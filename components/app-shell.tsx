@@ -11,6 +11,7 @@ import { BrandMark } from "@/components/brand-mark";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { WorkspaceAiAssistant } from "@/components/workspace-ai-assistant";
+import { FlowActivityBell } from "@/components/flow-activity";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
@@ -165,6 +166,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
             <span className="hidden text-xs sm:inline">Search workspace</span>
             <kbd className="ml-auto hidden rounded border bg-muted px-1.5 py-0.5 text-xs font-normal lg:inline-flex">Ctrl K</kbd>
           </Button>
+          <FlowActivityBell />
           <LanguageSwitcher />
           <ThemeToggle />
           <div className="lg:hidden">{userMenu}</div>

@@ -15,6 +15,9 @@ export async function CompanyEmails({ company, viewer, composeTo }: { company: C
   return <div className="space-y-3">
     {!company.emails.some((email) => email.trim()) ? <p className="text-sm text-muted-foreground">Add a contact email in the company profile to see this customer&apos;s messages.</p> : null}
     <EmailInboxWorkspace
+      mailboxes={data.mailboxes}
+      selectedMailboxId={data.selectedMailboxId}
+      defaultSenderId={data.defaultSenderId}
       mailboxConfigured={data.mailboxConfigured}
       sendConfigured={data.sendConfigured}
       inboxConfigured={data.inboxConfigured}

@@ -1,5 +1,7 @@
 "use client";
 
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -515,67 +517,48 @@ function PurchaseOrderEditor({
               {field("deliveryDate", "Expected delivery", "date")}
               <div className="space-y-2">
                 <Label htmlFor="po-currency">Currency</Label>
-                <select
-                  id="po-currency"
+                <Select
                   disabled={
                     locked ||
                     document.items.some((item) => Boolean(item.productSku))
                   }
-                  className="h-10 w-full rounded-md border bg-background px-3 text-sm"
                   value={document.currency}
-                  onChange={(event) =>
-                    change(
-                      "currency",
-                      event.target.value as PurchaseOrderDocument["currency"],
-                    )
-                  }
+                  onValueChange={(value) => { if (value !== null) change("currency", value as PurchaseOrderDocument["currency"]); }}
                 >
-                  {invoiceCurrencies.map((currency) => (
-                    <option key={currency}>{currency}</option>
-                  ))}
-                </select>
+                  <SelectTrigger id="po-currency" className="w-full min-w-0"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {invoiceCurrencies.map((currency) => (
+                      <SelectItem key={currency} value={currency}>{currency}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="po-status">Order status</Label>
-                <select
-                  id="po-status"
-                  className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-                  value={document.status}
-                  onChange={(event) =>
-                    change(
-                      "status",
-                      event.target.value as PurchaseOrderDocument["status"],
-                    )
-                  }
-                >
-                  {poStatuses.map((status) => (
-                    <option key={status} value={status}>
-                      {poStatusLabels[status]}
-                    </option>
-                  ))}
-                </select>
+                <Select value={document.status} onValueChange={(value) => { if (value !== null) change("status", value as PurchaseOrderDocument["status"]); }}>
+                  <SelectTrigger id="po-status" className="w-full min-w-0"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {poStatuses.map((status) => (
+                      <SelectItem key={status} value={status}>
+                        {poStatusLabels[status]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div className="grid gap-4 rounded-lg border p-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="po-payment-policy">Payment policy</Label>
-                <select
-                  id="po-payment-policy"
-                  className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-                  value={document.paymentPolicy}
-                  onChange={(event) =>
-                    change(
-                      "paymentPolicy",
-                      event.target
-                        .value as PurchaseOrderDocument["paymentPolicy"],
-                    )
-                  }
-                >
-                  <option value="full_before_shipment">
-                    100% payment before shipment
-                  </option>
-                  <option value="custom">Different agreed terms</option>
-                </select>
+                <Select value={document.paymentPolicy} onValueChange={(value) => { if (value !== null) change("paymentPolicy", value as PurchaseOrderDocument["paymentPolicy"]); }}>
+                  <SelectTrigger id="po-payment-policy" className="w-full min-w-0"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="full_before_shipment">
+                      100% payment before shipment
+                    </SelectItem>
+                    <SelectItem value="custom">Different agreed terms</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               {document.paymentPolicy === "custom" ? (
                 <>

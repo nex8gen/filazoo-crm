@@ -17,10 +17,22 @@ export type FlowReplyMessage = { subject: string | null; body: string | null; di
 
 export async function loadFlowReplyProducts(config: JsonConfig): Promise<CrmProductRow[]> {
   if (!config.useProducts && !config.attachCatalog) return [];
-  const { data } = await createSupabaseAdmin().from("products")
-    .select("sku,name,image_url,material,color,diameter,weight,price,currency,moq,stock_status,lead_time,tags,active,sheet_updated_at")
-    .eq("active", true).order("sku").limit(500).throwOnError();
-  return ((data ?? []) as CrmProductRow[]).filter((row) => !row.sku.startsWith("SAMPLE-") && !row.name.toLowerCase().startsWith("[sample]"));
+  const products: CrmProductRow[] = [];
+  for (let offset = 0; ; offset += 500) {
+    const { data } = await createSupabaseAdmin().from("products")
+      .select("sku,name,image_url,material,color,diameter,weight,price,currency,moq,stock_status,lead_time,tags,active,sheet_updated_at")
+      .eq("active", true).order("sku").range(offset, offset + 499).throwOnError();
+    products.push(...((data ?? []) as CrmProductRow[]).filter((row) => !row.sku.startsWith("SAMPLE-") && !row.name.toLowerCase().startsWith("[sample]")));
+    if (!data || data.length < 500) return products;
+  }
+}
+
+export async function prepareFlowTemplateCatalog() {
+  const products = await loadFlowReplyProducts({ attachCatalog: true });
+  if (!products.length) throw new Error("Add active products before sending a catalog.");
+  const content = Buffer.from(buildCatalogPdf(products.map(crmProduct), { title: "Filazoo product catalog" }));
+  if (content.length > 7_500_000) throw new Error("The generated catalog exceeds the 7.5 MB attachment limit.");
+  return [{ filename: "Filazoo-product-catalog.pdf", contentType: "application/pdf", content }];
 }
 
 export async function prepareFlowAiReply({ userId, contactId, companyId, conversationId, config }: {

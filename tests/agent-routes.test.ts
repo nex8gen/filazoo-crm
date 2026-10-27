@@ -10,6 +10,7 @@ import * as providerError from "../lib/ai/assistant-provider-error.ts";
 import * as i18n from "../lib/i18n.ts";
 import * as research from "../lib/ai/customer-research.ts";
 import * as companyChat from "../lib/ai/company-chat.ts";
+import * as imageInput from "../lib/ai/image-input.ts";
 
 const require = createRequire(import.meta.url);
 // Run the actual route handlers with isolated auth/provider/database boundaries.
@@ -17,7 +18,7 @@ const require = createRequire(import.meta.url);
 function route(file: string, dependencies: Record<string, unknown>, env: Record<string, string> = {}, method: "POST" | "GET" = "POST") {
   const exports: { POST?: (request: Request, context?: { params: Promise<{ id: string }> }) => Promise<Response>; GET?: (request: Request) => Promise<Response> } = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => dependencies[name] ?? (name === "@/lib/i18n" ? i18n : name === "@/lib/ai/customer-research" ? research : require(name)), Response, Request, URL, AbortSignal, Date, Error, crypto, console, process: { env } });
+  vm.runInNewContext(code, { exports, require: (name: string) => dependencies[name] ?? (name === "@/lib/i18n" ? i18n : name === "@/lib/ai/customer-research" ? research : name === "@/lib/ai/image-input" ? imageInput : require(name)), Response, Request, URL, AbortSignal, Date, Error, crypto, console, process: { env } });
   return exports[method]!;
 }
 
@@ -26,6 +27,77 @@ const id = "15693adc-0bdf-4617-b214-71b1861764a9";
 const company = { type: "create_company", company: { name: "Acme", country: "US", segment: "Retail" } };
 const request = (body: unknown, origin = "http://localhost:3000") => new Request("http://localhost:3000/api/ai/assistant/action", { method: "POST", headers: { "Content-Type": "application/json", origin }, body: JSON.stringify(body) });
 const decision = { id, decision: "approve", approval: "manual" };
+
+test("image prompts reach workspace providers in Chat and Agent mode without bypassing action approval", async () => {
+  const image = { name: "address.png", dataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1kAAAAASUVORK5CYII=" };
+  for (const mode of ["analyze", "work"]) {
+    let prepared = 0;
+    let gatewayCalls = 0;
+    let signedIn = true;
+    const proposal = { type: "update_company", companyId: id, changes: { commerce: { shippingAddress: "42 Test Road" } } };
+    const post = route("../app/api/ai/assistant/route.ts", {
+      "@/lib/auth": { getWorkspaceViewer: async () => signedIn ? viewer : null },
+      "@/lib/ai/workspace-assistant": assistant,
+      "@/lib/ai/assistant-provider-error": providerError,
+      "@/lib/ai/gemini": { generateGeminiText: async ({ images, prompt }: { images: imageInput.ProviderImage[]; prompt: string }) => {
+        assert.equal(images[0].dataUrl, image.dataUrl);
+        assert.match(prompt, /Message 1, image 1/);
+        assert.ok(!prompt.includes("base64"));
+        throw new Error("Regional availability");
+      } },
+      "@/lib/ai/gateway": { isGeminiRegionError: () => true, generateGatewayText: async ({ images, visionModel }: { images: imageInput.ProviderImage[]; visionModel: string }) => {
+        gatewayCalls++;
+        assert.equal(images[0].dataUrl, image.dataUrl);
+        assert.equal(visionModel, "test-vision-model");
+        return `Address read from the image.\nFILAZOO_ACTIONS_JSON: ${JSON.stringify([proposal])}`;
+      } },
+      "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
+      "@/lib/ai/agent-execution": { prepareAgentActions: async (actions: unknown, _viewer: unknown, approvalMode: string) => {
+        prepared++;
+        assert.equal(approvalMode, "ask");
+        assert.equal(JSON.stringify(actions), JSON.stringify([proposal]));
+        return [{ id: "pending-approval" }];
+      } },
+    }, { GEMINI_API_KEY: "test", AI_GATEWAY_API_KEY: "test", AI_GATEWAY_VISION_MODEL: "test-vision-model" });
+    const body = { mode, pathname: "/companies", pageLabel: "Companies", pageText: "", messages: [{ role: "user", content: "Update this customer's shipping address from the image.", images: [image] }] };
+    const response = await post(request(body));
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.equal(result.output, "Address read from the image.");
+    assert.equal(prepared, mode === "work" ? 1 : 0);
+    assert.equal(result.actions.length, mode === "work" ? 1 : 0);
+    assert.equal((await post(request({ ...body, messages: [{ ...body.messages[0], images: [{ ...image, dataUrl: "https://attacker.example/image.png" }] }] }))).status, 400);
+    assert.equal(gatewayCalls, 1);
+    signedIn = false;
+    assert.equal((await post(request(body))).status, 401);
+    assert.equal(gatewayCalls, 1);
+  }
+});
+
+test("customer image questions use authorized records and retain image context in follow-ups", async () => {
+  const image = { name: "address.png", dataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1kAAAAASUVORK5CYII=" };
+  let loaded = false;
+  const post = route("../app/api/companies/[id]/chat/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer },
+    "@/lib/data/crm": { getCompanyDetails: async (companyId: string) => { assert.equal(companyId, id); loaded = true; return { details: { company: {} } }; } },
+    "@/lib/ai/company-chat": { ...companyChat, buildCompanyChatContext: () => ({ context: { coverage: {} }, sources: [] }) },
+    "@/lib/ai/gemini": { generateGeminiText: async ({ images, prompt }: { images: imageInput.ProviderImage[]; prompt: string }) => {
+      assert.equal(loaded, true);
+      assert.deepEqual(images, [{ ...image, label: "Message 1, image 1" }]);
+      assert.match(prompt, /What is the postal code/);
+      assert.ok(!prompt.includes("base64"));
+      return "The image shows postal code 12345.";
+    } },
+    "@/lib/ai/gateway": {},
+  }, { GEMINI_API_KEY: "test" });
+  const response = await post(request({ messages: [
+    { role: "user", content: "Read this image.", images: [image] },
+    { role: "assistant", content: "It shows an address." },
+    { role: "user", content: "What is the postal code?" },
+  ] }), { params: Promise.resolve({ id }) });
+  assert.equal(response.status, 200);
+  assert.match((await response.json()).output, /12345/);
+});
 
 test("agent reads email results before preparing customer updates and discards premature actions", async () => {
   const proposed = { type: "update_company", companyId: id, sourceEmailId: "mail-1", changes: { commerce: { shippingAddress: "99 New Road" } } };

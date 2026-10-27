@@ -16,5 +16,5 @@ const flow: AutomationFlow = {
 };
 
 export default function FlowCanvasQaPage() {
-  return <FlowBuilder initialFlows={[flow]} initialFlowId={flow.id} canEdit mailboxOptions={[]} memberOptions={[]} filterOptions={{ segments: [], countries: [] }} />;
+  return <FlowBuilder initialFlows={[flow]} viewerId={flow.createdBy} initialFlowId={flow.id} canEdit mailboxOptions={[]} memberOptions={[]} filterOptions={{ segments: [], countries: [] }} />;
 }

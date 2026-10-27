@@ -1,7 +1,8 @@
 import "server-only";
 import { simulateFlow, type FlowFacts } from "../flow-engine.ts";
 import type { FlowEmailTestInput, FlowEmailTestResult } from "../flow-email-test.ts";
-import { generateFlowAiReply, loadFlowReplyProducts, type FlowReplyMessage } from "./flow-ai-reply.ts";
+import { generateFlowAiReply, loadFlowReplyProducts, prepareFlowTemplateCatalog, type FlowReplyMessage } from "./flow-ai-reply.ts";
+import { emailTemplates, renderFlowTemplate } from "../flow-templates.ts";
 
 /** Preview only: never creates a run, writes CRM data, uploads attachments or sends email. */
 export async function testFlowWithEmails(input: FlowEmailTestInput, managerName: string | null): Promise<FlowEmailTestResult> {
@@ -29,8 +30,16 @@ export async function testFlowWithEmails(input: FlowEmailTestInput, managerName:
       if (entry.status !== "would_run") continue;
       const step = input.flow.steps[entry.step - 1];
       if (step.type === "send_email") {
-        previousMessages += 1;
-        messages.unshift({ subject: String(step.config.subject || "Template email"), body: String(step.config.body || "A configured template email would be sent here."), direction: "sent", created_at: new Date().toISOString() });
+        try {
+          const template = emailTemplates[String(step.config.templateId)];
+          const contact = { name: input.customerName, email: email.from };
+          const subject = renderFlowTemplate(String(step.config.subject || template.subject), contact);
+          const body = renderFlowTemplate(String(step.config.body || template.body), contact);
+          const attachments = step.config.templateId === "send_catalog" ? await prepareFlowTemplateCatalog() : [];
+          testCase.replies.push({ step: entry.step, subject, body, attachments: attachments.map((attachment) => ({ filename: attachment.filename, size: attachment.content.length })) });
+          previousMessages += 1;
+          messages.unshift({ subject, body, direction: "sent", created_at: new Date().toISOString() });
+        } catch (error) { testCase.error = error instanceof Error ? error.message : "Unable to prepare template."; break; }
       }
       if (step.type !== "ai_auto_reply") continue;
       try {

@@ -6,8 +6,19 @@ export const stepTypes = ["wait", "if_condition", "send_email", "ai_auto_reply",
 export const emailCategories = ["Needs follow-up", "Waiting on customer", "Interested", "Big order", "No action"] as const;
 export const companyStatuses = ["new", "researching", "qualified", "contacted", "engaged", "customer", "disqualified"] as const;
 export const pipelineStages = ["new", "contacted", "replied", "interested", "big_order", "won", "lost"] as const;
+export const flowLeadLists = ["Shopify B2B leads", "Meta ad leads"] as const;
+export function flowLeadListForSource(source: string | null | undefined) {
+  if (source === "shopify_b2b_form" || source === "shopify_b2b_form_opt_in") return "Shopify B2B leads";
+  return source === "meta_lead_ads" ? "Meta ad leads" : null;
+}
 
 export type FlowStatus = (typeof flowStatuses)[number];
+export const flowBulkInputSchema = z.object({
+  ids: z.array(z.uuid()).min(1).max(100).transform((ids) => [...new Set(ids)]),
+  action: z.enum(["live", "paused", "delete"]),
+});
+export type FlowBulkAction = z.infer<typeof flowBulkInputSchema>["action"];
+export type FlowBulkResult = { id: string; ok: true; flow?: AutomationFlow } | { id: string; ok: false; error: string };
 export type TriggerType = (typeof triggerTypes)[number];
 export type FlowStepType = (typeof stepTypes)[number];
 export type JsonConfig = Record<string, string | number | boolean | null>;
@@ -70,7 +81,7 @@ const triggerConfigSchemas: Record<TriggerType, z.ZodType<JsonConfig>> = {
   email_received: z.object({ ...profileFilters }),
   category_changed: z.object({ category: z.enum(emailCategories), ...profileFilters }),
   no_reply: z.object({ amount: z.number().int().min(1).max(365), unit: z.enum(["hours", "days"]), businessDays: z.boolean().optional(), ...profileFilters }),
-  lead_added_to_list: z.object({ listId: z.string().trim().min(1).max(160), ...profileFilters }),
+  lead_added_to_list: z.object({ listId: z.enum(flowLeadLists), ...profileFilters }),
   company_segment_changed: z.object({ segment: z.string().trim().min(1).max(120), country: profileFilters.country, companyStatus: profileFilters.companyStatus, pipelineStage: profileFilters.pipelineStage, minFitScore: profileFilters.minFitScore }),
   pipeline_stage_changed: z.object({ stage: z.enum(pipelineStages), ...profileFilters }),
 };
@@ -88,6 +99,7 @@ const stepConfigSchemas: Record<FlowStepType, z.ZodType<JsonConfig>> = {
     sendWindow: z.enum(["anytime", "business_hours"]),
     trackOpens: z.boolean().optional(),
     trackClicks: z.boolean().optional(),
+    utmTracking: z.boolean().optional(),
   }).superRefine((value, context) => {
     if (value.usePrices && !value.useProducts) context.addIssue({ code: "custom", message: "Enable product information before using prices." });
   }),
@@ -117,7 +129,7 @@ const stepConfigSchemas: Record<FlowStepType, z.ZodType<JsonConfig>> = {
     trackClicks: z.boolean().optional(),
     utmTracking: z.boolean().optional(),
     stopOnReply: z.boolean().optional(),
-    sendWindow: z.enum(["anytime", "business_hours"]).optional(),
+    sendWindow: z.enum(["anytime", "business_hours"]).default("business_hours"),
   }),
   create_task: z.object({
     assigneeType: z.enum(["owner", "user"]),
@@ -193,7 +205,7 @@ export function flowAgentCapabilities() {
     stepConfigs: Object.fromEntries(stepTypes.map((type) => [type, z.toJSONSchema(stepConfigSchemas[type], { io: "input" })])),
     stepDefaults: Object.fromEntries(stepTypes.map((type) => [type, { ...blankStep(type).config, ...(type === "send_email" ? { templateId: "helpful_reminder" } : {}) }])),
     emailTemplates: ["helpful_reminder", "send_catalog", "quote_follow_up", "welcome_intro", "last_chance"],
-    timezone: "Asia/Shanghai",
+    timezone: "UTC",
   };
 }
 

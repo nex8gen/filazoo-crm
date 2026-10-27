@@ -24,6 +24,7 @@ export async function syncFlowMailboxMessages() {
     await admin.from("emails").upsert({ id: emailId(message.message_id), contact_id: contact.id, direction: "sent", subject: message.subject, body: message.body, message_id: message.message_id, thread_id: message.thread_key || `message:${normalizeMessageId(message.message_id)}`, status: "sent", sent_at: message.sent_at, created_at: message.sent_at, owner_id: message.user_id }, { onConflict: "id", ignoreDuplicates: true }).throwOnError();
   }
   const { data: mailboxes } = await admin.from("workspace_mailboxes").select("*").eq("is_active", true).throwOnError();
+  const ownAddresses = new Set((mailboxes ?? []).map((row) => String(row.email).trim().toLowerCase()));
   const { loadSyncedMailbox, loadMailboxMessageContent } = await import("./mailbox-sync.ts");
   for (const row of mailboxes ?? []) {
     const mailbox = normalizeMailboxRow(row);
@@ -42,6 +43,8 @@ export async function syncFlowMailboxMessages() {
     if (!users.length || (mailbox.type === "personal" && !users.includes(mailbox.userId ?? ""))) continue;
     for (let message of inbound) {
       if (!message.messageId) continue;
+      // A copy of our own outgoing email is not a new customer inquiry.
+      if (ownAddresses.has(message.contact.trim().toLowerCase())) continue;
       const { data: contact } = await admin.from("contacts").select("id").eq("email", message.contact).maybeSingle().throwOnError();
       if (!contact) continue;
       const { data: existing } = await admin.from("emails").select("id").eq("message_id", message.messageId).limit(1).maybeSingle().throwOnError();

@@ -1,5 +1,6 @@
 import type { DataMode, EmailDraft, Reply } from "./types.ts";
-import { getEffectiveMailbox, mailboxHasImap, mailboxHasSmtp } from "./data/mailboxes.ts";
+import { getViewerMailboxes, mailboxHasImap, mailboxHasSmtp } from "./data/mailboxes.ts";
+import { defaultViewerMailbox, type MailboxOption } from "./mailbox-utils.ts";
 import { getEmailAutomationSettings, listEmailInboxStates, listSentMailboxMessages, type EmailCategory, type EmailFolderState } from "./data/email-state.ts";
 import { requireWorkspaceMember } from "./auth.ts";
 import { canViewEmail } from "./email-access.ts";
@@ -14,6 +15,7 @@ export type InboxEmailItem = {
   uid?: number;
   uidValidity?: number;
   mailboxKey?: string;
+  mailboxId?: string | null;
   bodyLoaded?: boolean;
   contactName?: string;
   source?: "mailbox" | "shopify" | "crm";
@@ -63,6 +65,9 @@ export type EmailInboxBackendData = {
   lastMailboxSync?: string | null;
   aiConfigured: boolean;
   defaultMailboxEmail: string | null;
+  mailboxes: MailboxOption[];
+  selectedMailboxId: string | null;
+  defaultSenderId: string | null;
   emails: InboxEmailItem[];
   automation: {
     enabled: boolean;
@@ -303,19 +308,23 @@ export function buildInboxEmailItems({
   });
 }
 
-export async function getEmailInboxBackendData({ syncMailbox = true, history = false }: { syncMailbox?: boolean; history?: boolean } = {}): Promise<EmailInboxBackendData> {
+export async function getEmailInboxBackendData({ syncMailbox = true, history = false, mailboxId }: { syncMailbox?: boolean; history?: boolean; mailboxId?: string } = {}): Promise<EmailInboxBackendData> {
   const { listCompanies, listEmailDrafts, listReplies } = await import("./data/crm.ts");
   const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
-  const [{ emails, mode }, { replies }, companyResult, defaultMailbox, sentMessages, states, shopifyMessages, assignedContacts] = await Promise.all([
+  const [{ emails, mode }, { replies }, companyResult, mailboxes, states, shopifyMessages, assignedContacts] = await Promise.all([
     listEmailDrafts(),
     listReplies(),
     listCompanies(),
-    getEffectiveMailbox(viewer.id).catch(() => null),
-    listSentMailboxMessages(viewer.id).catch(() => []),
+    getViewerMailboxes(viewer.id),
     listEmailInboxStates(viewer.id).catch(() => new Map()),
     listShopifyFormInboxMessages().catch(() => []),
     getAssignedEmailContacts(viewer),
   ]);
+  const defaultSender = defaultViewerMailbox(mailboxes);
+  const defaultMailbox = mailboxId !== undefined ? mailboxes.find((mailbox) => mailbox.id === mailboxId) : defaultSender;
+  if (mailboxId !== undefined && !defaultMailbox) throw new Error("Mailbox unavailable.");
+  const personal = defaultMailbox?.type === "personal";
+  const sentMessages = defaultMailbox ? await listSentMailboxMessages(viewer.id, defaultMailbox.id).catch(() => []) : [];
 
   let liveInbound: InboxEmailItem[] = [];
   let inboxError: string | null = null;
@@ -336,7 +345,7 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
   const companiesByEmail = new Map(companyResult.companies.filter((company) => company.email).map((company) => [company.email.toLowerCase(), company]));
   const companiesByName = new Map(companyResult.companies.map((company) => [company.name.toLowerCase(), company]));
   const companiesById = new Map(companyResult.companies.map((company) => [company.id, company]));
-  const inbox = [...buildInboxEmailItems({ drafts: emails, replies, inbound: [...shopifyMessages, ...liveInbound] }), ...sentMessages]
+  const inbox = [...buildInboxEmailItems({ drafts: personal ? [] : emails, replies: personal ? [] : replies, inbound: [...(personal ? [] : shopifyMessages), ...liveInbound] }), ...sentMessages]
     .filter((item) => canViewEmail(viewer, item.contact, assignedContacts))
     .map((item) => {
       const assignedCompanyId = assignedContacts?.get(item.contact.trim().toLowerCase());
@@ -368,8 +377,8 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
         ownerInitials: company?.ownerInitials ?? "—",
       };
     });
-  const defaultMailboxEmail = defaultMailbox?.email || null;
-  const sendConfigured = mailboxHasSmtp(defaultMailbox);
+  const defaultMailboxEmail = defaultSender?.email || null;
+  const sendConfigured = mailboxHasSmtp(defaultSender);
   const inboxConfigured = mailboxHasImap(defaultMailbox);
   const mailboxConfigured = sendConfigured && inboxConfigured;
 
@@ -392,6 +401,9 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
     lastMailboxSync,
     aiConfigured,
     defaultMailboxEmail,
+    mailboxes: mailboxes.map((mailbox) => ({ id: mailbox.id, email: mailbox.email, type: mailbox.type, sendConfigured: mailboxHasSmtp(mailbox), inboxConfigured: mailboxHasImap(mailbox) })),
+    selectedMailboxId: defaultMailbox?.id ?? null,
+    defaultSenderId: defaultSender?.id ?? null,
     emails: inbox,
     automation,
   };

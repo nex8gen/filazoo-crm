@@ -82,3 +82,25 @@ export function normalizeMailboxRows(rows: MailboxRecordInput[] | null | undefin
   if (!Array.isArray(rows)) return [];
   return rows.map(normalizeMailboxRow).filter((row): row is NormalizedMailboxRecord => row !== null);
 }
+
+export type MailboxOption = {
+  id: string;
+  email: string;
+  type: "workspace" | "personal";
+  sendConfigured: boolean;
+  inboxConfigured: boolean;
+};
+
+/** Personal mailbox access is always limited to its owner, including admins. */
+export function viewerMailboxes(mailboxes: NormalizedMailboxRecord[], viewerId: string) {
+  return mailboxes.filter((mailbox) => mailbox.type === "workspace" || mailbox.userId === viewerId);
+}
+
+export function defaultViewerMailbox(mailboxes: NormalizedMailboxRecord[]) {
+  // A stopped default stays selected; never silently send through another account.
+  return mailboxes.find((mailbox) => mailbox.type === "personal" && mailbox.isDefault)
+    ?? mailboxes.find((mailbox) => mailbox.type === "personal" && mailbox.isActive)
+    ?? mailboxes.find((mailbox) => mailbox.type === "workspace" && mailbox.isDefault)
+    ?? mailboxes.find((mailbox) => mailbox.type === "workspace" && mailbox.isActive)
+    ?? null;
+}

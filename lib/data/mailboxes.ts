@@ -1,5 +1,5 @@
 import { requireWorkspaceMember } from "../auth.ts";
-import { normalizeMailboxRows, type NormalizedMailboxRecord } from "../mailbox-utils.ts";
+import { defaultViewerMailbox, normalizeMailboxRows, viewerMailboxes, type NormalizedMailboxRecord } from "../mailbox-utils.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 
 export type MailboxType = "workspace" | "personal";
@@ -91,4 +91,22 @@ export async function getEffectiveMailbox(viewerId?: string | null): Promise<Wor
   // Keep a stopped default selected so it cannot silently fall back to another sender.
   // Connections removed in Settings must not reappear from environment credentials.
   return personalMailbox ?? workspaceMailbox;
+}
+
+/** Used for interactive email access, never the settings admin inventory. */
+export async function getViewerMailboxes(viewerId: string): Promise<WorkspaceMailboxRecord[]> {
+  const { data, error } = await createSupabaseAdmin().from("workspace_mailboxes")
+    .select("*")
+    .or(`user_id.eq.${viewerId},type.eq.workspace`)
+    .order("created_at", { ascending: false });
+  if (error) throw new Error("Unable to load your mailboxes. Please refresh and try again.");
+  return viewerMailboxes(normalizeMailboxRows(data), viewerId);
+}
+
+export async function getViewerMailbox(viewerId: string, mailboxId?: string | null) {
+  const mailboxes = await getViewerMailboxes(viewerId);
+  if (mailboxId !== undefined && mailboxId !== null) {
+    return mailboxes.find((mailbox) => mailbox.id === mailboxId) ?? null;
+  }
+  return defaultViewerMailbox(mailboxes);
 }

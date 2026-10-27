@@ -1,11 +1,11 @@
 import { requireWorkspaceMember } from "@/lib/auth";
-import { createFlow, listFlows } from "@/lib/data/flows";
+import { createFlow, listWorkspaceFlows } from "@/lib/data/flows";
 import { flowInputSchema } from "@/lib/flows";
 
 export async function GET() {
-  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
+  await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   try {
-    return Response.json({ ok: true, flows: await listFlows(viewer.id) }, { headers: { "Cache-Control": "no-store" } });
+    return Response.json({ ok: true, flows: await listWorkspaceFlows() }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return Response.json({ ok: false, error: error instanceof Error ? error.message : "Unable to load flows." }, { status: 500 });
   }

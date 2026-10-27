@@ -13,6 +13,8 @@ import { CustomerResearchSources, type ResearchResult } from "@/components/ui/cu
 import type { AppLanguage } from "@/lib/i18n";
 import type { Company } from "@/lib/types";
 import type { CompanyChatMessage, CompanyChatSource } from "@/lib/ai/company-chat";
+import { AiImagePreviews, useAiImageAttachments } from "@/components/ui/ai-image-attachments";
+import { chatImageLimitError } from "@/lib/ai/image-input";
 
 const shortcuts = [
   { label: "Analyze customer", icon: FileText, prompt: "Analyze this customer and write a report on their company, what they do, how big they are, their likely filament needs and the best sales approach. Separate facts from estimates and identify what we need to confirm." },
@@ -28,7 +30,7 @@ async function requestCustomerReply(companyId: string, messages: ChatEntry[], si
   const started = performance.now();
   const response = await fetch(`/api/companies/${companyId}/chat`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ language, webSearch, messages: messages.slice(-19).map(({ role, content }) => ({ role, content })) }),
+    body: JSON.stringify({ language, webSearch, messages: messages.slice(-19).map(({ role, content, images }) => ({ role, content, images })) }),
     signal,
   });
   const result = await response.json().catch(() => null);
@@ -40,6 +42,7 @@ export function CompanyAi({ company }: { company: Company }) {
   const { language, t } = useLanguage();
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   const [question, setQuestion] = useState("");
+  const attachments = useAiImageAttachments();
   const [webSearch, setWebSearch] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -82,10 +85,13 @@ export function CompanyAi({ company }: { company: Company }) {
 
   function send(content = question) {
     const text = content.trim();
-    if (!text || text.length > 6_000 || request.current || retryMessages || animation) return;
-    const next: ChatEntry[] = [...messages, { id: crypto.randomUUID(), role: "user", content: text }];
+    if ((!text && !attachments.images.length) || text.length > 6_000 || attachments.processing || request.current || retryMessages || animation) return;
+    const next: ChatEntry[] = [...messages, { id: crypto.randomUUID(), role: "user", content: text, ...(attachments.images.length ? { images: attachments.images } : {}) }];
+    const imageError = chatImageLimitError(next.slice(-19));
+    if (imageError) { setError(imageError); return; }
     setMessages(next);
     setQuestion("");
+    attachments.clear();
     void generate(next);
   }
 
@@ -119,14 +125,14 @@ export function CompanyAi({ company }: { company: Company }) {
                 <div className="min-w-0 flex-1 text-xs text-muted-foreground">{entry.sources?.length ? <span>{entry.sources.length} sources · Expand the response status to inspect</span> : null}{entry.omittedActivity ? <p className="mt-2 text-[11px]">Based on recent records; some older activity was outside this answer&apos;s context.</p> : null}</div>
                 <div className="flex gap-1"><Button type="button" variant="ghost" size="xs" disabled={busy} onClick={() => setAnimation({ id: entry.id, run: performance.now() })} aria-label="Replay reply animation"><RotateCcw />Replay</Button><Button type="button" variant="ghost" size="xs" onClick={() => void copy(entry)} aria-label="Copy AI answer"><Copy />{copiedId === entry.id ? "Copied" : "Copy"}</Button></div>
               </div>}
-            </> : <><p className="mb-2 text-xs font-medium text-muted-foreground">You</p><p data-no-translate className="whitespace-pre-wrap break-words text-sm leading-7 [overflow-wrap:anywhere]">{entry.content}</p></>}
+            </> : <><p className="mb-2 text-xs font-medium text-muted-foreground">You</p><AiImagePreviews images={entry.images} /><p data-no-translate className="whitespace-pre-wrap break-words text-sm leading-7 [overflow-wrap:anywhere]">{entry.content}</p></>}
           </div>)}</div>}
           {pending ? <div role="status" className="mt-6"><ThinkingState working scope={company.name} />{webSearch ? <p className="mt-2 text-xs text-muted-foreground">Searching Google and checking company websites…</p> : null}</div> : null}
-          {error ? <div role="alert" className="mt-5 rounded-xl border border-destructive/20 bg-destructive/5 p-4"><p className="text-sm leading-6">{error}</p>{retryMessages ? <div className="mt-3 flex gap-2"><Button type="button" variant="outline" size="sm" disabled={pending} onClick={() => void generate(retryMessages)}>Try again</Button><Button type="button" variant="ghost" size="sm" disabled={pending} onClick={() => { const last = retryMessages.at(-1); setQuestion(last?.content || ""); setMessages((current) => current.slice(0, -1)); setRetryMessages(null); setError(null); input.current?.focus(); }}>Edit question</Button></div> : null}</div> : null}
+          {error ? <div role="alert" className="mt-5 rounded-xl border border-destructive/20 bg-destructive/5 p-4"><p className="text-sm leading-6">{error}</p>{retryMessages ? <div className="mt-3 flex gap-2"><Button type="button" variant="outline" size="sm" disabled={pending} onClick={() => void generate(retryMessages)}>Try again</Button><Button type="button" variant="ghost" size="sm" disabled={pending} onClick={() => { const last = retryMessages.at(-1); setQuestion(last?.content || ""); attachments.setImages(last?.images ?? []); setMessages((current) => current.slice(0, -1)); setRetryMessages(null); setError(null); input.current?.focus(); }}>Edit question</Button></div> : null}</div> : null}
         </div>
         <div className="sticky bottom-0 z-10 shrink-0 border-t bg-card px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-5 sm:px-6">
-          {messages.length ? <div className="mb-3 flex flex-wrap items-center gap-2">{shortcuts.map(({ label, prompt }) => <button key={label} type="button" disabled={busy || Boolean(retryMessages)} onClick={() => send(t(prompt))} className="rounded-full border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50">{label}</button>)}<Button type="button" variant="ghost" size="xs" className="ml-auto" disabled={pending} onClick={() => { setMessages([]); setError(null); setRetryMessages(null); setAnimation(null); setQuestion(""); input.current?.focus(); }}><RefreshCw />New chat</Button></div> : null}
-          <AiChatInput contextLabel={company.name} value={question} onChange={setQuestion} onSend={() => send()} inputRef={input} disabled={busy || Boolean(retryMessages)} busy={busy} shortcuts={shortcuts} webSearch={webSearch} onWebSearchChange={setWebSearch} />
+          {messages.length ? <div className="mb-3 flex flex-wrap items-center gap-2">{shortcuts.map(({ label, prompt }) => <button key={label} type="button" disabled={busy || Boolean(retryMessages)} onClick={() => send(t(prompt))} className="rounded-full border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50">{label}</button>)}<Button type="button" variant="ghost" size="xs" className="ml-auto" disabled={pending} onClick={() => { setMessages([]); setError(null); setRetryMessages(null); setAnimation(null); setQuestion(""); attachments.clear(); input.current?.focus(); }}><RefreshCw />New chat</Button></div> : null}
+          <AiChatInput attachments={attachments} contextLabel={company.name} value={question} onChange={setQuestion} onSend={() => send()} inputRef={input} disabled={busy || Boolean(retryMessages)} busy={busy} shortcuts={shortcuts} webSearch={webSearch} onWebSearchChange={setWebSearch} />
           <p className="mt-3 text-center text-[11px] leading-5 text-muted-foreground">AI provides advice and drafts. Review before using. This chat lasts until you leave or refresh this page.</p>
         </div>
       </CardContent>

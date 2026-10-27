@@ -1,5 +1,5 @@
 import { requireWorkspaceMember } from "@/lib/auth";
-import { getEffectiveMailbox, mailboxHasImap } from "@/lib/data/mailboxes";
+import { getViewerMailboxes, mailboxHasImap } from "@/lib/data/mailboxes";
 import { mailboxSyncKey, loadMailboxMessageContent } from "@/lib/data/mailbox-sync";
 import { getAssignedEmailContacts } from "@/lib/data/email-access";
 import { canViewEmail } from "@/lib/email-access";
@@ -13,7 +13,7 @@ export async function GET(request: Request) {
   const uid = Number(params.get("uid")), validity = Number(params.get("validity"));
   const part = params.get("part") || "";
   if (!Number.isSafeInteger(uid) || uid < 1 || !Number.isSafeInteger(validity) || validity < 1 || !/^\d+(?:\.\d+)*$/.test(part) || part.length > 100) return new Response("Invalid attachment identifier.", { status: 400 });
-  const mailbox = await getEffectiveMailbox(viewer.id);
+  const mailbox = (await getViewerMailboxes(viewer.id)).find((item) => mailboxSyncKey(item) === params.get("mailbox"));
   if (!mailbox || !mailboxHasImap(mailbox) || params.get("mailbox") !== mailboxSyncKey(mailbox)) return new Response("Attachment not found.", { status: 404 });
   try {
     if (viewer.role === "bd_manager") {

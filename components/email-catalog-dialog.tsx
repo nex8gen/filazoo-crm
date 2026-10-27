@@ -1,5 +1,7 @@
 "use client";
 
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
 import { useEffect, useRef, useState } from "react";
 import { Check, FileText, Library, LoaderCircle, Search } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -77,19 +79,19 @@ export function EmailCatalogDialog({ products, catalogs, customer, busy, onClose
         <fieldset disabled={locked} className="grid min-w-0 disabled:opacity-70 md:grid-cols-[minmax(0,1fr)_300px]">
           <div className="min-w-0 space-y-4 p-5">
             <label className="block text-xs font-medium">Start from a catalog
-              <select className={`${inputClass} mt-1.5`} value="" onChange={(event) => {
-                if (event.target.value === "all") loadSelection(products.map((p) => p.sku), "Filazoo complete catalog");
-                else { const saved = catalogs.find((c) => c.id === event.target.value); if (saved) loadSelection(saved.productSkus, `${saved.company} catalog v${saved.version}`); }
-              }}>
-                <option value="">Choose a saved selection or select products below</option>
-                <option value="all">Complete Filazoo catalog ({products.length} products)</option>
-                {catalogs.map((c) => <option key={c.id} value={c.id}>{c.company} · v{c.version} · {products.filter((p) => c.productSkus.includes(p.sku)).length} available products · {c.currency}</option>)}
-              </select>
+              <Select value="" onValueChange={(selectedValue) => { if (selectedValue === null) return;
+                if (selectedValue === "all") loadSelection(products.map((p) => p.sku), "Filazoo complete catalog");
+                else { const saved = catalogs.find((c) => c.id === selectedValue); if (saved) loadSelection(saved.productSkus, `${saved.company} catalog v${saved.version}`); }
+               }}><SelectTrigger className="w-full min-w-0 mt-1.5"><SelectValue /></SelectTrigger><SelectContent>
+                <SelectItem value="">Choose a saved selection or select products below</SelectItem>
+                <SelectItem value="all">Complete Filazoo catalog ({products.length} products)</SelectItem>
+                {catalogs.map((c) => <SelectItem key={c.id} value={c.id}>{c.company} · v{c.version} · {products.filter((p) => c.productSkus.includes(p.sku)).length} available products · {c.currency}</SelectItem>)}
+              </SelectContent></Select>
             </label>
             <div className="relative"><Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" /><input aria-label="Search products" placeholder="Search name, SKU, material, or color…" value={query} onChange={(e) => setQuery(e.target.value)} className={`${inputClass} pl-9`} /></div>
             <div className="grid grid-cols-2 gap-2">
-              <select aria-label="Filter by material" value={material} onChange={(e) => setMaterial(e.target.value)} className={inputClass}><option value="">All materials</option>{materials.map((value) => <option key={value}>{value}</option>)}</select>
-              <select aria-label="Filter by stock status" value={stock} onChange={(e) => setStock(e.target.value)} className={inputClass}><option value="">All stock statuses</option>{stockStatuses.map((value) => <option key={value}>{value}</option>)}</select>
+              <Select value={material} onValueChange={(selectedValue) => { if (selectedValue === null) return; setMaterial(selectedValue); }}><SelectTrigger aria-label="Filter by material" className="w-full min-w-0"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="">All materials</SelectItem>{materials.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select>
+              <Select value={stock} onValueChange={(selectedValue) => { if (selectedValue === null) return; setStock(selectedValue); }}><SelectTrigger aria-label="Filter by stock status" className="w-full min-w-0"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="">All stock statuses</SelectItem>{stockStatuses.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select>
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
               <span className="text-muted-foreground" role="status">{visible.length} shown · {chosen.length} selected</span>
@@ -111,7 +113,7 @@ export function EmailCatalogDialog({ products, catalogs, customer, busy, onClose
             <details className="rounded-lg border bg-background p-3" open>
               <summary className="cursor-pointer text-xs font-semibold">Advanced options</summary>
               <div className="mt-4 space-y-4">
-                <label className="block text-xs font-medium">Product order<select value={sort} onChange={(e) => setSort(e.target.value)} className={`${inputClass} mt-1.5`}><option value="original">Catalog order</option><option value="name">Name: A–Z</option><option value="material">Material, then name</option></select></label>
+                <label className="block text-xs font-medium">Product order<Select value={sort} onValueChange={(selectedValue) => { if (selectedValue === null) return; setSort(selectedValue); }}><SelectTrigger className="w-full min-w-0 mt-1.5"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="original">Catalog order</SelectItem><SelectItem value="name">Name: A–Z</SelectItem><SelectItem value="material">Material, then name</SelectItem></SelectContent></Select></label>
                 <label className="block text-xs font-medium">PDF footer note<textarea maxLength={80} rows={3} value={note} onChange={(e) => setNote(e.target.value.replace(/\r?\n/g, " "))} placeholder="e.g. Prices valid for 30 days" className="mt-1.5 w-full resize-none rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-ring" /><span className="mt-1 block text-right font-normal text-muted-foreground">{note.length}/80</span></label>
               </div>
             </details>

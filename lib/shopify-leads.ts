@@ -400,9 +400,11 @@ export async function saveShopifyLead(lead: ShopifyLead, webhookId: string, shop
       processed_at: new Date().toISOString(),
     }).eq("webhook_id", webhookId);
     if (completion.error) throw completion.error;
+    // A form submission is not an incoming email. Start new-lead flows as
+    // soon as the CRM contact and its pipeline have both been saved.
     try {
-      const { enrollMatchingFlows } = await import("./data/flow-runtime.ts");
-      await enrollMatchingFlows({ type: "lead_added_to_list", conversationId: `shopify:${lead.customerId}`, contactId, companyId: company.id, listId: "Shopify B2B leads", segment: "Shopify B2B lead" });
+      const { enrollMatchingFlows, enrollNewLeadFlows } = await import("./data/flow-runtime.ts");
+      if (contactId) await enrollNewLeadFlows(contactId);
       if (createdCompany) await enrollMatchingFlows({ type: "company_segment_changed", conversationId: `company:${company.id}`, contactId, companyId: company.id, segment: "Shopify B2B lead", eventKey: `shopify-company:${company.id}` });
     } catch (automationError) {
       console.error("Shopify lead saved, but flow enrollment failed:", automationError);

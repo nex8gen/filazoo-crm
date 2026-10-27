@@ -32,6 +32,7 @@ export type SimulationEntry = {
   type: FlowStepType;
   status: "would_run" | "waiting" | "skipped" | "stopped";
   detail: string;
+  scheduledAt?: string;
 };
 
 function normalized(value: unknown) {
@@ -74,8 +75,19 @@ export function calculateWaitUntil(config: JsonConfig, from = new Date()) {
   const amount = Math.max(1, Number(config.amount) || 1);
   const unit = String(config.unit || "days");
   const result = new Date(from);
-  if (unit === "minutes") result.setUTCMinutes(result.getUTCMinutes() + amount);
-  else if (unit === "hours") result.setUTCHours(result.getUTCHours() + amount);
+  if (unit === "minutes" || unit === "hours") {
+    let remaining = amount * (unit === "minutes" ? 60_000 : 3_600_000);
+    if (config.businessDays) {
+      moveOffWeekend(result);
+      while (remaining > 0) {
+        const midnight = new Date(result); midnight.setUTCHours(24, 0, 0, 0);
+        const elapsed = Math.min(remaining, midnight.getTime() - result.getTime());
+        result.setTime(result.getTime() + elapsed);
+        remaining -= elapsed;
+        if (isWeekend(result)) moveOffWeekend(result);
+      }
+    } else result.setTime(result.getTime() + remaining);
+  }
   else if (config.businessDays) {
     let remaining = amount;
     while (remaining > 0) {
@@ -93,6 +105,15 @@ export function calculateWaitUntil(config: JsonConfig, from = new Date()) {
     if (config.businessDays) moveOffWeekend(result);
   }
   return result;
+}
+
+export function nextBusinessWindow(now = new Date()) {
+  const next = new Date(now);
+  const hour = next.getUTCHours();
+  if (!isWeekend(next) && hour >= 9 && hour < 17) return null;
+  if (hour >= 17) next.setUTCDate(next.getUTCDate() + 1);
+  next.setUTCHours(9, 0, 0, 0);
+  return moveOffWeekend(next);
 }
 
 export function conditionMatches(config: JsonConfig, facts: FlowFacts) {
@@ -116,7 +137,7 @@ export function simulateFlow(flow: FlowInput, facts: FlowFacts, from = new Date(
     const step = flow.steps[index]!;
     if (step.type === "wait") {
       cursor = calculateWaitUntil(step.config, cursor);
-      trace.push({ step: index + 1, type: step.type, status: "waiting", detail: `Would resume at ${cursor.toISOString()}` });
+      trace.push({ step: index + 1, type: step.type, status: "waiting", scheduledAt: cursor.toISOString(), detail: `Would resume at ${cursor.toISOString()}` });
       index += 1;
       continue;
     }
@@ -138,7 +159,8 @@ export function simulateFlow(flow: FlowInput, facts: FlowFacts, from = new Date(
     }
     if (step.type === "change_category") currentFacts.category = String(step.config.category);
     if (step.type === "ai_auto_reply") {
-      trace.push({ step: index + 1, type: step.type, status: "would_run", detail: `Would read the latest email and draft a personalized reply${step.config.useProducts ? " using active CRM products" : ""}${step.config.usePrices ? " and verified prices" : ""}${step.config.attachCatalog ? "; attach a catalog PDF" + (step.config.catalogFirstMessageOnly ? " to the first automated message only" : "") : ""}. No AI request or email is sent in simulation.` });
+      if (step.config.sendWindow === "business_hours") cursor = nextBusinessWindow(cursor) ?? cursor;
+      trace.push({ step: index + 1, type: step.type, status: "would_run", scheduledAt: cursor.toISOString(), detail: `Would read the latest email and draft a personalized reply${step.config.useProducts ? " using active CRM products" : ""}${step.config.usePrices ? " and verified prices" : ""}${step.config.attachCatalog ? "; attach a catalog PDF" + (step.config.catalogFirstMessageOnly ? " to the first automated message only" : "") : ""}. No AI request or email is sent in simulation.` });
       index += 1;
       continue;
     }
@@ -146,7 +168,8 @@ export function simulateFlow(flow: FlowInput, facts: FlowFacts, from = new Date(
       trace.push({ step: index + 1, type: step.type, status: "stopped", detail: "Customer replied; run would be cancelled." });
       break;
     }
-    trace.push({ step: index + 1, type: step.type, status: step.type === "stop" ? "stopped" : "would_run", detail: step.type === "stop" ? String(step.config.reason || "Flow would end here.") : `${step.type.replaceAll("_", " ")} is configured.` });
+    if (step.type === "send_email" && step.config.sendWindow === "business_hours") cursor = nextBusinessWindow(cursor) ?? cursor;
+    trace.push({ step: index + 1, type: step.type, status: step.type === "stop" ? "stopped" : "would_run", scheduledAt: cursor.toISOString(), detail: step.type === "stop" ? String(step.config.reason || "Flow would end here.") : `${step.type.replaceAll("_", " ")} is configured.` });
     if (step.type === "stop") break;
     index += 1;
   }

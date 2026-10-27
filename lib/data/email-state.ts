@@ -77,18 +77,20 @@ export async function saveEmailAutomationSettings(userId: string, enabled: boole
   return { enabled, steps };
 }
 
-export async function listSentMailboxMessages(userId: string): Promise<InboxEmailItem[]> {
-  const { data, error } = await createSupabaseAdmin()
+export async function listSentMailboxMessages(userId: string, mailboxId?: string): Promise<InboxEmailItem[]> {
+  let query = createSupabaseAdmin()
     .from("mailbox_sent_messages")
-    .select("id,from_email,to_email,subject,body,status,sent_at,message_id,thread_key,in_reply_to,reference_ids,attachments")
-    .eq("user_id", userId)
-    .order("sent_at", { ascending: false })
+    .select("id,mailbox_id,from_email,to_email,subject,body,status,sent_at,message_id,thread_key,in_reply_to,reference_ids,attachments")
+    .eq("user_id", userId);
+  if (mailboxId !== undefined) query = query.eq("mailbox_id", mailboxId);
+  const { data, error } = await query.order("sent_at", { ascending: false })
     .limit(100);
   if (error) throw new Error(`Unable to load sent mailbox messages: ${error.message}`);
   return (data ?? []).map((row) => {
     const item: InboxEmailItem = {
       id: `sent-${row.id}`,
       from: row.from_email,
+      mailboxId: row.mailbox_id,
       direction: "outbound" as const,
       status: row.status === "sent" ? "Sent" : "Failed",
       subject: row.subject,

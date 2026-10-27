@@ -1,3 +1,5 @@
+import type { ProviderImage } from "./image-input.ts";
+
 type GeminiResponse = {
   candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
   error?: { message?: string };
@@ -8,6 +10,7 @@ export type GenerateGeminiTextOptions = {
   model?: string;
   systemInstruction: string;
   prompt: string;
+  images?: ProviderImage[];
   maxOutputTokens?: number;
   fetcher?: typeof fetch;
 };
@@ -17,6 +20,7 @@ export async function generateGeminiText({
   model = "gemini-3.5-flash-lite",
   systemInstruction,
   prompt,
+  images = [],
   maxOutputTokens = 1_200,
   fetcher = fetch,
 }: GenerateGeminiTextOptions) {
@@ -29,7 +33,13 @@ export async function generateGeminiText({
     },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: systemInstruction }] },
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      contents: [{ role: "user", parts: [
+        { text: prompt },
+        ...images.flatMap((image) => [
+          { text: `${image.label}: ${JSON.stringify(image.name)} (user-supplied image evidence)` },
+          { inlineData: { mimeType: image.dataUrl.slice(5, image.dataUrl.indexOf(";")), data: image.dataUrl.slice(image.dataUrl.indexOf(",") + 1) } },
+        ]),
+      ] }],
       generationConfig: { maxOutputTokens },
     }),
     cache: "no-store",

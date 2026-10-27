@@ -29,9 +29,9 @@ import { TablePagination } from "@/components/ui/table-pagination";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  blankStep, companyStatuses, defaultFlowInput, emailCategories, flowInputSchema, formatTrigger, pipelineStages, stepLabels, stepTypes,
+  blankStep, companyStatuses, defaultFlowInput, emailCategories, flowInputSchema, flowLeadLists, formatTrigger, pipelineStages, stepLabels, stepTypes,
   triggerLabels, triggerTypes, type AutomationFlow, type FlowInput, type FlowStatus, type FlowStepType,
-  type JsonConfig, type TriggerType,
+  type JsonConfig, type TriggerType, type FlowBulkAction, type FlowBulkResult,
 } from "@/lib/flows";
 import {
   CANVAS_NODE_WIDTH, CANVAS_START_X, canvasPointFromClient,
@@ -44,7 +44,7 @@ type DraftFlow = FlowInput & { id: string | null; activeRuns?: number; completed
 type Selection = "trigger" | string;
 const templates: Option[] = [
   { id: "helpful_reminder", label: "Helpful reminder" },
-  { id: "send_catalog", label: "Send relevant catalog" },
+  { id: "send_catalog", label: "Send product catalog (PDF)" },
   { id: "quote_follow_up", label: "Quote follow-up" },
   { id: "welcome_intro", label: "Welcome introduction" },
   { id: "last_chance", label: "Last-chance follow-up" },
@@ -90,9 +90,12 @@ function AiReplyInspector({ config, onChange, mailboxes, disabled }: { config: J
       <ToggleField checked={Boolean(config.attachCatalog)} onChange={(value) => set("attachCatalog", value)} label="Attach product catalog PDF" detail="Generate an attachment from current active CRM products and prices." disabled={disabled} />
       {config.attachCatalog ? <ToggleField checked={config.catalogFirstMessageOnly !== false} onChange={(value) => set("catalogFirstMessageOnly", value)} label="Attach catalog to first message only" detail="Only the first automated message to this lead includes the catalog, across flows and conversations." disabled={disabled} /> : null}
       <ToggleField checked={config.replyInThread !== false} onChange={(value) => set("replyInThread", value)} label="Reply in same thread" disabled={disabled} />
+      <ToggleField checked={config.trackOpens !== false} onChange={(value) => set("trackOpens", value)} label="Track opens" disabled={disabled} />
+      <ToggleField checked={config.trackClicks !== false} onChange={(value) => set("trackClicks", value)} label="Track link clicks" disabled={disabled} />
+      <ToggleField checked={config.utmTracking !== false} onChange={(value) => set("utmTracking", value)} label="Add UTM tracking" disabled={disabled} />
     </div>
     <div className="space-y-2"><Label>Send window</Label><FlowSelect value={String(config.sendWindow || "anytime")} onChange={(value) => set("sendWindow", value)} options={[["anytime", "Any time"], ["business_hours", "Business hours (09:00–17:00 UTC)"]]} disabled={disabled} /></div>
-    <p className="text-xs leading-5 text-muted-foreground">Sends automatically when this step runs. New customer replies are read, including replies received during a wait. Unsubscribed, suppressed and unverified contacts remain blocked.</p>
+    <p className="text-xs leading-5 text-muted-foreground">Sends automatically when this step runs. New customer replies are read, including replies received during a wait. Website/Meta inquiries and received customer emails can be answered without address verification. Unsubscribed, suppressed, invalid and risky addresses remain blocked.</p>
   </>;
 }
 
@@ -124,7 +127,7 @@ function TriggerInspector({ draft, setDraft, filterOptions = { segments: [], cou
   const updateOptional = (key: string, value: string) => { const next = { ...draft.triggerConfig }; if (value === "__any") delete next[key]; else next[key] = value; setDraft({ ...draft, triggerConfig: next }); };
   const segmentOptions = [{ id: "__any", label: "Any segment" }, ...filterOptions.segments.map((value) => ({ id: value, label: value }))];
   const countryOptions = [{ id: "__any", label: "Any country" }, ...filterOptions.countries.map((value) => ({ id: value, label: value }))];
-  return <div className="space-y-5"><div><p className="text-sm font-semibold">Journey trigger</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Choose the real CRM event that enrolls a contact.</p></div><div className="space-y-2"><Label>Trigger event</Label><FlowSelect value={draft.triggerType} onChange={(value) => { const type = value as TriggerType; setDraft({ ...draft, triggerType: type, triggerConfig: configs[type] }); }} options={triggerTypes.map((value) => [value, triggerLabels[value]] as const)} disabled={disabled} /></div>{draft.triggerType === "category_changed" ? <div className="space-y-2"><Label>Email category</Label><FlowSelect value={String(draft.triggerConfig.category || "Needs follow-up")} onChange={(value) => updateConfig("category", value)} options={emailCategories.map((value) => [value, value] as const)} disabled={disabled} /></div> : null}{draft.triggerType === "no_reply" ? <><div className="grid grid-cols-2 gap-3"><div className="space-y-2"><Label>Duration</Label><NumberInput min={1} value={draft.triggerConfig.amount} onChange={(value) => updateConfig("amount", value)} disabled={disabled} /></div><div className="space-y-2"><Label>Unit</Label><FlowSelect value={String(draft.triggerConfig.unit || "days")} onChange={(value) => updateConfig("unit", value)} options={[["hours", "Hours"], ["days", "Days"]]} disabled={disabled} /></div></div><ToggleField checked={Boolean(draft.triggerConfig.businessDays)} onChange={(value) => updateConfig("businessDays", value)} label="Count business days only" detail="Skip weekends when evaluating the trigger." disabled={disabled} /></> : null}{draft.triggerType === "lead_added_to_list" ? <div className="space-y-2"><Label>Lead list</Label><Input value={String(draft.triggerConfig.listId || "")} onChange={(event) => updateConfig("listId", event.target.value)} placeholder="Shopify B2B leads" disabled={disabled} /></div> : null}{draft.triggerType === "company_segment_changed" ? <div className="space-y-2"><Label>Company segment</Label>{filterOptions.segments.length ? <FlowSelect value={String(draft.triggerConfig.segment || filterOptions.segments[0])} onChange={(value) => updateConfig("segment", value)} options={filterOptions.segments.map((value) => ({ id: value, label: value }))} disabled={disabled} /> : <Input value={String(draft.triggerConfig.segment || "")} onChange={(event) => updateConfig("segment", event.target.value)} placeholder="Enter a CRM segment" disabled={disabled} />}</div> : null}{draft.triggerType === "pipeline_stage_changed" ? <div className="space-y-2"><Label>Pipeline stage</Label><FlowSelect value={String(draft.triggerConfig.stage || "new")} onChange={(value) => updateConfig("stage", value)} options={pipelineStages.map((value) => [value, titleCase(value)] as const)} disabled={disabled} /></div> : null}<div className="space-y-3 border-t pt-4"><div><p className="text-xs font-semibold">Company filters</p><p className="mt-1 text-xs text-muted-foreground">All selected filters must match before enrollment.</p></div>{draft.triggerType !== "company_segment_changed" ? <div className="space-y-2"><Label>Segment</Label><FlowSelect value={String(draft.triggerConfig.segment || "__any")} onChange={(value) => updateOptional("segment", value)} options={segmentOptions} disabled={disabled} /></div> : null}<div className="space-y-2"><Label>Country</Label><FlowSelect value={String(draft.triggerConfig.country || "__any")} onChange={(value) => updateOptional("country", value)} options={countryOptions} disabled={disabled} /></div><div className="space-y-2"><Label>Company status</Label><FlowSelect value={String(draft.triggerConfig.companyStatus || "__any")} onChange={(value) => updateOptional("companyStatus", value)} options={[{ id: "__any", label: "Any status" }, ...companyStatuses.map((value) => ({ id: value, label: titleCase(value) }))]} disabled={disabled} /></div><div className="space-y-2"><Label>Pipeline stage filter</Label><FlowSelect value={String(draft.triggerConfig.pipelineStage || "__any")} onChange={(value) => updateOptional("pipelineStage", value)} options={[{ id: "__any", label: "Any stage" }, ...pipelineStages.map((value) => ({ id: value, label: titleCase(value) }))]} disabled={disabled} /></div><div className="space-y-2"><Label>Minimum fit score</Label><NumberInput min={0} value={draft.triggerConfig.minFitScore ?? 0} onChange={(value) => { const next = { ...draft.triggerConfig }; if (value <= 0) delete next.minFitScore; else next.minFitScore = value; setDraft({ ...draft, triggerConfig: next }); }} disabled={disabled} /></div></div><div className="rounded-lg bg-muted/50 p-3 text-xs leading-5 text-muted-foreground"><strong className="text-foreground">Enrollment:</strong> Each conversation can have only one active run in this flow.</div></div>;
+  return <div className="space-y-5"><div><p className="text-sm font-semibold">Journey trigger</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Choose the real CRM event that enrolls a contact.</p></div><div className="space-y-2"><Label>Trigger event</Label><FlowSelect value={draft.triggerType} onChange={(value) => { const type = value as TriggerType; setDraft({ ...draft, triggerType: type, triggerConfig: configs[type] }); }} options={triggerTypes.map((value) => [value, triggerLabels[value]] as const)} disabled={disabled} /></div>{draft.triggerType === "category_changed" ? <div className="space-y-2"><Label>Email category</Label><FlowSelect value={String(draft.triggerConfig.category || "Needs follow-up")} onChange={(value) => updateConfig("category", value)} options={emailCategories.map((value) => [value, value] as const)} disabled={disabled} /></div> : null}{draft.triggerType === "no_reply" ? <><div className="grid grid-cols-2 gap-3"><div className="space-y-2"><Label>Duration</Label><NumberInput min={1} value={draft.triggerConfig.amount} onChange={(value) => updateConfig("amount", value)} disabled={disabled} /></div><div className="space-y-2"><Label>Unit</Label><FlowSelect value={String(draft.triggerConfig.unit || "days")} onChange={(value) => updateConfig("unit", value)} options={[["hours", "Hours"], ["days", "Days"]]} disabled={disabled} /></div></div><ToggleField checked={Boolean(draft.triggerConfig.businessDays)} onChange={(value) => updateConfig("businessDays", value)} label="Count business days only" detail="Skip weekends when evaluating the trigger." disabled={disabled} /></> : null}{draft.triggerType === "lead_added_to_list" ? <div className="space-y-2"><Label>Lead list</Label><FlowSelect value={String(draft.triggerConfig.listId || "Shopify B2B leads")} onChange={(value) => updateConfig("listId", value)} options={flowLeadLists.map(value => [value, value] as const)} disabled={disabled} /></div> : null}{draft.triggerType === "company_segment_changed" ? <div className="space-y-2"><Label>Company segment</Label>{filterOptions.segments.length ? <FlowSelect value={String(draft.triggerConfig.segment || filterOptions.segments[0])} onChange={(value) => updateConfig("segment", value)} options={filterOptions.segments.map((value) => ({ id: value, label: value }))} disabled={disabled} /> : <Input value={String(draft.triggerConfig.segment || "")} onChange={(event) => updateConfig("segment", event.target.value)} placeholder="Enter a CRM segment" disabled={disabled} />}</div> : null}{draft.triggerType === "pipeline_stage_changed" ? <div className="space-y-2"><Label>Pipeline stage</Label><FlowSelect value={String(draft.triggerConfig.stage || "new")} onChange={(value) => updateConfig("stage", value)} options={pipelineStages.map((value) => [value, titleCase(value)] as const)} disabled={disabled} /></div> : null}<div className="space-y-3 border-t pt-4"><div><p className="text-xs font-semibold">Company filters</p><p className="mt-1 text-xs text-muted-foreground">All selected filters must match before enrollment.</p></div>{draft.triggerType !== "company_segment_changed" ? <div className="space-y-2"><Label>Segment</Label><FlowSelect value={String(draft.triggerConfig.segment || "__any")} onChange={(value) => updateOptional("segment", value)} options={segmentOptions} disabled={disabled} /></div> : null}<div className="space-y-2"><Label>Country</Label><FlowSelect value={String(draft.triggerConfig.country || "__any")} onChange={(value) => updateOptional("country", value)} options={countryOptions} disabled={disabled} /></div><div className="space-y-2"><Label>Company status</Label><FlowSelect value={String(draft.triggerConfig.companyStatus || "__any")} onChange={(value) => updateOptional("companyStatus", value)} options={[{ id: "__any", label: "Any status" }, ...companyStatuses.map((value) => ({ id: value, label: titleCase(value) }))]} disabled={disabled} /></div><div className="space-y-2"><Label>Pipeline stage filter</Label><FlowSelect value={String(draft.triggerConfig.pipelineStage || "__any")} onChange={(value) => updateOptional("pipelineStage", value)} options={[{ id: "__any", label: "Any stage" }, ...pipelineStages.map((value) => ({ id: value, label: titleCase(value) }))]} disabled={disabled} /></div><div className="space-y-2"><Label>Minimum fit score</Label><NumberInput min={0} value={draft.triggerConfig.minFitScore ?? 0} onChange={(value) => { const next = { ...draft.triggerConfig }; if (value <= 0) delete next.minFitScore; else next.minFitScore = value; setDraft({ ...draft, triggerConfig: next }); }} disabled={disabled} /></div></div><div className="rounded-lg bg-muted/50 p-3 text-xs leading-5 text-muted-foreground"><strong className="text-foreground">Enrollment:</strong> Each conversation can have only one active run in this flow.</div></div>;
 }
 
 function BaseStepInspector({ type, config, onChange, mailboxes, members, disabled }: { type: FlowStepType; config: JsonConfig; onChange: (config: JsonConfig) => void; mailboxes: Option[]; members: Option[]; disabled: boolean }) {
@@ -398,7 +401,14 @@ function FlowCanvas({ draft, selection, insertAt, canEdit, setSelection, setInse
       <svg aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full overflow-visible">
         {connectorNodes.map(({ from, to }, index) => <path key={index} d={`M ${from.x + from.width / 2} ${from.y + from.height} L ${to.x + to.width / 2} ${to.y}`} fill="none" stroke="currentColor" strokeWidth="2" className="text-border" vectorEffect="non-scaling-stroke" />)}
       </svg>
-      {connectorNodes.map(({ from, to, insertAt: position }) => <div key={`add-${position}`} data-canvas-node data-flow-insert-at={position} className={`absolute ${insertAt === position ? "z-40" : "z-20"}`} style={{ left: from.x + from.width / 2 - 14, top: (from.y + from.height + to.y) / 2 - 14 }}><button type="button" onClick={(event) => { event.stopPropagation(); setInsertAt(insertAt === position ? null : position); }} disabled={!canEdit} aria-label={`Add action at position ${position + 1}`} className="grid size-7 place-items-center rounded-full border bg-background text-muted-foreground shadow-sm transition hover:scale-110 hover:border-primary hover:text-primary disabled:opacity-50"><Plus className="size-4" /></button>{insertAt === position ? <div data-no-drag className="absolute left-1/2 top-9 z-30 grid w-72 -translate-x-1/2 grid-cols-2 gap-1 rounded-xl border bg-popover p-2 shadow-xl">{stepTypes.map((type) => { const Icon = stepMeta[type].icon; return <button key={type} type="button" onClick={() => onAddStep(type, position)} className="flex items-center gap-2 rounded-lg p-2 text-left hover:bg-muted"><Icon className="size-4 text-muted-foreground" /><span className="text-sm font-medium">{stepLabels[type]}</span></button>; })}</div> : null}</div>)}
+      {connectorNodes.map(({ from, to, insertAt: position }) => <div key={`add-${position}`} data-canvas-node data-flow-insert-at={position} className={`absolute ${insertAt === position ? "z-40" : "z-20"}`} style={{ left: from.x + from.width / 2 - 14, top: (from.y + from.height + to.y) / 2 - 14 }}>
+        <DropdownMenu open={insertAt === position} onOpenChange={(open) => setInsertAt(open ? position : null)}>
+          <DropdownMenuTrigger onClick={(event) => event.stopPropagation()} disabled={!canEdit} aria-label={`Add action at position ${position + 1}`} className="grid size-7 place-items-center rounded-full border bg-background text-muted-foreground shadow-sm transition hover:scale-110 hover:border-primary hover:text-primary disabled:opacity-50"><Plus className="size-4" /></DropdownMenuTrigger>
+          <DropdownMenuContent data-no-drag align="center" className="w-64">
+            {stepTypes.map((type) => { const Icon = stepMeta[type].icon; return <DropdownMenuItem key={type} onClick={() => onAddStep(type, position)}><Icon className="text-muted-foreground" />{stepLabels[type]}</DropdownMenuItem>; })}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>)}
       <div data-canvas-node data-flow-node-id={triggerId} className="absolute" style={{ left: triggerPosition.x, top: triggerPosition.y, width: nodeWidth }}><button type="button" onClick={() => setSelection("trigger")} className={`w-full rounded-xl border bg-background p-3 text-left shadow-sm transition-shadow hover:shadow-md ${selection === "trigger" ? "border-primary ring-2 ring-primary/15" : ""}`}><div className="flex items-start gap-2.5"><span className="grid size-10 shrink-0 place-items-center rounded-full bg-foreground text-background"><Workflow className="size-5" strokeWidth={2} /></span><div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-2"><p className="text-body font-semibold leading-5 text-foreground">Trigger</p><Badge variant="outline" className="h-6 px-2.5 text-xs font-medium">Enrollment</Badge></div><p className="mt-0.5 text-sm leading-5 text-muted-foreground">{formatTrigger(draft.triggerType, draft.triggerConfig)}</p><div className="mt-2 flex flex-wrap gap-1.5"><Badge variant="secondary" className="min-h-6 gap-1.5 px-2 text-xs font-medium [&_svg]:size-3.5"><ListFilter />Profile filters</Badge><Badge variant="outline" className="h-auto min-h-6 max-w-full whitespace-normal px-2 text-left text-xs font-medium">One active run per conversation</Badge></div></div></div></button></div>
       {draft.steps.map((step, index) => {
         const id = step.id || `step-${index}`;
@@ -416,12 +426,12 @@ function FlowCanvas({ draft, selection, insertAt, canEdit, setSelection, setInse
   </main>;
 }
 
-export function FlowBuilder({ initialFlows, mailboxOptions, memberOptions, initialFlowId, canEdit, filterOptions }: { initialFlows: AutomationFlow[]; mailboxOptions: Option[]; memberOptions: Option[]; initialFlowId?: string; canEdit: boolean; filterOptions: FilterOptions }) {
+export function FlowBuilder({ initialFlows, mailboxOptions, memberOptions, initialFlowId, canEdit: canCreate, viewerId, isAdmin = false, filterOptions }: { initialFlows: AutomationFlow[]; mailboxOptions: Option[]; memberOptions: Option[]; initialFlowId?: string; canEdit: boolean; viewerId: string; isAdmin?: boolean; filterOptions: FilterOptions }) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const [flows, setFlows] = useState(initialFlows);
   const [deletingFlow, setDeletingFlow] = useState<AutomationFlow | null>(null);
   const actionBusy = useRef(false);
-  const initial = initialFlowId === "default" ? initialFlows.find((flow) => flow.name === "3-step follow-up") : initialFlows.find((flow) => flow.id === initialFlowId);
+  const initial = initialFlowId === "default" ? initialFlows.find((flow) => flow.name === "3-step follow-up" && flow.createdBy === viewerId) : initialFlows.find((flow) => flow.id === initialFlowId);
   const [draft, setDraft] = useState<DraftFlow | null>(initial ? toDraft(initial) : null);
   const [view, setView] = useState<"list" | "builder">(initial ? "builder" : "list");
   const [selection, updateSelection] = useState<Selection>("trigger");
@@ -436,6 +446,8 @@ export function FlowBuilder({ initialFlows, mailboxOptions, memberOptions, initi
   const [emailTestOpen, setEmailTestOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [auditOpen, setAuditDialogOpen] = useState(false);
+  const canManageFlow = (flow: AutomationFlow) => canCreate && (isAdmin || flow.createdBy === viewerId);
+  const canEdit = canCreate && (!draft?.id || flows.some((flow) => flow.id === draft.id && canManageFlow(flow)));
 
   useEffect(() => {
     const controller = new AbortController();
@@ -466,7 +478,7 @@ export function FlowBuilder({ initialFlows, mailboxOptions, memberOptions, initi
 
   async function setAuditOpen(open: boolean) {
     setAuditDialogOpen(open);
-    if (!open || !draft) return;
+    if (!open || !draft || !canEdit) return;
     setNotice("Running a safe backend test…");
     try {
       const response = await fetch("/api/flows/test", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ flow: draft }) });
@@ -488,7 +500,7 @@ export function FlowBuilder({ initialFlows, mailboxOptions, memberOptions, initi
   }
 
   async function removeFlow(flow: AutomationFlow) {
-    if (!canEdit) return;
+    if (!canManageFlow(flow)) return;
     const response = await fetch(`/api/flows/${flow.id}`, { method: "DELETE" });
     const result = await response.json().catch(() => ({ ok: false }));
     if (!response.ok || !result.ok) throw new Error(result.error || "Unable to delete flow.");
@@ -498,7 +510,7 @@ export function FlowBuilder({ initialFlows, mailboxOptions, memberOptions, initi
   }
 
   async function duplicateFlow(flow: AutomationFlow) {
-    if (!canEdit || actionBusy.current) return;
+    if (!canCreate || actionBusy.current) return;
     actionBusy.current = true;
     try {
       const payload = { ...toDraft(flow), id: undefined, name: `${flow.name} copy`, status: "draft" as const, steps: flow.steps.map((step) => ({ type: step.type, config: step.config })) };
@@ -516,7 +528,7 @@ export function FlowBuilder({ initialFlows, mailboxOptions, memberOptions, initi
   }
 
   async function changeStatus(flow: AutomationFlow, status: FlowStatus) {
-    if (!canEdit || actionBusy.current) return;
+    if (!canManageFlow(flow) || actionBusy.current) return;
     actionBusy.current = true;
     try {
       const payload = { ...toDraft(flow), status, steps: flow.steps.map((step) => ({ id: step.id, type: step.type, config: step.config })) };
@@ -533,12 +545,37 @@ export function FlowBuilder({ initialFlows, mailboxOptions, memberOptions, initi
     }
   }
 
-  if (view === "list" || !draft) return <><FlowListView flows={flows} canEdit={canEdit} onCreate={() => { setDraft(newDraft()); setSelection("trigger"); setView("builder"); }} onOpen={openFlow} onDuplicate={duplicateFlow} onChangeStatus={changeStatus} onRemove={async (flow) => { setDeletingFlow(flow); }} /><ConfirmActionDialog open={Boolean(deletingFlow)} onOpenChange={(open) => { if (!open) setDeletingFlow(null); }} title="Delete flow?" description={`Delete “${deletingFlow?.name ?? ""}” and its run history? This cannot be undone.`} onConfirm={async () => { if (deletingFlow) await removeFlow(deletingFlow); }} /></>;
+  async function runBulkAction(ids: string[], action: FlowBulkAction): Promise<FlowBulkResult[]> {
+    if (!canCreate || actionBusy.current) throw new Error("Another flow action is in progress.");
+    actionBusy.current = true;
+    try {
+      const response = await fetch("/api/flows/bulk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids, action }) });
+      const result = await response.json().catch(() => ({ ok: false }));
+      if (!response.ok || !result.ok) throw new Error(result.error || "Unable to update flows.");
+      const results = result.results as FlowBulkResult[];
+      const changes = new Map(results.map((item) => [item.id, item]));
+      setFlows((current) => current.flatMap((flow) => {
+        const change = changes.get(flow.id);
+        if (!change?.ok) return [flow];
+        return action === "delete" ? [] : [change.flow ?? flow];
+      }));
+      setDraft((current) => {
+        const change = current?.id ? changes.get(current.id) : undefined;
+        if (!change?.ok) return current;
+        return action === "delete" ? null : change.flow ? toDraft(change.flow) : current;
+      });
+      return results;
+    } finally {
+      actionBusy.current = false;
+    }
+  }
+
+  if (view === "list" || !draft) return <><FlowListView flows={flows} canEdit={canCreate} viewerId={viewerId} isAdmin={isAdmin} memberOptions={memberOptions} onBulkAction={runBulkAction} onCreate={() => { setDraft(newDraft()); setSelection("trigger"); setView("builder"); }} onOpen={openFlow} onDuplicate={duplicateFlow} onChangeStatus={changeStatus} onRemove={async (flow) => { setDeletingFlow(flow); }} /><ConfirmActionDialog open={Boolean(deletingFlow)} onOpenChange={(open) => { if (!open) setDeletingFlow(null); }} title="Delete flow?" description={`Delete “${deletingFlow?.name ?? ""}” and its run history? This cannot be undone.`} onConfirm={async () => { if (deletingFlow) await removeFlow(deletingFlow); }} /></>;
 
   const selectedStep = selectedIndex >= 0 ? draft.steps[selectedIndex] : null;
   return <div className="flex h-full min-h-0 flex-col overflow-hidden bg-muted/20 [&>header]:static! [&>header]:shrink-0">
-    <header className="sticky top-12 z-20 flex min-h-14 flex-wrap items-center gap-3 border-b bg-background/95 px-4 py-2 backdrop-blur"><button type="button" onClick={() => setView("list")} className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"><ArrowLeft className="size-3.5" />Flows</button><ChevronRight className="size-3.5 text-muted-foreground" /><Input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} aria-label="Flow name" className="h-8 min-w-0 flex-1 sm:w-64 sm:flex-none border-transparent px-2 text-sm font-semibold hover:border-input focus:border-input" disabled={!canEdit} /><Badge variant={statusVariant(draft.status)} className="capitalize">{draft.status}</Badge><span className="hidden text-xs text-muted-foreground xl:inline">{draft.steps.length} actions · {draft.activeRuns || 0} active</span><div className="ml-auto flex w-full flex-wrap items-center gap-2 sm:w-auto"><Button variant="ghost" size="sm" onClick={() => setAuditOpen(true)}><AiIcon  />Audit flow</Button><Button variant="outline" size="sm" onClick={() => setEmailTestOpen(true)} disabled={!canEdit}><Mail />Test with emails</Button><Button variant="outline" size="sm" onClick={() => setPreviewOpen(true)}><Eye />Preview</Button><Button variant="outline" size="sm" onClick={() => void persist(draft.status)} disabled={!canEdit || saving}><Save />{saving ? "Saving…" : "Save"}</Button>{draft.status === "live" ? <Button size="sm" variant="secondary" onClick={() => void persist("paused")} disabled={!canEdit || saving}><Pause />Pause</Button> : <Button size="sm" onClick={() => void persist("live")} disabled={!canEdit || saving}><Play />Turn on</Button>}</div></header>
-    {!canEdit ? <div className="border-b bg-amber-50 px-4 py-2 text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">Viewer access is read-only.</div> : null}
+    <header className="sticky top-12 z-20 flex min-h-14 flex-wrap items-center gap-3 border-b bg-background/95 px-4 py-2 backdrop-blur"><button type="button" onClick={() => setView("list")} className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"><ArrowLeft className="size-3.5" />Flows</button><ChevronRight className="size-3.5 text-muted-foreground" /><Input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} aria-label="Flow name" className="h-8 min-w-0 flex-1 sm:w-64 sm:flex-none border-transparent px-2 text-sm font-semibold hover:border-input focus:border-input" disabled={!canEdit} /><Badge variant={statusVariant(draft.status)} className="capitalize">{draft.status}</Badge><span className="hidden text-xs text-muted-foreground xl:inline">{draft.steps.length} actions · {draft.activeRuns || 0} active</span><div className="ml-auto flex w-full flex-wrap items-center gap-2 sm:w-auto"><Button variant="ghost" size="sm" onClick={() => setAuditOpen(true)} disabled={!canEdit}><AiIcon  />Audit flow</Button><Button variant="outline" size="sm" onClick={() => setEmailTestOpen(true)} disabled={!canCreate}><Mail />Test with emails</Button><Button variant="outline" size="sm" onClick={() => setPreviewOpen(true)}><Eye />Preview</Button><Button variant="outline" size="sm" onClick={() => void persist(draft.status)} disabled={!canEdit || saving}><Save />{saving ? "Saving…" : "Save"}</Button>{draft.status === "live" ? <Button size="sm" variant="secondary" onClick={() => void persist("paused")} disabled={!canEdit || saving}><Pause />Pause</Button> : <Button size="sm" onClick={() => void persist("live")} disabled={!canEdit || saving}><Play />Turn on</Button>}</div></header>
+    {!canEdit ? <div className="border-b bg-amber-50 px-4 py-2 text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">{canCreate ? "Shared flow is read-only. Its creator or an administrator can change it." : "Viewer access is read-only."}</div> : null}
     <div className="flex shrink-0 gap-2 border-b bg-background px-4 py-2 md:hidden" role="group" aria-label="Flow workspace view">
       <Button variant={mobileBuilderPanel === "canvas" ? "secondary" : "ghost"} className="flex-1" aria-pressed={mobileBuilderPanel === "canvas"} onClick={() => setMobileBuilderPanel("canvas")}><Workflow />Canvas</Button>
       <Button variant={mobileBuilderPanel === "settings" ? "secondary" : "ghost"} className="flex-1" aria-pressed={mobileBuilderPanel === "settings"} onClick={() => setMobileBuilderPanel("settings")}><Settings2 />Configure / Insights</Button>
@@ -564,25 +601,70 @@ export function FlowBuilder({ initialFlows, mailboxOptions, memberOptions, initi
   </div>;
 }
 
-function FlowListView({ flows, canEdit, onCreate, onOpen, onDuplicate, onChangeStatus, onRemove }: {
+function FlowListView({ flows, canEdit, viewerId, isAdmin, memberOptions, onCreate, onOpen, onDuplicate, onChangeStatus, onRemove, onBulkAction }: {
   flows: AutomationFlow[];
   canEdit: boolean;
+  viewerId: string;
+  isAdmin: boolean;
+  memberOptions: Option[];
   onCreate: () => void;
   onOpen: (flow: AutomationFlow) => void;
   onDuplicate: (flow: AutomationFlow) => Promise<unknown>;
   onChangeStatus: (flow: AutomationFlow, status: FlowStatus) => Promise<unknown>;
   onRemove: (flow: AutomationFlow) => Promise<unknown>;
+  onBulkAction: (ids: string[], action: FlowBulkAction) => Promise<FlowBulkResult[]>;
 }) {
   const { language, t } = useLanguage();
+  const memberLabels = new Map(memberOptions.map((member) => [member.id, member.label]));
   const liveFlows = flows.filter((flow) => flow.status === "live").length;
   const activeRuns = flows.reduce((total, flow) => total + (flow.activeRuns || 0), 0);
   const completedRuns = flows.reduce((total, flow) => total + (flow.completedRuns || 0), 0);
   const dateFormatter = new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" });
   const [page, setPage] = useState(1);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const bulkBusyRef = useRef(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [bulkErrors, setBulkErrors] = useState<Array<{ id: string; error: string }>>([]);
   const pageSize = 25;
   const pageCount = Math.max(1, Math.ceil(flows.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const visibleFlows = flows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const canManage = (flow: AutomationFlow) => canEdit && (isAdmin || flow.createdBy === viewerId);
+  const selectedFlows = flows.filter((flow) => selectedIds.includes(flow.id) && canManage(flow));
+  const selectablePage = visibleFlows.filter(canManage);
+  const allPageSelected = selectablePage.length > 0 && selectablePage.every((flow) => selectedIds.includes(flow.id));
+  const somePageSelected = selectablePage.some((flow) => selectedIds.includes(flow.id));
+
+  function selectFlows(ids: string[]) {
+    if (bulkBusyRef.current) return;
+    const uniqueIds = [...new Set(ids)];
+    if (uniqueIds.length > 100) { toast.error(t("Select up to 100 flows at a time.")); return; }
+    setSelectedIds(uniqueIds);
+  }
+
+  async function applyBulk(action: FlowBulkAction) {
+    if (bulkBusyRef.current || !selectedFlows.length) return;
+    bulkBusyRef.current = true;
+    setBulkBusy(true);
+    setBulkErrors([]);
+    try {
+      const results = await onBulkAction(selectedFlows.map((flow) => flow.id), action);
+      const succeeded = new Set(results.filter((result) => result.ok).map((result) => result.id));
+      setSelectedIds((current) => current.filter((id) => !succeeded.has(id)));
+      const errors = results.filter((result): result is Extract<FlowBulkResult, { ok: false }> => !result.ok);
+      setBulkErrors(errors);
+      if (errors.length) toast.error(t("Some flows could not be updated. Review the errors below."));
+      else toast.success(t(action === "delete" ? "Selected flows deleted." : action === "live" ? "Selected flows turned on." : "Selected flows paused."));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to update flows.";
+      setBulkErrors(selectedFlows.map((flow) => ({ id: flow.id, error: message })));
+      toast.error(t(message));
+    } finally {
+      bulkBusyRef.current = false;
+      setBulkBusy(false);
+    }
+  }
 
   return <section className="scroll-surface h-full min-h-0 overflow-y-auto bg-muted/20">
     <div className="w-full px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
@@ -591,7 +673,7 @@ function FlowListView({ flows, canEdit, onCreate, onOpen, onDuplicate, onChangeS
           <span className="grid size-10 shrink-0 place-items-center rounded-xl border bg-background text-primary shadow-sm"><Workflow className="size-5" /></span>
           <div><h1 className="text-xl font-semibold tracking-tight">Flows</h1><p className="mt-1 text-sm text-muted-foreground">Build, monitor, and improve automated customer journeys.</p></div>
         </div>
-        <Button size="lg" onClick={onCreate} disabled={!canEdit} className="shadow-sm"><Plus />Create flow</Button>
+        <Button size="lg" onClick={onCreate} disabled={!canEdit || bulkBusy} className="shadow-sm"><Plus />Create flow</Button>
       </div>
 
       <div className="mt-6 grid gap-3 sm:grid-cols-3">
@@ -602,16 +684,24 @@ function FlowListView({ flows, canEdit, onCreate, onOpen, onDuplicate, onChangeS
 
       
         <div className="mt-6 mb-3 flex items-center justify-between">
-          <div><h2 className="text-sm font-semibold">All flows</h2><p className="mt-0.5 text-xs text-muted-foreground">Select a flow to open its canvas and configuration.</p></div>
+          <div><h2 className="text-sm font-semibold">All flows</h2><p className="mt-0.5 text-xs text-muted-foreground">All workspace flows. Select a flow to view its canvas and configuration.</p></div>
           <Badge variant="secondary" className="tabular-nums">{flows.length}</Badge>
         </div>
 
       <Card className="crm-table-frame crm-table-page-wide gap-0 py-0">
+        {selectedFlows.length ? <div role="group" aria-label="Bulk flow actions" aria-busy={bulkBusy} className="flex flex-wrap items-center gap-2 border-b bg-primary/5 px-4 py-3">
+          <span className="mr-auto text-sm font-semibold">{t(`${selectedFlows.length} selected`)}</span>
+          <Button size="sm" variant="outline" disabled={bulkBusy} onClick={() => void applyBulk("live")}><Play />Turn on</Button>
+          <Button size="sm" variant="outline" disabled={bulkBusy} onClick={() => void applyBulk("paused")}><Pause />Pause</Button>
+          <Button size="sm" variant="destructive" disabled={bulkBusy} onClick={() => setDeleteOpen(true)}><Trash2 />Delete</Button>
+          <Button size="sm" variant="ghost" disabled={bulkBusy} onClick={() => setSelectedIds([])}>Clear selection</Button>
+        </div> : null}
+        {bulkErrors.length ? <div role="alert" className="max-h-48 overflow-auto border-b bg-destructive/5 px-4 py-3 text-sm"><p className="font-medium">Some flows could not be updated. Review the errors below.</p><ul className="mt-2 list-disc space-y-1 pl-5">{bulkErrors.map((item) => <li key={item.id}><span translate="no" className="font-medium">{flows.find((flow) => flow.id === item.id)?.name || item.id}</span>: {item.error}</li>)}</ul></div> : null}
         {flows.length ? <>
           <div>
-            <Table className="min-w-[880px]">
-              <TableHeader><TableRow className="bg-muted/30 hover:bg-muted/30"><TableHead className="pl-5">Flow</TableHead><TableHead>Trigger</TableHead><TableHead>Status</TableHead><TableHead className="text-center">Active</TableHead><TableHead className="text-center">Completed</TableHead><TableHead>Last updated</TableHead><TableHead className="w-12" /></TableRow></TableHeader>
-              <TableBody>{visibleFlows.map((flow) => <TableRow key={flow.id} className="group cursor-pointer" onClick={() => onOpen(flow)}><TableCell className="pl-5"><div className="flex items-center gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary"><Workflow className="size-4" /></span><div><p className="font-semibold group-hover:text-primary">{flow.name}</p><p className="mt-0.5 text-xs text-muted-foreground">{t(`${flow.steps.length} actions`)}</p></div></div></TableCell><TableCell><p className="max-w-64 truncate text-sm">{formatTrigger(flow.triggerType, flow.triggerConfig)}</p></TableCell><TableCell><FlowStatusBadge status={flow.status} /></TableCell><TableCell className="text-center font-medium tabular-nums">{flow.activeRuns || 0}</TableCell><TableCell className="text-center font-medium tabular-nums">{flow.completedRuns || 0}</TableCell><TableCell className="whitespace-nowrap text-xs text-muted-foreground">{dateFormatter.format(new Date(flow.updatedAt))}</TableCell><TableCell><FlowActions flow={flow} canEdit={canEdit} onOpen={onOpen} onDuplicate={onDuplicate} onChangeStatus={onChangeStatus} onRemove={onRemove} /></TableCell></TableRow>)}</TableBody>
+            <Table className="min-w-[1040px]">
+              <TableHeader><TableRow className="bg-muted/30 hover:bg-muted/30"><TableHead className="w-12 pl-5"><Checkbox aria-label="Select all editable flows on this page" checked={allPageSelected} indeterminate={!allPageSelected && somePageSelected} disabled={bulkBusy || !selectablePage.length} onCheckedChange={(checked) => selectFlows(checked ? [...new Set([...selectedFlows.map((flow) => flow.id), ...selectablePage.map((flow) => flow.id)])] : selectedIds.filter((id) => !selectablePage.some((flow) => flow.id === id)))} /></TableHead><TableHead>Flow</TableHead><TableHead>Created by</TableHead><TableHead>Trigger</TableHead><TableHead>Status</TableHead><TableHead className="text-center">Active</TableHead><TableHead className="text-center">Completed</TableHead><TableHead>Last updated</TableHead><TableHead className="w-12" /></TableRow></TableHeader>
+              <TableBody>{visibleFlows.map((flow) => <TableRow key={flow.id} data-state={selectedIds.includes(flow.id) ? "selected" : undefined} className="group cursor-pointer" onClick={() => { if (!bulkBusy) onOpen(flow); }}><TableCell className="pl-5" onClick={(event) => event.stopPropagation()}><Checkbox aria-label={`Select ${flow.name}`} checked={selectedIds.includes(flow.id)} disabled={bulkBusy || !canManage(flow)} onCheckedChange={(checked) => selectFlows(checked ? [...selectedFlows.map((item) => item.id), flow.id] : selectedIds.filter((id) => id !== flow.id))} /></TableCell><TableCell><div className="flex items-center gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary"><Workflow className="size-4" /></span><div><p className="font-semibold group-hover:text-primary">{flow.name}</p><p className="mt-0.5 text-xs text-muted-foreground">{t(`${flow.steps.length} actions`)}</p></div></div></TableCell><TableCell className="text-sm">{memberLabels.get(flow.createdBy) || (flow.createdBy === viewerId ? "You" : "Workspace member")}</TableCell><TableCell><p className="max-w-64 truncate text-sm">{formatTrigger(flow.triggerType, flow.triggerConfig)}</p></TableCell><TableCell><FlowStatusBadge status={flow.status} /></TableCell><TableCell className="text-center font-medium tabular-nums">{flow.activeRuns || 0}</TableCell><TableCell className="text-center font-medium tabular-nums">{flow.completedRuns || 0}</TableCell><TableCell className="whitespace-nowrap text-xs text-muted-foreground">{dateFormatter.format(new Date(flow.updatedAt))}</TableCell><TableCell><FlowActions flow={flow} canEdit={canManage(flow) && !bulkBusy} canDuplicate={canEdit && !bulkBusy} onOpen={onOpen} onDuplicate={onDuplicate} onChangeStatus={onChangeStatus} onRemove={onRemove} /></TableCell></TableRow>)}</TableBody>
             </Table>
           </div>
 
@@ -620,6 +710,7 @@ function FlowListView({ flows, canEdit, onCreate, onOpen, onDuplicate, onChangeS
         </> : <div className="grid min-h-64 place-items-center px-6 py-12 text-center"><div><span className="mx-auto grid size-12 place-items-center rounded-2xl bg-primary/10 text-primary"><Workflow className="size-5" /></span><h3 className="mt-4 font-semibold">Create your first flow</h3><p className="mx-auto mt-1 max-w-sm text-sm leading-6 text-muted-foreground">Automate timely follow-ups, internal tasks, and customer journey decisions.</p><Button className="mt-5" onClick={onCreate} disabled={!canEdit}><Plus />Create flow</Button></div></div>}
       </Card>
       <TablePagination className="mt-6" page={currentPage} pageCount={pageCount} total={flows.length} itemLabel="flows" onPrevious={() => setPage(currentPage - 1)} onNext={() => setPage(currentPage + 1)} />
+      <ConfirmActionDialog open={deleteOpen} onOpenChange={setDeleteOpen} title="Delete selected flows?" description={t("Delete the selected flows and their run history? This cannot be undone.")} onConfirm={() => applyBulk("delete")} />
     </div>
   </section>;
 }
@@ -632,15 +723,16 @@ function FlowStatusBadge({ status }: { status: FlowStatus }) {
   return <Badge variant={statusVariant(status)} className="gap-1.5 capitalize"><span className={`size-1.5 rounded-full ${status === "live" ? "bg-current" : status === "paused" ? "bg-amber-500" : "bg-muted-foreground"}`} />{status}</Badge>;
 }
 
-function FlowActions({ flow, canEdit, onOpen, onDuplicate, onChangeStatus, onRemove }: {
+function FlowActions({ flow, canEdit, canDuplicate, onOpen, onDuplicate, onChangeStatus, onRemove }: {
   flow: AutomationFlow;
   canEdit: boolean;
+  canDuplicate: boolean;
   onOpen: (flow: AutomationFlow) => void;
   onDuplicate: (flow: AutomationFlow) => Promise<unknown>;
   onChangeStatus: (flow: AutomationFlow, status: FlowStatus) => Promise<unknown>;
   onRemove: (flow: AutomationFlow) => Promise<unknown>;
 }) {
-  return <div onClick={(event) => event.stopPropagation()}><DropdownMenu><DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Actions for ${flow.name}`} />}><MoreHorizontal /></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => onOpen(flow)}>Edit</DropdownMenuItem><DropdownMenuItem onClick={() => void onDuplicate(flow)} disabled={!canEdit}><Copy />Duplicate</DropdownMenuItem><DropdownMenuItem onClick={() => void onChangeStatus(flow, flow.status === "live" ? "paused" : "live")} disabled={!canEdit}>{flow.status === "live" ? <Pause /> : <Play />}{flow.status === "live" ? "Pause" : "Turn on"}</DropdownMenuItem><DropdownMenuItem variant="destructive" onClick={() => void onRemove(flow)} disabled={!canEdit}><Trash2 />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>;
+  return <div onClick={(event) => event.stopPropagation()}><DropdownMenu><DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Actions for ${flow.name}`} />}><MoreHorizontal /></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => onOpen(flow)}>{canEdit ? "Edit" : "View"}</DropdownMenuItem><DropdownMenuItem onClick={() => void onDuplicate(flow)} disabled={!canDuplicate}><Copy />Duplicate</DropdownMenuItem><DropdownMenuItem onClick={() => void onChangeStatus(flow, flow.status === "live" ? "paused" : "live")} disabled={!canEdit}>{flow.status === "live" ? <Pause /> : <Play />}{flow.status === "live" ? "Pause" : "Turn on"}</DropdownMenuItem><DropdownMenuItem variant="destructive" onClick={() => void onRemove(flow)} disabled={!canEdit}><Trash2 />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>;
 }
 
 function PreviewRow({ icon: Icon, title, detail }: { icon: typeof Mail | typeof AiIcon; title: string; detail: string }) { return <div className="flex items-center gap-3 rounded-lg border bg-background p-3"><span className="grid size-8 place-items-center rounded-lg bg-muted"><Icon className="size-4" /></span><div><p className="text-xs font-semibold">{title}</p><p className="mt-0.5 text-xs text-muted-foreground">{detail}</p></div></div>; }

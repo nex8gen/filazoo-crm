@@ -17,9 +17,11 @@ import { actionWorkProgress, pageWorkArea, requestedWorkProgress, type AgentWork
 import { AgentWorkIcon } from "@/components/agent-work-icon";
 import { AgentApprovalMenu } from "@/components/agent-approval-menu";
 import { CustomerResearchSources, WebSearchOption, type ResearchResult } from "@/components/ui/customer-research";
+import { AiImageFeedback, AiImagePicker, AiImagePreviews, useAiImageAttachments } from "@/components/ui/ai-image-attachments";
+import { chatImageLimitError, type ChatImage } from "@/lib/ai/image-input";
 
 type Mode = "chat" | "agent";
-type Message = { id: string; role: "user" | "assistant"; content: string; actions?: AgentProposal[]; durationMs?: number; work?: AgentWorkProgress; research?: ResearchResult };
+type Message = { id: string; role: "user" | "assistant"; content: string; images?: ChatImage[]; actions?: AgentProposal[]; durationMs?: number; work?: AgentWorkProgress; research?: ResearchResult };
 
 const pageNames: Array<[RegExp, string]> = [
   [/^\/companies\/[^/]+/, "Company profile"],
@@ -67,6 +69,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
   const [recordScope, setRecordScope] = useState("");
   const [approvalMode, setApprovalMode] = useState<"ask" | "auto">("ask");
   const [question, setQuestion] = useState("");
+  const attachments = useAiImageAttachments();
   const [webSearch, setWebSearch] = useState(false);
   const [chats, setChats] = useState<Record<string, Message[]>>({});
   const [pending, setPending] = useState(false);
@@ -120,10 +123,14 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
   }, [applying]);
   async function send(value = question) {
     const content = value.trim();
-    if (!content || busy || abort.current || actionLock.current) return;
-    const next: Message[] = [...messages, { id: crypto.randomUUID(), role: "user", content }];
+    if ((!content && !attachments.images.length) || attachments.processing || busy || abort.current || actionLock.current) return;
+    const sentImages = attachments.images;
+    const next: Message[] = [...messages, { id: crypto.randomUUID(), role: "user", content, ...(sentImages.length ? { images: sentImages } : {}) }];
+    const imageError = chatImageLimitError(next.slice(-15));
+    if (imageError) { setError(imageError); return; }
     setChats((current) => ({ ...current, [chatKey]: next }));
     setQuestion("");
+    attachments.clear();
     setError(null);
     const work = mode === "agent" ? requestedWorkProgress(content, pageLabel) : undefined;
     setActiveWork(work ?? null);
@@ -150,7 +157,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
           pathname,
           pageLabel,
           pageText: visiblePageText(),
-          messages: next.slice(-15).map(({ role, content: messageContent }) => ({ role, content: messageContent })),
+          messages: next.slice(-15).map(({ role, content: messageContent, images }) => ({ role, content: messageContent, images })),
         }),
         signal: controller.signal,
       });
@@ -175,6 +182,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
         setError(reason instanceof Error ? reason.message : "Unable to reach Filazoo AI.");
         setChats((current) => ({ ...current, [chatKey]: (current[chatKey] ?? []).filter((message) => message.id !== next.at(-1)?.id) }));
         setQuestion(content);
+        attachments.setImages(sentImages);
       }
     } finally {
       if (abort.current === controller) abort.current = null;
@@ -189,6 +197,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
     setAnimation(null);
     setChats((current) => ({ ...current, [chatKey]: [] }));
     setQuestion("");
+    attachments.clear();
     setError(null);
     input.current?.focus();
   }
@@ -244,7 +253,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
         <ColumnResizeHandle label="AI sidebar width" variable="--workspace-ai-preferred-width" container="[data-workspace-shell]" panel="[data-ai-workspace]" min={320} max={720} reverse className="ai-sidebar-resize" />
         <div className="flex items-center gap-2 border-b bg-background/95 p-3">
           <div className="grid min-w-0 flex-1 grid-cols-2 rounded-2xl bg-muted/70 p-1" role="tablist" aria-label="AI mode">
-            {(["chat", "agent"] as const).map((value) => <button key={value} type="button" role="tab" aria-selected={mode === value} disabled={busy} onClick={() => { setMode(value); setAnimation(null); setError(null); setQuestion(""); }} className={`flex min-h-12 min-w-0 items-center gap-2.5 rounded-xl px-3 text-left transition-all disabled:opacity-50 ${mode === value ? "bg-background text-foreground shadow-[0_1px_5px_rgba(15,23,42,.08)] ring-1 ring-border/60" : "text-muted-foreground hover:text-foreground"}`}>
+            {(["chat", "agent"] as const).map((value) => <button key={value} type="button" role="tab" aria-selected={mode === value} disabled={busy} onClick={() => { setMode(value); setAnimation(null); setError(null); setQuestion(""); attachments.clear(); }} className={`flex min-h-12 min-w-0 items-center gap-2.5 rounded-xl px-3 text-left transition-all disabled:opacity-50 ${mode === value ? "bg-background text-foreground shadow-[0_1px_5px_rgba(15,23,42,.08)] ring-1 ring-border/60" : "text-muted-foreground hover:text-foreground"}`}>
               <span className={`grid size-8 shrink-0 place-items-center rounded-lg ${mode === value ? "bg-muted" : ""}`}>{value === "chat" ? <MessageCircle className="size-[18px]" /> : <AgentAvatar size="sm" color="violet" shape="squircle" glow={false} className="!size-6" />}</span><span className="min-w-0"><span className="block text-xs font-semibold">{value === "chat" ? "Chat" : "Agent"}</span><span className="block truncate text-[10px] font-normal text-muted-foreground">{value === "chat" ? "Ask & analyze" : "Plan & act"}</span></span>
             </button>)}
           </div>
@@ -263,7 +272,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
             <div className="relative z-10 mx-auto mt-7 grid w-full max-w-sm gap-2">{starters[mode].map(([label, prompt]) => <button key={label} type="button" onClick={() => void send(t(prompt))} className="group flex min-h-12 items-center justify-between rounded-2xl border bg-background/90 px-4 text-left text-sm shadow-[0_1px_3px_rgba(15,23,42,.03)] transition hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md focus-visible:outline-2 focus-visible:outline-ring"><span>{label}</span><ArrowUpRight className="size-3.5 text-muted-foreground opacity-0 transition group-hover:opacity-100" /></button>)}</div>
             <motion.button type="button" aria-label="Focus the AI message box" onClick={() => input.current?.focus()} animate={{ y: [0, 5, 0], opacity: [0.45, 1, 0.45] }} transition={{ duration: 1.8, ease: "easeInOut", repeat: Infinity }} className="mt-7 grid size-8 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"><ChevronDown className="size-5" /></motion.button>
           </div> : <div className="space-y-5">{messages.map((message) => <div key={message.id} className={message.role === "user" ? "ml-auto max-w-[88%] rounded-2xl rounded-br-md bg-muted px-4 py-3" : "group max-w-full"}>
-            {message.role === "user" ? <p data-no-translate className="whitespace-pre-wrap text-sm leading-6">{message.content}</p> : <>
+            {message.role === "user" ? <><AiImagePreviews images={message.images} /><p data-no-translate className="whitespace-pre-wrap text-sm leading-6">{message.content}</p></> : <>
               <ThinkingState working={false} writing={animation?.id === message.id} durationMs={message.durationMs} scope={t(pageLabel)} activity={message.work} className="mb-2" />
               <StreamingText key={`${message.id}-${animation?.id === message.id ? animation.run : 0}`} text={message.content} animate={animation?.id === message.id} onProgress={() => { const viewport = log.current; if (viewport && viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 120) viewport.scrollTop = viewport.scrollHeight; }} onComplete={() => setAnimation((current) => current?.id === message.id ? null : current)} />
               <CustomerResearchSources research={message.research} />
@@ -282,10 +291,11 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
           {mode === "agent" && (pending || applying) && activeWork ? <div role="status" aria-live="polite" className="mb-3 rounded-xl border border-violet-500/15 bg-violet-500/[0.04] px-3 py-2"><ThinkingState key={applying || "preparing"} working scope={t(workPage)} activity={activeWork} /></div> : null}
           {messages.length ? <div className="mb-2 flex justify-end"><Button type="button" variant="ghost" size="xs" disabled={busy} onClick={newChat}><Plus />New chat</Button></div> : null}
           <div className="rounded-2xl border bg-card p-2.5 shadow-[0_6px_24px_rgba(15,23,42,.07)] transition focus-within:border-primary/40 focus-within:shadow-[0_8px_30px_rgba(15,23,42,.10)]">
-            <div className="mb-2 flex justify-end"><WebSearchOption enabled={webSearch} onChange={setWebSearch} disabled={busy} /></div>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><AiImagePicker attachments={attachments} disabled={busy} /><WebSearchOption enabled={webSearch} onChange={setWebSearch} disabled={busy} /></div>
             <div className="mb-1 flex items-center gap-1.5 px-2 text-[10px] font-medium text-muted-foreground">{mode === "agent" ? <AgentAvatar size="sm" color="violet" shape="squircle" glow={false} className="!size-5" /> : <AiIcon className="size-4" />}<span>{mode === "agent" ? "Agent mode" : "Chat"}</span><span className="text-border">/</span><AgentWorkIcon area={pageWorkArea(pageLabel)} className="size-3 shrink-0" /><span className="truncate">{pageLabel}</span></div>
-            <textarea ref={input} value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} placeholder={mode === "chat" ? `Ask about ${pageLabel}…` : `Tell the agent what to do…`} disabled={busy} rows={3} maxLength={6_000} className="w-full resize-none bg-transparent px-2 py-1 text-sm leading-6 outline-none placeholder:text-muted-foreground disabled:opacity-60" />
-            <div className="flex items-center justify-between gap-3 px-1 pb-0.5">{mode === "agent" ? <AgentApprovalMenu value={approvalMode} onChange={setApprovalMode} disabled={busy} /> : <span className="text-[10px] text-muted-foreground">Enter to send · Shift Enter for a new line</span>}<Button type="button" size="icon-sm" className="rounded-full" disabled={busy || !question.trim()} onClick={() => void send()} aria-label="Send to Filazoo AI"><CornerDownLeft /></Button></div>
+            <AiImagePreviews images={attachments.images} onRemove={attachments.remove} disabled={busy || attachments.processing} /><AiImageFeedback attachments={attachments} />
+            <textarea ref={input} value={question} onPaste={busy ? undefined : attachments.onPaste} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); } }} placeholder={mode === "chat" ? `Ask about ${pageLabel}…` : `Tell the agent what to do…`} disabled={busy} rows={3} maxLength={6_000} className="w-full resize-none bg-transparent px-2 py-1 text-sm leading-6 outline-none placeholder:text-muted-foreground disabled:opacity-60" />
+            <div className="flex items-center justify-between gap-3 px-1 pb-0.5">{mode === "agent" ? <AgentApprovalMenu value={approvalMode} onChange={setApprovalMode} disabled={busy} /> : <span className="text-[10px] text-muted-foreground">Enter to send · Shift Enter for a new line</span>}<Button type="button" size="icon-sm" className="rounded-full" disabled={busy || attachments.processing || (!question.trim() && !attachments.images.length)} onClick={() => void send()} aria-label="Send to Filazoo AI"><CornerDownLeft /></Button></div>
           </div>
           <p className="mt-2 text-center text-[10px] leading-4 text-muted-foreground">AI can make mistakes. Review suggestions before using them.</p>
         </div>

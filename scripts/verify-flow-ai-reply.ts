@@ -7,7 +7,7 @@ process.env.DRY_RUN = "true";
 process.env.GEMINI_API_KEY = "verification-only-intercepted";
 const { createSupabaseAdmin } = await import("../lib/supabase/admin.ts");
 const { blankStep } = await import("../lib/flows.ts");
-const { scanTimeBasedFlowTriggers, processFlowRun } = await import("../lib/data/flow-runtime.ts");
+const { enrollMatchingFlows, scanTimeBasedFlowTriggers, processFlowRun } = await import("../lib/data/flow-runtime.ts");
 const { prepareFlowAiReply } = await import("../lib/data/flow-ai-reply.ts");
 const admin = createSupabaseAdmin();
 const prefix = `AI flow verification ${randomUUID()}`;
@@ -47,7 +47,10 @@ try {
   assert.ok(definition!.flow_steps.some((step) => step.type === "ai_auto_reply"));
   const { data: contact } = await admin.from("contacts").insert({ company_id: companyId, name: "Test", email: `new-${randomUUID()}@example.com`, verification_status: "valid" }).select("id").single().throwOnError();
   const contactId = contact!.id;
-  assert.equal(await scanTimeBasedFlowTriggers(flowId!), 1);
+  const event = { type: "new_lead" as const, flowId: flowId!, contactId, conversationId: "intake" };
+  assert.equal((await enrollMatchingFlows(event))[0]?.reason, "waiting");
+  assert.equal((await enrollMatchingFlows({ ...event, contactId: oldContact!.id })).length, 0);
+  assert.equal((await enrollMatchingFlows({ ...event, eventKey: randomUUID() }))[0]?.enrolled, false);
   assert.equal(await scanTimeBasedFlowTriggers(flowId!), 0);
   const { data: runs } = await admin.from("flow_runs").select("id,contact_id,next_run_at,started_at,conversation_id").eq("flow_id", flowId!).throwOnError();
   assert.equal(runs!.length, 1);
@@ -55,7 +58,7 @@ try {
   assert.equal(run.contact_id, contactId);
   assert.notEqual(run.contact_id, oldContact!.id);
   assert.ok(Date.parse(run.next_run_at) - Date.parse(run.started_at) >= 299000);
-  console.log("PASS new-lead activation excludes old leads, enrolls once and persists the five-minute wait");
+  console.log("PASS immediate new-lead enrollment excludes old leads, deduplicates intake/scanner retries and persists the five-minute wait");
 
   const inboundId = `<${randomUUID()}@example.com>`;
   await admin.from("emails").insert({ contact_id: contactId, direction: "received", status: "received", subject: "Black PLA", body: "Please tell me about black PLA for our print farm.", thread_id: `message:${inboundId}`, message_id: inboundId, owner_id: userId }).throwOnError();
