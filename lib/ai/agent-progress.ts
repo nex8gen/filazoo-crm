@@ -1,13 +1,14 @@
 import type { PreparedAgentAction } from "./agent-actions.ts";
 
-export type AgentWorkArea = "invoice" | "email" | "message" | "company" | "product" | "workspace";
+export type AgentWorkArea = "invoice" | "email" | "message" | "company" | "product" | "flow" | "workspace";
 export type AgentWorkProgress = { area: AgentWorkArea; label: string; detail: string; relatedAreas?: AgentWorkArea[] };
 
 export const agentWorkAreaLabels: Record<AgentWorkArea, string> = {
-  invoice: "Invoices", email: "Email", message: "Messenger", company: "Companies", product: "Products", workspace: "Workspace",
+  invoice: "Invoices", email: "Email", message: "Messenger", company: "Companies", product: "Products", flow: "Flows", workspace: "Workspace",
 };
 
 export function pageWorkArea(page: string): AgentWorkArea {
+  if (/flow|automation|lead-channel\/ai-agent/i.test(page)) return "flow";
   if (/invoice/i.test(page)) return "invoice";
   if (/email/i.test(page)) return "email";
   if (/messenger/i.test(page)) return "message";
@@ -19,18 +20,20 @@ export function pageWorkArea(page: string): AgentWorkArea {
 // Before a proposal exists these describe preparation, never completed actions.
 export function requestedWorkProgress(request: string, page: string): AgentWorkProgress {
   const areas: AgentWorkArea[] = [];
+  if (/\b(?:flows?|automation)\b/iu.test(request)) areas.push("flow");
   if (/\binvoic(?:e|es|ing)\b|发票/iu.test(request)) areas.push("invoice");
   if (/\be-?mail\b|邮件/iu.test(request)) areas.push("email");
   if (/\b(?:message|messenger|whatsapp|sms)\b|消息|短信/iu.test(request)) areas.push("message");
   const area = areas[0] ?? pageWorkArea(page);
   const labels: Record<AgentWorkArea, string> = {
     invoice: "Preparing invoice actions…", email: "Preparing email actions…", message: "Preparing message actions…",
-    company: "Preparing company actions…", product: "Reviewing product details…", workspace: "Preparing your task…",
+    company: "Preparing company actions…", product: "Reviewing product details…", flow: "Preparing flow actions…", workspace: "Preparing your task…",
   };
   return { area, label: labels[area], detail: request.length > 180 ? `${request.slice(0, 177)}…` : request, relatedAreas: areas.slice(1) };
 }
 
 export function actionWorkProgress(action: PreparedAgentAction): AgentWorkProgress {
+  if (action.type === "create_flow") return { area: "flow", label: "Creating automation flow…", detail: action.flow.name };
   if (action.type === "create_company") return { area: "company", label: "Creating company…", detail: action.company.name };
   if (action.type === "update_company" || action.type === "add_company_note") return { area: "company", label: action.type === "update_company" ? "Updating customer profile…" : "Adding customer note…", detail: action.companyName };
   if (action.type === "write_email") return { area: "email", label: action.email.delivery === "draft" ? "Preparing email draft…" : "Sending email…", detail: action.email.to };

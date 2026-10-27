@@ -7,6 +7,7 @@ import {
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { patchInvoiceSettings } from "@/lib/data/invoice-payment-methods";
 import { invoicePaymentMethodsSchema } from "@/lib/invoice-payment-methods";
+import { invoiceDefaultsSchema } from "@/lib/invoice-defaults";
 import {
   billingProfileSchema,
   sellerSettingsSchema,
@@ -20,6 +21,7 @@ const inputSchema = z.discriminatedUnion("kind", [
   }),
   z.object({ kind: z.literal("seller"), settings: sellerSettingsSchema }),
   z.object({ kind: z.literal("payments"), paymentMethods: invoicePaymentMethodsSchema }),
+  z.object({ kind: z.literal("invoice_defaults"), settings: sellerSettingsSchema, defaults: invoiceDefaultsSchema }),
 ]);
 export async function PUT(request: Request) {
   const origin = checkInvoiceOrigin(request);
@@ -36,7 +38,8 @@ export async function PUT(request: Request) {
   try {
     if (input.data.kind !== "customer") {
       await patchInvoiceSettings(input.data.kind === "payments"
-        ? { paymentMethods: input.data.paymentMethods } : input.data.settings, access.viewer.id);
+        ? { paymentMethods: input.data.paymentMethods } : input.data.kind === "invoice_defaults"
+          ? { ...input.data.settings, defaults: input.data.defaults } : input.data.settings, access.viewer.id);
       return Response.json({ ok: true });
     }
     const existing = input.data.kind === "customer"

@@ -21,6 +21,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { TableFilters, TableFilter } from "@/components/ui/table-filters";
 import { TablePagination } from "@/components/ui/table-pagination";
 import type { Company, DataMode } from "@/lib/types";
+import { usePreferences } from "@/components/preferences-provider";
 
 const statusClass: Record<Company["stage"], string> = {
   "Profile created": "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900 dark:bg-sky-950/60 dark:text-sky-300",
@@ -46,6 +47,8 @@ function CompanyIdentity({ company }: { company: Company }) {
 }
 
 export function CompaniesTable({ companies, mode, canWrite, canDelete }: { companies: Company[]; mode: DataMode; canWrite: boolean; canDelete: boolean }) {
+  const { preferences } = usePreferences();
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: preferences.tablePageSize as number });
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
@@ -101,9 +104,8 @@ export function CompaniesTable({ companies, mode, canWrite, canDelete }: { compa
   ], [selectedIds]);
 
   const table = useReactTable({
-    data: filtered, columns, state: { sorting }, onSortingChange: setSorting, getRowId: (row) => row.id,
+    data: filtered, columns, state: { sorting, pagination: { pageSize: preferences.tablePageSize, pageIndex: Math.min(pagination.pageIndex, Math.max(0, Math.ceil(filtered.length / preferences.tablePageSize) - 1)) } }, onSortingChange: setSorting, onPaginationChange: setPagination, getRowId: (row) => row.id,
     getCoreRowModel: getCoreRowModel(), getSortedRowModel: getSortedRowModel(), getPaginationRowModel: getPaginationRowModel(),
-    initialState: { pagination: { pageIndex: 0, pageSize: 25 } },
   });
 
   const runBulkAction = (action: "contacted" | "interested" | "delete") => {

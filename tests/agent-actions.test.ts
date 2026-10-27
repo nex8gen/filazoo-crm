@@ -6,6 +6,8 @@ import { blankInvoiceDocument, invoiceTotals } from "../lib/invoices.ts";
 import type { InvoiceProduct } from "../lib/invoice-links.ts";
 import type { InvoiceBankAccount } from "../lib/invoice-banks.ts";
 import { assistantProviderError } from "../lib/ai/assistant-provider-error.ts";
+import type { InvoicePaymentMethod } from "../lib/invoice-payment-methods.ts";
+import { defaultFlowInput, flowAgentCapabilities, flowInputSchema, stepTypes } from "../lib/flows.ts";
 
 const companyId = "ad9cb9f8-e098-44f0-a078-20eed16ef1bd";
 const bank: InvoiceBankAccount = { id: "c8658f23-965c-49b3-a11a-35dc61920fc6", label: "USD bank", currency: "USD", beneficiaryName: "Filazoo", beneficiaryAddress: "", accountNumber: "123456", bankName: "Test Bank", bankAddress: "", swift: "TESTUS33", bankCode: "" };
@@ -14,6 +16,64 @@ const pla = product("PLA", "PLA", "Black", 500);
 const petg = product("PETG", "PETG", "White", 700);
 const selection = { items: [{ productSku: "PLA", variantId: "PLA-color", quantity: 200 }, { productSku: "PETG", variantId: "PETG-color", quantity: 23 }], bankAccountId: bank.id };
 const base = { ...blankInvoiceDocument("2026-10-26"), customerName: "Acme", companyId };
+const payments: InvoicePaymentMethod[] = [
+  { id: "3280fd30-4529-4c4d-ab74-c695ab064e57", type: "paypal", label: "PayPal", currency: "", details: "PayPal payment", paymentUrl: "https://paypal.me/example" },
+  { id: "f57661f0-c5a1-4469-b883-7a90c32a7028", type: "bank_transfer", label: "Current bank", currency: "USD", details: "Current saved account", paymentUrl: "" },
+];
+
+test("new invoices default to both current payment methods and remove legacy payment details", () => {
+  const old = { ...base, bankAccountId: bank.id, bankAccount: bank, paymentInstructions: "Old bank instructions" };
+  const document = buildAgentInvoice(old, { items: selection.items }, [pla, petg], [bank], payments, { creating: true });
+  assert.deepEqual(document.paymentMethods, payments);
+  assert.equal(document.bankAccountId, undefined);
+  assert.equal(document.bankAccount, undefined);
+  assert.equal(document.paymentInstructions, "");
+  assert.equal(old.bankAccount, bank);
+});
+
+test("payment selection snapshots only current saved methods and rejects missing, duplicate or wrong-currency options", () => {
+  const document = buildAgentInvoice(base, { items: selection.items, paymentMethodIds: [payments[0].id] }, [pla, petg], [], payments);
+  assert.deepEqual(document.paymentMethods, [payments[0]]);
+  assert.throws(() => buildAgentInvoice(base, { paymentMethodIds: [bank.id] }, [], [], payments), /current saved payment/);
+  assert.throws(() => buildAgentInvoice(base, { paymentMethodIds: [payments[1].id] }, [], [], [{ ...payments[1], currency: "EUR" }]), /currency/);
+  assert.throws(() => buildAgentInvoice(base, { ...selection, paymentMethodIds: [payments[0].id] }, [pla, petg], [bank], payments), /not both/);
+  assert.equal(workspaceActionSchema.safeParse({ type: "create_invoice", companyId, items: selection.items, paymentMethodIds: [payments[0].id, payments[0].id] }).success, false);
+  assert.equal(workspaceActionSchema.safeParse({ type: "create_invoice", companyId, items: selection.items, paymentMethods: payments }).success, false);
+  assert.throws(() => buildAgentInvoice(base, { items: selection.items }, [pla, petg], [], [{ ...payments[1], currency: "EUR" }], { creating: true }), /No current payment methods/);
+});
+
+test("shipping, discounts, dates and explicit tax change the actual invoice calculation", () => {
+  const document = buildAgentInvoice(base, { items: [{ ...selection.items[0], taxBps: 750 }], details: { shippingMinor: 3900, discountMinor: 1000, dueDate: "2026-11-25", reference: "PO-39" } }, [pla], []);
+  assert.equal(document.shippingMinor, 3900);
+  assert.equal(document.discountMinor, 1000);
+  assert.equal(document.dueDate, "2026-11-25");
+  assert.equal(invoiceTotals(document).total, 110325);
+  for (const amount of [-1, 39.5]) assert.equal(workspaceActionSchema.safeParse({ type: "create_invoice", companyId, items: selection.items, details: { shippingMinor: amount } }).success, false);
+});
+
+test("details-only updates preserve custom prices, taxes and current payment snapshots", () => {
+  const initial = { ...base, items: [{ description: "Agreed price", quantity: 3, unitPriceMinor: 1234, taxBps: 500 }], paymentMethods: payments };
+  const action = workspaceActionSchema.parse({ type: "update_invoice", invoiceId: companyId, companyId, details: { shippingMinor: 3900, notes: "Deliver in the morning" } });
+  assert.equal(action.type, "update_invoice");
+  if (action.type !== "update_invoice") return;
+  const document = buildAgentInvoice(initial, action, [], [], payments);
+  assert.deepEqual(document.items, initial.items);
+  assert.deepEqual(document.paymentMethods, initial.paymentMethods);
+  assert.equal(invoiceTotals(document).total, 7787);
+  assert.equal(buildAgentInvoice(document, { details: { shippingMinor: 0 } }, [], []).shippingMinor, 0);
+  assert.equal(workspaceActionSchema.safeParse({ type: "create_invoice", companyId, details: { shippingMinor: 3900 } }).success, false);
+});
+
+test("flow proposals validate actual trigger and step configurations", () => {
+  const action = { type: "create_flow", flow: defaultFlowInput };
+  assert.equal(extractWorkspaceActions(`Ready.\nFILAZOO_ACTIONS_JSON: ${JSON.stringify([action])}`).actions[0]?.type, "create_flow");
+  assert.equal(workspaceActionSchema.safeParse({ ...action, flow: { ...defaultFlowInput, steps: [{ type: "send_email", config: { mailboxId: "default" } }] } }).success, false);
+  assert.equal(workspaceActionSchema.safeParse({ ...action, flow: { ...defaultFlowInput, triggerType: "invented" } }).success, false);
+  const guide = flowAgentCapabilities();
+  for (const type of stepTypes) {
+    assert.equal(flowInputSchema.safeParse({ ...defaultFlowInput, steps: [{ type, config: guide.stepDefaults[type] }] }).success, true, type);
+  }
+});
 
 test("builds exactly 200 black PLA and 23 white PETG with real prices and saved bank details", () => {
   const document = buildAgentInvoice(base, selection, [pla, petg], [bank]);

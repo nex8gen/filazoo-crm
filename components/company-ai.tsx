@@ -9,24 +9,26 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { StreamingText, ThinkingState } from "@/components/ui/ai-agent-response";
 import { AiChatInput } from "@/components/ui/ai-chat-input";
+import { CustomerResearchSources, type ResearchResult } from "@/components/ui/customer-research";
 import type { AppLanguage } from "@/lib/i18n";
 import type { Company } from "@/lib/types";
 import type { CompanyChatMessage, CompanyChatSource } from "@/lib/ai/company-chat";
 
 const shortcuts = [
+  { label: "Analyze customer", icon: FileText, prompt: "Analyze this customer and write a report on their company, what they do, how big they are, their likely filament needs and the best sales approach. Separate facts from estimates and identify what we need to confirm." },
   { label: "Customer brief", icon: FileText, prompt: "Give me a concise brief on this customer: their business, needs, buying intent and what we know so far." },
   { label: "Next best action", icon: Target, prompt: "What should we do next for this customer, and why? Use the latest activity and identify anything we need to confirm." },
   { label: "Draft a reply", icon: SquarePen, prompt: "Draft a short, helpful reply to this customer's latest received email. If there is no saved inbound email, tell me what information you need instead." },
   { label: "Follow-up plan", icon: Clock3, prompt: "Suggest a follow-up plan for this customer, including timing in Shanghai time, talking points, and questions to ask. Distinguish the existing schedule from your suggestions." },
 ];
 
-type ChatEntry = CompanyChatMessage & { id: string; sources?: CompanyChatSource[]; omittedActivity?: number; durationMs?: number };
+type ChatEntry = CompanyChatMessage & { id: string; sources?: CompanyChatSource[]; omittedActivity?: number; durationMs?: number; research?: ResearchResult };
 
-async function requestCustomerReply(companyId: string, messages: ChatEntry[], signal: AbortSignal, language: AppLanguage) {
+async function requestCustomerReply(companyId: string, messages: ChatEntry[], signal: AbortSignal, language: AppLanguage, webSearch: boolean) {
   const started = performance.now();
   const response = await fetch(`/api/companies/${companyId}/chat`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ language, messages: messages.slice(-19).map(({ role, content }) => ({ role, content })) }),
+    body: JSON.stringify({ language, webSearch, messages: messages.slice(-19).map(({ role, content }) => ({ role, content })) }),
     signal,
   });
   const result = await response.json().catch(() => null);
@@ -38,6 +40,7 @@ export function CompanyAi({ company }: { company: Company }) {
   const { language, t } = useLanguage();
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   const [question, setQuestion] = useState("");
+  const [webSearch, setWebSearch] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -60,12 +63,12 @@ export function CompanyAi({ company }: { company: Company }) {
     setRetryMessages(next);
     setPending(true);
     setError(null);
-    const timeout = setTimeout(() => controller.abort(), 55_000);
+    const timeout = setTimeout(() => controller.abort(), webSearch ? 110_000 : 55_000);
     try {
-      const result = await requestCustomerReply(company.id, next, controller.signal, language);
+      const result = await requestCustomerReply(company.id, next, controller.signal, language, webSearch);
       if (controller.signal.aborted) return;
       const id = crypto.randomUUID();
-      setMessages([...next, { id, role: "assistant", content: result.output, sources: result.sources, omittedActivity: result.coverage?.omittedActivity, durationMs: result.durationMs }]);
+      setMessages([...next, { id, role: "assistant", content: result.output, sources: result.sources, omittedActivity: result.coverage?.omittedActivity, durationMs: result.durationMs, research: result.research }]);
       setAnimation({ id, run: 1 });
       setRetryMessages(null);
     } catch (error) {
@@ -111,18 +114,19 @@ export function CompanyAi({ company }: { company: Company }) {
             {entry.role === "assistant" ? <>
               <ThinkingState working={false} writing={animation?.id === entry.id} durationMs={entry.durationMs} scope={company.name} steps={(entry.sources ?? []).map((source) => ({ id: source.id, label: `[${source.id}] ${t(source.label)}`, detail: source.recordedAt ? new Date(source.recordedAt).toLocaleDateString(language, { timeZone: "Asia/Shanghai" }) : undefined }))} className="mb-2" />
               <StreamingText key={`${entry.id}-${animation?.id === entry.id ? animation.run : 0}`} text={entry.content} animate={animation?.id === entry.id} onProgress={followReply} onComplete={() => setAnimation((current) => current?.id === entry.id ? null : current)} />
+              <CustomerResearchSources research={entry.research} />
               {animation?.id === entry.id ? <Button type="button" variant="ghost" size="xs" className="mt-2" onClick={() => setAnimation(null)}>Show full reply</Button> : <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                 <div className="min-w-0 flex-1 text-xs text-muted-foreground">{entry.sources?.length ? <span>{entry.sources.length} sources · Expand the response status to inspect</span> : null}{entry.omittedActivity ? <p className="mt-2 text-[11px]">Based on recent records; some older activity was outside this answer&apos;s context.</p> : null}</div>
                 <div className="flex gap-1"><Button type="button" variant="ghost" size="xs" disabled={busy} onClick={() => setAnimation({ id: entry.id, run: performance.now() })} aria-label="Replay reply animation"><RotateCcw />Replay</Button><Button type="button" variant="ghost" size="xs" onClick={() => void copy(entry)} aria-label="Copy AI answer"><Copy />{copiedId === entry.id ? "Copied" : "Copy"}</Button></div>
               </div>}
             </> : <><p className="mb-2 text-xs font-medium text-muted-foreground">You</p><p data-no-translate className="whitespace-pre-wrap break-words text-sm leading-7 [overflow-wrap:anywhere]">{entry.content}</p></>}
           </div>)}</div>}
-          {pending ? <div role="status" className="mt-6"><ThinkingState working scope={company.name} /></div> : null}
+          {pending ? <div role="status" className="mt-6"><ThinkingState working scope={company.name} />{webSearch ? <p className="mt-2 text-xs text-muted-foreground">Searching Google and checking company websites…</p> : null}</div> : null}
           {error ? <div role="alert" className="mt-5 rounded-xl border border-destructive/20 bg-destructive/5 p-4"><p className="text-sm leading-6">{error}</p>{retryMessages ? <div className="mt-3 flex gap-2"><Button type="button" variant="outline" size="sm" disabled={pending} onClick={() => void generate(retryMessages)}>Try again</Button><Button type="button" variant="ghost" size="sm" disabled={pending} onClick={() => { const last = retryMessages.at(-1); setQuestion(last?.content || ""); setMessages((current) => current.slice(0, -1)); setRetryMessages(null); setError(null); input.current?.focus(); }}>Edit question</Button></div> : null}</div> : null}
         </div>
         <div className="sticky bottom-0 z-10 shrink-0 border-t bg-card px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-5 sm:px-6">
           {messages.length ? <div className="mb-3 flex flex-wrap items-center gap-2">{shortcuts.map(({ label, prompt }) => <button key={label} type="button" disabled={busy || Boolean(retryMessages)} onClick={() => send(t(prompt))} className="rounded-full border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50">{label}</button>)}<Button type="button" variant="ghost" size="xs" className="ml-auto" disabled={pending} onClick={() => { setMessages([]); setError(null); setRetryMessages(null); setAnimation(null); setQuestion(""); input.current?.focus(); }}><RefreshCw />New chat</Button></div> : null}
-          <AiChatInput contextLabel={company.name} value={question} onChange={setQuestion} onSend={() => send()} inputRef={input} disabled={busy || Boolean(retryMessages)} busy={busy} shortcuts={shortcuts} />
+          <AiChatInput contextLabel={company.name} value={question} onChange={setQuestion} onSend={() => send()} inputRef={input} disabled={busy || Boolean(retryMessages)} busy={busy} shortcuts={shortcuts} webSearch={webSearch} onWebSearchChange={setWebSearch} />
           <p className="mt-3 text-center text-[11px] leading-5 text-muted-foreground">AI provides advice and drafts. Review before using. This chat lasts until you leave or refresh this page.</p>
         </div>
       </CardContent>

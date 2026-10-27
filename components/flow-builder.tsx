@@ -437,6 +437,22 @@ export function FlowBuilder({ initialFlows, mailboxOptions, memberOptions, initi
   const [previewOpen, setPreviewOpen] = useState(false);
   const [auditOpen, setAuditDialogOpen] = useState(false);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    function refreshAfterAgentAction(event: Event) {
+      if (!(event as CustomEvent<{ flowId?: string }>).detail?.flowId) return;
+      void fetch("/api/flows", { cache: "no-store", signal: controller.signal })
+        .then(async (response) => {
+          const result = await response.json();
+          if (!response.ok || !result.ok) throw new Error(result.error || "Unable to refresh flows.");
+          if (!controller.signal.aborted) setFlows(result.flows);
+        })
+        .catch(() => { if (!controller.signal.aborted) toast.error("Refresh Flows to see the agent's latest changes."); });
+    }
+    window.addEventListener("filazoo:agent-action", refreshAfterAgentAction);
+    return () => { controller.abort(); window.removeEventListener("filazoo:agent-action", refreshAfterAgentAction); };
+  }, []);
+
   const mailboxes = useMemo(() => [{ id: "owner", label: "Owner's mailbox" }, { id: "default", label: "Default workspace mailbox" }, ...mailboxOptions.filter((option) => option.id !== "owner" && option.id !== "default")], [mailboxOptions]);
   const palette = useMemo(() => stepTypes.filter((type) => `${stepLabels[type]} ${stepMeta[type].description}`.toLowerCase().includes(paletteQuery.toLowerCase())), [paletteQuery]);
   const selectedIndex = draft?.steps.findIndex((step) => step.id === selection) ?? -1;

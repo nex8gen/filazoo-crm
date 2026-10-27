@@ -4,12 +4,16 @@ import type { WorkspaceViewer } from "../auth";
 import { createSupabaseAdmin } from "../supabase/admin";
 import { invoiceBootstrap, invoiceCustomers, invoiceProductSelect } from "../data/invoice-connections";
 import { invoiceBankAccounts } from "../data/invoice-banks";
+import { invoicePaymentMethods } from "../data/invoice-payment-methods";
 import { getInvoice } from "../data/invoices";
 import { getEffectiveMailbox, mailboxHasSmtp } from "../data/mailboxes";
 import { invoiceProduct, type InvoiceProductRow } from "../invoice-links";
 import type { WorkspaceAssistantInput } from "./workspace-assistant";
 import { loadAgentCompany, loadAgentEmails, presentAgentEmail } from "./agent-records";
 import { threadKeyForEmail } from "../email-threading";
+import { flowAgentCapabilities } from "../flows";
+
+export { searchAgentEmails } from "./agent-records";
 
 export async function loadAgentContext(input: WorkspaceAssistantInput, viewer: WorkspaceViewer) {
   const db = createSupabaseAdmin();
@@ -39,16 +43,22 @@ export async function loadAgentContext(input: WorkspaceAssistantInput, viewer: W
   let productsQuery = db.from("products").select(invoiceProductSelect, { count: "exact" }).eq("active", true).not("sku", "like", "SAMPLE-%");
   if (terms.length) productsQuery = productsQuery.or(terms.flatMap((term) => [`name.ilike.%${term}%`, `sku.ilike.%${term}%`]).join(","));
   const customerQuery = terms.length ? db.from("companies").select("id,name,city,country,contacts(id,name,email)", { count: "exact" }).or(terms.map((term) => `name.ilike.%${term}%`).join(",")).order("name").limit(25) : null;
-  const [bootstrap, customers, products, banks, mailbox, matchingCustomers] = await Promise.all([
+  const flowTask = /flow|automat|follow.?up/i.test(`${input.pathname} ${input.messages.at(-1)?.content ?? ""}`);
+  const [bootstrap, customers, products, banks, paymentMethods, mailbox, matchingCustomers, flowMailboxes, flowMembers, flows] = await Promise.all([
     invoiceBootstrap({ companyId, ...(emailContext?.current && companyId ? { email: emailContext.current.contact, threadId: threadKeyForEmail(emailContext.current) } : {}) }),
     invoiceCustomers(),
     productsQuery.order("name").limit(100),
     invoiceBankAccounts(),
+    invoicePaymentMethods(),
     getEffectiveMailbox(viewer.id),
     customerQuery,
+    flowTask ? db.from("workspace_mailboxes").select("id,email,display_name,type,is_default").eq("is_active", true).or(`type.eq.workspace,user_id.eq.${viewer.id}`).limit(100) : null,
+    flowTask ? db.from("workspace_members").select("user_id,display_name").not("activated_at", "is", null).limit(200) : null,
+    flowTask ? db.from("flows").select("id,name,status,trigger_type,trigger_config").eq("user_id", viewer.id).order("updated_at", { ascending: false }).limit(20) : null,
   ]);
   if (products.error) throw new Error("Unable to read current catalog products.");
   if (matchingCustomers?.error) throw new Error("Unable to read matching CRM customers.");
+  if (flowMailboxes?.error || flowMembers?.error || flows?.error) throw new Error("Unable to read current flow resources.");
   // Avoid sending images, mailbox passwords or transport credentials to the model.
   const catalog = ((products.data ?? []) as InvoiceProductRow[]).map(invoiceProduct).map((product) => ({
     sku: product.sku, name: product.name, currency: product.currency, priceMinor: product.priceMinor,
@@ -69,6 +79,9 @@ export async function loadAgentContext(input: WorkspaceAssistantInput, viewer: W
     products: catalog,
     productCoverage: { included: catalog.length, matching: products.count },
     banks,
+    paymentMethods,
+    flowCapabilities: flowAgentCapabilities(),
+    ...(flowTask ? { flowResources: { mailboxes: flowMailboxes?.data ?? [], members: flowMembers?.data ?? [], recentFlows: flows?.data ?? [] } } : {}),
     sender: mailboxHasSmtp(mailbox) ? mailbox?.email : null,
     EXECUTION_RESULTS: completed,
     permissions: { role: viewer.role, canAct: viewer.role !== "viewer" },

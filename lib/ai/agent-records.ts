@@ -7,12 +7,12 @@ import { getEmailInboxBackendData, type InboxEmailItem } from "../email-inbox";
 import { getEffectiveMailbox } from "../data/mailboxes";
 import { loadMailboxMessageContent, mailboxSyncKey } from "../data/mailbox-sync";
 import { groupEmailConversations, replyTarget, replyReferences, threadKeyForEmail } from "../email-threading";
-import type { agentEmailSchema } from "./workspace-assistant";
+import type { agentEmailSchema, AgentEmailSearch } from "./workspace-assistant";
 import type { z } from "zod";
 
 /** Read only the signed-in user's accessible inbox; never trust client email bodies or headers. */
 export async function loadAgentEmails(viewer: WorkspaceViewer, emailId?: string, companyId?: string) {
-  const { emails } = await getEmailInboxBackendData({ syncMailbox: false });
+  const { emails } = await getEmailInboxBackendData({ syncMailbox: false, history: true });
   const selected = emailId ? emails.find((email) => email.id === emailId && !email.demo) : null;
   if (emailId && !selected) throw new Error("The selected email is unavailable or you no longer have access to it.");
   const groups = groupEmailConversations(emails);
@@ -43,7 +43,55 @@ export async function loadAgentEmails(viewer: WorkspaceViewer, emailId?: string,
 }
 
 export function presentAgentEmail(email: InboxEmailItem) {
-  return { id: email.id, direction: email.direction, contact: email.contact, replyTo: email.replyTo, subject: email.subject, text: email.body.slice(0, 12000), timestamp: email.timestamp, companyId: email.companyId, threadId: threadKeyForEmail(email) };
+  return { id: email.id, direction: email.direction, contact: email.contact, replyTo: email.replyTo, subject: email.subject, text: email.body.slice(0, 12000), truncated: email.body.length > 12000, timestamp: email.timestamp, companyId: email.companyId, threadId: threadKeyForEmail(email) };
+}
+
+/** Uses the same access-filtered inbox as the email UI; never searches raw mailbox tables. */
+export async function searchAgentEmails(viewer: WorkspaceViewer, search: AgentEmailSearch) {
+  const inbox = await getEmailInboxBackendData({ syncMailbox: false, history: true });
+  const db = createSupabaseAdmin();
+  const contacts = search.companyId ? await db.from("contacts").select("email").eq("company_id", search.companyId) : null;
+  if (contacts?.error) throw new Error("Unable to load this customer's email addresses.");
+  const addresses = new Set((contacts?.data ?? []).map((row) => row.email?.trim().toLowerCase()).filter(Boolean));
+  const query = search.query.toLowerCase();
+  const candidates = inbox.emails.filter((email) => !email.demo && email.direction === "inbound"
+    && (!search.companyId || addresses.has(email.contact.trim().toLowerCase()))
+    && (!search.emailId || email.id === search.emailId)
+    && (!query || `${email.contact}\n${email.company}\n${email.subject}\n${email.body}`.toLowerCase().includes(query)))
+    .sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp));
+  if (search.emailId && !candidates.length) throw new Error("The requested customer email is unavailable or does not match this search.");
+  const selected = candidates.slice(search.offset, search.offset + 8);
+  const senders = [...new Set(selected.map((email) => email.contact.trim().toLowerCase()))];
+  const matches = senders.length ? await db.from("contacts").select("company_id,email").in("email", senders) : null;
+  if (matches?.error) throw new Error("Unable to match emails to customer profiles.");
+  const mailbox = await getEffectiveMailbox(viewer.id);
+  const messages = await Promise.all(selected.map(async (email) => {
+    const companyIds = [...new Set((matches?.data ?? []).filter((row) => row.email?.trim().toLowerCase() === email.contact.trim().toLowerCase()).map((row) => row.company_id as string))];
+    const companyId = companyIds.length === 1 ? companyIds[0] : null;
+    try {
+      let body = email.body;
+      if (email.bodyLoaded === false) {
+        if (!mailbox || !email.uid || !email.uidValidity || email.mailboxKey !== mailboxSyncKey(mailbox)) throw new Error("Message content unavailable.");
+        body = (await loadMailboxMessageContent(mailbox, email.uid, email.uidValidity)).body;
+      }
+      return { ...presentAgentEmail({ ...email, body, companyId }), contentAvailable: true };
+    } catch {
+      // A failed body load must never be presented as a complete message or used for extraction.
+      return { ...presentAgentEmail({ ...email, body: "", companyId }), contentAvailable: false };
+    }
+  }));
+  const companyIds = [...new Set(messages.flatMap((message) => message.companyId ? [message.companyId] : []))];
+  return {
+    messages,
+    companies: await Promise.all(companyIds.map(loadAgentCompany)),
+    coverage: {
+      scope: "accessible synced inbound emails; no live mailbox sync",
+      matching: candidates.length, included: messages.length, offset: search.offset,
+      nextOffset: candidates.length > search.offset + 8 ? search.offset + 8 : null,
+      unloadedBodiesNotSearched: inbox.emails.filter((email) => !email.demo && email.direction === "inbound" && email.bodyLoaded === false).length,
+      mailboxError: inbox.inboxError,
+    },
+  };
 }
 
 export async function prepareAgentEmail(email: z.infer<typeof agentEmailSchema>, viewer: WorkspaceViewer) {

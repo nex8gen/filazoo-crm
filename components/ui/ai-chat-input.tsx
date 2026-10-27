@@ -6,6 +6,7 @@ import { ArrowUp, AtSign, ChevronDown, Sparkles } from "lucide-react";
 import { BorderBeam } from "@/components/ui/border-beam";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import "./ai-chat-input.css";
+import { WebSearchOption } from "@/components/ui/customer-research";
 
 type AiChatInputProps = {
   contextLabel: string;
@@ -16,6 +17,8 @@ type AiChatInputProps = {
   disabled?: boolean;
   busy?: boolean;
   shortcuts: { label: string; prompt: string }[];
+  webSearch?: boolean;
+  onWebSearchChange?: (enabled: boolean) => void;
 };
 
 const subscribeToMount = () => () => {};
@@ -31,7 +34,7 @@ const composerBeamCss = `
   }
 `;
 
-export function AiChatInput({ contextLabel, value, onChange, onSend, inputRef, disabled = false, busy = false, shortcuts }: AiChatInputProps) {
+export function AiChatInput({ contextLabel, value, onChange, onSend, inputRef, disabled = false, busy = false, shortcuts, webSearch = false, onWebSearchChange }: AiChatInputProps) {
   const id = useId();
   const [showContext, setShowContext] = useState(false);
   const { resolvedTheme } = useTheme();
@@ -56,7 +59,7 @@ export function AiChatInput({ contextLabel, value, onChange, onSend, inputRef, d
               if (!disabled && value.trim()) onSend();
             }
           }} maxLength={6_000} disabled={disabled} placeholder="Ask anything about this customer…" rows={2} className="customer-chat-textarea" />
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <DropdownMenu>
               <DropdownMenuTrigger disabled={disabled} className="customer-chat-chip gap-1 pl-2.5 pr-1.5" aria-label="Customer assistant shortcuts">
                 <Sparkles aria-hidden="true" className="mr-0.5 size-3 text-muted-foreground" /><span>Assistant</span><ChevronDown aria-hidden="true" className="size-3.5 text-muted-foreground" />
@@ -66,6 +69,7 @@ export function AiChatInput({ contextLabel, value, onChange, onSend, inputRef, d
               </DropdownMenuContent>
             </DropdownMenu>
             <span className="customer-chat-chip gap-1 px-2.5" title="Uses the CRM's configured AI provider automatically">Auto</span>
+            {onWebSearchChange ? <WebSearchOption enabled={webSearch} onChange={onWebSearchChange} disabled={disabled} /> : null}
             <button type="submit" disabled={disabled || !value.trim()} aria-label="Send customer question" title="Send question" className="customer-chat-chip customer-chat-send ml-auto size-8 !p-0"><ArrowUp aria-hidden="true" className="size-4" /></button>
           </div>
         </div>

@@ -7,6 +7,9 @@ import { createSupabaseAdmin } from "../supabase/admin";
 import { createInvoice, getInvoice, mutateInvoice } from "../data/invoices";
 import { invoiceBootstrap, invoiceProducts, validateInvoiceConnections } from "../data/invoice-connections";
 import { invoiceBankAccounts } from "../data/invoice-banks";
+import { invoicePaymentMethods } from "../data/invoice-payment-methods";
+import { createFlow } from "../data/flows";
+import { flowInputSchema } from "../flows";
 import { getEffectiveMailbox, mailboxHasSmtp } from "../data/mailboxes";
 import { canEditInvoice } from "../invoice-permissions";
 import { invoiceLabel, invoiceTotals, type InvoiceDocument } from "../invoices";
@@ -16,13 +19,22 @@ import { actionWorkProgress, type AgentWorkProgress } from "./agent-progress";
 import { loadAgentCompany, loadAgentEmails, prepareAgentEmail } from "./agent-records";
 import { threadKeyForEmail } from "../email-threading";
 
+async function validateCustomerEmailSource(action: { companyId: string; sourceEmailId?: string }, viewer: WorkspaceViewer) {
+  if (!action.sourceEmailId) return;
+  const source = await loadAgentEmails(viewer, action.sourceEmailId);
+  if (source.companyId !== action.companyId || source.current?.direction !== "inbound") {
+    throw new Error("The source email does not uniquely match this customer. Choose the correct customer conversation before updating its profile.");
+  }
+}
+
 export async function prepareAgentActions(actions: WorkspaceAction[], viewer: WorkspaceViewer, approvalMode: "ask" | "auto") {
   if (viewer.role === "viewer") throw new Error("Your workspace role is read-only.");
   const proposals: AgentProposal[] = [];
   for (const action of actions) {
     let prepared: PreparedAgentAction;
-    if (action.type === "create_company") prepared = action;
+    if (action.type === "create_company" || action.type === "create_flow") prepared = action;
     else if (action.type === "update_company" || action.type === "add_company_note") {
+      await validateCustomerEmailSource(action, viewer);
       const company = await loadAgentCompany(action.companyId);
       prepared = action.type === "update_company" ? { ...action, companyName: company.fields.name, fingerprint: company.fingerprint } : { ...action, companyName: company.fields.name };
     } else if (action.type === "write_email" && !action.invoiceId) {
@@ -42,19 +54,20 @@ export async function prepareAgentActions(actions: WorkspaceAction[], viewer: Wo
         prepared = { type: "send_invoice", invoiceId: existing.id, email: await prepareAgentEmail(action.email, viewer), revision: existing.revision, document: existing.document };
       } else if (action.type === "create_invoice" || action.type === "update_invoice") {
         if (existing && existing.document.companyId !== action.companyId) throw new Error("The invoice belongs to a different company. Open that company to create a new invoice.");
-        if (existing?.document.purchaseOrderId) throw new Error("Update this order-linked invoice in its editor to preserve the agreed order pricing.");
-        if (existing?.document.items.some((item) => !item.productSku || item.pricingMode !== "catalog")) throw new Error("This invoice contains custom or agreed pricing. Update it in the invoice editor to preserve those prices.");
+        if (action.items && existing?.document.purchaseOrderId) throw new Error("Update this order-linked invoice's products in its editor to preserve the agreed order pricing.");
+        if (action.items && existing?.document.items.some((item) => !item.productSku || item.pricingMode !== "catalog")) throw new Error("This invoice contains custom or agreed pricing. Omit items to update its details, or change products in the invoice editor to preserve those prices.");
         const sourceEmailId = action.sourceEmailId || action.email?.sourceEmailId;
         const source = sourceEmailId ? await loadAgentEmails(viewer, sourceEmailId) : null;
         if (source && source.companyId !== action.companyId) throw new Error("The email does not match this customer uniquely. Choose the correct customer before creating its invoice.");
-        const skus = [...new Set(action.items.map((item) => item.productSku))];
-        const [bootstrap, catalog, banks] = await Promise.all([
+        const skus = [...new Set(action.items?.map((item) => item.productSku) ?? [])];
+        const [bootstrap, catalog, banks, payments] = await Promise.all([
           invoiceBootstrap({ companyId: action.companyId, ...(source?.current ? { email: source.current.contact, threadId: threadKeyForEmail(source.current) } : {}) }),
-          invoiceProducts("", 0, "", skus),
+          skus.length ? invoiceProducts("", 0, "", skus) : Promise.resolve({ products: [] }),
           invoiceBankAccounts(),
+          invoicePaymentMethods(),
         ]);
         const base = existing?.document ?? bootstrap.document;
-        const document = buildAgentInvoice(base, action, catalog.products, banks);
+        const document = buildAgentInvoice(base, action, catalog.products, banks, payments, { creating: action.type === "create_invoice" });
         await validateInvoiceConnections(document);
         prepared = action.type === "create_invoice"
           ? { type: action.type, document, ...(action.email ? { email: await prepareAgentEmail(action.email, viewer) } : {}) }
@@ -73,9 +86,16 @@ export async function prepareAgentActions(actions: WorkspaceAction[], viewer: Wo
 }
 
 async function validateSavedBank(document: InvoiceDocument) {
-  if (!document.bankAccountId) return;
-  const bank = (await invoiceBankAccounts()).find((account) => account.id === document.bankAccountId);
-  if (!bank || JSON.stringify(bank) !== JSON.stringify(document.bankAccount)) throw new Error("The selected bank details changed. Ask the agent to prepare a fresh proposal.");
+  if (document.bankAccountId) {
+    const bank = (await invoiceBankAccounts()).find((account) => account.id === document.bankAccountId);
+    if (!bank || JSON.stringify(bank) !== JSON.stringify(document.bankAccount)) throw new Error("The selected bank details changed. Ask the agent to prepare a fresh proposal.");
+  }
+  if (document.paymentMethods?.length) {
+    const current = await invoicePaymentMethods();
+    for (const method of document.paymentMethods) {
+      if (JSON.stringify(current.find((value) => value.id === method.id)) !== JSON.stringify(method)) throw new Error("The selected payment details changed. Ask the agent to prepare a fresh proposal.");
+    }
+  }
 }
 
 /** The caller has atomically claimed this stored proposal; never retry SMTP implicitly. */
@@ -87,6 +107,12 @@ export async function executeAgentAction(id: string, action: PreparedAgentAction
     const { error } = await db.from("workspace_agent_actions").update({ result: { ...savedResult, progress } }).eq("id", id).eq("user_id", viewer.id).eq("status", "running");
     if (error) throw new Error("Unable to record action progress. Check the action result before retrying.");
   }
+  if (action.type === "create_flow") {
+    await reportProgress(activity);
+    const flow = await createFlow(viewer.id, flowInputSchema.parse(action.flow));
+    revalidatePath("/lead-channel/ai-agent");
+    return { success: `${flow.name} created as ${flow.status === "live" ? "a live flow" : "a draft flow"}.`, flowId: flow.id, href: `/lead-channel/ai-agent?flow=${flow.id}` };
+  }
   if (action.type === "create_company") {
     await reportProgress(activity);
     const data = new FormData();
@@ -97,6 +123,7 @@ export async function executeAgentAction(id: string, action: PreparedAgentAction
   }
   if (action.type === "update_company" || action.type === "add_company_note") {
     await reportProgress(activity);
+    await validateCustomerEmailSource(action, viewer);
     const company = await loadAgentCompany(action.companyId);
     const data = new FormData();
     if (action.type === "add_company_note") data.set("comment", action.note);

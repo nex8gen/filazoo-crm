@@ -1,6 +1,7 @@
 import "server-only";
 import { createSupabaseAdmin } from "../supabase/admin";
-import { blankInvoiceDocument, type InvoiceDocument } from "../invoices";
+import { type InvoiceDocument } from "../invoices";
+import { invoiceDocumentWithDefaults } from "../invoice-defaults";
 import { relatedInvoices } from "./invoice-related";
 import { purchaseOrderSchema } from "../purchase-orders.ts";
 import { orderInvoiceProductMatches } from "../purchase-order-links.ts";
@@ -11,7 +12,6 @@ import {
   type BillingCustomer,
   type BillingProfile,
   type InvoiceProductRow,
-  sellerSettingsSchema,
 } from "../invoice-links";
 
 export class InvoiceConnectionError extends Error {
@@ -139,8 +139,7 @@ export async function invoiceBootstrap(input: {
   ]);
   if (settings.error) throw settings.error;
   let document = {
-    ...blankInvoiceDocument(new Date().toISOString().slice(0, 10)),
-    ...sellerSettingsSchema.partial().parse(settings.data?.settings ?? {}),
+    ...invoiceDocumentWithDefaults(new Date().toISOString().slice(0, 10), settings.data?.settings ?? {}),
     ...(input.threadId ? { sourceThreadId: input.threadId } : {}),
     ...(input.email ? { customerEmail: input.email } : {}),
   };

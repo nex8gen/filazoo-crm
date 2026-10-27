@@ -16,7 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { TablePagination } from "@/components/ui/table-pagination";
 import type { WorkspaceMemberRecord } from "@/lib/data/members";
 
-const PAGE_SIZE = 25;
+import { usePreferences } from "@/components/preferences-provider";
 
 function formatDate(value: string | null) {
   return value ? new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "Never";
@@ -71,6 +71,8 @@ function MemberActions({ member }: { member: WorkspaceMemberRecord }) {
 }
 
 export function MembersTable({ members, viewerId }: { members: WorkspaceMemberRecord[]; viewerId: string }) {
+  const { preferences } = usePreferences();
+  const PAGE_SIZE = preferences.tablePageSize;
   const [page, setPage] = useState(1);
   const pageCount = Math.max(1, Math.ceil(members.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);

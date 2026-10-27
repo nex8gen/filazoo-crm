@@ -3,6 +3,8 @@
    native tables; the shared Table component includes it automatically. */
 /* These rules intentionally sit outside Tailwind cascade layers. That keeps
    page-level utility classes from silently changing the shared appearance. */
+html[data-density="compact"] .crm-table :is(thead th, tbody td, tfoot td) { padding-block: 0.5rem; }
+
 .crm-table {
   width: 100%;
   border-collapse: separate;

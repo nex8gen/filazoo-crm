@@ -13,14 +13,15 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableFilters, TableFilter } from "@/components/ui/table-filters";
 import { TablePagination } from "@/components/ui/table-pagination";
-
-const PAGE_SIZE = 25;
+import { usePreferences } from "@/components/preferences-provider";
 
 function formatCatalogDate(value: string, language: AppLanguage) {
   return new Intl.DateTimeFormat(language, { dateStyle: "medium" }).format(new Date(value));
 }
 
 export function CompanyCatalogsTable({ catalogs }: { catalogs: Catalog[] }) {
+  const { preferences } = usePreferences();
+  const PAGE_SIZE = preferences.tablePageSize;
   const { language } = useLanguage();
   const [query, setQuery] = useState("");
   const [currency, setCurrency] = useState("all");

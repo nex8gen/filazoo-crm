@@ -10,7 +10,10 @@ import * as threading from "../lib/email-threading.ts";
 import * as commerce from "../lib/company-commerce.ts";
 import * as permissions from "../lib/invoice-permissions.ts";
 import * as progress from "../lib/ai/agent-progress.ts";
+import * as flows from "../lib/flows.ts";
+import type { InvoicePaymentMethod } from "../lib/invoice-payment-methods.ts";
 import { workspaceActionSchema } from "../lib/ai/workspace-assistant.ts";
+import { buildInboxEmailItems } from "../lib/email-inbox.ts";
 
 const require = createRequire(import.meta.url);
 function moduleUnderTest<T>(file: string, dependencies: Record<string, unknown>): T {
@@ -25,16 +28,17 @@ function database(tables: Record<string, Record<string, unknown>[]>) {
     let inserted: Record<string, unknown>[] | undefined;
     let updated: Record<string, unknown> | undefined;
     const filters = new Map<string, unknown>();
+    const lists = new Map<string, unknown[]>();
     const run = () => {
       if (inserted) (tables[table] ??= []).push(...inserted);
-      const data = (tables[table] ?? []).filter((row) => [...filters].every(([key, value]) => row[key] === value));
+      const data = (tables[table] ?? []).filter((row) => [...filters].every(([key, value]) => row[key] === value) && [...lists].every(([key, values]) => values.includes(row[key])));
       if (updated) data.forEach((row) => Object.assign(row, updated));
       return { data, error: null, count: data.length };
     };
     const query = {
       select() { return query; }, order() { return query; }, limit() { return query; }, not() { return query; }, or() { return query; },
       eq(key: string, value: unknown) { filters.set(key, value); return query; },
-      in() { return query; },
+      in(key: string, values: unknown[]) { lists.set(key, values); return query; },
       insert(rows: Record<string, unknown> | Record<string, unknown>[]) { inserted = Array.isArray(rows) ? rows : [rows]; return query; },
       update(row: Record<string, unknown>) { updated = row; return query; },
       async maybeSingle() { const result = run(); return { ...result, data: result.data[0] ?? null }; },
@@ -57,6 +61,9 @@ function executionFixture() {
   const tables: Record<string, Record<string, unknown>[]> = { workspace_agent_actions: [{ id: actionId, user_id: viewer.id, status: "running" }] };
   const savedForms: FormData[] = [];
   const sent: Record<string, unknown>[] = [];
+  const savedFlows: { userId: string; input: flows.FlowInput }[] = [];
+  const savedInvoices: invoices.InvoiceDocument[] = [];
+  const payments: InvoicePaymentMethod[] = [{ id: "3280fd30-4529-4c4d-ab74-c695ab064e57", type: "paypal", label: "PayPal", currency: "", details: "PayPal payment", paymentUrl: "https://paypal.me/example" }];
   let fingerprint = "a".repeat(64);
   let invoiceReads = 0;
   let bootstrapInput: { companyId?: string; email?: string; threadId?: string } | undefined;
@@ -66,21 +73,24 @@ function executionFixture() {
     "@/app/crm-actions": { createCompany() {}, updateCompany: async (_id: string, _state: unknown, form: FormData) => { savedForms.push(form); return { success: "Customer updated." }; }, addCompanyComment: async (_id: string, _state: unknown, form: FormData) => { savedForms.push(form); return { success: "Note added." }; } },
     "@/app/api/email/send/route": { POST: async (request: Request) => { sent.push(await request.json()); return Response.json({ ok: true, saved: true }); } },
     "../supabase/admin": { createSupabaseAdmin: () => database(tables) },
-    "../data/invoices": { getInvoice: async () => { invoiceReads++; return invoice; }, createInvoice: async () => invoice, mutateInvoice: async () => invoice },
+    "../data/invoices": { getInvoice: async () => { invoiceReads++; return invoice; }, createInvoice: async (value: invoices.InvoiceDocument) => { savedInvoices.push(value); return { ...invoice, document: value }; }, mutateInvoice: async (_id: string, _userId: string, value: { document: invoices.InvoiceDocument }) => { savedInvoices.push(value.document); return { ...invoice, document: value.document }; } },
     "../data/invoice-connections": { invoiceBootstrap: async (input: { companyId?: string; email?: string; threadId?: string }) => { bootstrapInput = input; return { document: { ...document, ...(input.threadId ? { sourceThreadId: input.threadId, customerEmail: input.email } : {}) } }; }, invoiceProducts: async () => ({ products: [{ sku: "PLA", name: "PLA Black", currency: "USD", moq: 1, priceMinor: 500, tiers: [], variants: [], stockStatus: "Available", imageUrl: null }] }), validateInvoiceConnections: async () => {} },
     "../data/invoice-banks": { invoiceBankAccounts: async () => [] },
+    "../data/invoice-payment-methods": { invoicePaymentMethods: async () => payments },
+    "../data/flows": { createFlow: async (userId: string, input: flows.FlowInput) => { savedFlows.push({ userId, input }); return { id: invoiceId, ...input }; } },
+    "../flows": flows,
     "../data/mailboxes": { getEffectiveMailbox: async () => null, mailboxHasSmtp: () => false },
     "../invoice-permissions": permissions,
     "../invoices": invoices,
     "./agent-actions": actions,
     "./agent-progress": progress,
-    "./agent-records": { loadAgentCompany: async () => ({ ...company, fingerprint }), loadAgentEmails: async () => ({ companyId, current: { id: "mail-1", contact: "secondary@example.com", threadId: "thread-1" } }), prepareAgentEmail: async (value: unknown) => ({ ...value as object, threadId: "thread-1", inReplyTo: "<order@example.com>", references: ["<order@example.com>"] }) },
+    "./agent-records": { loadAgentCompany: async () => ({ ...company, fingerprint }), loadAgentEmails: async () => ({ companyId, current: { id: "mail-1", direction: "inbound", contact: "secondary@example.com", threadId: "thread-1" } }), prepareAgentEmail: async (value: unknown) => ({ ...value as object, threadId: "thread-1", inReplyTo: "<order@example.com>", references: ["<order@example.com>"] }) },
     "../email-threading": threading,
     "../invoice-pdf": { renderInvoicePdf: async () => Buffer.from("%PDF-1.7 actual-invoice") },
     "../invoice-pdf-meta": { invoicePdfFilename: () => "INV-000008.pdf" },
   };
   const execution = moduleUnderTest<typeof import("../lib/ai/agent-execution.ts")>("../lib/ai/agent-execution.ts", dependencies);
-  return { ...execution, tables, savedForms, sent, dependencies, changeCustomer: () => { fingerprint = "b".repeat(64); }, invoiceReads: () => invoiceReads, bootstrapInput: () => bootstrapInput };
+  return { ...execution, tables, savedForms, savedFlows, savedInvoices, payments, sent, dependencies, changeCustomer: () => { fingerprint = "b".repeat(64); }, invoiceReads: () => invoiceReads, bootstrapInput: () => bootstrapInput };
 }
 
 test("customer field updates preserve other profile fields and reject stale approved snapshots", async () => {
@@ -106,6 +116,68 @@ test("additional customer information appends a note without replacing the summa
   await assert.rejects(() => fixture.prepareAgentActions([], { ...viewer, role: "viewer" }, "auto"), /read-only/);
   assert.equal(workspaceActionSchema.safeParse({ type: "update_company", companyId, changes: { owner_id: "forged" } }).success, false);
   assert.equal(workspaceActionSchema.safeParse({ type: "update_company", companyId, changes: {} }).success, false);
+});
+
+test("email-based profile updates recheck exact customer matching and source access before writing", async () => {
+  const fixture = executionFixture();
+  const action = workspaceActionSchema.parse({ type: "update_company", companyId, sourceEmailId: "mail-1", changes: { commerce: { shippingAddress: "99 New Road, Shanghai 200000, China", shippingRecipient: "Alex" } } });
+  const [proposal] = await fixture.prepareAgentActions([action], viewer, "auto");
+  assert.equal(actions.preparedAgentActionSchema.safeParse(proposal.action).success, true);
+  await fixture.executeAgentAction(actionId, proposal.action, viewer, request);
+  assert.equal(fixture.savedForms[0].get("commerce.shippingAddress"), "99 New Road, Shanghai 200000, China");
+  assert.equal(fixture.savedForms[0].get("commerce.address"), "Saved address");
+  assert.equal(fixture.savedForms[0].get("contactEmail"), "buyer@example.com");
+  fixture.dependencies["./agent-records"].loadAgentEmails = async () => { throw new Error("Source access revoked."); };
+  await assert.rejects(() => fixture.executeAgentAction(actionId, proposal.action, viewer, request), /access revoked/);
+  assert.equal(fixture.savedForms.length, 1);
+  for (const mismatch of [null, invoiceId, companyId]) {
+    fixture.dependencies["./agent-records"].loadAgentEmails = async () => ({ companyId: mismatch as string, current: { id: "mail-1", direction: mismatch === companyId ? "outbound" : "inbound", contact: "secondary@example.com", threadId: "thread-1" } });
+    await assert.rejects(() => fixture.prepareAgentActions([action], viewer, "ask"), /does not uniquely match/);
+    await assert.rejects(() => fixture.executeAgentAction(actionId, proposal.action, viewer, request), /does not uniquely match/);
+  }
+  assert.equal(fixture.savedForms.length, 1);
+});
+
+test("email lookup loads full accessible inbound bodies, matches secondary contacts, and reports incomplete coverage", async () => {
+  const tables = {
+    contacts: [{ email: "secondary@example.com", company_id: companyId }, { email: "shared@example.com", company_id: companyId }, { email: "shared@example.com", company_id: invoiceId }],
+    companies: [{ id: companyId, name: "Acme" }],
+  };
+  const base = { direction: "inbound", company: "Acme", companyId, subject: "Shipping", contact: "secondary@example.com", body: "Ship to 99 New Road", timestamp: "2026-10-27T00:00:00Z" };
+  const messages = [
+    { ...base, id: "full", bodyLoaded: false, uid: 1, uidValidity: 1, mailboxKey: "key" },
+    { ...base, id: "unavailable", bodyLoaded: false, uid: 2, uidValidity: 1, mailboxKey: "key" },
+    { ...base, id: "ambiguous", contact: "shared@example.com" },
+    ...Array.from({ length: 7 }, (_, index) => ({ ...base, id: `recent-${index}` })),
+    { ...base, id: "demo", demo: true }, { ...base, id: "outbound", direction: "outbound" },
+    { ...base, id: "other-customer", companyId: invoiceId, contact: "other@example.com" },
+  ];
+  let reads = 0;
+  const records = moduleUnderTest<typeof import("../lib/ai/agent-records.ts")>("../lib/ai/agent-records.ts", {
+    "../supabase/admin": { createSupabaseAdmin: () => database(tables) }, "../company-commerce": commerce,
+    "../email-inbox": { getEmailInboxBackendData: async (options: { syncMailbox: boolean; history: boolean }) => { assert.equal(options.syncMailbox, false); assert.equal(options.history, true); return { emails: messages, inboxError: "Some mailbox history unavailable" }; } },
+    "../data/mailboxes": { getEffectiveMailbox: async () => ({ id: "mailbox" }) },
+    "../data/mailbox-sync": { mailboxSyncKey: () => "key", loadMailboxMessageContent: async (_mailbox: unknown, uid: number) => { reads++; if (uid === 2) throw new Error("Body unavailable"); return { body: "Ship to 99 New Road, Shanghai 200000, China" }; } },
+    "../email-threading": threading,
+  });
+  const result = await records.searchAgentEmails(viewer, { companyId, query: "", offset: 0 });
+  assert.equal(result.coverage.matching, 10);
+  assert.equal(result.coverage.included, 8);
+  assert.equal(result.coverage.nextOffset, 8);
+  assert.match(result.coverage.mailboxError || "", /history unavailable/);
+  assert.equal(result.messages.find((message) => message.id === "full")?.text, "Ship to 99 New Road, Shanghai 200000, China");
+  assert.equal(result.messages.find((message) => message.id === "full")?.companyId, companyId);
+  assert.equal(result.messages.find((message) => message.id === "ambiguous")?.companyId, null);
+  assert.equal(result.messages.find((message) => message.id === "unavailable")?.contentAvailable, false);
+  assert.equal(result.messages.find((message) => message.id === "unavailable")?.text, "");
+  assert.equal(result.companies.length, 1);
+  assert.equal(reads, 2);
+  const next = await records.searchAgentEmails(viewer, { companyId, query: "", offset: 8 });
+  assert.equal(next.messages.length, 2);
+  assert.equal(next.coverage.nextOffset, null);
+  const empty = await records.searchAgentEmails(viewer, { query: "unknown@example.com", offset: 0 });
+  assert.equal(empty.messages.length, 0);
+  await assert.rejects(() => records.searchAgentEmails(viewer, { query: "", offset: 0, emailId: "private-message" }), /unavailable/);
 });
 
 test("invoice email drafts need no SMTP, retain verified reply headers and never send", async () => {
@@ -153,6 +225,56 @@ test("creating an invoice from an email links its thread and uses the actual cor
   assert.equal(proposal.action.type === "create_invoice" && proposal.action.document.customerEmail, "secondary@example.com");
 });
 
+test("shipping-only changes save the charge and preserve custom invoice lines", async () => {
+  const fixture = executionFixture();
+  const [proposal] = await fixture.prepareAgentActions([{ type: "update_invoice", invoiceId, companyId, details: { shippingMinor: 3900 } }], viewer, "ask");
+  assert.equal(fixture.savedInvoices.length, 0);
+  await fixture.executeAgentAction(actionId, proposal.action, viewer, request);
+  assert.equal(fixture.savedInvoices[0].shippingMinor, 3900);
+  assert.deepEqual(fixture.savedInvoices[0].items, document.items);
+  assert.equal(invoices.invoiceTotals(fixture.savedInvoices[0]).total, 103900);
+  assert.equal(fixture.sent.length, 0);
+});
+
+test("current payment methods reach the saved invoice and changed approved payment details block saving", async () => {
+  const fixture = executionFixture();
+  const [proposal] = await fixture.prepareAgentActions([{ type: "create_invoice", companyId, items: [{ productSku: "PLA", quantity: 200 }], details: { shippingMinor: 3900 } }], viewer, "ask");
+  assert.equal(actions.preparedAgentActionSchema.safeParse(proposal.action).success, true);
+  fixture.payments[0] = { ...fixture.payments[0], paymentUrl: "https://paypal.me/changed" };
+  await assert.rejects(() => fixture.executeAgentAction(actionId, proposal.action, viewer, request), /payment details changed/);
+  assert.equal(fixture.savedInvoices.length, 0);
+  const [fresh] = await fixture.prepareAgentActions([{ type: "create_invoice", companyId, items: [{ productSku: "PLA", quantity: 200 }], details: { shippingMinor: 3900 } }], viewer, "ask");
+  await fixture.executeAgentAction(actionId, fresh.action, viewer, request);
+  assert.deepEqual(fixture.savedInvoices[0].paymentMethods, fixture.payments);
+  assert.equal(fixture.savedInvoices[0].shippingMinor, 3900);
+});
+
+test("flow creation is saved for approval and execution uses the current user's CRM flow service", async () => {
+  const fixture = executionFixture();
+  const [proposal] = await fixture.prepareAgentActions([{ type: "create_flow", flow: flows.defaultFlowInput }], viewer, "ask");
+  assert.equal(actions.preparedAgentActionSchema.safeParse(proposal.action).success, true);
+  assert.equal(fixture.tables.workspace_agent_actions.length, 2);
+  assert.equal(fixture.savedFlows.length, 0);
+  assert.equal(progress.actionWorkProgress(proposal.action).area, "flow");
+  const result = await fixture.executeAgentAction(actionId, proposal.action, viewer, request);
+  assert.equal(fixture.savedFlows[0].userId, viewer.id);
+  assert.equal(fixture.savedFlows[0].input.status, "draft");
+  assert.deepEqual(fixture.savedFlows[0].input.steps, flows.defaultFlowInput.steps);
+  assert.equal(result.href, `/lead-channel/ai-agent?flow=${invoiceId}`);
+  assert.equal(fixture.savedInvoices.length, 0);
+  assert.equal(fixture.sent.length, 0);
+  await assert.rejects(() => fixture.prepareAgentActions([{ type: "create_flow", flow: flows.defaultFlowInput }], { ...viewer, role: "viewer" }, "ask"), /read-only/);
+});
+
+test("live flow creation propagates resource validation failures", async () => {
+  const fixture = executionFixture();
+  fixture.dependencies["../data/flows"].createFlow = async () => { throw new Error("The selected sender mailbox needs complete SMTP settings."); };
+  const [proposal] = await fixture.prepareAgentActions([{ type: "create_flow", flow: { ...flows.defaultFlowInput, status: "live" } }], viewer, "ask");
+  await assert.rejects(() => fixture.executeAgentAction(actionId, proposal.action, viewer, request), /SMTP settings/);
+  assert.equal(fixture.savedFlows.length, 0);
+  assert.equal(fixture.sent.length, 0);
+});
+
 test("open email context loads full bodies, matches secondary contacts and derives reply headers", async () => {
   const tables = { contacts: [{ email: "buyer@example.com", company_id: companyId }] };
   const messages = [{ id: "mail-1", direction: "inbound", subject: "Order", contact: "buyer@example.com", body: "Preview only", bodyLoaded: false, uid: 4, uidValidity: 1, mailboxKey: "key", messageId: "<order@example.com>", threadId: "thread-1", timestamp: "2026-10-26T00:00:00Z" }];
@@ -177,6 +299,31 @@ test("open email context loads full bodies, matches secondary contacts and deriv
   assert.equal((await records.loadAgentEmails(viewer, "mail-1")).companyId, null);
 });
 
+test("the agent accepts real enquiries produced by the inbox builder and still rejects demo emails", async () => {
+  const messages = buildInboxEmailItems({ inbound: [
+    { id: "shopify-1", source: "shopify", contact: "buyer@example.com", company: "Example Print Studio", body: "Please create a company profile.", timestamp: "2026-10-26T00:00:00Z" },
+    { id: "mailbox-1", source: "mailbox", contact: "buyer@example.com", body: "Our company details", timestamp: "2026-10-25T00:00:00Z" },
+    { id: "sample-1", demo: true, contact: "buyer@example.com", body: "Sample company", timestamp: "2026-10-24T00:00:00Z" },
+  ] });
+  const records = moduleUnderTest<typeof import("../lib/ai/agent-records.ts")>("../lib/ai/agent-records.ts", {
+    "../supabase/admin": { createSupabaseAdmin: () => database({ contacts: [{ email: "buyer@example.com", company_id: companyId }] }) },
+    "../company-commerce": commerce,
+    "../email-inbox": { getEmailInboxBackendData: async () => ({ emails: messages }) },
+    "../data/mailboxes": { getEffectiveMailbox: async () => null },
+    "../data/mailbox-sync": {},
+    "../email-threading": threading,
+  });
+  for (const emailId of ["shopify-1", "mailbox-1"]) {
+    const context = await records.loadAgentEmails(viewer, emailId);
+    assert.equal(context.current?.id, emailId);
+    assert.equal(context.companyId, companyId);
+  }
+  await assert.rejects(() => records.loadAgentEmails(viewer, "sample-1"), /no longer have access/);
+  const history = await records.loadAgentEmails(viewer, undefined, companyId);
+  assert.equal(history.messages.some((message) => message.demo), false);
+  assert.equal(history.messages.length, 2);
+});
+
 test("invoices carry email billing and shipping details while prices remain server-controlled", () => {
   const action = workspaceActionSchema.parse({ type: "create_invoice", companyId, items: [{ productSku: "PLA", quantity: 200 }], details: { customerAddress: "Billing office", shippingRecipient: "Alex", shippingAddress: "Shanghai warehouse", reference: "PO-123" } });
   assert.equal(action.type, "create_invoice");
@@ -196,6 +343,8 @@ test("open email scope overrides an old company and does not reuse another custo
     "../supabase/admin": { createSupabaseAdmin: () => database({ workspace_agent_actions: [{ id: actionId, user_id: viewer.id, status: "completed", result: { invoiceId } }], products: [], companies: [] }) },
     "../data/invoice-connections": { invoiceBootstrap: async ({ companyId }: { companyId?: string }) => { bootstrapCompany = companyId; return { document, billing: {} }; }, invoiceCustomers: async () => ({ customers: [], count: 0 }), invoiceProductSelect: "sku,name" },
     "../data/invoice-banks": { invoiceBankAccounts: async () => [] },
+    "../data/invoice-payment-methods": { invoicePaymentMethods: async () => [] },
+    "../flows": flows,
     "../data/invoices": { getInvoice: async () => ({ ...invoice, document: { ...document, companyId: oldCompany } }) },
     "../data/mailboxes": { getEffectiveMailbox: async () => null, mailboxHasSmtp: () => false },
     "../invoice-links": { invoiceProduct: (value: unknown) => value },

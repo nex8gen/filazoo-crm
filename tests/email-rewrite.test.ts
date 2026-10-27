@@ -17,6 +17,15 @@ test("the rewrite prompt identifies the assigned BD manager and forbids placehol
   assert.match(instruction, /never output placeholders/i);
 });
 
+test("rewriting always requests English regardless of interface, draft, and conversation language", () => {
+  const instruction = buildEmailRewriteInstruction(signature);
+  assert.match(instruction, /Always write the entire finished email in professional English/);
+  assert.match(instruction, /regardless of the CRM interface language/);
+  assert.match(instruction, /Translate Chinese or mixed-language input into English/);
+  assert.match(instruction, /Best regards,\n\nRaul Chen\nBD Sales Manager\nFilazoo/);
+  assert.doesNotMatch(instruction, /Simplified Chinese|顺祝商祺/);
+});
+
 test("the final email always uses the assigned manager signature", () => {
   const output = applyEmailSignature(
     "Hi Isaac,\n\nHere is our catalog.\n\nBest regards,\n\n[Your Name]\n[Your Title]\n[Your Company]",

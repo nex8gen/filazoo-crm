@@ -193,6 +193,6 @@ export function withBillingCustomer(
     ...(doc.items.every((item) => !item.description) && profile
       ? { currency: profile.currency }
       : {}),
-    dueDate: due ? due.toISOString().slice(0, 10) : doc.dueDate,
+    dueDate: due && profile ? due.toISOString().slice(0, 10) : doc.dueDate,
   };
 }

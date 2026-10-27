@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableFilters, TableFilter } from "@/components/ui/table-filters";
 import { TablePagination } from "@/components/ui/table-pagination";
+import { usePreferences } from "@/components/preferences-provider";
 
 type Lead = {
   leadgen_id: string;
@@ -20,13 +21,15 @@ type Lead = {
 };
 
 export function MetaLeadsTable({ leads }: { leads: Lead[] }) {
+  const { preferences } = usePreferences();
+  const pageSize = preferences.tablePageSize;
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const filtered = leads.filter((lead) => [lead.full_name, lead.email, lead.phone, lead.owner, lead.form_id, lead.ad_id].some((value) => value?.toLowerCase().includes(query.trim().toLowerCase())));
-  const pageCount = Math.max(1, Math.ceil(filtered.length / 25));
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, pageCount);
-  const rows = filtered.slice((currentPage - 1) * 25, currentPage * 25);
+  const rows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   return <div className="space-y-6">
     <TableFilters onApply={() => { setQuery(search); setPage(1); }}><TableFilter label="Search submission" search><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Name, email, phone, owner, form, or ad" /></TableFilter></TableFilters>
     <div className="crm-table-frame"><Table>

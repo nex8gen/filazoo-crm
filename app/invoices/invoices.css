@@ -120,6 +120,8 @@
 .invoice-paper-qr figcaption { color: var(--invoice-ink); font-size: 12px; line-height: 1.4; }
 .invoice-paper-qr figcaption span { display: block; color: var(--invoice-muted); font-size: 11px; }
 .invoice-paper h3 { margin-bottom: 9px; color: var(--invoice-ink); font-size: 14px; font-weight: 600; }
+.invoice-paper-seller > h3,
+.invoice-paper-parties > section > h3 { font-size: 16px; }
 .invoice-paper-parties p { color: var(--invoice-muted); }
 .invoice-paper .invoice-paper-name { color: var(--invoice-ink); font-weight: 600; }
 .invoice-paper-address { white-space: pre-line; }

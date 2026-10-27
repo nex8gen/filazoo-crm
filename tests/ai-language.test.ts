@@ -4,7 +4,7 @@ import { aiLanguageSchema } from "../lib/ai/language.ts";
 import { companyChatInstruction, companyChatSchema } from "../lib/ai/company-chat.ts";
 import { workspaceAssistantInstruction, workspaceAssistantSchema } from "../lib/ai/workspace-assistant.ts";
 import { buildEmailReplyInstruction } from "../lib/ai/email-reply.ts";
-import { applyEmailSignature, buildEmailRewriteInstruction } from "../lib/ai/email-rewrite.ts";
+import { applyEmailSignature } from "../lib/ai/email-rewrite.ts";
 import { buildEmailSummaryInstruction, generateEmailSummary } from "../lib/ai/email-summary.ts";
 import { runMockProfileAgent } from "../lib/ai/mock-agent.ts";
 import { readFileSync } from "node:fs";
@@ -12,8 +12,8 @@ import { readFileSync } from "node:fs";
 const now = "2026-10-26T02:00:00.000Z";
 const signature = { name: "Casey", title: "商务拓展经理", company: "Filazoo" };
 
-test("every AI instruction prioritizes the selected Chinese UI language over English input and history", () => {
-  const instructions = [companyChatInstruction(now, "zh-CN"), workspaceAssistantInstruction("analyze", now, "zh-CN"), workspaceAssistantInstruction("work", now, "zh-CN"), buildEmailReplyInstruction("zh-CN"), buildEmailRewriteInstruction(signature, "zh-CN"), buildEmailSummaryInstruction("zh-CN")];
+test("localized AI instructions prioritize the selected Chinese UI language over English input and history", () => {
+  const instructions = [companyChatInstruction(now, "zh-CN"), workspaceAssistantInstruction("analyze", now, "zh-CN"), workspaceAssistantInstruction("work", now, "zh-CN"), buildEmailReplyInstruction("zh-CN"), buildEmailSummaryInstruction("zh-CN")];
   for (const instruction of instructions) {
     assert.match(instruction, /professional Simplified Chinese/);
     assert.match(instruction, /even when.*English/);

@@ -7,6 +7,7 @@ import ts from "typescript";
 import * as methods from "../lib/invoice-payment-methods.ts";
 import * as links from "../lib/invoice-links.ts";
 import * as permissions from "../lib/invoice-permissions.ts";
+import * as defaults from "../lib/invoice-defaults.ts";
 
 const require = createRequire(import.meta.url);
 function moduleAt(file: string, dependencies: Record<string, unknown>): Record<string, (...args: never[]) => Promise<unknown>> {
@@ -62,6 +63,7 @@ function fixture(role: string | null = "admin", options: { absent?: boolean; con
   const route = moduleAt("../app/api/invoices/billing/route.ts", {
     "@/lib/invoice-api": access, "@/lib/supabase/admin": { createSupabaseAdmin: () => db },
     "@/lib/data/invoice-payment-methods": storage, "@/lib/invoice-payment-methods": methods, "@/lib/invoice-links": links,
+    "@/lib/invoice-defaults": defaults,
   });
   return {
     put: (body: unknown, origin = "http://localhost:3000") => route.PUT(new Request("http://localhost:3000/api/invoices/billing", { method: "PUT", headers: { origin, "Content-Type": "application/json" }, body: JSON.stringify(body) }) as never) as Promise<Response>,
@@ -86,6 +88,23 @@ test("first payment configuration works without existing seller defaults", async
   assert.deepEqual(await mock.read(), []);
   assert.equal((await mock.put({ kind: "payments", paymentMethods: [paypal] })).status, 200);
   assert.deepEqual(await mock.read(), [paypal]);
+});
+
+test("shared invoice defaults save atomically without replacing payment methods", async () => {
+  const mock = fixture();
+  await mock.put({ kind: "payments", paymentMethods: [paypal] });
+  const settings = { ...seller, sellerName: "Legal seller" };
+  const invoiceDefaults = { currency: "EUR", termsDays: 30, taxBps: 1250 };
+  assert.equal((await mock.put({ kind: "invoice_defaults", settings, defaults: invoiceDefaults })).status, 200);
+  assert.deepEqual(await mock.read(), [paypal]);
+  assert.equal(JSON.stringify(mock.row()!.settings.defaults), JSON.stringify(invoiceDefaults));
+  assert.equal(mock.row()!.settings.sellerName, "Legal seller");
+  for (const role of ["viewer", "bd_manager", null]) {
+    const denied = fixture(role);
+    assert.equal((await denied.put({ kind: "invoice_defaults", settings, defaults: invoiceDefaults })).status, role ? 403 : 401);
+    assert.equal(denied.queries(), 0);
+  }
+  assert.equal((await mock.put({ kind: "invoice_defaults", settings, defaults: { termsDays: -1 } })).status, 400);
 });
 
 test("concurrent settings changes are reread and retained before retrying", async () => {

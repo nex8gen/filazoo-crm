@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { CreditCard, Mail, Plug, Search, Settings, ShieldCheck, Sun, UserRound, UsersRound, Workflow } from "lucide-react";
+import { CreditCard, Mail, MailCheck, Plug, ReceiptText, Search, Settings, ShieldCheck, Sun, UserRound, UsersRound, Workflow } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
 export function SettingsNavigation({ isAdmin }: { isAdmin: boolean }) {
@@ -11,10 +11,11 @@ export function SettingsNavigation({ isAdmin }: { isAdmin: boolean }) {
   const [search, setSearch] = useState("");
   const groups = [
     { label: "Personal", items: [
-      { label: "General", href: "/settings", icon: Settings },
-      { label: "Appearance", href: "/settings/appearance", icon: Sun },
+      { label: "General", href: "/settings", icon: Settings, keywords: "language rows page list" },
+      { label: "Appearance", href: "/settings/appearance", icon: Sun, keywords: "theme light dark system density compact motion animation accessibility" },
       { label: "Profile", href: "/settings/profile", icon: UserRound },
-      { label: "Security and login", href: "/settings/security", icon: ShieldCheck },
+      { label: "Security and login", href: "/settings/security", icon: ShieldCheck, keywords: "password session sign out devices" },
+      { label: "Email preferences", href: "/settings/email", icon: MailCheck, keywords: "signature translation chinese read refresh sync AI suggestions" },
     ] },
     { label: "Integrations", items: [
       { label: "My mailbox", href: "/settings/mailboxes", icon: Mail },
@@ -22,13 +23,14 @@ export function SettingsNavigation({ isAdmin }: { isAdmin: boolean }) {
     ] },
     { label: "Billing", items: [
       { label: "Payment methods", href: "/settings/payments", icon: CreditCard },
+      { label: "Invoice defaults", href: "/settings/invoices", icon: ReceiptText, keywords: "seller legal business address tax currency terms payment deadline notes" },
     ] },
     ...(isAdmin ? [{ label: "Workspace", items: [
       { label: "Team and access", href: "/settings/team", icon: UsersRound },
       { label: "Assignment and automation", href: "/settings/advanced", icon: Workflow },
     ] }] : []),
   ];
-  const filtered = groups.map((group) => ({ ...group, items: group.items.filter((item) => `${item.label} ${group.label}`.toLowerCase().includes(search.trim().toLowerCase())) })).filter((group) => group.items.length);
+  const filtered = groups.map((group) => ({ ...group, items: group.items.filter((item) => `${item.label} ${group.label} ${"keywords" in item ? item.keywords : ""}`.toLowerCase().includes(search.trim().toLowerCase())) })).filter((group) => group.items.length);
 
   return (
     <aside className="shrink-0 border-b bg-muted/10 p-3 md:sticky md:top-12 md:h-[calc(100dvh-3rem)] md:w-64 md:overflow-y-auto md:border-b-0 md:border-r xl:w-72">

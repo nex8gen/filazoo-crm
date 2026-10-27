@@ -28,6 +28,18 @@ test("CRM drafts and replies become an inbox-ready timeline", () => {
   assert.equal(items[1].direction, "outbound");
   assert.equal(items[0].company, "Proto Labs");
   assert.ok(items.some((item) => item.subject.includes("PETG pricing")));
+  assert.ok(items.every((item) => item.demo === false));
+});
+
+test("live mailbox and Shopify messages retain their provenance instead of becoming demo mail", () => {
+  const items = buildInboxEmailItems({ inbound: [
+    { id: "mailbox-1", source: "mailbox", contact: "buyer@example.com", body: "Please quote PLA." },
+    { id: "shopify-1", source: "shopify", contact: "lead@example.com", body: "Create our company profile." },
+    { id: "sample-1", source: "crm", demo: true, body: "Sample message" },
+  ] });
+  assert.equal(items.find((item) => item.id === "mailbox-1")?.demo, false);
+  assert.equal(items.find((item) => item.id === "shopify-1")?.demo, false);
+  assert.equal(items.find((item) => item.id === "sample-1")?.demo, true);
 });
 
 test("team inbox filtering keeps CRM contacts and replies to CRM-sent mail", () => {

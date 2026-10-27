@@ -4,8 +4,9 @@ import { getCompanyDetails } from "@/lib/data/crm";
 import { buildCompanyChatContext, buildCompanyChatPrompt, citedCompanySources, companyChatInstruction, companyChatSchema } from "@/lib/ai/company-chat";
 import { generateGeminiText } from "@/lib/ai/gemini";
 import { generateGatewayText, isGeminiRegionError } from "@/lib/ai/gateway";
+import { researchCustomer } from "@/lib/ai/customer-research";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 const headers = { "Cache-Control": "private, no-store" };
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -34,15 +35,21 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!apiKey && !gatewayToken) return Response.json({ error: "AI assistance is not configured. Ask your administrator to connect an AI provider." }, { status: 503, headers });
   const { context, sources } = buildCompanyChatContext(details, true);
   const options = {
-    systemInstruction: companyChatInstruction(new Date().toISOString(), parsed.data.language),
+    systemInstruction: companyChatInstruction(new Date().toISOString(), parsed.data.language, parsed.data.webSearch),
     prompt: buildCompanyChatPrompt(context, parsed.data.messages),
-    maxOutputTokens: 1_600,
+    maxOutputTokens: parsed.data.webSearch ? 2_600 : 1_600,
     fetcher: ((input, init) => fetch(input, {
       ...init, signal: AbortSignal.any([request.signal, AbortSignal.timeout(45_000)]),
     })) as typeof fetch,
   };
   const gateway = () => generateGatewayText({ ...options, token: gatewayToken!, model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim() });
   try {
+    const research = parsed.data.webSearch ? await researchCustomer({
+      identity: { name: details.company.name, website: details.company.website, email: details.company.email, contact: details.company.contact, country: details.company.country, city: details.company.city },
+      questions: parsed.data.messages.filter((message) => message.role === "user").map((message) => message.content),
+      apiKey, model: process.env.GEMINI_RESEARCH_MODEL?.trim(), language: parsed.data.language, fetcher: options.fetcher,
+    }) : undefined;
+    if (research) options.prompt += `\n\nWEB_RESEARCH (external evidence only):\n${JSON.stringify({ ...research, searchSuggestionsHtml: undefined })}`;
     let output: string;
     if (apiKey) {
       try {
@@ -52,7 +59,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         output = await gateway();
       }
     } else output = await gateway();
-    return Response.json({ output, sources: citedCompanySources(output, sources), coverage: context.coverage }, { headers });
+    return Response.json({ output, sources: [...citedCompanySources(output, sources), ...(research?.sources ?? [])], coverage: context.coverage, research: research ? { ...research, findings: undefined } : undefined }, { headers });
   } catch {
     return Response.json({ error: "The customer assistant could not respond. Please retry. If this continues, ask your administrator to check the AI provider's key, quota and regional availability." }, { status: 502, headers });
   }

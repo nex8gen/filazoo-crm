@@ -19,15 +19,20 @@ import { MailboxManager } from "./mailbox-manager";
 import { PaymentMethodsForm } from "./payment-methods-form";
 import { invoicePaymentMethods } from "@/lib/data/invoice-payment-methods";
 import { canManageBilling } from "@/lib/invoice-permissions";
+import { PreferencesForm, SessionSettings } from "./preferences-form";
+import { LanguageSwitcher } from "@/components/language-switcher";
+import { InvoiceDefaultsForm } from "./invoice-defaults-form";
+import { getInvoiceDefaults } from "@/lib/data/invoice-defaults";
 
 export default async function SettingsPage({ params }: { params?: Promise<{ section?: string }> }) {
   const section = (await params)?.section || "general";
-  const titles: Record<string, string> = { general: "General", appearance: "Appearance", profile: "Profile", security: "Security and login", mailboxes: "My mailbox", integrations: "Connected channels", payments: "Payment methods", team: "Team and access", advanced: "Assignment and automation" };
+  const titles: Record<string, string> = { general: "General", appearance: "Appearance", profile: "Profile", security: "Security and login", email: "Email preferences", invoices: "Invoice defaults", mailboxes: "My mailbox", integrations: "Connected channels", payments: "Payment methods", team: "Team and access", advanced: "Assignment and automation" };
   if (!titles[section]) notFound();
   const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   if ((section === "team" || section === "advanced") && viewer.role !== "admin") notFound();
   const members = viewer.role === "admin" && (section === "team" || section === "advanced") ? await listWorkspaceMembers() : [];
   const paymentMethods = section === "payments" ? await invoicePaymentMethods() : [];
+  const invoiceDefaults = section === "invoices" ? await getInvoiceDefaults() : null;
 
   const [defaultWorkspaceMailbox, personalMailbox, mailboxResult] = await Promise.all([
     section === "team" ? getDefaultWorkspaceMailbox().catch(() => null) : Promise.resolve(null),
@@ -43,6 +48,17 @@ export default async function SettingsPage({ params }: { params?: Promise<{ sect
       <SettingsNavigation isAdmin={viewer.role === "admin"} />
       <div className="min-w-0 flex-1 p-5 sm:p-8 lg:p-10">
       <PageHeader title={titles[section]} description="Manage your personal preferences and workspace." />
+      {section === "general" ? <div className="mb-4 grid max-w-2xl gap-4"><Card className="shadow-none"><CardHeader><CardTitle>Language</CardTitle><CardDescription>Choose English or Chinese for this browser.</CardDescription></CardHeader><CardContent><LanguageSwitcher /></CardContent></Card><Card className="shadow-none"><CardHeader><CardTitle>List preferences</CardTitle><CardDescription>Choose how many records you see when browsing your CRM.</CardDescription></CardHeader><CardContent><PreferencesForm section="general" /></CardContent></Card></div> : null}
+      {section === "appearance" ? <Card className="mb-4 max-w-2xl shadow-none"><CardHeader><CardTitle>Display and accessibility</CardTitle><CardDescription>Control table spacing and animation across your workspace.</CardDescription></CardHeader><CardContent><PreferencesForm section="appearance" /></CardContent></Card> : null}
+      {section === "email" ? <Card className="max-w-2xl shadow-none"><CardHeader><CardTitle>Reading and sending</CardTitle><CardDescription>Your defaults for the email inbox and company conversations.</CardDescription></CardHeader><CardContent><PreferencesForm section="email" /><Separator className="my-5" /><Button variant="outline" nativeButton={false} render={<Link href="/settings/mailboxes" />}>Manage my mailbox</Button></CardContent></Card> : null}
+      {section === "invoices" && invoiceDefaults ? <Card className="max-w-2xl shadow-none"><CardHeader><CardTitle>Seller and invoice defaults</CardTitle><CardDescription>Shared workspace defaults for new invoices. Customer billing profiles can override currency and due dates. Existing invoices keep their saved details.</CardDescription></CardHeader><CardContent><InvoiceDefaultsForm initial={invoiceDefaults} canManage={canManageBilling(viewer.role)} /></CardContent></Card> : null}
+      {section === "security" ? <Card className="mb-4 max-w-2xl shadow-none"><CardHeader><CardTitle>Other devices</CardTitle><CardDescription>End your other signed-in sessions.</CardDescription></CardHeader><CardContent><SessionSettings /></CardContent></Card> : null}
+      {section === "integrations" ? <div className="mb-4 grid max-w-2xl gap-4">{[
+        { title: "Email and delivery", description: "Manage your sending mailbox, shared team inbox, and delivery readiness.", links: [{ label: "My mailbox", href: "/settings/mailboxes" }, { label: "Delivery checks", href: "/deliverability" }, ...(viewer.role === "admin" ? [{ label: "Shared inbox", href: "/settings/team" }] : [])] },
+        { title: "Customer messaging", description: "View channel connection status and manage customer conversations.", links: [{ label: "Open Messenger", href: "/messenger" }] },
+        { title: "Automation and follow-ups", description: "Configure flow triggers, business days, stop-on-reply rules, and AI approval controls in the automation workspace.", links: [{ label: "Manage automation", href: "/lead-channel/ai-agent" }] },
+        { title: "Products and customer catalogs", description: "Manage product pricing, minimum quantities, variants, availability, and the selections shared with each customer.", links: [{ label: "Manage products", href: "/catalogs" }, { label: "Company catalogs", href: "/catalogs/companies" }] },
+      ].map((feature) => <Card key={feature.title} className="shadow-none"><CardHeader><CardTitle>{feature.title}</CardTitle><CardDescription>{feature.description}</CardDescription></CardHeader><CardContent className="flex flex-wrap gap-2">{feature.links.map((link) => <Button key={link.href} variant="outline" nativeButton={false} render={<Link href={link.href} />}>{link.label}</Button>)}</CardContent></Card>)}</div> : null}
       {section === "payments" ? <Card className="max-w-2xl shadow-none"><CardHeader><CardTitle>Customer payment methods</CardTitle><CardDescription>Add bank transfer, PayPal, and other payment instructions to offer on customer invoices.</CardDescription></CardHeader><CardContent><PaymentMethodsForm initial={paymentMethods} canManage={canManageBilling(viewer.role)} /></CardContent></Card> : null}
       {section === "integrations" ? <Card className="max-w-2xl shadow-none"><CardHeader><CardTitle>Meta lead connection</CardTitle><CardDescription>Connect Facebook and Instagram ad forms through Make and view incoming leads.</CardDescription></CardHeader><CardContent><Button nativeButton={false} render={<Link href="/lead-channel/meta" />}>Manage connection</Button></CardContent></Card> : null}
       {section === "general" ? <Card className="max-w-2xl shadow-none"><CardHeader><CardTitle>Account overview</CardTitle><CardDescription>Your Filazoo workspace account and preferences.</CardDescription></CardHeader><CardContent className="space-y-5"><div><p className="text-sm font-medium">{viewer.displayName || "Account"}</p><p className="mt-1 text-sm text-muted-foreground">{viewer.email}</p><Badge variant="outline" className="mt-3 capitalize">{viewer.role}</Badge></div><Separator /><div className="flex flex-wrap gap-3"><Button nativeButton={false} render={<Link href="/settings/profile" />}>Edit profile</Button><Button variant="outline" nativeButton={false} render={<Link href="/settings/appearance" />}>Appearance</Button></div></CardContent></Card> : null}

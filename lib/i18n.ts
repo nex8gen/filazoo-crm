@@ -1,4 +1,5 @@
 import { zhCNAdditional } from "./i18n-zh-cn.ts";
+import { zhCNSettings } from "./i18n-settings.ts";
 
 export type AppLanguage = "en" | "zh-CN";
 
@@ -187,6 +188,8 @@ const zhCN: Record<string, string> = {
   "Success": "成功", "Required": "必填", "Optional": "选填", "Unknown": "未知", "Yes": "是", "No": "否",
   "Copied": "已复制", "Copy": "复制", "Page": "页", "of": "共",
   ...zhCNAdditional,
+  ...zhCNSettings,
+  "Analyse": "采购分析",
 };
 
 const translated = (input: string) => translateUiText(input, "zh-CN");

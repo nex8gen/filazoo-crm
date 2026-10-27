@@ -1,24 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import type { ComponentType } from "react";
 import { AiIcon } from "@/components/ai-icon";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  BookOpen,
-  Building2,
-  LayoutDashboard,
-  Mail,
-  Menu,
-  MessageSquareText,
-  Package2,
-  ReceiptText,
-  Search,
-  Settings,
-  Tags,
-} from "lucide-react";
+import { Menu, Search } from "lucide-react";
+import { navigation, type NavigationItem } from "@/lib/navigation";
 import { BrandMark } from "@/components/brand-mark";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -27,91 +15,6 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 const WorkspaceCommandMenu = dynamic(() => import("@/components/workspace-command-menu").then((module) => module.WorkspaceCommandMenu));
-
-type NavigationItem = {
-  label: string;
-  href: string;
-  icon: ComponentType<{ className?: string }>;
-  description: string;
-  exact?: boolean;
-};
-
-type NavigationGroup = {
-  label: string;
-  eyebrow: string;
-  icon: ComponentType<{ className?: string }>;
-  direct?: boolean;
-  items: NavigationItem[];
-};
-
-const navigation: NavigationGroup[] = [
-  {
-    label: "Workspace",
-    eyebrow: "CRM",
-    icon: LayoutDashboard,
-    direct: true,
-    items: [
-      { label: "Overview", href: "/", icon: LayoutDashboard, description: "Performance at a glance" },
-    ],
-  },
-  {
-    label: "Companies",
-    eyebrow: "Accounts",
-    icon: Building2,
-    items: [
-      { label: "Company", href: "/companies", icon: Building2, description: "Accounts and prospects" },
-      { label: "Segment", href: "/segments", icon: Tags, description: "Companies grouped by business segment" },
-    ],
-  },
-  {
-    label: "Invoices",
-    eyebrow: "Billing",
-    icon: ReceiptText,
-    direct: true,
-    items: [{ label: "Invoices", href: "/invoices", icon: ReceiptText, description: "Billing, balances and payments" }],
-  },
-  {
-    label: "Email",
-    eyebrow: "Mailbox",
-    icon: Mail,
-    direct: true,
-    items: [{ label: "Email", href: "/emails", icon: Mail, description: "Mailbox and email conversations" }],
-  },
-  {
-    label: "Messenger",
-    eyebrow: "Engagement",
-    icon: MessageSquareText,
-    direct: true,
-    items: [
-      { label: "Messenger", href: "/messenger", icon: MessageSquareText, description: "Facebook ad leads and Page Messenger replies" },
-    ],
-  },
-  {
-    label: "AI Automation",
-    eyebrow: "Automation",
-    icon: AiIcon,
-    direct: true,
-    items: [
-      { label: "AI Automation", href: "/lead-channel/ai-agent", icon: AiIcon, description: "Email follow-up flows and automation rules" },
-    ],
-  },
-  {
-    label: "Products",
-    eyebrow: "Product management",
-    icon: Package2,
-    items: [
-      { label: "Products", href: "/catalogs", icon: Package2, description: "Products, pricing and availability", exact: true },
-      { label: "Company Catalogs", href: "/catalogs/companies", icon: BookOpen, description: "Tailored selections for each company" },
-    ],
-  },
-  {
-    label: "Settings",
-    eyebrow: "Configuration",
-    icon: Settings,
-    direct: true,
-    items: [{ label: "General", href: "/settings", icon: Settings, description: "Profile, security and team" }],
-  },
-];
 
 const allItems = navigation.flatMap((group) => group.items);
 const authPaths = [

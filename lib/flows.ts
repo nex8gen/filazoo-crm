@@ -186,6 +186,17 @@ export function blankStep(type: FlowStepType = "wait"): FlowInput["steps"][numbe
   return { id, type, config: configs[type] };
 }
 
+/** Keep the assistant's configuration guide tied to the same validators as the flow editor. */
+export function flowAgentCapabilities() {
+  return {
+    triggerConfigs: Object.fromEntries(triggerTypes.map((type) => [type, z.toJSONSchema(triggerConfigSchemas[type], { io: "input" })])),
+    stepConfigs: Object.fromEntries(stepTypes.map((type) => [type, z.toJSONSchema(stepConfigSchemas[type], { io: "input" })])),
+    stepDefaults: Object.fromEntries(stepTypes.map((type) => [type, { ...blankStep(type).config, ...(type === "send_email" ? { templateId: "helpful_reminder" } : {}) }])),
+    emailTemplates: ["helpful_reminder", "send_catalog", "quote_follow_up", "welcome_intro", "last_chance"],
+    timezone: "Asia/Shanghai",
+  };
+}
+
 export function formatTrigger(type: TriggerType, config: JsonConfig) {
   if (type === "category_changed") return `Category changed to ${config.category || "…"}`;
   if (type === "no_reply") return `No reply after ${config.amount || "…"} ${config.unit || "days"}`;

@@ -1,7 +1,8 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Building2, History, ReceiptText, ClipboardList, Mail, MessageCircle } from "lucide-react";
+import { ArrowLeft, Building2, History, ReceiptText, ClipboardList, Mail, MessageCircle, ChartNoAxesCombined } from "lucide-react";
+import { CompanyAnalysis } from "@/components/company-analysis";
 import { CompanyCustomerPortal } from "@/components/company-customer-portal";
 import { CompanyEmails } from "@/components/company-emails";
 import { CompanyPurchaseOrders } from "@/components/company-purchase-orders";
@@ -37,13 +38,14 @@ async function CompanyPageContent({ params, searchParams }: CompanyPageProps) {
   if (!details) notFound();
   return <div data-ai-company-id={id}>
     <Link href="/companies" className={buttonVariants({ variant: "ghost", size: "sm", className: "mb-4 -ml-2" })}><ArrowLeft />Back to companies</Link>
-    <Tabs key={`${id}:${tab || "profile"}:${compose || ""}`} defaultValue={tab === "customer-portal" ? "customer-portal" : tab === "email" ? "email" : tab === "purchase-orders" ? "purchase-orders" : tab === "invoices" ? "invoices" : tab === "history" ? "history" : "profile"} className="gap-6">
+    <Tabs key={`${id}:${tab || "profile"}:${compose || ""}`} defaultValue={tab === "analyse" ? "analyse" : tab === "customer-portal" ? "customer-portal" : tab === "email" ? "email" : tab === "purchase-orders" ? "purchase-orders" : tab === "invoices" ? "invoices" : tab === "history" ? "history" : "profile"} className="gap-6">
       <div className="sticky top-12 z-30 flex min-w-0 flex-col gap-3 border-b bg-background py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-5">
         <div className="order-2 min-w-0 overflow-x-auto pb-1 sm:order-1">
           <TabsList variant="line" aria-label="Customer profile sections" className="min-w-max justify-start gap-2 lg:gap-4">
             <TabsTrigger id="company-profile-tab" value="profile" className="gap-2 px-3"><Building2 />Profile</TabsTrigger>
             <TabsTrigger value="email" className="gap-2 px-3"><Mail />Email</TabsTrigger>
             <TabsTrigger value="purchase-orders" className="gap-2 px-3"><ClipboardList />Purchase orders</TabsTrigger>
+            <TabsTrigger value="analyse" className="gap-2 px-3"><ChartNoAxesCombined />Analyse</TabsTrigger>
             <TabsTrigger value="invoices" className="gap-2 px-3"><ReceiptText />Invoices</TabsTrigger>
             <TabsTrigger value="customer-portal" className="gap-2 px-3"><MessageCircle />Customer portal</TabsTrigger>
             <TabsTrigger id="company-history-tab" value="history" className="gap-2 px-3"><History />Activity history</TabsTrigger>
@@ -63,6 +65,9 @@ async function CompanyPageContent({ params, searchParams }: CompanyPageProps) {
       </div>
       <TabsContent value="profile" keepMounted>
         <CompanyDetails key={`${id}:${details.company.nextFollowupAt || ""}`} details={details} canWrite={viewer.role !== "viewer"} />
+      </TabsContent>
+      <TabsContent value="analyse" keepMounted>
+        <Suspense fallback={<CompanyBillingSkeleton />}><CompanyAnalysis companyId={id} canWrite={viewer.role !== "viewer"} preferredCurrency={details.commerce?.currency || details.company.currency} /></Suspense>
       </TabsContent>
       <TabsContent value="invoices" keepMounted>
         <Suspense fallback={<CompanyBillingSkeleton />}><CompanyInvoices companyId={id} canWrite={viewer.role !== "viewer"} /></Suspense>

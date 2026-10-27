@@ -18,6 +18,7 @@ export default async function AiAgentPage({ searchParams }: PageProps<"/lead-cha
 
   return <div className="h-full min-h-0">
     <FlowBuilder
+      key={typeof params.flow === "string" ? params.flow : "list"}
       initialFlows={flows}
       initialFlowId={typeof params.flow === "string" ? params.flow : undefined}
       canEdit={viewer.role === "admin" || viewer.role === "operator" || viewer.role === "bd_manager"}

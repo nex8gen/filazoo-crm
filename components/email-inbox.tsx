@@ -1,4 +1,6 @@
 "use client";
+import { usePreferences } from "@/components/preferences-provider";
+import { withEmailSignature } from "@/lib/user-preferences";
 
 import { useLanguage } from "@/components/language-provider";
 
@@ -283,6 +285,7 @@ export function EmailInboxWorkspace({
   companyScope?: CompanyEmailScope;
 }) {
   const sourceEmails = companyScope ? filterCompanyEmails(initialEmails, companyScope) : initialEmails;
+  const { preferences } = usePreferences();
   const { language } = useLanguage();
   const initialTarget = initialThreadId ? sourceEmails.find((email) => threadKeyForEmail(email) === initialThreadId || email.id === initialThreadId) : undefined;
   const pendingThread = useRef(initialTarget ? null : initialThreadId);
@@ -322,8 +325,8 @@ export function EmailInboxWorkspace({
   const [translations, setTranslations] = useState<Record<string, { body: string; html: string | null | undefined }>>({});
   const [translating, setTranslating] = useState<Set<string>>(new Set());
   const [translationErrors, setTranslationErrors] = useState<Record<string, string>>({});
-  const [translationOn, setTranslationOn] = useState(!companyScope);
-  const [aiReplyOn, setAiReplyOn] = useState(true);
+  const [translationOn, setTranslationOn] = useState(preferences.emailTranslate);
+  const [aiReplyOn, setAiReplyOn] = useState(preferences.emailAiSuggestions);
   const [aiReplyBusy, setAiReplyBusy] = useState(false);
   const aiReplyInProgress = useRef(false);
   const aiReplyInvoices = useRef(new Map<string, string>());
@@ -458,10 +461,10 @@ export function EmailInboxWorkspace({
   }, [applyMailboxSnapshot, companyScope, inboxConfigured]);
 
   useEffect(() => {
-    if (!inboxConfigured) return;
+    if (!inboxConfigured || !preferences.emailSyncSeconds) return;
     const initialSyncTimer = window.setTimeout(() => void syncInbox(false), 0);
     const refresh = () => { if (document.visibilityState === "visible") void syncInbox(false); };
-    const timer = window.setInterval(refresh, 10_000);
+    const timer = window.setInterval(refresh, preferences.emailSyncSeconds * 1000);
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
     return () => {
@@ -470,7 +473,7 @@ export function EmailInboxWorkspace({
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", refresh);
     };
-  }, [inboxConfigured, syncInbox]);
+  }, [inboxConfigured, syncInbox, preferences.emailSyncSeconds]);
 
   const conversations = useMemo(() => buildConversations(emails), [emails]);
   const visible = useMemo(() => {
@@ -785,6 +788,7 @@ export function EmailInboxWorkspace({
     const email = item.latest;
     if (item.id !== selectedConversation?.id) clearReplyComposer();
     setSelectedId(email.id);
+    if (!preferences.emailMarkRead) return;
     const unread = item.messages.filter((message) => message.direction === "inbound" && !readMessages.has(message.id));
     setReadMessages((current) => new Set([...current, ...unread.map((message) => message.id)]));
     for (const message of unread) {
@@ -1054,8 +1058,8 @@ export function EmailInboxWorkspace({
         body: JSON.stringify({
           to: recipient,
           subject: `Re: ${selected.subject.replace(/^Re:\s*/i, "")}`,
-          text: trimmedDraft,
-          html: `<p>${trimmedDraft.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character).replace(/\n/g, "<br />")}</p>`,
+          text: withEmailSignature(trimmedDraft, preferences.emailSignature),
+          html: `<p>${withEmailSignature(trimmedDraft, preferences.emailSignature).replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character).replace(/\n/g, "<br />")}</p>`,
           attachments: replyAttachments.map(({ filename, content, contentType }) => ({ filename, content, contentType })),
           threadId: selectedConversation?.id,
           inReplyTo: replyParent.messageId || undefined,
@@ -1141,7 +1145,7 @@ export function EmailInboxWorkspace({
       const response = await fetch("/api/email/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to, subject, text, ...(composeThread?.to === to ? { threadId: composeThread.threadId, inReplyTo: composeThread.inReplyTo, references: composeThread.references } : {}), attachments: composeAttachments.map(({ filename, content, contentType }) => ({ filename, content, contentType })) }),
+        body: JSON.stringify({ to, subject, text: withEmailSignature(text, preferences.emailSignature), ...(composeThread?.to === to ? { threadId: composeThread.threadId, inReplyTo: composeThread.inReplyTo, references: composeThread.references } : {}), attachments: composeAttachments.map(({ filename, content, contentType }) => ({ filename, content, contentType })) }),
       });
       const result = await response.json().catch(() => ({ ok: false, error: "Unable to send the email." }));
       if (!response.ok || !result.ok) throw new Error(result.error || "Unable to send the email.");
@@ -1290,6 +1294,7 @@ export function EmailInboxWorkspace({
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-2.5 py-2 text-xs text-muted-foreground"><span>From <span className="font-medium text-foreground">{defaultMailboxEmail || "No mailbox selected"}</span></span><span>To <span className="font-medium text-foreground">{replyRecipient}</span></span></div>
                 <div className="mail-reply-input overflow-hidden rounded-xl border bg-background focus-within:border-primary/50">
                   <textarea ref={replyInput} readOnly={aiReplyBusy} aria-busy={aiReplyBusy} aria-label="Reply message" value={draft} onChange={(event) => updateDraft(event.target.value)} placeholder={`Write in Chinese or English to reply to ${replyRecipient}…`} className="min-h-24 w-full resize-none bg-transparent p-3.5 text-sm leading-6 outline-none" />
+                  {preferences.emailSignature ? <div className="mb-3 max-h-28 overflow-y-auto rounded-md border bg-muted/20 p-3 text-xs"><p className="mb-1 text-muted-foreground">Your signature will be appended when sending.</p><p data-no-translate className="whitespace-pre-wrap break-words">{preferences.emailSignature}</p></div> : null}
                   <AttachmentChips attachments={replyAttachments} onRemove={(id) => setReplyAttachments((current) => current.filter((item) => item.id !== id))} />
                   <div className="flex items-center justify-between border-t px-2 py-2"><div className="flex gap-1"><input ref={replyFileInput} type="file" multiple accept=".pdf,.csv,.txt,.jpg,.jpeg,.png,.webp,.gif,.doc,.docx,.xls,.xlsx" className="hidden" onChange={(event) => { void addFiles(event.target.files, "reply"); event.target.value = ""; }} /><button type="button" disabled={attachmentBusy} title="Attach files" onClick={() => replyFileInput.current?.click()} className="rounded-md p-2 text-muted-foreground hover:bg-muted disabled:opacity-40"><Paperclip className="size-4" /></button><button type="button" title="Attach product catalog" onClick={() => openCatalogPicker("reply")} className="rounded-md p-2 text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-500/10"><Library className="size-4" /></button>{canCreateInvoices ? <button type="button" title="Customer invoices" aria-label="Customer invoices" onClick={()=>setInvoiceContext({companyId:selected.companyId,email:replyRecipient,threadId:selectedConversation?.id,customerName:selected.company,target:"reply"})} className="rounded-md p-2 text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-500/10"><ReceiptText className="size-4" /></button> : null}<button type="button" title="Add emoji" onClick={() => setDraft((value) => `${value}${value ? " " : ""}😊`)} className="rounded-md p-2 text-muted-foreground hover:bg-muted"><Smile className="size-4" /></button><button type="button" title={draft.trim() ? "Clear the message to generate a new AI reply" : "Generate reply from conversation with relevant PDFs"} disabled={aiReplyBusy || attachmentBusy || sending || Boolean(draft.trim())} onClick={() => void generateAiReply()} className="rounded-md p-2 text-violet-600 hover:bg-violet-50 disabled:opacity-40"><AiIcon className="size-4" state={aiReplyBusy ? "thinking" : "idle"} /></button><InboxCalculator /></div><button type="button" onClick={saveReply} disabled={!draft.trim() || sending || aiWriting || attachmentBusy} className="inline-flex h-9 items-center gap-2 rounded-md bg-foreground px-3 text-xs font-semibold text-background disabled:opacity-40"><Send className="size-4" />{sending ? "Sending..." : aiWriting ? "Writing..." : aiDraft && aiDraftSource === draft.trim() ? "Send AI draft" : "Send email"}</button></div>
                 </div>
@@ -1350,6 +1355,7 @@ export function EmailInboxWorkspace({
               <label className="grid grid-cols-[64px_1fr] items-center border-b py-2 text-sm"><span className="text-muted-foreground">To</span>{companyScope ? <select required autoFocus value={composeTo} onChange={(event) => setComposeTo(event.target.value)} className="min-w-0 bg-background py-1 outline-none"><option value="">Choose customer contact</option>{companyScope.emails.filter((email) => email.trim()).map((email) => <option key={email} value={email}>{email}</option>)}</select> : <input type="email" required autoFocus value={composeTo} onChange={(event) => setComposeTo(event.target.value)} placeholder="customer@example.com" className="min-w-0 bg-transparent py-1 outline-none placeholder:text-muted-foreground/60" />}</label>
               <label className="grid grid-cols-[64px_1fr] items-center border-b py-2 text-sm"><span className="text-muted-foreground">Subject</span><input required value={composeSubject} onChange={(event) => setComposeSubject(event.target.value)} placeholder="Email subject" className="min-w-0 bg-transparent py-1 outline-none placeholder:text-muted-foreground/60" /></label>
               <textarea required value={composeBody} onChange={(event) => setComposeBody(event.target.value)} placeholder="Write your message…" className="min-h-64 w-full resize-y bg-transparent py-4 text-sm leading-6 outline-none placeholder:text-muted-foreground/60" />
+              {preferences.emailSignature ? <div className="mb-3 max-h-28 overflow-y-auto rounded-md border bg-muted/20 p-3 text-xs"><p className="mb-1 text-muted-foreground">Your signature will be appended when sending.</p><p data-no-translate className="whitespace-pre-wrap break-words">{preferences.emailSignature}</p></div> : null}
               <AttachmentChips attachments={composeAttachments} onRemove={(id) => setComposeAttachments((current) => current.filter((item) => item.id !== id))} />
               <div className="mb-2 flex items-center gap-2 border-t pt-2"><input ref={composeFileInput} type="file" multiple accept=".pdf,.csv,.txt,.jpg,.jpeg,.png,.webp,.gif,.doc,.docx,.xls,.xlsx" className="hidden" onChange={(event) => { void addFiles(event.target.files, "compose"); event.target.value = ""; }} /><button type="button" onClick={() => composeFileInput.current?.click()} disabled={attachmentBusy} className="inline-flex h-8 items-center gap-2 rounded-md border px-2.5 text-xs font-medium hover:bg-muted disabled:opacity-40"><Paperclip className="size-3.5" />Attach file</button><button type="button" onClick={() => openCatalogPicker("compose")} className="inline-flex h-8 items-center gap-2 rounded-md border px-2.5 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:text-sky-300"><Library className="size-3.5" />Add catalog PDF</button>{canCreateInvoices ? <button type="button" onClick={()=>{if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(composeTo.trim())){setComposeError("Enter one customer email to view or create invoices.");return;}setInvoiceContext({email:composeTo.trim(),target:"compose"});}} className="inline-flex h-8 items-center gap-2 rounded-md border px-2.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300"><ReceiptText className="size-3.5" />Create invoice</button> : null}</div>
               {composeError ? <p role="alert" className="pb-3 text-xs font-medium text-red-600 dark:text-red-400">{composeError}</p> : null}

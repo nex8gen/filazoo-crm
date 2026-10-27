@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { generateGeminiText } from "../lib/ai/gemini.ts";
 import { generateGatewayText, isGeminiRegionError } from "../lib/ai/gateway.ts";
 import { workspaceAssistantSchema, workspaceAssistantInstruction, buildWorkspaceAssistantPrompt, extractWorkspaceActions } from "../lib/ai/workspace-assistant.ts";
+import { flowAgentCapabilities } from "../lib/flows.ts";
 
 const companyId = "ad9cb9f8-e098-44f0-a078-20eed16ef1bd";
 const bankId = "c8658f23-965c-49b3-a11a-35dc61920fc6";
@@ -89,3 +90,57 @@ assert.equal(note?.companyId, companyId, profileOutput);
 assert.match(note?.note || "", /Prefers morning deliveries/);
 assert.equal(profileActions.length, 2, profileOutput);
 console.log("PASS: natural-language customer updates produce a field patch and an appended note. No records changed or emails sent.");
+
+const paymentMethods = [
+  { id: "3280fd30-4529-4c4d-ab74-c695ab064e57", type: "paypal", label: "PayPal", currency: "", details: "Synthetic PayPal payment", paymentUrl: "https://paypal.me/example" },
+  { id: "f57661f0-c5a1-4469-b883-7a90c32a7028", type: "bank_transfer", label: "Current test bank", currency: "", details: "Synthetic current bank account", paymentUrl: "" },
+];
+const invoiceInput = workspaceAssistantSchema.parse({ ...input, messages: [{ role: "user", content: "Create in voice for this company black PLA 200 pieces and white PETG 23 pieces. Shipping cost is 39 doller and discount is 10 dollars. Add our current two payment ways PayPal and the bank. Do not send." }] });
+const invoiceOutput = await generate(buildWorkspaceAssistantPrompt(invoiceInput, { ...serverData, currentEmail: null, emailHistory: [], paymentMethods }));
+const invoiceActions = extractWorkspaceActions(invoiceOutput).actions;
+assert.equal(invoiceActions.length, 1, invoiceOutput);
+const dictated = invoiceActions[0];
+assert.equal(dictated.type, "create_invoice", invoiceOutput);
+if (dictated.type !== "create_invoice") throw new Error("Expected a dictated invoice proposal.");
+assert.equal(dictated.details?.shippingMinor, 3900);
+assert.equal(dictated.details?.discountMinor, 1000);
+assert.deepEqual([...(dictated.paymentMethodIds ?? [])].sort(), paymentMethods.map(({ id }) => id).sort());
+assert.equal(dictated.bankAccountId, undefined);
+assert.equal(dictated.email, undefined);
+console.log("PASS: voice-style invoice request applies $39 shipping, $10 discount and both current payment methods without the legacy bank.");
+
+const shippingInput = workspaceAssistantSchema.parse({ ...input, messages: [{ role: "user", content: "Change shipping on this invoice to 39 dollars. Keep everything else, including the agreed custom price, unchanged." }] });
+const currentInvoiceId = "15693adc-0bdf-4617-b214-71b1861764a9";
+const shippingOutput = await generate(buildWorkspaceAssistantPrompt(shippingInput, { ...serverData, paymentMethods, currentInvoice: { id: currentInvoiceId, revision: 1, status: "draft", document: { companyId, currency: "USD", items: [{ description: "Agreed price", quantity: 3, unitPriceMinor: 1234, taxBps: 500, pricingMode: "manual" }] } } }));
+const shippingActions = extractWorkspaceActions(shippingOutput).actions;
+assert.equal(shippingActions.length, 1, shippingOutput);
+const shipping = shippingActions[0];
+assert.equal(shipping.type, "update_invoice", shippingOutput);
+if (shipping.type !== "update_invoice") throw new Error("Expected an invoice detail update.");
+assert.equal(shipping.invoiceId, currentInvoiceId);
+assert.equal(shipping.details?.shippingMinor, 3900);
+assert.equal(shipping.items, undefined);
+console.log("PASS: shipping-only correction preserves existing custom invoice prices by omitting item changes.");
+
+const flowInput = workspaceAssistantSchema.parse({ ...input, pathname: "/lead-channel/ai-agent", pageLabel: "Flows", pageText: "", messages: [{ role: "user", content: 'Create a draft flow called "Two day reminder". When a customer has not replied for 2 calendar days, stop if they have replied; otherwise send a helpful reminder in the same thread from the default workspace mailbox, then create a high priority task for the owner due today titled "Call customer". Do not add another wait and do not activate the flow.' }] });
+const flowOutput = await generate(buildWorkspaceAssistantPrompt(flowInput, { flowCapabilities: flowAgentCapabilities(), flowResources: { mailboxes: [], members: [], recentFlows: [] }, permissions: { role: "admin", canAct: true } }));
+const flowActions = extractWorkspaceActions(flowOutput).actions;
+assert.equal(flowActions.length, 1, flowOutput);
+const flow = flowActions[0];
+assert.equal(flow.type, "create_flow", flowOutput);
+if (flow.type !== "create_flow") throw new Error("Expected an executable flow proposal.");
+assert.equal(flow.flow.name, "Two day reminder");
+assert.equal(flow.flow.status, "draft");
+assert.equal(flow.flow.triggerType, "no_reply");
+assert.equal(flow.flow.triggerConfig.amount, 2);
+assert.equal(flow.flow.triggerConfig.unit, "days");
+assert.notEqual(flow.flow.triggerConfig.businessDays, true);
+assert.deepEqual(flow.flow.steps.map(({ type }) => type), ["if_condition", "send_email", "create_task"]);
+assert.equal(flow.flow.steps[0].config.field, "customer_replied");
+assert.equal(flow.flow.steps[0].config.action, "stop_flow");
+assert.equal(flow.flow.steps[1].config.mailboxId, "default");
+assert.equal(flow.flow.steps[1].config.replyInThread, true);
+assert.equal(flow.flow.steps[2].config.title, "Call customer");
+assert.equal(flow.flow.steps[2].config.priority, "high");
+assert.equal(flow.flow.steps[2].config.dueInDays, 0);
+console.log("PASS: natural-language flow request produces a valid draft with the exact trigger, condition, reminder and owner task. No flow saved or email sent.");

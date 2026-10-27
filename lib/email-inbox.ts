@@ -77,6 +77,7 @@ function toPreview(text: string | null | undefined) {
 }
 
 type MailboxInboxSource = {
+  demo?: boolean;
   id?: string;
   direction?: "inbound" | "outbound";
   status?: string;
@@ -239,7 +240,7 @@ export function buildInboxEmailItems({
       references: message.references ?? [],
       timestamp: message.timestamp || new Date().toISOString(),
       source: message.source || "crm",
-      demo: true,
+      demo: message.demo === true,
     };
     item.threadId = threadKeyForEmail(item);
     seen.add(item.id);
@@ -266,7 +267,7 @@ export function buildInboxEmailItems({
       body: reply.body || "No email body available.",
       timestamp: reply.receivedAt || new Date().toISOString(),
       source: "crm",
-      demo: true,
+      demo: false,
     };
     item.threadId = threadKeyForEmail(item);
     seen.add(id);
@@ -287,7 +288,7 @@ export function buildInboxEmailItems({
       body: draft.preview || "No email body available.",
       timestamp: new Date().toISOString(),
       step: `Step ${draft.step} of 3`,
-      demo: true,
+      demo: false,
     };
     item.threadId = threadKeyForEmail(item);
     seen.add(id);

@@ -81,11 +81,11 @@ export async function POST(request: Request) {
   const gatewayToken = process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
 
   const signature = {
-    name: normalizeSignatureName(assignedManagerName, normalizeSignatureName(viewer.displayName, language === "zh-CN" ? "Filazoo 销售团队" : "Filazoo Sales Team")),
-    title: language === "zh-CN" ? "商务拓展经理" : DEFAULT_EMAIL_TITLE,
+    name: normalizeSignatureName(assignedManagerName, normalizeSignatureName(viewer.displayName)),
+    title: DEFAULT_EMAIL_TITLE,
     company: DEFAULT_EMAIL_COMPANY,
   };
-  const system = mode === "summary" ? `${buildEmailSummaryInstruction(language)}\nCURRENT TIME: ${new Date().toISOString()}\nWORKSPACE TIMEZONE: Asia/Shanghai` : buildEmailRewriteInstruction(signature, language);
+  const system = mode === "summary" ? `${buildEmailSummaryInstruction(language)}\nCURRENT TIME: ${new Date().toISOString()}\nWORKSPACE TIMEZONE: Asia/Shanghai` : buildEmailRewriteInstruction(signature);
   const userContent = mode === "summary" ? JSON.stringify({
     contact: recipient,
     customerProfile,
@@ -101,7 +101,7 @@ export async function POST(request: Request) {
   });
   const finalizeOutput = async (generate: (correction: string) => Promise<string>) => mode === "summary"
     ? generateEmailSummary(generate, undefined, language)
-    : applyEmailSignature(await generate(""), signature, language);
+    : applyEmailSignature(await generate(""), signature);
 
   const generateWithGateway = (correction: string) => generateGatewayText({
     token: gatewayToken!,

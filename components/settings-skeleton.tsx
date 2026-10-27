@@ -3,7 +3,7 @@ import { HeaderSkeleton, LoadingRegion } from "@/components/page-skeletons";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export function SettingsSkeleton({ section = "general" }: { section?: string }) {
-  const form = section === "profile" || section === "mailboxes";
+  const form = ["profile", "mailboxes", "email", "invoices"].includes(section);
   const workspace = section === "team" || section === "advanced";
   return <LoadingRegion label="Loading settings" className="flex min-h-[calc(100dvh-3rem)] flex-col md:flex-row">
     <div className="shrink-0 border-b bg-muted/10 p-3 md:sticky md:top-12 md:h-[calc(100dvh-3rem)] md:w-64 md:overflow-hidden md:border-b-0 md:border-r xl:w-72">

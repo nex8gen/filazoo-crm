@@ -16,9 +16,10 @@ import type { AgentActionResult, AgentProposal } from "@/lib/ai/agent-actions";
 import { actionWorkProgress, pageWorkArea, requestedWorkProgress, type AgentWorkProgress } from "@/lib/ai/agent-progress";
 import { AgentWorkIcon } from "@/components/agent-work-icon";
 import { AgentApprovalMenu } from "@/components/agent-approval-menu";
+import { CustomerResearchSources, WebSearchOption, type ResearchResult } from "@/components/ui/customer-research";
 
 type Mode = "chat" | "agent";
-type Message = { id: string; role: "user" | "assistant"; content: string; actions?: AgentProposal[]; durationMs?: number; work?: AgentWorkProgress };
+type Message = { id: string; role: "user" | "assistant"; content: string; actions?: AgentProposal[]; durationMs?: number; work?: AgentWorkProgress; research?: ResearchResult };
 
 const pageNames: Array<[RegExp, string]> = [
   [/^\/companies\/[^/]+/, "Company profile"],
@@ -31,11 +32,14 @@ const pageNames: Array<[RegExp, string]> = [
   [/^\/catalogs\/companies/, "Company Catalogs"],
   [/^\/catalogs/, "Products"],
   [/^\/settings/, "Settings"],
-  [/^\/$/, "Overview"],
+  [/^\/overview\/pages$/, "Pages"],
+  [/^\/overview\/sections$/, "Sections"],
+  [/^\/$/, "Analytics"],
 ];
 
 const starters: Record<Mode, Array<[string, string]>> = {
   chat: [
+    ["Analyze customer", "Analyze this customer: their company, what they do, how big they are, likely filament needs and sales opportunities. Separate facts from estimates."],
     ["Summarize this page", "Summarize the most important information on this page."],
     ["Find risks", "What risks, gaps, or items needing attention can you identify on this page?"],
     ["Recommend next steps", "Based on what is visible here, what should I focus on next?"],
@@ -63,6 +67,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
   const [recordScope, setRecordScope] = useState("");
   const [approvalMode, setApprovalMode] = useState<"ask" | "auto">("ask");
   const [question, setQuestion] = useState("");
+  const [webSearch, setWebSearch] = useState(false);
   const [chats, setChats] = useState<Record<string, Message[]>>({});
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -133,6 +138,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           language,
+          webSearch,
           mode: mode === "agent" ? "work" : "analyze",
           approvalMode,
           completedActionIds: Object.values(chats).flat().flatMap((message) => message.actions ?? []).filter((proposal) => ["completed", "failed", "unknown"].includes(actionResults[proposal.id]?.status ?? "")).map((proposal) => proposal.id).slice(-20),
@@ -153,7 +159,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
       const id = crypto.randomUUID();
       setChats((current) => ({
         ...current,
-        [chatKey]: [...(current[chatKey] ?? next), { id, role: "assistant", content: result.output, actions: result.actions, durationMs: performance.now() - started, work }],
+        [chatKey]: [...(current[chatKey] ?? next), { id, role: "assistant", content: result.output, actions: result.actions, durationMs: performance.now() - started, work, research: result.research }],
       }));
       setAnimation({ id, run: 1 });
       // Auto approval applies only to proposals created by this request. Changing
@@ -221,7 +227,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
       setActionResults((current) => ({ ...current, [actionId]: result }));
       if (decision === "approve") {
         router.refresh();
-        window.dispatchEvent(new CustomEvent("filazoo:agent-action", { detail: { draftId: result.draft ? actionId : undefined } }));
+        window.dispatchEvent(new CustomEvent("filazoo:agent-action", { detail: { draftId: result.draft ? actionId : undefined, flowId: result.flowId } }));
         if (result.draft && !document.querySelector(".email-workspace")) router.push(`/emails?agentDraft=${actionId}`);
       }
       return true;
@@ -260,6 +266,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
             {message.role === "user" ? <p data-no-translate className="whitespace-pre-wrap text-sm leading-6">{message.content}</p> : <>
               <ThinkingState working={false} writing={animation?.id === message.id} durationMs={message.durationMs} scope={t(pageLabel)} activity={message.work} className="mb-2" />
               <StreamingText key={`${message.id}-${animation?.id === message.id ? animation.run : 0}`} text={message.content} animate={animation?.id === message.id} onProgress={() => { const viewport = log.current; if (viewport && viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 120) viewport.scrollTop = viewport.scrollHeight; }} onComplete={() => setAnimation((current) => current?.id === message.id ? null : current)} />
+              <CustomerResearchSources research={message.research} />
               {animation?.id === message.id ? <Button type="button" variant="ghost" size="xs" className="mt-2" onClick={() => setAnimation(null)}>Show full reply</Button> : <>
               <div className="mt-2 flex gap-1"><Button type="button" variant="ghost" size="xs" className="text-muted-foreground" disabled={busy} onClick={() => setAnimation({ id: message.id, run: performance.now() })}><RotateCcw />Replay</Button><Button type="button" variant="ghost" size="xs" className="text-muted-foreground" onClick={() => void copy(message)}><Copy />{copiedId === message.id ? "Copied" : "Copy"}</Button></div>
               </>}
@@ -267,6 +274,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
             </>}
           </div>)}</div>}
           {pending && mode === "chat" ? <div className="mt-5"><ThinkingState working scope={t(pageLabel)} /></div> : null}
+          {pending && webSearch ? <p role="status" className="mt-2 text-xs text-muted-foreground">Searching Google and checking company websites…</p> : null}
           {error ? <div role="alert" className="mt-4 rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-sm leading-6 text-destructive">{error}</div> : null}
         </div>
 
@@ -274,6 +282,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
           {mode === "agent" && (pending || applying) && activeWork ? <div role="status" aria-live="polite" className="mb-3 rounded-xl border border-violet-500/15 bg-violet-500/[0.04] px-3 py-2"><ThinkingState key={applying || "preparing"} working scope={t(workPage)} activity={activeWork} /></div> : null}
           {messages.length ? <div className="mb-2 flex justify-end"><Button type="button" variant="ghost" size="xs" disabled={busy} onClick={newChat}><Plus />New chat</Button></div> : null}
           <div className="rounded-2xl border bg-card p-2.5 shadow-[0_6px_24px_rgba(15,23,42,.07)] transition focus-within:border-primary/40 focus-within:shadow-[0_8px_30px_rgba(15,23,42,.10)]">
+            <div className="mb-2 flex justify-end"><WebSearchOption enabled={webSearch} onChange={setWebSearch} disabled={busy} /></div>
             <div className="mb-1 flex items-center gap-1.5 px-2 text-[10px] font-medium text-muted-foreground">{mode === "agent" ? <AgentAvatar size="sm" color="violet" shape="squircle" glow={false} className="!size-5" /> : <AiIcon className="size-4" />}<span>{mode === "agent" ? "Agent mode" : "Chat"}</span><span className="text-border">/</span><AgentWorkIcon area={pageWorkArea(pageLabel)} className="size-3 shrink-0" /><span className="truncate">{pageLabel}</span></div>
             <textarea ref={input} value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} placeholder={mode === "chat" ? `Ask about ${pageLabel}…` : `Tell the agent what to do…`} disabled={busy} rows={3} maxLength={6_000} className="w-full resize-none bg-transparent px-2 py-1 text-sm leading-6 outline-none placeholder:text-muted-foreground disabled:opacity-60" />
             <div className="flex items-center justify-between gap-3 px-1 pb-0.5">{mode === "agent" ? <AgentApprovalMenu value={approvalMode} onChange={setApprovalMode} disabled={busy} /> : <span className="text-[10px] text-muted-foreground">Enter to send · Shift Enter for a new line</span>}<Button type="button" size="icon-sm" className="rounded-full" disabled={busy || !question.trim()} onClick={() => void send()} aria-label="Send to Filazoo AI"><CornerDownLeft /></Button></div>

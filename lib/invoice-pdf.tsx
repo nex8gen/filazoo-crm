@@ -34,6 +34,7 @@ const s = StyleSheet.create({
   intro: { flexDirection: "row", justifyContent: "space-between", gap: 28, marginTop: 12 },
   half: { width: "48%" },
   heading: { fontSize: 10.5, fontWeight: 600, marginBottom: 6 },
+  billingHeading: { fontSize: 12, fontWeight: 600, marginBottom: 6 },
   name: { fontWeight: 600 },
   muted: { color: "#494949" },
   metaRow: { flexDirection: "row", justifyContent: "space-between", gap: 10, marginBottom: 5 },
@@ -109,11 +110,11 @@ function InvoicePdfDocument({ invoice, today, qr }: { invoice: Invoice; today: s
     <Page size="A4" style={s.page} wrap>
       <View fixed style={s.header}><View><Text style={s.number}>{invoiceLabel(invoice)}</Text><Text style={s.status}>{status}</Text></View><PdfLogo /></View>
       <View style={s.intro} wrap={false}>
-        <View style={s.half}><Text style={s.heading}>Bill from</Text><ContentText value={doc.sellerName} style={s.name} /><ContentText value={doc.sellerAddress} style={s.muted} />{doc.sellerTaxId ? <ContentText value={`Tax ID: ${doc.sellerTaxId}`} /> : null}</View>
+        <View style={s.half}><Text style={s.billingHeading}>Bill from</Text><ContentText value={doc.sellerName} style={s.name} /><ContentText value={doc.sellerAddress} style={s.muted} />{doc.sellerTaxId ? <ContentText value={`Tax ID: ${doc.sellerTaxId}`} /> : null}</View>
         <View style={s.half}>{[["Invoice number", invoiceLabel(invoice)], ["Date issued", doc.issueDate], ["Date due", doc.dueDate], ["Currency", doc.currency], ...(doc.reference ? [["Reference / PO", doc.reference]] : [])].map(([label, value]) => <View key={label} style={s.metaRow}><Text style={s.metaLabel}>{label}</Text><ContentText value={value} style={s.metaValue} /></View>)}</View>
       </View>
       <View style={s.customerRow} wrap={false}>
-        <View style={s.half}><Text style={s.heading}>Bill to</Text><ContentText value={doc.customerName} style={s.name} /><ContentText value={doc.customerEmail} style={s.muted} /><ContentText value={doc.customerAddress} style={s.muted} />{doc.customerTaxId ? <ContentText value={`Tax ID: ${doc.customerTaxId}`} /> : null}
+        <View style={s.half}><Text style={s.billingHeading}>Bill to</Text><ContentText value={doc.customerName} style={s.name} /><ContentText value={doc.customerEmail} style={s.muted} /><ContentText value={doc.customerAddress} style={s.muted} />{doc.customerTaxId ? <ContentText value={`Tax ID: ${doc.customerTaxId}`} /> : null}
           {doc.shippingAddress ? <View style={{ marginTop: 10 }}><Text style={s.heading}>Ship to</Text>{doc.shippingRecipient ? <ContentText value={doc.shippingRecipient} /> : null}<ContentText value={doc.shippingAddress} style={s.muted} />{doc.shippingPhone ? <ContentText value={doc.shippingPhone} style={s.muted} /> : null}</View> : null}
         </View>
         {qr ? <View style={s.qr}><PdfImage src={qr} style={s.qrImage} /><Text style={s.qrLabel}>Your customer portal</Text><Text style={s.qrHint}>{invoice.status === "draft" ? "Activates when invoice is issued" : "Invoice · Tracking · Chat"}</Text></View> : null}
