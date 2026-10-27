@@ -1,6 +1,6 @@
 import "server-only";
 import { revalidatePath } from "next/cache";
-import { createCompany, updateCompany, addCompanyComment } from "@/app/crm-actions";
+import { createCompany, updateCompanyFields, addCompanyComment } from "@/app/crm-actions";
 import { POST as sendEmail } from "@/app/api/email/send/route";
 import type { WorkspaceViewer } from "../auth";
 import { createSupabaseAdmin } from "../supabase/admin";
@@ -20,6 +20,7 @@ import { loadAgentCompany, loadAgentEmails, prepareAgentEmail } from "./agent-re
 import { threadKeyForEmail } from "../email-threading";
 import { prepareCrmAction, executeCrmAction } from "./crm-execution";
 import { crmManualApproval } from "./crm-tools";
+import { deriveCompanyAddressFields } from "../company-profile-fields";
 
 async function validateCustomerEmailSource(action: { companyId: string; sourceEmailId?: string }, viewer: WorkspaceViewer) {
   if (!action.sourceEmailId) return;
@@ -39,7 +40,7 @@ export async function prepareAgentActions(actions: WorkspaceAction[], viewer: Wo
     else if (action.type === "update_company" || action.type === "add_company_note") {
       await validateCustomerEmailSource(action, viewer);
       const company = await loadAgentCompany(action.companyId);
-      prepared = action.type === "update_company" ? { ...action, companyName: company.fields.name, fingerprint: company.fingerprint } : { ...action, companyName: company.fields.name };
+      prepared = action.type === "update_company" ? { ...action, changes: action.deriveAddressFields ? deriveCompanyAddressFields(action.changes, company.fields) : action.changes, companyName: company.fields.name, fingerprint: company.fingerprint } : { ...action, companyName: company.fields.name };
     } else if (action.type === "write_email" && !action.invoiceId) {
       if (action.email.delivery !== "draft" && !mailboxHasSmtp(await getEffectiveMailbox(viewer.id))) throw new Error("Connect an active SMTP mailbox in Settings before sending email.");
       prepared = { type: action.type, email: await prepareAgentEmail(action.email, viewer) };
@@ -136,13 +137,8 @@ export async function executeAgentAction(id: string, action: PreparedAgentAction
     if (action.type === "add_company_note") data.set("comment", action.note);
     else {
       if (company.fingerprint !== action.fingerprint) throw new Error("This customer profile changed after the proposal. Ask the agent to prepare it again.");
-      Object.entries(company.fields).forEach(([key, value]) => data.set(key, value));
-      Object.entries(action.changes).forEach(([key, value]) => {
-        if (key === "commerce") Object.entries(value).forEach(([field, text]) => data.set(`commerce.${field}`, String(text)));
-        else data.set(key, String(value));
-      });
     }
-    const result = action.type === "add_company_note" ? await addCompanyComment(action.companyId, undefined, data) : await updateCompany(action.companyId, undefined, data);
+    const result = action.type === "add_company_note" ? await addCompanyComment(action.companyId, undefined, data) : await updateCompanyFields(action.companyId, action.changes);
     if (result?.error) throw new Error(result.error);
     return { success: result?.success || "Customer profile updated.", companyId: action.companyId, href: `/companies/${action.companyId}` };
   }

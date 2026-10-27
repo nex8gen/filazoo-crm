@@ -10,6 +10,7 @@ import { enrollMatchingFlows, enrollNewLeadFlows } from "@/lib/data/flow-runtime
 import { claimNextBdSalesManager } from "@/lib/lead-assignment";
 import { commerceSchema } from "@/lib/company-commerce";
 import { ensureCompanyCatalogPdf } from "@/lib/data/catalog-pdfs";
+import { companyProfileChangesSchema } from "@/lib/company-profile-fields";
 
 export type CrmActionState = { error?: string; success?: string } | undefined;
 
@@ -196,6 +197,30 @@ export async function createCompany(_state: CrmActionState, formData: FormData):
 
   refreshCrm();
   return { success: `${parsed.data.name} was added.` };
+}
+
+export async function updateCompanyFields(companyId: string, input: unknown): Promise<CrmActionState> {
+  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
+  if (!z.uuid().safeParse(companyId).success) return { error: "Choose a valid company profile." };
+  const parsed = companyProfileChangesSchema.safeParse(input);
+  if (!parsed.success) return { error: `Check ${parsed.error.issues[0]?.path.join(".") || "the requested fields"}: ${parsed.error.issues[0]?.message || "invalid value"}` };
+  const changes = parsed.data;
+  if (changes.website !== undefined) {
+    const website = normalizeWebsite(changes.website);
+    if (changes.website && !website) return { error: "Enter a valid company website." };
+    changes.website = website || "";
+  }
+  const { data, error } = await createSupabaseAdmin().rpc("patch_company_profile_fields", { p_company_id: companyId, p_actor_id: viewer.id, p_changes: changes });
+  if (error) return { error: error.code === "23505" ? "This website or contact email already belongs to another profile." : error.code === "P0001" ? error.message : "The requested profile fields could not be saved. Please retry." };
+  if (!data?.companyName) return { error: "The profile update could not be confirmed. Refresh before retrying." };
+  if (data.contactCreated && data.contactId) {
+    try { await enrollNewLeadFlows(data.contactId); }
+    catch (reason) { console.error("Contact saved, but flow enrollment failed:", reason); }
+  }
+  if (data.segmentChanged) await enrollCompanyEvent({ type: "company_segment_changed", conversationId: `company:${companyId}`, companyId, contactId: data.contactId, segment: changes.segment! });
+  if (data.stageChanged) await enrollCompanyEvent({ type: "pipeline_stage_changed", conversationId: `company:${companyId}:pipeline`, companyId, contactId: data.contactId, stage: changes.stage! });
+  refreshCompany(companyId);
+  return { success: `${data.companyName} was updated.` };
 }
 
 export async function updateCompany(companyId: string, _state: CrmActionState, formData: FormData): Promise<CrmActionState> {

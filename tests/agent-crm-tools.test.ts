@@ -16,6 +16,7 @@ import * as paymentMethods from "../lib/invoice-payment-methods.ts";
 import * as assistant from "../lib/ai/workspace-assistant.ts";
 import * as agentActions from "../lib/ai/agent-actions.ts";
 import * as progress from "../lib/ai/agent-progress.ts";
+import * as profileFields from "../lib/company-profile-fields.ts";
 
 const require = createRequire(import.meta.url);
 const companyId = "a1111111-1111-4111-8111-111111111111";
@@ -203,7 +204,7 @@ test("all new operations reject viewers before reading records and admin tools r
 test("new actions enter stored approval and financial/destructive actions stay manual in auto mode", async () => {
   const f = fixture();
   const execution = moduleUnderTest<typeof import("../lib/ai/agent-execution.ts")>("../lib/ai/agent-execution.ts", {
-    ...f.dependencies, "@/app/api/email/send/route": {}, "../data/invoice-connections": {}, "../data/invoice-banks": {}, "../data/mailboxes": {},
+    ...f.dependencies, "@/app/api/email/send/route": {}, "../data/invoice-connections": {}, "../data/invoice-banks": {}, "../data/mailboxes": {}, "../company-profile-fields": profileFields,
     "../invoices": invoices, "./agent-actions": agentActions, "./agent-progress": progress, "./crm-execution": f, "../email-threading": {},
   });
   const proposals = await execution.prepareAgentActions([

@@ -12,6 +12,7 @@ import * as permissions from "../lib/invoice-permissions.ts";
 import * as progress from "../lib/ai/agent-progress.ts";
 import * as flows from "../lib/flows.ts";
 import * as crmTools from "../lib/ai/crm-tools.ts";
+import * as profileFields from "../lib/company-profile-fields.ts";
 import type { InvoicePaymentMethod } from "../lib/invoice-payment-methods.ts";
 import { workspaceActionSchema } from "../lib/ai/workspace-assistant.ts";
 import { buildInboxEmailItems } from "../lib/email-inbox.ts";
@@ -61,6 +62,7 @@ const email = { to: "buyer@example.com", subject: "Re: Order", text: "Your reque
 function executionFixture() {
   const tables: Record<string, Record<string, unknown>[]> = { workspace_agent_actions: [{ id: actionId, user_id: viewer.id, status: "running" }] };
   const savedForms: FormData[] = [];
+  const savedPatches: profileFields.CompanyProfileChanges[] = [];
   const sent: Record<string, unknown>[] = [];
   const savedFlows: { userId: string; input: flows.FlowInput }[] = [];
   const savedInvoices: invoices.InvoiceDocument[] = [];
@@ -72,8 +74,9 @@ function executionFixture() {
   const dependencies = {
     "./crm-execution": {},
     "./crm-tools": crmTools,
+    "../company-profile-fields": profileFields,
     "next/cache": { revalidatePath() {} },
-    "@/app/crm-actions": { createCompany() {}, updateCompany: async (_id: string, _state: unknown, form: FormData) => { savedForms.push(form); return { success: "Customer updated." }; }, addCompanyComment: async (_id: string, _state: unknown, form: FormData) => { savedForms.push(form); return { success: "Note added." }; } },
+    "@/app/crm-actions": { createCompany() {}, updateCompanyFields: async (_id: string, changes: profileFields.CompanyProfileChanges) => { savedPatches.push(changes); return { success: "Customer updated." }; }, addCompanyComment: async (_id: string, _state: unknown, form: FormData) => { savedForms.push(form); return { success: "Note added." }; } },
     "@/app/api/email/send/route": { POST: async (request: Request) => { sent.push(await request.json()); return Response.json({ ok: true, saved: true }); } },
     "../supabase/admin": { createSupabaseAdmin: () => database(tables) },
     "../data/invoices": { getInvoice: async () => { invoiceReads++; return invoice; }, createInvoice: async (value: invoices.InvoiceDocument) => { savedInvoices.push(value); return { ...invoice, document: value }; }, mutateInvoice: async (_id: string, _userId: string, value: { document: invoices.InvoiceDocument }) => { savedInvoices.push(value.document); return { ...invoice, document: value.document }; } },
@@ -93,7 +96,7 @@ function executionFixture() {
     "../invoice-pdf-meta": { invoicePdfFilename: () => "INV-000008.pdf" },
   };
   const execution = moduleUnderTest<typeof import("../lib/ai/agent-execution.ts")>("../lib/ai/agent-execution.ts", dependencies);
-  return { ...execution, tables, savedForms, savedFlows, savedInvoices, payments, sent, dependencies, changeCustomer: () => { fingerprint = "b".repeat(64); }, invoiceReads: () => invoiceReads, bootstrapInput: () => bootstrapInput };
+  return { ...execution, tables, savedForms, savedPatches, savedFlows, savedInvoices, payments, sent, dependencies, changeCustomer: () => { fingerprint = "b".repeat(64); }, invoiceReads: () => invoiceReads, bootstrapInput: () => bootstrapInput };
 }
 
 test("customer field updates preserve other profile fields and reject stale approved snapshots", async () => {
@@ -101,13 +104,12 @@ test("customer field updates preserve other profile fields and reject stale appr
   const [proposal] = await fixture.prepareAgentActions([{ type: "update_company", companyId, changes: { city: "Shanghai", commerce: { shippingAddress: "New warehouse" } } }], viewer, "ask");
   assert.equal(actions.preparedAgentActionSchema.safeParse(proposal.action).success, true);
   await fixture.executeAgentAction(actionId, proposal.action, viewer, request);
-  assert.equal(fixture.savedForms[0].get("city"), "Shanghai");
-  assert.equal(fixture.savedForms[0].get("summary"), "Keep existing summary");
-  assert.equal(fixture.savedForms[0].get("commerce.taxId"), "VAT-OLD");
-  assert.equal(fixture.savedForms[0].get("commerce.shippingAddress"), "New warehouse");
+  assert.deepEqual(fixture.savedPatches[0], { city: "Shanghai", commerce: { shippingAddress: "New warehouse" } });
+  assert.equal(fixture.savedPatches[0].summary, undefined);
+  assert.equal(fixture.savedPatches[0].commerce?.taxId, undefined);
   fixture.changeCustomer();
   await assert.rejects(() => fixture.executeAgentAction(actionId, proposal.action, viewer, request), /changed after the proposal/);
-  assert.equal(fixture.savedForms.length, 1);
+  assert.equal(fixture.savedPatches.length, 1);
 });
 
 test("additional customer information appends a note without replacing the summary", async () => {
@@ -121,24 +123,38 @@ test("additional customer information appends a note without replacing the summa
   assert.equal(workspaceActionSchema.safeParse({ type: "update_company", companyId, changes: {} }).success, false);
 });
 
+test("country derivation is included in the proposal before approval and is opt-in per request", async () => {
+  const fixture = executionFixture();
+  const changes = { commerce: { shippingAddress: "1 Dixon Ln, Tarrytown, NY 10591, United States", shippingRecipient: "Jimmy Przybylinski" } };
+  const [derived] = await fixture.prepareAgentActions([{ type: "update_company", companyId, changes, deriveAddressFields: true }], viewer, "ask");
+  assert.equal(derived.action.type, "update_company");
+  if (derived.action.type !== "update_company") throw new Error("Expected a profile update.");
+  assert.equal(derived.action.changes.country, "United States");
+  await fixture.executeAgentAction(actionId, derived.action, viewer, request);
+  assert.equal(fixture.savedPatches[0].country, "United States");
+  const [shippingOnly] = await fixture.prepareAgentActions([{ type: "update_company", companyId, changes }], viewer, "ask");
+  if (shippingOnly.action.type !== "update_company") throw new Error("Expected a profile update.");
+  assert.equal(shippingOnly.action.changes.country, undefined);
+});
+
 test("email-based profile updates recheck exact customer matching and source access before writing", async () => {
   const fixture = executionFixture();
   const action = workspaceActionSchema.parse({ type: "update_company", companyId, sourceEmailId: "mail-1", changes: { commerce: { shippingAddress: "99 New Road, Shanghai 200000, China", shippingRecipient: "Alex" } } });
   const [proposal] = await fixture.prepareAgentActions([action], viewer, "auto");
   assert.equal(actions.preparedAgentActionSchema.safeParse(proposal.action).success, true);
   await fixture.executeAgentAction(actionId, proposal.action, viewer, request);
-  assert.equal(fixture.savedForms[0].get("commerce.shippingAddress"), "99 New Road, Shanghai 200000, China");
-  assert.equal(fixture.savedForms[0].get("commerce.address"), "Saved address");
-  assert.equal(fixture.savedForms[0].get("contactEmail"), "buyer@example.com");
+  assert.equal(fixture.savedPatches[0].commerce?.shippingAddress, "99 New Road, Shanghai 200000, China");
+  assert.equal(fixture.savedPatches[0].commerce?.address, undefined);
+  assert.equal(fixture.savedPatches[0].contactEmail, undefined);
   fixture.dependencies["./agent-records"].loadAgentEmails = async () => { throw new Error("Source access revoked."); };
   await assert.rejects(() => fixture.executeAgentAction(actionId, proposal.action, viewer, request), /access revoked/);
-  assert.equal(fixture.savedForms.length, 1);
+  assert.equal(fixture.savedPatches.length, 1);
   for (const mismatch of [null, invoiceId, companyId]) {
     fixture.dependencies["./agent-records"].loadAgentEmails = async () => ({ companyId: mismatch as string, current: { id: "mail-1", direction: mismatch === companyId ? "outbound" : "inbound", contact: "secondary@example.com", threadId: "thread-1" } });
     await assert.rejects(() => fixture.prepareAgentActions([action], viewer, "ask"), /does not uniquely match/);
     await assert.rejects(() => fixture.executeAgentAction(actionId, proposal.action, viewer, request), /does not uniquely match/);
   }
-  assert.equal(fixture.savedForms.length, 1);
+  assert.equal(fixture.savedPatches.length, 1);
 });
 
 test("email lookup loads full accessible inbound bodies, matches secondary contacts, and reports incomplete coverage", async () => {

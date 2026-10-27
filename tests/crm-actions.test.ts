@@ -24,6 +24,10 @@ const query = {
 const admin = {
   from(table: string) { state.calls.push(["from", table]); return query; },
   rpc(name: string, args: unknown) {
+    if (name === "patch_company_profile_fields") {
+      state.calls.push(["rpc", name, args]);
+      return Promise.resolve({ data: { companyName: "Incomplete customer", contactId: null, contactCreated: false, stageChanged: false, segmentChanged: false }, error: state.error });
+    }
     if (name !== "assign_company_owner") throw new Error("Listing flows must not create a default flow.");
     state.calls.push(["rpc", name, args]);
     return Promise.resolve({ data: "Manager", error: state.error });
@@ -46,7 +50,7 @@ const hooks = registerHooks({
     return nextResolve(specifier, context);
   },
 });
-const { createCompany, bulkUpdateCompanies, assignPipelineOwner, scheduleCompanyFollowup } = await import("../app/crm-actions.ts");
+const { createCompany, updateCompanyFields, bulkUpdateCompanies, assignPipelineOwner, scheduleCompanyFollowup } = await import("../app/crm-actions.ts");
 const { listFlows, deleteFlow } = await import("../lib/data/flows.ts");
 test.after(() => { hooks.deregister(); Reflect.deleteProperty(globalThis, key); });
 test.beforeEach(() => { state.role = "admin"; state.rows = [{ id }]; state.error = null; state.calls = []; state.paths = []; });
@@ -62,6 +66,49 @@ test("manual lead creation starts new-lead flows after saving the contact and pi
   state.calls = [];
   assert.ok((await createCompany(undefined, data))?.error);
   assert.ok(!state.calls.some((call) => call[0] === "new_lead"));
+});
+
+test("partial profile saves validate only requested fields and retain strict creation requirements", async () => {
+  const examples = {
+    name: "Customer", website: "example.invalid", country: "United States", city: "Tarrytown", segment: "Manufacturing",
+    contactName: "Jimmy", contactRole: "Buyer", contactEmail: "buyer@example.invalid", stage: "interested", summary: "Keep account notes", tags: "PLA, PETG", fitScore: 8,
+    estimatedOrderQuantity: 200, estimatedValue: 1200.5, currency: "CAD", nextFollowupAt: "2026-10-29T09:00:00+08:00",
+  };
+  for (const [field, value] of Object.entries(examples)) {
+    state.calls = [];
+    assert.equal((await updateCompanyFields(id, { [field]: value }))?.success, "Incomplete customer was updated.");
+    const args = state.calls.find((call) => call[0] === "rpc")?.[2] as { p_company_id: string; p_actor_id: string; p_changes: Record<string, unknown> };
+    assert.equal(args.p_company_id, id); assert.equal(args.p_actor_id, "actor");
+    assert.deepEqual(args.p_changes, { [field]: field === "website" ? "https://example.invalid/" : value });
+    assert.ok(!state.calls.some((call) => call[0] === "from"));
+  }
+  state.calls = [];
+  const incompleteCreation = new FormData();
+  incompleteCreation.set("name", "Imported lead");
+  assert.ok((await createCompany(undefined, incompleteCreation))?.error);
+  assert.deepEqual(state.calls, []);
+});
+
+test("all shipping and billing fields save independently without filling missing company data", async () => {
+  for (const [key, value] of Object.entries({ phone: "123", shippingRecipient: "Jimmy", shippingPhone: "456", shippingAddress: "1 Dixon Ln, Tarrytown, NY 10591, United States", shippingNotes: "Weekdays", address: "Office", taxId: "VAT-42", email: "billing@example.invalid", currency: "USD", termsDays: 30 })) {
+    state.calls = [];
+    assert.ok((await updateCompanyFields(id, { commerce: { [key]: value } }))?.success);
+    const args = state.calls.find((call) => call[0] === "rpc")?.[2] as { p_changes: Record<string, unknown> };
+    assert.deepEqual(args.p_changes, { commerce: { [key]: value } });
+  }
+});
+
+test("partial profile failures do not report success, refresh pages or bypass roles", async () => {
+  state.calls = [];
+  assert.ok((await updateCompanyFields(id, { commerce: { email: "invalid" } }))?.error?.includes("commerce.email"));
+  assert.ok((await updateCompanyFields(id, { owner_id: otherId }))?.error);
+  assert.ok((await updateCompanyFields("invalid", { city: "Shanghai" }))?.error);
+  assert.deepEqual(state.calls, []);
+  state.error = { message: "Database unavailable" };
+  assert.ok((await updateCompanyFields(id, { commerce: { shippingAddress: "Warehouse" } }))?.error);
+  assert.deepEqual(state.paths, []);
+  state.role = "viewer";
+  await assert.rejects(updateCompanyFields(id, { city: "Shanghai" }), /Access denied/);
 });
 
 test("company deletion reports actual deleted rows and refreshes linked screens", async () => {
