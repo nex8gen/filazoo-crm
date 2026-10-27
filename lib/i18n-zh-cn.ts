@@ -1,6 +1,10 @@
 // Shared professional Simplified Chinese copy for CRM screens and feedback.
 export const zhCNAdditional: Record<string, string> = {
+  "from the workspace, disconnects their personal mailbox, and pauses their automations. Their customers and linked follow-up tasks are redistributed among active BD Sales Managers with automatic assignment enabled, prioritizing those with fewer customers. If none are available, the customers remain unassigned. CRM history is preserved.": "的工作区权限、断开其个人邮箱，并暂停其自动化流程。该成员负责的客户及关联跟进任务将重新分配给已启用自动分配的在职商务拓展经理，优先分配给客户较少的经理。如果没有符合条件的经理，客户将保留为未分配状态。CRM 历史记录将保留。",
+  "Member deletion could not be confirmed. Please refresh and try again.": "无法确认成员删除结果，请刷新后重试。",
   "AI reply preview · Step": "AI 回复预览 · 步骤",
+  "Drag actions to reorder · Scroll to pan · Ctrl-scroll to zoom": "拖动操作调整顺序 · 滚动平移 · 按住 Ctrl 滚动缩放",
+  "Flow canvas. Drag the background or scroll to pan. Drag actions to reorder the flow.": "流程画布。拖动背景或滚动以平移，拖动操作以调整流程顺序。",
   "Customer name": "客户姓名",
   "Sample email": "示例邮件",
   "Test with emails": "使用邮件测试",

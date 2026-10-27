@@ -53,7 +53,7 @@ function DeleteMemberDialog({ member, open, onOpenChange }: { member: WorkspaceM
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogHeader><DialogTitle>Delete member?</DialogTitle><DialogDescription>This removes {member.displayName || member.email} from the workspace, disconnects their personal mailbox, pauses their automations, and releases assigned leads. CRM history is preserved.</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>Delete member?</DialogTitle><DialogDescription>This removes {member.displayName || member.email} from the workspace, disconnects their personal mailbox, and pauses their automations. Their customers and linked follow-up tasks are redistributed among active BD Sales Managers with automatic assignment enabled, prioritizing those with fewer customers. If none are available, the customers remain unassigned. CRM history is preserved.</DialogDescription></DialogHeader>
         <form action={action}>
           <input type="hidden" name="userId" value={member.id} />
           {state?.error ? <p role="alert" className="mb-4 text-xs text-destructive">{state.error}</p> : null}

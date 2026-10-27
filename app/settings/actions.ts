@@ -206,32 +206,13 @@ export async function deleteMember(_state: SettingsActionState, formData: FormDa
   if (parsed.data.userId === viewer.id) return { error: "You cannot delete your own administrator account." };
 
   const admin = createSupabaseAdmin();
-  const [{ data: target, error: targetError }, { data: membership, error: membershipError }] = await Promise.all([
-    admin.auth.admin.getUserById(parsed.data.userId),
-    admin.from("workspace_members").select("display_name").eq("user_id", parsed.data.userId).maybeSingle(),
-  ]);
-  if (targetError || !target.user || membershipError || !membership) return { error: "The team member could not be found." };
+  const { data, error } = await admin.rpc("remove_workspace_member", { p_user_id: parsed.data.userId, p_actor_id: viewer.id });
+  if (error) return { error: "Member deletion could not be confirmed. Please refresh and try again." };
 
-  const now = new Date().toISOString();
-  const cleanupResults = await Promise.all([
-    admin.from("pipeline").update({ owner_id: null, updated_at: now }).eq("owner_id", parsed.data.userId),
-    admin.from("meta_leads").update({ owner_id: null, assignment_method: null, updated_at: now }).eq("owner_id", parsed.data.userId),
-    admin.from("shopify_leads").update({ owner_id: null, assignment_method: null, updated_at: now }).eq("owner_id", parsed.data.userId),
-    admin.from("crm_tasks").update({ assigned_to: null, updated_at: now }).eq("assigned_to", parsed.data.userId),
-    admin.from("flows").update({ status: "paused", updated_at: now }).eq("user_id", parsed.data.userId).eq("status", "live"),
-    admin.from("email_automation_settings").update({ enabled: false, updated_at: now }).eq("user_id", parsed.data.userId),
-    admin.from("workspace_mailboxes").delete().eq("user_id", parsed.data.userId).eq("type", "personal"),
-  ]);
-  if (cleanupResults.some((result) => result.error)) return { error: "The member could not be deleted because assigned workspace data could not be released." };
-
-  const { error: deleteError } = await admin.from("workspace_members").delete().eq("user_id", parsed.data.userId);
-  if (deleteError) return { error: "The member's workspace access could not be deleted." };
-
-  await admin.from("events").insert({ actor_id: viewer.id, type: "workspace_member_deleted", data: { target_user_id: parsed.data.userId, target_email: target.user.email, summary: `${membership.display_name || target.user.email || "A member"} was removed from the workspace.` } });
-  revalidatePath("/settings", "layout");
-  revalidatePath("/companies");
-  revalidatePath("/pipeline");
-  return { success: "Member deleted and workspace access removed." };
+  revalidatePath("/", "layout");
+  const reassigned = Number(data?.reassigned ?? 0);
+  const unassigned = Number(data?.unassigned ?? 0);
+  return { success: `Member deleted and workspace access removed.${reassigned ? ` ${reassigned} customer assignment${reassigned === 1 ? "" : "s"} redistributed to remaining BD Sales Managers.` : ""}${unassigned ? ` ${unassigned} customer assignment${unassigned === 1 ? " remains" : "s remain"} unassigned because no active BD Sales Manager has automatic assignment enabled.` : ""}` };
 }
 
 export async function saveWorkspaceMailbox(_state: SettingsActionState, formData: FormData): Promise<SettingsActionState> {

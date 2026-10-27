@@ -4,7 +4,8 @@ import { useLanguage } from "@/components/language-provider";
 
 import { AiIcon } from "@/components/ai-icon";
 
-import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
+import { DndContext, DragOverlay, PointerSensor, pointerWithin, useDndContext, useDndMonitor, useDraggable, useDroppable, useSensor, useSensors, type DragMoveEvent } from "@dnd-kit/core";
 import {
   AlertTriangle, ArrowDown, ArrowLeft, ArrowUp, Bell, Check, CheckCircle2, ChevronRight,
   CircleStop, Clock3, Copy, Eye, GitBranch, History, ListFilter, Mail, MoreHorizontal,
@@ -32,20 +33,15 @@ import {
   triggerLabels, triggerTypes, type AutomationFlow, type FlowInput, type FlowStatus, type FlowStepType,
   type JsonConfig, type TriggerType,
 } from "@/lib/flows";
+import {
+  CANVAS_NODE_WIDTH, CANVAS_START_X, canvasPointFromClient,
+  flowInsertIndex, layoutFlowNodes, reorderFlowSteps, type CanvasPoint,
+} from "@/lib/flow-canvas";
 
 type Option = { id: string; label: string };
 type FilterOptions = { segments: string[]; countries: string[] };
 type DraftFlow = FlowInput & { id: string | null; activeRuns?: number; completedRuns?: number; updatedAt?: string };
 type Selection = "trigger" | string;
-type CanvasPoint = { x: number; y: number };
-type CanvasPositions = Record<string, CanvasPoint>;
-
-const CANVAS_NODE_WIDTH = 440;
-const CANVAS_START_X = 180;
-const CANVAS_TRIGGER_Y = 64;
-const CANVAS_STEP_Y = 240;
-const CANVAS_STEP_GAP = 144;
-
 const templates: Option[] = [
   { id: "helpful_reminder", label: "Helpful reminder" },
   { id: "send_catalog", label: "Send relevant catalog" },
@@ -152,6 +148,24 @@ type FlowActionPaletteProps = {
   onAudit: () => void;
 };
 
+function FlowPaletteAction({ type, canEdit, onAdd }: { type: FlowStepType; canEdit: boolean; onAdd: (type: FlowStepType) => void }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `palette-${type}`, data: { flowStepType: type }, disabled: !canEdit });
+  const { icon: Icon, tone, description } = stepMeta[type];
+  return <button ref={setNodeRef} type="button" {...attributes} {...listeners} onClick={() => onAdd(type)} disabled={!canEdit} className={`flex w-full touch-none cursor-grab items-center gap-2.5 rounded-lg px-2 py-2.5 text-left transition hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-50 ${isDragging ? "opacity-50" : ""}`}>
+    <span className={"grid size-9 shrink-0 place-items-center rounded-lg " + tone}><Icon className="size-4" /></span>
+    <span className="min-w-0 flex-1"><span className="block text-sm font-medium leading-5">{stepLabels[type]}</span><span className="mt-0.5 block text-xs leading-5 text-muted-foreground">{description}</span></span>
+    <GripVertical className="size-3.5 shrink-0 text-muted-foreground" />
+  </button>;
+}
+
+function FlowPaletteOverlay() {
+  const { active } = useDndContext();
+  const type = active?.data.current?.flowStepType as FlowStepType | undefined;
+  const meta = type && stepMeta[type];
+  const Icon = meta?.icon;
+  return <DragOverlay dropAnimation={null}>{type && meta && Icon ? <div className="pointer-events-none flex w-60 items-center gap-3 rounded-xl border bg-background p-3 shadow-xl"><span className={`grid size-9 shrink-0 place-items-center rounded-lg ${meta.tone}`}><Icon className="size-5" /></span><span className="text-sm font-semibold">{stepLabels[type]}</span></div> : null}</DragOverlay>;
+}
+
 function FlowActionPalette({ canEdit, query, onQueryChange, actions, onAdd, onAudit }: FlowActionPaletteProps) {
   return (
     <aside aria-label="Flow actions" className="scroll-surface hidden min-h-0 w-64 shrink-0 overflow-y-auto border-r bg-background p-4 min-[100rem]:block">
@@ -173,30 +187,7 @@ function FlowActionPalette({ canEdit, query, onQueryChange, actions, onAdd, onAu
           <section key={group} className="mb-5" aria-label={group + " actions"}>
             <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{group}</h3>
             <div className="space-y-1">
-              {groupActions.map((type) => {
-                const { icon: Icon, tone, description } = stepMeta[type];
-                return (
-                  <button
-                    key={type}
-                    type="button"
-                    draggable={canEdit}
-                    onDragStart={(event) => {
-                      event.dataTransfer.setData("application/x-filazoo-flow-step", type);
-                      event.dataTransfer.effectAllowed = "copy";
-                    }}
-                    onClick={() => onAdd(type)}
-                    disabled={!canEdit}
-                    className="flex w-full cursor-grab items-center gap-2.5 rounded-lg px-2 py-2.5 text-left transition hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <span className={"grid size-9 shrink-0 place-items-center rounded-lg " + tone}><Icon className="size-4" /></span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-medium leading-5">{stepLabels[type]}</span>
-                      <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">{description}</span>
-                    </span>
-                    <GripVertical className="size-3.5 shrink-0 text-muted-foreground" />
-                  </button>
-                );
-              })}
+              {groupActions.map((type) => <FlowPaletteAction key={type} type={type} canEdit={canEdit} onAdd={onAdd} />)}
             </div>
           </section>
         );
@@ -209,33 +200,46 @@ function FlowActionPalette({ canEdit, query, onQueryChange, actions, onAdd, onAu
   );
 }
 
-function FlowNode({ step, index, selected, onSelect, onMove, onRemove, onPointerDown, disabled }: { step: FlowInput["steps"][number]; index: number; selected: boolean; onSelect: () => void; onMove: (offset: number) => void; onRemove: () => void; onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void; disabled: boolean }) {
+function FlowNode({ step, index, selected, onSelect, onMove, onRemove, onPointerDown, disabled, last }: { step: FlowInput["steps"][number]; index: number; selected: boolean; onSelect: () => void; onMove: (offset: number) => void; onRemove: () => void; onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void; disabled: boolean; last: boolean }) {
+  const { t } = useLanguage();
   const meta = stepMeta[step.type]; const Icon = meta.icon;
-  return <div role="button" tabIndex={0} aria-pressed={selected} aria-label={`${stepLabels[step.type]}, step ${index + 1}. Drag to reposition.`} onPointerDown={onPointerDown} onClick={onSelect} onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(); } }} className={`group relative w-full touch-none cursor-grab rounded-xl border bg-background p-3 text-left shadow-sm transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:shadow-md active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selected ? "border-primary ring-2 ring-primary/15" : ""}`}><div className="flex items-start gap-2.5"><span className="mt-2.5 text-muted-foreground/65 transition group-hover:text-foreground"><GripVertical className="size-[18px]" /></span><span className={`grid size-10 shrink-0 place-items-center rounded-lg ${meta.tone}`}><Icon className="size-5" strokeWidth={2} /></span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-x-2 gap-y-1"><p className="text-body font-semibold leading-5 text-foreground">{stepLabels[step.type]}</p><Badge variant="outline" className="min-h-6 px-2 text-xs font-medium">Step {index + 1}</Badge></div><p className="mt-0.5 break-words text-sm leading-5 text-muted-foreground">{stepSummary(step.type, step.config)}</p></div><div data-no-drag className="flex gap-0.5 opacity-70 transition group-hover:opacity-100 group-focus-within:opacity-100"><Button type="button" variant="ghost" size="icon-xs" className="size-7 [&_svg]:size-4" onClick={(event) => { event.stopPropagation(); onMove(-1); }} disabled={disabled || index === 0} aria-label="Move up"><ArrowUp /></Button><Button type="button" variant="ghost" size="icon-xs" className="size-7 [&_svg]:size-4" onClick={(event) => { event.stopPropagation(); onMove(1); }} disabled={disabled} aria-label="Move down"><ArrowDown /></Button><Button type="button" variant="ghost" size="icon-xs" className="size-7 [&_svg]:size-4" onClick={(event) => { event.stopPropagation(); onRemove(); }} disabled={disabled} aria-label="Remove"><Trash2 /></Button></div></div></div>;
+  return <div role="button" tabIndex={0} aria-pressed={selected} aria-label={`${stepLabels[step.type]}, step ${index + 1}. Drag to reorder.`} onPointerDown={onPointerDown} onClick={onSelect} onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(); } }} className={`group relative w-full touch-none cursor-grab rounded-xl border bg-background p-3 text-left shadow-sm transition-[border-color,box-shadow,transform] duration-200 hover:shadow-md active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selected ? "border-primary ring-2 ring-primary/15" : ""}`}><div className="flex items-start gap-2.5"><span className="mt-2.5 text-muted-foreground/65 transition group-hover:text-foreground"><GripVertical className="size-[18px]" /></span><span className={`grid size-10 shrink-0 place-items-center rounded-lg ${meta.tone}`}><Icon className="size-5" strokeWidth={2} /></span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-x-2 gap-y-1"><p className="text-body font-semibold leading-5 text-foreground">{stepLabels[step.type]}</p><Badge variant="outline" className="min-h-6 px-2 text-xs font-medium" translate="no" data-no-translate>{t(`Step ${index + 1}`)}</Badge></div><p className="mt-0.5 break-words text-sm leading-5 text-muted-foreground">{stepSummary(step.type, step.config)}</p></div><div data-no-drag className="flex gap-0.5 opacity-70 transition group-hover:opacity-100 group-focus-within:opacity-100"><Button type="button" variant="ghost" size="icon-xs" className="size-7 [&_svg]:size-4" onClick={(event) => { event.stopPropagation(); onMove(-1); }} disabled={disabled || index === 0} aria-label="Move up"><ArrowUp /></Button><Button type="button" variant="ghost" size="icon-xs" className="size-7 [&_svg]:size-4" onClick={(event) => { event.stopPropagation(); onMove(1); }} disabled={disabled || last} aria-label="Move down"><ArrowDown /></Button><Button type="button" variant="ghost" size="icon-xs" className="size-7 [&_svg]:size-4" onClick={(event) => { event.stopPropagation(); onRemove(); }} disabled={disabled} aria-label="Remove"><Trash2 /></Button></div></div></div>;
 }
 
 function FlowCanvas({ draft, selection, insertAt, canEdit, setSelection, setInsertAt, onAddStep, onMoveStep, onRemoveStep }: { draft: DraftFlow; selection: Selection; insertAt: number | null; canEdit: boolean; setSelection: (selection: Selection) => void; setInsertAt: (position: number | null) => void; onAddStep: (type: FlowStepType, position?: number) => FlowInput["steps"][number] | null; onMoveStep: (index: number, offset: number) => void; onRemoveStep: (index: number) => void }) {
   const viewportRef = useRef<HTMLElement>(null);
-  const [positions, setPositions] = useState<CanvasPositions>({ __trigger: { x: CANVAS_START_X, y: CANVAS_TRIGGER_Y } });
+  const { setNodeRef } = useDroppable({ id: "flow-canvas", disabled: !canEdit });
+  const setViewportRef = useCallback((node: HTMLElement | null) => {
+    viewportRef.current = node;
+    setNodeRef(node);
+  }, [setNodeRef]);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState<CanvasPoint>({ x: 0, y: 0 });
   const [nodeWidth, setNodeWidth] = useState(CANVAS_NODE_WIDTH);
   const [nodeHeights, setNodeHeights] = useState<Record<string, number>>({});
   const nodeKeys = draft.steps.map((step, index) => step.id || `step-${index}`).join(",");
   const [panning, setPanning] = useState(false);
-  const [dropActive, setDropActive] = useState(false);
+  const [paletteDropIndex, setPaletteDropIndex] = useState<number | null>(null);
+  const [dragPreview, setDragPreview] = useState<{ id: string; position: CanvasPoint; target: number; index: number } | null>(null);
   const panRef = useRef<{ start: CanvasPoint; origin: CanvasPoint } | null>(null);
-  const dragRef = useRef<{ id: string; start: CanvasPoint; origin: CanvasPoint } | null>(null);
+  const dragRef = useRef<{ id: string; index: number; start: CanvasPoint; origin: CanvasPoint; element: HTMLDivElement; target: number; moved: boolean } | null>(null);
+  const suppressClickRef = useRef(false);
   const triggerId = "__trigger";
   const endId = "__end";
 
   useEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;
+    let previousWidth = 0;
     const resize = () => {
       const width = Math.min(CANVAS_NODE_WIDTH, Math.max(280, viewport.clientWidth - 48));
       setNodeWidth(width);
-      setPan({ x: Math.round((viewport.clientWidth - width) / 2 - CANVAS_START_X), y: 0 });
+      const initial = previousWidth === 0;
+      const delta = (viewport.clientWidth - previousWidth) / 2;
+      setPan((current) => initial
+        ? { x: Math.round((viewport.clientWidth - width) / 2 - CANVAS_START_X), y: 0 }
+        : { x: current.x + delta, y: current.y });
+      previousWidth = viewport.clientWidth;
     };
     resize();
     const observer = new ResizeObserver(resize);
@@ -266,22 +270,11 @@ function FlowCanvas({ draft, selection, insertAt, canEdit, setSelection, setInse
     return () => observer.disconnect();
   }, [nodeKeys]);
 
-  const pointFor = (id: string, fallback: CanvasPoint) => positions[id] || fallback;
-  const triggerPosition = pointFor(triggerId, { x: CANVAS_START_X, y: CANVAS_TRIGGER_Y });
-  const stepPositions: CanvasPoint[] = [];
-  let nextStepY = Math.max(CANVAS_STEP_Y, triggerPosition.y + (nodeHeights[triggerId] ?? 104) + 48);
-  for (const [index, step] of draft.steps.entries()) {
-    const id = step.id || `step-${index}`;
-    const position = pointFor(id, { x: CANVAS_START_X, y: nextStepY });
-    stepPositions.push(position);
-    nextStepY = position.y + Math.max(CANVAS_STEP_GAP, (nodeHeights[id] ?? 72) + 48);
-  }
-  const endPosition = pointFor(endId, { x: CANVAS_START_X + (nodeWidth - 162) / 2, y: nextStepY });
-  const nodes = [
-    { ...triggerPosition, width: nodeWidth, height: nodeHeights[triggerId] ?? 104 },
-    ...stepPositions.map((position, index) => ({ ...position, width: nodeWidth, height: nodeHeights[draft.steps[index]?.id || `step-${index}`] ?? 72 })),
-    { ...endPosition, width: 162, height: nodeHeights[endId] ?? 34 },
-  ];
+  const layout = layoutFlowNodes(draft.steps.map((step, index) => step.id || `step-${index}`), nodeHeights, nodeWidth);
+  const triggerPosition = layout.trigger;
+  const stepPositions = layout.steps;
+  const endPosition = layout.end;
+  const nodes = [layout.trigger, ...layout.steps, layout.end];
 
   function changeZoom(nextZoom: number) {
     const next = Math.min(1.5, Math.max(0.45, nextZoom));
@@ -305,23 +298,38 @@ function FlowCanvas({ draft, selection, insertAt, canEdit, setSelection, setInse
     setPan({ x: (viewport.clientWidth - (right - left) * next) / 2 - left * next, y: (viewport.clientHeight - (bottom - top) * next) / 2 - top * next });
   }
 
-  function startNodeDrag(event: ReactPointerEvent<HTMLDivElement>, id: string) {
+  function startNodeDrag(event: ReactPointerEvent<HTMLDivElement>, index: number) {
     if (!canEdit || event.button !== 0 || (event.target as HTMLElement).closest("[data-no-drag]")) return;
     event.stopPropagation();
+    suppressClickRef.current = false;
+    const node = layout.steps[index]!;
     event.currentTarget.setPointerCapture(event.pointerId);
-    dragRef.current = { id, start: { x: event.clientX, y: event.clientY }, origin: pointFor(id, { x: 260, y: 250 }) };
+    dragRef.current = { id: node.id, index, start: { x: event.clientX, y: event.clientY }, origin: node, element: event.currentTarget, target: index, moved: false };
   }
 
   function moveNode(event: ReactPointerEvent<HTMLDivElement>) {
     const drag = dragRef.current;
     if (!drag) return;
-    setPositions((current) => ({ ...current, [drag.id]: { x: drag.origin.x + (event.clientX - drag.start.x) / zoom, y: drag.origin.y + (event.clientY - drag.start.y) / zoom } }));
+    const dx = event.clientX - drag.start.x;
+    const dy = event.clientY - drag.start.y;
+    if (!drag.moved && Math.hypot(dx, dy) < 5) return;
+    drag.moved = true;
+    const position = { x: drag.origin.x + dx / zoom, y: drag.origin.y + dy / zoom };
+    drag.target = flowInsertIndex(position.y + layout.steps[drag.index]!.height / 2, layout.steps.filter((node) => node.id !== drag.id));
+    setDragPreview({ id: drag.id, index: drag.index, position, target: drag.target });
   }
 
-  function endNodeDrag(event: ReactPointerEvent<HTMLDivElement>) {
-    if (!dragRef.current) return;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  function endNodeDrag(event: ReactPointerEvent<HTMLDivElement>, cancelled = false) {
+    const drag = dragRef.current;
+    if (!drag) return;
+    if (drag.element.hasPointerCapture(event.pointerId)) drag.element.releasePointerCapture(event.pointerId);
     dragRef.current = null;
+    suppressClickRef.current = !cancelled && drag.moved;
+    setDragPreview(null);
+    if (!cancelled && drag.moved && drag.target !== drag.index) {
+      setInsertAt(null);
+      onMoveStep(drag.index, drag.target - drag.index);
+    }
   }
 
   function startPan(event: ReactPointerEvent<HTMLElement>) {
@@ -356,38 +364,60 @@ function FlowCanvas({ draft, selection, insertAt, canEdit, setSelection, setInse
     }));
   }
 
-  function dropPaletteItem(event: ReactDragEvent<HTMLElement>) {
-    event.preventDefault();
-    setDropActive(false);
-    if (!canEdit) return;
-    const type = event.dataTransfer.getData("application/x-filazoo-flow-step") as FlowStepType;
-    if (!stepTypes.includes(type)) return;
-    const rect = viewportRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const step = onAddStep(type);
-    if (!step?.id) return;
-    setPositions((current) => ({ ...current, [step.id!]: { x: (event.clientX - rect.left - pan.x) / zoom - nodeWidth / 2, y: (event.clientY - rect.top - pan.y) / zoom - 40 } }));
+  function paletteInsertIndex(event: DragMoveEvent) {
+    const viewport = viewportRef.current;
+    if (!canEdit || !viewport || event.over?.id !== "flow-canvas" || !(event.activatorEvent instanceof PointerEvent)) return null;
+    const rect = viewport.getBoundingClientRect();
+    const client = { x: event.activatorEvent.clientX + event.delta.x, y: event.activatorEvent.clientY + event.delta.y };
+    if (client.x < rect.left || client.x > rect.right || client.y < rect.top || client.y > rect.bottom) return null;
+    const point = canvasPointFromClient(client, { x: rect.left, y: rect.top }, pan, zoom);
+    return flowInsertIndex(point.y, layout.steps);
   }
 
-  const connectorNodes = nodes.slice(0, -1).map((node, index) => ({ from: node, to: nodes[index + 1]!, insertAt: index }));
+  useDndMonitor({
+    onDragMove: (event) => setPaletteDropIndex(paletteInsertIndex(event)),
+    onDragOver: (event) => setPaletteDropIndex(paletteInsertIndex(event)),
+    onDragCancel: () => setPaletteDropIndex(null),
+    onDragEnd: (event) => {
+      setPaletteDropIndex(null);
+      const type = event.active.data.current?.flowStepType as FlowStepType;
+      const index = paletteInsertIndex(event);
+      if (index !== null && stepTypes.includes(type)) onAddStep(type, index);
+    },
+  });
 
-  return <main ref={viewportRef} aria-label="Flow canvas. Drag the background or use the mouse wheel to pan. Drag cards to reposition them." onWheel={moveCanvasWithWheel} onPointerDown={startPan} onPointerMove={movePan} onPointerUp={endPan} onPointerCancel={endPan} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; setDropActive(true); }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDropActive(false); }} onDrop={dropPaletteItem} className={`relative min-h-0 touch-none overflow-hidden bg-muted/10 select-none ${panning ? "cursor-grabbing" : "cursor-grab"} ${dropActive ? "ring-2 ring-inset ring-primary/45" : ""}`} style={{ backgroundImage: "radial-gradient(circle, color-mix(in oklch, var(--border), transparent 20%) 1px, transparent 1px), radial-gradient(circle at 50% 0%, rgb(62 207 142 / 0.07), transparent 42%)", backgroundPosition: `${pan.x}px ${pan.y}px, center`, backgroundSize: `${24 * zoom}px ${24 * zoom}px, auto` }}>
+  const connectorNodes = nodes.slice(0, -1).map((node, index) => ({ from: node, to: nodes[index + 1]!, insertAt: index }));
+  const indicatorIndex = dragPreview
+    ? dragPreview.target > dragPreview.index ? dragPreview.target + 1 : dragPreview.target
+    : paletteDropIndex;
+  const indicator = indicatorIndex === null ? null : connectorNodes[indicatorIndex];
+
+  // Clipping prevents focus changes from scrolling the canvas behind its pan transform.
+  return <main ref={setViewportRef} aria-label="Flow canvas. Drag the background or scroll to pan. Drag actions to reorder the flow." onWheel={moveCanvasWithWheel} onPointerDown={startPan} onPointerMove={movePan} onPointerUp={endPan} onPointerCancel={endPan} onClickCapture={(event) => { if (suppressClickRef.current) { event.stopPropagation(); suppressClickRef.current = false; } }} className={`relative min-h-0 touch-none overflow-clip bg-muted/10 select-none ${panning ? "cursor-grabbing" : "cursor-grab"}`} style={{ backgroundImage: "radial-gradient(circle, color-mix(in oklch, var(--border), transparent 20%) 1px, transparent 1px), radial-gradient(circle at 50% 0%, rgb(62 207 142 / 0.07), transparent 42%)", backgroundPosition: `${pan.x}px ${pan.y}px, center`, backgroundSize: `${24 * zoom}px ${24 * zoom}px, auto` }}>
     <div className="absolute left-0 top-0 h-[2400px] w-[2400px] origin-top-left" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}>
       <svg aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full overflow-visible">
-        {connectorNodes.map(({ from, to }, index) => { const x1 = from.x + from.width / 2; const y1 = from.y + from.height; const x2 = to.x + to.width / 2; const y2 = to.y; const bend = Math.max(50, Math.abs(y2 - y1) * 0.45); return <path key={index} d={`M ${x1} ${y1} C ${x1} ${y1 + bend}, ${x2} ${y2 - bend}, ${x2} ${y2}`} fill="none" stroke="currentColor" strokeWidth="2" className="text-border" vectorEffect="non-scaling-stroke" />; })}
+        {connectorNodes.map(({ from, to }, index) => <path key={index} d={`M ${from.x + from.width / 2} ${from.y + from.height} L ${to.x + to.width / 2} ${to.y}`} fill="none" stroke="currentColor" strokeWidth="2" className="text-border" vectorEffect="non-scaling-stroke" />)}
       </svg>
-      {connectorNodes.map(({ from, to, insertAt: position }) => <div key={`add-${position}`} data-canvas-node className="absolute z-20" style={{ left: (from.x + from.width / 2 + to.x + to.width / 2) / 2 - 14, top: (from.y + from.height + to.y) / 2 - 14 }}><button type="button" onClick={(event) => { event.stopPropagation(); setInsertAt(insertAt === position ? null : position); }} disabled={!canEdit} aria-label={`Add action at position ${position + 1}`} className="grid size-7 place-items-center rounded-full border bg-background text-muted-foreground shadow-sm transition hover:scale-110 hover:border-primary hover:text-primary disabled:opacity-50"><Plus className="size-4" /></button>{insertAt === position ? <div data-no-drag className="absolute left-1/2 top-9 z-30 grid w-72 -translate-x-1/2 grid-cols-2 gap-1 rounded-xl border bg-popover p-2 shadow-xl">{stepTypes.map((type) => { const Icon = stepMeta[type].icon; return <button key={type} type="button" onClick={() => { const step = onAddStep(type, position); if (step?.id) setPositions((current) => ({ ...current, [step.id!]: { x: (from.x + from.width / 2 + to.x + to.width / 2) / 2 - nodeWidth / 2, y: (from.y + from.height + to.y) / 2 - 40 } })); }} className="flex items-center gap-2 rounded-lg p-2 text-left hover:bg-muted"><Icon className="size-4 text-muted-foreground" /><span className="text-sm font-medium">{stepLabels[type]}</span></button>; })}</div> : null}</div>)}
-      <div data-canvas-node data-flow-node-id={triggerId} className="absolute" style={{ left: triggerPosition.x, top: triggerPosition.y, width: nodeWidth }} onClick={() => setSelection("trigger")} onPointerDown={(event) => startNodeDrag(event, triggerId)} onPointerMove={moveNode} onPointerUp={endNodeDrag} onPointerCancel={endNodeDrag}><button type="button" onClick={() => setSelection("trigger")} className={`w-full rounded-xl border bg-background p-3 text-left shadow-sm transition-shadow hover:shadow-md ${selection === "trigger" ? "border-primary ring-2 ring-primary/15" : ""}`}><div className="flex items-start gap-2.5"><span className="mt-2.5 text-muted-foreground/65"><GripVertical className="size-[18px]" /></span><span className="grid size-10 shrink-0 place-items-center rounded-full bg-foreground text-background"><Workflow className="size-5" strokeWidth={2} /></span><div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-2"><p className="text-body font-semibold leading-5 text-foreground">Trigger</p><Badge variant="outline" className="h-6 px-2.5 text-xs font-medium">Enrollment</Badge></div><p className="mt-0.5 text-sm leading-5 text-muted-foreground">{formatTrigger(draft.triggerType, draft.triggerConfig)}</p><div className="mt-2 flex flex-wrap gap-1.5"><Badge variant="secondary" className="min-h-6 gap-1.5 px-2 text-xs font-medium [&_svg]:size-3.5"><ListFilter />Profile filters</Badge><Badge variant="outline" className="h-auto min-h-6 max-w-full whitespace-normal px-2 text-left text-xs font-medium">One active run per conversation</Badge></div></div></div></button></div>
-      {draft.steps.map((step, index) => { const id = step.id || `step-${index}`; const position = stepPositions[index]!; return <div key={id} data-canvas-node data-flow-node-id={id} className="absolute" style={{ left: position.x, top: position.y, width: nodeWidth }} onPointerMove={moveNode} onPointerUp={endNodeDrag} onPointerCancel={endNodeDrag}><FlowNode step={step} index={index} selected={selection === step.id} onSelect={() => setSelection(step.id!)} onPointerDown={(event) => startNodeDrag(event, id)} onMove={(offset) => onMoveStep(index, offset)} onRemove={() => onRemoveStep(index)} disabled={!canEdit} /></div>; })}
-      <div data-canvas-node data-flow-node-id={endId} className="absolute touch-none" style={{ left: endPosition.x, top: endPosition.y }} onPointerDown={(event) => startNodeDrag(event, endId)} onPointerMove={moveNode} onPointerUp={endNodeDrag} onPointerCancel={endNodeDrag}><div className="cursor-grab rounded-full border bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-sm active:cursor-grabbing"><CheckCircle2 className="mr-1 inline size-4" />End of flow</div></div>
+      {connectorNodes.map(({ from, to, insertAt: position }) => <div key={`add-${position}`} data-canvas-node data-flow-insert-at={position} className={`absolute ${insertAt === position ? "z-40" : "z-20"}`} style={{ left: from.x + from.width / 2 - 14, top: (from.y + from.height + to.y) / 2 - 14 }}><button type="button" onClick={(event) => { event.stopPropagation(); setInsertAt(insertAt === position ? null : position); }} disabled={!canEdit} aria-label={`Add action at position ${position + 1}`} className="grid size-7 place-items-center rounded-full border bg-background text-muted-foreground shadow-sm transition hover:scale-110 hover:border-primary hover:text-primary disabled:opacity-50"><Plus className="size-4" /></button>{insertAt === position ? <div data-no-drag className="absolute left-1/2 top-9 z-30 grid w-72 -translate-x-1/2 grid-cols-2 gap-1 rounded-xl border bg-popover p-2 shadow-xl">{stepTypes.map((type) => { const Icon = stepMeta[type].icon; return <button key={type} type="button" onClick={() => onAddStep(type, position)} className="flex items-center gap-2 rounded-lg p-2 text-left hover:bg-muted"><Icon className="size-4 text-muted-foreground" /><span className="text-sm font-medium">{stepLabels[type]}</span></button>; })}</div> : null}</div>)}
+      <div data-canvas-node data-flow-node-id={triggerId} className="absolute" style={{ left: triggerPosition.x, top: triggerPosition.y, width: nodeWidth }}><button type="button" onClick={() => setSelection("trigger")} className={`w-full rounded-xl border bg-background p-3 text-left shadow-sm transition-shadow hover:shadow-md ${selection === "trigger" ? "border-primary ring-2 ring-primary/15" : ""}`}><div className="flex items-start gap-2.5"><span className="grid size-10 shrink-0 place-items-center rounded-full bg-foreground text-background"><Workflow className="size-5" strokeWidth={2} /></span><div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-2"><p className="text-body font-semibold leading-5 text-foreground">Trigger</p><Badge variant="outline" className="h-6 px-2.5 text-xs font-medium">Enrollment</Badge></div><p className="mt-0.5 text-sm leading-5 text-muted-foreground">{formatTrigger(draft.triggerType, draft.triggerConfig)}</p><div className="mt-2 flex flex-wrap gap-1.5"><Badge variant="secondary" className="min-h-6 gap-1.5 px-2 text-xs font-medium [&_svg]:size-3.5"><ListFilter />Profile filters</Badge><Badge variant="outline" className="h-auto min-h-6 max-w-full whitespace-normal px-2 text-left text-xs font-medium">One active run per conversation</Badge></div></div></div></button></div>
+      {draft.steps.map((step, index) => {
+        const id = step.id || `step-${index}`;
+        const dragging = dragPreview?.id === id;
+        const position = dragging ? dragPreview.position : stepPositions[index]!;
+        return <div key={id} data-canvas-node data-flow-node-id={id} className={`absolute ${dragging ? "z-30 opacity-85" : ""}`} style={{ left: position.x, top: position.y, width: nodeWidth }} onPointerMove={moveNode} onPointerUp={endNodeDrag} onPointerCancel={(event) => endNodeDrag(event, true)}>
+          <FlowNode step={step} index={index} selected={selection === step.id} onSelect={() => setSelection(step.id!)} onPointerDown={(event) => startNodeDrag(event, index)} onMove={(offset) => { setInsertAt(null); onMoveStep(index, offset); }} onRemove={() => { setInsertAt(null); onRemoveStep(index); }} disabled={!canEdit} last={index === draft.steps.length - 1} />
+        </div>;
+      })}
+      <div data-canvas-node data-flow-node-id={endId} className="absolute" style={{ left: endPosition.x, top: endPosition.y, width: endPosition.width }}><div className="rounded-full border bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-sm"><CheckCircle2 className="mr-1 inline size-4" />End of flow</div></div>
+      {indicator ? <div data-flow-drop-indicator className="pointer-events-none absolute z-40 flex items-center gap-2" style={{ left: CANVAS_START_X - 12, top: (indicator.from.y + indicator.from.height + indicator.to.y) / 2 - 12, width: nodeWidth + 24 }}><span className="h-0.5 flex-1 bg-primary" /><span className="rounded-full border border-primary bg-background px-3 py-1 text-xs font-semibold text-primary shadow-sm">{dragPreview ? `Move to step ${dragPreview.target + 1}` : `Insert as step ${(paletteDropIndex ?? 0) + 1}`}</span><span className="h-0.5 flex-1 bg-primary" /></div> : null}
     </div>
-    {dropActive ? <div className="pointer-events-none absolute inset-5 z-40 grid place-items-center rounded-2xl border-2 border-dashed border-primary/40 bg-primary/5"><span className="rounded-full bg-background px-4 py-2 text-xs font-semibold text-primary shadow-sm">Drop action anywhere on the canvas</span></div> : null}
-    <div data-canvas-controls className="absolute bottom-3 right-3 z-50 flex items-center gap-1 rounded-xl border bg-background/95 p-1 shadow-lg backdrop-blur md:bottom-5 md:right-5"><button type="button" onClick={() => changeZoom(zoom - 0.1)} aria-label="Zoom out" className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"><Minus className="size-4" /></button><span className="w-11 text-center text-xs font-semibold tabular-nums text-muted-foreground">{Math.round(zoom * 100)}%</span><button type="button" onClick={() => changeZoom(zoom + 0.1)} aria-label="Zoom in" className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"><Plus className="size-4" /></button><span className="mx-1 h-5 w-px bg-border" /><button type="button" onClick={fitView} aria-label="Fit flow to canvas" className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"><Maximize2 className="size-4" /></button></div>
-    <div className="pointer-events-none absolute bottom-4 left-4 hidden rounded-full border bg-background/90 px-3 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur lg:block">Drag or scroll to pan · Ctrl-scroll to zoom</div>
+    <div data-canvas-controls className="absolute bottom-3 right-3 z-50 flex items-center gap-1 rounded-xl border bg-background/95 p-1 shadow-lg backdrop-blur md:bottom-5 md:right-5"><button type="button" onClick={() => changeZoom(zoom - 0.1)} aria-label="Zoom out" className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"><Minus className="size-4" /></button><span translate="no" data-no-translate className="w-11 text-center text-xs font-semibold tabular-nums text-muted-foreground">{Math.round(zoom * 100)}%</span><button type="button" onClick={() => changeZoom(zoom + 0.1)} aria-label="Zoom in" className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"><Plus className="size-4" /></button><span className="mx-1 h-5 w-px bg-border" /><button type="button" onClick={fitView} aria-label="Fit flow to canvas" className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"><Maximize2 className="size-4" /></button></div>
+    <div className="pointer-events-none absolute bottom-4 left-4 hidden rounded-full border bg-background/90 px-3 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur lg:block">Drag actions to reorder · Scroll to pan · Ctrl-scroll to zoom</div>
   </main>;
 }
 
 export function FlowBuilder({ initialFlows, mailboxOptions, memberOptions, initialFlowId, canEdit, filterOptions }: { initialFlows: AutomationFlow[]; mailboxOptions: Option[]; memberOptions: Option[]; initialFlowId?: string; canEdit: boolean; filterOptions: FilterOptions }) {
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const [flows, setFlows] = useState(initialFlows);
   const [deletingFlow, setDeletingFlow] = useState<AutomationFlow | null>(null);
   const actionBusy = useRef(false);
@@ -414,7 +444,7 @@ export function FlowBuilder({ initialFlows, mailboxOptions, memberOptions, initi
 
   function openFlow(flow: AutomationFlow) { setDraft(toDraft(flow)); setSelection("trigger"); setView("builder"); setErrors({}); setNotice(""); }
   function updateStep(index: number, config: JsonConfig) { if (!draft) return; setDraft({ ...draft, steps: draft.steps.map((step, i) => i === index ? { ...step, config } : step) }); }
-  function moveStep(index: number, offset: number) { if (!draft) return; const target = index + offset; if (target < 0 || target >= draft.steps.length) return; const steps = [...draft.steps]; [steps[index], steps[target]] = [steps[target]!, steps[index]!]; setDraft({ ...draft, steps }); }
+  function moveStep(index: number, offset: number) { if (!draft) return; const target = index + offset; if (target < 0 || target >= draft.steps.length) return; setDraft({ ...draft, steps: reorderFlowSteps(draft.steps, index, target) }); }
   function addStep(type: FlowStepType, position = draft?.steps.length ?? 0) { if (!draft || !canEdit) return null; const step = blankStep(type); const steps = [...draft.steps]; steps.splice(position, 0, step); setDraft({ ...draft, steps }); setSelection(step.id!); setInsertAt(null); return step; }
   function removeStep(index: number) { if (!draft) return; const steps = draft.steps.filter((_, i) => i !== index); setDraft({ ...draft, steps }); setSelection(steps[Math.min(index, steps.length - 1)]?.id || "trigger"); }
 
@@ -497,18 +527,21 @@ export function FlowBuilder({ initialFlows, mailboxOptions, memberOptions, initi
       <Button variant={mobileBuilderPanel === "canvas" ? "secondary" : "ghost"} className="flex-1" aria-pressed={mobileBuilderPanel === "canvas"} onClick={() => setMobileBuilderPanel("canvas")}><Workflow />Canvas</Button>
       <Button variant={mobileBuilderPanel === "settings" ? "secondary" : "ghost"} className="flex-1" aria-pressed={mobileBuilderPanel === "settings"} onClick={() => setMobileBuilderPanel("settings")}><Settings2 />Configure / Insights</Button>
     </div>
+    <DndContext id="flow-action-palette" sensors={sensors} collisionDetection={pointerWithin} autoScroll={false}>
     <div data-mobile-panel={mobileBuilderPanel} className="crm-flow-workspace grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)_minmax(0,42%)] overflow-hidden lg:flex lg:flex-nowrap [&>main]:min-w-0 [&>main]:flex-1">
       <FlowActionPalette
         canEdit={canEdit}
         query={paletteQuery}
         onQueryChange={setPaletteQuery}
         actions={palette}
-        onAdd={addStep}
+        onAdd={(type) => addStep(type, insertAt ?? draft.steps.length)}
         onAudit={() => setAuditOpen(true)}
       />
       <FlowCanvas key={draft.id || "new-flow"} draft={draft} selection={selection} insertAt={insertAt} canEdit={canEdit} setSelection={(value) => { setSelection(value); setMobileBuilderPanel("settings"); }} setInsertAt={setInsertAt} onAddStep={addStep} onMoveStep={moveStep} onRemoveStep={removeStep} />
       <aside className="scroll-surface min-h-0 overflow-y-auto border-t bg-background lg:w-80 lg:shrink-0 lg:border-l lg:border-t-0 xl:w-[360px]"><Tabs value={inspectorTab} onValueChange={setInspectorTab} className="min-h-full gap-0"><TabsList variant="line" className="sticky top-0 z-10 h-12 w-full justify-start border-b bg-background px-4"><TabsTrigger value="configure"><Settings2 />Configure</TabsTrigger><TabsTrigger value="insights"><History />Insights</TabsTrigger></TabsList><TabsContent value="configure" className="p-4 sm:p-5">{selection === "trigger" ? <><TriggerInspector draft={draft} setDraft={setDraft} filterOptions={filterOptions} disabled={!canEdit} />{errors.triggerConfig ? <p className="mt-4 text-xs text-destructive">{errors.triggerConfig}</p> : null}</> : selectedStep ? <><StepInspector type={selectedStep.type} config={selectedStep.config} onChange={(config) => updateStep(selectedIndex, config)} mailboxes={mailboxes} members={memberOptions} disabled={!canEdit} />{errors[`step-${selectedIndex}`] ? <p className="mt-4 text-xs text-destructive">{errors[`step-${selectedIndex}`]}</p> : null}<div className="mt-6 flex gap-2 border-t pt-4"><Button variant="outline" size="sm" onClick={() => { if (!draft) return; const copy = { ...selectedStep, id: crypto.randomUUID(), config: { ...selectedStep.config } }; const steps = [...draft.steps]; steps.splice(selectedIndex + 1, 0, copy); setDraft({ ...draft, steps }); setSelection(copy.id!); }} disabled={!canEdit}><Copy />Duplicate</Button><Button variant="destructive" size="sm" onClick={() => removeStep(selectedIndex)} disabled={!canEdit}><Trash2 />Remove</Button></div></> : null}</TabsContent><TabsContent value="insights" className="p-4 sm:p-5"><FlowInsights key={draft.id} flowId={draft.id} /></TabsContent></Tabs>{notice ? <div className="sticky bottom-0 border-t bg-background px-5 py-3 text-xs text-muted-foreground" role="status">{notice}</div> : null}</aside>
     </div>
+    <FlowPaletteOverlay />
+    </DndContext>
     {emailTestOpen ? <FlowEmailTestDialog flow={draft} open={emailTestOpen} onOpenChange={setEmailTestOpen} /> : null}
     <Dialog open={previewOpen} onOpenChange={setPreviewOpen}><DialogContent className="sm:max-w-2xl"><DialogHeader><DialogTitle>Preview · {draft.name}</DialogTitle><DialogDescription>Review the customer journey before turning it on.</DialogDescription></DialogHeader><div className="max-h-[60vh] space-y-2 overflow-auto rounded-lg bg-muted/30 p-4"><PreviewRow icon={Workflow} title="Trigger" detail={formatTrigger(draft.triggerType, draft.triggerConfig)} />{draft.steps.map((step, index) => <PreviewRow key={step.id || index} icon={stepMeta[step.type].icon} title={`${index + 1}. ${stepLabels[step.type]}`} detail={stepSummary(step.type, step.config)} />)}</div><DialogFooter showCloseButton><Button onClick={() => { setPreviewOpen(false); void persist("live"); }} disabled={!canEdit}><Play />Turn on flow</Button></DialogFooter></DialogContent></Dialog>
     <Dialog open={auditOpen} onOpenChange={setAuditOpen}><DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle className="flex items-center gap-2"><AiIcon className="size-4 text-violet-600" />Flow audit</DialogTitle><DialogDescription>Checks configuration, safety, and customer experience.</DialogDescription></DialogHeader><div className="space-y-2"><AuditRow ok={Boolean(draft.name.trim())} label="Flow has a clear name" /><AuditRow ok={draft.steps.length > 0} label={`${draft.steps.length} action${draft.steps.length === 1 ? "" : "s"} configured`} /><AuditRow ok={draft.steps.some((step) => step.type === "wait")} label="Includes pacing between messages" /><AuditRow ok={!draft.steps.some((step) => step.type === "send_email") || draft.steps.filter((step) => step.type === "send_email").every((step) => step.config.stopOnReply !== false)} label="Email steps stop when a customer replies" /><AuditRow ok={Boolean(audit?.success)} label={audit?.success ? "All required settings are complete" : "Some required settings need attention"} /></div>{notice ? <p role="status" className="text-xs text-muted-foreground">{notice}</p> : null}<DialogFooter showCloseButton><Button onClick={() => { setAuditOpen(false); if (!audit?.success) setNotice("Review the highlighted step settings."); }}><Check />Review complete</Button></DialogFooter></DialogContent></Dialog>

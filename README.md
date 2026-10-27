@@ -26,7 +26,7 @@ Apply `supabase/migrations/20261026101057_flow_ai_auto_reply.sql` for the new tr
 
 Apply `supabase/migrations/20261022040419_automation_atomic_save.sql` before using the updated flow API. Configure `NEXT_PUBLIC_APP_URL` to the public CRM origin for signed open/click links. Open tracking depends on the recipient loading images; mail privacy proxies and link scanners can affect engagement signals.
 
-The worker imports mailbox messages before scanning inbound/no-reply triggers and resuming due runs. `vercel.json` invokes `/api/cron/flows` every minute; configure a strong `CRON_SECRET` in the deployment environment. Vercel's per-minute cron requires Pro or Enterprise. On Hobby, use an external scheduler with `Authorization: Bearer <CRON_SECRET>` or a suitable hosting plan. A local `next dev` process does not run Vercel cron automatically. Keep `DRY_RUN=true` while testing; live sending also requires a verified contact and configured SMTP mailbox.
+The worker imports mailbox messages before scanning inbound/no-reply triggers and resuming due runs. `vercel.json` uses the Hobby-compatible daily schedule for `/api/cron/flows`; configure a strong `CRON_SECRET` in the deployment environment. Daily polling cannot deliver five-minute flow timing. For minute-based waits, configure an external scheduler to call this endpoint every minute with `Authorization: Bearer <CRON_SECRET>`, or use Vercel Pro/Enterprise and change the cron expression to `* * * * *`. Setting a per-minute Vercel cron on Hobby causes deployment rejection. A local `next dev` process does not run Vercel cron automatically. Keep `DRY_RUN=true` while testing; live sending also requires a verified contact and configured SMTP mailbox.
 
 `Audit flow` validates and simulates the current draft without sending messages. Real run events and errors appear under Insights. To verify the database runtime and HTTP endpoints with disposable records and forced dry-run email delivery, run:
 
@@ -152,6 +152,15 @@ and IMAP without sending mail; `scripts/verify-flows.ts` runs the existing dry-r
 automation integration checks and cleans up its disposable records.
 
 ## Current scope
+
+Member deletion redistributes customer assignments among active BD Sales Managers
+with automatic assignment enabled, prioritizing managers with fewer customers.
+Linked Meta/Shopify leads and follow-up tasks transfer with the customer; if no
+eligible manager remains, customers stay unassigned. Apply
+`supabase/migrations/20261027010510_redistribute_removed_member_customers.sql`
+before deploying the updated settings action. Removal, reassignment, automation
+cleanup, and audit history commit together. Run
+`tests/member-removal-database.sql` for rollback-only database integration checks.
 
 Implemented:
 

@@ -192,6 +192,7 @@ const zhCN: Record<string, string> = {
 const translated = (input: string) => translateUiText(input, "zh-CN");
 // Only match known UI sentence shapes; customer names, content and IDs stay intact.
 const patterns: Array<[RegExp, (...parts: string[]) => string]> = [
+  [/^Member deleted and workspace access removed\.(?: (\d+) customer assignments? redistributed to remaining BD Sales Managers\.)?(?: (\d+) customer assignments? remains? unassigned because no active BD Sales Manager has automatic assignment enabled\.)?$/, (reassigned, unassigned) => `${translated("Member deleted and workspace access removed.")}${reassigned ? ` 已将 ${reassigned} 项客户分配重新分配给其他商务拓展经理。` : ""}${unassigned ? ` 由于没有已启用自动分配的在职商务拓展经理，${unassigned} 项客户分配保留为未分配状态。` : ""}`],
     [/^(.+) · Filazoo$/, (page) => `${translated(page)} · Filazoo`],
     [/^Estimated value and deal count in (.+)$/, (currency) => `预计金额与商机数量，币种：${currency}`],
     [/^(\d+) leads$/, (count) => `${count} 条线索`],
@@ -276,6 +277,10 @@ export function translateUiText(value: string, language: AppLanguage): string {
   const activeCount = text.match(/^(\d+) active$/);
   if (activeCount) return `${leading}${activeCount[1]} 个运行中${trailing}`;
   const stepLabel = text.match(/^Step (\d+)$/);
+  const flowDropPosition = text.match(/^(Insert as|Move to) step (\d+)$/);
+  if (flowDropPosition) return `${leading}${flowDropPosition[1] === "Insert as" ? "插入为" : "移动至"}步骤 ${flowDropPosition[2]}${trailing}`;
+  const reorderedStep = text.match(/^(.+), step (\d+)\. Drag to reorder\.$/);
+  if (reorderedStep) return `${leading}${zhCN[reorderedStep[1]] ?? reorderedStep[1]}，步骤 ${reorderedStep[2]}。拖动可调整顺序。${trailing}`;
   if (stepLabel) return `${leading}步骤 ${stepLabel[1]}${trailing}`;
   const addPosition = text.match(/^Add action at position (\d+)$/);
   if (addPosition) return `${leading}在位置 ${addPosition[1]} 添加操作${trailing}`;
