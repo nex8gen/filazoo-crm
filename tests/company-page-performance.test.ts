@@ -31,7 +31,7 @@ function profileFixture(options: { denied?: boolean; demo?: boolean; missing?: b
     for (const method of ["select", "eq", "order", "maybeSingle"]) query[method] = (...args: unknown[]) => { calls.push([table, method, ...args]); return query; };
     query.then = async (resolve: (value: unknown) => void) => {
       if (table === "workspace_members") await avatarsStarted;
-      const data = table === "companies" ? options.missing ? null : { ...baseRow, pipeline: options.owner === false ? [] : baseRow.pipeline }
+      const data = table === "companies" ? options.missing ? null : { ...baseRow, pipeline: options.owner === false ? [] : baseRow.pipeline, contacts: [contact, { ...contact, id: "contact-2", email: "second@acme.test" }], customer_billing_profiles: [{ profile: { currency: "EUR", address: "Billing address" } }] }
         : table === "contacts" ? [contact, { ...contact, id: "contact-2", email: "second@acme.test" }]
         : table === "customer_billing_profiles" ? { profile: { currency: "EUR", address: "Billing address" } }
         : table === "workspace_members" ? { display_name: "Alice" } : null;
@@ -45,7 +45,7 @@ function profileFixture(options: { denied?: boolean; demo?: boolean; missing?: b
     "../supabase/admin.ts": { createSupabaseAdmin: () => client },
     "../crm-model.ts": model,
     "../order-estimate.ts": { metaOrderLabel: () => "" },
-    "./member-avatars.ts": { resolveMemberAvatars: async (_client: unknown, ids: string[]) => { avatarIds.push([...ids]); releaseOwners(); return new Map([["owner-1", "/owner.png"]]); } },
+    "./cached-member-avatars.ts": { resolveMemberAvatars: async (ids: string[]) => { avatarIds.push([...ids]); releaseOwners(); return new Map([["owner-1", "/owner.png"]]); } },
   });
   return { api, reads, calls, avatarIds };
 }
@@ -53,7 +53,7 @@ function profileFixture(options: { denied?: boolean; demo?: boolean; missing?: b
 test("profile loads only profile tables, retains primary contact and billing fields, and resolves only its owner's avatar", { timeout: 5000 }, async () => {
   const fixture = profileFixture();
   const result = await fixture.api.getCompanyProfile(id) as { details: { company: Record<string, unknown>; contacts: unknown[]; commerce: { currency: string }; activity: unknown[] } };
-  assert.deepEqual(fixture.reads.sort(), ["companies", "contacts", "customer_billing_profiles", "workspace_members"].sort());
+  assert.deepEqual(fixture.reads.sort(), ["companies", "workspace_members"].sort());
   assert.equal(result.details.company.contact, "Primary");
   assert.equal(result.details.company.email, contact.email);
   assert.equal(result.details.company.ownerName, "Alice");
@@ -63,8 +63,8 @@ test("profile loads only profile tables, retains primary contact and billing fie
   assert.equal(result.details.activity.length, 0);
   assert.deepEqual(fixture.avatarIds, [["owner-1"]]);
   assert.ok(fixture.calls.some(call => call[0] === "companies" && call[1] === "eq" && call[2] === "id" && call[3] === id));
-  assert.ok(fixture.calls.some(call => call[0] === "contacts" && call[1] === "order" && call[2] === "created_at"));
-  assert.ok(!fixture.calls.some(call => call[1] === "select" && /contacts\(|emails\(/.test(String(call[2]))));
+  assert.ok(fixture.calls.some(call => call[0] === "companies" && call[1] === "order" && call[2] === "created_at" && (call[3] as { referencedTable: string }).referencedTable === "contacts"));
+  assert.ok(!fixture.calls.some(call => call[1] === "select" && /emails\(/.test(String(call[2]))));
 });
 
 test("profile rejects unauthenticated reads and avoids data reads in demo or for malformed IDs", async () => {
@@ -86,7 +86,7 @@ test("missing profiles stay missing, unassigned profiles need no owner query, an
   const result = await unassigned.api.getCompanyProfile(id) as { details: { company: { ownerName: string } } };
   assert.equal(result.details.company.ownerName, "Unassigned");
   assert.ok(!unassigned.reads.includes("workspace_members"));
-  for (const failure of ["companies", "contacts", "customer_billing_profiles"]) await assert.rejects(profileFixture({ failure }).api.getCompanyProfile(id), /offline/);
+  for (const failure of ["companies"]) await assert.rejects(profileFixture({ failure }).api.getCompanyProfile(id), /offline/);
 });
 
 const sectionNames = { analyse: "CompanyAnalysis", invoices: "CompanyInvoices", "customer-portal": "CompanyCustomerPortal", email: "CompanyEmails", "purchase-orders": "CompanyPurchaseOrders", history: "CompanyTimeline" };

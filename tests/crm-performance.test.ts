@@ -42,7 +42,7 @@ function load(options: { demo?: boolean; denied?: boolean; failure?: boolean; ro
     "../supabase/admin.ts": { createSupabaseAdmin: () => client },
     "../crm-model.ts": model,
     "../order-estimate.ts": { metaOrderLabel: () => "" },
-    "./member-avatars.ts": { resolveMemberAvatars: async () => { avatarStarted = true; releaseOwners(); return new Map([["owner-1", "/avatar.png"]]); } },
+    "./cached-member-avatars.ts": { resolveMemberAvatars: async () => { avatarStarted = true; releaseOwners(); return new Map([["owner-1", "/avatar.png"]]); } },
   };
   const exports: Record<string, (...args: unknown[]) => Promise<{ company: Row | null; companies: Row[]; mode: string }>> = {};
   const code = ts.transpileModule(readFileSync(new URL("../lib/data/crm.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;

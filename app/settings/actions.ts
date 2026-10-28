@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { z } from "zod";
 import { buildInvitationConfirmationUrl, buildInvitationEmail } from "@/lib/auth-invitation";
 import { requireWorkspaceMember } from "@/lib/auth";
@@ -209,6 +209,7 @@ export async function deleteMember(_state: SettingsActionState, formData: FormDa
   const { data, error } = await admin.rpc("remove_workspace_member", { p_user_id: parsed.data.userId, p_actor_id: viewer.id });
   if (error) return { error: "Member deletion could not be confirmed. Please refresh and try again." };
 
+  updateTag(`member-avatar:${parsed.data.userId}`);
   revalidatePath("/", "layout");
   const reassigned = Number(data?.reassigned ?? 0);
   const unassigned = Number(data?.unassigned ?? 0);

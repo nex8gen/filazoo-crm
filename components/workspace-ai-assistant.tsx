@@ -5,12 +5,15 @@ import { useLanguage } from "@/components/language-provider";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { motion } from "motion/react";
-import { ArrowUp, ArrowUpRight, ChevronDown, Copy, MessageCircle, PanelRightClose, Plus, RotateCcw, ShieldCheck, Zap } from "lucide-react";
+import { ArrowUp, ChartNoAxesCombined, ChevronDown, Copy, FileText, Lightbulb, ListChecks, Map as MapIcon, PanelRightClose, PenLine, Plus, RotateCcw, Search, Sparkles, TriangleAlert, Users } from "lucide-react";
 import { AiIcon } from "@/components/ai-icon";
+import { AgentIcon } from "@/components/agent-icon";
 import { ColumnResizeHandle } from "@/components/column-resize-handle";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { StreamingText, ThinkingState } from "@/components/ui/ai-agent-response";
-import AgentAvatar from "@/components/ui/components-primitives-avatar";
+import { AiMascotInput } from "@/components/ui/ai-mascot-input";
+import OrbitingCirclesGlobe from "@/components/ui/orbiting-circles-02";
 import { AgentActionCard } from "@/components/agent-action-card";
 import type { AgentActionResult, AgentProposal } from "@/lib/ai/agent-actions";
 import { actionWorkProgress, pageWorkArea, requestedWorkProgress, type AgentWorkProgress } from "@/lib/ai/agent-progress";
@@ -18,7 +21,6 @@ import { AgentWorkIcon } from "@/components/agent-work-icon";
 import { AgentApprovalMenu } from "@/components/agent-approval-menu";
 import { CustomerResearchSources, WebSearchOption, type ResearchResult } from "@/components/ui/customer-research";
 import { AiImageFeedback, AiImagePicker, AiImagePreviews, useAiImageAttachments } from "@/components/ui/ai-image-attachments";
-import OrbitingCirclesGlobe from "@/components/ui/orbiting-circles-02";
 import { chatImageLimitError, type ChatImage } from "@/lib/ai/image-input";
 import { assistantRecordScope, readAssistantPageContext } from "@/lib/ai/page-context";
 
@@ -41,11 +43,19 @@ const pageNames: Array<[RegExp, string]> = [
   [/^\/$/, "Analytics"],
 ];
 
-const chatStarters: Array<[string, string]> = [
-    ["Analyze customer", "Analyze this customer: their company, what they do, how big they are, likely filament needs and sales opportunities. Separate facts from estimates."],
-    ["Summarize this page", "Summarize the most important information on this page."],
-    ["Find risks", "What risks, gaps, or items needing attention can you identify on this page?"],
-    ["Recommend next steps", "Based on what is visible here, what should I focus on next?"],
+const chatStarters = [
+  { label: "Analyze customer", icon: Users, tone: "text-blue-600 dark:text-blue-400", prompt: "Analyze the customer shown on this page: their business, likely filament needs, and sales opportunities. Separate verified facts from estimates. If no customer is selected, ask which customer to analyze." },
+  { label: "Summarize page", icon: FileText, tone: "text-pink-600 dark:text-pink-400", prompt: "Summarize this page in a few concise bullets. Highlight key facts, outstanding items, and anything that needs attention." },
+  { label: "Make a plan", icon: MapIcon, tone: "text-primary", prompt: "Based on this page, suggest a short action plan with priorities and clear next steps. Explain what information is missing before any action can be taken." },
+  { label: "Find risks", icon: TriangleAlert, tone: "text-orange-600 dark:text-orange-400", prompt: "Review this page for risks, missing information, and inconsistencies. Rank the most important issues and suggest practical ways to address them." },
+  { label: "Help me write", icon: PenLine, tone: "text-amber-600 dark:text-amber-400", prompt: "Help me draft a concise, professional customer message using the context on this page. If the recipient or purpose is unclear, ask me to clarify first. Show the draft for review." },
+];
+
+const moreChatStarters = [
+  { label: "Recommend next steps", icon: ListChecks, prompt: "Based on this page, what are the three most useful next steps? Explain why each matters and flag any missing information." },
+  { label: "Compare options", icon: ChartNoAxesCombined, prompt: "Compare the relevant options shown on this page. Summarize their tradeoffs and recommend a choice based only on the available facts." },
+  { label: "Find opportunities", icon: Lightbulb, prompt: "Identify the strongest customer or sales opportunities supported by this page. Explain the evidence and suggest a useful follow-up for each." },
+  { label: "Explain this page", icon: Search, prompt: "Explain the information on this page in plain language, including key terms and what I should pay attention to." },
 ];
 
 function visiblePageText() {
@@ -253,21 +263,32 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
         <div className="flex items-center gap-2 border-b bg-background/95 p-3">
           <div className="grid min-w-0 flex-1 grid-cols-2 rounded-2xl bg-muted/70 p-1" role="tablist" aria-label="AI mode">
             {(["chat", "agent"] as const).map((value) => <button key={value} type="button" role="tab" aria-selected={mode === value} disabled={busy} onClick={() => { setMode(value); setAnimation(null); setError(null); setQuestion(""); attachments.clear(); }} className={`flex min-h-12 min-w-0 items-center gap-2.5 rounded-xl px-3 text-left transition-all disabled:opacity-50 ${mode === value ? "bg-background text-foreground shadow-[0_1px_5px_rgba(15,23,42,.08)] ring-1 ring-border/60" : "text-muted-foreground hover:text-foreground"}`}>
-              <span className={`grid size-8 shrink-0 place-items-center rounded-lg ${mode === value ? "bg-muted" : ""}`}>{value === "chat" ? <MessageCircle className="size-[18px]" /> : <AgentAvatar size="sm" color="violet" shape="squircle" className="!size-6" />}</span><span className="min-w-0"><span className="block text-xs font-semibold">{value === "chat" ? "Chat" : "Agent"}</span><span className="block truncate text-[10px] font-normal text-muted-foreground">{value === "chat" ? "Ask & analyze" : "Plan & act"}</span></span>
+              <span className={`grid size-8 shrink-0 place-items-center rounded-lg ${mode === value ? "bg-muted" : ""}`}>{value === "chat" ? <AiIcon className="size-5" /> : <AgentIcon className="size-7" />}</span><span className="min-w-0"><span className="block text-xs font-semibold">{value === "chat" ? "Chat" : "Agent"}</span><span className="block truncate text-[10px] font-normal text-muted-foreground">{value === "chat" ? "Ask & analyze" : "Plan & act"}</span></span>
             </button>)}
           </div>
           <Button type="button" variant="ghost" size="icon-sm" className="shrink-0" onClick={() => onOpenChange(false)} aria-label="Close AI workspace"><PanelRightClose /></Button>
         </div>
 
         <div ref={log} role="log" aria-live="polite" aria-busy={busy} className="relative min-h-0 flex-1 overflow-y-auto px-5 py-6">
-          {!messages.length ? <div className={`relative flex min-h-full flex-col items-center justify-center overflow-hidden rounded-3xl before:pointer-events-none before:absolute before:inset-x-8 before:top-[18%] before:h-56 before:rounded-full before:bg-violet-500/[0.045] before:blur-3xl dark:before:bg-violet-400/[0.055] ${mode === "agent" ? "py-4" : "py-8"}`}>
+          {!messages.length ? mode === "agent" ? <div className="flex min-h-full flex-col items-center justify-center py-4 text-center">
+            <div className="w-full max-w-sm"><OrbitingCirclesGlobe active={open} /></div>
+            <h2 className="mt-5 text-lg font-semibold tracking-tight text-balance">What should I take care of?</h2>
+            <p className="mt-2 max-w-xs text-sm leading-6 text-pretty text-muted-foreground">Create invoices, draft emails, and update customers.</p>
+          </div> : <div className="relative flex min-h-full flex-col items-center justify-center overflow-hidden rounded-3xl py-8 before:pointer-events-none before:absolute before:inset-x-8 before:top-[18%] before:h-56 before:rounded-full before:bg-primary/5 before:blur-3xl">
             <div className="mx-auto flex w-full max-w-sm flex-col items-center text-center">
-              {mode === "agent" ? <div className="relative z-10 mb-3 flex w-full justify-center"><OrbitingCirclesGlobe active={open} /></div> : <motion.div animate={{ y: [0, -5, 0] }} transition={{ duration: 3, ease: "easeInOut", repeat: Infinity }} className="relative z-10 mb-5 flex items-center justify-center"><AiIcon className="size-12" /></motion.div>}
-              <h2 className="relative z-10 text-lg font-semibold tracking-tight text-balance">{mode === "chat" ? "What would you like to know?" : "What should I take care of?"}</h2>
-              <p className={`relative z-10 max-w-xs text-pretty text-muted-foreground ${mode === "agent" ? "mt-1.5 text-xs leading-5" : "mt-2 text-sm leading-6"}`}>{mode === "chat" ? `Ask about ${pageLabel}, find patterns, or get a concise recommendation.` : "Invoices, emails, and customer updates."}</p>
-              {mode === "agent" ? <p className="relative z-10 mt-2 inline-flex items-center gap-1.5 text-[10px] leading-4 text-muted-foreground">{approvalMode === "ask" ? <ShieldCheck aria-hidden="true" className="size-3 shrink-0" /> : <Zap aria-hidden="true" className="size-3 shrink-0 text-amber-500" />}<span>{approvalMode === "ask" ? "You review every action" : "Requested actions run automatically."}</span></p> : null}
+              <motion.div animate={{ y: [0, -5, 0] }} transition={{ duration: 3, ease: "easeInOut", repeat: Infinity }} className="relative z-10 mb-5 flex items-center justify-center"><AiIcon className="size-12" /></motion.div>
+              <h2 className="relative z-10 text-lg font-semibold tracking-tight text-balance">What would you like to know?</h2>
+              <p className="relative z-10 mt-2 max-w-xs text-pretty text-sm leading-6 text-muted-foreground">{`Ask about ${pageLabel}, find patterns, or get a concise recommendation.`}</p>
             </div>
-            {mode === "chat" ? <div role="group" aria-label="Suggested questions" className="relative z-10 mx-auto mt-7 grid w-full max-w-sm gap-2">{chatStarters.map(([label, prompt]) => <button key={label} type="button" disabled={busy} onClick={() => void send(t(prompt))} className="group flex min-h-12 items-center justify-between rounded-2xl border bg-background/90 px-4 text-left text-sm shadow-[0_1px_3px_rgba(15,23,42,.03)] transition hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md focus-visible:outline-2 focus-visible:outline-ring"><span>{label}</span><ArrowUpRight aria-hidden="true" className="size-3.5 text-muted-foreground opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100" /></button>)}</div> : null}
+            <div role="group" aria-label="Suggested questions" className="relative z-10 mx-auto mt-6 flex w-full max-w-sm flex-wrap justify-center gap-2">
+              {chatStarters.map(({ label, prompt, icon: Icon, tone }) => <button key={label} type="button" disabled={busy} onClick={() => void send(t(prompt))} className="inline-flex min-h-8 items-center gap-1.5 rounded-lg bg-muted/80 px-2.5 py-1.5 text-[11px] font-medium leading-4 transition-colors hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50"><Icon aria-hidden="true" className={`size-3.5 shrink-0 ${tone}`} /><span>{label}</span></button>)}
+              <DropdownMenu>
+                <DropdownMenuTrigger disabled={busy} className="inline-flex min-h-8 items-center gap-1.5 rounded-lg bg-muted/80 px-2.5 py-1.5 text-[11px] font-medium leading-4 hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50" aria-label="More suggested questions"><Sparkles aria-hidden="true" className="size-3.5 text-primary" /><span>More</span></DropdownMenuTrigger>
+                <DropdownMenuContent side="bottom" align="end" positionerClassName="z-[70]" className="w-56">
+                  {moreChatStarters.map(({ label, prompt, icon: Icon }) => <DropdownMenuItem key={label} disabled={busy} onClick={() => void send(t(prompt))}><Icon aria-hidden="true" className="size-4 text-primary" />{label}</DropdownMenuItem>)}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
             {mode === "chat" ? <motion.button type="button" aria-label="Focus the AI message box" onClick={() => input.current?.focus()} animate={{ y: [0, 5, 0], opacity: [0.45, 1, 0.45] }} transition={{ duration: 1.8, ease: "easeInOut", repeat: Infinity }} className="mt-7 grid size-8 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"><ChevronDown className="size-5" /></motion.button> : null}
           </div> : <div className="space-y-5">{messages.map((message) => <div key={message.id} className={message.role === "user" ? "ml-auto max-w-[88%] rounded-2xl rounded-br-md bg-muted px-4 py-3" : "group max-w-full"}>
             {message.role === "user" ? <><AiImagePreviews images={message.images} /><p data-no-translate className="whitespace-pre-wrap text-sm leading-6">{message.content}</p></> : <>
@@ -289,19 +310,17 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
           {mode === "agent" && (pending || applying) && activeWork ? <div role="status" aria-live="polite" className="mb-3 rounded-xl border border-violet-500/15 bg-violet-500/[0.04] px-3 py-2"><ThinkingState key={applying || "preparing"} working scope={t(workPage)} activity={activeWork} /></div> : null}
           <div className="mb-2.5 flex min-h-7 min-w-0 items-center justify-between gap-3 px-1">
             <div id={`${composerId}-context`} className="flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
-              {mode === "agent" ? <AgentAvatar size="sm" color="violet" shape="squircle" className="!size-4 shrink-0" /> : <MessageCircle aria-hidden="true" className="size-3.5 shrink-0" />}
-              <span className="shrink-0 font-medium">{mode === "agent" ? "Agent" : "Chat"}</span>
-              <span aria-hidden="true" className="h-3 w-px shrink-0 bg-border" />
               <AgentWorkIcon area={pageWorkArea(pageLabel)} className="size-3.5 shrink-0" />
-              <span className="truncate">{pageLabel}</span>
+              <span className="truncate font-medium">{pageLabel}</span>
             </div>
             {messages.length ? <Button type="button" variant="ghost" size="xs" className="shrink-0 text-muted-foreground" disabled={busy} onClick={newChat}><Plus />New chat</Button> : null}
           </div>
-          <form onSubmit={(event) => { event.preventDefault(); void send(); }} className="min-w-0 rounded-2xl border border-border/80 bg-card p-3 shadow-[0_2px_8px_rgba(15,23,42,.03)] transition-[border-color,box-shadow] focus-within:border-ring/60 focus-within:ring-2 focus-within:ring-ring/10 motion-reduce:transition-none">
-            <label htmlFor={composerId} className="sr-only">{mode === "chat" ? "Message Filazoo AI" : "Instructions for Filazoo agent"}</label>
+          {mode === "agent" ? <AiMascotInput key={`${chatKey}:${open}`} id={composerId} value={question} onChange={setQuestion} onSend={() => void send()} onCancel={() => { abort.current?.abort(); setAnimation(null); }} inputRef={input} attachments={attachments} webSearch={webSearch} onWebSearchChange={setWebSearch} busy={busy} canStop={!applying && (pending || Boolean(animation))} active={open} language={language} label="Instructions for Filazoo agent" placeholder="Tell the agent what to do…">
+            <AgentApprovalMenu value={approvalMode} onChange={setApprovalMode} disabled={busy} iconOnly />
+          </AiMascotInput> : <form onSubmit={(event) => { event.preventDefault(); void send(); }} className="min-w-0 rounded-2xl border border-border/80 bg-card p-3 shadow-[0_2px_8px_rgba(15,23,42,.03)] transition-[border-color,box-shadow] focus-within:border-ring/60 focus-within:ring-2 focus-within:ring-ring/10 motion-reduce:transition-none">
+            <label htmlFor={composerId} className="sr-only">Message Filazoo AI</label>
             <AiImagePreviews images={attachments.images} onRemove={attachments.remove} disabled={busy || attachments.processing} /><AiImageFeedback attachments={attachments} />
-            <textarea ref={input} id={composerId} aria-describedby={`${composerId}-context ${composerId}-hint`} value={question} onPaste={busy ? undefined : attachments.onPaste} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); } }} placeholder={mode === "chat" ? `Ask about ${pageLabel}…` : `Tell the agent what to do…`} disabled={busy} rows={2} maxLength={6_000} className="block max-h-40 min-h-20 w-full resize-none overflow-y-auto bg-transparent px-1 pt-1 pb-3 text-base leading-6 outline-none [field-sizing:content] placeholder:text-muted-foreground/80 disabled:opacity-60 sm:text-sm" />
-            {mode === "agent" ? <div className="mb-2 border-t border-border/50 pt-2"><AgentApprovalMenu value={approvalMode} onChange={setApprovalMode} disabled={busy} /></div> : null}
+            <textarea ref={input} id={composerId} aria-describedby={`${composerId}-context ${composerId}-hint`} value={question} onPaste={busy ? undefined : attachments.onPaste} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); } }} placeholder={`Ask about ${pageLabel}…`} disabled={busy} rows={2} maxLength={6_000} className="block max-h-40 min-h-20 w-full resize-none overflow-y-auto bg-transparent px-1 pt-1 pb-3 text-base leading-6 outline-none [field-sizing:content] placeholder:text-muted-foreground/80 disabled:opacity-60 sm:text-sm" />
             <div className="flex min-w-0 items-end justify-between gap-2">
               <div className="flex min-w-0 flex-wrap items-center gap-1 [&>button]:min-h-9 [&>button]:rounded-lg [&>button]:px-2 [&>button:not([aria-pressed=true])]:border-transparent [&>button:not([aria-pressed=true])]:bg-transparent [&>button:not([aria-pressed=true]):hover]:bg-muted [&>button]:focus-visible:outline-2 [&>button]:focus-visible:outline-offset-2 [&>button]:focus-visible:outline-ring">
                 <AiImagePicker attachments={attachments} disabled={busy} />
@@ -309,7 +328,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
               </div>
               <Button type="submit" size="icon" className="size-9 shrink-0 rounded-xl bg-foreground text-background shadow-none hover:bg-foreground/85 disabled:bg-muted disabled:text-muted-foreground disabled:opacity-60" disabled={busy || attachments.processing || (!question.trim() && !attachments.images.length)} aria-label="Send to Filazoo AI" title="Send message (Enter)"><ArrowUp aria-hidden="true" className="size-4" /></Button>
             </div>
-          </form>
+          </form>}
           <p id={`${composerId}-hint`} className="mt-2 text-center text-[10px] leading-4 text-muted-foreground">Enter to send · Shift + Enter for a new line</p>
           <p className="mt-1 text-center text-[10px] leading-4 text-muted-foreground">AI can make mistakes. Review suggestions before using them.</p>
         </div>

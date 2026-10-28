@@ -18,10 +18,9 @@ export function renderCompanyCatalogPdf(catalog: Catalog, products: Product[], i
     return product;
   });
   return buildCatalogPdf(selected, {
-    title: `Company catalog v${catalog.version} (${catalog.currency})`,
+    title: `Product catalog v${catalog.version}`,
     customer: catalog.company,
     date: catalog.priceDate.slice(0, 10),
-    note: "Prices retain their original product currency; no currency conversion applied.",
     images,
   });
 }

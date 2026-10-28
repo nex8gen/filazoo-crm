@@ -9,7 +9,9 @@ import type { DateRange } from "react-day-picker";
 import { CalendarDays, Check, ChevronDown, CircleDollarSign, Filter, RotateCcw, SlidersHorizontal, X } from "lucide-react";
 import type { AnalyticsChannel } from "@/lib/analytics-dashboard";
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
+import dynamic from "next/dynamic";
+
+const Calendar = dynamic(() => import("@/components/ui/calendar").then(module => module.Calendar));
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 

@@ -313,8 +313,31 @@ export function buildInboxEmailItems({
   });
 }
 
-export async function getEmailInboxBackendData({ syncMailbox = true, history = false, mailboxId, context }: { syncMailbox?: boolean; history?: boolean; mailboxId?: string; context?: { viewer: WorkspaceViewer; mailboxes: WorkspaceMailboxRecord[] } } = {}): Promise<EmailInboxBackendData> {
+async function readWorkspaceInboxSources(viewer: WorkspaceViewer) {
   const { listEmailDrafts, listReplies } = await import("./data/crm.ts");
+  const [drafts, replies, shopify, assigned] = await Promise.all([
+    listEmailDrafts(viewer), listReplies(viewer),
+    listShopifyFormInboxMessages().catch(() => []), getAssignedEmailContacts(viewer),
+  ]);
+  return { drafts, replies, shopify, assigned };
+}
+
+type EmailInboxReadContext = {
+  viewer: WorkspaceViewer; mailboxes: WorkspaceMailboxRecord[];
+  states?: ReturnType<typeof listEmailInboxStates>;
+  workspace?: ReturnType<typeof readWorkspaceInboxSources>;
+};
+
+/** One request's authorized snapshots; never retained between users or requests. */
+export function createEmailInboxReadContext(viewer: WorkspaceViewer, mailboxes: WorkspaceMailboxRecord[]): EmailInboxReadContext {
+  return {
+    viewer, mailboxes,
+    states: listEmailInboxStates(viewer.id).catch(() => new Map()),
+    workspace: !mailboxes.length || mailboxes.some(mailbox => mailbox.type === "workspace") ? readWorkspaceInboxSources(viewer) : undefined,
+  };
+}
+
+export async function getEmailInboxBackendData({ syncMailbox = true, history = false, mailboxId, context }: { syncMailbox?: boolean; history?: boolean; mailboxId?: string; context?: EmailInboxReadContext } = {}): Promise<EmailInboxBackendData> {
   const viewer = context?.viewer ?? await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   const mailboxes = context?.mailboxes ?? await getViewerMailboxes(viewer.id);
   const defaultSender = defaultViewerMailbox(mailboxes);
@@ -332,15 +355,16 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
       return { messages: [], error: message, syncedAt: null };
     }
   };
-  const [{ emails, mode }, { replies }, states, shopifyMessages, assignedContacts, sentMessages, mailboxResult] = await Promise.all([
-    personal ? Promise.resolve({ emails: [], mode: "live" as const }) : listEmailDrafts(viewer),
-    personal ? Promise.resolve({ replies: [] }) : listReplies(viewer),
-    listEmailInboxStates(viewer.id).catch(() => new Map()),
-    personal ? Promise.resolve([]) : listShopifyFormInboxMessages().catch(() => []),
-    personal ? Promise.resolve(null) : getAssignedEmailContacts(viewer),
+  const [workspace, states, sentMessages, mailboxResult] = await Promise.all([
+    personal ? Promise.resolve(null) : context?.workspace ?? readWorkspaceInboxSources(viewer),
+    context?.states ?? listEmailInboxStates(viewer.id).catch(() => new Map()),
     defaultMailbox ? listSentMailboxMessages(viewer.id, defaultMailbox.id).catch(() => []) : Promise.resolve([]),
     loadInbound(),
   ]);
+  const { emails, mode } = workspace?.drafts ?? { emails: [], mode: "live" as const };
+  const { replies } = workspace?.replies ?? { replies: [] };
+  const shopifyMessages = workspace?.shopify ?? [];
+  const assignedContacts = workspace?.assigned ?? null;
   const { messages: liveInbound, error: inboxError, syncedAt: lastMailboxSync } = mailboxResult;
   const visibleInbox = [...buildInboxEmailItems({ drafts: emails, replies, inbound: [...shopifyMessages, ...liveInbound] }), ...sentMessages]
     .filter((item) => canViewEmail(viewer, item.contact, assignedContacts, defaultMailbox));

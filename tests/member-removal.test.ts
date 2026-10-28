@@ -8,7 +8,7 @@ const member = "b0000000-2222-4222-8222-222222222222";
 const state = {
   role: "admin", error: null as { message: string } | null,
   result: { reassigned: 5, unassigned: 0 },
-  calls: [] as Array<{ name: string; args: unknown }>, paths: [] as string[],
+  calls: [] as Array<{ name: string; args: unknown }>, paths: [] as string[], tags: [] as string[],
 };
 const key = "__memberRemovalTest";
 Object.assign(globalThis, { [key]: state });
@@ -18,7 +18,7 @@ const hooks = registerHooks({
     let source: string | undefined;
     if (specifier === "@/lib/auth") source = `${runtime} export async function requireWorkspaceMember(roles) { if (!roles.includes(state.role)) throw new Error('Access denied'); return {id: '${actor}', role: state.role}; }`;
     if (specifier === "@/lib/supabase/admin") source = `${runtime} export function createSupabaseAdmin() { return { async rpc(name, args) { state.calls.push({name, args}); return { data: state.result, error: state.error }; } }; }`;
-    if (specifier === "next/cache") source = `${runtime} export function revalidatePath(path) { state.paths.push(path); }`;
+    if (specifier === "next/cache") source = `${runtime} export function revalidatePath(path) { state.paths.push(path); } export function updateTag(tag) { state.tags.push(tag); }`;
     if (specifier === "@/lib/auth-invitation") source = "export function buildInvitationConfirmationUrl() {} export function buildInvitationEmail() {}";
     if (specifier === "@/lib/data/mailboxes") source = "export function getDefaultWorkspaceMailbox() {} export function mailboxHasSmtp() {}";
     if (specifier === "@/lib/data/members") source = "export function listAllAuthUsers() {}";
@@ -31,7 +31,7 @@ const hooks = registerHooks({
 const { deleteMember } = await import("../app/settings/actions.ts");
 test.after(() => { hooks.deregister(); Reflect.deleteProperty(globalThis, key); });
 test.beforeEach(() => {
-  state.role = "admin"; state.error = null; state.result = { reassigned: 5, unassigned: 0 }; state.calls = []; state.paths = [];
+  state.role = "admin"; state.error = null; state.result = { reassigned: 5, unassigned: 0 }; state.calls = []; state.paths = []; state.tags = [];
 });
 function form(id = member) { const data = new FormData(); data.set("userId", id); return data; }
 
@@ -40,6 +40,7 @@ test("member deletion uses one atomic removal and refreshes customer ownership t
   assert.match(result?.success ?? "", /5 customer assignments redistributed/);
   assert.deepEqual(state.calls, [{ name: "remove_workspace_member", args: { p_user_id: member, p_actor_id: actor } }]);
   assert.deepEqual(state.paths, ["/"]);
+  assert.deepEqual(state.tags, [`member-avatar:${member}`]);
 });
 
 test("a failed removal never reports success or refreshes the page", async () => {
@@ -48,6 +49,7 @@ test("a failed removal never reports success or refreshes the page", async () =>
   assert.ok(result?.error);
   assert.equal(result?.success, undefined);
   assert.deepEqual(state.paths, []);
+  assert.deepEqual(state.tags, []);
 });
 
 test("removing the last eligible manager explains why customers are unassigned", async () => {

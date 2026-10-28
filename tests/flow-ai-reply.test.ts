@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { blankStep, flowInputSchema, defaultFlowInput } from "../lib/flows.ts";
 import { calculateWaitUntil, simulateFlow, triggerMatches, type FlowFacts } from "../lib/flow-engine.ts";
-import { flowReplyInstruction, resolveFlowReply, shouldAttachFlowCatalog } from "../lib/ai/flow-reply.ts";
+import { flowReplyInstruction, resolveFlowReply, shouldAttachFlowCatalog, resolveFlowCatalog, flowReplyContainsChinese } from "../lib/ai/flow-reply.ts";
 import type { InvoiceProduct } from "../lib/invoice-links.ts";
 
 const facts: FlowFacts = { customerReplied: true, openedEmail: false, clickedLink: false, category: null, segment: "Reseller", country: "US", companyStatus: "new", pipelineStage: "new", fitScore: 5 };
@@ -55,13 +55,55 @@ test("literal money and unresolved placeholders are rejected", () => {
   assert.equal(resolveFlowReply(output("Which material and quantity do you need?"), [], false).body, "Which material and quantity do you need?");
 });
 
-test("catalog is attached only to the first actual automated message by default", () => {
+test("catalog is attached on the first email or a later customer need, never every follow-up", () => {
   const config = blankStep("ai_auto_reply").config;
   assert.equal(shouldAttachFlowCatalog(config, 0), true);
   assert.equal(shouldAttachFlowCatalog(config, 1), false);
-  assert.equal(shouldAttachFlowCatalog({ ...config, catalogFirstMessageOnly: false }, 2), true);
+  assert.equal(shouldAttachFlowCatalog({ ...config, catalogFirstMessageOnly: false }, 2), false);
+  assert.equal(shouldAttachFlowCatalog(config, 2, true), true);
+  assert.equal(shouldAttachFlowCatalog({ ...config, catalogFirstMessageOnly: false }, 0), false);
+  assert.equal(shouldAttachFlowCatalog({ ...config, catalogFirstMessageOnly: false }, 2, true), true);
+  assert.equal(shouldAttachFlowCatalog({ ...config, attachCatalog: false }, 2, true), false);
   assert.equal(shouldAttachFlowCatalog({ ...config, attachCatalog: false }, 0), false);
   assert.match(flowReplyInstruction(config, false), /No catalog is attached/);
   assert.match(flowReplyInstruction(config, true), /will attach the current product catalog/);
   assert.match(flowReplyInstruction(config, false), /If there is no email/);
+});
+
+test("legacy language settings and new flow defaults always produce English instructions", () => {
+  assert.equal(blankStep("ai_auto_reply").config.language, "en");
+  for (const language of ["en", "auto", "zh-CN"]) {
+    const config = { ...blankStep("ai_auto_reply").config, language };
+    const parsed = flowInputSchema.parse({ ...defaultFlowInput, steps: [{ type: "ai_auto_reply", config }] });
+    assert.equal(parsed.steps[0].config.language, "en");
+    assert.match(flowReplyInstruction(config, false), /Write in English/);
+    assert.doesNotMatch(flowReplyInstruction(config, false), /Write in Simplified Chinese|Reply in the language/);
+  }
+});
+
+test("specific catalog selections never fall back to the full range", () => {
+  const config = blankStep("ai_auto_reply").config;
+  const skus = ["PLA-BASIC", "PLA-SILK", "PETG", "ABS"];
+  const plan = (intent: string, scope: string, productSkus: string[] = []) => JSON.stringify({ intent, scope, productSkus });
+  for (const intent of ["none", "requested", "recommended"]) {
+    assert.deepEqual(resolveFlowCatalog(plan(intent, "selected", ["PLA-BASIC", "PLA-SILK"]), config, 0, skus), skus.slice(0, 2));
+  }
+  for (const intent of ["requested", "recommended"]) {
+    assert.deepEqual(resolveFlowCatalog(plan(intent, "selected", ["PLA-BASIC"]), config, 3, skus), ["PLA-BASIC"]);
+    assert.deepEqual(resolveFlowCatalog(plan(intent, "all"), config, 3, skus), skus);
+    assert.throws(() => resolveFlowCatalog(plan(intent, "selected", []), config, 3, skus), /unavailable/);
+    assert.throws(() => resolveFlowCatalog(plan(intent, "selected", ["UNKNOWN"]), config, 3, skus), /unavailable/);
+    assert.throws(() => resolveFlowCatalog(plan(intent, "all", ["PLA-BASIC"]), config, 3, skus), /conflicting/);
+  }
+  assert.deepEqual(resolveFlowCatalog(plan("none", "all"), config, 3, skus), []);
+  assert.deepEqual(resolveFlowCatalog(plan("declined", "all"), config, 0, skus), []);
+  assert.deepEqual(resolveFlowCatalog(plan("requested", "unavailable"), config, 0, skus), []);
+  assert.deepEqual(resolveFlowCatalog(plan("requested", "all"), { ...config, attachCatalog: false }, 0, skus), []);
+});
+
+test("Chinese prose is detected while supplied proper names are preserved", () => {
+  assert.equal(flowReplyContainsChinese({ subject: "Hello", body: "Please confirm the quantity." }, []), false);
+  assert.equal(flowReplyContainsChinese({ subject: "Hello", body: "您好，请确认数量。" }, []), true);
+  assert.equal(flowReplyContainsChinese({ subject: "产品目录", body: "Hello" }, []), true);
+  assert.equal(flowReplyContainsChinese({ subject: "Hello", body: "Hi 李明, here is the PLA catalog." }, ["李明"]), false);
 });

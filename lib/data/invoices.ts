@@ -15,7 +15,7 @@ import {
   withInvoiceProductImages,
   type InvoiceProductRow,
 } from "../invoice-links";
-import { resolveMemberAvatars } from "./member-avatars";
+import { resolveMemberAvatars } from "./cached-member-avatars";
 import { customerPortalUrl } from "../customer-portal-links";
 
 export async function listInvoices(
@@ -54,7 +54,7 @@ export async function listInvoices(
     const { data: members, error: membersError } = await admin.from("workspace_members").select("user_id,display_name").in("user_id", creatorIds);
     if (membersError) throw membersError;
     for (const member of members ?? []) creators.set(member.user_id, { name: member.display_name || undefined });
-    const avatars = await resolveMemberAvatars(admin, creatorIds);
+    const avatars = await resolveMemberAvatars(creatorIds);
     for (const [id, avatarUrl] of avatars) creators.set(id, { ...creators.get(id), avatarUrl });
   }
   return {

@@ -14,27 +14,7 @@ type Alert = { id: string; message: string; channel: string; conversation_id: st
 export type FlowActivityData = { tasks: Task[]; alerts: Alert[] };
 const activityTime = (value: string) => new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(value));
 
-export function FlowActivityBell() {
-  const [count, setCount] = useState(0);
-  useEffect(() => {
-    const controller = new AbortController();
-    const refresh = async () => {
-      if (document.visibilityState === "hidden") return;
-      try {
-        const response = await fetch("/api/flows/activity?summary=1", { signal: controller.signal });
-        if (!response.ok) return;
-        const result = await response.json();
-        if (!controller.signal.aborted && result.ok) setCount(result.openTasks + result.unreadAlerts);
-      } catch { /* The activity page displays retrieval errors. */ }
-    };
-    void refresh();
-    const interval = setInterval(() => void refresh(), 60_000);
-    window.addEventListener("focus", refresh);
-    window.addEventListener("flow-activity-updated", refresh);
-    return () => { controller.abort(); clearInterval(interval); window.removeEventListener("focus", refresh); window.removeEventListener("flow-activity-updated", refresh); };
-  }, []);
-  return <Link href="/tasks" aria-label={`Tasks and notifications${count ? ` (${count} pending)` : ""}`} className="relative inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"><Bell className="size-4" />{count > 0 ? <span className="absolute -right-1 -top-1 rounded-full bg-primary px-1 text-[10px] text-primary-foreground">{count > 99 ? "99+" : count}</span> : null}</Link>;
-}
+export { FlowActivityBell } from "./flow-activity-bell";
 
 export function FlowActivity({ initial }: { initial: FlowActivityData }) {
   const [activity, setActivity] = useState(initial);

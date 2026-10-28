@@ -26,6 +26,9 @@ globalThis.fetch = async (input, init) => {
     const request = JSON.parse(String(init?.body));
     const context = JSON.parse(request.contents[0].parts[0].text);
     assert.equal(context.conversation.at(-1).body, "Please tell me about black PLA for our print farm.");
+    if (context.task === "select_catalog_products") {
+      return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify({ intent: "none", scope: "all", productSkus: [] }) }] } }] });
+    }
     assert.equal(context.catalogAttached, expectedCatalog);
     assert.equal(context.products.length > 0, expectedProducts);
     if (expectedProducts) assert.ok(context.products[0].pricing);

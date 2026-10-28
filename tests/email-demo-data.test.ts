@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isSampleEmailSubject } from "../lib/data/crm.ts";
+import { isSampleEmailSubject } from "../lib/email-samples.ts";
 import { buildInboxEmailItems, filterCustomerReplyMessages } from "../lib/email-inbox.ts";
 
 test("an empty mailbox does not inject sample emails", () => {

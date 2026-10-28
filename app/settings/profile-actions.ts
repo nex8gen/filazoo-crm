@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { requireWorkspaceMember } from "@/lib/auth";
 import { isAvatarPreset, isWebp, ownAvatarPath, PROFILE_AVATAR_BUCKET, PROFILE_AVATAR_MAX_BYTES } from "@/lib/profile-avatar";
 import { createClient } from "@/lib/supabase/server";
@@ -45,6 +45,7 @@ export async function saveProfileAvatar(formData: FormData): Promise<{ error?: s
   // Cleanup is best effort: a failure here must not turn a committed save into
   // an error. Profile readers use getUser, so token rotation is unnecessary.
   if (previousPath && previousPath !== path) await admin.storage.from(PROFILE_AVATAR_BUCKET).remove([previousPath]).catch(() => {});
+  updateTag(`member-avatar:${viewer.id}`);
   revalidatePath("/", "layout");
   return { success: "Profile photo updated." };
 }

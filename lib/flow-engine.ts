@@ -160,7 +160,7 @@ export function simulateFlow(flow: FlowInput, facts: FlowFacts, from = new Date(
     if (step.type === "change_category") currentFacts.category = String(step.config.category);
     if (step.type === "ai_auto_reply") {
       if (step.config.sendWindow === "business_hours") cursor = nextBusinessWindow(cursor) ?? cursor;
-      trace.push({ step: index + 1, type: step.type, status: "would_run", scheduledAt: cursor.toISOString(), detail: `Would read the latest email and draft a personalized reply${step.config.useProducts ? " using active CRM products" : ""}${step.config.usePrices ? " and verified prices" : ""}${step.config.attachCatalog ? "; attach a catalog PDF" + (step.config.catalogFirstMessageOnly ? " to the first automated message only" : "") : ""}. No AI request or email is sent in simulation.` });
+      trace.push({ step: index + 1, type: step.type, status: "would_run", scheduledAt: cursor.toISOString(), detail: `Would read the latest email and draft a personalized English reply${step.config.useProducts ? " using active CRM products" : ""}${step.config.usePrices ? " and verified prices" : ""}${step.config.attachCatalog ? "; attach a matching-product catalog PDF when requested or clearly needed" + (step.config.catalogFirstMessageOnly !== false ? ", also on the first automated email" : "") : ""}. No AI request or email is sent in simulation.` });
       index += 1;
       continue;
     }

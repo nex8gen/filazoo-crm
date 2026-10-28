@@ -11,6 +11,7 @@ const state = {
   uploads: [] as string[],
   removed: [] as string[],
   revalidated: [] as unknown[],
+  tags: [] as string[],
   failSave: false,
   throwSave: false,
   failCleanup: false,
@@ -26,8 +27,8 @@ const storage = {
 };
 const client = { auth: {
   getUser: async () => ({ data: { user: state.authenticated ? state.user : null }, error: null }),
-  // Stale claims must never be used to resolve the current avatar.
-  getClaims: async () => { throw new Error("stale claims accessed"); },
+  // Identity claims are verified, but stale token metadata cannot supply photos.
+  getClaims: async () => ({ data: { claims: state.authenticated ? { sub: userId, session_id: "d0d0d0d0-1111-2222-3333-444444444444", aud: "authenticated", role: "authenticated", iss: "https://test.supabase.co/auth/v1", user_metadata: { avatar_preset: "male" } } : null }, error: null }),
   refreshSession: async () => { throw new Error("unnecessary token rotation"); },
   updateUser: async (attributes: unknown) => {
     if (state.throwSave) throw new Error("network failed");
@@ -36,7 +37,9 @@ const client = { auth: {
     return { error: null };
   },
 } };
-const admin = { storage: {
+const admin = {
+  rpc: () => ({ maybeSingle: async () => ({ data: state.authenticated ? { ...state.user, role: "admin", activated_at: "2026-01-01", display_name: "Member" } : null, error: null }) }),
+  storage: {
   from: () => storage,
   getBucket: async () => ({ data: state.bucketMissing ? null : {}, error: state.bucketMissing ? { statusCode: "404" } : null }),
   createBucket: async () => { state.bucketsCreated++; return { error: null }; },
@@ -50,7 +53,7 @@ const mocks: Record<string, string> = {
   "@/lib/auth": `${runtime} export async function requireWorkspaceMember() { return state.viewer; } export async function getWorkspaceViewer() { return state.authenticated ? state.viewer : null; }`,
   "@/lib/supabase/server": `${runtime} export async function createClient() { return client; }`,
   "@/lib/supabase/admin": `${runtime} export function createSupabaseAdmin() { return admin; }`,
-  "next/cache": `${runtime} export function revalidatePath(...args) { state.revalidated.push(args); }`,
+  "next/cache": `${runtime} export function revalidatePath(...args) { state.revalidated.push(args); } export function updateTag(tag) { state.tags.push(tag); }`,
   "next/server": "export async function connection() {}",
 };
 const hooks = registerHooks({
@@ -59,7 +62,7 @@ const hooks = registerHooks({
     if (context.parentURL?.endsWith("/lib/auth.ts")) {
       if (specifier === "./supabase/server.ts") source = mocks["@/lib/supabase/server"];
       if (specifier === "./supabase/admin.ts") source = mocks["@/lib/supabase/admin"];
-      if (specifier === "./env.ts") source = "export const hasSupabaseAuthConfig = () => true; export const hasSupabaseConfig = () => true;";
+      if (specifier === "./env.ts") source = "export const env = { NEXT_PUBLIC_SUPABASE_URL: 'https://test.supabase.co' }; export const hasSupabaseAuthConfig = () => true; export const hasSupabaseConfig = () => true;";
     }
     if (source) return { url: `data:text/javascript,${encodeURIComponent(source)}`, shortCircuit: true };
     if (specifier === "@/lib/profile-avatar") return { url: new URL("../lib/profile-avatar.ts", import.meta.url).href, shortCircuit: true };
@@ -75,6 +78,7 @@ test.beforeEach(() => {
   state.uploads = [];
   state.removed = [];
   state.revalidated = [];
+  state.tags = [];
   state.failSave = state.throwSave = state.failCleanup = state.failUpload = state.bucketMissing = false;
   state.bucketsCreated = 0;
   state.authenticated = true;
@@ -96,6 +100,7 @@ test("preset selection removes the photo and refreshes every avatar surface", as
   assert.deepEqual(state.saved, { data: { avatar_path: null, avatar_preset: "glasses" } });
   assert.deepEqual(state.removed, [oldPath]);
   assert.deepEqual(state.revalidated, [["/", "layout"]]);
+  assert.deepEqual(state.tags, [`member-avatar:${userId}`]);
 });
 test("photo replacement stores a unique version before deleting the old image", async () => {
   assert.ok((await saveProfileAvatar(form(true))).success);

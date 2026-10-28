@@ -10,7 +10,7 @@ import { navigation, type NavigationItem } from "@/lib/navigation";
 import { BrandMark } from "@/components/brand-mark";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { FlowActivityBell } from "@/components/flow-activity";
+import { FlowActivityBell } from "@/components/flow-activity-bell";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 

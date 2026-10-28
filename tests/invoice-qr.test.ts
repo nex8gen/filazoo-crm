@@ -50,7 +50,7 @@ test("creating, saving, listing and reopening a draft all return its QR immediat
     "../supabase/admin": { createSupabaseAdmin: () => ({ from: () => query, rpc: async (name: string, args: { p_input?: { action: string } }) => ({ data: name === "invoice_receivables" ? [] : args.p_input?.action === "delete" ? null : structuredClone(draft), error: null }) }) },
     "../invoices": invoices, "../customer-portal-links": links,
     "./invoice-connections": { validateInvoiceConnections: async () => {} },
-    "../invoice-links": {}, "./member-avatars": {}, "../profile-avatar": {},
+    "../invoice-links": {}, "./cached-member-avatars": {}, "../profile-avatar": {},
   });
   const expected = links.customerPortalUrl(draft);
   assert.equal((await data.createInvoice(draft.document, "staff")).customer_portal_url, expected);

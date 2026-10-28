@@ -2,10 +2,10 @@ import "server-only";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 import { crmProduct, type CrmProductRow } from "../product-utils.ts";
 import { invoiceProduct } from "../invoice-links.ts";
-import { buildCatalogPdf } from "../catalog-pdf.ts";
+import { buildServerCatalogPdf } from "../catalog-pdf-server.ts";
 import { generateGeminiText } from "../ai/gemini.ts";
 import { generateGatewayText, isGeminiRegionError } from "../ai/gateway.ts";
-import { flowReplyInstruction, resolveFlowReply, shouldAttachFlowCatalog } from "../ai/flow-reply.ts";
+import { flowReplyInstruction, resolveFlowReply, flowCatalogInstruction, resolveFlowCatalog, flowReplyContainsChinese } from "../ai/flow-reply.ts";
 import { applyEmailSignature, DEFAULT_EMAIL_COMPANY, DEFAULT_EMAIL_TITLE } from "../ai/email-rewrite.ts";
 import type { JsonConfig } from "../flows.ts";
 
@@ -30,7 +30,7 @@ export async function loadFlowReplyProducts(config: JsonConfig): Promise<CrmProd
 export async function prepareFlowTemplateCatalog() {
   const products = await loadFlowReplyProducts({ attachCatalog: true });
   if (!products.length) throw new Error("Add active products before sending a catalog.");
-  const content = Buffer.from(buildCatalogPdf(products.map(crmProduct), { title: "Filazoo product catalog" }));
+  const content = Buffer.from(await buildServerCatalogPdf(products.map(crmProduct), { title: "Product catalog" }));
   if (content.length > 7_500_000) throw new Error("The generated catalog exceeds the 7.5 MB attachment limit.");
   return [{ filename: "Filazoo-product-catalog.pdf", contentType: "application/pdf", content }];
 }
@@ -64,14 +64,35 @@ export async function generateFlowAiReply({ config, contact, company, managerNam
   managerName: string | null; messages: FlowReplyMessage[]; productRows: CrmProductRow[]; previousAutomatedMessages: number;
 }) {
   if (!hasFlowReplyProvider()) throw new Error("AI auto-reply is not configured. Add an AI provider in the server settings.");
-  const attachCatalog = shouldAttachFlowCatalog(config, previousAutomatedMessages);
-  if (attachCatalog && !productRows.length) throw new Error("Add active products before attaching an AI reply catalog.");
   const priceProducts = productRows.map((row) => invoiceProduct({ ...row, tags: row.tags ?? [] }));
   const catalogProducts = productRows.map(crmProduct);
-  const history = [...messages].reverse().map((message) => ({ ...message, body: (message.body || "").slice(0, 6000) }));
+  const orderedMessages = [...messages].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+  const history = [...orderedMessages].reverse().map((message) => ({ ...message, body: (message.body || "").slice(0, 6000) }));
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  const token = process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
+  const generate = async (systemInstruction: string, prompt: string) => {
+    const options = { systemInstruction, prompt, maxOutputTokens: 8192 };
+    const gateway = () => generateGatewayText({ ...options, token: token!, model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim() });
+    try {
+      return apiKey ? await generateGeminiText({ ...options, apiKey, model: process.env.GEMINI_EMAIL_MODEL?.trim() }) : await gateway();
+    } catch (error) {
+      if (!apiKey || !token || !isGeminiRegionError(error)) throw error;
+      return gateway();
+    }
+  };
+  // Resolve the attachment before drafting so the email describes exactly what will be sent.
+  const selectedSkus = config.attachCatalog === true ? resolveFlowCatalog(await generate(flowCatalogInstruction, JSON.stringify({
+    task: "select_catalog_products", conversation: history,
+    firstAutomatedMessage: previousAutomatedMessages === 0 && config.catalogFirstMessageOnly !== false,
+    products: catalogProducts.map((product) => ({ sku: product.sku, name: product.name, material: product.material,
+      color: product.color, diameter: product.diameter, weight: product.weight })),
+  })), config, previousAutomatedMessages, catalogProducts.map((product) => product.sku)) : [];
+  const selectedProducts = catalogProducts.filter((product) => selectedSkus.includes(product.sku));
+  const attachCatalog = selectedProducts.length > 0;
   const prompt = JSON.stringify({
     recipient: contact, company,
     conversation: history, managerGuidance: config.instructions || "", catalogAttached: attachCatalog,
+    attachedCatalogProducts: selectedProducts.map((product) => ({ sku: product.sku, name: product.name, material: product.material })),
     products: config.useProducts ? catalogProducts.map((product, index) => ({
       sku: product.sku, name: product.name, material: product.material, diameter: product.diameter,
       weight: product.weight, stockStatus: product.stockStatus, leadTime: product.leadTime, moq: product.moq,
@@ -79,23 +100,17 @@ export async function generateFlowAiReply({ config, contact, company, managerNam
       ...(config.usePrices ? { pricing: priceProducts[index] } : {}),
     })) : [],
   });
-  const options = { systemInstruction: flowReplyInstruction(config, attachCatalog), prompt, maxOutputTokens: 8192 };
-  const apiKey = process.env.GEMINI_API_KEY?.trim();
-  const token = process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
-  const gateway = () => generateGatewayText({ ...options, token: token!, model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim() });
-  let output: string;
-  try {
-    output = apiKey ? await generateGeminiText({ ...options, apiKey, model: process.env.GEMINI_EMAIL_MODEL?.trim() }) : await gateway();
-  } catch (error) {
-    if (!apiKey || !token || !isGeminiRegionError(error)) throw error;
-    output = await gateway();
+  const instruction = flowReplyInstruction(config, attachCatalog);
+  let plan = resolveFlowReply(await generate(instruction, prompt), priceProducts, config.usePrices === true);
+  const properNames = [contact.name || "", company.name, ...catalogProducts.flatMap((product) => [product.name, product.sku])];
+  if (flowReplyContainsChinese(plan, properNames)) {
+    plan = resolveFlowReply(await generate(`${instruction} Your previous draft contained Chinese prose. Regenerate the entire subject and body in English.`, prompt), priceProducts, config.usePrices === true);
+    if (flowReplyContainsChinese(plan, properNames)) throw new Error("AI returned a non-English reply. No reply was sent.");
   }
-  const plan = resolveFlowReply(output, priceProducts, config.usePrices === true);
-  const latestInbound = messages.find((message) => message.direction === "received");
-  const language = config.language === "zh-CN" || (config.language === "auto" && /[\u3400-\u9fff]/.test(plan.body)) ? "zh-CN" : "en";
-  const body = applyEmailSignature(plan.body, { name: managerName || "Filazoo Sales Team", title: DEFAULT_EMAIL_TITLE, company: DEFAULT_EMAIL_COMPANY }, language);
-  const attachments = attachCatalog ? [{ filename: "Filazoo-product-catalog.pdf", contentType: "application/pdf", content: Buffer.from(buildCatalogPdf(catalogProducts, { title: "Filazoo product catalog", customer: company.name })) }] : [];
+  const latestInbound = orderedMessages.find((message) => message.direction === "received");
+  const body = applyEmailSignature(plan.body, { name: managerName || "Filazoo Sales Team", title: DEFAULT_EMAIL_TITLE, company: DEFAULT_EMAIL_COMPANY }, "en");
+  const attachments = attachCatalog ? [{ filename: "Filazoo-product-catalog.pdf", contentType: "application/pdf", content: Buffer.from(await buildServerCatalogPdf(selectedProducts, { title: "Product catalog", customer: company.name })) }] : [];
   if (attachments.some((attachment) => attachment.content.length > 7_500_000)) throw new Error("The generated catalog exceeds the 7.5 MB attachment limit.");
-  const replySubject = config.replyInThread !== false && latestInbound?.subject ? `Re: ${latestInbound.subject.replace(/^re:\s*/i, "")}`.replace(/[\r\n]/g, " ").slice(0, 300) : plan.subject;
+  const replySubject = config.replyInThread !== false && latestInbound?.subject && !/\p{Script=Han}/u.test(latestInbound.subject) ? `Re: ${latestInbound.subject.replace(/^re:\s*/i, "")}`.replace(/[\r\n]/g, " ").slice(0, 300) : plan.subject;
   return { ...plan, subject: replySubject, body, attachments, inReplyTo: config.replyInThread !== false ? latestInbound?.message_id : null, threadId: config.replyInThread !== false ? latestInbound?.thread_id : null };
 }

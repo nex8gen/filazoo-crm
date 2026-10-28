@@ -63,6 +63,7 @@ function workerFixture() {
   let failSmtp = false;
   let onProvider: (() => void) | undefined;
   const savedInvoices: invoices.Invoice[] = [];
+  const renderedCatalogs: Row[] = [];
   function from(table: string) {
     const filters: Array<(entry: Row) => boolean> = [];
     let patch: Row | undefined, insertion: Row | undefined, single = false;
@@ -112,7 +113,8 @@ function workerFixture() {
     "../invoice-links": invoiceLinks, "../ai/email-reply": reply,
     "../ai/gemini": { generateGeminiText: async () => { calls.provider++; onProvider?.(); return JSON.stringify(plan); } },
     "../ai/gateway": {}, "../ai/email-rewrite": { applyEmailSignature: (body: string) => body, DEFAULT_EMAIL_COMPANY: "Filazoo", DEFAULT_EMAIL_TITLE: "Manager" },
-    "../product-utils": { crmProduct: (product: unknown) => product }, "../catalog-pdf": { buildCatalogPdf: () => Buffer.from("%PDF-synthetic-catalog") }, "./catalog-pdfs": {},
+    "../product-utils": { crmProduct: (product: unknown) => product }, "../catalog-pdf-server": { buildServerCatalogPdf: async () => Buffer.from("%PDF-synthetic-catalog") },
+    "./catalog-pdfs": { ensureCompanyCatalogPdf: async (catalog: Row) => { renderedCatalogs.push(catalog); return Buffer.from("%PDF-current-template"); } },
     "./invoice-connections": { invoiceBootstrap: async () => ({ document, billing: null }) },
     "../invoices": invoices, "../invoice-permissions": permissions, "../company-commerce": commerce,
     "./invoices": { getInvoice: async () => null,
@@ -130,7 +132,7 @@ function workerFixture() {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText, { exports, require: (name: string) => { assert.ok(name in dependencies, name); return dependencies[name]; },
     Buffer, process: { env: { GEMINI_API_KEY: "synthetic" } }, console });
-  return { row, calls, tables, document, savedInvoices, first, next, run: () => exports.processEmailAutoReply!("automation"),
+  return { row, calls, tables, document, savedInvoices, renderedCatalogs, first, next, run: () => exports.processEmailAutoReply!("automation"),
     setPlan: (value: Partial<autoReply.AutoReplyPlan>) => { plan = { ...plan, ...value }; },
     setFresh: (messages: InboxEmailItem[]) => { fresh = messages; }, setFailSmtp: () => { failSmtp = true; },
     onProvider: (fn: () => void) => { onProvider = fn; } };
@@ -187,6 +189,22 @@ test("unknown catalog selections stop delivery instead of attaching another prod
   await fixture.run();
   assert.equal(fixture.calls.smtp, 0);
   assert.equal(fixture.row.status, "needs_review");
+});
+
+test("a fresh catalog request preserves the saved selection but generates a new template version", async () => {
+  const fixture = workerFixture();
+  fixture.tables.contacts = [{ id: "contact", email: fixture.next.contact, company_id: "company" }];
+  fixture.tables.companies = [{ id: "company", name: "Buyer" }];
+  fixture.tables.catalogs = [{ id: "old-catalog", company_id: "company", product_skus: ["PLA"], version: 1,
+    currency: "USD", pdf_url: "/old-template.pdf", price_date: "2026-10-20" }];
+  fixture.setPlan({ attachCatalog: true, catalogSkus: [], body: "Your current catalog is attached." });
+  await fixture.run();
+  assert.equal(fixture.calls.smtp, 1, String(fixture.row.last_error));
+  assert.equal(fixture.renderedCatalogs.length, 1);
+  assert.notEqual(fixture.renderedCatalogs[0].id, "old-catalog");
+  assert.equal(fixture.renderedCatalogs[0].version, 2);
+  assert.equal(JSON.stringify(fixture.renderedCatalogs[0].productSkus), JSON.stringify(["PLA"]));
+  assert.equal(fixture.tables.catalogs[0].pdf_url, "/old-template.pdf");
 });
 
 test("approved shipping creates and sends an invoice containing the exact approved cost", async () => {

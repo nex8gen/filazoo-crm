@@ -9,11 +9,10 @@ const catalog = { id: "catalog-1", company: "Acme / Works", version: 2, currency
 test("company PDF uses the exact saved selection, version, customer and price date", () => {
   const pdf = new TextDecoder().decode(renderCompanyCatalogPdf(catalog, b2bProducts));
   assert.match(pdf, /Acme \/ Works/);
-  assert.match(pdf, /Company catalog v2/);
-  assert.match(pdf, /EUR/);
-  assert.match(pdf, /2026-10-26  \|  1 products/);
+  assert.match(pdf, /Product catalog v2/);
+  assert.match(pdf, /2026-10-26/);
   assert.ok(pdf.includes(b2bProducts[0].name));
-  assert.match(pdf, /no currency conversion applied/);
+  assert.doesNotMatch(pdf, /no currency conversion applied|Default photos|Tier [123]/);
   assert.equal(companyCatalogPdfFilename(catalog), "filazoo-Acme-Works-catalog-v2.pdf");
   assert.equal(companyCatalogPdfUrl("a/b", true), "/api/catalogs/a%2Fb/pdf?download=1");
 });

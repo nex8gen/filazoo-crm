@@ -137,7 +137,7 @@ export function NewEmailDraftButton({ contacts, canWrite, label = "New sequence"
   );
 }
 
-export function NewCatalogButton({ companies, products, canWrite, label = "New catalog" }: { companies: Company[]; products: Product[]; canWrite: boolean; label?: string }) {
+export function NewCatalogButton({ companies, products, canWrite, label = "New catalog" }: { companies: Pick<Company, "id" | "name">[]; products: Product[]; canWrite: boolean; label?: string }) {
   const dialog = useActionDialog(createCatalog);
   const enabled = canWrite && companies.length > 0;
   return (

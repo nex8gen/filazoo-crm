@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
-    "verify": "npm run lint && npm run test && npm run build"
+    "perf:bundles": "node scripts/audit-client-bundles.mjs",
+    "verify": "npm run lint && npm run test && npm run build && npm run perf:bundles"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

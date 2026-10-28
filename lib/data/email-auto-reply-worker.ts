@@ -11,7 +11,7 @@ import { generateGeminiText } from "../ai/gemini";
 import { generateGatewayText, isGeminiRegionError } from "../ai/gateway";
 import { applyEmailSignature, DEFAULT_EMAIL_COMPANY, DEFAULT_EMAIL_TITLE } from "../ai/email-rewrite";
 import { crmProduct } from "../product-utils";
-import { buildCatalogPdf } from "../catalog-pdf";
+import { buildServerCatalogPdf } from "../catalog-pdf-server";
 import { ensureCompanyCatalogPdf } from "./catalog-pdfs";
 import { invoiceBootstrap } from "./invoice-connections";
 import { invoiceDocumentSchema, invoiceLabel, type InvoiceDocument } from "../invoices";
@@ -104,14 +104,11 @@ async function catalogAttachment(row: AutoReplyRow, plan: AutoReplyPlan, context
   const db = createSupabaseAdmin();
   const { data: saved } = profile.company ? await db.from("catalogs").select("*").eq("company_id", profile.company.id)
     .order("version", { ascending: false }).limit(1).maybeSingle().throwOnError() : { data: null };
-  // Keep customer-specific selections when the model didn't request a subset.
-  if (!requested.size && saved) {
-    return { filename: "Filazoo-customer-catalog.pdf", contentType: "application/pdf", content: Buffer.from(await ensureCompanyCatalogPdf({
-      id: saved.id, company: profile.company!.name, productSkus: saved.product_skus, currency: saved.currency,
-      priceDate: saved.price_date, version: saved.version, pdfUrl: saved.pdf_url, createdAt: saved.created_at,
-    })) };
-  }
-  const selected = requested.size ? products.filter((product) => requested.has(product.sku)) : products;
+  // Keep the customer's saved selection, but create a fresh version with the current
+  // template and product photos. Previously issued quote PDFs remain unchanged.
+  const selection = requested.size ? requested : saved ? new Set<string>(saved.product_skus ?? []) : null;
+  if (selection && [...selection].some((sku) => !products.some((product) => product.sku === sku))) throw new Error("A catalog product is unavailable.");
+  const selected = selection ? products.filter((product) => selection.has(product.sku)) : products;
   if (!selected.length) throw new Error("Add active products before sending a catalog.");
   // Save the actual selection in the customer's catalog history.
   if (profile.company) {
@@ -127,7 +124,7 @@ async function catalogAttachment(row: AutoReplyRow, plan: AutoReplyPlan, context
     })) };
   }
   return { filename: "Filazoo-customer-catalog.pdf", contentType: "application/pdf",
-    content: Buffer.from(buildCatalogPdf(selected.map(crmProduct), { title: "Filazoo product catalog", customer: plan.billingName || row.recipient })) };
+    content: Buffer.from(await buildServerCatalogPdf(selected.map(crmProduct), { title: "Product catalog", customer: plan.billingName || row.recipient })) };
 }
 
 async function invoiceDocument(context: Awaited<ReturnType<typeof planReply>>) {

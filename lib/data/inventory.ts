@@ -18,26 +18,31 @@ export const getInventoryState = cache(async () => {
   const status: InventoryStatus = { configured: Boolean(config), configurationError, warehouseIds: config?.warehouseIds || "", lastSyncedAt: null, lastError: null, running: false, stale: false };
   if (!hasSupabaseConfig() || !config) return { status, snapshots: [] as StockSnapshot[], skuMap: {} as Record<string, string> };
   const client = createSupabaseAdmin();
-  const { data: runs, error: runError } = await client.from("inventory_sync_runs").select("id,status,started_at,finished_at,error_message").eq("scope", config.scope).order("started_at", { ascending: false }).limit(10);
+  const [{ data: runs, error: runError }, snapshots] = await Promise.all([
+    client.from("inventory_sync_runs").select("id,status,started_at,finished_at,error_message").eq("scope", config.scope).order("started_at", { ascending: false }).limit(10),
+    (async () => {
+      // Read only this account/warehouse scope, preserving complete pagination.
+      const rows: StockSnapshot[] = [];
+      for (let offset = 0; ; offset += 1000) {
+        const { data, error } = await client.from("erp_inventory").select("sku,available,on_hand,locked,warehouse_ids,synced_at").eq("scope", config.scope).order("sku").range(offset, offset + 999);
+        if (error) throw new Error("Unable to load ERP stock. Please try again.");
+        rows.push(...(data ?? []));
+        if ((data?.length ?? 0) < 1000) break;
+      }
+      return rows;
+    })(),
+  ]);
   if (runError) throw new Error("Unable to read ERP sync status. Apply the inventory migration first.");
   const latest = runs?.[0];
   status.running = latest?.status === "running" && Date.now() - new Date(latest.started_at).getTime() < 300_000;
   status.lastError = latest?.status === "failed" ? latest.error_message : null;
-  // Read only the current scope. Account/warehouse changes must never reuse old stock.
-  const snapshots: StockSnapshot[] = [];
-  for (let offset = 0; ; offset += 1000) {
-    const { data, error } = await client.from("erp_inventory").select("sku,available,on_hand,locked,warehouse_ids,synced_at").eq("scope", config.scope).order("sku").range(offset, offset + 999);
-    if (error) throw new Error("Unable to load ERP stock. Please try again.");
-    snapshots.push(...(data ?? []));
-    if ((data?.length ?? 0) < 1000) break;
-  }
   status.lastSyncedAt = snapshots[0]?.synced_at ?? runs?.find(run => run.status === "succeeded")?.finished_at ?? null;
   status.stale = Boolean(status.lastSyncedAt && Date.now() - new Date(status.lastSyncedAt).getTime() > 30 * 60_000);
   return { status, snapshots, skuMap: config.skuMap };
 });
 
-export async function withErpInventory(products: Product[]) {
-  const { status, snapshots, skuMap } = await getInventoryState();
+export async function withErpInventory(products: Product[], state?: Awaited<ReturnType<typeof getInventoryState>>) {
+  const { status, snapshots, skuMap } = state ?? await getInventoryState();
   // Existing manually maintained labels continue until the ERP is configured.
   return status.configured ? applyProductInventory(products, snapshots, skuMap) : products;
 }

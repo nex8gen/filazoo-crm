@@ -32,7 +32,7 @@ function setup({ empty = false, denied = false } = {}) {
     "../auth.ts": { requireWorkspaceMember: async () => { if (denied) throw new Error("Unauthorized"); return viewer; } },
     "../company-email.ts": { filterCompanyEmails }, "../email-threading.ts": { normalizeMessageId },
     "./mailboxes.ts": { getViewerMailboxes: async (id: string) => { assert.equal(id, viewer.id); return mailboxes; } },
-    "../email-inbox.ts": { getEmailInboxBackendData: async (options: { mailboxId?: string; syncMailbox: boolean; context: { viewer: WorkspaceViewer; mailboxes: WorkspaceMailboxRecord[] } }) => {
+    "../email-inbox.ts": { createEmailInboxReadContext: (viewer: WorkspaceViewer, mailboxes: WorkspaceMailboxRecord[]) => ({ viewer, mailboxes }), getEmailInboxBackendData: async (options: { mailboxId?: string; syncMailbox: boolean; context: { viewer: WorkspaceViewer; mailboxes: WorkspaceMailboxRecord[] } }) => {
       assert.equal(options.syncMailbox, false);
       assert.equal(options.context.viewer, viewer);
       assert.equal(options.context.mailboxes, mailboxes);

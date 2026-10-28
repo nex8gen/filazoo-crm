@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { createProduct, updateProduct } from "@/app/crm-actions";
 import { downloadCatalogPdf } from "@/lib/catalog-pdf";
 import { parseCurrencyAmount } from "@/lib/product-utils";
+import { quantityPriceRanges, quantityPricingError, quantityRangeLabel } from "@/lib/quantity-pricing";
 import type { DataMode, Product, ProductVariant } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -44,7 +45,7 @@ function productFromForm(form: FormData, variants: ProductVariant[]): Product {
     const minimum = form.get(`minimum${index}`);
     const price = form.get(`price${index}`);
     return minimum && price ? [{ minimumQuantity: Number(minimum), price: money(price) }] : [];
-  });
+  }).sort((a, b) => a.minimumQuantity - b.minimumQuantity);
   const normalizedVariants = variants.map((variant) => ({ ...variant, price: money(amount(variant.price)), imageUrl: variant.imageUrl || null }));
   return {
     sku: String(form.get("sku")).toUpperCase(),
@@ -83,6 +84,9 @@ function ProductDialog({ product, open, onOpenChange, canWrite, mode, onSaved }:
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [imageUrl, setImageUrl] = useState(product?.imageUrl ?? null);
+  const [pricing, setPricing] = useState(() => product?.priceTiers.length
+    ? [...product.priceTiers].sort((a, b) => a.minimumQuantity - b.minimumQuantity).map((tier) => ({ minimumQuantity: String(tier.minimumQuantity), price: amount(tier.price) }))
+    : [{ minimumQuantity: "1", price: amount(product?.price ?? "0") }]);
   const [uploadCount, setUploadCount] = useState(0);
   const uploading = uploadCount > 0;
   const onImageBusyChange = (busy: boolean) => setUploadCount((count) => count + (busy ? 1 : -1));
@@ -99,6 +103,8 @@ function ProductDialog({ product, open, onOpenChange, canWrite, mode, onSaved }:
       return;
     }
     const form = new FormData(event.currentTarget);
+    const pricingError = quantityPricingError(pricing.map((tier) => ({ ...tier, minimumQuantity: Number(tier.minimumQuantity) })));
+    if (pricingError) { setError(pricingError); return; }
     if (product?.stock !== undefined) form.set("stockStatus", "ERP managed");
     form.set("variants", JSON.stringify(variants.map(variant => ({ ...variant, stockStatus: variant.stock !== undefined ? "ERP managed" : variant.stockStatus }))));
     if (product) form.set("originalSku", product.sku);
@@ -137,11 +143,16 @@ function ProductDialog({ product, open, onOpenChange, canWrite, mode, onSaved }:
         <div className="sm:col-span-2"><input type="hidden" name="imageUrl" value={imageUrl ?? ""} /><ProductImagePicker id="product-image" label="Product image" value={imageUrl} onChange={setImageUrl} disabled={!canWrite || saving || uploading} mode={mode} onBusyChange={onImageBusyChange} /></div>
 
         <section className="space-y-3 border-t pt-4 sm:col-span-2">
-          <div className="flex items-center justify-between"><div><p className="font-medium">Volume pricing</p><p className="text-xs text-muted-foreground">Set up to three quantity breaks.</p></div><label className="text-xs text-muted-foreground">Currency <Select name="currency" defaultValue="USD" disabled={!canWrite}><SelectTrigger size="sm" className="ml-2"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="USD">USD</SelectItem><SelectItem value="EUR">EUR</SelectItem><SelectItem value="GBP">GBP</SelectItem><SelectItem value="CNY">CNY</SelectItem></SelectContent></Select></label></div>
-          <div className="grid gap-3 sm:grid-cols-3">{[1, 2, 3].map((tier) => <div key={tier} className="grid grid-cols-2 gap-2 rounded-lg border bg-muted/20 p-3">
-            <Field label={`Tier ${tier} qty`} id={`minimum-${tier}`}><Input id={`minimum-${tier}`} name={`minimum${tier}`} type="number" min="1" defaultValue={product?.priceTiers[tier - 1]?.minimumQuantity ?? (tier === 1 ? 1 : "")} required={tier === 1} disabled={!canWrite} /></Field>
-            <Field label="Unit price" id={`price-${tier}`}><Input id={`price-${tier}`} name={`price${tier}`} type="number" min="0" step="0.01" defaultValue={product?.priceTiers[tier - 1] ? amount(product.priceTiers[tier - 1].price) : (tier === 1 ? amount(product?.price ?? "0") : "")} required={tier === 1} disabled={!canWrite} /></Field>
+          <div className="flex items-center justify-between gap-3"><div><p className="font-medium">Volume pricing</p><p className="text-xs text-muted-foreground">Set quantity ranges for this product.</p></div><label className="text-xs text-muted-foreground">Currency <Select name="currency" defaultValue={product?.price.startsWith("€") ? "EUR" : product?.price.startsWith("£") ? "GBP" : /[¥￥]|CNY|CN¥/.test(product?.price ?? "") ? "CNY" : "USD"} disabled={!canWrite}><SelectTrigger size="sm" className="ml-2"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="USD">USD</SelectItem><SelectItem value="EUR">EUR</SelectItem><SelectItem value="GBP">GBP</SelectItem><SelectItem value="CNY">CNY</SelectItem></SelectContent></Select></label></div>
+          <div className="grid gap-3 sm:grid-cols-3">{pricing.map((tier, index) => <div key={index} className="space-y-3 rounded-lg border bg-muted/20 p-3">
+            <div className="flex h-8 items-center justify-between gap-1"><p className="text-sm font-medium" aria-live="polite">{quantityRangeLabel(Number(tier.minimumQuantity) || 1, pricing[index + 1] ? Number(pricing[index + 1].minimumQuantity) : undefined)}</p>{canWrite && index === pricing.length - 1 && index > 0 ? <Button type="button" variant="ghost" size="icon-sm" aria-label="Remove quantity range" onClick={() => setPricing((current) => current.slice(0, -1))}><Trash2 /></Button> : null}</div>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="From qty" id={`minimum-${index + 1}`}><Input id={`minimum-${index + 1}`} name={`minimum${index + 1}`} type="number" min={index > 0 ? Number(pricing[index - 1].minimumQuantity) + 1 : 1} step="1" value={tier.minimumQuantity} onChange={(event) => setPricing((current) => current.map((item, position) => position === index ? { ...item, minimumQuantity: event.target.value } : item))} required disabled={!canWrite} /></Field>
+              {pricing[index + 1] ? <Field label="To qty" id={`maximum-${index + 1}`}><Input id={`maximum-${index + 1}`} type="number" min={Number(tier.minimumQuantity) || 1} step="1" value={pricing[index + 1].minimumQuantity === "" ? "" : Number(pricing[index + 1].minimumQuantity) - 1} onChange={(event) => setPricing((current) => current.map((item, position) => position === index + 1 ? { ...item, minimumQuantity: event.target.value === "" ? "" : String(Number(event.target.value) + 1) } : item))} required disabled={!canWrite} /></Field> : <div className="space-y-2"><Label>To qty</Label><p className="flex h-9 items-center text-xs text-muted-foreground">No upper limit</p></div>}
+            </div>
+            <Field label="Unit price" id={`price-${index + 1}`}><Input id={`price-${index + 1}`} name={`price${index + 1}`} type="number" min="0" step="0.01" value={tier.price} onChange={(event) => setPricing((current) => current.map((item, position) => position === index ? { ...item, price: event.target.value } : item))} required disabled={!canWrite} /></Field>
           </div>)}</div>
+          {canWrite && pricing.length < 3 ? <Button type="button" variant="outline" size="sm" onClick={() => setPricing((current) => [...current, { minimumQuantity: String(Number(current[current.length - 1].minimumQuantity) + 100), price: "" }])}><Plus />Add quantity range</Button> : null}
         </section>
 
         <section className="space-y-3 border-t pt-4 sm:col-span-2">
@@ -163,7 +174,7 @@ function ProductDialog({ product, open, onOpenChange, canWrite, mode, onSaved }:
 }
 
 function CatalogDownloadDialog({ products, open, onOpenChange }: { products: Product[]; open: boolean; onOpenChange: (open: boolean) => void }) {
-  const [title, setTitle] = useState("Filazoo custom product catalog");
+  const [title, setTitle] = useState("Product catalog");
   const [customer, setCustomer] = useState("");
   const [downloading, setDownloading] = useState(false);
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="sm:max-w-lg">
@@ -210,7 +221,7 @@ export function ProductsCatalogV2({ products: initialProducts, canWrite, mode }:
   }
   function exportCsv() {
     const fields = ["Name", "SKU", "Material", "Variants", "Volume pricing", "Stock", "Lead time", "Status", "Image URL"];
-    const rows = filtered.map((product) => [product.name, product.sku, product.material, product.variants.map((variant) => `${variant.name} (${variant.sku})`).join(" | "), product.priceTiers.map((tier) => `${tier.minimumQuantity}+ ${tier.price}`).join(" | "), product.stockStatus, product.leadTime, product.status, product.imageUrl || ""]);
+    const rows = filtered.map((product) => [product.name, product.sku, product.material, product.variants.map((variant) => `${variant.name} (${variant.sku})`).join(" | "), quantityPriceRanges(product.priceTiers).map((tier) => `${tier.label} ${tier.price}`).join(" | "), product.stockStatus, product.leadTime, product.status, product.imageUrl || ""]);
     const escape = (value: string) => `"${value.replaceAll('"', '""')}"`;
     const csv = [fields, ...rows].map((row) => row.map(escape).join(",")).join("\r\n");
     const url = URL.createObjectURL(new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" }));
@@ -230,7 +241,7 @@ export function ProductsCatalogV2({ products: initialProducts, canWrite, mode }:
         <TableCell className="pl-4" onClick={(event) => event.stopPropagation()}><Checkbox checked={selected.has(product.sku)} onCheckedChange={() => toggleSelected(product.sku)} aria-label={`Select ${product.name}`} /></TableCell>
         <TableCell className="overflow-hidden"><button type="button" className="flex w-full min-w-0 items-center gap-3 overflow-hidden text-left" onClick={() => { setEditingProduct(product); setEditorOpen(true); }}><div className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-md border bg-muted/50">{product.imageUrl ? <Image src={product.imageUrl} alt="" width={48} height={48} unoptimized className="size-full object-cover" /> : <ImageIcon className="size-4 text-muted-foreground" />}</div><div className="min-w-0 overflow-hidden"><p className="truncate font-medium hover:text-primary" title={product.name}>{product.name}</p><p className="truncate font-mono text-xs text-muted-foreground" title={product.sku}>{product.sku}</p><p className="mt-1 truncate text-xs text-muted-foreground">{product.variants.length} variant{product.variants.length === 1 ? "" : "s"} · Click to view</p></div></button></TableCell>
         <TableCell className="overflow-hidden whitespace-normal"><div className="min-w-0 space-y-1 overflow-hidden"><p className="truncate font-medium">{product.material} · {product.variants.length} variant{product.variants.length === 1 ? "" : "s"}</p><p className="truncate text-xs text-muted-foreground" title={product.colors.join(", ")}>{product.colors.join(" · ")}</p>{product.weight !== "Not specified" && product.weight !== "—" ? <p className="truncate text-xs text-muted-foreground">Pack weight: {product.weight}</p> : null}</div></TableCell>
-        <TableCell className="overflow-hidden whitespace-normal">{product.priceTiers.length ? <div className="flex max-w-full flex-wrap gap-1.5">{product.priceTiers.map((tier) => <span key={`${tier.minimumQuantity}-${tier.price}`} className="shrink-0 rounded-md border bg-muted/40 px-2 py-1 text-xs"><span className="text-muted-foreground">{tier.minimumQuantity}+</span> <span className="font-medium">{tier.price}</span></span>)}</div> : <span className="text-muted-foreground">Price unavailable</span>}</TableCell>
+        <TableCell className="overflow-hidden whitespace-normal">{product.priceTiers.length ? <div className="flex max-w-full flex-wrap gap-1.5">{quantityPriceRanges(product.priceTiers).map((tier) => <span key={`${tier.minimumQuantity}-${tier.price}`} className="shrink-0 rounded-md border bg-muted/40 px-2 py-1 text-xs"><span className="text-muted-foreground">{tier.label}</span> <span className="font-medium">{tier.price}</span></span>)}</div> : <span className="text-muted-foreground">Price unavailable</span>}</TableCell>
         <TableCell className="overflow-hidden whitespace-normal"><div className="flex min-w-0 items-start gap-2"><Box className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" /><div className="min-w-0"><p className="truncate" title={product.stock !== undefined ? stockLabel(product.stock) : product.stockStatus}>{product.stock !== undefined ? stockLabel(product.stock) : product.stockStatus}</p>{product.stock ? <p className="mt-0.5 text-xs text-muted-foreground" title={product.stock.syncedAt}>{product.stock.onHand.toLocaleString("en")} on hand · {product.stock.locked.toLocaleString("en")} locked</p> : null}<p className="mt-0.5 truncate text-xs text-muted-foreground" title={product.leadTime}>{product.leadTime}</p></div></div></TableCell>
         <TableCell><Badge variant={product.status === "Active" ? "secondary" : "outline"}>{product.status}</Badge></TableCell>
         <TableCell className="overflow-hidden pr-4"><div className="flex items-center justify-end gap-1"><span className="truncate text-xs text-muted-foreground">{formatUpdatedAt(product.updatedAt)}</span><Button className="shrink-0" variant="ghost" size="icon-sm" aria-label={`Copy ${product.sku}`} onClick={async (event) => { event.stopPropagation(); await navigator.clipboard.writeText(product.sku); toast.success(`${product.sku} copied.`); }}><Clipboard /></Button></div></TableCell>

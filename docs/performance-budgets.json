@@ -1,0 +1,16 @@
+{
+  "maxShellGzipBytes": 420000,
+  "routes": [
+    "index",
+    "companies",
+    "segments",
+    "catalogs",
+    "catalogs/companies",
+    "invoices",
+    "emails",
+    "pipeline",
+    "messenger",
+    "settings",
+    "lead-channel/ai-agent"
+  ]
+}

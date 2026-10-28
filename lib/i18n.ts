@@ -1,3 +1,4 @@
+import { zhCNApps } from "./i18n-apps.ts";
 import { zhCNAdditional } from "./i18n-zh-cn.ts";
 import { zhCNSettings } from "./i18n-settings.ts";
 import { zhCNSegments } from "./i18n-segments.ts";
@@ -11,6 +12,7 @@ export const LANGUAGE_STORAGE_KEY = "filazoo-language";
 // Product terminology is centralized so sales, catalog, mailbox, and
 // automation screens use consistent professional Chinese wording.
 const zhCN: Record<string, string> = {
+  ...zhCNApps,
   ...zhCNEmailAutoReply,
   "Switching mailbox…": "正在切换邮箱…",
   "Your workspace inbox shows emails from customers assigned to you. Your personal inbox shows all senders.": "工作区收件箱仅显示分配给您的客户邮件，个人收件箱则显示所有发件人的邮件。",

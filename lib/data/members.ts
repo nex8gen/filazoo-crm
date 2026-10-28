@@ -1,7 +1,7 @@
 import type { User } from "@supabase/supabase-js";
 import { requireWorkspaceMember, type WorkspaceRole } from "../auth.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
-import { resolveMemberAvatars } from "./member-avatars.ts";
+import { resolveMemberAvatars } from "./cached-member-avatars.ts";
 
 export type WorkspaceMemberRecord = {
   id: string;
@@ -41,7 +41,7 @@ export async function listBdSalesManagers({ withAvatars = true }: { withAvatars?
     .not("activated_at", "is", null)
     .order("display_name");
   if (error) throw new Error(`Unable to load BD Sales Managers: ${error.message}`);
-  const avatars = withAvatars ? await resolveMemberAvatars(createSupabaseAdmin(), (data ?? []).map((member) => member.user_id)) : new Map<string, string>();
+  const avatars = withAvatars ? await resolveMemberAvatars((data ?? []).map((member) => member.user_id)) : new Map<string, string>();
   return (data ?? []).map((member) => ({ id: member.user_id, name: member.display_name || "BD Sales Manager", avatarUrl: avatars.get(member.user_id) }));
 }
 

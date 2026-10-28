@@ -137,13 +137,19 @@ export async function enableAutoReply(viewer: WorkspaceViewer, input: { mailboxI
 }
 
 export async function stopAutoReply(viewer: WorkspaceViewer, id: string) {
-  const row = await getAutoReply(viewer, id);
   const db = createSupabaseAdmin();
-  const { data } = await db.from("email_auto_replies").update({ enabled: false, status: "paused", revision: row.revision + 1, processing_at: null })
-    .eq("id", id).eq("revision", row.revision).select().maybeSingle().throwOnError();
-  if (!data) throw new Error("Automation changed. Refresh and try stopping again.");
-  if (row.task_id) await db.from("crm_tasks").update({ status: "cancelled" }).eq("id", row.task_id).eq("status", "open").throwOnError();
-  return data as AutoReplyRow;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const row = await getAutoReply(viewer, id);
+    if (!row.enabled && row.status === "paused") return row;
+    const { data } = await db.from("email_auto_replies").update({ enabled: false, status: "paused", revision: row.revision + 1, processing_at: null })
+      .eq("id", id).eq("revision", row.revision).select().maybeSingle().throwOnError();
+    // A background claim can advance the revision while Stop is saving.
+    // Re-read and retry so taking over manually does not require another click.
+    if (!data) continue;
+    if (row.task_id) await db.from("crm_tasks").update({ status: "cancelled" }).eq("id", row.task_id).eq("status", "open").throwOnError();
+    return data as AutoReplyRow;
+  }
+  throw new Error("Unable to stop auto-reply. Please try again.");
 }
 
 /** A manual reply takes over any authorized automation linked to its RFC chain. */

@@ -95,7 +95,7 @@ const stepConfigSchemas: Record<FlowStepType, z.ZodType<JsonConfig>> = {
     attachCatalog: z.boolean(),
     catalogFirstMessageOnly: z.boolean(),
     instructions: z.string().trim().max(4000),
-    language: z.enum(["auto", "en", "zh-CN"]),
+    language: z.enum(["auto", "en", "zh-CN"]).transform(() => "en"),
     sendWindow: z.enum(["anytime", "business_hours"]),
     trackOpens: z.boolean().optional(),
     trackClicks: z.boolean().optional(),
@@ -186,7 +186,7 @@ export const defaultFlowInput: FlowInput = {
 export function blankStep(type: FlowStepType = "wait"): FlowInput["steps"][number] {
   const id = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `step-${Date.now()}`;
   const configs: Record<FlowStepType, JsonConfig> = {
-    ai_auto_reply: { mailboxId: "default", replyInThread: true, useProducts: true, usePrices: true, attachCatalog: true, catalogFirstMessageOnly: true, instructions: "", language: "auto", sendWindow: "anytime", trackOpens: true, trackClicks: true },
+    ai_auto_reply: { mailboxId: "default", replyInThread: true, useProducts: true, usePrices: true, attachCatalog: true, catalogFirstMessageOnly: true, instructions: "", language: "en", sendWindow: "anytime", trackOpens: true, trackClicks: true },
     wait: { amount: 1, unit: "days", businessDays: true, resumeAt: "09:00" },
     if_condition: { field: "customer_replied", action: "stop_flow", unmatchedAction: "continue", lookbackDays: 7 },
     send_email: { templateId: "", mailboxId: "default", replyInThread: true, subject: "", preheader: "", trackOpens: true, trackClicks: true, utmTracking: true, stopOnReply: true, sendWindow: "business_hours" },

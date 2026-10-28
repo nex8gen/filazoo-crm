@@ -83,13 +83,13 @@ function AiReplyInspector({ config, onChange, mailboxes, disabled }: { config: J
   return <>
     <div className="rounded-lg bg-violet-50 p-3 text-xs leading-5 text-violet-900 dark:bg-violet-500/10 dark:text-violet-200">Reads the latest customer email and conversation before sending. Leads without an email receive a welcome introduction.</div>
     <div className="space-y-2"><Label>Sender mailbox</Label><FlowSelect value={String(config.mailboxId || "default")} onChange={(value) => set("mailboxId", value)} options={mailboxes} disabled={disabled} /></div>
-    <div className="space-y-2"><Label>Reply language</Label><FlowSelect value={String(config.language || "auto")} onChange={(value) => set("language", value)} options={[["auto", "Match customer email"], ["en", "English"], ["zh-CN", "Chinese"]]} disabled={disabled} /></div>
+    <div className="space-y-2"><Label>Reply language</Label><p className="text-sm text-muted-foreground">English for every automated reply.</p></div>
     <div className="space-y-2"><Label>Reply instructions</Label><Textarea value={String(config.instructions || "")} onChange={(event) => set("instructions", event.target.value)} maxLength={4000} placeholder="Answer the customer's questions and ask about their required quantities." disabled={disabled} /></div>
     <div className="space-y-2">
       <ToggleField checked={Boolean(config.useProducts)} onChange={(value) => onChange({ ...config, useProducts: value, ...(!value ? { usePrices: false } : {}) })} label="Read product information" detail="Use active CRM products, variants, availability and specifications." disabled={disabled} />
       <ToggleField checked={Boolean(config.usePrices)} onChange={(value) => set("usePrices", value)} label="Use saved product prices" detail="Quote verified CRM prices with currency, minimum quantities and quantity breaks." disabled={disabled || !config.useProducts} />
-      <ToggleField checked={Boolean(config.attachCatalog)} onChange={(value) => set("attachCatalog", value)} label="Attach product catalog PDF" detail="Generate an attachment from current active CRM products and prices." disabled={disabled} />
-      {config.attachCatalog ? <ToggleField checked={config.catalogFirstMessageOnly !== false} onChange={(value) => set("catalogFirstMessageOnly", value)} label="Attach catalog to first message only" detail="Only the first automated message to this lead includes the catalog, across flows and conversations." disabled={disabled} /> : null}
+      <ToggleField checked={Boolean(config.attachCatalog)} onChange={(value) => set("attachCatalog", value)} label="Attach product catalog PDF when needed" detail="Attach when requested or when AI identifies a clear product need. Specific product requests include only matching products." disabled={disabled} />
+      {config.attachCatalog ? <ToggleField checked={config.catalogFirstMessageOnly !== false} onChange={(value) => set("catalogFirstMessageOnly", value)} label="Also include catalog in the first email" detail="Include it in the first automated email to this lead. Later emails attach only when needed. Customer refusals are respected." disabled={disabled} /> : null}
       <ToggleField checked={config.replyInThread !== false} onChange={(value) => set("replyInThread", value)} label="Reply in same thread" disabled={disabled} />
       <ToggleField checked={config.trackOpens !== false} onChange={(value) => set("trackOpens", value)} label="Track opens" disabled={disabled} />
       <ToggleField checked={config.trackClicks !== false} onChange={(value) => set("trackClicks", value)} label="Track link clicks" disabled={disabled} />
@@ -109,7 +109,7 @@ function titleCase(value: unknown) { return String(value || "").replaceAll("_", 
 
 function stepSummary(type: FlowStepType, config: JsonConfig) {
   if (type === "wait") return `Wait ${config.amount || 1} ${config.unit || "days"}${config.businessDays ? " · business time" : ""}`;
-  if (type === "ai_auto_reply") return config.attachCatalog ? "Personalized reply + catalog PDF" : "Personalized reply from the conversation";
+  if (type === "ai_auto_reply") return config.attachCatalog ? "English reply + catalog when needed" : "Personalized reply in English";
   if (type === "send_email") return templates.find((item) => item.id === config.templateId)?.label || "Choose an email template";
   if (type === "if_condition") return `${titleCase(config.field)} → ${titleCase(config.action)}`;
   if (type === "create_task") return String(config.title || "Create a CRM task");

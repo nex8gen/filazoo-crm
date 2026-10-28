@@ -18,6 +18,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { TableFilters, TableFilter } from "@/components/ui/table-filters";
 import { TablePagination } from "@/components/ui/table-pagination";
 import type { Product } from "@/lib/types";
+import { downloadCatalogPdf } from "@/lib/catalog-pdf";
 
 const pageSize = 25;
 
@@ -75,6 +76,7 @@ export function ProductsCatalog({ products, canWrite }: { products: Product[]; c
   const [status, setStatus] = useState("all");
   const [draft, setDraft] = useState({ query: "", material: "all", status: "all" });
   const [page, setPage] = useState(1);
+  const [downloading, setDownloading] = useState(false);
   const materials = useMemo(() => [...new Set(products.map((product) => product.material))].sort(), [products]);
   const filtered = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -106,9 +108,17 @@ export function ProductsCatalog({ products, canWrite }: { products: Product[]; c
     toast.success(`${sku} copied.`);
   };
 
+  async function exportCatalog() {
+    if (downloading) return;
+    setDownloading(true);
+    try { await downloadCatalogPdf(filtered); }
+    catch (error) { toast.error(error instanceof Error ? error.message : "Could not generate catalog. Please try again."); }
+    finally { setDownloading(false); }
+  }
+
   return (
     <div className="space-y-6">
-    <TableFilters onApply={() => { setQuery(draft.query); setMaterial(draft.material); setStatus(draft.status); setPage(1); }} actions={<><Button type="button" variant="outline" onClick={exportCsv} disabled={!filtered.length}><Download />CSV</Button><Button nativeButton={false} variant="outline" render={<a href="/downloads/filazoo-b2b-catalog.pdf" download />}><FileDown />Catalog PDF</Button><AddProductDialog canWrite={canWrite} /></>}>
+    <TableFilters onApply={() => { setQuery(draft.query); setMaterial(draft.material); setStatus(draft.status); setPage(1); }} actions={<><Button type="button" variant="outline" onClick={exportCsv} disabled={!filtered.length}><Download />CSV</Button><Button type="button" variant="outline" onClick={exportCatalog} disabled={downloading || !filtered.length}><FileDown />{downloading ? "Preparing PDF…" : "Catalog PDF"}</Button><AddProductDialog canWrite={canWrite} /></>}>
       <TableFilter label="Search product" search><Input value={draft.query} onChange={(event) => setDraft({ ...draft, query: event.target.value })} placeholder="Name, SKU, material, or variant" /></TableFilter>
       <TableFilter label="Material"><Select value={draft.material} onValueChange={(value) => setDraft({ ...draft, material: value ?? "all" })}><SelectTrigger><SelectValue>{draft.material === "all" ? "All materials" : draft.material}</SelectValue></SelectTrigger><SelectContent><SelectItem value="all">All materials</SelectItem>{materials.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select></TableFilter>
       <TableFilter label="Status"><Select value={draft.status} onValueChange={(value) => setDraft({ ...draft, status: value ?? "all" })}><SelectTrigger><SelectValue>{draft.status === "all" ? "All statuses" : draft.status}</SelectValue></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem><SelectItem value="Active">Active</SelectItem><SelectItem value="Inactive">Inactive</SelectItem></SelectContent></Select></TableFilter>

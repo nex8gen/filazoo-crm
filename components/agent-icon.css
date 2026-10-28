@@ -1,0 +1,21 @@
+.ai-robot { --robot-light: #34d399; }
+.ai-robot-shell { fill: #f4f4f5; stroke: #b8b8c1; }
+.dark .ai-robot-shell { fill: #27272a; stroke: #71717a; }
+.ai-robot-light { fill: var(--robot-light); filter: drop-shadow(0 0 3px var(--robot-light)); }
+.ai-robot-eyes { transform: translateX(var(--robot-eye-offset, 0px)); transition: transform 180ms ease-out; }
+.ai-robot-eye { transform-box: fill-box; transform-origin: center; }
+.ai-robot[data-state="thinking"] { --robot-light: #facc15; }
+.ai-robot[data-state="error"], .ai-robot[data-listening="true"] { --robot-light: #ef4444; }
+@media (prefers-reduced-motion: no-preference) {
+  .ai-robot-head { animation: ai-robot-float 2.8s ease-in-out infinite; }
+  .ai-robot-eye { animation: ai-robot-blink 4.5s infinite; }
+  .ai-robot[data-state="thinking"] .ai-robot-eye { animation: ai-robot-think 1.2s ease-in-out infinite; }
+  .ai-robot[data-listening="true"] .ai-robot-light { animation: ai-robot-listen 800ms ease-in-out infinite alternate; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-robot-eyes { transition: none; }
+}
+@keyframes ai-robot-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+@keyframes ai-robot-blink { 0%, 43%, 47%, 100% { transform: scaleY(1); } 45% { transform: scaleY(.15); } }
+@keyframes ai-robot-think { 0%, 100% { transform: translateY(-1px) scaleY(.75); } 50% { transform: translateY(-3px) scaleY(.75); } }
+@keyframes ai-robot-listen { from { opacity: .5; } to { opacity: 1; } }

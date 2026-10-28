@@ -26,7 +26,10 @@ export async function login(_state: LoginState, formData: FormData): Promise<Log
   try {
     const supabase = await createClient();
     const { data, error } = await supabase.auth.signInWithPassword({ email: parsed.data.email, password: parsed.data.password });
-    if (error || !data.user) return { error: "The email or password is incorrect.", email };
+    if (error) return { error: error.status === 400 || error.status === 422
+      ? "The email or password is incorrect."
+      : "Authentication is temporarily unavailable. Try again shortly.", email };
+    if (!data.user) return { error: "The email or password is incorrect.", email };
 
     const { data: membership, error: membershipError } = await createSupabaseAdmin()
       .from("workspace_members")
