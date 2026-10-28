@@ -12,6 +12,7 @@ import { normalizeMailboxRow } from "../mailbox-utils.ts";
 import { evaluateSend } from "../outreach-policy.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 import { syncFlowMailboxMessages } from "./flow-mail-sync.ts";
+import { isAutoReplySchemaMissing } from "../email-auto-reply.ts";
 import { hasFlowReplyProvider, prepareFlowAiReply, prepareFlowTemplateCatalog } from "./flow-ai-reply.ts";
 
 type RunRow = {
@@ -129,6 +130,16 @@ async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: F
   const contact = await getContact(run.contact_id);
   if (!contact) throw new Error("Email step requires a CRM contact.");
   const admin = createSupabaseAdmin();
+  const automatedMailbox = await getMailbox(flow, step.config.mailboxId);
+  const { data: conversationAutomation, error: automationError } = await admin.from("email_auto_replies").select("id").eq("recipient", contact.email.toLowerCase())
+    .eq("mailbox_id", automatedMailbox?.id || "00000000-0000-0000-0000-000000000000")
+    .eq("thread_key", String(run.context?.emailThreadId || run.conversation_id)).eq("enabled", true).limit(1).maybeSingle();
+  if (automationError && !isAutoReplySchemaMissing(automationError)) throw automationError;
+  if (conversationAutomation) {
+    await logRun(run.id, step.id, { action: "cancelled", reason: "Conversation AI auto-reply is handling this customer." });
+    await finishRun(run.id, "cancelled");
+    return "terminal" as const;
+  }
   if (step.config.sendWindow === "business_hours") {
     const resumeAt = nextBusinessWindow();
     if (resumeAt) {

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { canViewEmail } from "../lib/email-access.ts";
 
-test("BD inbox includes only assigned customer addresses across every email source", () => {
+test("BD workspace inbox includes only assigned customer addresses across every email source", () => {
   const contacts = new Map([["buyer@example.com", "company-a"], ["accounts@example.com", "company-a"]]);
   const messages = [
     { id: "imap", contact: " BUYER@EXAMPLE.COM " },
@@ -14,6 +14,16 @@ test("BD inbox includes only assigned customer addresses across every email sour
     { id: "company-name", contact: "Company A" },
   ];
   assert.deepEqual(messages.filter((message) => canViewEmail({ role: "bd_manager" }, message.contact, contacts)).map((message) => message.id), ["imap", "shopify", "draft"]);
+});
+
+test("personal mailbox owners can see every sender without a customer assignment", () => {
+  for (const role of ["admin", "operator", "bd_manager", "viewer"] as const) {
+    for (const contact of ["new@example.com", "newsletter@example.com", "other-managers-customer@example.com", ""]) {
+      assert.equal(canViewEmail({ id: "actor", role }, contact, null, { type: "personal", userId: "actor" }), true);
+    }
+    assert.equal(canViewEmail({ id: "actor", role }, "buyer@example.com", new Map([["buyer@example.com", "company-a"]]), { type: "personal", userId: "someone-else" }), false);
+  }
+  assert.equal(canViewEmail({ role: "bd_manager" }, "buyer@example.com", null, { type: "personal", userId: null }), false);
 });
 
 test("reassignment removes access from the previous BD manager and gives it to the new owner", () => {

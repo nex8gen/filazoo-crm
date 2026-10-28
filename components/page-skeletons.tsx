@@ -68,9 +68,11 @@ export function FlowsSkeleton() {
 
 export function SegmentsSkeleton() {
   return <LoadingRegion label="Loading segments">
-    <HeaderSkeleton actions={false} />
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      {Array.from({ length: 6 }, (_, index) => <div key={index} className="flex items-center gap-3 rounded-lg border bg-card p-5"><Skeleton className="size-4 shrink-0" /><div className="flex-1"><Skeleton className="h-5 w-32 max-w-full" /><Skeleton className="mt-1 h-4 w-20" /></div><Skeleton className="size-4" /></div>)}
+    <HeaderSkeleton />
+    <div className="mb-6 grid grid-cols-2 gap-3 xl:grid-cols-4">{Array.from({ length: 4 }, (_, index) => <SummarySkeleton key={index} />)}</div>
+    <div className="mb-6 flex gap-3"><Skeleton className="h-9 w-80 max-w-full" /><Skeleton className="h-9 w-32" /></div>
+    <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+      {Array.from({ length: 6 }, (_, index) => <div key={index} className="space-y-5 rounded-xl border bg-card p-5"><div className="flex gap-3"><Skeleton className="size-9 shrink-0 rounded-lg" /><div className="flex-1"><Skeleton className="h-5 w-32 max-w-full" /><Skeleton className="mt-1 h-4 w-20" /></div></div><Skeleton className="h-10 w-full" /><div className="flex gap-6">{Array.from({ length: 3 }, (_, metric) => <Skeleton key={metric} className="h-10 flex-1" />)}</div><Skeleton className="h-1.5 w-full" /><Skeleton className="h-4 w-full" /></div>)}
     </div>
   </LoadingRegion>;
 }

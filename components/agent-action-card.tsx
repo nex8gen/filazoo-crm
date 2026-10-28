@@ -64,6 +64,11 @@ export function AgentActionCard({ proposal, result, executing, progress, disable
     {result?.success ? <p className="mt-3 flex items-start gap-1.5 text-xs text-emerald-700 dark:text-emerald-300"><Check className="mt-0.5 size-3.5 shrink-0" />{result.success}</p> : null}
     {result?.error ? <p role="alert" className="mt-2 text-xs leading-5 text-destructive">{result.error}</p> : null}
     {result?.href ? <Link href={result.href} onClick={(event) => {
+      if (result.draftMessage && window.document.querySelector(".messenger-workspace")) {
+        event.preventDefault();
+        window.dispatchEvent(new CustomEvent("filazoo:agent-action", { detail: { draftMessage: result.draftMessage } }));
+        return;
+      }
       const draftId = new URL(result.href!, window.location.origin).searchParams.get("agentDraft");
       if (draftId && window.document.querySelector(".email-workspace")) {
         event.preventDefault();

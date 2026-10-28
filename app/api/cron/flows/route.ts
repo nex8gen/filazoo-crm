@@ -9,5 +9,7 @@ export async function GET(request: Request) {
   const task = new URL(request.url).searchParams.get("task");
   if (task === "health") return Response.json({ ok: true, liveSending: !env.dryRun, version: "flow-live-v2" }, { headers: { "Cache-Control": "no-store" } });
   const results = await processDueFlowRuns(50, { syncMailbox: task !== "resume" });
-  return Response.json({ ok: true, processed: results.length, results }, { headers: { "Cache-Control": "no-store" } });
+  const { processEmailAutoReplies } = await import("@/lib/data/email-auto-reply-worker");
+  const automaticRepliesChecked = await processEmailAutoReplies();
+  return Response.json({ ok: true, processed: results.length, results, automaticRepliesChecked }, { headers: { "Cache-Control": "no-store" } });
 }

@@ -129,6 +129,8 @@ export type Reply = {
   receivedAt: string;
 };
 
+export type ProductStock = { available: number; onHand: number; locked: number; warehouseIds: string[]; syncedAt: string };
+
 export type Product = {
   sku: string;
   name: string;
@@ -142,6 +144,7 @@ export type Product = {
   moq: number | null;
   priceTiers: { minimumQuantity: number; price: string }[];
   stockStatus: string;
+  stock?: ProductStock | null;
   leadTime: string;
   status: string;
   updatedAt: string | null;
@@ -154,6 +157,7 @@ export type ProductVariant = {
   sku: string;
   price: string;
   stockStatus: string;
+  stock?: ProductStock | null;
   imageUrl: string | null;
 };
 

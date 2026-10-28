@@ -10,6 +10,7 @@ import * as flows from "../lib/flows.ts";
 import * as policy from "../lib/outreach-policy.ts";
 import * as templates from "../lib/flow-templates.ts";
 import * as tracking from "../lib/flow-tracking.ts";
+import * as autoReply from "../lib/email-auto-reply.ts";
 
 type Row = Record<string, unknown>;
 const require = createRequire(import.meta.url);
@@ -91,6 +92,7 @@ function runtime(options: { businessWindow?: Date | null } = {}) {
     return query;
   }
   const dependencies: Record<string, unknown> = {
+    "../email-auto-reply.ts": autoReply,
     "server-only": {}, "../auth.ts": { requireWorkspaceMember: async () => ({ id: "owner" }) },
     "../flow-engine.ts": { ...engine, ...(Object.hasOwn(options, "businessWindow") ? { nextBusinessWindow: () => options.businessWindow } : {}) }, "../flows.ts": flows, "../outreach-policy.ts": policy, "../flow-templates.ts": templates,
     "../env.ts": { env },

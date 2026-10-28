@@ -1,4 +1,5 @@
 import { requireWorkspaceMember } from "../auth.ts";
+import type { WorkspaceViewer } from "../auth.ts";
 import { formatRelativeDate, getInitials, getPipelineStageLabel } from "../crm-model.ts";
 import { env, hasSupabaseConfig } from "../env.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
@@ -198,25 +199,68 @@ export async function listCompanies(): Promise<{ mode: DataMode; companies: Comp
   return { mode, companies: await queryCompanies() };
 }
 
-async function queryCompanies(): Promise<Company[]> {
-  const { data, error } = await createSupabaseAdmin()
-    .from("companies")
-    .select("id,name,website,domain,country,city,segment,source,status,meta_leads(created_at,field_data),company_profiles(summary,fit_score,interest_tags),contacts(id,name,role,email,verification_status,emails(status,direction,created_at)),pipeline(stage,next_followup_at,estimated_order_quantity,estimated_value,currency,owner_id)")
-    .or("source.is.null,source.neq.sample_seed")
-    .order("created_at", { ascending: false })
-    .limit(500);
-  if (error) throw new Error(`Unable to load companies: ${error.message}`);
-  const rows = (data ?? []) as unknown as CompanyRow[];
+async function queryCompanies(id?: string): Promise<Company[]> {
+  const rows: CompanyRow[] = [];
+  for (let offset = 0; ; offset += 500) {
+    const query = createSupabaseAdmin()
+      .from("companies")
+      .select("id,name,website,domain,country,city,segment,source,status,meta_leads(created_at,field_data),company_profiles(summary,fit_score,interest_tags),contacts(id,name,role,email,verification_status,emails(status,direction,created_at)),pipeline(stage,next_followup_at,estimated_order_quantity,estimated_value,currency,owner_id)")
+      .or("source.is.null,source.neq.sample_seed")
+      .order("created_at", { ascending: false })
+      .order("id")
+      .range(offset, offset + 499);
+    const { data, error } = await (id === undefined ? query : query.eq("id", id));
+    if (error) throw new Error(`Unable to load companies: ${error.message}`);
+    rows.push(...(data ?? []) as unknown as CompanyRow[]);
+    if (!data || data.length < 500) break;
+  }
   const ownerIds = [...new Set(rows.map((row) => first(row.pipeline)?.owner_id).filter((value): value is string => Boolean(value)))];
-  const { data: owners } = ownerIds.length ? await createSupabaseAdmin().from("workspace_members").select("user_id,display_name").in("user_id", ownerIds) : { data: [] };
+  const [{ data: owners }, ownerAvatars] = await Promise.all([
+    ownerIds.length ? createSupabaseAdmin().from("workspace_members").select("user_id,display_name").in("user_id", ownerIds) : Promise.resolve({ data: [] }),
+    resolveMemberAvatars(createSupabaseAdmin(), ownerIds),
+  ]);
   const ownerNames = new Map((owners ?? []).map((owner) => [owner.user_id, owner.display_name || "BD Sales Manager"]));
-  const ownerAvatars = await resolveMemberAvatars(createSupabaseAdmin(), ownerIds);
   return rows.map((row) => mapCompany(row, ownerNames, ownerAvatars));
 }
 
 type CompanyEventRow = { id: string; type: string; data: Record<string, unknown> | null; actor_id: string | null; created_at: string };
 type CompanyEmailRow = { id: string; message_id: string | null; subject: string | null; body: string | null; status: string; direction: string; approved_by: string | null; sent_at: string | null; created_at: string; contacts: Relation<{ name: string | null; email: string }> };
 type CompanyCatalogRow = { id: string; version: number; product_skus: string[] | null; created_at: string };
+
+/** Profile fields only: history is loaded separately when its tab is opened. */
+export async function getCompanyProfile(id: string): Promise<{ mode: DataMode; details: CompanyDetails | null }> {
+  const mode = getCrmDataMode();
+  if (mode === "demo") return { mode, details: null };
+  await authorizeLiveRead();
+  if (!/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(id)) return { mode, details: null };
+  const admin = createSupabaseAdmin();
+  const [companyResult, contactsResult, commerceResult] = await Promise.all([
+    admin.from("companies").select("id,name,website,domain,country,city,segment,source,status,meta_leads(created_at,field_data),company_profiles(summary,fit_score,interest_tags),pipeline(stage,next_followup_at,estimated_order_quantity,estimated_value,currency,owner_id)").eq("id", id).maybeSingle(),
+    admin.from("contacts").select("id,name,role,email,verification_status").eq("company_id", id).order("created_at").order("id"),
+    admin.from("customer_billing_profiles").select("profile").eq("company_id", id).maybeSingle(),
+  ]);
+  if (companyResult.error) throw new Error(`Unable to load company: ${companyResult.error.message}`);
+  if (!companyResult.data) return { mode, details: null };
+  const error = contactsResult.error || commerceResult.error;
+  if (error) throw new Error(`Unable to load company profile: ${error.message}`);
+  const companyRow = { ...companyResult.data, contacts: contactsResult.data ?? [] } as unknown as CompanyRow;
+  const ownerId = first(companyRow.pipeline)?.owner_id;
+  const [{ data: owner }, avatars] = await Promise.all([
+    ownerId ? admin.from("workspace_members").select("display_name").eq("user_id", ownerId).maybeSingle() : Promise.resolve({ data: null }),
+    resolveMemberAvatars(admin, ownerId ? [ownerId] : []),
+  ]);
+  const ownerNames = new Map<string, string>();
+  if (ownerId) ownerNames.set(ownerId, owner?.display_name || "BD Sales Manager");
+  return {
+    mode,
+    details: {
+      company: mapCompany(companyRow, ownerNames, avatars),
+      contacts: (contactsResult.data ?? []).map(contact => ({ id: contact.id, name: contact.name || "No name", role: contact.role || "Role not confirmed", email: contact.email, verificationStatus: contact.verification_status })),
+      commerce: commerceResult.data?.profile,
+      activity: [],
+    },
+  };
+}
 
 export async function getCompanyDetails(id: string): Promise<{ mode: DataMode; details: CompanyDetails | null }> {
   const mode = getCrmDataMode();
@@ -329,8 +373,13 @@ export async function getCompanyDetails(id: string): Promise<{ mode: DataMode; d
 }
 
 export async function getCompany(id: string) {
-  const result = await listCompanies();
-  return { mode: result.mode, company: result.companies.find((company) => company.id === id) ?? null };
+  const mode = getCrmDataMode();
+  if (mode === "demo") return { mode, company: null };
+  await authorizeLiveRead();
+  // Preserve missing-record behavior without sending malformed UUIDs to Postgres.
+  if (!/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(id)) return { mode, company: null };
+  const companies = await queryCompanies(id);
+  return { mode, company: companies[0] ?? null };
 }
 
 function emailStatus(status: string): EmailDraft["status"] {
@@ -343,10 +392,10 @@ export function isSampleEmailSubject(subject: string | null | undefined) {
   return /\[sample\]/i.test(subject ?? "");
 }
 
-export async function listEmailDrafts(): Promise<{ mode: DataMode; emails: EmailDraft[] }> {
+export async function listEmailDrafts(authorizedViewer?: WorkspaceViewer): Promise<{ mode: DataMode; emails: EmailDraft[] }> {
   const mode = getCrmDataMode();
   if (mode === "demo") return { mode, emails: [] };
-  await authorizeLiveRead();
+  if (!authorizedViewer) await authorizeLiveRead();
 
   const { data, error } = await createSupabaseAdmin()
     .from("emails")
@@ -426,10 +475,10 @@ export async function listCatalogs(): Promise<{ mode: DataMode; catalogs: Catalo
   };
 }
 
-export async function listReplies(): Promise<{ mode: DataMode; replies: Reply[] }> {
+export async function listReplies(authorizedViewer?: WorkspaceViewer): Promise<{ mode: DataMode; replies: Reply[] }> {
   const mode = getCrmDataMode();
   if (mode === "demo") return { mode, replies: [] };
-  await authorizeLiveRead();
+  if (!authorizedViewer) await authorizeLiveRead();
 
   const { data, error } = await createSupabaseAdmin()
     .from("emails")
@@ -470,7 +519,8 @@ export async function listProducts(skus?: string[]): Promise<{ mode: DataMode; p
   const { data, error } = await (skus ? query.in("sku", skus) : query);
   if (error) throw new Error(`Unable to load products: ${error.message}`);
   const syncedProducts = (data ?? []).filter((row) => !row.sku.startsWith("SAMPLE-") && !row.name.toLowerCase().startsWith("[sample]")).map(crmProduct);
-  return { mode, products: syncedProducts };
+  const { withErpInventory } = await import("./inventory.ts");
+  return { mode, products: await withErpInventory(syncedProducts) };
 }
 
 function eventTone(type: string) {

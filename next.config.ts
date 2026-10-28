@@ -1,9 +1,13 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
   cacheComponents: true,
   partialPrefetching: true,
+  experimental: {
+    // Reuse recently visited pages when switching through the sidebar, too.
+    // Server action revalidation and router.refresh() still invalidate them.
+    staleTimes: { dynamic: 60 },
+  },
   outputFileTracingIncludes: {
     "/api/customer/invoices/*/pdf": ["./public/fonts/*.woff", "./public/fonts/allison-regular.ttf", "./public/fonts/noto-sans-sc-regular.otf", "./public/paid-stamp.png", "./public/catalog-default-product.jpg"],
     "/api/catalogs/*/pdf": ["./public/catalog-default-product.jpg"],

@@ -31,7 +31,7 @@ export async function listAllAuthUsers(): Promise<User[]> {
   }
 }
 
-export async function listBdSalesManagers(): Promise<BdSalesManager[]> {
+export async function listBdSalesManagers({ withAvatars = true }: { withAvatars?: boolean } = {}): Promise<BdSalesManager[]> {
   await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   const { data, error } = await createSupabaseAdmin()
     .from("workspace_members")
@@ -41,7 +41,7 @@ export async function listBdSalesManagers(): Promise<BdSalesManager[]> {
     .not("activated_at", "is", null)
     .order("display_name");
   if (error) throw new Error(`Unable to load BD Sales Managers: ${error.message}`);
-  const avatars = await resolveMemberAvatars(createSupabaseAdmin(), (data ?? []).map((member) => member.user_id));
+  const avatars = withAvatars ? await resolveMemberAvatars(createSupabaseAdmin(), (data ?? []).map((member) => member.user_id)) : new Map<string, string>();
   return (data ?? []).map((member) => ({ id: member.user_id, name: member.display_name || "BD Sales Manager", avatarUrl: avatars.get(member.user_id) }));
 }
 

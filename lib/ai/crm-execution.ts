@@ -106,12 +106,12 @@ async function target(operation: CrmOperation, viewer: WorkspaceViewer): Promise
     const state = { category: current.category ?? null, starred: current.starred ?? false, read: current.read ?? false, folder: current.folder ?? "inbox", followUpAt: current.followUpAt ?? null };
     return { name: current.subject || current.contact, value: state, preview: { state: { ...state, ...operation.changes }, messageKey: current.id, contactEmail: current.contact, threadId: current.threadId ?? null } };
   }
-  if (operation.op === "send_message") {
-    const message = await one("meta_messages", "id,sender_id,recipient_id,direction,source,customer_name,thread_id", "id", operation.messageId);
+  if (operation.op === "send_message" || operation.op === "draft_message") {
+    const message = await one("meta_messages", "id,sender_id,recipient_id,direction,source,customer_name,thread_id,page_id", "id", operation.messageId);
     if (!message || message.direction !== "inbound") throw new Error("Choose an actual inbound customer message to reply to.");
     const channel = message.source === "twilio_whatsapp" ? "whatsapp" : message.source === "instagram_messaging" ? "instagram" : message.source === "facebook_messenger" ? "facebook" : null;
     if (!channel) throw new Error("This message channel is unsupported.");
-    return { name: String(message.customer_name || message.sender_id), value: message, preview: { to: message.sender_id, channel, text: operation.text } };
+    return { name: String(message.customer_name || message.sender_id), value: message, preview: { to: message.sender_id, channel, text: operation.text, delivery: operation.op === "draft_message" ? "draft" : "send", conversationId: `${channel}:${message.page_id}:${message.thread_id}` } };
   }
   if (operation.op === "manage_mailbox") {
     const row = await one("workspace_mailboxes", "id,user_id,email,display_name,type,is_active,is_default", "id", operation.mailboxId);
@@ -248,6 +248,9 @@ export async function executeCrmAction(action: PreparedCrmAction, viewer: Worksp
       const response = await saveEmailState(new Request(new URL("/api/email/state", request.url), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...current.preview.state as object, messageKey: current.preview.messageKey, contactEmail: current.preview.contactEmail, threadId: current.preview.threadId }) }));
       const saved = await response.json(); if (!response.ok || !saved.ok) throw new Error(saved.error || "Email state could not be saved.");
       result = { success: "Email organization updated." }; href = "/emails"; break;
+    }
+    case "draft_message": {
+      return { success: "Message draft prepared in Messenger.", href: "/messenger", draftMessage: { conversationId: String(current.preview.conversationId), text: operation.text } };
     }
     case "send_message": {
       const sent = await sendMetaTextMessage({ to: String(current.preview.to), text: operation.text, channel: current.preview.channel as "facebook" | "instagram" | "whatsapp" });

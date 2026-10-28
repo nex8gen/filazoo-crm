@@ -43,6 +43,7 @@ export async function updateSession(request: NextRequest) {
     // These handlers validate their own signed token / cron bearer secret.
     "/api/flows/track",
     "/api/cron/flows",
+    "/api/cron/inventory",
     "/api/meta/webhook",
     "/api/twilio/webhook",
     // Make authenticates this receiver with its own bearer secret.

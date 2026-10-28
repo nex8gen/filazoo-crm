@@ -7,8 +7,10 @@ import ts from "typescript";
 import * as mailboxUtils from "../lib/mailbox-utils.ts";
 import * as threading from "../lib/email-threading.ts";
 import { canViewEmail } from "../lib/email-access.ts";
+import { synchronizeMailbox } from "../lib/mailbox-sync.ts";
 import type { EmailInboxBackendData, InboxEmailItem } from "../lib/email-inbox.ts";
 import type { WorkspaceMailboxRecord } from "../lib/data/mailboxes.ts";
+import type { WorkspaceViewer } from "../lib/auth.ts";
 
 const require = createRequire(import.meta.url);
 function loadModule<T>(path: string, dependencies: Record<string, unknown>): T {
@@ -55,6 +57,7 @@ function setup() {
     } },
     "@/lib/supabase/admin": { createSupabaseAdmin: () => db },
     "@/lib/email-threading": threading,
+    "@/lib/data/email-auto-reply": { stopAutoReplyForManualSend: async () => undefined },
   });
   const send = (input: Record<string, unknown> = {}) => route.POST(new Request("http://localhost/api/email/send", {
     method: "POST", headers: { "Content-Type": "application/json" },
@@ -117,28 +120,32 @@ test("a connected personal account is preferred even when no personal default is
   assert.equal((await mailboxes.getViewerMailbox("actor"))?.id, "mine");
 });
 
-test("switching inbox accounts scopes received and sent mail while retaining the personal sender default", async () => {
+async function setupInbox(role = "operator", assignedContacts: Map<string, string> | null = null) {
   const setupData = setup();
   const mailboxes = (await setupData.mailboxes.getViewerMailboxes("actor")).map((mailbox) => ({
     ...mailbox, imapHost: "imap.example.test", imapUsername: mailbox.email, imapPassword: "test-only",
   }));
   const synced: string[] = [];
   const sentScopes: string[] = [];
-  const backend = loadModule<{ getEmailInboxBackendData: (options?: { mailboxId?: string; syncMailbox?: boolean }) => Promise<EmailInboxBackendData> }>("../lib/email-inbox.ts", {
-    "./auth.ts": { requireWorkspaceMember: async () => ({ id: "actor", role: "operator" }) },
+  const reads: string[] = [];
+  const counts = { auth: 0, mailboxes: 0 };
+  const viewer: WorkspaceViewer = { id: "actor", role: role as WorkspaceViewer["role"], email: null, displayName: null };
+  const backend = loadModule<{ getEmailInboxBackendData: (options?: { mailboxId?: string; syncMailbox?: boolean; context?: { viewer: WorkspaceViewer; mailboxes: WorkspaceMailboxRecord[] } }) => Promise<EmailInboxBackendData> }>("../lib/email-inbox.ts", {
+    "./auth.ts": { requireWorkspaceMember: async () => { counts.auth++; return viewer; } },
     "./mailbox-utils.ts": mailboxUtils,
     "./email-threading.ts": threading,
     "./email-access.ts": { canViewEmail },
-    "./data/email-access.ts": { getAssignedEmailContacts: async () => null },
+    "./data/email-access.ts": { getAssignedEmailContacts: async () => { reads.push("assignments"); return assignedContacts; } },
     "./data/mailboxes.ts": {
-      getViewerMailboxes: async () => mailboxes,
+      getViewerMailboxes: async () => { counts.mailboxes++; return mailboxes; },
       mailboxHasSmtp: setupData.mailboxes.mailboxHasSmtp,
       mailboxHasImap: (mailbox: WorkspaceMailboxRecord | null) => Boolean(mailbox?.isActive && mailbox.imapPassword),
     },
+    "./data/inbox-companies.ts": { listInboxCompanies: async () => { reads.push("companies"); return { companies: [] }; } },
     "./data/crm.ts": {
-      listCompanies: async () => ({ companies: [] }),
-      listEmailDrafts: async () => ({ emails: [{ id: "workspace-draft", subject: "Outreach", contact: "lead@example.com", preview: "Hello", step: 1, status: "Draft" }], mode: "live" }),
-      listReplies: async () => ({ replies: [{ id: "workspace-reply", contact: "lead@example.com", body: "Shared reply" }] }),
+      listCompanies: async () => { reads.push("companies"); return { companies: [] }; },
+      listEmailDrafts: async (authorizedViewer: WorkspaceViewer) => { assert.equal(authorizedViewer, viewer); reads.push("drafts"); return { emails: [{ id: "workspace-draft", subject: "Outreach", contact: "lead@example.com", preview: "Hello", step: 1, status: "Draft" }], mode: "live" }; },
+      listReplies: async (authorizedViewer: WorkspaceViewer) => { assert.equal(authorizedViewer, viewer); reads.push("replies"); return { replies: [{ id: "workspace-reply", contact: "lead@example.com", body: "Shared reply" }] }; },
     },
     "./data/email-state.ts": {
       listEmailInboxStates: async () => new Map(),
@@ -148,15 +155,31 @@ test("switching inbox accounts scopes received and sent mail while retaining the
       },
       getEmailAutomationSettings: async () => ({ enabled: false, steps: [], queueCount: 0 }),
     },
-    "./data/mailbox-sync.ts": { loadSyncedMailbox: async (mailbox: WorkspaceMailboxRecord) => {
+    "./data/mailbox-sync.ts": { loadSyncedMailbox: async (mailbox: WorkspaceMailboxRecord, options: { sync: boolean; includeContent: boolean }) => {
+      assert.equal(options.sync, false);
+      assert.equal(options.includeContent, false);
       synced.push(mailbox.id);
       return { messages: [{ id: `received-${mailbox.id}`, source: "mailbox", contact: "buyer@example.com", body: "Hello" }], error: null, syncedAt: null };
     } },
     "./supabase/admin.ts": { createSupabaseAdmin: () => ({ from: () => ({ select: () => ({ eq: () => ({ order: () => ({ range: async () => ({ data: [], error: null }) }) }) }) }) }) },
   });
+  return { backend, synced, sentScopes, reads, counts, context: { viewer, mailboxes } };
+}
+
+test("an authorized route context avoids repeated auth and mailbox queries while validating the selected ID", async () => {
+  const { backend, context, counts } = await setupInbox();
+  const data = await backend.getEmailInboxBackendData({ mailboxId: "team", syncMailbox: false, context });
+  assert.equal(data.selectedMailboxId, "team");
+  assert.deepEqual(counts, { auth: 0, mailboxes: 0 });
+  await assert.rejects(backend.getEmailInboxBackendData({ mailboxId: "someone-else", syncMailbox: false, context }), /Mailbox unavailable/);
+});
+
+test("switching inbox accounts scopes received and sent mail while retaining the personal sender default", async () => {
+  const { backend, synced, sentScopes, reads } = await setupInbox();
   const personal = await backend.getEmailInboxBackendData({ syncMailbox: false });
   assert.equal(personal.selectedMailboxId, "mine");
   assert.equal(personal.emails.map((message) => message.id).sort().join(","), "received-mine,sent-mine");
+  assert.deepEqual(reads, ["companies"], "Personal inbox must skip the workspace outreach queries");
   const workspace = await backend.getEmailInboxBackendData({ mailboxId: "team", syncMailbox: false });
   assert.equal(workspace.selectedMailboxId, "team");
   assert.equal(workspace.defaultSenderId, "mine");
@@ -166,6 +189,56 @@ test("switching inbox accounts scopes received and sent mail while retaining the
   assert.equal(sentScopes.join(","), "mine,team");
   assert.equal(JSON.stringify(workspace.mailboxes).includes("test-only"), false);
   await assert.rejects(backend.getEmailInboxBackendData({ mailboxId: "someone-else" }), /Mailbox unavailable/);
+});
+
+test("workspace mail hidden by customer assignments reports its scope and skips company enrichment", async () => {
+  const { backend, reads } = await setupInbox("bd_manager", new Map());
+  const data = await backend.getEmailInboxBackendData({ mailboxId: "team", syncMailbox: false });
+  assert.equal(data.assignedCustomersOnly, true);
+  assert.equal(data.emails.length, 0);
+  assert.equal(data.inboxError, null);
+  assert.equal(reads.includes("companies"), false);
+});
+
+test("personal inbox and sent history show unassigned senders without querying assignments", async () => {
+  const { backend, reads } = await setupInbox("bd_manager", new Map());
+  const data = await backend.getEmailInboxBackendData({ mailboxId: "mine", syncMailbox: false });
+  assert.equal(data.assignedCustomersOnly, false);
+  assert.equal(data.emails.map((message) => message.id).sort().join(","), "received-mine,sent-mine");
+  assert.equal(data.inboxError, null);
+  assert.equal(reads.includes("assignments"), false);
+  assert.equal(reads.includes("drafts"), false);
+  assert.equal(reads.includes("replies"), false);
+});
+
+test("assigned BD customer mail remains visible in either account", async () => {
+  const { backend } = await setupInbox("bd_manager", new Map([["buyer@example.com", "company-a"]]));
+  for (const mailboxId of ["mine", "team"]) {
+    const data = await backend.getEmailInboxBackendData({ mailboxId, syncMailbox: false });
+    assert.equal(data.emails.map((message) => message.id).sort().join(","), `received-${mailboxId},sent-${mailboxId}`);
+    if (mailboxId === "team") assert.ok(data.emails.every((message) => message.companyId === "company-a"));
+  }
+});
+
+test("header-only saved inbox reads never query cached message bodies or contact IMAP", async () => {
+  const tables: string[] = [];
+  const loader = loadModule<{ loadSyncedMailbox: (mailbox: WorkspaceMailboxRecord, options: { sync: boolean; includeContent: boolean }) => Promise<{ messages: InboxEmailItem[] }> }>("../lib/data/mailbox-sync.ts", {
+    "../supabase/admin.ts": { createSupabaseAdmin: () => ({ from: (table: string) => {
+      tables.push(table);
+      assert.equal(table, "mailbox_sync_state", "List requests must not download cached HTML content");
+      return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: {
+        messages: [{ id: "received", uid: 5, uidValidity: 1, contact: "buyer@example.com", bodyLoaded: false, body: "" }],
+        uid_validity: 1, last_uid: 5, synced_at: "2026-10-28T00:00:00Z", last_error: null,
+      }, error: null }) }) }) };
+    } }) },
+    "../mailbox-sync.ts": { synchronizeMailbox },
+    "../email-inbox.ts": { fetchMailboxInboxMessages: () => { assert.fail("Saved inbox reads must not contact IMAP"); } },
+  });
+  const mailbox = (await setup().mailboxes.getViewerMailboxes("actor"))[0];
+  const result = await loader.loadSyncedMailbox(mailbox, { sync: false, includeContent: false });
+  assert.deepEqual(tables, ["mailbox_sync_state"]);
+  assert.equal(result.messages[0].bodyLoaded, false);
+  assert.match(result.messages[0].mailboxKey!, /^[a-f0-9]{64}$/);
 });
 
 test("opening bodies and attachments works for either authorized account and rejects another user's mailbox", async () => {
@@ -200,4 +273,81 @@ test("opening bodies and attachments works for either authorized account and rej
   }
   assert.equal(loaded.join(","), "mine,team");
   assert.equal(downloaded.join(","), "mine,team");
+});
+
+test("BD managers can open all personal message bodies and received attachments while workspace mail stays scoped", async () => {
+  const available = await setup().mailboxes.getViewerMailboxes("actor");
+  let assigned = new Map<string, string>();
+  let assignmentReads = 0;
+  const downloaded: string[] = [];
+  const dependencies = {
+    "@/lib/auth": { requireWorkspaceMember: async () => ({ id: "actor", role: "bd_manager" }) },
+    "@/lib/data/mailboxes": { getViewerMailboxes: async () => available, mailboxHasImap: () => true },
+    "@/lib/data/mailbox-sync": {
+      mailboxSyncKey: (mailbox: WorkspaceMailboxRecord) => `key-${mailbox.id}`,
+      loadMailboxMessageContent: async () => ({ id: "message", contact: "unknown@example.com", body: "Personal mail" }),
+    },
+    "@/lib/data/email-access": { getAssignedEmailContacts: async () => { assignmentReads++; return assigned; } },
+    "@/lib/email-access": { canViewEmail },
+    "@/lib/mailbox-imap": { downloadMailboxAttachment: async (mailbox: WorkspaceMailboxRecord) => {
+      downloaded.push(mailbox.id);
+      return { filename: "test.txt", contentType: "text/plain", content: Buffer.from("test") };
+    } },
+  };
+  const routes = ["message", "received-attachment"].map((name) => loadModule<{ GET: (request: Request) => Promise<Response> }>(`../app/api/email/${name}/route.ts`, dependencies));
+  const request = (mailbox: string) => new Request(`http://localhost/api/email/message?mailbox=key-${mailbox}&uid=1&validity=1&part=1`);
+  for (const route of routes) assert.equal((await route.GET(request("mine"))).status, 200);
+  assert.equal(assignmentReads, 0, "Personal mailbox content must not depend on customer assignments");
+  for (const route of routes) {
+    assert.equal((await route.GET(request("team"))).status, 404);
+    assert.equal((await route.GET(request("someone-else"))).status, 404);
+  }
+  assert.equal(downloaded.join(","), "mine");
+  assigned = new Map([["unknown@example.com", "assigned-company"]]);
+  for (const route of routes) assert.equal((await route.GET(request("team"))).status, 200);
+  assert.equal(downloaded.join(","), "mine,team");
+});
+
+test("sent attachments use the message's actual personal or workspace mailbox and enforce ownership", async () => {
+  const id = "12345678-1234-1234-1234-123456789012";
+  const message = {
+    user_id: "actor", mailbox_id: "mine" as string | null, to_email: "unknown@example.com",
+    attachments: [{ path: `actor/${id}/0`, filename: "invoice.pdf", contentType: "application/pdf" }],
+  };
+  let assigned = new Map<string, string>();
+  let assignmentReads = 0;
+  let downloads = 0;
+  const db = {
+    from: (table: string) => {
+      assert.equal(table, "mailbox_sent_messages");
+      const query = { select: () => query, eq: (field: string, value: string) => {
+        assert.equal(value, field === "id" ? id : "actor");
+        return query;
+      }, maybeSingle: async () => ({ data: message.user_id === "actor" ? message : null, error: null }) };
+      return query;
+    },
+    storage: { from: () => ({ download: async () => { downloads++; return { data: new Blob(["%PDF-test"]), error: null }; } }) },
+  };
+  const route = loadModule<{ GET: (request: Request, context: { params: Promise<{ id: string; index: string }> }) => Promise<Response> }>("../app/api/email/attachments/[id]/[index]/route.ts", {
+    "@/lib/auth": { requireWorkspaceMember: async () => ({ id: "actor", role: "bd_manager" }) },
+    "@/lib/supabase/admin": { createSupabaseAdmin: () => db },
+    "@/lib/data/email-access": { getAssignedEmailContacts: async () => { assignmentReads++; return assigned; } },
+    "@/lib/email-access": { canViewEmail },
+    "@/lib/data/mailboxes": setup().mailboxes,
+  });
+  const download = () => route.GET(new Request("http://localhost/api/email/attachments/test/0"), { params: Promise.resolve({ id, index: "0" }) });
+  assert.equal((await download()).status, 200);
+  assert.equal(assignmentReads, 0);
+  for (const mailboxId of ["team", "someone-else", "removed", null]) {
+    message.mailbox_id = mailboxId;
+    assert.equal((await download()).status, 404);
+  }
+  assert.equal(downloads, 1);
+  message.mailbox_id = "team";
+  assigned = new Map([["unknown@example.com", "assigned-company"]]);
+  assert.equal((await download()).status, 200);
+  message.mailbox_id = "mine";
+  message.user_id = "someone-else";
+  assert.equal((await download()).status, 404);
+  assert.equal(downloads, 2);
 });

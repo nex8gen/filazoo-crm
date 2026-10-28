@@ -1,41 +1,47 @@
 import { requireWorkspaceMember } from "@/lib/auth";
 import { getEmailInboxBackendData } from "@/lib/email-inbox";
 import { after } from "next/server";
-import { getViewerMailbox, mailboxHasImap } from "@/lib/data/mailboxes";
+import { getViewerMailboxes, mailboxHasImap } from "@/lib/data/mailboxes";
 import { loadSyncedMailbox } from "@/lib/data/mailbox-sync";
 import { getCompanyDetails } from "@/lib/data/crm";
-import { filterCompanyEmails } from "@/lib/company-email";
+import { getCompanyEmailBackendData } from "@/lib/data/company-emails";
 
 export const maxDuration = 240;
 
 export async function GET(request: Request) {
+  const start = performance.now();
   const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
+  const authorizedAt = performance.now();
   const params = new URL(request.url).searchParams;
   const history = params.get("scope") === "history";
   const mailboxId = params.get("mailboxId") ?? undefined;
-  if (mailboxId !== undefined && !await getViewerMailbox(viewer.id, mailboxId)) return Response.json({ error: "Mailbox unavailable." }, { status: 404 });
+  const mailboxes = await getViewerMailboxes(viewer.id);
+  if (mailboxId !== undefined && !mailboxes.some((mailbox) => mailbox.id === mailboxId)) return Response.json({ error: "Mailbox unavailable." }, { status: 404 });
   const companyId = params.get("companyId");
   const company = companyId ? (await getCompanyDetails(companyId)).details : null;
   if (companyId && !company) return Response.json({ error: "Company not found." }, { status: 404 });
-  const data = await getEmailInboxBackendData({ syncMailbox: false, mailboxId });
-  if (company) data.emails = filterCompanyEmails(data.emails, {
+  const data = company ? await getCompanyEmailBackendData({
     id: company.company.id,
     name: company.company.name,
     emails: [company.company.email, ...company.contacts.map((contact) => contact.email)],
-  });
+  }, { viewer, mailboxes }) : await getEmailInboxBackendData({ syncMailbox: false, mailboxId, context: { viewer, mailboxes } });
   // Return saved mail immediately. Provider login and importing older mail
   // continue after the response, with a shared lease across server instances.
-  after(async () => {
-    try {
-      const mailbox = await getViewerMailbox(viewer.id, data.selectedMailboxId);
-      if (mailbox && mailboxHasImap(mailbox)) await loadSyncedMailbox(mailbox, { history });
-    } catch (error) {
-      console.warn("Mailbox background refresh failed:", error instanceof Error ? error.message : "Unknown error");
-    }
+  if (params.get("refresh") !== "false") after(async () => {
+    const refreshMailboxes = mailboxes.filter((item) => (company || item.id === data.selectedMailboxId) && mailboxHasImap(item));
+    await Promise.all(refreshMailboxes.map(async (mailbox) => {
+      try {
+        await loadSyncedMailbox(mailbox, { history, includeContent: false });
+        const { processEmailAutoReplies } = await import("@/lib/data/email-auto-reply-worker");
+        await processEmailAutoReplies(mailbox.id);
+      } catch (error) {
+        console.warn("Mailbox background refresh failed:", error instanceof Error ? error.message : "Unknown error");
+      }
+    }));
   });
 
   return Response.json(data, {
-    headers: { "Cache-Control": "no-store" },
+    headers: { "Cache-Control": "no-store", "Server-Timing": `auth;dur=${(authorizedAt - start).toFixed(1)},inbox;dur=${(performance.now() - authorizedAt).toFixed(1)}` },
     status: 200,
   });
 }

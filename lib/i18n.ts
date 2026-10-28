@@ -1,5 +1,8 @@
 import { zhCNAdditional } from "./i18n-zh-cn.ts";
 import { zhCNSettings } from "./i18n-settings.ts";
+import { zhCNSegments } from "./i18n-segments.ts";
+import { zhCNInventory } from "./i18n-inventory.ts";
+import { zhCNEmailAutoReply } from "./i18n-email-auto-reply.ts";
 
 export type AppLanguage = "en" | "zh-CN";
 
@@ -8,6 +11,11 @@ export const LANGUAGE_STORAGE_KEY = "filazoo-language";
 // Product terminology is centralized so sales, catalog, mailbox, and
 // automation screens use consistent professional Chinese wording.
 const zhCN: Record<string, string> = {
+  ...zhCNEmailAutoReply,
+  "Switching mailbox…": "正在切换邮箱…",
+  "Your workspace inbox shows emails from customers assigned to you. Your personal inbox shows all senders.": "工作区收件箱仅显示分配给您的客户邮件，个人收件箱则显示所有发件人的邮件。",
+  "Unable to switch mailboxes. Please try again.": "无法切换邮箱，请重试。",
+  ...zhCNInventory,
   "No payment methods added yet": "暂无收款方式",
   "Add bank transfer, PayPal, or another way for customers to pay.": "添加银行转账、PayPal 或其他客户付款方式。",
   "No saved payment methods": "暂无已保存的收款方式",
@@ -250,12 +258,16 @@ const zhCN: Record<string, string> = {
   "Copied": "已复制", "Copy": "复制", "Page": "页", "of": "共",
   ...zhCNAdditional,
   ...zhCNSettings,
+  ...zhCNSegments,
   "Analyse": "采购分析",
 };
 
 const translated = (input: string) => translateUiText(input, "zh-CN");
 // Only match known UI sentence shapes; customer names, content and IDs stay intact.
 const patterns: Array<[RegExp, (...parts: string[]) => string]> = [
+  [/^(\d+) saved · (\d+) business$/, (saved, business) => `${saved} 个已保存 · ${business} 个业务细分`],
+  [/^(\d[\d,]*) companies with an email$/, (count) => `${count} 家企业拥有邮箱`],
+  [/^Fit score ≥ (\d+)$/, (score) => `匹配评分 ≥ ${score}`],
   [/^Member deleted and workspace access removed\.(?: (\d+) customer assignments? redistributed to remaining BD Sales Managers\.)?(?: (\d+) customer assignments? remains? unassigned because no active BD Sales Manager has automatic assignment enabled\.)?$/, (reassigned, unassigned) => `${translated("Member deleted and workspace access removed.")}${reassigned ? ` 已将 ${reassigned} 项客户分配重新分配给其他商务拓展经理。` : ""}${unassigned ? ` 由于没有已启用自动分配的在职商务拓展经理，${unassigned} 项客户分配保留为未分配状态。` : ""}`],
     [/^(.+) · Filazoo$/, (page) => `${translated(page)} · Filazoo`],
     [/^Estimated value and deal count in (.+)$/, (currency) => `预计金额与商机数量，币种：${currency}`],

@@ -19,7 +19,7 @@ export function buildMailerTransportConfig(input: MailboxTransportInput = {}) {
   }
 
   const portValue = Number(input.port ?? (input.secure ? 465 : 587));
-  const secure = input.secure ?? portValue === 465;
+  const secure = input.secure ?? [465, 994].includes(portValue);
 
   return {
     host,

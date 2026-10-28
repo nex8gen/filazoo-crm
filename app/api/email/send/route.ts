@@ -78,6 +78,10 @@ export async function POST(request: Request) {
 
     let sendResult;
     try {
+      if (inReplyTo || references.length) {
+        const { stopAutoReplyForManualSend } = await import("@/lib/data/email-auto-reply");
+        await stopAutoReplyForManualSend(viewer, [...references, ...(inReplyTo ? [inReplyTo] : [])], to);
+      }
       sendResult = await sendMailboxEmail(
       {
         host: mailbox.smtpHost,
@@ -85,7 +89,7 @@ export async function POST(request: Request) {
         user: mailbox.smtpUsername,
         pass: mailbox.smtpPassword,
         from: mailbox.email,
-        secure: (mailbox.smtpPort ?? 587) === 465,
+        secure: [465, 994].includes(mailbox.smtpPort ?? 587),
       },
       {
         to,

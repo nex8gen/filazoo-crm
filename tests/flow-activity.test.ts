@@ -4,11 +4,13 @@ import { createRequire } from "node:module";
 import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
+import * as autoReply from "../lib/email-auto-reply.ts";
 
 type Row = Record<string, unknown>;
 const require = createRequire(import.meta.url);
 function fixture() {
   const db: Record<string, Row[]> = {
+    email_auto_replies: [],
     crm_tasks: [{ id: "mine", assigned_to: "viewer", status: "open" }, { id: "theirs", assigned_to: "other", status: "open" }],
     internal_notifications: [{ id: "mine", user_id: "viewer", read_at: null }, { id: "theirs", user_id: "other", read_at: null }],
   };
@@ -18,6 +20,7 @@ function fixture() {
     const query = {
       select(_columns?: string, options?: { head?: boolean }) { head = options?.head ?? false; return query; },
       eq(key: string, value: unknown) { filters.push(row => row[key] === value); return query; },
+      in(key: string, values: unknown[]) { filters.push(row => values.includes(row[key])); return query; },
       is(key: string, value: unknown) { filters.push(row => (row[key] ?? null) === value); return query; },
       order() { return query; }, limit() { return query; }, maybeSingle() { single = true; return query; },
       update(value: Row) { changes = value; return query; }, throwOnError() { return query; },
@@ -32,6 +35,7 @@ function fixture() {
   const code = ts.transpileModule(readFileSync(new URL("../lib/data/flow-activity.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const exports = {} as { listFlowActivity: (summary?: boolean) => Promise<Row>; updateFlowActivity: (kind: string, id: string) => Promise<void> };
   const deps: Record<string, unknown> = { "server-only": {}, "../auth.ts": { requireWorkspaceMember: async () => ({ id: "viewer" }) }, "../supabase/admin.ts": { createSupabaseAdmin: () => ({ from }) } };
+  deps["../email-auto-reply.ts"] = autoReply;
   vm.runInNewContext(code, { exports, require: (name: string) => deps[name] ?? require(name), Date });
   return { db, exports };
 }

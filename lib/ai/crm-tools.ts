@@ -42,6 +42,7 @@ export const crmOperationSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("delete_flow"), flowId: z.uuid() }).strict(),
   z.object({ op: z.literal("set_email_state"), emailId: text(512), changes: patch(emailInboxStateSchema.pick({ category: true, starred: true, read: true, folder: true, followUpAt: true }).shape) }).strict(),
   z.object({ op: z.literal("send_message"), messageId: z.uuid(), text: text(10_000) }).strict(),
+  z.object({ op: z.literal("draft_message"), messageId: z.uuid(), text: text(10_000) }).strict(),
   z.object({ op: z.literal("complete_activity"), kind: z.enum(["task", "alert"]), id: z.uuid() }).strict(),
   z.object({ op: z.literal("update_profile"), displayName: text(80).min(2) }).strict(),
   z.object({ op: z.literal("invite_member"), email: z.email(), displayName: text(80).min(2), role }).strict(),
@@ -78,7 +79,7 @@ export const crmOperationLabels: Record<CrmOperation["op"], string> = {
   schedule_followup: "Schedule customer follow-up", assign_owner: "Assign customer owner", delete_company: "Delete company",
   create_catalog: "Create customer catalog", create_product: "Create product", update_product: "Update product", save_order: "Save purchase order", invoice_order: "Create invoice from order", custom_invoice: "Save custom-price draft invoice", complete_activity: "Complete task or read notification",
   invoice_lifecycle: "Change invoice or record payment", update_flow: "Update automation flow", flow_status: "Change flow status", duplicate_flow: "Duplicate flow", delete_flow: "Delete flow",
-  set_email_state: "Organize email", send_message: "Send customer message", update_profile: "Update my profile", invite_member: "Invite team member", update_member: "Update team member", delete_member: "Remove team member",
+  set_email_state: "Organize email", send_message: "Send customer message", draft_message: "Prepare message draft", update_profile: "Update my profile", invite_member: "Invite team member", update_member: "Update team member", delete_member: "Remove team member",
   manage_mailbox: "Manage mailbox connection", save_preferences: "Update my preferences", invoice_defaults: "Update invoice defaults", payment_methods: "Update payment methods",
 };
 

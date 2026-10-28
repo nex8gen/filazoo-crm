@@ -2,6 +2,7 @@ import { requireWorkspaceMember } from "@/lib/auth";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { getAssignedEmailContacts } from "@/lib/data/email-access";
 import { canViewEmail } from "@/lib/email-access";
+import { getViewerMailbox } from "@/lib/data/mailboxes";
 
 export async function GET(_request: Request, context: RouteContext<"/api/email/attachments/[id]/[index]">) {
   const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
@@ -13,9 +14,12 @@ export async function GET(_request: Request, context: RouteContext<"/api/email/a
 
   const admin = createSupabaseAdmin();
   const { data: message, error } = await admin.from("mailbox_sent_messages")
-    .select("attachments,to_email").eq("id", id).eq("user_id", viewer.id).maybeSingle();
+    .select("attachments,to_email,mailbox_id").eq("id", id).eq("user_id", viewer.id).maybeSingle();
   if (error || !message || !Array.isArray(message.attachments)) return new Response("Attachment not found.", { status: 404 });
-  if (!canViewEmail(viewer, message.to_email, await getAssignedEmailContacts(viewer))) return new Response("Attachment not found.", { status: 404 });
+  const mailbox = message.mailbox_id ? await getViewerMailbox(viewer.id, message.mailbox_id) : null;
+  if (message.mailbox_id && !mailbox) return new Response("Attachment not found.", { status: 404 });
+  const assignedContacts = mailbox?.type === "personal" ? null : await getAssignedEmailContacts(viewer);
+  if (!canViewEmail(viewer, message.to_email, assignedContacts, mailbox)) return new Response("Attachment not found.", { status: 404 });
   const attachment = message.attachments[index];
   if (!attachment || typeof attachment.path !== "string" || typeof attachment.filename !== "string" || !attachment.path.startsWith(`${viewer.id}/${id}/`)) {
     return new Response("Attachment not found.", { status: 404 });

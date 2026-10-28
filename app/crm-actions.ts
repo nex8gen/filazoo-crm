@@ -123,7 +123,7 @@ function domainFromWebsite(website: string | null) {
 }
 
 function refreshCrm() {
-  ["/", "/companies", "/pipeline", "/emails", "/catalogs", "/catalogs/companies"].forEach((path) => revalidatePath(path));
+  ["/", "/companies", "/segments", "/pipeline", "/emails", "/catalogs", "/catalogs/companies"].forEach((path) => revalidatePath(path));
 }
 
 function refreshCompany(companyId: string) {

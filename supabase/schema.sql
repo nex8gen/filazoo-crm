@@ -12,6 +12,26 @@ begin
 end;
 $$;
 
+-- Saved audiences are evaluated against current company profiles.
+-- Like other CRM tables, access is server-only after workspace authorization.
+create table public.company_segments (
+  id uuid primary key default gen_random_uuid(),
+  name text not null check (char_length(name) between 2 and 120 and name = btrim(name)),
+  description text not null default '' check (char_length(description) <= 500),
+  rules jsonb not null default '{}'::jsonb check (
+    jsonb_typeof(rules) = 'object'
+    and rules - array['businessSegment','country','source','stage','minFitScore','hasEmail','companyIds'] = '{}'::jsonb
+    and (not (rules ? 'companyIds') or (jsonb_typeof(rules->'companyIds') = 'array' and rules - 'companyIds' = '{}'::jsonb))
+  ),
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+create unique index company_segments_name_key on public.company_segments (lower(name));
+alter table public.company_segments enable row level security;
+revoke all on public.company_segments from public, anon, authenticated;
+grant all on public.company_segments to service_role;
+comment on table public.company_segments is 'Server-only saved CRM audiences. Server actions validate active workspace membership and writer roles; browsers have no direct access.';
+
 create table public.workspace_members (
   user_id uuid primary key references auth.users(id) on delete cascade,
   role text not null default 'viewer' check (role in ('admin','operator','bd_manager','viewer')),
@@ -1002,3 +1022,253 @@ revoke all on function public.remove_workspace_member(uuid, uuid) from public, a
 grant execute on function public.remove_workspace_member(uuid, uuid) to service_role;
 
 commit;
+
+
+-- Lingxing ERP stock snapshots
+-- ERP snapshots are separate from editable catalog/pricing data. Only the
+-- authenticated application server can read or publish them.
+create table public.inventory_sync_runs (
+  id uuid primary key default gen_random_uuid(),
+  scope text not null,
+  status text not null check (status in ('running', 'succeeded', 'failed')),
+  rows_seen integer not null default 0,
+  error_message text,
+  started_at timestamptz not null default now(),
+  finished_at timestamptz
+);
+create unique index inventory_one_running on public.inventory_sync_runs ((true)) where status = 'running';
+create index inventory_sync_scope_started on public.inventory_sync_runs (scope, started_at desc);
+
+create table public.erp_inventory (
+  sku text primary key check (length(btrim(sku)) > 0),
+  scope text not null,
+  available bigint not null,
+  on_hand bigint not null,
+  locked bigint not null,
+  warehouse_ids text[] not null,
+  synced_at timestamptz not null,
+  run_id uuid not null references public.inventory_sync_runs(id)
+);
+create index erp_inventory_scope_sku on public.erp_inventory(scope, sku);
+alter table public.inventory_sync_runs enable row level security;
+alter table public.erp_inventory enable row level security;
+revoke all on public.inventory_sync_runs, public.erp_inventory from public, anon, authenticated;
+grant select, insert, update, delete on public.inventory_sync_runs, public.erp_inventory to service_role;
+
+create function public.claim_inventory_sync(p_scope text) returns uuid
+language plpgsql security invoker set search_path = '' as $$
+declare v_id uuid;
+begin
+  if not pg_try_advisory_xact_lock(741850201) then return null; end if;
+  update public.inventory_sync_runs
+    set status = 'failed', finished_at = now(), error_message = 'Previous sync timed out. Previous stock was kept.'
+    where status = 'running' and started_at <= now() - interval '5 minutes';
+  if exists (select 1 from public.inventory_sync_runs where status = 'running') then return null; end if;
+  if exists (select 1 from public.inventory_sync_runs where scope = p_scope and started_at > now() - interval '30 seconds') then return null; end if;
+  insert into public.inventory_sync_runs(scope, status) values(p_scope, 'running') returning id into v_id;
+  return v_id;
+end;
+$$;
+
+create function public.finish_inventory_sync(p_run_id uuid, p_entries jsonb) returns void
+language plpgsql security invoker set search_path = '' as $$
+declare v_scope text; v_started_at timestamptz;
+begin
+  -- Serializes publication with claim/expiry; expired workers cannot publish.
+  perform pg_advisory_xact_lock(741850201);
+  select scope, started_at into v_scope, v_started_at from public.inventory_sync_runs
+    where id = p_run_id and status = 'running' for update;
+  if v_scope is null or v_started_at <= now() - interval '5 minutes' then raise exception 'Inventory sync lease expired'; end if;
+  if jsonb_typeof(p_entries) is distinct from 'array' then raise exception 'Invalid stock snapshot'; end if;
+  -- Replacement and run completion commit together. Failed/incomplete pages
+  -- never call this function, so the last complete snapshot stays intact.
+  delete from public.erp_inventory;
+  insert into public.erp_inventory(sku, scope, available, on_hand, locked, warehouse_ids, synced_at, run_id)
+    select sku, v_scope, available, on_hand, locked, warehouse_ids, v_started_at, p_run_id
+    from jsonb_to_recordset(p_entries) as x(sku text, available bigint, on_hand bigint, locked bigint, warehouse_ids text[]);
+  update public.inventory_sync_runs set status = 'succeeded', rows_seen = jsonb_array_length(p_entries), finished_at = now()
+    where id = p_run_id;
+end;
+$$;
+revoke all on function public.claim_inventory_sync(text), public.finish_inventory_sync(uuid, jsonb) from public, anon, authenticated;
+grant execute on function public.claim_inventory_sync(text), public.finish_inventory_sync(uuid, jsonb) to service_role;
+
+
+-- Editable ERP connection and automatic stock schedule
+create extension if not exists pg_cron with schema pg_catalog;
+create extension if not exists pg_net with schema extensions;
+create extension if not exists supabase_vault with schema vault;
+
+create table public.erp_connection_settings (
+  singleton boolean primary key default true check (singleton),
+  provider text not null default 'lingxing' check (provider = 'lingxing'),
+  name text not null,
+  app_id text not null,
+  app_secret_id uuid not null,
+  worker_secret_id uuid not null,
+  warehouse_ids text[] not null default '{}',
+  sku_map jsonb not null default '{}' check (jsonb_typeof(sku_map) = 'object'),
+  enabled boolean not null default true,
+  sync_interval integer not null default 0 check (sync_interval in (0,5,15,60,1440)),
+  worker_url text,
+  revision integer not null default 1,
+  updated_by uuid references auth.users(id),
+  updated_at timestamptz not null default now(),
+  last_dispatched_at timestamptz,
+  last_dispatch_id bigint,
+  last_dispatch_error text
+);
+alter table public.erp_connection_settings enable row level security;
+revoke all on public.erp_connection_settings from public, anon, authenticated;
+grant select, insert, update, delete on public.erp_connection_settings to service_role;
+
+-- All functions use caller privileges. Secrets are encrypted by Supabase
+-- Vault, and only server service-role RPCs may retrieve the decrypted value.
+create function public.read_erp_connection() returns jsonb
+language sql security invoker set search_path = '' as $$
+  select to_jsonb(s) - 'app_secret_id' - 'worker_secret_id' || jsonb_build_object('app_secret', v.decrypted_secret)
+  from public.erp_connection_settings s join vault.decrypted_secrets v on v.id = s.app_secret_id
+  where s.singleton;
+$$;
+
+create function public.save_erp_connection(
+  p_name text, p_app_id text, p_app_secret text, p_warehouse_ids text[],
+  p_sku_map jsonb, p_enabled boolean, p_sync_interval integer,
+  p_worker_url text, p_revision integer, p_updated_by uuid
+) returns integer language plpgsql security invoker set search_path = '' as $$
+declare v_current public.erp_connection_settings; v_secret_id uuid; v_worker_id uuid; v_revision integer;
+begin
+  perform pg_advisory_xact_lock(741850202);
+  select * into v_current from public.erp_connection_settings where singleton for update;
+  if coalesce(v_current.revision, 0) <> p_revision then raise exception using errcode = '40001', message = 'ERP settings changed. Refresh and try again.'; end if;
+  if length(btrim(p_name)) not between 1 and 100 or octet_length(p_app_id) not in (16,24,32) then raise exception 'Invalid ERP connection details'; end if;
+  if jsonb_typeof(p_sku_map) is distinct from 'object' then raise exception 'Invalid SKU mappings'; end if;
+  if p_enabled and p_sync_interval > 0 and (p_worker_url is null or p_worker_url !~ '^https://([a-zA-Z0-9][a-zA-Z0-9-]*\.)+[a-zA-Z]{2,}/api/cron/inventory$') then raise exception 'Automatic sync requires a public HTTPS CRM URL'; end if;
+  v_secret_id := v_current.app_secret_id;
+  if nullif(btrim(p_app_secret), '') is not null then
+    if v_secret_id is null then v_secret_id := vault.create_secret(p_app_secret, null, 'Filazoo Lingxing API credential');
+    else perform vault.update_secret(v_secret_id, p_app_secret); end if;
+  elsif v_secret_id is null or v_current.app_id <> p_app_id then raise exception 'App Secret is required for a new App ID';
+  end if;
+  v_worker_id := v_current.worker_secret_id;
+  if v_worker_id is null then v_worker_id := vault.create_secret(encode(extensions.gen_random_bytes(32), 'hex'), null, 'Filazoo inventory scheduler credential'); end if;
+  v_revision := coalesce(v_current.revision, 0) + 1;
+  insert into public.erp_connection_settings(singleton,name,app_id,app_secret_id,worker_secret_id,warehouse_ids,sku_map,enabled,sync_interval,worker_url,revision,updated_by)
+    values(true,p_name,p_app_id,v_secret_id,v_worker_id,p_warehouse_ids,p_sku_map,p_enabled,p_sync_interval,p_worker_url,v_revision,p_updated_by)
+    on conflict(singleton) do update set name=excluded.name,app_id=excluded.app_id,app_secret_id=excluded.app_secret_id,
+      warehouse_ids=excluded.warehouse_ids,sku_map=excluded.sku_map,enabled=excluded.enabled,sync_interval=excluded.sync_interval,
+      worker_url=excluded.worker_url,revision=excluded.revision,updated_by=excluded.updated_by,updated_at=now(),
+      last_dispatched_at=null,last_dispatch_id=null,last_dispatch_error=null;
+  return v_revision;
+end;
+$$;
+
+create function public.erp_worker_authorized(p_secret text) returns boolean
+language sql security invoker set search_path = '' as $$
+  select exists(select 1 from public.erp_connection_settings s join vault.decrypted_secrets v on v.id=s.worker_secret_id
+    where s.singleton and s.enabled and extensions.digest(p_secret,'sha256') = extensions.digest(v.decrypted_secret,'sha256'));
+$$;
+
+create function public.dispatch_erp_inventory_sync() returns bigint
+language plpgsql security invoker set search_path = '' as $$
+declare v_settings public.erp_connection_settings; v_secret text; v_id bigint;
+begin
+  if not pg_try_advisory_xact_lock(741850203) then return null; end if;
+  select * into v_settings from public.erp_connection_settings where singleton and enabled and sync_interval > 0
+    and (last_dispatched_at is null or last_dispatched_at <= now() - make_interval(mins => sync_interval)) for update;
+  if not found then return null; end if;
+  select decrypted_secret into v_secret from vault.decrypted_secrets where id=v_settings.worker_secret_id;
+  if v_secret is null then raise exception 'Inventory worker credential unavailable'; end if;
+  v_id := net.http_get(url := v_settings.worker_url, headers := jsonb_build_object('Authorization','Bearer '||v_secret), timeout_milliseconds := 290000);
+  update public.erp_connection_settings set last_dispatched_at=now(),last_dispatch_id=v_id,last_dispatch_error=null where singleton;
+  return v_id;
+exception when others then
+  update public.erp_connection_settings set last_dispatch_error='Automatic stock sync could not be requested. Check the deployed CRM address.' where singleton;
+  return null;
+end;
+$$;
+
+revoke all on function public.read_erp_connection(), public.save_erp_connection(text,text,text,text[],jsonb,boolean,integer,text,integer,uuid), public.erp_worker_authorized(text), public.dispatch_erp_inventory_sync() from public, anon, authenticated;
+grant execute on function public.read_erp_connection(), public.save_erp_connection(text,text,text,text[],jsonb,boolean,integer,text,integer,uuid), public.erp_worker_authorized(text), public.dispatch_erp_inventory_sync() to service_role;
+
+-- This tick is idle until an administrator saves an enabled automatic
+-- connection. Cron runs as its migration owner; no service-role elevation.
+select cron.schedule('filazoo-erp-inventory-tick','*/5 * * * *','select public.dispatch_erp_inventory_sync();');
+
+-- Conversation opt-in. All reads/writes go through authenticated server services.
+create table public.email_auto_replies (
+  id uuid primary key default gen_random_uuid(),
+  mailbox_id uuid not null references public.workspace_mailboxes(id) on delete cascade,
+  sender_id uuid not null references public.workspace_mailboxes(id) on delete cascade check(sender_id=mailbox_id),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  assigned_to uuid not null references auth.users(id) on delete cascade,
+  root_message_id text not null, thread_key text not null, recipient text not null,
+  anchors text[] not null, history jsonb not null default '[]'::jsonb check (jsonb_typeof(history) = 'array'),
+  enabled boolean not null default false,
+  status text not null default 'paused' check (status in ('active','paused','processing','waiting_shipping','ready','needs_review')),
+  revision integer not null default 1,
+  enabled_at timestamptz not null default now(), last_message_key text not null,
+  pending_message_key text, pending_document jsonb, invoice_id uuid references public.invoices(id) on delete set null,
+  task_id uuid references public.crm_tasks(id) on delete set null,
+  last_error text, last_sent_at timestamptz, processing_at timestamptz,
+  created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
+  unique(mailbox_id, root_message_id)
+);
+create index email_auto_replies_due_idx on public.email_auto_replies(updated_at) where enabled;
+create index email_auto_replies_anchors_idx on public.email_auto_replies using gin(anchors);
+create index email_auto_replies_user_idx on public.email_auto_replies(user_id);
+create index email_auto_replies_sender_idx on public.email_auto_replies(sender_id);
+create index email_auto_replies_assignee_idx on public.email_auto_replies(assigned_to);
+create index email_auto_replies_invoice_idx on public.email_auto_replies(invoice_id);
+create index email_auto_replies_task_idx on public.email_auto_replies(task_id);
+create trigger email_auto_replies_updated before update on public.email_auto_replies for each row execute function public.set_updated_at();
+
+-- A durable reservation is written BEFORE SMTP. Interrupted or ambiguous sends
+-- require human review and are never retried automatically.
+create table public.email_auto_reply_deliveries (
+  id uuid primary key default gen_random_uuid(),
+  automation_id uuid not null references public.email_auto_replies(id) on delete cascade,
+  message_key text not null, status text not null check (status in ('reserved','sent','failed')),
+  message_id text, error text, created_at timestamptz not null default now(), sent_at timestamptz,
+  unique(automation_id, message_key)
+);
+create table public.email_reply_knowledge (
+  id uuid primary key default gen_random_uuid(), title text not null check(char_length(title) between 1 and 200),
+  content text not null check(char_length(content) between 1 and 10000),
+  created_by uuid references auth.users(id) on delete set null, created_at timestamptz not null default now()
+);
+create index email_reply_knowledge_creator_idx on public.email_reply_knowledge(created_by);
+alter table public.email_auto_replies enable row level security;
+alter table public.email_auto_reply_deliveries enable row level security;
+alter table public.email_reply_knowledge enable row level security;
+revoke all on public.email_auto_replies, public.email_auto_reply_deliveries, public.email_reply_knowledge from public, anon, authenticated;
+grant select, insert, update, delete on public.email_auto_replies, public.email_auto_reply_deliveries, public.email_reply_knowledge to service_role;
+
+-- Save the pause, task and notification together, including revision protection
+-- against a user stopping AI while generation was running.
+create function public.handoff_email_auto_reply(
+  p_id uuid, p_revision integer, p_status text, p_document jsonb, p_message_key text,
+  p_history jsonb, p_reason text, p_company_id uuid default null, p_contact_id uuid default null
+) returns void language plpgsql security invoker set search_path = '' as $$
+declare a public.email_auto_replies; v_task uuid;
+begin
+  select * into a from public.email_auto_replies where id=p_id for update;
+  if a.id is null or not a.enabled or a.revision <> p_revision or a.status <> 'processing' then
+    raise exception 'Automation changed or was stopped';
+  end if;
+  if p_status not in ('waiting_shipping','needs_review') then raise exception 'Invalid handoff'; end if;
+  v_task := coalesce(a.task_id, gen_random_uuid());
+  insert into public.crm_tasks(id,company_id,contact_id,assigned_to,title,notes,priority,status,due_at)
+    values(v_task,p_company_id,p_contact_id,a.assigned_to,
+      case when p_status='waiting_shipping' then 'Add shipping cost to send customer invoice' else 'Review AI email reply' end,
+      left(p_reason,4000) || E'\nOpen conversation: /emails?mailbox=' || a.mailbox_id::text || '&thread=' || a.thread_key,
+      'high','open',now())
+    on conflict(id) do update set title=excluded.title,notes=excluded.notes,status='open',completed_at=null,assigned_to=excluded.assigned_to;
+  insert into public.internal_notifications(user_id,message,conversation_id,include_thread_link)
+    values(a.assigned_to,left(case when p_status='waiting_shipping' then 'Shipping approval required: ' else 'AI reply needs review: ' end || a.recipient || '. ' || p_reason,500),a.thread_key,true);
+  update public.email_auto_replies set status=p_status,pending_document=p_document,pending_message_key=p_message_key,
+    history=p_history,task_id=v_task,last_error=p_reason,processing_at=null where id=p_id;
+end;
+$$;
+revoke all on function public.handoff_email_auto_reply(uuid,integer,text,jsonb,text,jsonb,text,uuid,uuid) from public, anon, authenticated;
+grant execute on function public.handoff_email_auto_reply(uuid,integer,text,jsonb,text,jsonb,text,uuid,uuid) to service_role;

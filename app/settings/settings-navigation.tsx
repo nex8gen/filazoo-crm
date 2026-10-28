@@ -4,11 +4,12 @@ import { EmptyState } from "@/components/data-state";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { CreditCard, Mail, MailCheck, Plug, ReceiptText, Search, Settings, ShieldCheck, Sun, UserRound, UsersRound, Workflow } from "lucide-react";
+import { CreditCard, LayoutGrid, Mail, MailCheck, Plug, ReceiptText, Search, Settings, ShieldCheck, Sun, UserRound, UsersRound, Workflow } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
 export function SettingsNavigation({ isAdmin }: { isAdmin: boolean }) {
   const pathname = usePathname();
+  const isActive = (href: string) => pathname === href || (href === "/settings/apps" && pathname.startsWith("/settings/apps/"));
   const [search, setSearch] = useState("");
   const groups = [
     { label: "Personal", items: [
@@ -19,8 +20,10 @@ export function SettingsNavigation({ isAdmin }: { isAdmin: boolean }) {
       { label: "Email preferences", href: "/settings/email", icon: MailCheck, keywords: "signature translation chinese read refresh sync AI suggestions" },
     ] },
     { label: "Integrations", items: [
+      { label: "Apps & connections", href: "/settings/apps", icon: LayoutGrid, keywords: "apps connections integrations library gmail outlook whatsapp shopify calendar drive" },
       { label: "My mailbox", href: "/settings/mailboxes", icon: Mail },
       { label: "Connected channels", href: "/settings/integrations", icon: Plug },
+      ...(isAdmin ? [{ label: "ERP connection", href: "/settings/erp", icon: Plug, keywords: "lingxing api stock inventory warehouse credentials app secret SKU" }] : []),
     ] },
     { label: "Billing", items: [
       { label: "Payment methods", href: "/settings/payments", icon: CreditCard },
@@ -38,7 +41,7 @@ export function SettingsNavigation({ isAdmin }: { isAdmin: boolean }) {
       <h1 className="px-3 pb-4 pt-2 text-base font-semibold">Settings</h1>
       <div className="relative mb-4"><Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" /><Input aria-label="Search settings" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search" className="h-9 rounded-full border-0 bg-muted pl-9 shadow-none" /></div>
       <nav aria-label="Settings navigation" className="flex gap-5 overflow-x-auto pb-2 md:block md:space-y-6 md:overflow-visible">
-        {filtered.map((group) => <div key={group.label} className="shrink-0"><p className="mb-2 px-3 text-xs font-medium text-muted-foreground">{group.label}</p><ul className="space-y-1">{group.items.map((item) => <li key={item.href}><Link href={item.href} aria-current={pathname === item.href ? "page" : undefined} className={`flex min-h-9 items-center gap-2.5 rounded-lg px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring ${pathname === item.href ? "bg-muted font-medium text-foreground" : "text-foreground/80 hover:bg-muted/60"}`}><item.icon className="size-[18px] shrink-0" />{item.label}</Link></li>)}</ul></div>)}
+        {filtered.map((group) => <div key={group.label} className="shrink-0"><p className="mb-2 px-3 text-xs font-medium text-muted-foreground">{group.label}</p><ul className="space-y-1">{group.items.map((item) => <li key={item.href}><Link href={item.href} aria-current={isActive(item.href) ? "page" : undefined} className={`flex min-h-9 items-center gap-2.5 rounded-lg px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring ${isActive(item.href) ? "bg-muted font-medium text-foreground" : "text-foreground/80 hover:bg-muted/60"}`}><item.icon className="size-[18px] shrink-0" />{item.label}</Link></li>)}</ul></div>)}
         {!filtered.length ? <EmptyState compact icon={Search} title="No settings found." className="border-0 bg-transparent" /> : null}
       </nav>
     </aside>

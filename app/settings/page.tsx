@@ -25,16 +25,21 @@ import { PreferencesForm, SessionSettings } from "./preferences-form";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { InvoiceDefaultsForm } from "./invoice-defaults-form";
 import { getInvoiceDefaults } from "@/lib/data/invoice-defaults";
+import { getErpSettingsView } from "@/lib/data/erp-settings";
+import { getInventoryState } from "@/lib/data/inventory";
+import { listProducts } from "@/lib/data/crm";
+import { ErpConnectionForm } from "./erp-connection-form";
 
 export default async function SettingsPage({ params }: { params?: Promise<{ section?: string }> }) {
   const section = (await params)?.section || "general";
-  const titles: Record<string, string> = { general: "General", appearance: "Appearance", profile: "Profile", security: "Security and login", email: "Email preferences", invoices: "Invoice defaults", mailboxes: "My mailbox", integrations: "Connected channels", payments: "Payment methods", team: "Team and access", advanced: "Assignment and automation" };
+  const titles: Record<string, string> = { general: "General", appearance: "Appearance", profile: "Profile", security: "Security and login", email: "Email preferences", invoices: "Invoice defaults", mailboxes: "My mailbox", integrations: "Connected channels", erp: "ERP connection", payments: "Payment methods", team: "Team and access", advanced: "Assignment and automation" };
   if (!titles[section]) notFound();
   const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
-  if ((section === "team" || section === "advanced") && viewer.role !== "admin") notFound();
+  if ((section === "team" || section === "advanced" || section === "erp") && viewer.role !== "admin") notFound();
   const members = viewer.role === "admin" && (section === "team" || section === "advanced") ? await listWorkspaceMembers() : [];
   const paymentMethods = section === "payments" ? await invoicePaymentMethods() : [];
   const invoiceDefaults = section === "invoices" ? await getInvoiceDefaults() : null;
+  const erp = section === "erp" ? await Promise.all([getErpSettingsView(), getInventoryState(), listProducts()]) : null;
 
   const [defaultWorkspaceMailbox, personalMailbox, mailboxResult] = await Promise.all([
     section === "team" ? getDefaultWorkspaceMailbox().catch(() => null) : Promise.resolve(null),
@@ -50,12 +55,14 @@ export default async function SettingsPage({ params }: { params?: Promise<{ sect
       <SettingsNavigation isAdmin={viewer.role === "admin"} />
       <div className="min-w-0 flex-1 p-5 sm:p-8 lg:p-10">
       <PageHeader title={titles[section]} description="Manage your personal preferences and workspace." />
+      {erp ? <ErpConnectionForm key={erp[0].revision} initial={erp[0]} status={erp[1].status} products={[...new Map(erp[2].products.flatMap(product => [{ sku: product.sku, name: product.name }, ...product.variants.map(variant => ({ sku: variant.sku, name: `${product.name} — ${variant.name}` }))]).map(product => [product.sku, product])).values()]} /> : null}
       {section === "general" ? <div className="mb-4 grid max-w-2xl gap-4"><Card className="shadow-none"><CardHeader><CardTitle>Language</CardTitle><CardDescription>Choose English or Chinese for this browser.</CardDescription></CardHeader><CardContent><LanguageSwitcher /></CardContent></Card><Card className="shadow-none"><CardHeader><CardTitle>List preferences</CardTitle><CardDescription>Choose how many records you see when browsing your CRM.</CardDescription></CardHeader><CardContent><PreferencesForm section="general" /></CardContent></Card></div> : null}
       {section === "appearance" ? <Card className="mb-4 max-w-2xl shadow-none"><CardHeader><CardTitle>Display and accessibility</CardTitle><CardDescription>Control table spacing and animation across your workspace.</CardDescription></CardHeader><CardContent><PreferencesForm section="appearance" /></CardContent></Card> : null}
       {section === "email" ? <Card className="max-w-2xl shadow-none"><CardHeader><CardTitle>Reading and sending</CardTitle><CardDescription>Your defaults for the email inbox and company conversations.</CardDescription></CardHeader><CardContent><PreferencesForm section="email" /><Separator className="my-5" /><Button variant="outline" nativeButton={false} render={<Link href="/settings/mailboxes" />}>Manage my mailbox</Button></CardContent></Card> : null}
       {section === "invoices" && invoiceDefaults ? <Card className="max-w-2xl shadow-none"><CardHeader><CardTitle>Seller and invoice defaults</CardTitle><CardDescription>Shared workspace defaults for new invoices. Customer billing profiles can override currency and due dates. Existing invoices keep their saved details.</CardDescription></CardHeader><CardContent><InvoiceDefaultsForm initial={invoiceDefaults} canManage={canManageBilling(viewer.role)} /></CardContent></Card> : null}
       {section === "security" ? <Card className="mb-4 max-w-2xl shadow-none"><CardHeader><CardTitle>Other devices</CardTitle><CardDescription>End your other signed-in sessions.</CardDescription></CardHeader><CardContent><SessionSettings /></CardContent></Card> : null}
       {section === "integrations" ? <div className="mb-4 grid max-w-2xl gap-4">{[
+        ...(viewer.role === "admin" ? [{ title: "ERP product stock", description: "Add API credentials, choose warehouses, map product SKUs, and schedule stock updates without editing code.", links: [{ label: "Manage ERP connection", href: "/settings/erp" }] }] : []),
         { title: "Email and delivery", description: "Manage your sending mailbox, shared team inbox, and delivery readiness.", links: [{ label: "My mailbox", href: "/settings/mailboxes" }, { label: "Delivery checks", href: "/deliverability" }, ...(viewer.role === "admin" ? [{ label: "Shared inbox", href: "/settings/team" }] : [])] },
         { title: "Customer messaging", description: "View channel connection status and manage customer conversations.", links: [{ label: "Open Messenger", href: "/messenger" }] },
         { title: "Automation and follow-ups", description: "Configure flow triggers, business days, stop-on-reply rules, and AI approval controls in the automation workspace.", links: [{ label: "Manage automation", href: "/lead-channel/ai-agent" }] },

@@ -52,11 +52,12 @@ export async function POST(request: Request) {
   const geminiModel = (agentMode ? process.env.GEMINI_AGENT_MODEL?.trim() : process.env.GEMINI_CHAT_MODEL?.trim()) || process.env.GEMINI_EMAIL_MODEL?.trim();
   const gateway = () => generateGatewayText({ ...options, token: gatewayToken!, model: gatewayModel, visionModel: process.env.AI_GATEWAY_VISION_MODEL?.trim() });
   let serverData: Awaited<ReturnType<typeof loadAgentContext>> | undefined;
-  if (agentMode || parsed.data.webSearch) {
+  if (agentMode || parsed.data.webSearch || parsed.data.pageContext?.emailId || parsed.data.pageContext?.conversationId || parsed.data.pageContext?.flowId || parsed.data.pageContext?.flowDraft) {
     try {
       serverData = await loadAgentContext(parsed.data, viewer);
       options.prompt = buildWorkspaceAssistantPrompt(parsed.data, serverData);
-    } catch {
+    } catch (error) {
+      console.error("Unable to load assistant context:", error instanceof Error ? error.message : "Unknown context error");
       return Response.json({ error: translateUiText("Unable to load the selected email or CRM records. Refresh the page and try again.", parsed.data.language) }, { status: 503, headers: responseHeaders });
     }
   }
@@ -116,6 +117,10 @@ export async function POST(request: Request) {
     const extracted = extractWorkspaceActions(output);
     if (!agentMode) return Response.json({ output: translateUiText(extracted.output, parsed.data.language), actions: [], research: researchResult }, { headers: responseHeaders });
     try {
+      const selected = serverData?.currentEmail;
+      for (const action of extracted.actions) {
+        if ("email" in action && action.email && action.email.sourceEmailId === selected?.id && selected?.mailboxId) action.email.mailboxId = selected.mailboxId;
+      }
       const actions = await prepareAgentActions(extracted.actions, viewer, parsed.data.approvalMode);
       return Response.json({ output: translateUiText(extracted.output || (actions.length ? "The requested actions are ready." : "Please describe the task you want me to carry out."), parsed.data.language), actions, research: researchResult }, { headers: responseHeaders });
     } catch (error) {

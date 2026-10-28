@@ -237,6 +237,8 @@ export async function receiveMailboxMessages(mailbox: ImapMailbox, { limit = 10,
         id: parsed.messageId ? `imap-${parsed.messageId}` : `imap-${mailbox.email}-${box.uidvalidity}-${message.attributes.uid}`,
         uid: message.attributes.uid, uidValidity: box.uidvalidity, bodyLoaded: !headersOnly,
         from: from?.address, replyTo: parsed.replyTo?.value[0]?.address || null,
+        automaticResponse: (parsed.headers.has("auto-submitted") && String(parsed.headers.get("auto-submitted")).toLowerCase() !== "no")
+          || /bulk|list|junk/i.test(String(parsed.headers.get("precedence") || "")) || parsed.headers.has("list-id"),
         contact: from?.address || "Unknown sender", contactName: from?.name,
         direction: "inbound", status: "Received", subject: parsed.subject || "(No subject)", company: "Unknown company",
         body, preview: body.replace(/\s+/g, " ").slice(0, 160), html: typeof html === "string" ? html : null,

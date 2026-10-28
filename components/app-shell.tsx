@@ -4,16 +4,17 @@ import Link from "next/link";
 import { AiIcon } from "@/components/ai-icon";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Menu, Search } from "lucide-react";
 import { navigation, type NavigationItem } from "@/lib/navigation";
 import { BrandMark } from "@/components/brand-mark";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { WorkspaceAiAssistant } from "@/components/workspace-ai-assistant";
 import { FlowActivityBell } from "@/components/flow-activity";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+
+const WorkspaceAiAssistant = lazy(() => import("@/components/workspace-ai-assistant").then((module) => ({ default: module.WorkspaceAiAssistant })));
 
 const WorkspaceCommandMenu = dynamic(() => import("@/components/workspace-command-menu").then((module) => module.WorkspaceCommandMenu));
 
@@ -122,6 +123,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
   const [commandOpen, setCommandOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
+  const [aiLoaded, setAiLoaded] = useState(false);
   const navigationTriggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -203,8 +205,9 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
       {commandOpen ? (
         <WorkspaceCommandMenu navigation={navigation} open={commandOpen} onOpenChange={setCommandOpen} onNavigate={navigate} />
       ) : null}
-      <button type="button" aria-label="Open Filazoo AI" aria-expanded={aiOpen} title="Ask Filazoo AI" onClick={() => setAiOpen(true)} className={`fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-5 z-[55] grid size-20 place-items-center text-violet-700 transition duration-200 hover:scale-110 focus-visible:rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring sm:right-7 dark:text-violet-300 ${aiOpen ? "pointer-events-none scale-90 opacity-0" : "opacity-100"}`}><span aria-hidden="true" className="absolute inset-0 rounded-full bg-background/30 backdrop-blur-md" style={{ WebkitMaskImage: "radial-gradient(circle, #000 0%, #000 40%, rgba(0,0,0,.65) 58%, transparent 80%)", maskImage: "radial-gradient(circle, #000 0%, #000 40%, rgba(0,0,0,.65) 58%, transparent 80%)" }} /><span aria-hidden="true" className="absolute inset-2 rounded-full border border-border/80 bg-background/55 shadow-sm" /><AiIcon className="relative z-10 size-12" /></button>
-      <WorkspaceAiAssistant open={aiOpen} onOpenChange={setAiOpen} />
+      <button type="button" aria-label="Open Filazoo AI" aria-expanded={aiOpen} title="Ask Filazoo AI" onClick={() => { setAiLoaded(true); setAiOpen(true); }} className={`fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-5 z-[55] grid size-20 place-items-center text-violet-700 transition duration-200 hover:scale-110 focus-visible:rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring sm:right-7 dark:text-violet-300 ${aiOpen ? "pointer-events-none scale-90 opacity-0" : "opacity-100"}`}><span aria-hidden="true" className="absolute inset-0 rounded-full bg-background/30 backdrop-blur-md" style={{ WebkitMaskImage: "radial-gradient(circle, #000 0%, #000 40%, rgba(0,0,0,.65) 58%, transparent 80%)", maskImage: "radial-gradient(circle, #000 0%, #000 40%, rgba(0,0,0,.65) 58%, transparent 80%)" }} /><span aria-hidden="true" className="absolute inset-2 rounded-full border border-border/80 bg-background/55 shadow-sm" /><AiIcon className="relative z-10 size-12" /></button>
+      {/* Keep the panel mounted after its first use so drafts and running work survive closing. */}
+      {aiLoaded ? <Suspense fallback={aiOpen ? <aside aria-label="Filazoo AI workspace" className="fixed inset-y-0 right-0 z-[60] flex w-full flex-col border-l bg-background lg:top-12 lg:w-[var(--workspace-ai-width)]"><div className="flex items-center justify-between border-b p-4"><span role="status" className="text-sm text-muted-foreground">Loading…</span><Button variant="ghost" size="sm" onClick={() => setAiOpen(false)}>Close</Button></div></aside> : null}><WorkspaceAiAssistant open={aiOpen} onOpenChange={setAiOpen} /></Suspense> : null}
     </div>
   );
 }

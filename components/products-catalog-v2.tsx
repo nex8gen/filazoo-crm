@@ -23,6 +23,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { TableFilters, TableFilter } from "@/components/ui/table-filters";
 import { TablePagination } from "@/components/ui/table-pagination";
 import { ProductImagePicker } from "@/components/product-image-picker";
+import { stockLabel } from "@/lib/product-inventory";
 
 const pageSize = 25;
 const amount = (value: string) => parseCurrencyAmount(value).toFixed(2);
@@ -98,7 +99,8 @@ function ProductDialog({ product, open, onOpenChange, canWrite, mode, onSaved }:
       return;
     }
     const form = new FormData(event.currentTarget);
-    form.set("variants", JSON.stringify(variants));
+    if (product?.stock !== undefined) form.set("stockStatus", "ERP managed");
+    form.set("variants", JSON.stringify(variants.map(variant => ({ ...variant, stockStatus: variant.stock !== undefined ? "ERP managed" : variant.stockStatus }))));
     if (product) form.set("originalSku", product.sku);
     setSaving(true);
     setError("");
@@ -130,7 +132,7 @@ function ProductDialog({ product, open, onOpenChange, canWrite, mode, onSaved }:
         <Field label="Status" id="product-status"><Select name="active" defaultValue={product?.status === "Inactive" ? "false" : "true"} disabled={!canWrite}><SelectTrigger id="product-status" size="sm" className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="true">Active</SelectItem><SelectItem value="false">Inactive</SelectItem></SelectContent></Select></Field>
         <Field label="Diameter" id="product-diameter"><Input id="product-diameter" name="diameter" defaultValue={product?.diameter === "Not specified" ? "" : product?.diameter} placeholder="1.75 mm" disabled={!canWrite} /></Field>
         <Field label="Pack weight" id="product-weight"><Input id="product-weight" name="weight" defaultValue={product?.weight === "Not specified" ? "" : product?.weight} placeholder="1 kg" disabled={!canWrite} /></Field>
-        <Field label="Stock status" id="product-stock"><Input id="product-stock" name="stockStatus" defaultValue={product?.stockStatus} placeholder="In stock" disabled={!canWrite} /></Field>
+        <Field label="Stock status" id="product-stock"><Input id="product-stock" name="stockStatus" defaultValue={product?.stockStatus} placeholder="In stock" disabled={!canWrite || product?.stock !== undefined} />{product?.stock !== undefined ? <p className="text-xs text-muted-foreground">Stock comes from Lingxing ERP. Sync stock to refresh quantities.</p> : null}</Field>
         <Field label="Lead time" id="product-lead"><Input id="product-lead" name="leadTime" defaultValue={product?.leadTime} placeholder="Ships in 3–5 days" disabled={!canWrite} /></Field>
         <div className="sm:col-span-2"><input type="hidden" name="imageUrl" value={imageUrl ?? ""} /><ProductImagePicker id="product-image" label="Product image" value={imageUrl} onChange={setImageUrl} disabled={!canWrite || saving || uploading} mode={mode} onBusyChange={onImageBusyChange} /></div>
 
@@ -148,7 +150,7 @@ function ProductDialog({ product, open, onOpenChange, canWrite, mode, onSaved }:
             <Input value={variant.name} onChange={(event) => updateVariant(index, { name: event.target.value })} placeholder="Name / color" aria-label={`Variant ${index + 1} name`} disabled={!canWrite} />
             <Input value={variant.sku} onChange={(event) => updateVariant(index, { sku: event.target.value })} placeholder="Variant SKU" aria-label={`Variant ${index + 1} SKU`} disabled={!canWrite} />
             <Input value={variant.price.replace(/[^0-9.-]/g, "")} onChange={(event) => updateVariant(index, { price: event.target.value })} type="number" min="0" step="0.01" placeholder="Price" aria-label={`Variant ${index + 1} price`} disabled={!canWrite} />
-            <Input value={variant.stockStatus} onChange={(event) => updateVariant(index, { stockStatus: event.target.value })} placeholder="Availability" aria-label={`Variant ${index + 1} availability`} disabled={!canWrite} />
+            <Input value={variant.stock !== undefined ? stockLabel(variant.stock) : variant.stockStatus} onChange={(event) => updateVariant(index, { stockStatus: event.target.value })} placeholder="Availability" aria-label={`Variant ${index + 1} availability`} disabled={!canWrite || variant.stock !== undefined} />
             {canWrite ? <Button type="button" variant="ghost" size="icon-sm" disabled={variants.length === 1 || saving || uploading} onClick={() => setVariants((current) => current.filter((_, position) => position !== index))} aria-label={`Remove ${variant.name || "variant"}`}><Trash2 /></Button> : null}
             <div className="sm:col-span-full"><ProductImagePicker id={`variant-image-${variant.id}`} label={`Variant ${index + 1} image (optional)`} value={variant.imageUrl} onChange={(imageUrl) => updateVariant(index, { imageUrl })} disabled={!canWrite || saving || uploading} mode={mode} onBusyChange={onImageBusyChange} /></div>
           </div>)}</div>
@@ -173,6 +175,11 @@ function CatalogDownloadDialog({ products, open, onOpenChange }: { products: Pro
 
 export function ProductsCatalogV2({ products: initialProducts, canWrite, mode }: { products: Product[]; canWrite: boolean; mode: DataMode }) {
   const [products, setProducts] = useState(initialProducts);
+  const [previousProducts, setPreviousProducts] = useState(initialProducts);
+  if (initialProducts !== previousProducts) {
+    setPreviousProducts(initialProducts);
+    setProducts(initialProducts);
+  }
   const [query, setQuery] = useState("");
   const [material, setMaterial] = useState("all");
   const [status, setStatus] = useState("all");
@@ -224,7 +231,7 @@ export function ProductsCatalogV2({ products: initialProducts, canWrite, mode }:
         <TableCell className="overflow-hidden"><button type="button" className="flex w-full min-w-0 items-center gap-3 overflow-hidden text-left" onClick={() => { setEditingProduct(product); setEditorOpen(true); }}><div className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-md border bg-muted/50">{product.imageUrl ? <Image src={product.imageUrl} alt="" width={48} height={48} unoptimized className="size-full object-cover" /> : <ImageIcon className="size-4 text-muted-foreground" />}</div><div className="min-w-0 overflow-hidden"><p className="truncate font-medium hover:text-primary" title={product.name}>{product.name}</p><p className="truncate font-mono text-xs text-muted-foreground" title={product.sku}>{product.sku}</p><p className="mt-1 truncate text-xs text-muted-foreground">{product.variants.length} variant{product.variants.length === 1 ? "" : "s"} · Click to view</p></div></button></TableCell>
         <TableCell className="overflow-hidden whitespace-normal"><div className="min-w-0 space-y-1 overflow-hidden"><p className="truncate font-medium">{product.material} · {product.variants.length} variant{product.variants.length === 1 ? "" : "s"}</p><p className="truncate text-xs text-muted-foreground" title={product.colors.join(", ")}>{product.colors.join(" · ")}</p>{product.weight !== "Not specified" && product.weight !== "—" ? <p className="truncate text-xs text-muted-foreground">Pack weight: {product.weight}</p> : null}</div></TableCell>
         <TableCell className="overflow-hidden whitespace-normal">{product.priceTiers.length ? <div className="flex max-w-full flex-wrap gap-1.5">{product.priceTiers.map((tier) => <span key={`${tier.minimumQuantity}-${tier.price}`} className="shrink-0 rounded-md border bg-muted/40 px-2 py-1 text-xs"><span className="text-muted-foreground">{tier.minimumQuantity}+</span> <span className="font-medium">{tier.price}</span></span>)}</div> : <span className="text-muted-foreground">Price unavailable</span>}</TableCell>
-        <TableCell className="overflow-hidden whitespace-normal"><div className="flex min-w-0 items-start gap-2"><Box className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" /><div className="min-w-0"><p className="truncate" title={product.stockStatus}>{product.stockStatus}</p><p className="mt-0.5 truncate text-xs text-muted-foreground" title={product.leadTime}>{product.leadTime}</p></div></div></TableCell>
+        <TableCell className="overflow-hidden whitespace-normal"><div className="flex min-w-0 items-start gap-2"><Box className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" /><div className="min-w-0"><p className="truncate" title={product.stock !== undefined ? stockLabel(product.stock) : product.stockStatus}>{product.stock !== undefined ? stockLabel(product.stock) : product.stockStatus}</p>{product.stock ? <p className="mt-0.5 text-xs text-muted-foreground" title={product.stock.syncedAt}>{product.stock.onHand.toLocaleString("en")} on hand · {product.stock.locked.toLocaleString("en")} locked</p> : null}<p className="mt-0.5 truncate text-xs text-muted-foreground" title={product.leadTime}>{product.leadTime}</p></div></div></TableCell>
         <TableCell><Badge variant={product.status === "Active" ? "secondary" : "outline"}>{product.status}</Badge></TableCell>
         <TableCell className="overflow-hidden pr-4"><div className="flex items-center justify-end gap-1"><span className="truncate text-xs text-muted-foreground">{formatUpdatedAt(product.updatedAt)}</span><Button className="shrink-0" variant="ghost" size="icon-sm" aria-label={`Copy ${product.sku}`} onClick={async (event) => { event.stopPropagation(); await navigator.clipboard.writeText(product.sku); toast.success(`${product.sku} copied.`); }}><Clipboard /></Button></div></TableCell>
       </TableRow>)}

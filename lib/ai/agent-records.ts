@@ -4,15 +4,24 @@ import type { WorkspaceViewer } from "../auth";
 import { createSupabaseAdmin } from "../supabase/admin";
 import { commerceDefaults } from "../company-commerce";
 import { getEmailInboxBackendData, type InboxEmailItem } from "../email-inbox";
-import { getEffectiveMailbox } from "../data/mailboxes";
+import { getEffectiveMailbox, getViewerMailbox, getViewerMailboxes } from "../data/mailboxes";
 import { loadMailboxMessageContent, mailboxSyncKey } from "../data/mailbox-sync";
 import { groupEmailConversations, replyTarget, replyReferences, threadKeyForEmail } from "../email-threading";
 import type { agentEmailSchema, AgentEmailSearch } from "./workspace-assistant";
 import type { z } from "zod";
 
 /** Read only the signed-in user's accessible inbox; never trust client email bodies or headers. */
-export async function loadAgentEmails(viewer: WorkspaceViewer, emailId?: string, companyId?: string) {
-  const { emails } = await getEmailInboxBackendData({ syncMailbox: false, history: true });
+export async function loadAgentEmails(viewer: WorkspaceViewer, emailId?: string, companyId?: string, mailboxId?: string) {
+  let inbox = await getEmailInboxBackendData({ syncMailbox: false, history: true, ...(mailboxId ? { mailboxId } : {}) });
+  // Approval and execution also reload source IDs after the user leaves the page.
+  if (emailId && !mailboxId && !inbox.emails.some((email) => email.id === emailId && !email.demo)) {
+    for (const mailbox of await getViewerMailboxes(viewer.id)) {
+      if (mailbox.id === inbox.selectedMailboxId) continue;
+      const candidate = await getEmailInboxBackendData({ syncMailbox: false, history: true, mailboxId: mailbox.id });
+      if (candidate.emails.some((email) => email.id === emailId && !email.demo)) { inbox = candidate; break; }
+    }
+  }
+  const { emails } = inbox;
   const selected = emailId ? emails.find((email) => email.id === emailId && !email.demo) : null;
   if (emailId && !selected) throw new Error("The selected email is unavailable or you no longer have access to it.");
   const groups = groupEmailConversations(emails);
@@ -23,14 +32,19 @@ export async function loadAgentEmails(viewer: WorkspaceViewer, emailId?: string,
   const history = selected
     ? conversation?.[1] ?? [selected]
     : emails.filter((email) => (email.companyId === companyId || addresses.has(email.contact.toLowerCase())) && !email.demo);
-  const mailbox = await getEffectiveMailbox(viewer.id);
+  const mailbox = inbox.selectedMailboxId ? await getViewerMailbox(viewer.id, inbox.selectedMailboxId) : await getEffectiveMailbox(viewer.id);
   const recent = [...history].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp)).slice(-12);
   if (selected && !recent.some((email) => email.id === selected.id)) recent.unshift(selected);
   const messages = await Promise.all(recent.map(async (email) => {
     if (email.bodyLoaded !== false) return email;
-    if (!mailbox || !email.uid || !email.uidValidity || email.mailboxKey !== mailboxSyncKey(mailbox)) throw new Error("Load this conversation before asking the agent to use it.");
-    const full = await loadMailboxMessageContent(mailbox, email.uid, email.uidValidity);
-    return { ...email, body: full.body, bodyLoaded: true };
+    try {
+      if (!mailbox || !email.uid || !email.uidValidity || email.mailboxKey !== mailboxSyncKey(mailbox)) throw new Error("Load this conversation before asking the agent to use it.");
+      const full = await loadMailboxMessageContent(mailbox, email.uid, email.uidValidity);
+      return { ...email, body: full.body, bodyLoaded: true };
+    } catch (error) {
+      if (email.id === selected?.id) throw error;
+      return { ...email, body: "", bodyLoaded: false };
+    }
   }));
   const loaded = selected ? messages.find((email) => email.id === selected.id) ?? selected : null;
   const current = loaded ? { ...loaded, threadId: conversation?.[0] || threadKeyForEmail(loaded) } : null;
@@ -39,11 +53,11 @@ export async function loadAgentEmails(viewer: WorkspaceViewer, emailId?: string,
   const matches = address ? await createSupabaseAdmin().from("contacts").select("company_id").eq("email", address) : null;
   if (matches?.error) throw new Error("Unable to match the email to its customer profile.");
   const companyIds = [...new Set((matches?.data ?? []).map((row) => row.company_id as string))];
-  return { current, messages, companyId: companyIds.length === 1 ? companyIds[0] : null };
+  return { current, messages, mailboxId: inbox.selectedMailboxId ?? null, companyId: companyIds.length === 1 ? companyIds[0] : null };
 }
 
 export function presentAgentEmail(email: InboxEmailItem) {
-  return { id: email.id, direction: email.direction, contact: email.contact, replyTo: email.replyTo, subject: email.subject, text: email.body.slice(0, 12000), truncated: email.body.length > 12000, timestamp: email.timestamp, companyId: email.companyId, threadId: threadKeyForEmail(email) };
+  return { id: email.id, direction: email.direction, contact: email.contact, replyTo: email.replyTo, subject: email.subject, text: email.bodyLoaded === false ? "" : email.body.slice(0, 12000), contentAvailable: email.bodyLoaded !== false, truncated: email.body.length > 12000, timestamp: email.timestamp, companyId: email.companyId, threadId: threadKeyForEmail(email) };
 }
 
 /** Uses the same access-filtered inbox as the email UI; never searches raw mailbox tables. */
@@ -74,7 +88,7 @@ export async function searchAgentEmails(viewer: WorkspaceViewer, search: AgentEm
         if (!mailbox || !email.uid || !email.uidValidity || email.mailboxKey !== mailboxSyncKey(mailbox)) throw new Error("Message content unavailable.");
         body = (await loadMailboxMessageContent(mailbox, email.uid, email.uidValidity)).body;
       }
-      return { ...presentAgentEmail({ ...email, body, companyId }), contentAvailable: true };
+      return { ...presentAgentEmail({ ...email, body, bodyLoaded: true, companyId }), contentAvailable: true };
     } catch {
       // A failed body load must never be presented as a complete message or used for extraction.
       return { ...presentAgentEmail({ ...email, body: "", companyId }), contentAvailable: false };
@@ -96,10 +110,10 @@ export async function searchAgentEmails(viewer: WorkspaceViewer, search: AgentEm
 
 export async function prepareAgentEmail(email: z.infer<typeof agentEmailSchema>, viewer: WorkspaceViewer) {
   if (!email.sourceEmailId) return email;
-  const context = await loadAgentEmails(viewer, email.sourceEmailId);
+  const context = await loadAgentEmails(viewer, email.sourceEmailId, undefined, email.mailboxId);
   const target = replyTarget(context.messages);
   if (!target || target.recipient.toLowerCase() !== email.to.toLowerCase()) throw new Error("A reply must use the selected conversation's recipient. Prepare a new email for a different recipient.");
-  return { ...email, threadId: context.current!.threadId || undefined, inReplyTo: target.parent.messageId?.match(/<[^<>\s]+>/)?.[0], references: replyReferences(target.parent) };
+  return { ...email, ...(context.mailboxId ? { mailboxId: context.mailboxId } : {}), threadId: context.current!.threadId || undefined, inReplyTo: target.parent.messageId?.match(/<[^<>\s]+>/)?.[0], references: replyReferences(target.parent) };
 }
 
 /** A complete editable snapshot, using raw values rather than display labels or defaults. */

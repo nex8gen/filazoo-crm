@@ -74,7 +74,7 @@ export async function verifyMailboxConnections(mailbox: MailboxConnectionInput) 
       user: mailbox.smtpUsername,
       pass: mailbox.smtpPassword,
       from: mailbox.email,
-      secure: mailbox.smtpPort === 465,
+      secure: [465, 994].includes(mailbox.smtpPort),
     });
   } catch (error) {
     throw new Error(describeMailboxConnectionError("SMTP", error));

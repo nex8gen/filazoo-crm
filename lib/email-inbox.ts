@@ -3,6 +3,9 @@ import { getViewerMailboxes, mailboxHasImap, mailboxHasSmtp } from "./data/mailb
 import { defaultViewerMailbox, type MailboxOption } from "./mailbox-utils.ts";
 import { getEmailAutomationSettings, listEmailInboxStates, listSentMailboxMessages, type EmailCategory, type EmailFolderState } from "./data/email-state.ts";
 import { requireWorkspaceMember } from "./auth.ts";
+import type { WorkspaceViewer } from "./auth.ts";
+import type { WorkspaceMailboxRecord } from "./data/mailboxes.ts";
+import { listInboxCompanies } from "./data/inbox-companies.ts";
 import { canViewEmail } from "./email-access.ts";
 import { getAssignedEmailContacts } from "./data/email-access.ts";
 import { normalizeMessageId, normalizeReferences, threadKeyForEmail } from "./email-threading.ts";
@@ -17,6 +20,7 @@ export type InboxEmailItem = {
   mailboxKey?: string;
   mailboxId?: string | null;
   bodyLoaded?: boolean;
+  automaticResponse?: boolean;
   contactName?: string;
   source?: "mailbox" | "shopify" | "crm";
   direction: "inbound" | "outbound";
@@ -68,6 +72,7 @@ export type EmailInboxBackendData = {
   mailboxes: MailboxOption[];
   selectedMailboxId: string | null;
   defaultSenderId: string | null;
+  assignedCustomersOnly: boolean;
   emails: InboxEmailItem[];
   automation: {
     enabled: boolean;
@@ -308,45 +313,48 @@ export function buildInboxEmailItems({
   });
 }
 
-export async function getEmailInboxBackendData({ syncMailbox = true, history = false, mailboxId }: { syncMailbox?: boolean; history?: boolean; mailboxId?: string } = {}): Promise<EmailInboxBackendData> {
-  const { listCompanies, listEmailDrafts, listReplies } = await import("./data/crm.ts");
-  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
-  const [{ emails, mode }, { replies }, companyResult, mailboxes, states, shopifyMessages, assignedContacts] = await Promise.all([
-    listEmailDrafts(),
-    listReplies(),
-    listCompanies(),
-    getViewerMailboxes(viewer.id),
-    listEmailInboxStates(viewer.id).catch(() => new Map()),
-    listShopifyFormInboxMessages().catch(() => []),
-    getAssignedEmailContacts(viewer),
-  ]);
+export async function getEmailInboxBackendData({ syncMailbox = true, history = false, mailboxId, context }: { syncMailbox?: boolean; history?: boolean; mailboxId?: string; context?: { viewer: WorkspaceViewer; mailboxes: WorkspaceMailboxRecord[] } } = {}): Promise<EmailInboxBackendData> {
+  const { listEmailDrafts, listReplies } = await import("./data/crm.ts");
+  const viewer = context?.viewer ?? await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
+  const mailboxes = context?.mailboxes ?? await getViewerMailboxes(viewer.id);
   const defaultSender = defaultViewerMailbox(mailboxes);
   const defaultMailbox = mailboxId !== undefined ? mailboxes.find((mailbox) => mailbox.id === mailboxId) : defaultSender;
   if (mailboxId !== undefined && !defaultMailbox) throw new Error("Mailbox unavailable.");
   const personal = defaultMailbox?.type === "personal";
-  const sentMessages = defaultMailbox ? await listSentMailboxMessages(viewer.id, defaultMailbox.id).catch(() => []) : [];
-
-  let liveInbound: InboxEmailItem[] = [];
-  let inboxError: string | null = null;
-  let lastMailboxSync: string | null = null;
-  if (mailboxHasImap(defaultMailbox) && defaultMailbox) {
+  const loadInbound = async () => {
+    if (!mailboxHasImap(defaultMailbox) || !defaultMailbox) return { messages: [], error: null, syncedAt: null };
     try {
       const { loadSyncedMailbox } = await import("./data/mailbox-sync.ts");
-      const result = await loadSyncedMailbox(defaultMailbox, { sync: syncMailbox, history });
-      liveInbound = result.messages;
-      inboxError = result.error;
-      lastMailboxSync = result.syncedAt;
+      return await loadSyncedMailbox(defaultMailbox, { sync: syncMailbox, history, includeContent: false });
     } catch (error) {
-      inboxError = error instanceof Error ? error.message : "Unable to connect to the mailbox inbox.";
-      console.warn("Unable to sync mailbox inbox:", inboxError);
+      const message = error instanceof Error ? error.message : "Unable to connect to the mailbox inbox.";
+      console.warn("Unable to sync mailbox inbox:", message);
+      return { messages: [], error: message, syncedAt: null };
     }
-  }
+  };
+  const [{ emails, mode }, { replies }, states, shopifyMessages, assignedContacts, sentMessages, mailboxResult] = await Promise.all([
+    personal ? Promise.resolve({ emails: [], mode: "live" as const }) : listEmailDrafts(viewer),
+    personal ? Promise.resolve({ replies: [] }) : listReplies(viewer),
+    listEmailInboxStates(viewer.id).catch(() => new Map()),
+    personal ? Promise.resolve([]) : listShopifyFormInboxMessages().catch(() => []),
+    personal ? Promise.resolve(null) : getAssignedEmailContacts(viewer),
+    defaultMailbox ? listSentMailboxMessages(viewer.id, defaultMailbox.id).catch(() => []) : Promise.resolve([]),
+    loadInbound(),
+  ]);
+  const { messages: liveInbound, error: inboxError, syncedAt: lastMailboxSync } = mailboxResult;
+  const visibleInbox = [...buildInboxEmailItems({ drafts: emails, replies, inbound: [...shopifyMessages, ...liveInbound] }), ...sentMessages]
+    .filter((item) => canViewEmail(viewer, item.contact, assignedContacts, defaultMailbox));
+  // There is nothing to enrich when access rules exclude the saved messages.
+  const [companyResult, automation] = await Promise.all([
+    visibleInbox.length ? listInboxCompanies(visibleInbox, assignedContacts) : Promise.resolve({ companies: [] }),
+    getEmailAutomationSettings(viewer.id, visibleInbox.filter((item) => item.direction === "inbound").length)
+      .catch(() => ({ enabled: false, queueCount: 0, steps: [] })),
+  ]);
 
   const companiesByEmail = new Map(companyResult.companies.filter((company) => company.email).map((company) => [company.email.toLowerCase(), company]));
   const companiesByName = new Map(companyResult.companies.map((company) => [company.name.toLowerCase(), company]));
   const companiesById = new Map(companyResult.companies.map((company) => [company.id, company]));
-  const inbox = [...buildInboxEmailItems({ drafts: personal ? [] : emails, replies: personal ? [] : replies, inbound: [...(personal ? [] : shopifyMessages), ...liveInbound] }), ...sentMessages]
-    .filter((item) => canViewEmail(viewer, item.contact, assignedContacts))
+  const inbox = visibleInbox
     .map((item) => {
       const assignedCompanyId = assignedContacts?.get(item.contact.trim().toLowerCase());
       const company = assignedCompanyId ? companiesById.get(assignedCompanyId)
@@ -387,11 +395,6 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
     || process.env.AI_GATEWAY_API_KEY?.trim()
     || process.env.VERCEL_OIDC_TOKEN?.trim(),
   );
-  const automation = await getEmailAutomationSettings(
-    viewer.id,
-    inbox.filter((item) => item.direction === "inbound").length,
-  ).catch(() => ({ enabled: false, queueCount: 0, steps: [] }));
-
   return {
     mode,
     mailboxConfigured,
@@ -404,6 +407,7 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
     mailboxes: mailboxes.map((mailbox) => ({ id: mailbox.id, email: mailbox.email, type: mailbox.type, sendConfigured: mailboxHasSmtp(mailbox), inboxConfigured: mailboxHasImap(mailbox) })),
     selectedMailboxId: defaultMailbox?.id ?? null,
     defaultSenderId: defaultSender?.id ?? null,
+    assignedCustomersOnly: !personal && viewer.role === "bd_manager",
     emails: inbox,
     automation,
   };

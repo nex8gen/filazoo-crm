@@ -20,6 +20,7 @@ import { CustomerResearchSources, WebSearchOption, type ResearchResult } from "@
 import { AiImageFeedback, AiImagePicker, AiImagePreviews, useAiImageAttachments } from "@/components/ui/ai-image-attachments";
 import OrbitingCirclesGlobe from "@/components/ui/orbiting-circles-02";
 import { chatImageLimitError, type ChatImage } from "@/lib/ai/image-input";
+import { assistantRecordScope, readAssistantPageContext } from "@/lib/ai/page-context";
 
 type Mode = "chat" | "agent";
 type Message = { id: string; role: "user" | "assistant"; content: string; images?: ChatImage[]; actions?: AgentProposal[]; durationMs?: number; work?: AgentWorkProgress; research?: ResearchResult };
@@ -73,22 +74,26 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
   const [activeWork, setActiveWork] = useState<AgentWorkProgress | null>(null);
   const [workPage, setWorkPage] = useState(pageLabel);
   const actionLock = useRef(false);
+  const proposalContexts = useRef(new Map<string, ReturnType<typeof readAssistantPageContext>>());
   const [animation, setAnimation] = useState<{ id: string; run: number } | null>(null);
   const abort = useRef<AbortController | null>(null);
   const log = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const composerId = useId();
   const chatKey = `${pathname}:${recordScope}:${mode}`;
+  const visibleChatKey = useRef(chatKey);
   const messages = useMemo(() => chats[chatKey] ?? [], [chatKey, chats]);
   const busy = pending || Boolean(animation) || Boolean(applying);
+
+  useEffect(() => { visibleChatKey.current = chatKey; setAnimation(null); }, [chatKey]);
 
   useEffect(() => {
     const main = document.querySelector("#workspace-content");
     if (!main) return;
-    const readScope = () => setRecordScope(main.querySelector<HTMLElement>("[data-ai-email-id]")?.dataset.aiEmailId || main.querySelector<HTMLElement>("[data-ai-invoice-id]")?.dataset.aiInvoiceId || main.querySelector<HTMLElement>("[data-ai-company-id]")?.dataset.aiCompanyId || "");
+    const readScope = () => setRecordScope(assistantRecordScope(readAssistantPageContext(main)));
     readScope();
     const observer = new MutationObserver(readScope);
-    observer.observe(main, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-ai-email-id", "data-ai-invoice-id", "data-ai-company-id"] });
+    observer.observe(main, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-ai-email-id", "data-ai-mailbox-id", "data-ai-invoice-id", "data-ai-company-id", "data-ai-conversation-id", "data-ai-flow-id", "data-ai-flow-draft"] });
     return () => observer.disconnect();
   }, [pathname]);
 
@@ -118,11 +123,13 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
   async function send(value = question) {
     const content = value.trim();
     if ((!content && !attachments.images.length) || attachments.processing || busy || abort.current || actionLock.current) return;
+    const pageContext = readAssistantPageContext(document.querySelector("#workspace-content"));
+    const requestChatKey = `${pathname}:${assistantRecordScope(pageContext)}:${mode}`;
     const sentImages = attachments.images;
-    const next: Message[] = [...messages, { id: crypto.randomUUID(), role: "user", content, ...(sentImages.length ? { images: sentImages } : {}) }];
+    const next: Message[] = [...(chats[requestChatKey] ?? []), { id: crypto.randomUUID(), role: "user", content, ...(sentImages.length ? { images: sentImages } : {}) }];
     const imageError = chatImageLimitError(next.slice(-15));
     if (imageError) { setError(imageError); return; }
-    setChats((current) => ({ ...current, [chatKey]: next }));
+    setChats((current) => ({ ...current, [requestChatKey]: next }));
     setQuestion("");
     attachments.clear();
     setError(null);
@@ -143,11 +150,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
           mode: mode === "agent" ? "work" : "analyze",
           approvalMode,
           completedActionIds: Object.values(chats).flat().flatMap((message) => message.actions ?? []).filter((proposal) => ["completed", "failed", "unknown"].includes(actionResults[proposal.id]?.status ?? "")).map((proposal) => proposal.id).slice(-20),
-          pageContext: {
-            emailId: document.querySelector<HTMLElement>("[data-ai-email-id]")?.dataset.aiEmailId || undefined,
-            invoiceId: document.querySelector<HTMLElement>("[data-ai-invoice-id]")?.dataset.aiInvoiceId || undefined,
-            companyId: document.querySelector<HTMLElement>("[data-ai-company-id]")?.dataset.aiCompanyId || new URLSearchParams(window.location.search).get("companyId") || undefined,
-          },
+          pageContext,
           pathname,
           pageLabel,
           pageText: visiblePageText(),
@@ -158,11 +161,12 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
       const result = await response.json().catch(() => null);
       if (!response.ok || typeof result?.output !== "string") throw new Error(result?.error || "Unable to reach Filazoo AI.");
       const id = crypto.randomUUID();
+      for (const proposal of (result.actions ?? []) as AgentProposal[]) proposalContexts.current.set(proposal.id, pageContext);
       setChats((current) => ({
         ...current,
-        [chatKey]: [...(current[chatKey] ?? next), { id, role: "assistant", content: result.output, actions: result.actions, durationMs: performance.now() - started, work, research: result.research }],
+        [requestChatKey]: [...(current[requestChatKey] ?? next), { id, role: "assistant", content: result.output, actions: result.actions, durationMs: performance.now() - started, work, research: result.research }],
       }));
-      setAnimation({ id, run: 1 });
+      if (visibleChatKey.current === requestChatKey) setAnimation({ id, run: 1 });
       // Auto approval applies only to proposals created by this request. Changing
       // the selector never executes older proposals waiting for review.
       if (mode === "agent" && approvalMode === "auto") {
@@ -175,7 +179,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
     } catch (reason) {
       if (!controller.signal.aborted) {
         setError(reason instanceof Error ? reason.message : "Unable to reach Filazoo AI.");
-        setChats((current) => ({ ...current, [chatKey]: (current[chatKey] ?? []).filter((message) => message.id !== next.at(-1)?.id) }));
+        setChats((current) => ({ ...current, [requestChatKey]: (current[requestChatKey] ?? []).filter((message) => message.id !== next.at(-1)?.id) }));
         setQuestion(content);
         attachments.setImages(sentImages);
       }
@@ -231,7 +235,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
       setActionResults((current) => ({ ...current, [actionId]: result }));
       if (decision === "approve") {
         router.refresh();
-        window.dispatchEvent(new CustomEvent("filazoo:agent-action", { detail: { draftId: result.draft ? actionId : undefined, flowId: result.flowId } }));
+        window.dispatchEvent(new CustomEvent("filazoo:agent-action", { detail: { draftId: result.draft ? actionId : undefined, draftMessage: result.draftMessage, flowId: result.flowId, flowEditorBefore: proposalContexts.current.get(actionId)?.flowDraft } }));
         if (result.draft && !document.querySelector(".email-workspace")) router.push(`/emails?agentDraft=${actionId}`);
       }
       return true;

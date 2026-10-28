@@ -1,5 +1,6 @@
 "use client";
 import { usePreferences } from "@/components/preferences-provider";
+import { useBackgroundRefresh } from "@/components/use-background-refresh";
 import { withEmailSignature } from "@/lib/user-preferences";
 
 import { useLanguage } from "@/components/language-provider";
@@ -7,7 +8,7 @@ import { useLanguage } from "@/components/language-provider";
 import { AiIcon } from "@/components/ai-icon";
 import { ColumnResizeHandle } from "@/components/column-resize-handle";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem, SelectGroup, SelectLabel } from "@/components/ui/select";
 
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -18,7 +19,7 @@ import {
   Archive, ArrowLeft, ChevronLeft, ChevronRight, PanelRight, MailOpen, CalendarClock, Check,
   Clock3, FileText, Filter, Forward, Inbox, Languages, Mail, MoreHorizontal,
   LoaderCircle, Library, Paperclip, Plus, RefreshCw, Reply, Search, Send,
-  Smile, Star, Trash2, Workflow, X, ReceiptText,
+  Smile, Star, Trash2, Workflow, X, ReceiptText, Settings2, UserRound, UsersRound,
 } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel,
@@ -31,6 +32,7 @@ import { InboxCalculator } from "@/components/inbox-calculator";
 import { EmailCatalogDialog } from "@/components/email-catalog-dialog";
 import { EmailMessageList } from "@/components/email-message-list";
 import { EmailAiSummary } from "@/components/email-ai-summary";
+import { EmailAutoReplyControl } from "@/components/email-auto-reply-control";
 import { EmailAiTypewriter } from "@/components/email-ai-typewriter";
 import "./email-workspace.css";
 import "./email-ai-writing.css";
@@ -254,7 +256,7 @@ function emailMatchesFolder(
 function SenderSelect({ mailboxes, value, onChange, disabled, label }: { mailboxes: MailboxOption[]; value: string; onChange: (id: string) => void; disabled: boolean; label: string }) {
   return <Select value={value} onValueChange={(selectedValue) => { if (selectedValue === null) return; onChange(selectedValue); }} disabled={disabled || !mailboxes.length}><SelectTrigger aria-label={label} size="sm" className="min-w-0 max-w-full"><SelectValue /></SelectTrigger><SelectContent>
     {!value ? <SelectItem value="">No mailbox selected</SelectItem> : null}
-    {mailboxes.map((mailbox) => <SelectItem key={mailbox.id} value={mailbox.id} disabled={!mailbox.sendConfigured}>{mailbox.email} · {mailbox.type === "personal" ? "Personal" : "Workspace"}{!mailbox.sendConfigured ? " (sending unavailable)" : ""}</SelectItem>)}
+    {(["personal", "workspace"] as const).map(type => mailboxes.some(mailbox => mailbox.type === type) ? <SelectGroup key={type}><SelectLabel>{type === "personal" ? "My email" : "Team email"}</SelectLabel>{mailboxes.filter(mailbox => mailbox.type === type).map(mailbox => <SelectItem key={mailbox.id} value={mailbox.id} disabled={!mailbox.sendConfigured}>{mailbox.email}{!mailbox.sendConfigured ? " (sending unavailable)" : ""}</SelectItem>)}</SelectGroup> : null)}
   </SelectContent></Select>;
 }
 
@@ -276,6 +278,11 @@ export function EmailInboxWorkspace({
   invoiceViewer,
   companyScope,
   initialAgentDraft,
+  assignedCustomersOnly = false,
+  onMailboxChange,
+  onMailboxSnapshot,
+  switchingMailboxId,
+  mailboxSwitchError,
 }: {
   initialEmails: EmailWorkspaceItem[];
   initialThreadId?: string;
@@ -297,6 +304,11 @@ export function EmailInboxWorkspace({
   canCreateInvoices?: boolean;
   invoiceViewer?: { id: string; role: string };
   companyScope?: CompanyEmailScope;
+  assignedCustomersOnly?: boolean;
+  onMailboxChange?: (mailboxId: string) => void;
+  onMailboxSnapshot?: (mailboxId: string | null, emails: EmailWorkspaceItem[]) => void;
+  switchingMailboxId?: string | null;
+  mailboxSwitchError?: string | null;
 }) {
   const sourceEmails = companyScope ? filterCompanyEmails(initialEmails, companyScope) : initialEmails;
   const { preferences } = usePreferences();
@@ -375,6 +387,14 @@ export function EmailInboxWorkspace({
   const savedStates = useRef(new Map(sourceEmails.map((email) => [email.id, messageState(email)])));
   const stateWrites = useRef(new Map<string, Promise<void>>());
 
+  useEffect(() => {
+    onMailboxSnapshot?.(selectedMailboxId, emails.map((email) => ({
+      ...email,
+      starred: starred.has(email.id), read: readMessages.has(email.id),
+      category: categories[email.id] ?? null, folder: folderStates[email.id] ?? "inbox", followUpAt: followUps[email.id] ?? null,
+    })));
+  }, [onMailboxSnapshot, selectedMailboxId, emails, starred, readMessages, categories, folderStates, followUps]);
+
   useEffect(() => { unsentDraft.current = Boolean(composeTo.trim() || composeSubject.trim() || composeBody.trim() || draft.trim() || composeAttachments.length || replyAttachments.length); }, [composeTo, composeSubject, composeBody, draft, composeAttachments.length, replyAttachments.length]);
   useEffect(() => {
     const controller = new AbortController();
@@ -404,6 +424,7 @@ export function EmailInboxWorkspace({
         if (unsentDraft.current) throw new Error("Your draft changed while the agent draft was loading. Open the result link after finishing it.");
         loadedAgentDraft.current = id;
         setComposeTo(prepared.to);
+        if (prepared.mailboxId) setComposeSenderId(prepared.mailboxId);
         setComposeSubject(prepared.subject);
         setComposeBody(prepared.text);
         setComposeThread({ to: prepared.to, threadId: prepared.threadId, inReplyTo: prepared.inReplyTo, references: prepared.references });
@@ -456,7 +477,7 @@ export function EmailInboxWorkspace({
     const revision = stateRevision.current;
     try {
       const params = new URLSearchParams();
-      if (selectedMailboxId) params.set("mailboxId", selectedMailboxId);
+      if (selectedMailboxId && !companyScope) params.set("mailboxId", selectedMailboxId);
       if (manual) params.set("scope", "history");
       if (companyScope) params.set("companyId", companyScope.id);
       const response = await fetch(`/api/email/inbox?${params}`, { cache: "no-store" });
@@ -479,20 +500,7 @@ export function EmailInboxWorkspace({
     }
   }, [applyMailboxSnapshot, companyScope, inboxConfigured, selectedMailboxId]);
 
-  useEffect(() => {
-    if (!inboxConfigured || !preferences.emailSyncSeconds) return;
-    const initialSyncTimer = window.setTimeout(() => void syncInbox(false), 0);
-    const refresh = () => { if (document.visibilityState === "visible") void syncInbox(false); };
-    const timer = window.setInterval(refresh, preferences.emailSyncSeconds * 1000);
-    window.addEventListener("focus", refresh);
-    document.addEventListener("visibilitychange", refresh);
-    return () => {
-      window.clearTimeout(initialSyncTimer);
-      window.clearInterval(timer);
-      window.removeEventListener("focus", refresh);
-      document.removeEventListener("visibilitychange", refresh);
-    };
-  }, [inboxConfigured, syncInbox, preferences.emailSyncSeconds]);
+  useBackgroundRefresh(syncInbox, inboxConfigured, preferences.emailSyncSeconds);
 
   const conversations = useMemo(() => buildConversations(emails), [emails]);
   const visible = useMemo(() => {
@@ -1091,6 +1099,7 @@ export function EmailInboxWorkspace({
       if (!response.ok || !result.ok) {
         throw new Error(result.error || "Unable to send the email.");
       }
+      window.dispatchEvent(new Event("email-auto-reply-updated"));
 
       const reply: EmailWorkspaceItem = {
         ...result.email,
@@ -1104,7 +1113,7 @@ export function EmailInboxWorkspace({
         customerProfile: selected.customerProfile,
       };
       stateRevision.current += 1;
-      if (reply.mailboxId === selectedMailboxId) setEmails((current) => [reply, ...current]);
+      if (companyScope || reply.mailboxId === selectedMailboxId) setEmails((current) => [reply, ...current]);
       if (session !== replySession.current) return;
       setDraft("");
       setAiDraft("");
@@ -1172,7 +1181,7 @@ export function EmailInboxWorkspace({
 
       const sentEmail: EmailWorkspaceItem = result.email;
       stateRevision.current += 1;
-      if (sentEmail.mailboxId === selectedMailboxId) {
+      if (companyScope || sentEmail.mailboxId === selectedMailboxId) {
         setEmails((current) => [sentEmail, ...current]);
         setFolderStates((current) => ({ ...current, [sentEmail.id]: "inbox" }));
         setSelectedId(sentEmail.id);
@@ -1207,18 +1216,28 @@ export function EmailInboxWorkspace({
   ];
 
   return (
-    <div data-ai-email-id={reading ? selected?.id : undefined} data-ai-company-id={reading ? selected?.companyId || undefined : companyScope?.id} className={`email-workspace flex min-w-0 flex-col overflow-hidden bg-background ${companyScope ? "company-email-workspace h-[clamp(520px,calc(100dvh-14rem),900px)] rounded-xl border" : "h-[calc(100dvh-3rem)]"}`}>
+    <div data-ai-mailbox-id={selectedMailboxId || undefined} data-ai-email-id={reading ? selected?.id : undefined} data-ai-company-id={reading ? selected?.companyId || undefined : companyScope?.id} className={`email-workspace flex min-w-0 flex-col overflow-hidden bg-background ${companyScope ? "company-email-workspace h-[clamp(520px,calc(100dvh-14rem),900px)] rounded-xl border" : "h-[calc(100dvh-3rem)]"}`}>
       {companyScope ? <h3 className="sr-only">Customer mailbox</h3> : <h1 className="sr-only">Email</h1>}
-      {!companyScope && mailboxes.length ? <nav aria-label="Email accounts" className="flex shrink-0 gap-1 overflow-x-auto border-b px-3 pt-2">
-        {mailboxes.map((mailbox) => <Link key={mailbox.id} href={`/emails?mailbox=${encodeURIComponent(mailbox.id)}`} prefetch={false} aria-current={selectedMailboxId === mailbox.id ? "page" : undefined} onClick={(event) => {
-          if (mailbox.id === selectedMailboxId) { event.preventDefault(); return; }
-          if (unsentDraft.current || sending || composeSending || attachmentBusy) { event.preventDefault(); setNotice("Finish or clear your draft before switching mailboxes."); }
-        }} className={`flex max-w-72 shrink-0 flex-col gap-0.5 border-b-2 px-3 py-2 text-xs ${selectedMailboxId === mailbox.id ? "border-primary bg-primary/5 text-primary" : "border-transparent text-muted-foreground hover:bg-muted"}`}>
-          <span className="font-semibold">{mailbox.type === "personal" ? "Personal email" : "Workspace email"}</span><span className="truncate">{mailbox.email}{!mailbox.inboxConfigured ? " · Sync unavailable" : ""}</span>
+      {!companyScope ? <nav aria-label="Email accounts" className="flex shrink-0 flex-wrap items-center gap-3 border-b p-3 sm:flex-nowrap">
+        <div className="flex min-w-0 flex-1 gap-5 overflow-x-auto">
+        {(["personal", "workspace"] as const).map(type => mailboxes.some(mailbox => mailbox.type === type) ? <div key={type} className="flex shrink-0 items-center gap-2.5"><span className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">{type === "personal" ? <UserRound className="size-3.5" /> : <UsersRound className="size-3.5" />}{type === "personal" ? "My email" : "Team email"}</span><div className="flex gap-1">
+        {mailboxes.filter(mailbox => mailbox.type === type).map((mailbox) => <Link key={mailbox.id} href={`/emails?mailbox=${encodeURIComponent(mailbox.id)}`} prefetch={false} aria-label={`${type === "personal" ? "My email" : "Team email"}: ${mailbox.email}`} aria-current={selectedMailboxId === mailbox.id ? "page" : undefined} aria-busy={switchingMailboxId === mailbox.id} onNavigate={(event) => {
+          if (unsentDraft.current || composeOpen || sending || composeSending || attachmentBusy || aiReplyBusy || pendingStateWrites.current) { event.preventDefault(); setNotice("Finish or clear your draft before switching mailboxes."); return; }
+          if (onMailboxChange) { event.preventDefault(); onMailboxChange(mailbox.id); return; }
+          if (mailbox.id === selectedMailboxId) event.preventDefault();
+        }} className={`flex max-w-72 shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-xs ${selectedMailboxId === mailbox.id ? "border-primary/30 bg-primary/5 font-medium text-primary" : "border-transparent text-muted-foreground hover:bg-muted"}`}>
+          {switchingMailboxId === mailbox.id ? <LoaderCircle className="size-3 shrink-0 animate-spin" /> : <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${mailbox.inboxConfigured ? "bg-emerald-500" : "bg-amber-500"}`} />}<span className="truncate">{mailbox.email}{!mailbox.inboxConfigured ? " · Sync unavailable" : ""}</span>
         </Link>)}
+        </div></div> : null)}
+        {!mailboxes.length ? <span className="text-sm text-muted-foreground">Connect an email account to get started.</span> : null}
+        </div>
+        <Link href={`/settings/apps?view=${mailboxes.find(mailbox => mailbox.id === selectedMailboxId)?.type === "workspace" ? "team" : "personal"}`} onNavigate={event => { if (unsentDraft.current || composeOpen || sending || composeSending || attachmentBusy || aiReplyBusy || pendingStateWrites.current) { event.preventDefault(); setNotice("Finish or clear your draft before managing connections."); } }} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted"><Settings2 className="size-3.5" />{mailboxes.length ? "Manage connections" : "Connect email"}</Link>
       </nav> : null}
+      {switchingMailboxId ? <p role="status" className="border-b px-4 py-2 text-xs text-muted-foreground">Switching mailbox…</p> : null}
+      {mailboxSwitchError ? <p role="alert" className="border-b px-4 py-2 text-xs text-destructive">{mailboxSwitchError}</p> : null}
+      {assignedCustomersOnly && !companyScope ? <p className="border-b px-4 py-2 text-xs text-muted-foreground">Your team inbox shows emails from customers assigned to you. My email shows all senders in your personal accounts.</p> : null}
 
-      <div className="mail-layout" data-reading={reading} data-details={detailsOpen}>
+      <div className="mail-layout" data-reading={reading} data-details={detailsOpen} inert={Boolean(switchingMailboxId)} aria-busy={Boolean(switchingMailboxId)}>
         {!companyScope ? <ColumnResizeHandle label="Email folders width" variable="--mail-folder-width" container=".mail-layout" panel=".mail-folders" min={160} max={360} className="mail-folder-resize" /> : null}
         <ColumnResizeHandle label="Conversation list width" variable="--mail-list-width" container=".mail-layout" panel=".mail-list" min={220} max={600} storageKey={companyScope ? "company-mail-list" : "mail-list"} className="mail-list-resize" />
         {selected && !companyScope ? <ColumnResizeHandle label="Contact details width" variable="--mail-details-width" container=".mail-layout" panel=".mail-details" min={280} max={560} reverse className="mail-details-resize" /> : null}
@@ -1310,6 +1329,7 @@ export function EmailInboxWorkspace({
                 <Popover><PopoverTrigger aria-label="AI reply options" className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-violet-600 hover:bg-muted"><AiIcon className="size-3.5" state={aiReplyBusy || aiUpdating ? "thinking" : "idle"} />AI tools<ChevronRight className="size-3 rotate-90" /></PopoverTrigger>
                   <PopoverContent align="end" side="top" className="mail-ai-tools w-80 max-w-[calc(100vw-2rem)] max-h-[min(28rem,var(--available-height))] overflow-y-auto p-3">
                     <PopoverTitle>AI reply tools</PopoverTitle>
+                    {invoiceViewer?.role !== "viewer" ? <EmailAutoReplyControl key={`${target?.parent.mailboxId ?? selectedMailboxId}:${target?.parent.messageId}`} mailboxId={target?.parent.mailboxId ?? selectedMailboxId} senderId={target?.parent.mailboxId ?? selectedMailboxId ?? undefined} messageId={target?.parent.messageId} references={[...new Set(conversation.flatMap(replyReferences))].slice(0, 100)} onManualReply={startReply} /> : null}
                 <div className="mb-2 flex flex-wrap items-center gap-2">
                   <div className="flex items-center gap-2 rounded-md border bg-emerald-50 px-2.5 py-1.5 text-xs text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"><AiIcon state={aiUpdating ? "thinking" : "idle"} />AI writing<Toggle checked={aiReplyOn} onChange={() => { if (!aiReplyBusy) toggleAiWriting(); }} label="Toggle AI writing" /></div>
                   {!aiConfigured ? <span className="text-xs text-amber-700">AI provider not configured — suggestions remain available</span> : null}

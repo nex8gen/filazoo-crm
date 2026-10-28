@@ -32,7 +32,7 @@ export function mailboxSyncKey(mailbox: Pick<WorkspaceMailboxRecord, "id" | "ema
   return createHash("sha256").update(JSON.stringify([mailbox.id, mailbox.email, mailbox.imapHost, mailbox.imapPort, mailbox.imapUsername])).digest("hex");
 }
 
-export async function loadSyncedMailbox(mailbox: WorkspaceMailboxRecord, options: { sync?: boolean; history?: boolean; onProgress?: (stage: string) => void } = {}) {
+export async function loadSyncedMailbox(mailbox: WorkspaceMailboxRecord, options: { sync?: boolean; history?: boolean; includeContent?: boolean; onProgress?: (stage: string) => void } = {}) {
   const admin = createSupabaseAdmin();
   const key = mailboxSyncKey(mailbox);
   const store: MailboxSyncStore = {
@@ -73,6 +73,9 @@ export async function loadSyncedMailbox(mailbox: WorkspaceMailboxRecord, options
   };
   const { fetchMailboxInboxMessages } = await import("../email-inbox.ts");
   const snapshot = await synchronizeMailbox(store, (fetchOptions) => fetchMailboxInboxMessages(mailbox, { ...fetchOptions, onProgress: options.onProgress }), options);
+  // Inbox lists need headers only. Bodies are served by the message endpoint
+  // when opened, rather than downloading every cached HTML body on each poll.
+  if (options.includeContent === false) return { messages: snapshot.messages.map((message) => presentMailboxMessage(message, key)), error: snapshot.error ?? null, syncedAt: snapshot.syncedAt ?? null };
   const { data: cachedBodies } = snapshot.cursor ? await admin.from("mailbox_message_content").select("uid,content")
     .eq("mailbox_key", key).eq("uid_validity", snapshot.cursor.uidValidity).order("uid", { ascending: false }).limit(1000).throwOnError() : { data: [] };
   const byUid = new Map((cachedBodies ?? []).map((row) => [row.uid, row.content as InboxEmailItem]));

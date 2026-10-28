@@ -1,5 +1,5 @@
 import { EmailInboxWorkspace } from "@/components/email-inbox";
-import { getEmailInboxBackendData } from "@/lib/email-inbox";
+import { getCompanyEmailBackendData } from "@/lib/data/company-emails";
 import { filterCompanyEmails, type CompanyEmailScope } from "@/lib/company-email";
 import { listCatalogs, listProducts } from "@/lib/data/crm";
 import { b2bProducts } from "@/lib/data/b2b-products";
@@ -7,7 +7,7 @@ import { canCreateInvoices } from "@/lib/invoice-permissions";
 
 export async function CompanyEmails({ company, viewer, composeTo }: { company: CompanyEmailScope; viewer: { id: string; role: string }; composeTo?: string }) {
   const [data, productResult, catalogResult] = await Promise.all([
-    getEmailInboxBackendData({ syncMailbox: false }),
+    getCompanyEmailBackendData(company),
     listProducts().catch(() => ({ products: [] })),
     listCatalogs().catch(() => ({ catalogs: [] })),
   ]);

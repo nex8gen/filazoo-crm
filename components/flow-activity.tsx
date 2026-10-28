@@ -1,5 +1,6 @@
 "use client";
 
+import { EmailAutoReplyControl } from "@/components/email-auto-reply-control";
 import { ListTodo } from "lucide-react";
 import { EmptyState } from "@/components/data-state";
 import Link from "next/link";
@@ -8,7 +9,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { flowConversationPath } from "@/lib/flow-engine";
 
-type Task = { id: string; title: string; notes: string | null; priority: string; due_at: string | null; company_id: string | null };
+type Task = { id: string; title: string; notes: string | null; priority: string; due_at: string | null; company_id: string | null; automation_id?: string | null };
 type Alert = { id: string; message: string; channel: string; conversation_id: string | null; include_thread_link: boolean; read_at: string | null; created_at: string };
 export type FlowActivityData = { tasks: Task[]; alerts: Alert[] };
 const activityTime = (value: string) => new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(value));
@@ -39,6 +40,20 @@ export function FlowActivity({ initial }: { initial: FlowActivityData }) {
   const [activity, setActivity] = useState(initial);
   const [pending, setPending] = useState("");
   const [error, setError] = useState("");
+  useEffect(() => {
+    const controller = new AbortController();
+    const refresh = async () => {
+      if (document.visibilityState === "hidden") return;
+      try {
+        const response = await fetch("/api/flows/activity", { signal: controller.signal, cache: "no-store" });
+        const result = await response.json();
+        if (!controller.signal.aborted && response.ok && result.ok) setActivity({ tasks: result.tasks, alerts: result.alerts });
+      } catch { /* Preserve the current task list on a failed background refresh. */ }
+    };
+    const interval = setInterval(() => void refresh(), 15_000);
+    window.addEventListener("flow-activity-updated", refresh);
+    return () => { controller.abort(); clearInterval(interval); window.removeEventListener("flow-activity-updated", refresh); };
+  }, []);
   async function complete(kind: "task" | "alert", id: string) {
     setPending(id); setError("");
     try {
@@ -53,7 +68,7 @@ export function FlowActivity({ initial }: { initial: FlowActivityData }) {
   return <div className="space-y-5"><p className="text-xs text-muted-foreground">Times shown in UTC+8.</p>
     {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
     <div className="grid gap-6 lg:grid-cols-2">
-      <section aria-labelledby="flow-tasks" className="space-y-3"><h2 id="flow-tasks" className="font-semibold">Your open tasks</h2><p className="text-xs text-muted-foreground">Up to 100 tasks, earliest due first.</p>{!activity.tasks.length ? <EmptyState compact icon={ListTodo} title="No open tasks assigned to you." /> : activity.tasks.map(task => <article key={task.id} className="space-y-3 rounded-lg border p-4"><div><p className="font-medium">{task.title}</p><p className="mt-1 text-xs text-muted-foreground">{task.priority} priority{task.due_at ? ` · Due ${activityTime(task.due_at)}` : ""}</p></div>{task.notes ? <p className="whitespace-pre-wrap break-words text-sm">{task.notes}</p> : null}<div className="flex items-center gap-3"><Button size="sm" variant="outline" disabled={Boolean(pending)} onClick={() => void complete("task", task.id)}>{pending === task.id ? "Saving…" : "Mark complete"}</Button>{task.company_id ? <Link href={`/companies/${task.company_id}`} className="text-sm text-primary underline">Open company</Link> : null}</div></article>)}</section>
+      <section aria-labelledby="flow-tasks" className="space-y-3"><h2 id="flow-tasks" className="font-semibold">Your open tasks</h2><p className="text-xs text-muted-foreground">Up to 100 tasks, earliest due first.</p>{!activity.tasks.length ? <EmptyState compact icon={ListTodo} title="No open tasks assigned to you." /> : activity.tasks.map(task => <article key={task.id} className="space-y-3 rounded-lg border p-4"><div><p className="font-medium">{task.title}</p><p className="mt-1 text-xs text-muted-foreground">{task.priority} priority{task.due_at ? ` · Due ${activityTime(task.due_at)}` : ""}</p></div>{task.notes ? <p className="whitespace-pre-wrap break-words text-sm">{task.notes}</p> : null}{task.automation_id ? <EmailAutoReplyControl automationId={task.automation_id} /> : null}<div className="flex items-center gap-3"><Button size="sm" variant="outline" disabled={Boolean(pending) || Boolean(task.automation_id)} onClick={() => void complete("task", task.id)}>{pending === task.id ? "Saving…" : "Mark complete"}</Button>{task.company_id ? <Link href={`/companies/${task.company_id}`} className="text-sm text-primary underline">Open company</Link> : null}</div></article>)}</section>
       <section aria-labelledby="flow-alerts" className="space-y-3"><h2 id="flow-alerts" className="font-semibold">Your notifications</h2><p className="text-xs text-muted-foreground">100 most recent notifications.</p>{!activity.alerts.length ? <EmptyState compact icon={Bell} title="No notifications yet." /> : activity.alerts.map(alert => <article key={alert.id} className={`space-y-3 rounded-lg border p-4 ${alert.read_at ? "" : "bg-primary/5"}`}><p className="whitespace-pre-wrap break-words text-sm">{alert.message}</p><p className="text-xs text-muted-foreground">{activityTime(alert.created_at)}</p><div className="flex items-center gap-3">{!alert.read_at ? <Button size="sm" variant="outline" disabled={Boolean(pending)} onClick={() => void complete("alert", alert.id)}>{pending === alert.id ? "Saving…" : "Mark read"}</Button> : <span className="text-xs text-muted-foreground">Read</span>}{alert.include_thread_link && alert.conversation_id ? <Link href={flowConversationPath(alert.conversation_id)} className="text-sm text-primary underline">Open conversation</Link> : null}</div></article>)}</section>
     </div>
   </div>;

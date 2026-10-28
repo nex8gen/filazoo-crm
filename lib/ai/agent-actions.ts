@@ -7,6 +7,7 @@ import type { InvoicePaymentMethod } from "../invoice-payment-methods.ts";
 import { preparedCrmActionSchema } from "./crm-tools.ts";
 
 export const preparedAgentEmailSchema = agentEmailSchema.extend({
+  mailboxId: z.uuid().optional(),
   threadId: z.string().min(1).max(1100).optional(),
   inReplyTo: z.string().regex(/^<[^<>\s]+>$/).optional(),
   references: z.array(z.string().regex(/^<[^<>\s]+>$/)).max(100).optional(),
@@ -24,7 +25,7 @@ export const preparedAgentActionSchema = z.discriminatedUnion("type", [
 ]);
 export type PreparedAgentAction = z.infer<typeof preparedAgentActionSchema>;
 export type AgentProposal = { id: string; action: PreparedAgentAction; approvalMode: "ask" | "auto"; expiresAt: string };
-export type AgentActionResult = { success?: string; error?: string; href?: string; status?: string };
+export type AgentActionResult = { success?: string; error?: string; href?: string; status?: string; draftMessage?: { conversationId: string; text: string } };
 
 type AgentInvoiceSelection = Pick<Extract<WorkspaceAction, { type: "update_invoice" }>, "items" | "bankAccountId" | "paymentMethodIds" | "details">;
 

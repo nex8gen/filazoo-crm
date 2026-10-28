@@ -10,7 +10,7 @@ import { invoiceBankAccounts } from "../data/invoice-banks";
 import { invoicePaymentMethods } from "../data/invoice-payment-methods";
 import { createFlow } from "../data/flows";
 import { flowInputSchema } from "../flows";
-import { getEffectiveMailbox, mailboxHasSmtp } from "../data/mailboxes";
+import { getEffectiveMailbox, getViewerMailbox, mailboxHasSmtp } from "../data/mailboxes";
 import { canEditInvoice } from "../invoice-permissions";
 import { invoiceLabel, invoiceTotals, type InvoiceDocument } from "../invoices";
 import { buildAgentInvoice, type AgentProposal, type PreparedAgentAction } from "./agent-actions";
@@ -42,8 +42,12 @@ export async function prepareAgentActions(actions: WorkspaceAction[], viewer: Wo
       const company = await loadAgentCompany(action.companyId);
       prepared = action.type === "update_company" ? { ...action, changes: action.deriveAddressFields ? deriveCompanyAddressFields(action.changes, company.fields) : action.changes, companyName: company.fields.name, fingerprint: company.fingerprint } : { ...action, companyName: company.fields.name };
     } else if (action.type === "write_email" && !action.invoiceId) {
-      if (action.email.delivery !== "draft" && !mailboxHasSmtp(await getEffectiveMailbox(viewer.id))) throw new Error("Connect an active SMTP mailbox in Settings before sending email.");
-      prepared = { type: action.type, email: await prepareAgentEmail(action.email, viewer) };
+      const email = await prepareAgentEmail(action.email, viewer);
+      if (action.email.delivery !== "draft") {
+        const mailbox = "mailboxId" in email ? await getViewerMailbox(viewer.id, email.mailboxId as string) : await getEffectiveMailbox(viewer.id);
+        if (!mailboxHasSmtp(mailbox)) throw new Error("Connect an active SMTP mailbox in Settings before sending email.");
+      }
+      prepared = { type: action.type, email };
     }
     else {
       const existing = action.type === "create_invoice" ? null : action.invoiceId ? await getInvoice(action.invoiceId) : null;
@@ -144,9 +148,9 @@ export async function executeAgentAction(id: string, action: PreparedAgentAction
   }
   if (action.type === "write_email") {
     await reportProgress(activity);
-    if (action.email.delivery === "draft") return { success: "Email draft prepared in the inbox composer.", href: `/emails?agentDraft=${id}`, draft: { ...action.email } };
-    await prepareAgentEmail(action.email, viewer);
-    const response = await sendEmail(new Request(new URL("/api/email/send", request.url), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(action.email) }));
+    const email = await prepareAgentEmail(action.email, viewer);
+    if (email.delivery === "draft") return { success: "Email draft prepared in the inbox composer.", href: `/emails?agentDraft=${id}`, draft: { ...email } };
+    const response = await sendEmail(new Request(new URL("/api/email/send", request.url), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(email) }));
     const result = await response.json();
     if (!response.ok || !result.ok) throw new Error(result.error || "Email was not confirmed sent. Check Sent before retrying.");
     revalidatePath("/emails");

@@ -178,6 +178,19 @@ test("email organization preserves other flags and messaging resolves its recipi
   await assert.rejects(() => f.prepareCrmAction({ op: "send_message", messageId: recordId, text: "Hi" }, viewer), /actual inbound/);
 });
 
+test("message drafts resolve the open conversation, recheck access and never send", async () => {
+  const f = fixture();
+  Object.assign(f.tables.meta_messages[0], { page_id: "our-page", thread_id: "customer-42" });
+  const proposal = await f.prepareCrmAction({ op: "draft_message", messageId: recordId, text: "Which PLA colors do you need?" }, viewer);
+  assert.equal(agentActions.preparedAgentActionSchema.safeParse(proposal).success, true);
+  const result = await f.executeCrmAction(proposal, viewer, actionId, request);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.draftMessage)), { conversationId: "instagram:our-page:customer-42", text: "Which PLA colors do you need?" });
+  assert.equal(f.calls.some((call) => call.name === "sendMetaTextMessage"), false);
+  f.tables.meta_messages[0].direction = "outbound";
+  await assert.rejects(() => f.executeCrmAction(proposal, viewer, actionId, request), /actual inbound/);
+  await assert.rejects(() => f.prepareCrmAction({ op: "draft_message", messageId: recordId, text: "Hi" }, { ...viewer, role: "viewer" }), /read-only/);
+});
+
 test("preferences and invoice defaults merge only explicit changes", async () => {
   const f = fixture();
   const pref = await f.prepareCrmAction(tools.crmOperationSchema.parse({ op: "save_preferences", changes: { density: "compact" } }), viewer);

@@ -93,6 +93,9 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     document.documentElement.dataset.language = language;
     localizeTree(document.body, language);
     localizeTree(document.querySelector("title") ?? document.head, language);
+    // Server and React output is already English. Restore any translated nodes
+    // above when switching back, then avoid observing every DOM update in English.
+    if (language === "en") return;
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
         if (mutation.type === "characterData") localizeTextNode(mutation.target as Text, language);

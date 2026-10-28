@@ -16,9 +16,9 @@ export async function GET(request: Request) {
   const mailbox = (await getViewerMailboxes(viewer.id)).find((item) => mailboxSyncKey(item) === params.get("mailbox"));
   if (!mailbox || !mailboxHasImap(mailbox) || params.get("mailbox") !== mailboxSyncKey(mailbox)) return new Response("Attachment not found.", { status: 404 });
   try {
-    if (viewer.role === "bd_manager") {
+    if (viewer.role === "bd_manager" && mailbox.type !== "personal") {
       const email = await loadMailboxMessageContent(mailbox, uid, validity);
-      if (!canViewEmail(viewer, email.contact, await getAssignedEmailContacts(viewer))) return new Response("Attachment not found.", { status: 404 });
+      if (!canViewEmail(viewer, email.contact, await getAssignedEmailContacts(viewer), mailbox)) return new Response("Attachment not found.", { status: 404 });
     }
     const attachment = await downloadMailboxAttachment(mailbox, uid, validity, part);
     const filename = attachment.filename.replace(/[\r\n"\\]/g, "_");

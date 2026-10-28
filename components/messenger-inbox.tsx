@@ -4,7 +4,7 @@ import { EmptyState } from "@/components/data-state";
 import { AiIcon } from "@/components/ai-icon";
 
 import { useLanguage } from "@/components/language-provider";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive, ArrowDownToLine, ArrowLeft, Check, CheckCheck, ChevronDown, CircleUserRound,
   Clock3, Copy, Filter, Flag, Globe2, Inbox, Languages, MessageCircleMore,
@@ -94,6 +94,7 @@ export function MessengerInbox({ data }: { data: MetaInboxData }) {
   const [activeChannel, setActiveChannel] = useState<Channel>("all");
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState("");
+  const draftRef = useRef(draft);
   const [sending, setSending] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [translationOn, setTranslationOn] = useState(true);
@@ -112,7 +113,24 @@ export function MessengerInbox({ data }: { data: MetaInboxData }) {
     }).sort((a, b) => (new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()) * (sortNewest ? 1 : -1));
   }, [activeChannel, onlyUnread, search, sortNewest, threads]);
 
-  const selectedThread = threads.find((thread) => thread.id === selectedId) ?? filteredThreads[0];
+  const selectedThread = filteredThreads.find((thread) => thread.id === selectedId) ?? filteredThreads[0];
+  useEffect(() => { draftRef.current = draft; }, [draft]);
+  useEffect(() => {
+    function openAgentDraft(event: Event) {
+      const prepared = (event as CustomEvent<{ draftMessage?: { conversationId: string; text: string } }>).detail?.draftMessage;
+      if (!prepared) return;
+      const target = threads.find((thread) => thread.id === prepared.conversationId);
+      if (!target) { setNotice("Refresh Messenger to open the agent's conversation."); return; }
+      if (draftRef.current.trim()) { setNotice("You have an unsent message. Finish or clear it, then open the agent draft from its result."); return; }
+      setActiveChannel("all"); setSearch(""); setOnlyUnread(false);
+      setSelectedId(target.id); setMobileReading(true);
+      draftRef.current = prepared.text;
+      setDraft(prepared.text);
+      setNotice("Agent draft ready. Review it before sending.");
+    }
+    window.addEventListener("filazoo:agent-action", openAgentDraft);
+    return () => window.removeEventListener("filazoo:agent-action", openAgentDraft);
+  }, [threads]);
   const activeOption = channelOptions.find((item) => item.id === activeChannel)!;
   const unreadCount = threads.reduce((total, thread) => total + thread.unread, 0);
   const isChannelConnected = (channel: Channel) => channel === "all"
@@ -192,7 +210,7 @@ export function MessengerInbox({ data }: { data: MetaInboxData }) {
   }
 
   return (
-    <div className="messenger-workspace flex h-[calc(100dvh-3rem)] flex-col overflow-hidden bg-[#f7f8fa] dark:bg-background">
+    <div data-ai-conversation-id={selectedThread?.id} className="messenger-workspace flex h-[calc(100dvh-3rem)] flex-col overflow-hidden bg-[#f7f8fa] dark:bg-background">
       <div className={`${mobileReading ? "hidden md:block" : ""} shrink-0 border-b bg-background px-4 pb-3 pt-4 sm:px-6`}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">

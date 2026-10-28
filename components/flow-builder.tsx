@@ -430,6 +430,8 @@ function FlowCanvas({ draft, selection, insertAt, canEdit, setSelection, setInse
 export function FlowBuilder({ initialFlows, mailboxOptions, memberOptions, initialFlowId, canEdit: canCreate, viewerId, isAdmin = false, filterOptions }: { initialFlows: AutomationFlow[]; mailboxOptions: Option[]; memberOptions: Option[]; initialFlowId?: string; canEdit: boolean; viewerId: string; isAdmin?: boolean; filterOptions: FilterOptions }) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const [flows, setFlows] = useState(initialFlows);
+  const flowsRef = useRef(flows);
+  useEffect(() => { flowsRef.current = flows; }, [flows]);
   const [deletingFlow, setDeletingFlow] = useState<AutomationFlow | null>(null);
   const actionBusy = useRef(false);
   const initial = initialFlowId === "default" ? initialFlows.find((flow) => flow.name === "3-step follow-up" && flow.createdBy === viewerId) : initialFlows.find((flow) => flow.id === initialFlowId);
@@ -453,12 +455,24 @@ export function FlowBuilder({ initialFlows, mailboxOptions, memberOptions, initi
   useEffect(() => {
     const controller = new AbortController();
     function refreshAfterAgentAction(event: Event) {
-      if (!(event as CustomEvent<{ flowId?: string }>).detail?.flowId) return;
+      const detail = (event as CustomEvent<{ flowId?: string; flowEditorBefore?: FlowInput }>).detail;
+      if (!detail?.flowId) return;
       void fetch("/api/flows", { cache: "no-store", signal: controller.signal })
         .then(async (response) => {
           const result = await response.json();
           if (!response.ok || !result.ok) throw new Error(result.error || "Unable to refresh flows.");
-          if (!controller.signal.aborted) setFlows(result.flows);
+          if (!controller.signal.aborted) {
+            const previous = flowsRef.current;
+            setDraft((current) => {
+              const saved = previous.find((flow) => flow.id === current?.id);
+              const updated = (result.flows as AutomationFlow[]).find((flow) => flow.id === (current?.id ?? detail.flowId));
+              const definition = current ? flowInputSchema.safeParse(current) : null;
+              const matchesRequest = detail.flowEditorBefore && definition?.success && JSON.stringify(definition.data) === JSON.stringify(detail.flowEditorBefore);
+              const unchanged = saved && JSON.stringify(current) === JSON.stringify(toDraft(saved));
+              return current && updated && (matchesRequest || unchanged) ? toDraft(updated) : current;
+            });
+            setFlows(result.flows);
+          }
         })
         .catch(() => { if (!controller.signal.aborted) toast.error("Refresh Flows to see the agent's latest changes."); });
     }
@@ -574,7 +588,9 @@ export function FlowBuilder({ initialFlows, mailboxOptions, memberOptions, initi
   if (view === "list" || !draft) return <><FlowListView flows={flows} canEdit={canCreate} viewerId={viewerId} isAdmin={isAdmin} memberOptions={memberOptions} onBulkAction={runBulkAction} onCreate={() => { setDraft(newDraft()); setSelection("trigger"); setView("builder"); }} onOpen={openFlow} onDuplicate={duplicateFlow} onChangeStatus={changeStatus} onRemove={async (flow) => { setDeletingFlow(flow); }} /><ConfirmActionDialog open={Boolean(deletingFlow)} onOpenChange={(open) => { if (!open) setDeletingFlow(null); }} title="Delete flow?" description={`Delete “${deletingFlow?.name ?? ""}” and its run history? This cannot be undone.`} onConfirm={async () => { if (deletingFlow) await removeFlow(deletingFlow); }} /></>;
 
   const selectedStep = selectedIndex >= 0 ? draft.steps[selectedIndex] : null;
-  return <div className="flex h-full min-h-0 flex-col overflow-hidden bg-muted/20 [&>header]:static! [&>header]:shrink-0">
+  const savedFlow = flows.find((flow) => flow.id === draft.id);
+  const hasUnsavedChanges = !savedFlow || JSON.stringify(draft) !== JSON.stringify(toDraft(savedFlow));
+  return <div data-ai-flow-id={draft.id} data-ai-flow-draft={JSON.stringify({ name: draft.name, triggerType: draft.triggerType, triggerConfig: draft.triggerConfig, status: draft.status, steps: draft.steps })} data-ai-flow-unsaved={hasUnsavedChanges} data-ai-flow-step-id={selection} className="flex h-full min-h-0 flex-col overflow-hidden bg-muted/20 [&>header]:static! [&>header]:shrink-0">
     <header className="sticky top-12 z-20 flex min-h-14 flex-wrap items-center gap-3 border-b bg-background/95 px-4 py-2 backdrop-blur"><button type="button" onClick={() => setView("list")} className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"><ArrowLeft className="size-3.5" />Flows</button><ChevronRight className="size-3.5 text-muted-foreground" /><Input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} aria-label="Flow name" className="h-8 min-w-0 flex-1 sm:w-64 sm:flex-none border-transparent px-2 text-sm font-semibold hover:border-input focus:border-input" disabled={!canEdit} /><Badge variant={statusVariant(draft.status)} className="capitalize">{draft.status}</Badge><span className="hidden text-xs text-muted-foreground xl:inline">{draft.steps.length} actions · {draft.activeRuns || 0} active</span><div className="ml-auto flex w-full flex-wrap items-center gap-2 sm:w-auto"><Button variant="ghost" size="sm" onClick={() => setAuditOpen(true)} disabled={!canEdit}><AiIcon  />Audit flow</Button><Button variant="outline" size="sm" onClick={() => setEmailTestOpen(true)} disabled={!canCreate}><Mail />Test with emails</Button><Button variant="outline" size="sm" onClick={() => setPreviewOpen(true)}><Eye />Preview</Button><Button variant="outline" size="sm" onClick={() => void persist(draft.status)} disabled={!canEdit || saving}><Save />{saving ? "Saving…" : "Save"}</Button>{draft.status === "live" ? <Button size="sm" variant="secondary" onClick={() => void persist("paused")} disabled={!canEdit || saving}><Pause />Pause</Button> : <Button size="sm" onClick={() => void persist("live")} disabled={!canEdit || saving}><Play />Turn on</Button>}</div></header>
     {!canEdit ? <div className="border-b bg-amber-50 px-4 py-2 text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">{canCreate ? "Shared flow is read-only. Its creator or an administrator can change it." : "Viewer access is read-only."}</div> : null}
     <div className="flex shrink-0 gap-2 border-b bg-background px-4 py-2 md:hidden" role="group" aria-label="Flow workspace view">

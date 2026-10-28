@@ -85,7 +85,7 @@ function executionFixture() {
     "../data/invoice-payment-methods": { invoicePaymentMethods: async () => payments },
     "../data/flows": { createFlow: async (userId: string, input: flows.FlowInput) => { savedFlows.push({ userId, input }); return { id: invoiceId, ...input }; } },
     "../flows": flows,
-    "../data/mailboxes": { getEffectiveMailbox: async () => null, mailboxHasSmtp: () => false },
+    "../data/mailboxes": { getViewerMailboxes: async () => [], getEffectiveMailbox: async () => null, mailboxHasSmtp: () => false },
     "../invoice-permissions": permissions,
     "../invoices": invoices,
     "./agent-actions": actions,
@@ -175,7 +175,7 @@ test("email lookup loads full accessible inbound bodies, matches secondary conta
   const records = moduleUnderTest<typeof import("../lib/ai/agent-records.ts")>("../lib/ai/agent-records.ts", {
     "../supabase/admin": { createSupabaseAdmin: () => database(tables) }, "../company-commerce": commerce,
     "../email-inbox": { getEmailInboxBackendData: async (options: { syncMailbox: boolean; history: boolean }) => { assert.equal(options.syncMailbox, false); assert.equal(options.history, true); return { emails: messages, inboxError: "Some mailbox history unavailable" }; } },
-    "../data/mailboxes": { getEffectiveMailbox: async () => ({ id: "mailbox" }) },
+    "../data/mailboxes": { getViewerMailboxes: async () => [], getEffectiveMailbox: async () => ({ id: "mailbox" }) },
     "../data/mailbox-sync": { mailboxSyncKey: () => "key", loadMailboxMessageContent: async (_mailbox: unknown, uid: number) => { reads++; if (uid === 2) throw new Error("Body unavailable"); return { body: "Ship to 99 New Road, Shanghai 200000, China" }; } },
     "../email-threading": threading,
   });
@@ -302,7 +302,7 @@ test("open email context loads full bodies, matches secondary contacts and deriv
     "../supabase/admin": { createSupabaseAdmin: () => database(tables) },
     "../company-commerce": commerce,
     "../email-inbox": { getEmailInboxBackendData: async () => ({ emails: messages }) },
-    "../data/mailboxes": { getEffectiveMailbox: async () => ({ id: "mailbox" }) },
+    "../data/mailboxes": { getViewerMailboxes: async () => [], getEffectiveMailbox: async () => ({ id: "mailbox" }) },
     "../data/mailbox-sync": { mailboxSyncKey: () => "key", loadMailboxMessageContent: async () => { fullReads++; return { body: "Please invoice 200 black PLA. Ship to the Shanghai warehouse." }; } },
     "../email-threading": threading,
   });
@@ -328,7 +328,7 @@ test("the agent accepts real enquiries produced by the inbox builder and still r
     "../supabase/admin": { createSupabaseAdmin: () => database({ contacts: [{ email: "buyer@example.com", company_id: companyId }] }) },
     "../company-commerce": commerce,
     "../email-inbox": { getEmailInboxBackendData: async () => ({ emails: messages }) },
-    "../data/mailboxes": { getEffectiveMailbox: async () => null },
+    "../data/mailboxes": { getViewerMailboxes: async () => [], getEffectiveMailbox: async () => null },
     "../data/mailbox-sync": {},
     "../email-threading": threading,
   });
@@ -341,6 +341,40 @@ test("the agent accepts real enquiries produced by the inbox builder and still r
   const history = await records.loadAgentEmails(viewer, undefined, companyId);
   assert.equal(history.messages.some((message) => message.demo), false);
   assert.equal(history.messages.length, 2);
+});
+
+test("selected workspace mailbox emails remain accessible at preparation and do not use the personal mailbox for bodies", async () => {
+  const personalId = "a37acc59-4a11-47db-ad1e-aa9fe5d72e74";
+  const requests: string[] = [];
+  const source = { id: "workspace-mail", direction: "inbound", contact: "buyer@example.com", subject: "PLA", body: "Preview", bodyLoaded: false, uid: 7, uidValidity: 2, mailboxKey: "workspace-key", threadId: "thread", timestamp: "2026-10-28T00:00:00Z", messageId: "<workspace@example.com>" };
+  const records = moduleUnderTest<typeof import("../lib/ai/agent-records.ts")>("../lib/ai/agent-records.ts", {
+    "../supabase/admin": { createSupabaseAdmin: () => database({ contacts: [] }) }, "../company-commerce": commerce, "../email-threading": threading,
+    "../email-inbox": { getEmailInboxBackendData: async (options: { mailboxId?: string }) => { requests.push(options.mailboxId ?? "default"); return { selectedMailboxId: options.mailboxId ?? personalId, emails: options.mailboxId === invoiceId ? [source] : [] }; } },
+    "../data/mailboxes": { getViewerMailboxes: async () => [{ id: personalId }, { id: invoiceId }], getViewerMailbox: async (_viewerId: string, id: string) => ({ id }), getEffectiveMailbox: async () => { throw new Error("Must not use the default sender to read a workspace body"); } },
+    "../data/mailbox-sync": { mailboxSyncKey: (mailbox: { id: string }) => mailbox.id === invoiceId ? "workspace-key" : "personal-key", loadMailboxMessageContent: async (mailbox: { id: string }) => { assert.equal(mailbox.id, invoiceId); return { body: "Please quote 500 kg PLA" }; } },
+  });
+  const selected = await records.loadAgentEmails(viewer, source.id, undefined, invoiceId);
+  assert.equal(selected.current?.body, "Please quote 500 kg PLA");
+  assert.deepEqual(requests, [invoiceId]);
+  requests.length = 0;
+  const prepared = await records.prepareAgentEmail({ ...email, sourceEmailId: source.id }, viewer);
+  assert.equal("mailboxId" in prepared && prepared.mailboxId, invoiceId);
+  assert.deepEqual(requests, ["default", invoiceId]);
+  await assert.rejects(() => records.loadAgentEmails(viewer, "inaccessible"), /no longer have access/);
+});
+
+test("an unavailable older email does not block the loaded selected message or expose a preview as full text", async () => {
+  const selected = { id: "current", direction: "inbound", contact: "buyer@example.com", subject: "PLA", body: "Please quote PLA", threadId: "thread", timestamp: "2026-10-28T00:00:00Z" };
+  const records = moduleUnderTest<typeof import("../lib/ai/agent-records.ts")>("../lib/ai/agent-records.ts", {
+    "../supabase/admin": { createSupabaseAdmin: () => database({ contacts: [] }) }, "../company-commerce": commerce, "../email-threading": threading,
+    "../email-inbox": { getEmailInboxBackendData: async () => ({ emails: [{ ...selected, id: "older", bodyLoaded: false, body: "Partial preview", timestamp: "2026-10-27T00:00:00Z" }, selected] }) },
+    "../data/mailboxes": { getEffectiveMailbox: async () => null }, "../data/mailbox-sync": {},
+  });
+  const context = await records.loadAgentEmails(viewer, "current");
+  assert.equal(context.current?.body, "Please quote PLA");
+  const older = records.presentAgentEmail(context.messages.find((message) => message.id === "older")!);
+  assert.equal(older.contentAvailable, false);
+  assert.equal(older.text, "");
 });
 
 test("invoices carry email billing and shipping details while prices remain server-controlled", () => {
@@ -357,15 +391,17 @@ test("invoices carry email billing and shipping details while prices remain serv
 test("open email scope overrides an old company and does not reuse another customer's invoice", async () => {
   let bootstrapCompany: string | undefined;
   let matchedCompany: string | null = companyId;
+  let supportingFailure = false;
   const oldCompany = "a37acc59-4a11-47db-ad1e-aa9fe5d72e74";
   const context = moduleUnderTest<typeof import("../lib/ai/agent-context.ts")>("../lib/ai/agent-context.ts", {
+    "./agent-page-records": {},
     "../supabase/admin": { createSupabaseAdmin: () => database({ workspace_agent_actions: [{ id: actionId, user_id: viewer.id, status: "completed", result: { invoiceId } }], products: [], companies: [] }) },
-    "../data/invoice-connections": { invoiceBootstrap: async ({ companyId }: { companyId?: string }) => { bootstrapCompany = companyId; return { document, billing: {} }; }, invoiceCustomers: async () => ({ customers: [], count: 0 }), invoiceProductSelect: "sku,name" },
+    "../data/invoice-connections": { invoiceBootstrap: async ({ companyId }: { companyId?: string }) => { if (supportingFailure) throw new Error("Billing unavailable"); bootstrapCompany = companyId; return { document, billing: {} }; }, invoiceCustomers: async () => ({ customers: [], count: 0 }), invoiceProductSelect: "sku,name" },
     "../data/invoice-banks": { invoiceBankAccounts: async () => [] },
     "../data/invoice-payment-methods": { invoicePaymentMethods: async () => [] },
     "../flows": flows,
     "../data/invoices": { getInvoice: async () => ({ ...invoice, document: { ...document, companyId: oldCompany } }) },
-    "../data/mailboxes": { getEffectiveMailbox: async () => null, mailboxHasSmtp: () => false },
+    "../data/mailboxes": { getViewerMailboxes: async () => [], getEffectiveMailbox: async () => null, mailboxHasSmtp: () => false },
     "../invoice-links": { invoiceProduct: (value: unknown) => value },
     "../email-threading": threading,
     "./agent-records": { loadAgentEmails: async () => ({ current: { id: "mail-1", body: "Please invoice PLA Black" }, messages: [{ subject: "Order", body: "Please invoice PLA Black" }], companyId: matchedCompany }), loadAgentCompany: async (id: string) => ({ id }), presentAgentEmail: (value: unknown) => value },
@@ -379,6 +415,11 @@ test("open email scope overrides an old company and does not reuse another custo
   const unmatched = await context.loadAgentContext({ ...input, completedActionIds: [...input.completedActionIds], messages: [...input.messages] }, viewer);
   assert.equal(unmatched.currentCompanyId, null);
   assert.equal(unmatched.currentInvoice, null);
+  supportingFailure = true;
+  const partial = await context.loadAgentContext({ ...input, completedActionIds: [...input.completedActionIds], messages: [...input.messages] }, viewer);
+  assert.equal(partial.currentEmail?.id, "mail-1");
+  assert.equal(partial.invoiceDefaults, null);
+  assert.match(partial.contextWarnings.join(" "), /Invoice defaults unavailable/);
 });
 
 test("draft retrieval checks ownership, completed state, source access and invoice revision", async () => {

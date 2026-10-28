@@ -29,6 +29,25 @@ const company = { type: "create_company", company: { name: "Acme", country: "US"
 const request = (body: unknown, origin = "http://localhost:3000") => new Request("http://localhost:3000/api/ai/assistant/action", { method: "POST", headers: { "Content-Type": "application/json", origin }, body: JSON.stringify(body) });
 const decision = { id, decision: "approve", approval: "manual" };
 
+test("Chat and Agent reload the open email and bind reply proposals to its selected mailbox", async () => {
+  for (const mode of ["analyze", "work"]) {
+    let loads = 0;
+    let preparations = 0;
+    const action = { type: "write_email", email: { to: "buyer@example.com", subject: "Re: PLA", text: "Which colors do you need?", delivery: "draft", sourceEmailId: "selected-email", mailboxId: viewer.id } };
+    const post = route("../app/api/ai/assistant/route.ts", {
+      "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
+      "@/lib/ai/agent-context": { loadAgentContext: async (input: assistant.WorkspaceAssistantInput) => { loads++; assert.equal(input.pageContext?.mailboxId, id); return { currentEmail: { id: "selected-email", mailboxId: id, text: "I need 500 kg PLA" } }; } },
+      "@/lib/ai/gemini": { generateGeminiText: async ({ prompt }: { prompt: string }) => { assert.match(prompt, /I need 500 kg PLA/); return `Reply ready.\nFILAZOO_ACTIONS_JSON: ${JSON.stringify([action])}`; } },
+      "@/lib/ai/gateway": {}, "@/lib/ai/assistant-provider-error": providerError,
+      "@/lib/ai/agent-execution": { prepareAgentActions: async (values: assistant.WorkspaceAction[]) => { preparations++; assert.equal(values[0].type, "write_email"); if (values[0].type === "write_email") assert.equal(values[0].email.mailboxId, id); return []; } },
+    }, { GEMINI_API_KEY: "synthetic" });
+    const response = await post(request({ mode, pathname: "/emails", pageLabel: "Email", pageText: "", pageContext: { emailId: "selected-email", mailboxId: id }, messages: [{ role: "user", content: "Write a reply to this" }] }));
+    assert.equal(response.status, 200);
+    assert.equal(loads, 1);
+    assert.equal(preparations, mode === "work" ? 1 : 0);
+  }
+});
+
 test("image prompts reach workspace providers in Chat and Agent mode without bypassing action approval", async () => {
   const image = { name: "address.png", dataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1kAAAAASUVORK5CYII=" };
   for (const mode of ["analyze", "work"]) {
