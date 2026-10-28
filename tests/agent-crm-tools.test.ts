@@ -219,6 +219,7 @@ test("new actions enter stored approval and financial/destructive actions stay m
   const execution = moduleUnderTest<typeof import("../lib/ai/agent-execution.ts")>("../lib/ai/agent-execution.ts", {
     ...f.dependencies, "@/app/api/email/send/route": {}, "../data/invoice-connections": {}, "../data/invoice-banks": {}, "../data/mailboxes": {}, "../company-profile-fields": profileFields,
     "../invoices": invoices, "./agent-actions": agentActions, "./agent-progress": progress, "./crm-execution": f, "../email-threading": {},
+    "./agent-catalog": {},
   });
   const proposals = await execution.prepareAgentActions([
     { type: "crm_action", operation: { op: "delete_company", companyId } },

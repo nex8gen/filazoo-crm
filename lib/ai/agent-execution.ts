@@ -21,6 +21,7 @@ import { threadKeyForEmail } from "../email-threading";
 import { prepareCrmAction, executeCrmAction } from "./crm-execution";
 import { crmManualApproval } from "./crm-tools";
 import { deriveCompanyAddressFields } from "../company-profile-fields";
+import { prepareAgentCatalog, agentCatalogAttachments } from "./agent-catalog";
 
 async function validateCustomerEmailSource(action: { companyId: string; sourceEmailId?: string }, viewer: WorkspaceViewer) {
   if (!action.sourceEmailId) return;
@@ -42,7 +43,7 @@ export async function prepareAgentActions(actions: WorkspaceAction[], viewer: Wo
       const company = await loadAgentCompany(action.companyId);
       prepared = action.type === "update_company" ? { ...action, changes: action.deriveAddressFields ? deriveCompanyAddressFields(action.changes, company.fields) : action.changes, companyName: company.fields.name, fingerprint: company.fingerprint } : { ...action, companyName: company.fields.name };
     } else if (action.type === "write_email" && !action.invoiceId) {
-      const email = await prepareAgentEmail(action.email, viewer);
+      const email = await prepareAgentCatalog(await prepareAgentEmail(action.email, viewer));
       if (action.email.delivery !== "draft") {
         const mailbox = "mailboxId" in email ? await getViewerMailbox(viewer.id, email.mailboxId as string) : await getEffectiveMailbox(viewer.id);
         if (!mailboxHasSmtp(mailbox)) throw new Error("Connect an active SMTP mailbox in Settings before sending email.");
@@ -59,7 +60,7 @@ export async function prepareAgentActions(actions: WorkspaceAction[], viewer: Wo
         if (!mailboxHasSmtp(mailbox)) throw new Error("Connect an active SMTP mailbox in Settings before sending an invoice.");
       }
       if ((action.type === "send_invoice" || action.type === "write_email") && existing) {
-        prepared = { type: "send_invoice", invoiceId: existing.id, email: await prepareAgentEmail(action.email, viewer), revision: existing.revision, document: existing.document };
+        prepared = { type: "send_invoice", invoiceId: existing.id, email: await prepareAgentCatalog(await prepareAgentEmail(action.email, viewer)), revision: existing.revision, document: existing.document };
       } else if (action.type === "create_invoice" || action.type === "update_invoice") {
         if (existing && existing.document.companyId !== action.companyId) throw new Error("The invoice belongs to a different company. Open that company to create a new invoice.");
         if (action.items && existing?.document.purchaseOrderId) throw new Error("Update this order-linked invoice's products in its editor to preserve the agreed order pricing.");
@@ -78,8 +79,8 @@ export async function prepareAgentActions(actions: WorkspaceAction[], viewer: Wo
         const document = buildAgentInvoice(base, action, catalog.products, banks, payments, { creating: action.type === "create_invoice" });
         await validateInvoiceConnections(document);
         prepared = action.type === "create_invoice"
-          ? { type: action.type, document, ...(action.email ? { email: await prepareAgentEmail(action.email, viewer) } : {}) }
-          : { type: action.type, invoiceId: action.invoiceId, revision: existing!.revision, document, ...(action.email ? { email: await prepareAgentEmail(action.email, viewer) } : {}) };
+          ? { type: action.type, document, ...(action.email ? { email: await prepareAgentCatalog(await prepareAgentEmail(action.email, viewer)) } : {}) }
+          : { type: action.type, invoiceId: action.invoiceId, revision: existing!.revision, document, ...(action.email ? { email: await prepareAgentCatalog(await prepareAgentEmail(action.email, viewer)) } : {}) };
       } else throw new Error("Invalid invoice action.");
     }
     proposals.push({ id: crypto.randomUUID(), action: prepared, approvalMode: action.type === "crm_action" && crmManualApproval(action.operation) ? "ask" : approvalMode, expiresAt: new Date(Date.now() + 30 * 60_000).toISOString() });
@@ -149,14 +150,17 @@ export async function executeAgentAction(id: string, action: PreparedAgentAction
   if (action.type === "write_email") {
     await reportProgress(activity);
     const email = await prepareAgentEmail(action.email, viewer);
-    if (email.delivery === "draft") return { success: "Email draft prepared in the inbox composer.", href: `/emails?agentDraft=${id}`, draft: { ...email } };
-    const response = await sendEmail(new Request(new URL("/api/email/send", request.url), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(email) }));
+    const attachments = await agentCatalogAttachments(action.email);
+    if (email.delivery === "draft") return { success: `Email draft prepared${attachments.length ? " with its catalog PDF" : ""} in the inbox composer.`, href: `/emails?agentDraft=${id}`, draft: { ...email, ...(action.email.catalogSnapshot ? { catalogSnapshot: action.email.catalogSnapshot } : {}) } };
+    const response = await sendEmail(new Request(new URL("/api/email/send", request.url), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...email, attachments }) }));
     const result = await response.json();
     if (!response.ok || !result.ok) throw new Error(result.error || "Email was not confirmed sent. Check Sent before retrying.");
     revalidatePath("/emails");
     return { success: `Email sent to ${action.email.to}.${result.saved === false ? " The mailbox accepted it, but the Sent record could not be saved." : ""}`, href: "/emails" };
   }
   await reportProgress({ ...activity, label: "Checking invoice details…" });
+  // Validate and render attachments before creating/updating an invoice.
+  const catalogAttachments = action.email ? await agentCatalogAttachments(action.email) : [];
   let invoice = action.type === "create_invoice" ? null : await getInvoice(action.invoiceId);
   if (action.type !== "create_invoice" && (!invoice || invoice.revision !== action.revision || invoice.status === "void")) throw new Error("This invoice changed after the proposal. Ask the agent to prepare it again.");
   if (action.type === "update_invoice" && invoice && !canEditInvoice(viewer, invoice)) throw new Error("You no longer have permission to edit this invoice.");
@@ -182,7 +186,7 @@ export async function executeAgentAction(id: string, action: PreparedAgentAction
   // Recheck access to the source conversation at execution time.
   await prepareAgentEmail(action.email, viewer);
   if (action.email.delivery === "draft") return {
-    ...saved, success: `${saved.success} Email draft prepared with its invoice PDF.`, href: `/emails?agentDraft=${id}`,
+    ...saved, success: `${saved.success} Email draft prepared with its invoice PDF${catalogAttachments.length ? " and catalog PDF" : ""}.`, href: `/emails?agentDraft=${id}`,
     draft: { ...action.email, invoiceId: invoice.id, revision: invoice.revision },
   };
   await reportProgress({ area: "invoice", label: "Preparing invoice PDF…", detail: `${invoiceLabel(invoice)} · ${invoice.document.customerName}`, relatedAreas: ["email"] });
@@ -192,7 +196,7 @@ export async function executeAgentAction(id: string, action: PreparedAgentAction
   await reportProgress({ area: "email", label: "Sending invoice email…", detail: `${invoiceLabel(invoice)} · ${action.email.to}`, relatedAreas: ["invoice"] });
   const response = await sendEmail(new Request(new URL("/api/email/send", request.url), {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...action.email, attachments: [{ filename: invoicePdfFilename(invoice), contentType: "application/pdf", content: pdf.toString("base64") }] }),
+    body: JSON.stringify({ ...action.email, attachments: [{ filename: invoicePdfFilename(invoice), contentType: "application/pdf", content: pdf.toString("base64") }, ...catalogAttachments] }),
   }));
   const result = await response.json();
   if (!response.ok || !result.ok) throw new Error(`${saved.success} Email was not confirmed sent: ${result.error || "Mailbox request failed."} Check Sent before preparing another send.`);

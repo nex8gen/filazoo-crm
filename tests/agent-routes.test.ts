@@ -29,6 +29,29 @@ const company = { type: "create_company", company: { name: "Acme", country: "US"
 const request = (body: unknown, origin = "http://localhost:3000") => new Request("http://localhost:3000/api/ai/assistant/action", { method: "POST", headers: { "Content-Type": "application/json", origin }, body: JSON.stringify(body) });
 const decision = { id, decision: "approve", approval: "manual" };
 
+test("the assistant never returns raw email JSON and only prepares actions from a valid protocol", async () => {
+  const email = { to: "buyer@example.com", subject: "Catalog", text: "The catalog is attached.", delivery: "draft", attachCatalog: true };
+  const action = { type: "write_email", email };
+  for (const mode of ["work", "analyze"]) {
+    for (const valid of [true, false]) {
+      let prepared = 0;
+      const post = route("../app/api/ai/assistant/route.ts", {
+        "@/lib/auth": { getWorkspaceViewer: async () => viewer },
+        "@/lib/ai/workspace-assistant": assistant,
+        "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
+        "@/lib/ai/gemini": { generateGeminiText: async () => `\`\`\`json\n${JSON.stringify(email)}\n\`\`\`${valid ? `\nFILAZOO_ACTIONS_JSON: ${JSON.stringify([action])}` : ""}` },
+        "@/lib/ai/gateway": {}, "@/lib/ai/assistant-provider-error": providerError,
+        "@/lib/ai/agent-execution": { prepareAgentActions: async (values: assistant.WorkspaceAction[]) => { prepared += values.length; return []; } },
+      }, { GEMINI_API_KEY: "synthetic" });
+      const response = await post(request({ mode, pathname: "/emails", pageLabel: "Email", pageText: "", messages: [{ role: "user", content: "Write an email and attach the catalog PDF" }] }));
+      assert.equal(response.status, 200);
+      const body = await response.json();
+      assert.doesNotMatch(body.output, /```|FILAZOO_|buyer@example|"to"|"text"/);
+      assert.equal(prepared, mode === "work" && valid ? 1 : 0);
+    }
+  }
+});
+
 test("Chat and Agent reload the open email and bind reply proposals to its selected mailbox", async () => {
   for (const mode of ["analyze", "work"]) {
     let loads = 0;

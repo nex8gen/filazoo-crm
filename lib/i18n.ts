@@ -12,6 +12,15 @@ export const LANGUAGE_STORAGE_KEY = "filazoo-language";
 // Product terminology is centralized so sales, catalog, mailbox, and
 // automation screens use consistent professional Chinese wording.
 const zhCN: Record<string, string> = {
+  "Attachment: Filazoo product catalog PDF ·": "附件：Filazoo 产品目录 PDF ·",
+  "active products · Current saved prices and photos": "款在售产品 · 包含当前保存的价格和图片",
+  "I could not prepare this request correctly. No actions were prepared. Please try again.": "未能正确处理此请求，未创建任何操作。请重试。",
+  "The requested actions are ready for review.": "所需操作已准备好，请审核。",
+  "No actions were prepared.": "未创建任何操作。",
+  "Listening…": "正在聆听…",
+  "Create invoices, draft emails, and update customers.": "创建发票、起草邮件并更新客户资料。",
+  "Message Filazoo AI": "向 Filazoo AI 发送消息",
+  "More": "更多",
   ...zhCNApps,
   ...zhCNEmailAutoReply,
   "Switching mailbox…": "正在切换邮箱…",

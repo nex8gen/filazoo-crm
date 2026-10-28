@@ -7,6 +7,10 @@ import type { InvoicePaymentMethod } from "../invoice-payment-methods.ts";
 import { preparedCrmActionSchema } from "./crm-tools.ts";
 
 export const preparedAgentEmailSchema = agentEmailSchema.extend({
+  catalogSnapshot: z.object({
+    productSkus: z.array(z.string().min(1).max(200)).min(1).max(499),
+    fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+  }).strict().optional(),
   mailboxId: z.uuid().optional(),
   threadId: z.string().min(1).max(1100).optional(),
   inReplyTo: z.string().regex(/^<[^<>\s]+>$/).optional(),

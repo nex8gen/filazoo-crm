@@ -40,3 +40,40 @@ test("extracts only valid reviewable workspace actions", () => {
   assert.deepEqual(extractWorkspaceActions("Normal answer").actions, []);
   assert.deepEqual(extractWorkspaceActions("Review.\nFILAZOO_ACTIONS_JSON: [{\"type\":\"delete_company\"}]").actions, []);
 });
+
+const emailAction = { type: "write_email", email: { to: "buyer@example.com", subject: "Product catalog", text: "Hi Webster,\nThe catalog is attached.", delivery: "draft", attachCatalog: true } };
+
+test("hides duplicated raw email JSON while retaining the validated approval action", () => {
+  const result = extractWorkspaceActions(`\`\`\`json\n${JSON.stringify(emailAction.email)}\n\`\`\`\nFILAZOO_ACTIONS_JSON: ${JSON.stringify([emailAction])}`);
+  assert.equal(result.actions[0]?.type, "write_email");
+  assert.equal(result.output, "The requested actions are ready for review.");
+  assert.ok(!result.output.includes("buyer@example.com"));
+  assert.ok(!result.output.includes("\\n"));
+});
+
+test("malformed or unmarked structured output fails closed without exposing internals", () => {
+  for (const output of [
+    JSON.stringify(emailAction.email), JSON.stringify([emailAction]),
+    `\`\`\`${JSON.stringify([emailAction])}`, '{"to":"buyer@example.com",',
+    `Ready\nFILAZOO_ACTIONS_JSON: [{"type":"write_email"`,
+    `FILAZOO_ACTIONS_JSON: []\nFILAZOO_ACTIONS_JSON: ${JSON.stringify([emailAction])}`,
+    'FILAZOO_ACTIONS_JSON : []', 'FILAZOO_EMAIL_SEARCH_JSON: {}',
+  ]) {
+    const result = extractWorkspaceActions(output);
+    assert.equal(result.actions.length, 0);
+    assert.match(result.output, /No actions were prepared/);
+    assert.doesNotMatch(result.output, /FILAZOO_|```|"to"|"type"|buyer@example/);
+  }
+});
+
+test("handles fenced valid action protocols and leaves ordinary prose intact", () => {
+  for (const output of [
+    `FILAZOO_ACTIONS_JSON: \`\`\`json\n${JSON.stringify([emailAction])}\n\`\`\``,
+    `\`\`\`json\nFILAZOO_ACTIONS_JSON: ${JSON.stringify([emailAction])}\n\`\`\``,
+  ]) {
+    const result = extractWorkspaceActions(output);
+    assert.equal(result.actions.length, 1);
+    assert.doesNotMatch(result.output, /```|FILAZOO_/);
+  }
+  assert.equal(extractWorkspaceActions("Here is a draft:\nHi Webster,\nThanks for reaching out.").output, "Here is a draft:\nHi Webster,\nThanks for reaching out.");
+});

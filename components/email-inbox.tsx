@@ -413,6 +413,9 @@ export function EmailInboxWorkspace({
         if (!response.ok || !result.draft) throw new Error(result.error || "Unable to open the agent draft.");
         const prepared = result.draft;
         const attachments: ComposerAttachment[] = [];
+        for (const [index, attachment] of (prepared.attachments ?? []).entries()) {
+          attachments.push({ ...attachment, id: `agent-${id}-${index}` });
+        }
         if (prepared.invoiceId) {
           const pdf = await fetch(`/api/invoices/${prepared.invoiceId}/pdf`, { signal: controller.signal, cache: "no-store" });
           if (!pdf.ok) throw new Error("Unable to attach the invoice PDF. Open the draft again to retry.");

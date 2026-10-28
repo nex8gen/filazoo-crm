@@ -47,6 +47,23 @@ if (email.type !== "write_email") throw new Error("Expected an email draft");
 assert.equal(email.email.delivery, "draft"); assert.equal(email.email.sourceEmailId, "synthetic-mail"); assert.equal(email.email.to, "buyer@example.com");
 console.log("PASS: open unmatched email produces a threaded draft despite unavailable invoice defaults.");
 
+for (const delivery of ["draft", "send"] as const) {
+  const catalog = await plan("/emails", delivery === "draft"
+    ? "Can you write email for this customer and attach the catalog PDF also?"
+    : "Send this customer a reply with our complete product catalog PDF attached.", {
+    currentCompany: null, currentCompanyId: null,
+    currentEmail: { id: "synthetic-catalog-mail", contact: "buyer@example.com", subject: "Catalog request", direction: "inbound", text: "Hi, please share your product catalog and pricing.", contentAvailable: true },
+    products: [], permissions: { canAct: true, role: "admin" },
+  });
+  assert.equal(catalog.type, "write_email");
+  if (catalog.type !== "write_email") throw new Error("Expected a catalog email action");
+  assert.equal(catalog.email.delivery, delivery);
+  assert.equal(catalog.email.attachCatalog, true);
+  assert.equal(catalog.email.sourceEmailId, "synthetic-catalog-mail");
+  assert.equal(catalog.email.to, "buyer@example.com");
+  console.log(`PASS: catalog ${delivery} uses the real attachment flag and selected email without requiring a customer profile.`);
+}
+
 const message = await plan("/messenger", "Write a reply to this message.", {
   currentConversation: { id: "instagram:page:customer", customer: "Synthetic buyer", channel: "instagram", replyWindowOpen: true, messages: [{ id, direction: "inbound", text: "Do you have black PLA?" }] }, permissions: { canAct: true, role: "admin" },
 });

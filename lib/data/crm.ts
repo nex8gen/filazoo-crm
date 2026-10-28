@@ -540,7 +540,7 @@ export async function listReplies(authorizedViewer?: WorkspaceViewer): Promise<{
   };
 }
 
-export async function listProducts(skus?: string[]): Promise<{ mode: DataMode; products: Product[] }> {
+export async function listProducts(skus?: string[], options: { requireComplete?: boolean } = {}): Promise<{ mode: DataMode; products: Product[] }> {
   const mode = getCrmDataMode();
   if (mode === "demo") return { mode, products: [] };
   await authorizeLiveRead();
@@ -549,13 +549,14 @@ export async function listProducts(skus?: string[]): Promise<{ mode: DataMode; p
     .from("products")
     .select("sku,name,image_url,material,color,diameter,weight,price,currency,moq,stock_status,lead_time,tags,active,sheet_updated_at")
     .order("name")
-    .limit(500);
+    .limit(options.requireComplete ? 501 : 500);
   const inventoryModule = await import("./inventory.ts");
   const [{ data, error }, inventory] = await Promise.all([
     skus ? query.in("sku", skus) : query,
     inventoryModule.getInventoryState(),
   ]);
   if (error) throw new Error(`Unable to load products: ${error.message}`);
+  if (options.requireComplete && (data?.length ?? 0) > 500) throw new Error("The complete product catalog exceeds the lookup limit. Choose products in the inbox catalog picker.");
   const syncedProducts = (data ?? []).filter((row) => !row.sku.startsWith("SAMPLE-") && !row.name.toLowerCase().startsWith("[sample]")).map(crmProduct);
   return { mode, products: await inventoryModule.withErpInventory(syncedProducts, inventory) };
 }

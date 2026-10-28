@@ -74,6 +74,7 @@ function executionFixture() {
   const dependencies = {
     "./crm-execution": {},
     "./crm-tools": crmTools,
+    "./agent-catalog": { prepareAgentCatalog: async (email: unknown) => email, agentCatalogAttachments: (async () => []) as (email: unknown) => Promise<{ filename: string; contentType: string; content: string; size: number }[]> },
     "../company-profile-fields": profileFields,
     "next/cache": { revalidatePath() {} },
     "@/app/crm-actions": { createCompany() {}, updateCompanyFields: async (_id: string, changes: profileFields.CompanyProfileChanges) => { savedPatches.push(changes); return { success: "Customer updated." }; }, addCompanyComment: async (_id: string, _state: unknown, form: FormData) => { savedForms.push(form); return { success: "Note added." }; } },
@@ -233,6 +234,60 @@ test("plain email draft actions work without an invoice or configured SMTP", asy
   assert.match(result.success || "", /draft/);
   assert.equal(fixture.invoiceReads(), 0);
   assert.equal(fixture.sent.length, 0);
+});
+
+test("catalog drafts retain approved product snapshots and sends include real catalog bytes alongside invoices", async () => {
+  const fixture = executionFixture();
+  const snapshot = { productSkus: ["PLA"], fingerprint: "a".repeat(64) };
+  const attachment = { filename: "Filazoo-product-catalog.pdf", contentType: "application/pdf", content: Buffer.from("%PDF-1.7 catalog").toString("base64"), size: 16 };
+  let rendered = 0;
+  Object.assign(fixture.dependencies["./agent-catalog"], {
+    prepareAgentCatalog: async (value: unknown) => ({ ...value as object, catalogSnapshot: snapshot }),
+    agentCatalogAttachments: async (...values: unknown[]) => {
+      assert.equal((values[0] as { attachCatalog: boolean }).attachCatalog, true);
+      assert.deepEqual((values[0] as { catalogSnapshot: unknown }).catalogSnapshot, snapshot);
+      rendered++;
+      return [attachment];
+    },
+  });
+  const catalogEmail = { ...email, attachCatalog: true, text: "The catalog is attached." };
+  const [draft] = await fixture.prepareAgentActions([{ type: "write_email", email: catalogEmail }], viewer, "ask");
+  assert.equal(actions.preparedAgentActionSchema.safeParse(draft.action).success, true);
+  const result = await fixture.executeAgentAction(actionId, draft.action, viewer, request);
+  assert.match(result.success || "", /catalog PDF/);
+  assert.equal("draft" in result && result.draft?.attachCatalog, true);
+  assert.deepEqual("draft" in result && result.draft?.catalogSnapshot, snapshot);
+  assert.equal(fixture.sent.length, 0);
+  assert.equal(rendered, 1);
+
+  fixture.dependencies["../data/mailboxes"].mailboxHasSmtp = () => true;
+  for (const action of [
+    { type: "write_email" as const, email: { ...catalogEmail, delivery: "send" as const } },
+    { type: "send_invoice" as const, invoiceId, email: { ...catalogEmail, delivery: "send" as const } },
+  ]) {
+    const [proposal] = await fixture.prepareAgentActions([action], viewer, "ask");
+    await fixture.executeAgentAction(actionId, proposal.action, viewer, request);
+    const sent = fixture.sent.at(-1)!;
+    assert.equal(sent.inReplyTo, "<order@example.com>");
+    const attachments = sent.attachments as { filename: string; content: string }[];
+    assert.equal(attachments.length, action.type === "send_invoice" ? 2 : 1);
+    const catalog = attachments.find((item) => item.filename === attachment.filename)!;
+    assert.equal(Buffer.from(catalog.content, "base64").toString(), "%PDF-1.7 catalog");
+  }
+});
+
+test("catalog PDF failures stop execution before email sending or invoice creation", async () => {
+  const fixture = executionFixture();
+  fixture.dependencies["./agent-catalog"].agentCatalogAttachments = async () => { throw new Error("Catalog changed after approval."); };
+  for (const action of [
+    { type: "write_email" as const, email: { ...email, attachCatalog: true } },
+    { type: "create_invoice" as const, companyId, items: [{ productSku: "PLA", quantity: 200 }], email: { ...email, attachCatalog: true } },
+  ]) {
+    const [proposal] = await fixture.prepareAgentActions([action], viewer, "ask");
+    await assert.rejects(() => fixture.executeAgentAction(actionId, proposal.action, viewer, request), /Catalog changed/);
+  }
+  assert.equal(fixture.sent.length, 0);
+  assert.equal(fixture.savedInvoices.length, 0);
 });
 
 test("creating an invoice from an email links its thread and uses the actual correspondent", async () => {
@@ -430,6 +485,7 @@ test("draft retrieval checks ownership, completed state, source access and invoi
     "@/lib/auth": { getWorkspaceViewer: async () => viewer },
     "@/lib/supabase/admin": { createSupabaseAdmin: () => database(tables) },
     "@/lib/ai/agent-actions": actions,
+    "@/lib/ai/agent-catalog": { agentCatalogAttachments: async () => [] },
     "@/lib/ai/agent-records": { prepareAgentEmail: async () => { if (!allowed) throw new Error("Source email access revoked."); } },
     "@/lib/data/invoices": { getInvoice: async () => ({ ...invoice, revision }) },
   });
@@ -446,4 +502,44 @@ test("draft retrieval checks ownership, completed state, source access and invoi
   tables.workspace_agent_actions[0].user_id = viewer.id;
   tables.workspace_agent_actions[0].status = "pending";
   assert.equal((await route.GET(request)).status, 404);
+});
+
+test("catalog draft retrieval returns PDF data only after owner and source access checks", async () => {
+  const snapshot = { productSkus: ["PLA"], fingerprint: "a".repeat(64) };
+  const draft = { ...email, attachCatalog: true, catalogSnapshot: snapshot };
+  const tables: Record<string, Record<string, unknown>[]> = { workspace_agent_actions: [{ id: actionId, user_id: viewer.id, status: "completed", result: { draft } }] };
+  let renderCount = 0;
+  let sourceAllowed = true;
+  let stale = false;
+  const attachment = { filename: "Filazoo-product-catalog.pdf", contentType: "application/pdf", content: Buffer.from("%PDF-1.7 catalog").toString("base64"), size: 16 };
+  const route = moduleUnderTest<typeof import("../app/api/ai/assistant/draft/route.ts")>("../app/api/ai/assistant/draft/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer },
+    "@/lib/supabase/admin": { createSupabaseAdmin: () => database(tables) },
+    "@/lib/ai/agent-actions": actions,
+    "@/lib/ai/agent-records": { prepareAgentEmail: async () => { if (!sourceAllowed) throw new Error("Source access revoked."); } },
+    "@/lib/ai/agent-catalog": { agentCatalogAttachments: async (value: unknown) => {
+      assert.equal((value as { attachCatalog: boolean }).attachCatalog, true);
+      if (stale) throw new Error("Catalog changed after approval.");
+      renderCount++;
+      return [attachment];
+    } },
+    "@/lib/data/invoices": {},
+  });
+  const request = new Request(`http://localhost:3000/api/ai/assistant/draft?id=${actionId}`);
+  const response = await route.GET(request);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(Buffer.from(body.draft.attachments[0].content, "base64").toString(), "%PDF-1.7 catalog");
+  assert.equal(renderCount, 1);
+  tables.workspace_agent_actions[0].user_id = "another-user";
+  assert.equal((await route.GET(request)).status, 404);
+  assert.equal(renderCount, 1);
+  tables.workspace_agent_actions[0].user_id = viewer.id;
+  sourceAllowed = false;
+  assert.equal((await route.GET(request)).status, 409);
+  assert.equal(renderCount, 1);
+  sourceAllowed = true;
+  stale = true;
+  assert.equal((await route.GET(request)).status, 409);
+  assert.equal(renderCount, 1);
 });
