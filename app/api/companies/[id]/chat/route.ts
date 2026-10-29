@@ -6,6 +6,8 @@ import { generateGeminiText } from "@/lib/ai/gemini";
 import { generateGatewayText, isGeminiRegionError } from "@/lib/ai/gateway";
 import { researchCustomer } from "@/lib/ai/customer-research";
 import { ChatBodyTooLargeError, collectChatImages, readChatRequestBody } from "@/lib/ai/image-input";
+import { startChatSession } from "@/lib/ai/chat-session";
+import { HistoryError } from "@/lib/ai/chat-history-server";
 
 export const maxDuration = 120;
 const headers = { "Cache-Control": "private, no-store" };
@@ -38,13 +40,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   const gatewayToken = process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
   if (!apiKey && !gatewayToken) return Response.json({ error: "AI assistance is not configured. Ask your administrator to connect an AI provider." }, { status: 503, headers });
+  let session: Awaited<ReturnType<typeof startChatSession>>;
+  try {
+    session = await startChatSession(parsed.data.history, { mode: "customer", pathname: `/companies/${id}`, pageContext: { companyId: id } }, viewer, parsed.data.messages.at(-1)!);
+    if (session?.replay) return Response.json(session.replay, { headers });
+    if (session) parsed.data.messages = session.messages;
+  } catch (error) { return Response.json({ error: error instanceof HistoryError ? error.message : "Unable to open saved conversation." }, { status: error instanceof HistoryError ? error.status : 503, headers }); }
   const { context, sources } = buildCompanyChatContext(details, true);
   const options = {
     systemInstruction: companyChatInstruction(new Date().toISOString(), parsed.data.language, parsed.data.webSearch),
-    prompt: buildCompanyChatPrompt(context, parsed.data.messages),
+    prompt: buildCompanyChatPrompt(context, parsed.data.messages) + (session?.summaryPrompt ?? ""),
     images: collectChatImages(parsed.data.messages),
     maxOutputTokens: parsed.data.webSearch ? 2_600 : 1_600,
-    fetcher: ((input, init) => fetch(input, {
+    fetcher: ((input, init) => (session?.fetcher ?? fetch)(input, {
       ...init, signal: AbortSignal.any([request.signal, AbortSignal.timeout(45_000)]),
     })) as typeof fetch,
   };
@@ -65,8 +73,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         output = await gateway();
       }
     } else output = await gateway();
-    return Response.json({ output, sources: [...citedCompanySources(output, sources), ...(research?.sources ?? [])], coverage: context.coverage, research: research ? { ...research, findings: undefined } : undefined }, { headers });
-  } catch {
-    return Response.json({ error: "The customer assistant could not respond. Please retry. If this continues, ask your administrator to check the AI provider's key, quota and regional availability." }, { status: 502, headers });
-  }
+    const payload = { output, sources: [...citedCompanySources(output, sources), ...(research?.sources ?? [])], coverage: context.coverage, research: research ? { ...research, findings: undefined } : undefined };
+    return Response.json(session ? await session.complete(payload) : payload, { headers });
+  } catch (error) {
+    await session?.fail();
+    return Response.json({ error: error instanceof HistoryError ? error.message : "The customer assistant could not respond. Please retry. If this continues, ask your administrator to check the AI provider's key, quota and regional availability." }, { status: error instanceof HistoryError ? error.status : 502, headers });
+  } finally { await session?.flush(); }
 }

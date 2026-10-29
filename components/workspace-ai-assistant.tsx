@@ -23,9 +23,12 @@ import { CustomerResearchSources, WebSearchOption, type ResearchResult } from "@
 import { AiImageFeedback, AiImagePicker, AiImagePreviews, useAiImageAttachments } from "@/components/ui/ai-image-attachments";
 import { chatImageLimitError, type ChatImage } from "@/lib/ai/image-input";
 import { assistantRecordScope, readAssistantPageContext } from "@/lib/ai/page-context";
+import { savedPageContext } from "@/lib/ai/chat-history";
+import { useAiConversation } from "@/components/use-ai-conversation";
+import { AiHistoryMenu } from "@/components/ai-history-menu";
 
 type Mode = "chat" | "agent";
-type Message = { id: string; role: "user" | "assistant"; content: string; images?: ChatImage[]; actions?: AgentProposal[]; durationMs?: number; work?: AgentWorkProgress; research?: ResearchResult };
+type Message = { id: string; role: "user" | "assistant"; content: string; images?: ChatImage[]; attachmentNames?: string[]; actions?: AgentProposal[]; durationMs?: number; work?: AgentWorkProgress; research?: ResearchResult };
 
 const pageNames: Array<[RegExp, string]> = [
   [/^\/companies\/[^/]+/, "Company profile"],
@@ -71,6 +74,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
   const pageLabel = useMemo(() => pageNames.find(([pattern]) => pattern.test(pathname))?.[1] ?? "Workspace", [pathname]);
   const [mode, setMode] = useState<Mode>("chat");
   const [recordScope, setRecordScope] = useState("");
+  const [historyContext, setHistoryContext] = useState<{ pathname: string; context: ReturnType<typeof savedPageContext> }>({ pathname: "", context: {} });
   const [approvalMode, setApprovalMode] = useState<"ask" | "auto">("ask");
   const [question, setQuestion] = useState("");
   const attachments = useAiImageAttachments();
@@ -88,19 +92,31 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
   const [animation, setAnimation] = useState<{ id: string; run: number } | null>(null);
   const abort = useRef<AbortController | null>(null);
   const log = useRef<HTMLDivElement>(null);
+  const historyScroll = useRef<{ height: number; top: number } | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const composerId = useId();
   const chatKey = `${pathname}:${recordScope}:${mode}`;
   const visibleChatKey = useRef(chatKey);
   const messages = useMemo(() => chats[chatKey] ?? [], [chatKey, chats]);
-  const busy = pending || Boolean(animation) || Boolean(applying);
+  const history = useAiConversation({ mode, pathname, pageContext: historyContext.context }, (detail, prepend) => {
+    if (pending || applying) return;
+    if (prepend && log.current) historyScroll.current = { height: log.current.scrollHeight, top: log.current.scrollTop };
+    setChats((current) => ({ ...current, [chatKey]: prepend ? [...detail.messages as Message[], ...(current[chatKey] ?? [])] : detail.messages as Message[] }));
+    setActionResults((current) => ({ ...current, ...detail.actionResults }));
+    if (!prepend) { setAnimation(null); setError(null); setQuestion(""); attachments.clear(); }
+  }, open && historyContext.pathname === pathname);
+  const busy = pending || Boolean(animation) || Boolean(applying) || history.loading || (open && historyContext.pathname !== pathname);
 
   useEffect(() => { visibleChatKey.current = chatKey; setAnimation(null); }, [chatKey]);
 
   useEffect(() => {
     const main = document.querySelector("#workspace-content");
     if (!main) return;
-    const readScope = () => setRecordScope(assistantRecordScope(readAssistantPageContext(main)));
+    const readScope = () => {
+      const context = savedPageContext(readAssistantPageContext(main));
+      setRecordScope(assistantRecordScope(context));
+      setHistoryContext((current) => current.pathname === pathname && JSON.stringify(current.context) === JSON.stringify(context) ? current : { pathname, context });
+    };
     readScope();
     const observer = new MutationObserver(readScope);
     observer.observe(main, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-ai-email-id", "data-ai-mailbox-id", "data-ai-invoice-id", "data-ai-company-id", "data-ai-conversation-id", "data-ai-flow-id", "data-ai-flow-draft"] });
@@ -109,6 +125,11 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
 
   useEffect(() => () => abort.current?.abort(), [language]);
   useEffect(() => {
+    if (historyScroll.current && log.current) {
+      log.current.scrollTop = historyScroll.current.top + log.current.scrollHeight - historyScroll.current.height;
+      historyScroll.current = null;
+      return;
+    }
     log.current?.scrollTo({ top: messages.length || pending || animation || applying ? log.current.scrollHeight : 0, behavior: "smooth" });
   }, [messages, pending, animation, applying]);
   useEffect(() => {
@@ -134,10 +155,10 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
     const content = value.trim();
     if ((!content && !attachments.images.length) || attachments.processing || busy || abort.current || actionLock.current) return;
     const pageContext = readAssistantPageContext(document.querySelector("#workspace-content"));
-    const requestChatKey = `${pathname}:${assistantRecordScope(pageContext)}:${mode}`;
+    const requestChatKey = `${pathname}:${assistantRecordScope(savedPageContext(pageContext))}:${mode}`;
     const sentImages = attachments.images;
     const next: Message[] = [...(chats[requestChatKey] ?? []), { id: crypto.randomUUID(), role: "user", content, ...(sentImages.length ? { images: sentImages } : {}) }];
-    const imageError = chatImageLimitError(next.slice(-15));
+    const imageError = chatImageLimitError([next.at(-1)!]);
     if (imageError) { setError(imageError); return; }
     setChats((current) => ({ ...current, [requestChatKey]: next }));
     setQuestion("");
@@ -151,11 +172,14 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
     abort.current = controller;
     const started = performance.now();
     try {
+      const reference = await history.ensure(next.at(-1)!.id);
+      if (controller.signal.aborted) return;
       const response = await fetch("/api/ai/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           language,
+          history: reference,
           webSearch,
           mode: mode === "agent" ? "work" : "analyze",
           approvalMode,
@@ -164,12 +188,13 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
           pathname,
           pageLabel,
           pageText: visiblePageText(),
-          messages: next.slice(-15).map(({ role, content: messageContent, images }) => ({ role, content: messageContent, images })),
+          messages: [{ role: "user", content, images: sentImages }],
         }),
         signal: controller.signal,
       });
       const result = await response.json().catch(() => null);
       if (!response.ok || typeof result?.output !== "string") throw new Error(result?.error || "Unable to reach Filazoo AI.");
+      history.accept(result.history);
       const id = crypto.randomUUID();
       for (const proposal of (result.actions ?? []) as AgentProposal[]) proposalContexts.current.set(proposal.id, pageContext);
       setChats((current) => ({
@@ -200,6 +225,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
   }
 
   function newChat() {
+    history.newConversation();
     abort.current?.abort();
     abort.current = null;
     setPending(false);
@@ -269,6 +295,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
           <Button type="button" variant="ghost" size="icon-sm" className="shrink-0" onClick={() => onOpenChange(false)} aria-label="Close AI workspace"><PanelRightClose /></Button>
         </div>
 
+        <AiHistoryMenu key={history.scope} history={history} disabled={pending || Boolean(applying) || Boolean(animation)} onNew={newChat} />
         <div ref={log} role="log" aria-live="polite" aria-busy={busy} className="relative min-h-0 flex-1 overflow-y-auto px-5 py-6">
           {!messages.length ? mode === "agent" ? <div className="flex min-h-full flex-col items-center justify-center py-4 text-center">
             <div className="w-full max-w-sm"><OrbitingCirclesGlobe active={open} /></div>
@@ -291,7 +318,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
             </div>
             {mode === "chat" ? <motion.button type="button" aria-label="Focus the AI message box" onClick={() => input.current?.focus()} animate={{ y: [0, 5, 0], opacity: [0.45, 1, 0.45] }} transition={{ duration: 1.8, ease: "easeInOut", repeat: Infinity }} className="mt-7 grid size-8 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"><ChevronDown className="size-5" /></motion.button> : null}
           </div> : <div className="space-y-5">{messages.map((message) => <div key={message.id} className={message.role === "user" ? "ml-auto max-w-[88%] rounded-2xl rounded-br-md bg-muted px-4 py-3" : "group max-w-full"}>
-            {message.role === "user" ? <><AiImagePreviews images={message.images} /><p data-no-translate className="whitespace-pre-wrap text-sm leading-6">{message.content}</p></> : <>
+            {message.role === "user" ? <><AiImagePreviews images={message.images} />{message.attachmentNames?.length ? <p className="mb-2 text-xs text-muted-foreground">Attached: {message.attachmentNames.join(", ")}. Images are not retained; reattach to inspect them again.</p> : null}<p data-no-translate className="whitespace-pre-wrap text-sm leading-6">{message.content}</p></> : <>
               <ThinkingState working={false} writing={animation?.id === message.id} durationMs={message.durationMs} scope={t(pageLabel)} activity={message.work} className="mb-2" />
               <StreamingText key={`${message.id}-${animation?.id === message.id ? animation.run : 0}`} text={message.content} animate={animation?.id === message.id} onProgress={() => { const viewport = log.current; if (viewport && viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 120) viewport.scrollTop = viewport.scrollHeight; }} onComplete={() => setAnimation((current) => current?.id === message.id ? null : current)} />
               <CustomerResearchSources research={message.research} />

@@ -1,5 +1,52 @@
 # Workspace chat and agent
 
+## Saved conversations and usage
+
+Chat, Agent and customer AI conversations save to Supabase after every completed
+reply. **History** searches titles and messages and supports rename, pin/unpin,
+archive/restore and permanent transcript deletion. It shows the current page,
+record and mode only. The latest nonarchived conversation resumes on reload;
+**New chat** preserves the earlier transcript. Messages and lists are paginated.
+
+The authenticated server owns transcripts. Reads recheck current membership,
+original role, selected-record access and a fingerprint of accessible mailboxes
+and sales assignments. A role, mailbox-access or assignment change makes earlier
+histories unavailable, including
+email evidence discovered away from an open record. Browser clients cannot read
+or write these private tables/RPCs directly. Histories are private to their owner.
+
+Agent proposals link to their conversation. Reopening history reads current
+approval, status and results; it never approves or executes proposals. Existing
+expiration, role, snapshot and execution-lock checks still apply. Transcript
+deletion preserves action audit records and aggregate usage. Saved requests ignore
+client-supplied past messages/results. Version checks reject stale tabs; request
+IDs replay completed responses without another provider call or new proposals.
+For an unknown request outcome, reopen History before trying again. Start a new
+conversation if a crashed request remains pending.
+
+Long conversations use the most recent ten saved messages plus the question and
+a bounded rolling summary of attributed earlier excerpts. This extractive memory
+is not a verified customer profile or permanent agent instructions. Current CRM
+records and execution results take precedence. Full transcript text remains
+available through pagination. Image names are saved, but image bytes are not
+retained; reattach an image to inspect it again.
+
+**History → AI usage** shows the owner's last 30 days of saved-chat requests,
+provider calls (including research/lookups and failed attempts), reported token
+counts, missing-counter coverage and estimated USD cost. Optional
+`AI_CHAT_MODEL_RATES_JSON` sets input/output prices per million tokens per model.
+Costs are unavailable without configured rates. Estimates exclude cache discounts,
+search fees and other billing adjustments, and are not provider invoices or usage
+for unrelated automations.
+
+Apply the additive `ai_chat_history` migration for the private tables, RPCs and
+action links. No paid Supabase plan is required. `tests/chat-history.test.ts`
+checks API boundaries, usage and memory. `tests/chat-history-database.sql` checks
+transactional completion, ownership, stale requests, search, deletion and database
+privileges with all test data rolled back.
+
+## Chat and agent behavior
+
 Chat is read-only. The assistant route discards action output in chat mode and never creates proposals for it.
 
 The sidebar captures the open email and mailbox, Messenger conversation, or flow editor when a request is submitted. Chat also reloads selected records for accurate replies and summaries, while keeping actions disabled. Each mailbox/conversation/flow has its own sidebar history. Source emails are reloaded through accessible mailboxes again at approval and execution; replies retain the selected sender mailbox and threading. Unavailable invoice defaults, payment settings or older message bodies are reported as coverage limits rather than blocking an otherwise accessible selected email. A failed selected-message read still blocks the request.
@@ -32,22 +79,33 @@ The `create_flow` action accepts the same validated trigger, filter and ordered 
 
 ## Expanded CRM tools
 
-`crm_action` adds 25 strictly validated operations alongside the original actions. Their schemas and usage instructions live in `lib/ai/crm-tools.ts`; preparation and execution live in `lib/ai/crm-execution.ts`. The existing instructions, provider configuration, invoice builders and email safeguards remain in place. This is an expansion of the agent's application tools and instructions; it does not fine-tune the underlying LLM or introduce permanent conversational memory.
+`crm_action` adds 37 strictly validated operations alongside the eight original actions. Schemas and usage instructions live in `lib/ai/crm-tools.ts` and `lib/ai/crm-productivity.ts`; preparation and execution live in `lib/ai/crm-execution.ts` and `lib/ai/crm-productivity-execution.ts`. The existing provider configuration, invoice builders and email safeguards remain in place. This expands the agent's tools and instructions; approved business facts persist for automatic replies, but this does not fine-tune the underlying model.
 
 | Area | Agent operations |
 | --- | --- |
 | Customers and sales | Schedule/cancel a follow-up, assign/unassign an owner, delete a company, create a customer catalog |
 | Products | Create a product; edit its name, material, sizes, variants, quantity prices, stock, image URL and active status |
+| Saved audiences | Look up, create and edit saved segments and their selection rules, separately from customer business-segment labels |
+| ERP inventory | Read saved stock, SKU aliases and sync status; explicitly refresh the connected ERP snapshot with admin/operator permission and manual approval |
 | Purchase orders | Create an order, partially edit its details or status, create an invoice for remaining quantities at agreed order prices |
 | Invoices | Save explicitly agreed custom-price draft lines; issue, void or delete an invoice; record a received payment |
 | Existing flows | Edit definitions, activate/pause/return to draft, duplicate as a draft, delete |
 | Email and messaging | Change read/star/folder/category/follow-up state; send a reply to an existing Facebook, Instagram or WhatsApp conversation |
-| Tasks and alerts | Complete your assigned task or mark your notification read |
+| Tasks and alerts | Create your own general task, edit its title/notes/priority/due time/status, complete your assigned task or mark your notification read |
+| Exports and downloads | Export selected companies, a saved audience, search matches or all companies as CSV; download a saved invoice or catalog PDF |
+| Conversation AI | Inspect accessible automatic-reply statuses, explicitly enable/pause a conversation or approve its waiting shipping amount |
+| Approved business knowledge | Inspect reusable facts; admin/operator can add or delete explicitly approved policies with manual review |
 | Settings | Change your display name/preferences; manage team members, stop/resume/delete a mailbox connection, change invoice defaults/payment methods within your role |
 
 The agent calls the same authenticated services as the CRM forms. Role and record ownership checks run at preparation and execution. Product/order/flow/preferences changes preserve omitted fields, and approval snapshots reject stale records. Purchase orders retain their version lock; invoice updates retain their revision lock. Custom invoice lines use explicit integer-cent prices, stay drafts, require manual review and cannot detach an order's agreed products. Recording a payment never initiates a charge or bank transfer. Messaging recipients and channels are resolved from real inbound messages. Mailbox passwords, login credentials, authentication, choosing/uploading files and connecting new external accounts remain interactive CRM tasks; the agent directs the user to the appropriate page.
 
-`FILAZOO_CRM_READ_JSON` enables bounded lookups of companies, products (including inactive ones), orders, invoices, full flow definitions, your tasks/notifications, catalogs, messages, member labels, manageable mailboxes and authorized billing settings. Queries accept literal search text, exact IDs, optional company scope and pagination. Each response includes coverage, and up to four total reads are allowed per request, including at most two existing email lookups. Projections exclude credentials, tokens and raw webhook payloads. Reads finish before proposals are stored; a read failure or budget exhaustion never saves partial mutations. Chat mode still rejects all action/read protocols.
+`FILAZOO_CRM_READ_JSON` enables bounded lookups of companies, products (including inactive ones), orders, invoices, full flow definitions, your tasks/notifications, catalogs, messages, member labels, manageable mailboxes, authorized billing settings, conversation AI and business facts. Exact customer-email searches include secondary contacts and preserve ambiguous matches. Exact variant SKUs resolve to their saved parent product, including inactive products; scans explicitly stop beyond 5,000 catalog products. Queries accept literal search text, exact IDs, optional company scope and pagination. Each response includes coverage, and up to four total reads are allowed per request, including at most two existing email lookups. `FILAZOO_CRM_READS_JSON` batches two to four independent CRM lookups concurrently; each still consumes one read. A failed batch produces no proposals. Projections exclude credentials, tokens and raw webhook payloads. Reads finish before proposals are stored; a read failure or budget exhaustion never saves partial mutations. Chat mode still rejects all action/read protocols.
+
+Task edits preserve omitted fields, reject concurrent changes and cannot take over a teammate's task or bypass a shipping-review workflow. CSV downloads require a completed action owned by the current user, expire with its 30-minute approval window and reject changed export data. Exports neutralize spreadsheet formulas, preserve Unicode and stop above 5,000 source companies or 4 MB; selecting specific company IDs avoids scanning the whole company list. Product edits preserve custom descriptions and unrelated tags and reject lost/concurrent saves. File downloads use authenticated CRM endpoints.
+
+Malformed lookup or action output gets one shared, bounded re-planning attempt before any proposal is stored. Action validation feedback contains only schema error codes and paths. Repeated invalid output stops without proposals; this mechanism never retries an executed action.
+
+Conversation AI always requires manual review because enabling it permits future automatic replies. The server resolves receiving mailbox, RFC message headers and recipients from saved emails; the model cannot supply another recipient. Re-enabling preserves an existing shipping review. Shipping approval reports a queued reply, not confirmed delivery. Business-fact changes also require manual review and admin/operator permission. Customer messages and web content cannot approve new workspace policy. Credentials, uploads, integration setup, portal administration and dashboard layout changes still use their CRM interfaces. Newly created IDs can support the next turn, but there is no autonomous post-approval continuation engine.
 
 Examples: “Rename TEST-PLA to Premium PLA and keep its prices”; “Mark PO-42 in production”; “Create an invoice for PO-42's remaining quantities”; “Pause Buyer follow-up”; “Archive this email and keep its star”; “Record the $50 bank transfer received today, reference BANK-42”; “Mark my call-buyer task complete.” Missing identities are looked up rather than fabricated. Tasks requiring a newly created record's ID can continue from its saved result; if that result is not yet available, the agent must finish the first step before preparing dependent work.
 

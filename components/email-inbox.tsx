@@ -40,7 +40,7 @@ import { AssignedOwner } from "@/components/assigned-owner";
 import { ContactSummary } from "@/components/contact-summary";
 import { groupEmailConversations, replyReferences, replyTarget, threadKeyForEmail } from "@/lib/email-threading";
 import { buildCatalogPdfWithImages } from "@/lib/catalog-pdf";
-import { splitQuotedEmail } from "@/lib/email-content";
+import { emailContentSandbox, emailDocument, splitQuotedEmail } from "@/lib/email-content";
 import { prepareEmailTranslation } from "@/lib/email-translation-document";
 import { requestEmailTranslation } from "@/lib/email-translation-client";
 import type { Catalog, Product } from "@/lib/types";
@@ -129,18 +129,6 @@ function buildConversations(emails: EmailWorkspaceItem[]): EmailConversation[] {
   });
 }
 
-function emailDocument(html: string) {
-  const safeHtml = html
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
-    .replace(/<meta\b[^>]*http-equiv\s*=\s*["']?refresh["']?[^>]*>/gi, "")
-    .replace(/<(iframe|object|embed)\b[^>]*>[\s\S]*?<\/\1>/gi, "")
-    .replace(/<(iframe|object|embed)\b[^>]*\/?\s*>/gi, "");
-  const additions = '<base target="_blank"><meta name="referrer" content="no-referrer"><style>html,body{margin:0;padding:0;background:transparent}img{max-width:100%;height:auto}</style>';
-  return /<head[\s>]/i.test(safeHtml)
-    ? safeHtml.replace(/<head([^>]*)>/i, `<head$1>${additions}`)
-    : `<!doctype html><html><head>${additions}</head><body>${safeHtml}</body></html>`;
-}
-
 function PlainEmailBody({ body }: { body: string }) {
   const linkPattern = /(https?:\/\/[^\s<>]+|www\.[^\s<>]+|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,})/gi;
   return <div data-no-translate className="whitespace-pre-wrap text-sm leading-7">{body.split(linkPattern).map((part, index) => {
@@ -157,7 +145,7 @@ function PlainEmailBody({ body }: { body: string }) {
 
 function OriginalEmailBody({ email }: { email: EmailWorkspaceItem }) {
   if (!email.html) return <PlainEmailBody body={email.body} />;
-  return <iframe title={`Email content from ${email.contact}`} srcDoc={emailDocument(email.html)} sandbox="allow-popups allow-popups-to-escape-sandbox" className="min-h-[420px] w-full border-0 bg-white" />;
+  return <iframe title={`Email content from ${email.contact}`} srcDoc={emailDocument(email.html)} sandbox={emailContentSandbox} className="min-h-[420px] w-full border-0 bg-white" />;
 }
 
 function EmailBody({ email, onLoad, loading, error }: { email: EmailWorkspaceItem; onLoad: () => void; loading: boolean; error?: string }) {

@@ -100,6 +100,18 @@ function executionFixture() {
   return { ...execution, tables, savedForms, savedPatches, savedFlows, savedInvoices, payments, sent, dependencies, changeCustomer: () => { fingerprint = "b".repeat(64); }, invoiceReads: () => invoiceReads, bootstrapInput: () => bootstrapInput };
 }
 
+test("company creation returns its verified saved ID for dependent actions and never invents a success", async () => {
+  const f = executionFixture();
+  const action = workspaceActionSchema.parse({ type: "create_company", company: { name: "Audit", country: "US", segment: "Test" } });
+  const [proposal] = await f.prepareAgentActions([action], viewer, "ask");
+  Object.assign(f.dependencies["@/app/crm-actions"], { createCompany: async () => ({ success: "Audit was added.", companyId }) });
+  const result = await f.executeAgentAction(actionId, proposal.action, viewer, request);
+  assert.equal(result.companyId, companyId);
+  assert.equal(result.href, `/companies/${companyId}`);
+  Object.assign(f.dependencies["@/app/crm-actions"], { createCompany: async () => undefined });
+  await assert.rejects(() => f.executeAgentAction(actionId, proposal.action, viewer, request), /did not confirm/);
+});
+
 test("customer field updates preserve other profile fields and reject stale approved snapshots", async () => {
   const fixture = executionFixture();
   const [proposal] = await fixture.prepareAgentActions([{ type: "update_company", companyId, changes: { city: "Shanghai", commerce: { shippingAddress: "New warehouse" } } }], viewer, "ask");

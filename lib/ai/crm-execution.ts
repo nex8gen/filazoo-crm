@@ -5,6 +5,10 @@ import { revalidatePath } from "next/cache";
 import * as crm from "@/app/crm-actions";
 import * as settings from "@/app/settings/actions";
 import { saveUserPreferences } from "@/app/settings/preference-actions";
+import { createSegment, updateSegment } from "@/app/segment-actions";
+import { syncInventory } from "@/app/inventory-actions";
+import { getInventoryState } from "../data/inventory";
+import { segmentInputSchema } from "../segments";
 import { savePurchaseOrder, createOrderInvoice, getPurchaseOrderProfile } from "@/app/purchase-order-actions";
 import { POST as saveEmailState } from "@/app/api/email/state/route";
 import { sendMetaTextMessage } from "../meta-messenger";
@@ -26,12 +30,14 @@ import { listWorkspaceMembers } from "../data/members";
 import { updateFlowActivity } from "../data/flow-activity";
 import { loadAgentCompany, loadAgentEmails } from "./agent-records";
 import { agentProductSchema, crmOperationSchema, crmOperationLabels, type CrmOperation, type PreparedCrmAction } from "./crm-tools";
+import { isProductivityOperation } from "./crm-productivity";
+import { productivityTarget, executeProductivityOperation } from "./crm-productivity-execution";
 
 const adminOperations = new Set(["assign_owner", "delete_company", "invite_member", "update_member", "delete_member"]);
 export function authorizeCrmOperation(viewer: WorkspaceViewer, operation: CrmOperation) {
   if (viewer.role === "viewer") throw new Error("Your workspace role is read-only.");
   if (adminOperations.has(operation.op) && viewer.role !== "admin") throw new Error("This action requires a workspace administrator.");
-  if (["invoice_lifecycle", "invoice_defaults", "payment_methods"].includes(operation.op) && !["admin", "operator"].includes(viewer.role)) throw new Error("This action requires an admin or operator.");
+  if (["invoice_lifecycle", "invoice_defaults", "payment_methods", "sync_inventory"].includes(operation.op) && !["admin", "operator"].includes(viewer.role)) throw new Error("This action requires an admin or operator.");
 }
 
 function form(values: Record<string, unknown>) {
@@ -55,6 +61,19 @@ async function one(table: string, fields: string, key: string, value: string) {
 
 /** Reload only the relevant record, with ownership checked before preparing and executing. */
 async function target(operation: CrmOperation, viewer: WorkspaceViewer): Promise<{ name: string; value: unknown; preview: Record<string, unknown> }> {
+  if (isProductivityOperation(operation)) return productivityTarget(operation, viewer);
+  if (operation.op === "create_segment" || operation.op === "update_segment") {
+    const saved = operation.op === "update_segment" ? await one("company_segments", "id,name,description,rules", "id", operation.segmentId) : null;
+    if (operation.op === "update_segment" && !saved) throw new Error("This saved segment is no longer available.");
+    const segment = segmentInputSchema.strict().parse(operation.op === "create_segment" ? operation.segment : { name: saved!.name, description: saved!.description, rules: saved!.rules, ...operation.changes });
+    return { name: segment.name, value: saved, preview: { segment } };
+  }
+  if (operation.op === "sync_inventory") {
+    const { status } = await getInventoryState();
+    if (!status.configured || status.configurationError) throw new Error("Configure an active ERP connection in Settings before syncing inventory.");
+    const scope = { configured: status.configured, warehouseIds: status.warehouseIds };
+    return { name: "ERP inventory", value: scope, preview: { ...scope, effect: "Refresh the saved stock snapshot from the connected ERP. Product prices are preserved." } };
+  }
   const db = createSupabaseAdmin();
   if (operation.op === "custom_invoice") {
     const existing = operation.invoiceId ? await getInvoice(operation.invoiceId) : null;
@@ -167,7 +186,12 @@ async function target(operation: CrmOperation, viewer: WorkspaceViewer): Promise
       if (rows.error || (operation.productSkus.length && rows.data?.length !== operation.productSkus.length)) throw new Error("One or more selected catalog products are unavailable.");
       if (!operation.productSkus.length && (rows.data?.length ?? 0) > 100) throw new Error("Choose up to 100 specific catalog products.");
       value = { company, products: rows.data };
-      preview = { currency: operation.currency, products: rows.data };
+      preview = { currency: operation.currency, products: (rows.data ?? []).map((row) => {
+        const product = productFromRow(row);
+        return { sku: product.sku, name: product.name, currency: product.currency,
+          tiers: product.tiers.map((tier) => ({ minimum: tier.minimum, unitPriceMinor: Math.round(tier.price * 100) })),
+          variants: product.variants.map(({ name, sku, price }) => ({ name, sku, price })) };
+      }) };
     }
     return { name: company.fields.name, value, preview };
   }
@@ -204,8 +228,20 @@ export async function executeCrmAction(action: PreparedCrmAction, viewer: Worksp
   authorizeCrmOperation(viewer, operation);
   const current = await target(operation, viewer);
   if (hash(current.value) !== action.fingerprint) throw new Error("This record changed after the proposal. Ask the agent to prepare it again.");
+  if (isProductivityOperation(operation)) return executeProductivityOperation(operation, viewer, actionId, current.preview, request);
   let result: { error?: string; success?: string } | undefined;
   let href = "/";
+  if (operation.op === "create_segment" || operation.op === "update_segment") {
+    const segment = segmentInputSchema.parse(current.preview.segment);
+    const data = form({ ...segment, rules: JSON.stringify(segment.rules), ...(operation.op === "update_segment" ? { segmentId: operation.segmentId } : {}) });
+    result = operation.op === "create_segment" ? await createSegment({}, data) : await updateSegment({}, data);
+    return { success: checked(result, "Saved segment updated."), href: "/segments" };
+  }
+  if (operation.op === "sync_inventory") {
+    const saved = await syncInventory();
+    if (!saved.ok) throw new Error(saved.error);
+    return { success: saved.skipped ? "An inventory sync is already running. No new sync was started." : `Inventory synced: ${saved.count} stock records refreshed.`, href: "/catalogs" };
+  }
   const extra: Record<string, unknown> = {};
   switch (operation.op) {
     case "schedule_followup": result = await crm.scheduleCompanyFollowup(operation.companyId, operation.dueAt); href = `/companies/${operation.companyId}`; break;
@@ -218,7 +254,13 @@ export async function executeCrmAction(action: PreparedCrmAction, viewer: Worksp
     }
     case "create_product": result = await crm.createProduct(undefined, productForm(agentProductSchema.parse(current.preview.product))); href = "/catalogs"; break;
     case "update_product": result = await crm.updateProduct(undefined, productForm(agentProductSchema.parse(current.preview.product), operation.sku)); href = "/catalogs"; break;
-    case "save_order": result = await savePurchaseOrder(operation.companyId, operation.orderId ?? null, Number(current.preview.version), current.preview.document); href = `/companies/${operation.companyId}`; break;
+    case "save_order": {
+      const saved = await savePurchaseOrder(operation.companyId, operation.orderId ?? null, Number(current.preview.version), current.preview.document);
+      result = saved;
+      if (saved.orderId) extra.orderId = saved.orderId;
+      extra.companyId = operation.companyId;
+      href = `/companies/${operation.companyId}`; break;
+    }
     case "invoice_order": {
       const saved = await createOrderInvoice(operation.companyId, operation.orderId);
       if (saved.error || !saved.invoiceId) throw new Error(saved.error || "The CRM did not confirm an invoice.");

@@ -30,7 +30,7 @@ export async function createAnalysisFollowup(input: { companyId: string; product
   const pipeline = (Array.isArray(company.pipeline) ? company.pipeline[0] : company.pipeline) as { owner_id: string | null } | null;
   const labels = { receipt: "Confirm receipt and usage", fulfillment: "Check order fulfillment", restock: "Confirm replenishment needs", demand: "Review purchasing needs", history: "Discuss product needs", monitor: "Check product usage" };
   const { error } = await db.from("crm_tasks").upsert({
-    id: requestId, company_id: companyId, assigned_to: pipeline?.owner_id || viewer.id,
+    id: requestId, company_id: companyId, assigned_to: pipeline?.owner_id || viewer.id, follows_company_owner: true,
     title: `${labels[reminder.kind]}: ${reminder.name}`.slice(0, 200),
     notes: marker, priority: "normal", due_at: dueAt,
   }, { onConflict: "id", ignoreDuplicates: true });

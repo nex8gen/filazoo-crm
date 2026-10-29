@@ -1272,3 +1272,291 @@ end;
 $$;
 revoke all on function public.handoff_email_auto_reply(uuid,integer,text,jsonb,text,jsonb,text,uuid,uuid) from public, anon, authenticated;
 grant execute on function public.handoff_email_auto_reply(uuid,integer,text,jsonb,text,jsonb,text,uuid,uuid) to service_role;
+
+
+begin;
+create table public.ai_conversations (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  owner_role text not null,
+  access_key text not null,
+  mode text not null check (mode in ('chat','agent','customer')),
+  pathname text not null,
+  page_context jsonb not null default '{}'::jsonb,
+  scope text not null,
+  title text not null default 'New conversation' check (char_length(title) between 1 and 120),
+  pinned boolean not null default false,
+  archived boolean not null default false,
+  summary text not null default '' check (char_length(summary) <= 5000),
+  version integer not null default 0,
+  active_request uuid,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index ai_conversations_owner_scope on public.ai_conversations(user_id,owner_role,scope,archived,pinned desc,updated_at desc,id);
+create index ai_conversations_search on public.ai_conversations using gin (to_tsvector('simple',title));
+create table public.ai_chat_turns (
+  request_id uuid primary key,
+  conversation_id uuid not null references public.ai_conversations(id) on delete cascade,
+  status text not null check (status in ('pending','completed','failed')),
+  response jsonb,
+  created_at timestamptz not null default now()
+);
+create index ai_chat_turns_conversation on public.ai_chat_turns(conversation_id);
+create table public.ai_chat_messages (
+  id uuid primary key default gen_random_uuid(),
+  conversation_id uuid not null references public.ai_conversations(id) on delete cascade,
+  turn integer not null,
+  role text not null check (role in ('user','assistant')),
+  content text not null check (char_length(content) <= 40000),
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  unique(conversation_id,turn,role)
+);
+create index ai_chat_messages_search on public.ai_chat_messages using gin (to_tsvector('simple',content));
+create table public.ai_usage_events (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  conversation_id uuid references public.ai_conversations(id) on delete set null,
+  request_id uuid not null,
+  call_index integer not null,
+  provider text not null,
+  model text not null,
+  input_tokens bigint check (input_tokens >= 0),
+  output_tokens bigint check (output_tokens >= 0),
+  total_tokens bigint check (total_tokens >= 0),
+  estimated_cost_usd numeric check (estimated_cost_usd >= 0),
+  success boolean not null,
+  created_at timestamptz not null default now(),
+  unique(request_id,call_index)
+);
+create index ai_usage_events_owner_created on public.ai_usage_events(user_id,created_at desc);
+create index ai_usage_events_conversation on public.ai_usage_events(conversation_id);
+alter table public.workspace_agent_actions add column conversation_id uuid references public.ai_conversations(id) on delete set null;
+create index workspace_agent_actions_conversation on public.workspace_agent_actions(conversation_id,user_id,created_at);
+
+-- All reads and writes use authenticated server routes which also recheck record
+-- access and current membership. Clients cannot forge transcripts, costs or actions.
+alter table public.ai_conversations enable row level security;
+alter table public.ai_chat_turns enable row level security;
+alter table public.ai_chat_messages enable row level security;
+alter table public.ai_usage_events enable row level security;
+revoke all on public.ai_conversations,public.ai_chat_turns,public.ai_chat_messages,public.ai_usage_events from public,anon,authenticated;
+grant all on public.ai_conversations,public.ai_chat_turns,public.ai_chat_messages,public.ai_usage_events to service_role;
+grant usage,select on sequence public.ai_usage_events_id_seq to service_role;
+
+create function public.begin_ai_chat_turn(p_user_id uuid,p_conversation_id uuid,p_request_id uuid,p_version integer) returns jsonb
+language plpgsql security invoker set search_path = public,pg_temp as $$
+declare c public.ai_conversations; t public.ai_chat_turns;
+begin
+  select * into c from public.ai_conversations where id=p_conversation_id and user_id=p_user_id for update;
+  if not found then raise exception 'Conversation unavailable'; end if;
+  select * into t from public.ai_chat_turns where request_id=p_request_id;
+  if found then
+    if t.conversation_id <> c.id then raise exception 'Request ID already used'; end if;
+    if t.status='completed' then return jsonb_build_object('response',t.response); end if;
+    raise exception 'This request is pending or failed. Reload history before sending again';
+  end if;
+  if c.active_request is not null then raise exception 'A previous request is still pending. Reload history or start a new chat'; end if;
+  if c.archived or c.version <> p_version then raise exception 'Conversation changed. Reload history before sending again'; end if;
+  insert into public.ai_chat_turns(request_id,conversation_id,status) values(p_request_id,c.id,'pending');
+  update public.ai_conversations set active_request=p_request_id where id=c.id;
+  return '{}'::jsonb;
+end; $$;
+
+create function public.finish_ai_chat_turn(p_user_id uuid,p_conversation_id uuid,p_request_id uuid,p_user_message jsonb,p_response jsonb,p_summary text) returns void
+language plpgsql security invoker set search_path = public,pg_temp as $$
+declare c public.ai_conversations; action_id uuid;
+begin
+  select * into c from public.ai_conversations where id=p_conversation_id and user_id=p_user_id for update;
+  if not found then raise exception 'Conversation unavailable'; end if;
+  if exists(select 1 from public.ai_chat_turns where request_id=p_request_id and conversation_id=c.id and status='completed') then return; end if;
+  if c.active_request is distinct from p_request_id then raise exception 'Request does not own conversation'; end if;
+  if jsonb_typeof(p_response->'output') <> 'string' then raise exception 'Missing assistant reply'; end if;
+  for action_id in select (x->>'id')::uuid from jsonb_array_elements(coalesce(p_response->'actions','[]'::jsonb)) x loop
+    update public.workspace_agent_actions set conversation_id=c.id where id=action_id and user_id=p_user_id and (conversation_id is null or conversation_id=c.id);
+    if not found then raise exception 'Action does not belong to conversation owner'; end if;
+  end loop;
+  insert into public.ai_chat_messages(id,conversation_id,turn,role,content,metadata)
+    values(p_request_id,c.id,c.version+1,'user',coalesce(p_user_message->>'content',''),jsonb_build_object('attachmentNames',coalesce(p_user_message->'attachmentNames','[]'::jsonb)));
+  insert into public.ai_chat_messages(conversation_id,turn,role,content,metadata)
+    values(c.id,c.version+1,'assistant',p_response->>'output',p_response-'output'-'history');
+  update public.ai_chat_turns set status='completed',response=p_response where request_id=p_request_id and conversation_id=c.id;
+  update public.ai_conversations set version=version+1,active_request=null,updated_at=now(),summary=left(p_summary,5000),
+    title=case when version=0 and title='New conversation' then left(coalesce(nullif(btrim(p_user_message->>'content'),''),'Image conversation'),120) else title end where id=c.id;
+end; $$;
+
+create function public.fail_ai_chat_turn(p_user_id uuid,p_conversation_id uuid,p_request_id uuid) returns void
+language plpgsql security invoker set search_path = public,pg_temp as $$
+begin
+  perform 1 from public.ai_conversations where id=p_conversation_id and user_id=p_user_id and active_request=p_request_id for update;
+  if not found then return; end if;
+  update public.ai_chat_turns set status='failed' where request_id=p_request_id and conversation_id=p_conversation_id and status='pending';
+  update public.ai_conversations set active_request=null where id=p_conversation_id;
+end; $$;
+
+create function public.ai_chat_usage_totals(p_user_id uuid,p_since timestamptz) returns jsonb
+language sql stable security invoker set search_path=public,pg_temp as $$
+  select jsonb_build_object('requests',count(distinct request_id),'calls',count(*),'failedCalls',count(*) filter(where not success),
+    'inputTokens',coalesce(sum(input_tokens),0),'outputTokens',coalesce(sum(output_tokens),0),'totalTokens',coalesce(sum(total_tokens),0),
+    'unreportedCalls',count(*) filter(where total_tokens is null),'estimatedCostUsd',sum(estimated_cost_usd),
+    'unpricedCalls',count(*) filter(where estimated_cost_usd is null))
+  from public.ai_usage_events where user_id=p_user_id and created_at >= p_since;
+$$;
+revoke all on function public.begin_ai_chat_turn(uuid,uuid,uuid,integer),public.finish_ai_chat_turn(uuid,uuid,uuid,jsonb,jsonb,text),public.fail_ai_chat_turn(uuid,uuid,uuid),public.ai_chat_usage_totals(uuid,timestamptz) from public,anon,authenticated;
+grant execute on function public.begin_ai_chat_turn(uuid,uuid,uuid,integer),public.finish_ai_chat_turn(uuid,uuid,uuid,jsonb,jsonb,text),public.fail_ai_chat_turn(uuid,uuid,uuid),public.ai_chat_usage_totals(uuid,timestamptz) to service_role;
+
+create function public.search_ai_conversations(p_user_id uuid,p_role text,p_access_key text,p_scope text,p_archived boolean,p_search text,p_offset integer) returns setof public.ai_conversations
+language sql stable security invoker set search_path=public,pg_temp as $$
+  select c.* from public.ai_conversations c
+  where c.user_id=p_user_id and c.owner_role=p_role and c.access_key=p_access_key and c.scope=p_scope and c.archived=p_archived
+    and (p_search='' or to_tsvector('simple',c.title) @@ plainto_tsquery('simple',p_search)
+      or exists(select 1 from public.ai_chat_messages m where m.conversation_id=c.id and to_tsvector('simple',m.content) @@ plainto_tsquery('simple',p_search)))
+  order by c.pinned desc,c.updated_at desc,c.id limit 31 offset greatest(0,least(p_offset,10000));
+$$;
+revoke all on function public.search_ai_conversations(uuid,text,text,text,boolean,text,integer) from public,anon,authenticated;
+grant execute on function public.search_ai_conversations(uuid,text,text,text,boolean,text,integer) to service_role;
+notify pgrst,'reload schema';
+commit;
+
+-- Task and notification lifecycle (2026-10-29).
+begin;
+
+alter table public.crm_tasks add column follows_company_owner boolean not null default false;
+alter table public.internal_notifications
+  add column task_id uuid references public.crm_tasks(id) on delete cascade,
+  add column event_key text unique,
+  add column is_unread boolean generated always as (read_at is null) stored;
+create index internal_notifications_task_idx on public.internal_notifications(task_id) where task_id is not null;
+create index internal_notifications_inbox_idx on public.internal_notifications(user_id,is_unread desc,created_at desc,id);
+create index crm_tasks_due_reminder_idx on public.crm_tasks(due_at,id) where status='open' and assigned_to is not null;
+
+update public.crm_tasks set follows_company_owner=true
+where notes='Scheduled from intelligent next follow-up recommendation.' or notes like 'Company purchase analysis: %';
+
+-- Every producer (CRM, flows, AI and product analysis) shares the same lifecycle.
+create function public.sync_crm_task_activity() returns trigger
+language plpgsql security invoker set search_path='' as $$
+declare
+  assigned boolean := false;
+  marker constant text := 'Scheduled from intelligent next follow-up recommendation.';
+begin
+  if tg_op='INSERT' then
+    assigned := new.status='open' and new.assigned_to is not null;
+  else
+    -- Retire obsolete reminders; history remains visible as read.
+    if new.status<>'open' or new.assigned_to is distinct from old.assigned_to then
+      update public.internal_notifications set read_at=coalesce(read_at,now())
+      where task_id=new.id and read_at is null;
+    elsif new.due_at is distinct from old.due_at then
+      update public.internal_notifications set read_at=coalesce(read_at,now())
+      where task_id=new.id and event_key like 'task-due:%' and read_at is null;
+    end if;
+    assigned := new.status='open' and new.assigned_to is not null
+      and (old.status<>'open' or new.assigned_to is distinct from old.assigned_to);
+
+    -- Only the currently scheduled reminder may change the company's date.
+    -- The pipeline trigger sees the same date and cannot recreate a closed task.
+    if old.notes=marker and old.status='open' and new.company_id is not null then
+      if new.status<>'open' then
+        update public.pipeline set next_followup_at=null
+        where company_id=new.company_id and next_followup_at=old.due_at
+          and not exists(select 1 from public.crm_tasks t where t.company_id=new.company_id and t.id<>new.id and t.status='open' and t.notes=marker);
+      elsif new.due_at is distinct from old.due_at then
+        update public.pipeline set next_followup_at=new.due_at
+        where company_id=new.company_id and next_followup_at=old.due_at;
+      end if;
+    end if;
+  end if;
+  if assigned and exists(select 1 from public.workspace_members where user_id=new.assigned_to and activated_at is not null) then
+    insert into public.internal_notifications(user_id,message,task_id,include_thread_link)
+    values(new.assigned_to,left('Task assigned: '||new.title,500),new.id,false);
+  end if;
+  return new;
+end;
+$$;
+revoke all on function public.sync_crm_task_activity() from public,anon,authenticated;
+grant execute on function public.sync_crm_task_activity() to service_role;
+create trigger crm_tasks_activity after insert or update of status,due_at,assigned_to on public.crm_tasks
+for each row execute function public.sync_crm_task_activity();
+
+create function public.transfer_company_followup_tasks() returns trigger
+language plpgsql security invoker set search_path='' as $$
+begin
+  if new.owner_id is distinct from old.owner_id then
+    update public.crm_tasks set assigned_to=new.owner_id
+    where company_id=new.company_id and status='open'
+      and (follows_company_owner or notes='Scheduled from intelligent next follow-up recommendation.' or notes like 'Company purchase analysis: %')
+      and assigned_to is distinct from new.owner_id;
+  end if;
+  return new;
+end;
+$$;
+revoke all on function public.transfer_company_followup_tasks() from public,anon,authenticated;
+grant execute on function public.transfer_company_followup_tasks() to service_role;
+create trigger pipeline_transfer_followup_tasks after update of owner_id on public.pipeline
+for each row execute function public.transfer_company_followup_tasks();
+
+-- Link AI handoff alerts to their task so resolving or stopping the handoff
+-- clears its unread alert and opens the correct review controls from history.
+create or replace function public.handoff_email_auto_reply(
+  p_id uuid, p_revision integer, p_status text, p_document jsonb, p_message_key text,
+  p_history jsonb, p_reason text, p_company_id uuid default null, p_contact_id uuid default null
+) returns void language plpgsql security invoker set search_path = '' as $$
+declare a public.email_auto_replies; v_task uuid;
+begin
+  select * into a from public.email_auto_replies where id=p_id for update;
+  if a.id is null or not a.enabled or a.revision <> p_revision or a.status <> 'processing' then
+    raise exception 'Automation changed or was stopped';
+  end if;
+  if p_status not in ('waiting_shipping','needs_review') then raise exception 'Invalid handoff'; end if;
+  v_task := coalesce(a.task_id, gen_random_uuid());
+  insert into public.crm_tasks(id,company_id,contact_id,assigned_to,title,notes,priority,status,due_at)
+    values(v_task,p_company_id,p_contact_id,a.assigned_to,
+      case when p_status='waiting_shipping' then 'Add shipping cost to send customer invoice' else 'Review AI email reply' end,
+      left(p_reason,4000) || E'\nOpen conversation: /emails?mailbox=' || a.mailbox_id::text || '&thread=' || a.thread_key,
+      'high','open',now())
+    on conflict(id) do update set title=excluded.title,notes=excluded.notes,status='open',completed_at=null,assigned_to=excluded.assigned_to;
+  insert into public.internal_notifications(user_id,message,conversation_id,include_thread_link,task_id,event_key)
+    values(a.assigned_to,left(case when p_status='waiting_shipping' then 'Shipping approval required: ' else 'AI reply needs review: ' end || a.recipient || '. ' || p_reason,500),a.thread_key,true,v_task,'auto-reply-handoff:'||a.id||':'||p_revision)
+    on conflict(event_key) do nothing;
+  update public.email_auto_replies set status=p_status,pending_document=p_document,pending_message_key=p_message_key,
+    history=p_history,task_id=v_task,last_error=p_reason,processing_at=null where id=p_id;
+end;
+$$;
+revoke all on function public.handoff_email_auto_reply(uuid,integer,text,jsonb,text,jsonb,text,uuid,uuid) from public, anon, authenticated;
+grant execute on function public.handoff_email_auto_reply(uuid,integer,text,jsonb,text,jsonb,text,uuid,uuid) to service_role;
+
+-- A task due at the same instant is notified once per recipient, even when
+-- multiple schedulers run. Row locks serialize completion and notification.
+create function public.notify_due_crm_tasks() returns integer
+language plpgsql security invoker set search_path='' as $$
+declare
+  task record;
+  inserted integer;
+  total integer := 0;
+begin
+  for task in
+    select t.id,t.title,t.assigned_to,t.due_at,
+      'task-due:'||t.id||':'||t.assigned_to||':'||extract(epoch from t.due_at) as reminder_key
+    from public.crm_tasks t join public.workspace_members m on m.user_id=t.assigned_to and m.activated_at is not null
+    where t.status='open' and t.due_at<=now()
+      and not exists(select 1 from public.internal_notifications n where n.event_key='task-due:'||t.id||':'||t.assigned_to||':'||extract(epoch from t.due_at))
+    order by t.due_at,t.id limit 500 for update of t skip locked
+  loop
+    insert into public.internal_notifications(user_id,message,task_id,event_key,include_thread_link)
+    values(task.assigned_to,left('Task due: '||task.title,500),task.id,task.reminder_key,false)
+    on conflict(event_key) do nothing;
+    get diagnostics inserted = row_count;
+    total := total+inserted;
+  end loop;
+  return total;
+end;
+$$;
+revoke all on function public.notify_due_crm_tasks() from public,anon,authenticated;
+grant execute on function public.notify_due_crm_tasks() to service_role;
+
+create extension if not exists pg_cron;
+select cron.schedule('filazoo-task-due-reminders','* * * * *','select public.notify_due_crm_tasks();');
+notify pgrst,'reload schema';
+commit;

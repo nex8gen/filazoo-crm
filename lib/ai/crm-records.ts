@@ -6,6 +6,9 @@ import { listWorkspaceFlows } from "../data/flows";
 import { listWorkspaceMembers } from "../data/members";
 import { loadAgentCompany } from "./agent-records";
 import { crmReadSchema, type CrmRead } from "./crm-tools";
+import { getInventoryState } from "../data/inventory";
+import { readAgentAutoReplies } from "./crm-productivity-records";
+import { variantsFromTags } from "../product-utils";
 
 /** Explicit projections prevent credentials, tokens and raw webhook payloads entering prompts. */
 const resources = {
@@ -19,11 +22,22 @@ const resources = {
   messages: { table: "meta_messages", fields: "id,thread_id,sender_id,recipient_id,customer_name,direction,body,source,created_at", search: "customer_name", order: "created_at" },
   members: { table: "workspace_members", fields: "user_id,display_name,role,auto_assign_leads,activated_at", search: "display_name", order: "user_id" },
   mailboxes: { table: "workspace_mailboxes", fields: "id,user_id,email,display_name,type,is_active,is_default", search: "email", order: "id" },
+  segments: { table: "company_segments", fields: "id,name,description,rules,created_at", search: "name", order: "id" },
+  business_facts: { table: "email_reply_knowledge", fields: "id,title,content,created_at", search: "title", order: "id" },
 } as const;
 
 export async function readCrmRecords(viewer: WorkspaceViewer, request: CrmRead) {
   const input = crmReadSchema.parse(request);
   const db = createSupabaseAdmin();
+  if (input.resource === "auto_replies") return readAgentAutoReplies(viewer, input);
+  if (input.resource === "inventory") {
+    if (input.companyId) throw new Error("Inventory does not support a company filter.");
+    const { status, snapshots, skuMap } = await getInventoryState();
+    const aliases = Object.entries(skuMap);
+    const matches = snapshots.filter((row) => (!input.id || row.sku === (skuMap[input.id] ?? input.id)) && (!input.query || [row.sku, ...aliases.filter(([, erpSku]) => erpSku === row.sku).map(([crmSku]) => crmSku)].some((sku) => sku.toLowerCase().includes(input.query.toLowerCase()))));
+    const records = matches.slice(input.offset, input.offset + 10).map((row) => ({ ...row, crmSkus: aliases.filter(([, erpSku]) => erpSku === row.sku).map(([crmSku]) => crmSku) }));
+    return { records, status, coverage: { matching: matches.length, included: records.length, nextOffset: matches.length > input.offset + 10 ? input.offset + 10 : null, scope: "Saved ERP snapshot; quantities aggregate the configured warehouses. No sync was started." } };
+  }
   if (input.resource === "settings") {
     const personal = { preferences: viewer.preferences ?? {}, profile: { displayName: viewer.displayName } };
     if (!["admin", "operator"].includes(viewer.role)) return { records: [{ ...personal, billingAvailable: false }], coverage: { matching: 1, included: 1, nextOffset: null } };
@@ -45,6 +59,16 @@ export async function readCrmRecords(viewer: WorkspaceViewer, request: CrmRead) 
   }
   const config: { table: string; fields: string; search: string; order: string } = resources[input.resource];
   let query = db.from(config.table).select(config.fields, { count: "exact" });
+  // Imported contact addresses can contain valid local-part characters that
+  // the interactive form's stricter email validator does not accept.
+  const contactSearch = input.resource === "companies" && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(input.query);
+  if (contactSearch) {
+    const { data, error, count } = await db.from("contacts").select("company_id", { count: "exact" }).ilike("email", input.query.replace(/[\\%_]/g, "\\$&")).order("company_id").range(0, 500);
+    if (error || (count ?? data?.length ?? 0) > 500) throw new Error("Unable to resolve this contact email. Use a company name or exact ID.");
+    const ids = [...new Set((data ?? []).map((contact) => contact.company_id).filter((id) => typeof id === "string"))];
+    if (!ids.length) return { records: [], coverage: { matching: 0, included: 0, nextOffset: null } };
+    query = query.in("id", ids);
+  }
   if (input.id) {
     if (input.resource !== "products" && !z.uuid().safeParse(input.id).success) throw new Error("Choose a valid record ID.");
     query = query.eq(input.resource === "products" ? "sku" : input.resource === "members" ? "user_id" : "id", input.id);
@@ -54,7 +78,7 @@ export async function readCrmRecords(viewer: WorkspaceViewer, request: CrmRead) 
     else if (input.resource === "companies") query = query.eq("id", input.companyId);
     else throw new Error("This resource does not support a company filter.");
   }
-  if (input.query) {
+  if (input.query && !contactSearch) {
     const literal = input.query.replace(/[\\%_]/g, "\\$&");
     if (input.resource === "products") {
       // Separate indexed SKU/name queries avoid interpreting user text as PostgREST filter syntax.
@@ -75,6 +99,25 @@ export async function readCrmRecords(viewer: WorkspaceViewer, request: CrmRead) 
   const { data, error, count } = await query.order(config.order, { ascending: input.resource === "products" || input.resource === "companies" }).range(input.offset, input.offset + 9);
   if (error) throw new Error(`Unable to read ${input.resource}. No changes were prepared.`);
   const rows = data ?? [];
+  if (input.resource === "products" && !rows.length && (input.query || input.id) && input.offset === 0) {
+    // Variants are stored in encoded tags rather than a searchable SKU column.
+    // A complete bounded scan resolves an exact variant without guessing a parent.
+    const wanted = (input.id || input.query).toLowerCase();
+    const matches: Record<string, unknown>[] = [];
+    for (let offset = 0; ; offset += 500) {
+      const page = await db.from("products").select(config.fields).order("sku").range(offset, offset + 499);
+      if (page.error) throw new Error("Unable to resolve the product variant.");
+      for (const row of (page.data ?? []) as unknown as Array<Record<string, unknown> & { sku: string; tags: string[] | null; price: number | null; stock_status: string | null }>) {
+        const variants = variantsFromTags(row.tags ?? [], [], String(row.sku), row.price === null ? "" : String(row.price), String(row.stock_status || ""));
+        const matched = variants.filter((variant) => variant.sku.toLowerCase() === wanted || variant.id.toLowerCase() === wanted);
+        if (matched.length || String(row.sku).toLowerCase() === wanted) matches.push({ ...row, matchedVariants: matched.map(({ id, name, sku, price }) => ({ id, name, sku, price })) });
+      }
+      if ((page.data?.length ?? 0) < 500) break;
+      if (offset >= 4500) throw new Error("Narrow this variant lookup to a product family; the catalog scan limit was reached.");
+    }
+    if (matches.length > 10 || JSON.stringify(matches).length > 60_000) throw new Error("This variant matches too many product records. Narrow the product family.");
+    return { records: matches, coverage: { matching: matches.length, included: matches.length, nextOffset: null, scope: "Exact variant SKU or ID matched to its saved parent product." } };
+  }
   const encoded = JSON.stringify(rows);
   if (encoded.length > 60_000) throw new Error("These records are too large. Look up one exact record ID at a time.");
   return { records: rows, coverage: { matching: count, included: rows.length, offset: input.offset, nextOffset: count !== null && count > input.offset + rows.length ? input.offset + rows.length : null } };

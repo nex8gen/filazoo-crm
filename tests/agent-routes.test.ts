@@ -14,12 +14,13 @@ import * as imageInput from "../lib/ai/image-input.ts";
 import * as crmTools from "../lib/ai/crm-tools.ts";
 
 const require = createRequire(import.meta.url);
+class TestHistoryError extends Error { status = 503; }
 // Run the actual route handlers with isolated auth/provider/database boundaries.
 // No test signs in to the real workspace, saves an invoice, or sends an email.
 function route(file: string, dependencies: Record<string, unknown>, env: Record<string, string> = {}, method: "POST" | "GET" = "POST") {
   const exports: { POST?: (request: Request, context?: { params: Promise<{ id: string }> }) => Promise<Response>; GET?: (request: Request) => Promise<Response> } = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => dependencies[name] ?? (name === "@/lib/ai/crm-tools" ? crmTools : name === "@/lib/ai/crm-records" ? {} : name === "@/lib/i18n" ? i18n : name === "@/lib/ai/customer-research" ? research : name === "@/lib/ai/image-input" ? imageInput : require(name)), Response, Request, URL, AbortSignal, Date, Error, crypto, console, process: { env } });
+  vm.runInNewContext(code, { exports, require: (name: string) => dependencies[name] ?? (name === "@/lib/ai/chat-session" ? { startChatSession: async () => undefined } : name === "@/lib/ai/chat-history-server" ? { HistoryError: TestHistoryError } : name === "@/lib/ai/chat-history" ? { savedPageContext: (value: unknown) => value ?? {} } : name === "@/lib/ai/crm-tools" ? crmTools : name === "@/lib/ai/crm-records" ? {} : name === "@/lib/i18n" ? i18n : name === "@/lib/ai/customer-research" ? research : name === "@/lib/ai/image-input" ? imageInput : require(name)), Response, Request, URL, AbortSignal, Date, Error, crypto, console, process: { env } });
   return exports[method]!;
 }
 
@@ -28,6 +29,58 @@ const id = "15693adc-0bdf-4617-b214-71b1861764a9";
 const company = { type: "create_company", company: { name: "Acme", country: "US", segment: "Retail" } };
 const request = (body: unknown, origin = "http://localhost:3000") => new Request("http://localhost:3000/api/ai/assistant/action", { method: "POST", headers: { "Content-Type": "application/json", origin }, body: JSON.stringify(body) });
 const decision = { id, decision: "approve", approval: "manual" };
+
+test("malformed compound actions are replanned once before storing any proposal", async () => {
+  let generated = 0, preparations = 0;
+  const operations = [
+    { type: "crm_action", operation: { op: "update_task", taskId: id, changes: { status: "cancelled", dueAt: null } } },
+    { type: "crm_action", operation: { op: "add_business_fact", title: "Preview", content: "Synthetic approval test only." } },
+  ];
+  const post = route("../app/api/ai/assistant/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
+    "@/lib/ai/assistant-provider-error": providerError, "@/lib/ai/gateway": {},
+    "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
+    "@/lib/ai/gemini": { generateGeminiText: async ({ prompt }: { prompt: string }) => {
+      generated++;
+      assert.equal(preparations, 0);
+      if (generated === 1) return 'FILAZOO_ACTIONS_JSON: [{"type":"crm_action","operation":{"op":"update_task","taskId":"invalid","changes":{"status":"canceled"}}}]';
+      assert.match(prompt, /SERVER_ACTION_CORRECTION/); assert.match(prompt, /operation/);
+      return `Review each change.\nFILAZOO_ACTIONS_JSON: ${JSON.stringify(operations)}`;
+    } },
+    "@/lib/ai/agent-execution": { prepareAgentActions: async (values: unknown) => { preparations++; assert.deepEqual(JSON.parse(JSON.stringify(values)), operations); return operations.map((action) => ({ id, action, approvalMode: "ask" })); } },
+  }, { GEMINI_API_KEY: "synthetic" });
+  const response = await post(request({ mode: "work", pathname: "/tasks", pageLabel: "Tasks", pageText: "", messages: [{ role: "user", content: "Cancel my test task and preview a business fact." }] }));
+  assert.equal((await response.json()).actions.length, 2); assert.equal(generated, 2); assert.equal(preparations, 1);
+});
+
+test("persistent invalid actions stop after one repair and Chat never retries them", async () => {
+  for (const mode of ["work", "analyze"]) {
+    let calls = 0, prepared = 0;
+    const post = route("../app/api/ai/assistant/route.ts", {
+      "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
+      "@/lib/ai/assistant-provider-error": providerError, "@/lib/ai/gateway": {},
+      "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
+      "@/lib/ai/gemini": { generateGeminiText: async () => { calls++; return 'FILAZOO_ACTIONS_JSON: [{"type":"crm_action","operation":{"op":"invent_a_tool"}}]'; } },
+      "@/lib/ai/agent-execution": { prepareAgentActions: async () => { prepared++; return []; } },
+    }, { GEMINI_API_KEY: "synthetic" });
+    const body = await (await post(request({ mode, pathname: "/tasks", pageLabel: "Tasks", pageText: "", messages: [{ role: "user", content: "Check my task" }] }))).json();
+    assert.deepEqual(body.actions, []); assert.doesNotMatch(body.output, /FILAZOO_|invent_a_tool/);
+    assert.equal(calls, mode === "work" ? 2 : 1); assert.equal(prepared, 0);
+  }
+});
+
+test("read-protocol and action-protocol failures share a single repair allowance", async () => {
+  let calls = 0;
+  const post = route("../app/api/ai/assistant/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
+    "@/lib/ai/assistant-provider-error": providerError, "@/lib/ai/gateway": {},
+    "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
+    "@/lib/ai/gemini": { generateGeminiText: async () => ++calls === 1 ? 'FILAZOO_CRM_READ_JSON: {}\nFILAZOO_ACTIONS_JSON: []' : 'FILAZOO_ACTIONS_JSON: [bad JSON]' },
+    "@/lib/ai/agent-execution": { prepareAgentActions: async () => { throw new Error("Must never prepare"); } },
+  }, { GEMINI_API_KEY: "synthetic" });
+  const body = await (await post(request({ mode: "work", pathname: "/tasks", pageLabel: "Tasks", pageText: "", messages: [{ role: "user", content: "Cancel my test task" }] }))).json();
+  assert.deepEqual(body.actions, []); assert.equal(calls, 2);
+});
 
 test("the assistant never returns raw email JSON and only prepares actions from a valid protocol", async () => {
   const email = { to: "buyer@example.com", subject: "Catalog", text: "The catalog is attached.", delivery: "draft", attachCatalog: true };
@@ -106,7 +159,7 @@ test("image prompts reach workspace providers in Chat and Agent mode without byp
     const response = await post(request(body));
     assert.equal(response.status, 200);
     const result = await response.json();
-    assert.equal(result.output, "Address read from the image.");
+    assert.equal(result.output, mode === "work" ? "The requested actions are ready." : "Address read from the image.");
     assert.equal(prepared, mode === "work" ? 1 : 0);
     assert.equal(result.actions.length, mode === "work" ? 1 : 0);
     assert.equal((await post(request({ ...body, messages: [{ ...body.messages[0], images: [{ ...image, dataUrl: "https://attacker.example/image.png" }] }] }))).status, 400);
@@ -209,6 +262,100 @@ test("CRM lookups feed verified IDs back to planning before new actions enter ap
   const response = await post(request({ mode: "work", pathname: "/companies", pageLabel: "Companies", pageText: "", messages: [{ role: "user", content: "Schedule Acme follow-up tomorrow at 9am" }] }));
   assert.equal(response.status, 200); assert.equal(read, 1); assert.equal(prepared, 1); assert.equal(generated, 2);
   assert.ok(!(await response.json()).output.includes("FILAZOO_"));
+});
+
+test("agent repairs a mixed lookup/action response once before reading and never saves premature actions", async () => {
+  for (const repeats of [false, true]) {
+    let generated = 0, reads = 0, prepared = 0;
+    const proposal = { type: "add_company_note", companyId: id, note: "Synthetic audit" };
+    const post = route("../app/api/ai/assistant/route.ts", {
+      "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant, "@/lib/ai/assistant-provider-error": providerError,
+      "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) }, "@/lib/ai/gateway": {},
+      "@/lib/ai/gemini": { generateGeminiText: async ({ prompt }: { prompt: string }) => {
+        generated++;
+        if (generated === 1 || repeats) return `FILAZOO_CRM_READ_JSON: {"resource":"companies","query":"Audit"}\nFILAZOO_ACTIONS_JSON: ${JSON.stringify([proposal])}`;
+        assert.match(prompt, /SERVER_PROTOCOL_CORRECTION/);
+        if (generated === 2) return 'FILAZOO_CRM_READ_JSON: {"resource":"companies","query":"Audit"}';
+        assert.match(prompt, /Verified audit company/);
+        return `Ready for review.\nFILAZOO_ACTIONS_JSON: ${JSON.stringify([proposal])}`;
+      } },
+      "@/lib/ai/crm-records": { readCrmRecords: async () => { reads++; assert.equal(prepared, 0); return { records: [{ id, name: "Verified audit company" }] }; } },
+      "@/lib/ai/agent-execution": { prepareAgentActions: async () => { prepared++; assert.equal(reads, 1); return []; } },
+    }, { GEMINI_API_KEY: "synthetic" });
+    const response = await post(request({ mode: "work", approvalMode: "auto", pathname: "/companies", pageLabel: "Companies", pageText: "", messages: [{ role: "user", content: "Add the audit note to Audit company" }] }));
+    assert.equal(response.status, 200);
+    assert.equal(generated, repeats ? 2 : 3); assert.equal(reads, repeats ? 0 : 1); assert.equal(prepared, repeats ? 0 : 1);
+    assert.ok(!(await response.json()).output.includes("FILAZOO_"));
+  }
+});
+
+test("a prepared proposal never repeats the model's premature success claim", async () => {
+  let executed = 0;
+  const post = route("../app/api/ai/assistant/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant, "@/lib/ai/assistant-provider-error": providerError,
+    "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) }, "@/lib/ai/gateway": {},
+    "@/lib/ai/gemini": { generateGeminiText: async () => `The company has been created and saved.\nFILAZOO_ACTIONS_JSON: ${JSON.stringify([company])}` },
+    "@/lib/ai/agent-execution": { prepareAgentActions: async () => [{ id, approvalMode: "ask", action: company }], executeAgentAction: async () => { executed++; } },
+  }, { GEMINI_API_KEY: "synthetic" });
+  const response = await post(request({ mode: "work", pathname: "/companies", pageLabel: "Companies", pageText: "", messages: [{ role: "user", content: "Create Acme" }] }));
+  const body = await response.json();
+  assert.equal(body.output, "The requested actions are ready for review.");
+  assert.equal(body.actions.length, 1); assert.equal(executed, 0);
+});
+
+test("independent CRM lookups start together and need only one additional model round", { timeout: 2000 }, async () => {
+  let generated = 0, started = 0, finished = 0, prepared = 0;
+  const pending: Array<() => void> = [];
+  const post = route("../app/api/ai/assistant/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant, "@/lib/ai/assistant-provider-error": providerError,
+    "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) }, "@/lib/ai/gateway": {},
+    "@/lib/ai/gemini": { generateGeminiText: async ({ prompt }: { prompt: string }) => {
+      generated++;
+      if (generated === 1) return 'FILAZOO_CRM_READS_JSON: [{"resource":"tasks"},{"resource":"inventory","id":"PLA-BLACK"}]';
+      assert.equal(finished, 2); assert.match(prompt, /Verified task/); assert.match(prompt, /ERP-BLACK/); assert.match(prompt, /2 record lookups remain/);
+      return `Ready.\nFILAZOO_ACTIONS_JSON: ${JSON.stringify([company])}`;
+    } },
+    "@/lib/ai/crm-records": { readCrmRecords: async (_actor: unknown, lookup: crmTools.CrmRead) => {
+      started++;
+      await new Promise<void>((resolve) => { pending.push(resolve); if (started === 2) pending.forEach((release) => release()); });
+      finished++;
+      return { records: [lookup.resource === "tasks" ? { id, title: "Verified task" } : { sku: "ERP-BLACK" }] };
+    } },
+    "@/lib/ai/agent-execution": { prepareAgentActions: async () => { assert.equal(finished, 2); prepared++; return []; } },
+  }, { GEMINI_API_KEY: "synthetic" });
+  assert.equal((await post(request({ mode: "work", pathname: "/tasks", pageLabel: "Tasks", pageText: "", messages: [{ role: "user", content: "Check my task and PLA stock, then create Acme" }] }))).status, 200);
+  assert.equal(generated, 2); assert.equal(prepared, 1);
+});
+
+test("batch failures, budget exhaustion and Chat never prepare partial actions", async () => {
+  for (const scenario of ["failure", "budget", "analyze"]) {
+    let generated = 0, reads = 0, prepared = 0;
+    const post = route("../app/api/ai/assistant/route.ts", {
+      "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant, "@/lib/ai/assistant-provider-error": providerError,
+      "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) }, "@/lib/ai/gateway": {},
+      "@/lib/ai/gemini": { generateGeminiText: async () => { generated++; return `FILAZOO_CRM_READS_JSON: ${JSON.stringify(generated === 1 ? [{ resource: "tasks" }, { resource: "inventory" }, { resource: "segments" }] : [{ resource: "products" }, { resource: "companies" }])}`; } },
+      "@/lib/ai/crm-records": { readCrmRecords: async (_actor: unknown, lookup: crmTools.CrmRead) => { reads++; if (scenario === "failure" && lookup.resource === "tasks") throw new Error("Private database detail"); return { records: [] }; } },
+      "@/lib/ai/agent-execution": { prepareAgentActions: async () => { prepared++; return []; } },
+    }, { GEMINI_API_KEY: "synthetic" });
+    const response = await post(request({ mode: scenario === "analyze" ? "analyze" : "work", pathname: "/tasks", pageLabel: "Tasks", pageText: "", messages: [{ role: "user", content: "Check tasks, inventory and segments" }] }));
+    const body = await response.json();
+    assert.equal(prepared, 0); assert.equal(reads, scenario === "analyze" ? 0 : 3); assert.deepEqual(body.actions, []);
+    assert.doesNotMatch(body.output, /Private|FILAZOO_/);
+  }
+});
+
+test("a provider failure after a successful lookup remains a provider error", async () => {
+  let generated = 0, reads = 0;
+  const post = route("../app/api/ai/assistant/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant, "@/lib/ai/assistant-provider-error": providerError,
+    "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) }, "@/lib/ai/gateway": {},
+    "@/lib/ai/gemini": { generateGeminiText: async () => { if (++generated === 1) return 'FILAZOO_CRM_READ_JSON: {"resource":"tasks"}'; throw new Error("AI provider is temporarily unavailable"); } },
+    "@/lib/ai/crm-records": { readCrmRecords: async () => { reads++; return { records: [] }; } },
+    "@/lib/ai/agent-execution": { prepareAgentActions: async () => { throw new Error("Must not prepare"); } },
+  }, { GEMINI_API_KEY: "synthetic" });
+  const response = await post(request({ mode: "work", pathname: "/tasks", pageLabel: "Tasks", pageText: "", messages: [{ role: "user", content: "Find my task" }] }));
+  assert.equal(response.status, 502); assert.equal(reads, 1);
+  assert.doesNotMatch((await response.json()).error, /Unable to read the requested CRM/);
 });
 
 test("CRM read failures and read budgets never create partial mutations or run in Chat mode", async () => {

@@ -17,6 +17,8 @@ import * as assistant from "../lib/ai/workspace-assistant.ts";
 import * as agentActions from "../lib/ai/agent-actions.ts";
 import * as progress from "../lib/ai/agent-progress.ts";
 import * as profileFields from "../lib/company-profile-fields.ts";
+import * as segments from "../lib/segments.ts";
+import * as productivity from "../lib/ai/crm-productivity.ts";
 
 const require = createRequire(import.meta.url);
 const companyId = "a1111111-1111-4111-8111-111111111111";
@@ -43,9 +45,11 @@ function fixture() {
     invoice_settings: [{ singleton: true, settings: { sellerName: "Filazoo", sellerAddress: "Saved address", sellerTaxId: "VAT-OLD", paymentInstructions: "Saved instructions", notes: "Keep notes", defaults: { currency: "USD", termsDays: 30, taxBps: 750 }, paymentMethods: [] } }],
     meta_messages: [{ id: recordId, direction: "inbound", sender_id: "customer-42", recipient_id: "our-page", source: "instagram_messaging", customer_name: "Buyer" }],
     crm_tasks: [{ id: recordId, title: "Call buyer", status: "open", assigned_to: actorId }],
+    company_segments: [{ id: recordId, name: "US prospects", description: "Keep description", rules: { country: "United States", hasEmail: true } }],
     internal_notifications: [{ id: recordId, message: "Buyer replied", user_id: actorId, read_at: null }],
   };
   const calls: Array<{ name: string; args: unknown[] }> = [];
+  const inventory = { status: { configured: true, configurationError: null as string | null, warehouseIds: "warehouse-1", stale: false }, snapshots: [{ sku: "ERP-BLACK", available: 23, on_hand: 25, locked: 2, warehouse_ids: ["warehouse-1"], synced_at: "2026-10-29T00:00:00Z" }], skuMap: { "PLA-BLACK": "ERP-BLACK" } };
   let failure = false;
   let companyName = "Example Print Studio";
   const flow = { id: recordId, ...flows.defaultFlowInput, status: "paused", updatedAt: "2026-10-27T00:00:00Z" };
@@ -65,10 +69,14 @@ function fixture() {
   } };
   const shared = (name: string) => async (...args: unknown[]) => { calls.push({ name, args }); return failure ? { error: "Shared CRM validation failed" } : { success: "Saved by shared service" }; };
   const dependencies = {
+    "./crm-productivity": productivity, "./crm-productivity-execution": {}, "./crm-productivity-records": {},
     "next/cache": { revalidatePath() {} }, "./crm-tools": tools, "../supabase/admin": { createSupabaseAdmin: () => db },
     "@/app/crm-actions": Object.fromEntries(["scheduleCompanyFollowup", "assignPipelineOwner", "bulkUpdateCompanies", "createCatalog", "createProduct", "updateProduct"].map((name) => [name, shared(name)])),
     "@/app/settings/actions": Object.fromEntries(["updateProfile", "inviteMember", "updateMember", "deleteMember", "manageMailbox"].map((name) => [name, shared(name)])),
     "@/app/settings/preference-actions": { saveUserPreferences: shared("saveUserPreferences") },
+    "@/app/segment-actions": { createSegment: shared("createSegment"), updateSegment: shared("updateSegment") },
+    "@/app/inventory-actions": { syncInventory: async () => { calls.push({ name: "syncInventory", args: [] }); return failure ? { ok: false, error: "ERP unavailable" } : { ok: true, skipped: false, count: 1 }; } },
+    "../data/inventory": { getInventoryState: async () => inventory }, "../segments": segments,
     "@/app/purchase-order-actions": { savePurchaseOrder: shared("savePurchaseOrder"), createOrderInvoice: async (...args: unknown[]) => { calls.push({ name: "createOrderInvoice", args }); return { invoiceId: recordId }; }, getPurchaseOrderProfile: async () => ({ customer: { companyName: "Buyer", contactName: "", contactRole: "", contactEmail: "", billingEmail: "", billingAddress: "", taxId: "", phone: "" }, commerce: { currency: "USD", shippingAddress: "Default warehouse" } }) },
     "@/app/api/email/state/route": { POST: async (input: Request) => { calls.push({ name: "saveEmailState", args: [await input.json()] }); return Response.json({ ok: true }); } },
     "../meta-messenger": { sendMetaTextMessage: async (...args: unknown[]) => { calls.push({ name: "sendMetaTextMessage", args }); return { ok: true }; } },
@@ -82,8 +90,114 @@ function fixture() {
     "./agent-records": { loadAgentCompany: async () => ({ id: companyId, fields: { name: companyName } }), loadAgentEmails: async () => ({ current: { id: "mail-1", subject: "Hello", contact: "buyer@example.com", read: true, starred: true, category: "Interested", threadId: "thread-1" } }) },
   };
   const execution = moduleUnderTest<typeof import("../lib/ai/crm-execution.ts")>("../lib/ai/crm-execution.ts", dependencies);
-  return { ...execution, tables, calls, flow, invoice, dependencies, changeCompany() { companyName = "Changed"; }, fail() { failure = true; } };
+  return { ...execution, tables, calls, flow, invoice, inventory, dependencies, changeCompany() { companyName = "Changed"; }, fail() { failure = true; } };
 }
+
+test("saved audience segment actions execute through the CRM service, preserve omitted fields and reject stale rules", async () => {
+  const f = fixture();
+  const created = await f.prepareCrmAction({ op: "create_segment", segment: { name: "Audit prospects", description: "Synthetic", rules: { country: "United States", minFitScore: 7, hasEmail: true } } }, viewer);
+  await f.executeCrmAction(created, viewer, actionId, request);
+  const form = f.calls.find((call) => call.name === "createSegment")!.args[1] as FormData;
+  assert.equal(form.get("name"), "Audit prospects");
+  assert.equal(JSON.parse(String(form.get("rules"))).minFitScore, 7);
+  const changed = await f.prepareCrmAction({ op: "update_segment", segmentId: recordId, changes: { name: "Renamed audience" } }, viewer);
+  await f.executeCrmAction(changed, viewer, actionId, request);
+  const saved = f.calls.find((call) => call.name === "updateSegment")!.args[1] as FormData;
+  assert.equal(saved.get("description"), "Keep description");
+  assert.deepEqual(JSON.parse(String(saved.get("rules"))), { country: "United States", hasEmail: true });
+  f.tables.company_segments[0].rules = { country: "Canada" };
+  await assert.rejects(() => f.executeCrmAction(changed, viewer, actionId, request), /changed after/);
+  f.fail();
+  await assert.rejects(() => f.executeCrmAction(created, viewer, actionId, request), /Shared CRM validation failed/);
+  await assert.rejects(() => f.prepareCrmAction({ op: "update_segment", segmentId: actionId, changes: { name: "Missing" } }, viewer), /no longer available/);
+  await assert.rejects(() => f.prepareCrmAction(created.operation, { ...viewer, role: "viewer" }), /read-only/);
+  assert.equal(tools.crmOperationSchema.safeParse({ op: "create_segment", segment: { name: "Invalid", description: "", rules: { companyIds: [companyId], country: "US" } } }).success, false);
+});
+
+test("ERP inventory sync executes only with the proper role and configured scope and propagates failure", async () => {
+  const f = fixture();
+  const proposal = await f.prepareCrmAction({ op: "sync_inventory" }, viewer);
+  assert.equal(tools.crmManualApproval(proposal.operation), true);
+  assert.equal(f.calls.some((call) => call.name === "syncInventory"), false);
+  const saved = await f.executeCrmAction(proposal, viewer, actionId, request);
+  assert.match(saved.success!, /1 stock records/);
+  await assert.rejects(() => f.prepareCrmAction({ op: "sync_inventory" }, { ...viewer, role: "bd_manager" }), /admin or operator/);
+  f.fail();
+  await assert.rejects(() => f.executeCrmAction(proposal, viewer, actionId, request), /ERP unavailable/);
+  f.inventory.status.warehouseIds = "changed-warehouse";
+  await assert.rejects(() => f.executeCrmAction(proposal, viewer, actionId, request), /changed after/);
+  f.inventory.status.configured = false;
+  await assert.rejects(() => f.prepareCrmAction({ op: "sync_inventory" }, viewer), /active ERP connection/);
+});
+
+test("inventory lookup resolves CRM SKU aliases and exposes saved stock coverage without starting a sync", async () => {
+  const f = fixture();
+  const records = moduleUnderTest<typeof import("../lib/ai/crm-records.ts")>("../lib/ai/crm-records.ts", f.dependencies);
+  const result = await records.readCrmRecords(viewer, tools.crmReadSchema.parse({ resource: "inventory", id: "PLA-BLACK" }));
+  assert.equal(result.records.length, 1);
+  assert.equal((result.records[0] as { available: number }).available, 23);
+  assert.equal(result.coverage.nextOffset, null);
+  assert.equal(f.calls.some((call) => call.name === "syncInventory"), false);
+  const missing = await records.readCrmRecords(viewer, tools.crmReadSchema.parse({ resource: "inventory", query: "unknown-sku" }));
+  assert.equal(missing.records.length, 0);
+  await assert.rejects(() => records.readCrmRecords(viewer, tools.crmReadSchema.parse({ resource: "inventory", companyId })), /company filter/);
+});
+
+test("customer, catalog, product and account operations dispatch real validated arguments to shared CRM services", async () => {
+  const cases: Array<{ operation: tools.CrmOperation; service: string }> = [
+    { operation: { op: "schedule_followup", companyId, dueAt: "2099-10-30T09:00:00+08:00" }, service: "scheduleCompanyFollowup" },
+    { operation: { op: "assign_owner", companyId, ownerId: actorId }, service: "assignPipelineOwner" },
+    { operation: { op: "delete_company", companyId }, service: "bulkUpdateCompanies" },
+    { operation: { op: "create_catalog", companyId, currency: "USD", productSkus: ["PLA"] }, service: "createCatalog" },
+    { operation: { op: "update_profile", displayName: "Audit Sales" }, service: "updateProfile" },
+    { operation: { op: "invite_member", email: "audit@example.com", displayName: "Audit User", role: "viewer" }, service: "inviteMember" },
+    { operation: { op: "update_member", userId: actorId, displayName: "Sales Manager", email: "sales@example.com", role: "admin", autoAssignLeads: false }, service: "updateMember" },
+    { operation: { op: "delete_member", userId: actorId }, service: "deleteMember" },
+    ...(["stop", "resume", "delete"] as const).map((operation) => ({ operation: { op: "manage_mailbox" as const, mailboxId: recordId, operation }, service: "manageMailbox" })),
+  ];
+  for (const item of cases) {
+    const f = fixture();
+    const proposal = await f.prepareCrmAction(item.operation, viewer);
+    if (item.operation.op === "create_catalog") {
+      assert.ok(!JSON.stringify(proposal.preview).includes("variant-json"));
+      assert.ok(!JSON.stringify(proposal.preview).includes("price-tier:"));
+      assert.equal((proposal.preview.products as { tiers: { unitPriceMinor: number }[] }[])[0].tiers[0].unitPriceMinor, 950);
+    }
+    assert.equal(f.calls.some((call) => call.name === item.service), false);
+    const result = await f.executeCrmAction(proposal, viewer, actionId, request);
+    assert.ok(result.success, item.operation.op);
+    assert.equal(f.calls.filter((call) => call.name === item.service).length, 1, item.operation.op);
+  }
+  const f = fixture();
+  const product = tools.agentProductSchema.parse(f.productFromRow(f.tables.products[0]));
+  const proposal = await f.prepareCrmAction({ op: "create_product", product: { ...product, sku: "AUDIT-NEW", active: false } }, viewer);
+  await f.executeCrmAction(proposal, viewer, actionId, request);
+  const form = f.calls.find((call) => call.name === "createProduct")!.args[1] as FormData;
+  assert.equal(form.get("sku"), "AUDIT-NEW"); assert.equal(form.get("price1"), "9.5");
+  assert.equal(JSON.parse(String(form.get("variants")))[0].sku, "PLA-BLACK");
+});
+
+test("invoice issue, void, draft deletion and flow duplication execute their shared lifecycle services", async () => {
+  for (const action of ["issue", "void", "delete"] as const) {
+    const f = fixture();
+    const proposal = await f.prepareCrmAction({ op: "invoice_lifecycle", invoiceId: recordId, action }, viewer);
+    await f.executeCrmAction(proposal, viewer, actionId, request);
+    const mutation = f.calls.find((call) => call.name === "mutateInvoice")!.args[2] as { action: string; revision: number };
+    assert.equal(mutation.action, action); assert.equal(mutation.revision, 3);
+  }
+  const f = fixture();
+  const proposal = await f.prepareCrmAction({ op: "duplicate_flow", flowId: recordId, name: "Audit duplicate" }, viewer);
+  await f.executeCrmAction(proposal, viewer, actionId, request);
+  const saved = f.calls.find((call) => call.name === "createFlow")!.args[0] as flows.FlowInput;
+  assert.equal(saved.name, "Audit duplicate"); assert.equal(saved.status, "draft");
+  assert.equal(saved.steps.length, f.flow.steps.length);
+  const edit = await f.prepareCrmAction({ op: "update_flow", flowId: recordId, changes: { name: "Audit edited" } }, viewer);
+  await f.executeCrmAction(edit, viewer, actionId, request);
+  assert.equal((f.calls.find((call) => call.name === "updateFlow")!.args[0] as flows.FlowInput).name, "Audit edited");
+  const deletion = await f.prepareCrmAction({ op: "delete_flow", flowId: recordId }, viewer);
+  await f.executeCrmAction(deletion, viewer, actionId, request);
+  assert.equal(f.calls.filter((call) => call.name === "deleteFlow").length, 1);
+});
 
 test("partial schemas do not populate defaults or accept arbitrary operations", () => {
   const pref = tools.crmOperationSchema.parse({ op: "save_preferences", changes: { density: "compact" } });

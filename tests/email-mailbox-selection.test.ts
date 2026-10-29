@@ -8,6 +8,7 @@ import * as mailboxUtils from "../lib/mailbox-utils.ts";
 import * as threading from "../lib/email-threading.ts";
 import { canViewEmail } from "../lib/email-access.ts";
 import { synchronizeMailbox } from "../lib/mailbox-sync.ts";
+import * as emailContent from "../lib/email-content.ts";
 import type { EmailInboxBackendData, InboxEmailItem } from "../lib/email-inbox.ts";
 import type { WorkspaceMailboxRecord } from "../lib/data/mailboxes.ts";
 import type { WorkspaceViewer } from "../lib/auth.ts";
@@ -232,6 +233,7 @@ test("header-only saved inbox reads never query cached message bodies or contact
       }, error: null }) }) }) };
     } }) },
     "../mailbox-sync.ts": { synchronizeMailbox },
+    "../email-content.ts": emailContent,
     "../email-inbox.ts": { fetchMailboxInboxMessages: () => { assert.fail("Saved inbox reads must not contact IMAP"); } },
   });
   const mailbox = (await setup().mailboxes.getViewerMailboxes("actor"))[0];

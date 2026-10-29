@@ -230,15 +230,15 @@ export async function listSegmentCompanies(): Promise<{ mode: DataMode; companie
   return { mode, companies };
 }
 
-export async function listCompanies(): Promise<{ mode: DataMode; companies: Company[] }> {
+export async function listCompanies(options: { ids?: string[]; maxCompanies?: number } = {}): Promise<{ mode: DataMode; companies: Company[] }> {
   const mode = getCrmDataMode();
   if (mode === "demo") return { mode, companies: [] };
   await authorizeLiveRead();
 
-  return { mode, companies: await queryCompanies() };
+  return { mode, companies: await queryCompanies(undefined, options) };
 }
 
-async function queryCompanies(id?: string): Promise<Company[]> {
+async function queryCompanies(id?: string, options: { ids?: string[]; maxCompanies?: number } = {}): Promise<Company[]> {
   const rows: CompanyRow[] = [];
   for (let offset = 0; ; offset += 500) {
     const query = createSupabaseAdmin()
@@ -248,9 +248,11 @@ async function queryCompanies(id?: string): Promise<Company[]> {
       .order("created_at", { ascending: false })
       .order("id")
       .range(offset, offset + 499);
-    const { data, error } = await (id === undefined ? query : query.eq("id", id));
+    const selected = options.ids ? query.in("id", options.ids) : query;
+    const { data, error } = await (id === undefined ? selected : selected.eq("id", id));
     if (error) throw new Error(`Unable to load companies: ${error.message}`);
     rows.push(...(data ?? []) as unknown as CompanyRow[]);
+    if (options.maxCompanies !== undefined && rows.length > options.maxCompanies) throw new Error("This export exceeds 5,000 source companies. Select specific company IDs.");
     if (!data || data.length < 500) break;
   }
   const ownerIds = [...new Set(rows.map((row) => first(row.pipeline)?.owner_id).filter((value): value is string => Boolean(value)))];

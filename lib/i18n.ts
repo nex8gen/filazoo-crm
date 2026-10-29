@@ -4,6 +4,8 @@ import { zhCNSettings } from "./i18n-settings.ts";
 import { zhCNSegments } from "./i18n-segments.ts";
 import { zhCNInventory } from "./i18n-inventory.ts";
 import { zhCNEmailAutoReply } from "./i18n-email-auto-reply.ts";
+import { zhCNAiHistory } from "./i18n-ai-history.ts";
+import { zhCNTaskActivity } from "./i18n-task-activity.ts";
 
 export type AppLanguage = "en" | "zh-CN";
 
@@ -23,6 +25,8 @@ const zhCN: Record<string, string> = {
   "More": "更多",
   ...zhCNApps,
   ...zhCNEmailAutoReply,
+  ...zhCNAiHistory,
+  ...zhCNTaskActivity,
   "Switching mailbox…": "正在切换邮箱…",
   "Your workspace inbox shows emails from customers assigned to you. Your personal inbox shows all senders.": "工作区收件箱仅显示分配给您的客户邮件，个人收件箱则显示所有发件人的邮件。",
   "Unable to switch mailboxes. Please try again.": "无法切换邮箱，请重试。",

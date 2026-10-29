@@ -29,7 +29,7 @@ export const preparedAgentActionSchema = z.discriminatedUnion("type", [
 ]);
 export type PreparedAgentAction = z.infer<typeof preparedAgentActionSchema>;
 export type AgentProposal = { id: string; action: PreparedAgentAction; approvalMode: "ask" | "auto"; expiresAt: string };
-export type AgentActionResult = { success?: string; error?: string; href?: string; status?: string; draftMessage?: { conversationId: string; text: string } };
+export type AgentActionResult = { success?: string; error?: string; href?: string; status?: string; approval?: string; finishedAt?: string; draftMessage?: { conversationId: string; text: string } };
 
 type AgentInvoiceSelection = Pick<Extract<WorkspaceAction, { type: "update_invoice" }>, "items" | "bankAccountId" | "paymentMethodIds" | "details">;
 

@@ -104,6 +104,7 @@ export function CompanyAnalysisDashboard({ companyId, canWrite, preferredCurrenc
         const result = await createAnalysisFollowup({ companyId, productKey: reminder.key, currency, dueAt: followupInstant(dueAt), requestId: requestId.current });
         if (result.error) { setTaskError(result.error); return; }
         if (!result.task) throw new Error("No task returned");
+        window.dispatchEvent(new Event("flow-activity-updated"));
         setSavedTasks(current => [...current, result.task]); setReminder(null);
         setNotice(copy("Product follow-up saved to CRM tasks.", "产品跟进已保存到 CRM 任务。"));
       } catch { setTaskError(copy("The follow-up could not be confirmed. Please try again.", "无法确认跟进任务是否保存，请重试。")); }

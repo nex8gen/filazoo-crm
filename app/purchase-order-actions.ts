@@ -133,7 +133,7 @@ export async function savePurchaseOrder(
   orderId: string | null,
   version: number,
   input: unknown,
-): Promise<{ error?: string; success?: string }> {
+): Promise<{ error?: string; success?: string; orderId?: string }> {
   const viewer = await requireWorkspaceMember([
     "admin",
     "operator",
@@ -259,7 +259,7 @@ export async function savePurchaseOrder(
         "This PO was changed by another user. Close the editor and reload before editing again.",
     };
   revalidatePath(`/companies/${companyId}`);
-  return { success: "Purchase order saved." };
+  return { success: "Purchase order saved.", orderId: result.data.id };
 }
 
 export async function createOrderInvoice(

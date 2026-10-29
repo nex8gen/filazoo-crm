@@ -8,10 +8,12 @@ import { chatMessageSchema, chatImageLimitError, conversationImageReferences, ch
 import { crmActionSchema, crmToolInstruction } from "./crm-tools.ts";
 import { companyProfileChangesSchema } from "../company-profile-fields.ts";
 import { assistantPageContextSchema } from "./page-context.ts";
+import { historyReferenceSchema } from "./chat-history.ts";
 
 export const workspaceAssistantSchema = z.object({
   language: aiLanguageSchema,
   webSearch: z.boolean().optional(),
+  history: historyReferenceSchema.optional(),
   mode: z.enum(["analyze", "work"]),
   approvalMode: z.enum(["ask", "auto"]).default("ask"),
   completedActionIds: z.array(z.uuid()).max(20).default([]),
@@ -155,21 +157,21 @@ export function buildWorkspaceAssistantPrompt(input: WorkspaceAssistantInput, se
 }
 
 export function extractWorkspaceActions(output: string) {
-  const invalid = { output: "I could not prepare this request correctly. No actions were prepared. Please try again.", actions: [] as WorkspaceAction[] };
+  const invalid = { output: "I could not prepare this request correctly. No actions were prepared. Please try again.", actions: [] as WorkspaceAction[], protocolValid: false as const, repairIssues: [] as { code: string; path: string }[] };
   // The provider's free text is not a trusted rendering boundary. Fail closed
   // for missing/malformed protocols, including duplicated email JSON in prose.
   const hasInternalData = (text: string) => /FILAZOO_[A-Z_]+|```\s*json\b|["'](?:type|op)["']\s*:\s*["']|["'](?:to|subject|sourceEmailId|attachCatalog)["']\s*:/i.test(text);
   const marker = "FILAZOO_ACTIONS_JSON:";
   const markerAt = output.lastIndexOf(marker);
-  if (markerAt < 0) return hasInternalData(output) ? invalid : { output: output.trim(), actions: [] as WorkspaceAction[] };
+  if (markerAt < 0) return hasInternalData(output) ? invalid : { output: output.trim(), actions: [] as WorkspaceAction[], protocolValid: true as const };
   if (output.indexOf(marker) !== markerAt) return invalid;
   const answer = output.slice(0, markerAt).trim().replace(/^```(?:json)?\s*$/i, "");
   const encoded = output.slice(markerAt + marker.length).trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
   try {
     const parsed = workspaceActionsSchema.safeParse(JSON.parse(encoded));
-    if (!parsed.success) return invalid;
+    if (!parsed.success) return { ...invalid, repairIssues: parsed.error.issues.slice(0, 5).map(({ code, path }) => ({ code, path: path.join(".") })) };
     const summary = hasInternalData(answer) || answer.includes("```") ? "" : answer;
-    return { output: summary || (parsed.data.length ? "The requested actions are ready for review." : "No actions were prepared."), actions: parsed.data };
+    return { output: summary || (parsed.data.length ? "The requested actions are ready for review." : "No actions were prepared."), actions: parsed.data, protocolValid: true as const };
   } catch {
     return invalid;
   }

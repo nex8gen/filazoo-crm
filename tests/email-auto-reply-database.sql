@@ -21,6 +21,7 @@ begin
   select task_id into v_task from public.email_auto_replies where id=v_auto and status='waiting_shipping';
   if v_task is null or not exists(select 1 from public.crm_tasks where id=v_task and assigned_to=v_user and status='open') then raise exception 'Shipping task missing'; end if;
   if not exists(select 1 from public.internal_notifications where user_id=v_user and conversation_id='message:'||v_key) then raise exception 'Notification missing'; end if;
+  if not exists(select 1 from public.internal_notifications where user_id=v_user and task_id=v_task and event_key='auto-reply-handoff:'||v_auto||':2') then raise exception 'AI handoff alert is not linked to its review task'; end if;
   begin
     perform public.handoff_email_auto_reply(v_auto,1,'needs_review',null,v_key,'[]','Stale');
     raise exception 'Stale revision accepted';
@@ -35,5 +36,7 @@ begin
     perform public.handoff_email_auto_reply(v_auto,3,'waiting_shipping','{}',v_key,'[]','Stopped');
     raise exception 'Stopped automation accepted';
   exception when others then if sqlerrm='Stopped automation accepted' then raise; end if; end;
+  update public.crm_tasks set status='cancelled' where id=v_task;
+  if exists(select 1 from public.internal_notifications where task_id=v_task and read_at is null) then raise exception 'Resolved AI handoff still has unread alerts'; end if;
 end $$;
 rollback;

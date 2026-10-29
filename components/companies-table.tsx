@@ -3,10 +3,11 @@
 
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { type SortingState, flexRender } from "@tanstack/react-table";
 import { type LegacyColumnDef as ColumnDef, getCoreRowModel, getPaginationRowModel, getSortedRowModel, useLegacyTable as useReactTable } from "@tanstack/react-table/legacy";
-import { Building2, ChevronsUpDown, CircleAlert, Globe2, Mail, MapPin, PackageCheck, Trash2, UserRoundCheck } from "lucide-react";
+import { Building2, ChevronsUpDown, CircleAlert, Columns3, Globe2, Mail, PackageCheck, Trash2, UserRoundCheck } from "lucide-react";
 import { toast } from "sonner";
 import { bulkUpdateCompanies } from "@/app/crm-actions";
 import { AssignedOwner } from "@/components/assigned-owner";
@@ -17,12 +18,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableFilters, TableFilter } from "@/components/ui/table-filters";
 import { TablePagination } from "@/components/ui/table-pagination";
 import type { Company, DataMode } from "@/lib/types";
 import { usePreferences } from "@/components/preferences-provider";
+import { countryFlagCode } from "@/lib/country-flags";
 
 const statusClass: Record<Company["stage"], string> = {
   "Profile created": "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900 dark:bg-sky-950/60 dark:text-sky-300",
@@ -47,6 +50,14 @@ function CompanyIdentity({ company }: { company: Company }) {
   );
 }
 
+function CountryFlag({ country }: { country: string }) {
+  const code = countryFlagCode(country);
+  const label = country.trim() || "Unknown country";
+  return <span className="inline-flex h-6 items-center" title={label}>
+    {code ? <Image src={`/flags/${code}.svg`} alt={label} width={24} height={18} className="h-[18px] w-6 rounded-sm object-cover ring-1 ring-border/50" /> : <Globe2 role="img" aria-label={label} className="size-5 text-muted-foreground" />}
+  </span>;
+}
+
 export function CompaniesTable({ companies, mode, canWrite, canDelete }: { companies: Company[]; mode: DataMode; canWrite: boolean; canDelete: boolean }) {
   const { preferences } = usePreferences();
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: preferences.tablePageSize as number });
@@ -56,6 +67,7 @@ export function CompaniesTable({ companies, mode, canWrite, canDelete }: { compa
   const [country, setCountry] = useState("all");
   const [draft, setDraft] = useState({ query: "", status: "all", country: "all" });
   const [sorting, setSorting] = useState<SortingState>([]);
+  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>({});
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [pending, startTransition] = useTransition();
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -77,7 +89,7 @@ export function CompaniesTable({ companies, mode, canWrite, canDelete }: { compa
 
   const columns = useMemo<ColumnDef<Company>[]>(() => [
     {
-      id: "select", enableSorting: false,
+      id: "select", enableSorting: false, enableHiding: false,
       header: ({ table }) => {
         const ids = table.getRowModel().rows.map((row) => row.original.id);
         const allSelected = ids.length > 0 && ids.every((id) => selectedIds.has(id));
@@ -86,12 +98,12 @@ export function CompaniesTable({ companies, mode, canWrite, canDelete }: { compa
       cell: ({ row }) => <input aria-label={`Select ${row.original.name}`} type="checkbox" checked={selectedIds.has(row.original.id)} className="size-4 accent-current" onChange={(event) => toggleOne(row.original.id, event.target.checked)} />,
     },
     {
-      accessorKey: "name", header: "Company / customer",
+      accessorKey: "name", header: "Company / customer", enableHiding: false,
       cell: ({ row }) => <Link href={`/companies/${row.original.id}`} className="text-primary no-underline hover:no-underline"><CompanyIdentity company={row.original} /></Link>,
     },
     { accessorKey: "email", header: "Email", cell: ({ getValue }) => <span className="flex max-w-52 items-center gap-1.5 truncate"><Mail className="size-3.5 shrink-0 text-muted-foreground/70" />{getValue<string>() || "No email"}</span> },
     { accessorKey: "ownerName", header: "Assigned manager", cell: ({ row }) => <AssignedOwner name={row.original.ownerName} initials={row.original.ownerInitials} imageUrl={row.original.ownerAvatarUrl} assigned={Boolean(row.original.ownerId)} compact /> },
-    { accessorKey: "country", header: "Country", cell: ({ getValue }) => { const value = getValue<string>(); return <span className={`flex items-center gap-1.5 whitespace-nowrap ${value === "Unknown" ? "text-amber-600 dark:text-amber-400" : ""}`}><MapPin className="size-3.5" />{value}</span>; } },
+    { accessorKey: "country", header: "Country", cell: ({ getValue }) => <CountryFlag country={getValue<string>()} /> },
     { accessorKey: "segment", header: "Segment", cell: ({ getValue }) => <span className="block max-w-44 truncate">{getValue<string>()}</span> },
     { accessorKey: "stage", header: "Status", cell: ({ getValue }) => { const value = getValue<Company["stage"]>(); return <Badge variant="outline" className={statusClass[value]}>{value}</Badge>; } },
     { accessorKey: "outreachStatus", header: "Outreach", cell: ({ getValue }) => <span className="whitespace-nowrap">{getValue<string>()}</span> },
@@ -105,7 +117,7 @@ export function CompaniesTable({ companies, mode, canWrite, canDelete }: { compa
   ], [selectedIds]);
 
   const table = useReactTable({
-    data: filtered, columns, state: { sorting, pagination: { pageSize: preferences.tablePageSize, pageIndex: Math.min(pagination.pageIndex, Math.max(0, Math.ceil(filtered.length / preferences.tablePageSize) - 1)) } }, onSortingChange: setSorting, onPaginationChange: setPagination, getRowId: (row) => row.id,
+    data: filtered, columns, state: { sorting, columnVisibility, pagination: { pageSize: preferences.tablePageSize, pageIndex: Math.min(pagination.pageIndex, Math.max(0, Math.ceil(filtered.length / preferences.tablePageSize) - 1)) } }, onSortingChange: setSorting, onColumnVisibilityChange: setColumnVisibility, onPaginationChange: setPagination, getRowId: (row) => row.id,
     getCoreRowModel: getCoreRowModel(), getSortedRowModel: getSortedRowModel(), getPaginationRowModel: getPaginationRowModel(),
   });
 
@@ -143,7 +155,19 @@ export function CompaniesTable({ companies, mode, canWrite, canDelete }: { compa
     </div>
 
     
-    <TableFilters onApply={() => { setQuery(draft.query); setStatus(draft.status); setCountry(draft.country); table.setPageIndex(0); }}>
+    <TableFilters onApply={() => { setQuery(draft.query); setStatus(draft.status); setCountry(draft.country); table.setPageIndex(0); }} actions={
+      <DropdownMenu>
+        <DropdownMenuTrigger render={<Button variant="outline" />}><Columns3 />Columns</DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>Show columns</DropdownMenuLabel>
+            {table.getAllLeafColumns().filter((column) => column.getCanHide()).map((column) => <DropdownMenuCheckboxItem key={column.id} checked={column.getIsVisible()} onCheckedChange={(checked) => column.toggleVisibility(checked)} closeOnClick={false}>{String(column.columnDef.header)}</DropdownMenuCheckboxItem>)}
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => table.resetColumnVisibility()}>Show all columns</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    }>
       <TableFilter label="Search company" search><Input value={draft.query} onChange={(event) => setDraft({ ...draft, query: event.target.value })} placeholder="Company, email, domain, or segment" /></TableFilter>
       <TableFilter label="Status"><Select value={draft.status} onValueChange={(value) => setDraft({ ...draft, status: value ?? "all" })}><SelectTrigger><SelectValue>{draft.status === "all" ? "All statuses" : draft.status}</SelectValue></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem>{Object.keys(statusClass).map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></TableFilter>
       <TableFilter label="Country"><Select value={draft.country} onValueChange={(value) => setDraft({ ...draft, country: value ?? "all" })}><SelectTrigger><SelectValue>{draft.country === "all" ? "All countries" : draft.country}</SelectValue></SelectTrigger><SelectContent><SelectItem value="all">All countries</SelectItem>{countries.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></TableFilter>

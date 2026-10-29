@@ -1,5 +1,5 @@
 import type { ComponentType } from "react";
-import { BookOpen, Building2, ChartNoAxesCombined, LayoutDashboard, Mail, MessageSquareText, Package2, ReceiptText, Settings, Tags } from "lucide-react";
+import { BookOpen, Building2, ChartNoAxesCombined, LayoutDashboard, ListTodo, Mail, MessageSquareText, Package2, ReceiptText, Settings, Tags } from "lucide-react";
 import { AiIcon } from "@/components/ai-icon";
 
 export type NavigationItem = {
@@ -25,6 +25,7 @@ export const navigation: NavigationGroup[] = [
     icon: LayoutDashboard,
     items: [
       { label: "Analytics", href: "/", icon: ChartNoAxesCombined, description: "Performance at a glance" },
+      { label: "Tasks and notifications", href: "/tasks", icon: ListTodo, description: "Assigned work, reminders and alerts" },
     ],
   },
   {

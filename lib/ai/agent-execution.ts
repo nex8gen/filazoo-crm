@@ -132,7 +132,8 @@ export async function executeAgentAction(id: string, action: PreparedAgentAction
     Object.entries(action.company).forEach(([key, value]) => data.set(key, value));
     const result = await createCompany(undefined, data);
     if (result?.error) throw new Error(result.error);
-    return { success: result?.success || `${action.company.name} was added.`, href: "/companies" };
+    if (!result?.success) throw new Error("The CRM did not confirm company creation. Check Companies before retrying.");
+    return { success: result.success, ...(result.companyId ? { companyId: result.companyId } : {}), href: result.companyId ? `/companies/${result.companyId}` : "/companies" };
   }
   if (action.type === "update_company" || action.type === "add_company_note") {
     await reportProgress(activity);

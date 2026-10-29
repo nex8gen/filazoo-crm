@@ -4,7 +4,8 @@ import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { agentApprovalAllowed, preparedAgentActionSchema } from "@/lib/ai/agent-actions";
 import { executeAgentAction } from "@/lib/ai/agent-execution";
 
-export const maxDuration = 60;
+// Shipping approval uses the existing email API's after() worker budget.
+export const maxDuration = 240;
 const headers = { "Cache-Control": "private, no-store" };
 const decisionSchema = z.object({ id: z.uuid(), decision: z.enum(["approve", "decline"]), approval: z.enum(["manual", "auto"]) }).strict();
 

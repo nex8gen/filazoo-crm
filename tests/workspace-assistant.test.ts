@@ -61,6 +61,7 @@ test("malformed or unmarked structured output fails closed without exposing inte
   ]) {
     const result = extractWorkspaceActions(output);
     assert.equal(result.actions.length, 0);
+    assert.equal(result.protocolValid, false);
     assert.match(result.output, /No actions were prepared/);
     assert.doesNotMatch(result.output, /FILAZOO_|```|"to"|"type"|buyer@example/);
   }
@@ -76,4 +77,5 @@ test("handles fenced valid action protocols and leaves ordinary prose intact", (
     assert.doesNotMatch(result.output, /```|FILAZOO_/);
   }
   assert.equal(extractWorkspaceActions("Here is a draft:\nHi Webster,\nThanks for reaching out.").output, "Here is a draft:\nHi Webster,\nThanks for reaching out.");
+  assert.equal(extractWorkspaceActions("No changes requested.").protocolValid, true);
 });

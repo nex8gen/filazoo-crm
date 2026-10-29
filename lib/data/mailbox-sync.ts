@@ -3,16 +3,16 @@ import { createSupabaseAdmin } from "../supabase/admin.ts";
 import type { WorkspaceMailboxRecord } from "./mailboxes.ts";
 import { synchronizeMailbox, type MailboxSnapshot, type MailboxSyncStore } from "../mailbox-sync.ts";
 import type { InboxEmailItem } from "../email-inbox.ts";
+import { resolveEmailContentIds } from "../email-content.ts";
 
 function presentMailboxMessage(message: InboxEmailItem, key: string): InboxEmailItem {
-  let html = message.html;
   const attachments = message.attachments?.map((attachment) => {
     if (!attachment.partId || !message.uid || !message.uidValidity) return attachment;
     const params = new URLSearchParams({ mailbox: key, uid: String(message.uid), validity: String(message.uidValidity), part: attachment.partId });
     const url = `/api/email/received-attachment?${params}`;
-    if (attachment.cid && html) html = html.split(`cid:${attachment.cid}`).join(url.replaceAll("&", "&amp;"));
     return { ...attachment, url };
   });
+  const html = message.html ? resolveEmailContentIds(message.html, attachments ?? []) : message.html;
   return { ...message, html, attachments, mailboxKey: key };
 }
 

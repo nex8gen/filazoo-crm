@@ -11,8 +11,9 @@ import { claimNextBdSalesManager } from "@/lib/lead-assignment";
 import { commerceSchema } from "@/lib/company-commerce";
 import { ensureCompanyCatalogPdf } from "@/lib/data/catalog-pdfs";
 import { companyProfileChangesSchema } from "@/lib/company-profile-fields";
+import { productEditMetadata } from "@/lib/product-edit-metadata";
 
-export type CrmActionState = { error?: string; success?: string } | undefined;
+export type CrmActionState = { error?: string; success?: string; companyId?: string } | undefined;
 
 export async function addCompanyComment(companyId: string, _state: CrmActionState, formData: FormData): Promise<CrmActionState> {
   const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
@@ -196,7 +197,7 @@ export async function createCompany(_state: CrmActionState, formData: FormData):
   await enrollCompanyEvent({ type: "company_segment_changed", conversationId: `company:${company.id}`, companyId: company.id, contactId: createdContact?.id ?? null, segment: parsed.data.segment });
 
   refreshCrm();
-  return { success: `${parsed.data.name} was added.` };
+  return { success: `${parsed.data.name} was added.`, companyId: company.id };
 }
 
 export async function updateCompanyFields(companyId: string, input: unknown): Promise<CrmActionState> {
@@ -508,15 +509,21 @@ export async function updateProduct(_state: CrmActionState, formData: FormData):
   ].sort((a, b) => a.minimum - b.minimum);
   if (new Set(tiers.map((tier) => tier.minimum)).size !== tiers.length) return { error: "Pricing tier quantities must be unique." };
   const colors = parsedVariants.data.map((variant) => variant.name);
-  const { error } = await createSupabaseAdmin().from("products").update({
+  const admin = createSupabaseAdmin();
+  const current = await admin.from("products").select("sku,tags,description,sheet_updated_at").eq("sku", originalSku.data).maybeSingle();
+  if (current.error || !current.data) return { error: "This product is unavailable. Refresh Products before editing." };
+  const metadata = productEditMetadata(current.data, [...tiers.map((tier) => `price-tier:${tier.minimum}:${tier.price}`), variantTag(parsedVariants.data.map((variant) => ({ ...variant, imageUrl: variant.imageUrl || null })))], `Volume pricing: ${tiers.map((tier) => `${tier.minimum}+ ${parsed.data.currency} ${tier.price.toFixed(2)}`).join("; ")}.`);
+  const update = admin.from("products").update({
     sku: parsed.data.sku.toUpperCase(), name: parsed.data.name, material: parsed.data.material, color: colors.join(", "),
     diameter: parsed.data.diameter || null, weight: parsed.data.weight || null, price: parsed.data.price1, currency: parsed.data.currency,
     moq: parsed.data.minimum1, stock_status: parsed.data.stockStatus || "Not specified", lead_time: parsed.data.leadTime || "Not specified",
     image_url: parsed.data.imageUrl || null, active: parsed.data.active === "true", sheet_updated_at: new Date().toISOString(),
-    tags: ["manual", ...tiers.map((tier) => `price-tier:${tier.minimum}:${tier.price}`), variantTag(parsedVariants.data.map((variant) => ({ ...variant, imageUrl: variant.imageUrl || null })))],
-    description: `Volume pricing: ${tiers.map((tier) => `${tier.minimum}+ ${parsed.data.currency} ${tier.price.toFixed(2)}`).join("; ")}.`,
+    ...metadata,
   }).eq("sku", originalSku.data);
+  const guarded = current.data.sheet_updated_at === null ? update.is("sheet_updated_at", null) : update.eq("sheet_updated_at", current.data.sheet_updated_at);
+  const { data: saved, error } = await guarded.select("sku").maybeSingle();
   if (error) return { error: error.code === "23505" ? "A product with this SKU already exists." : "The product could not be updated." };
+  if (!saved) return { error: "This product changed or was removed. Refresh Products and try again." };
   revalidatePath("/catalogs");
   revalidatePath("/catalogs/companies");
   return { success: `${parsed.data.name} was updated.` };

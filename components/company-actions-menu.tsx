@@ -78,6 +78,7 @@ export function CompanyActionsMenu({ companyId, ownerId, managers, canAssign, ca
         if (!result?.success) throw new Error("Assignment could not be confirmed. Please refresh and retry.");
         setAssignmentOpen(false);
         toast.success(result.success);
+        window.dispatchEvent(new Event("flow-activity-updated"));
         router.refresh();
       } catch {
         toast.error("Assignment could not be confirmed. Please refresh and retry.");
@@ -102,6 +103,7 @@ export function CompanyActionsMenu({ companyId, ownerId, managers, canAssign, ca
         if (!result?.success) throw new Error("Follow-up could not be confirmed.");
         setFollowupOpen(false);
         toast.success(result.success);
+        window.dispatchEvent(new Event("flow-activity-updated"));
         router.refresh();
       } catch {
         toast.error("Follow-up could not be confirmed. Please refresh and retry.");

@@ -4,10 +4,12 @@ import type { AppLanguage } from "../i18n.ts";
 import type { CompanyDetails } from "../types.ts";
 import { customerReportInstruction } from "./customer-research.ts";
 import { chatMessageSchema, chatImageLimitError, conversationImageReferences, chatImageInstruction } from "./image-input.ts";
+import { historyReferenceSchema } from "./chat-history.ts";
 
 export const companyChatSchema = z.object({
   language: aiLanguageSchema,
   webSearch: z.boolean().optional(),
+  history: historyReferenceSchema.optional(),
   messages: z.array(chatMessageSchema).min(1).max(19),
 }).strict().superRefine(({ messages }, ctx) => {
   const imageError = chatImageLimitError(messages);

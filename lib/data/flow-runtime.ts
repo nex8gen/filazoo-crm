@@ -115,8 +115,9 @@ export async function validateFlowResources(userId: string, input: FlowInput) {
     }
     const memberId = step.type === "create_task" && step.config.assigneeType === "user" ? step.config.assigneeId : step.type === "internal_alert" && step.config.userId !== "owner" ? step.config.userId : null;
     if (memberId) {
-      const { data } = await admin.from("workspace_members").select("user_id").eq("user_id", memberId).not("activated_at", "is", null).maybeSingle().throwOnError();
+      const { data } = await admin.from("workspace_members").select("user_id,role").eq("user_id", memberId).not("activated_at", "is", null).maybeSingle().throwOnError();
       if (!data) throw new Error("Choose an active workspace member for tasks and alerts.");
+      if (step.type === "create_task" && data.role === "viewer") throw new Error("Choose a workspace member who can manage tasks, rather than a read-only viewer.");
     }
   }
 }
@@ -213,7 +214,7 @@ async function executeAction(run: RunRow, flow: FlowRow, step: FlowStep, facts: 
   if (step.type === "send_email" || step.type === "ai_auto_reply") return executeEmail(run, flow, step, facts);
   if (step.type === "create_task") {
     const { data: pipeline } = run.company_id && step.config.assigneeType !== "user" ? await admin.from("pipeline").select("owner_id").eq("company_id", run.company_id).maybeSingle().throwOnError() : { data: null };
-    await admin.from("crm_tasks").insert({ flow_run_id: run.id, company_id: run.company_id, contact_id: run.contact_id, assigned_to: step.config.assigneeType === "user" ? step.config.assigneeId : pipeline?.owner_id || flow.user_id, title: step.config.title, notes: step.config.notes || null, priority: step.config.priority || "normal", due_at: new Date(Date.now() + Number(step.config.dueInDays || 0) * 86_400_000).toISOString() }).throwOnError();
+    await admin.from("crm_tasks").insert({ flow_run_id: run.id, company_id: run.company_id, contact_id: run.contact_id, assigned_to: step.config.assigneeType === "user" ? step.config.assigneeId : pipeline?.owner_id || flow.user_id, follows_company_owner: step.config.assigneeType !== "user", title: step.config.title, notes: step.config.notes || null, priority: step.config.priority || "normal", due_at: new Date(Date.now() + Number(step.config.dueInDays || 0) * 86_400_000).toISOString() }).throwOnError();
     await logRun(run.id, step.id, { action: "task_created", title: step.config.title });
   } else if (step.type === "change_category") {
     const messageKey = String(run.context?.messageKey || run.conversation_id);
