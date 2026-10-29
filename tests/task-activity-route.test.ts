@@ -17,10 +17,11 @@ function fixture(role: string | null = "admin") {
   const deps: Record<string, unknown> = {
     "@/lib/auth": { getWorkspaceViewer: async () => role ? { id, role } : null },
     "@/lib/task-activity": activity, "@/lib/ai/crm-productivity": productivity,
+    "@/lib/data/task-assignees": { listTaskAssignees: async () => [{ id, name: "Test user", role: "admin" }] },
     "@/lib/data/flow-activity": { listFlowActivity: async (...args: unknown[]) => { if (fail) throw new Error("private database failure"); return { args }; }, updateFlowActivity: async (...args: unknown[]) => { writes.push(args); } },
     "@/lib/data/agent-tasks": { createAgentTask: async (...args: unknown[]) => { writes.push(args); return { id }; }, updateAgentTask: async (...args: unknown[]) => { writes.push(args); } },
   };
-  vm.runInNewContext(code, { exports, require: (name: string) => deps[name] ?? require(name), URL, Request, Response, Error });
+  vm.runInNewContext(code, { exports, require: (name: string) => deps[name] ?? require(name), URL, Request, Response, Error, console: { error() {} } });
   return { ...exports, writes, fail() { fail = true; } };
 }
 function request(method: string, body?: unknown, origin = "https://crm.example.com") {
@@ -63,4 +64,28 @@ test("activity retrieval validates pagination, is private and reports failures w
   assert.equal(failed.status, 503); assert.doesNotMatch(JSON.stringify(await failed.json()), /private database/);
   assert.equal(activity.activityPage("1.5"), 0); assert.equal(activity.activityPage("Infinity"), 0);
   assert.equal(activity.activityTime("bad timestamp"), "Unknown time");
+});
+
+test("inbox filters and preview requests are validated and search input is bounded", async () => {
+  const app = fixture();
+  const params = new URLSearchParams({ taskView: "completed", alertView: "unread", query: "x".repeat(200), preview: "1" });
+  const result = await (await app.GET(new Request(`https://crm.example.com/api/flows/activity?${params}`))).json();
+  assert.deepEqual(result.args[1], { taskPage: 0, alertPage: 0, taskView: "completed", alertView: "unread", query: "x".repeat(120), preview: true });
+  const invalid = await (await app.GET(new Request("https://crm.example.com/api/flows/activity?taskView=forged&alertView=other&preview=all"))).json();
+  assert.deepEqual(invalid.args[1], { taskPage: 0, alertPage: 0 });
+});
+
+test("member discovery is limited to writers and assignment IDs reach the guarded task service", async () => {
+  const app = fixture();
+  const members = await app.GET(new Request("https://crm.example.com/api/flows/activity?members=1"));
+  assert.equal(members.status, 200); assert.equal((await members.json()).members[0].name, "Test user");
+  assert.equal((await fixture("viewer").GET(new Request("https://crm.example.com/api/flows/activity?members=1"))).status, 403);
+  const assignedTo = "c3333333-3333-4333-8333-333333333333";
+  assert.equal((await app.POST(request("POST", { requestId: id, task: { op: "create_task", title: "Team task" }, assignedTo }))).status, 200);
+  assert.equal(app.writes[0][3], assignedTo);
+  assert.equal((await app.PATCH(request("PATCH", { kind: "task", id, expectedUpdatedAt: "revision", changes: { priority: "high" }, assignedTo }))).status, 200);
+  assert.equal(app.writes[1][4], assignedTo);
+  assert.equal((await app.POST(request("POST", { requestId: id, task: { op: "create_task", title: "Forged assignee" }, assignedTo: "not-a-user" }))).status, 400);
+  const delegated = await (await app.GET(new Request("https://crm.example.com/api/flows/activity?taskScope=delegated"))).json();
+  assert.equal(delegated.version, 2); assert.equal(delegated.args[1].taskScope, "delegated");
 });

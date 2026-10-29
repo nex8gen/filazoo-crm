@@ -1,7 +1,7 @@
 import "server-only";
 import type { WorkspaceViewer } from "../auth";
 import { beginSavedTurn, finishSavedTurn, failSavedTurn, saveChatUsage } from "./chat-history-server";
-import { conversationMemory, memoryPrompt, type ConversationInput, type HistoryReference } from "./chat-history";
+import { conversationMemory, memoryPrompt, pendingInvoicePrompt, type ConversationInput, type HistoryReference } from "./chat-history";
 import { trackAiUsage } from "./chat-usage";
 import type { ChatImage } from "./image-input";
 
@@ -18,7 +18,7 @@ export async function startChatSession(reference: HistoryReference | undefined, 
   return {
     replay: prior.replay,
     messages: [...memory.messages, userMessage],
-    summaryPrompt: memoryPrompt(memory.summary),
+    summaryPrompt: memoryPrompt(memory.summary) + pendingInvoicePrompt("pendingInvoices" in prior ? prior.pendingInvoices ?? [] : []),
     completedActionIds: prior.completedActionIds,
     fetcher: tracker.fetcher,
     async complete(payload: { output: string; [key: string]: unknown }) {

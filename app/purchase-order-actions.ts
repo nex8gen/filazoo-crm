@@ -25,7 +25,19 @@ import {
   applyOrderCustomerToInvoice,
 } from "@/lib/purchase-order-links";
 import { createInvoice } from "@/lib/data/invoices";
-import type { InvoiceDocument } from "@/lib/invoices";
+import { invoiceCurrencies, type InvoiceDocument } from "@/lib/invoices";
+
+export async function getPurchaseOrderCatalogAvailability() {
+  await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
+  const db = createSupabaseAdmin();
+  return Promise.all(invoiceCurrencies.map(async (currency) => {
+    const { count, error } = await db.from("products")
+      .select("sku", { count: "exact", head: true })
+      .eq("active", true).not("sku", "like", "SAMPLE-%").eq("currency", currency);
+    if (error) throw new Error("Catalog currencies could not be loaded.");
+    return { currency, count: count ?? 0 };
+  }));
+}
 
 export async function getPurchaseOrderProfile(
   companyId: string,
@@ -88,7 +100,7 @@ export async function searchPurchaseOrderProducts(
     .object({
       search: z.string().max(100),
       page: z.number().int().min(0).max(100000),
-      currency: z.string().length(3),
+      currency: z.enum(invoiceCurrencies),
     })
     .parse({ search, page, currency });
   return invoiceProducts(input.search, input.page, input.currency);
@@ -164,13 +176,15 @@ export async function savePurchaseOrder(
   const existing = orderId
     ? await db
         .from("purchase_orders")
-        .select("document")
+        .select("document,version")
         .eq("id", orderId)
         .eq("company_id", companyId)
         .maybeSingle()
     : null;
   if (existing?.error || (orderId && !existing?.data))
     return { error: "The existing order could not be loaded." };
+  if (existing?.data && existing.data.version !== version)
+    return { error: "This PO was changed by another user. Close the editor and reload before editing again." };
   const previous = existing?.data
     ? purchaseOrderSchema.parse(existing.data.document)
     : null;

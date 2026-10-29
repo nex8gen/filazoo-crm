@@ -4,6 +4,7 @@ import {
   purchaseOrderSchema,
   purchaseOrderTotal,
   orderBillingSummary,
+  orderHasUnreservedItems,
   type PurchaseOrder,
 } from "../lib/purchase-orders.ts";
 import { commerceDefaults, commerceSchema } from "../lib/company-commerce.ts";
@@ -65,6 +66,7 @@ test("draft reservations, partial invoicing, payments and voids stay separate", 
     },
   };
   po.invoices = [invoice];
+  assert.equal(orderHasUnreservedItems(po), false);
   assert.equal(orderBillingSummary(po).quantities.get("line-1"), 10);
   assert.equal(orderBillingSummary(po).total, 0);
   assert.equal(orderBillingSummary(po).canShip, false);
@@ -80,8 +82,11 @@ test("draft reservations, partial invoicing, payments and voids stay separate", 
   };
   assert.equal(orderBillingSummary(po).canShip, true);
   po.invoices = [{ ...invoice, status: "void" }];
+  assert.equal(orderHasUnreservedItems(po), true);
   assert.equal(orderBillingSummary(po).quantities.size, 0);
   assert.equal(orderBillingSummary(po).fullyInvoiced, false);
+  assert.equal(orderBillingSummary(po).canShip, false);
+  po.invoices = [{ ...invoice, status: "issued", total_minor: 0, paid_minor: 0 }];
   assert.equal(orderBillingSummary(po).canShip, false);
 });
 

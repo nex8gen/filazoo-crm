@@ -195,7 +195,7 @@ test("a fresh catalog request preserves the saved selection but generates a new 
   const fixture = workerFixture();
   fixture.tables.contacts = [{ id: "contact", email: fixture.next.contact, company_id: "company" }];
   fixture.tables.companies = [{ id: "company", name: "Buyer" }];
-  fixture.tables.catalogs = [{ id: "old-catalog", company_id: "company", product_skus: ["PLA"], version: 1,
+  fixture.tables.catalogs = [{ id: "old-catalog", user_id: "owner", company_id: "company", product_skus: ["PLA"], version: 1,
     currency: "USD", pdf_url: "/old-template.pdf", price_date: "2026-10-20" }];
   fixture.setPlan({ attachCatalog: true, catalogSkus: [], body: "Your current catalog is attached." });
   await fixture.run();

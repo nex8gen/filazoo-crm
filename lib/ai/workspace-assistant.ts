@@ -137,6 +137,11 @@ Use only IDs, SKUs, variants and catalog prices from SERVER_DATA. When the user 
   return [
     "You are Filazoo AI, an internal CRM copilot.",
     modeInstruction,
+    ...(mode === "work" ? [`CLARIFICATION IS A SUCCESSFUL NEXT STEP. When a required identity, product, variant, quantity, amount, date or business choice is missing or ambiguous, ask a short, specific question instead of emitting an incomplete action. Use FILAZOO_QUESTION_JSON: {"question":"your natural-language question"} as the entire response. Do not combine this with reads or actions, even an empty action array. Ordinary questions may also be plain text. Never reveal the protocol.
+For "can create a invoice for this costmer" on a company page, use the verified currentCompany/currentCompanyId; acknowledge its actual name and ask which products, colors and quantities to include. Do not guess Basic PLA, a quantity of 1, sales estimates or items from an older invoice. If the user instead wants a saved purchase order, look it up and use invoice_order only after that order is identified. The mere presence of a purchase order on the page is not a choice to invoice it.
+Without a uniquely identified customer, ask for the customer name or business email. If multiple saved customers match, present their distinguishing names/location/contact and ask which one; never choose the first or most recent. Look up supplied names/emails before requesting an internal ID. Do not ask the user to identify an already verified open customer. Ask only for information still missing; preserve answers from earlier turns and use the latest correction. A question produces no proposal and must work in both approval modes.
+When the user answers your question, continue their original task. Re-read relevant saved records as needed, use the exact supplied product/variant and quantity and prepare a normal approval when complete. Black Gold is not Red Gold. If the requested variant does not exist or several match, say so and ask which actual variant to use; never substitute silently.
+PENDING_INVOICE_PROPOSALS are saved, unexecuted review cards, not invoices or completion evidence. Use their details to answer follow-up questions about addresses, products or totals. "Did/do you add the address?" asks for a factual answer; do not create another invoice or turn it into a change. If asked to revise an unapproved proposal, clearly identify the replacement and explain the earlier card remains unapproved. Do not claim you updated or cancelled the old card.`] : []),
     ...(mode === "work" ? [crmToolInstruction] : []),
     `Resolve "this", "here", "this email/message/flow" from the selected record in SERVER_DATA. currentEmail is the open email; currentConversation is the open Messenger conversation with real internal message IDs; currentFlow is the saved flow. Do not select another recent record or ask the user to paste information already supplied. An unmatched email can still be answered with write_email; matching a company is required only for actions that need a company ID.
 For "write/draft/prepare a reply" in Messenger use crm_action with operation:{op:"draft_message",messageId:the latest inbound currentConversation.messages ID,text:the reply}. This fills a draft without sending. Use send_message only when explicitly asked to send. Email replies use write_email with delivery:"draft" and currentEmail.id as sourceEmailId. Honor contentAvailable:false and contextWarnings; missing supporting resources do not mean the selected message is missing. Do not invent prices or commitments when catalog or payment information is unavailable.
@@ -150,6 +155,46 @@ For a requested change to the open flow, use crm_action update_flow with current
     "Respect the current page scope. Be concise and practical. Use short paragraphs and simple lists without markdown tables.",
     `Current time: ${now}. Workspace timezone: Asia/Shanghai.`,
   ].join("\n");
+}
+
+const agentQuestionSchema = z.object({ question: z.string().trim().min(5).max(1800) }).strict();
+/** A question is read-only planning, never an executable action. */
+export function extractAgentQuestion(output: string) {
+  const marker = "FILAZOO_QUESTION_JSON:";
+  if (!output.includes(marker)) return null;
+  const protocols = output.match(/FILAZOO_[A-Z_]+\s*:/g) ?? [];
+  if (protocols.length !== 1 || protocols[0] !== marker) throw new Error("Ask one focused question without read or action protocols.");
+  const encoded = output.slice(output.indexOf(marker) + marker.length).trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  const parsed = agentQuestionSchema.safeParse((() => { try { return JSON.parse(encoded); } catch { return null; } })());
+  if (!parsed.success || /FILAZOO_|```|["'](?:type|op)["']\s*:/.test(parsed.data.question)) throw new Error("Ask a clear question about the missing details.");
+  return parsed.data;
+}
+
+/** Questions about existing invoice details cannot authorize a new invoice. */
+export function isInvoiceDetailQuestion(text: string) {
+  return /^(?:did|do|does|have|has)\s+(?:you|it|the (?:invoice|draft))\b/i.test(text.trim())
+    && /\b(?:address|shipping|billing|total|price|quantity|payment|tax|discount|invoice)\b/i.test(text)
+    && !/\b(?:please|then|also)\s+(?:add|change|update|create|send|remove)\b/i.test(text);
+}
+
+/** A bare first-turn invoice request has no line items to approve. */
+export function isBareInvoiceRequest(text: string) {
+  const words = text.toLowerCase().replace(/[^a-z\s]/g, " ").trim().split(/\s+/);
+  const allowed = new Set("can could would will you i want to please help me create make prepare draft a an the invoice invioce inovice for this that customer costmer costomer client company".split(" "));
+  return words.length <= 22 && words.some((word) => ["invoice", "invioce", "inovice"].includes(word))
+    && words.some((word) => ["create", "make", "prepare", "draft"].includes(word)) && words.every((word) => allowed.has(word)) && !/\d/.test(text);
+}
+
+/** A broad customer lookup cannot authorize choosing its first result. */
+export function ambiguousInvoiceCustomerQuestion(text: string, records: readonly unknown[], language: AppLanguage = "en") {
+  if (!/\b(?:create|make|prepare|draft)\b/i.test(text) || !/\b(?:invoice|invioce|inovice)\b/i.test(text) || /\b(?:all|both|each|every|batch|invoices)\b/i.test(text)) return null;
+  const customer = z.object({ id: z.uuid(), name: z.string(), city: z.string().nullable().optional(), country: z.string().nullable().optional() });
+  const matches = records.flatMap((record) => { const parsed = customer.safeParse(record); return parsed.success ? [parsed.data] : []; });
+  if (matches.length < 2) return null;
+  const normalized = text.toLowerCase();
+  if (matches.filter((match) => normalized.includes(match.id.toLowerCase()) || normalized.includes(match.name.toLowerCase())).length === 1) return null;
+  const choices = matches.slice(0, 5).map((match, index) => `${index + 1}. ${match.name}${match.city || match.country ? ` (${[match.city, match.country].filter(Boolean).join(", ")})` : ""}`).join("; ");
+  return language === "zh-CN" ? `您要为哪家公司创建发票草稿？找到了多个匹配客户：${choices}${matches.length > 5 ? "；还有更多匹配客户" : ""}。请选择一家公司，或提供其业务邮箱。` : `Which customer should I use for this draft invoice? I found multiple matches: ${choices}${matches.length > 5 ? "; more matches are available" : ""}. Please choose a company or give its business email.`;
 }
 
 export function buildWorkspaceAssistantPrompt(input: WorkspaceAssistantInput, serverData?: unknown) {

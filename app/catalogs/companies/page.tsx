@@ -12,7 +12,7 @@ import { prepareCompanyCatalogPdfs } from "@/lib/data/catalog-pdfs";
 export default async function CompanyCatalogsPage() {
   const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   const [{ mode, catalogs }, { companies }, { products }] = await Promise.all([listCatalogs(), listCompanyOptions(), listProducts()]);
-  const canWrite = viewer.role !== "viewer";
+  const canWrite = true;
   if (catalogs.some(catalog => !catalog.pdfUrl)) {
     // Saved catalogs may reference products beyond the general selector limit.
     // Resolve those exact SKUs before entering the request-independent callback.
@@ -24,7 +24,7 @@ export default async function CompanyCatalogsPage() {
     }
     // Preserve PDF snapshot preparation without making the list wait for images
     // and Storage. All request-scoped authorization/product reads finish above.
-    after(() => prepareCompanyCatalogPdfs(catalogs.map(catalog => ({ ...catalog })), preparedProducts));
+    after(() => prepareCompanyCatalogPdfs(catalogs.map(catalog => ({ ...catalog })), preparedProducts, viewer.id));
   }
 
   return (

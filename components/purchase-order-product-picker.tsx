@@ -1,6 +1,7 @@
 "use client";
 
 import { EmptyState } from "@/components/data-state";
+import Image from "next/image";
 import { PackageSearch } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -18,16 +19,24 @@ export function PurchaseOrderProductPicker({
   currency,
   disabled,
   onAdd,
+  onCancel,
+  title = "Add from product catalog",
+  catalogAvailability = [],
 }: {
   currency: string;
   disabled: boolean;
+  title?: string;
+  onCancel?: () => void;
+  catalogAvailability?: { currency: string; count: number }[];
   onAdd: (
     item: PurchaseOrderDocument["items"][number],
     product: InvoiceProduct,
   ) => void;
 }) {
   const [search, setSearch] = useState("");
-  const [page, setPage] = useState(0);
+  const [pagination, setPagination] = useState({ currency, search: "", page: 0 });
+  const page = pagination.currency === currency && pagination.search === search ? pagination.page : 0;
+  const setPage = (page: number) => setPagination({ currency, search, page });
   const [result, setResult] = useState<{
     key: string;
     products: InvoiceProduct[];
@@ -43,7 +52,10 @@ export function PurchaseOrderProductPicker({
     const timer = setTimeout(() => {
       searchPurchaseOrderProducts(search, page, currency)
         .then((data) => {
-          if (!cancelled) setResult({ ...data, key });
+          if (!cancelled) {
+            setResult({ ...data, key });
+            setError(null);
+          }
         })
         .catch((error) => {
           if (!cancelled)
@@ -69,12 +81,21 @@ export function PurchaseOrderProductPicker({
       aria-label="Product catalog"
     >
       <div>
-        <h3 className="font-medium">Add from product catalog</h3>
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="font-medium">{title}</h3>
+          {onCancel && <Button type="button" size="sm" variant="ghost" onClick={onCancel}>Cancel selection</Button>}
+        </div>
         <p className="text-sm text-muted-foreground">
           Select a product and variant. SKU, image, minimum quantity, and
           quantity pricing come from Products.
         </p>
       </div>
+      {catalogAvailability.length > 0 && (
+        <p className="text-xs text-muted-foreground">
+          Available catalog: {catalogAvailability.filter((item) => item.count > 0).map((item) => `${item.count} ${item.currency} products`).join(", ") || "No active products"}.
+          {catalogAvailability.find((item) => item.currency === currency)?.count === 0 && " Change the order currency above to match the catalog before adding products."}
+        </p>
+      )}
       <div className="space-y-2">
         <Label htmlFor="po-product-search">
           Search products by name or SKU
@@ -125,7 +146,7 @@ export function PurchaseOrderProductPicker({
                 size="sm"
                 variant="outline"
                 disabled={page === 0}
-                onClick={() => setPage((value) => value - 1)}
+                onClick={() => setPage(page - 1)}
               >
                 Previous products
               </Button>
@@ -134,7 +155,7 @@ export function PurchaseOrderProductPicker({
                 size="sm"
                 variant="outline"
                 disabled={(page + 1) * 25 >= current.count}
-                onClick={() => setPage((value) => value + 1)}
+                onClick={() => setPage(page + 1)}
               >
                 Next products
               </Button>
@@ -162,6 +183,7 @@ function ProductChoice({
   return (
     <div className="space-y-3 rounded-lg border bg-background p-3">
       <div className="flex items-start gap-3">
+        <Image src={variant?.imageUrl || product.imageUrl || "/catalog-default-product.jpg"} alt={variant ? `${product.name} - ${variant.name}` : product.name} width={56} height={56} unoptimized className="size-14 shrink-0 rounded-md border object-cover" />
         <div className="min-w-0">
           <p className="text-sm font-medium">{product.name}</p>
           <p className="text-xs text-muted-foreground">
@@ -170,6 +192,7 @@ function ProductChoice({
           <p className="mt-1 text-xs text-muted-foreground">
             {variant?.stockStatus || product.stockStatus}
           </p>
+          {product.tiers.length > 1 && <p className="mt-1 text-xs text-muted-foreground">{product.tiers.map((tier) => `${tier.minimumQuantity}+: ${formatMoney(tier.priceMinor, product.currency)}`).join(" · ")}</p>}
         </div>
       </div>
       {product.variants.length > 0 && (

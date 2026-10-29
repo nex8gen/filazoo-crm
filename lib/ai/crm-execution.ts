@@ -30,12 +30,15 @@ import { listWorkspaceMembers } from "../data/members";
 import { updateFlowActivity } from "../data/flow-activity";
 import { loadAgentCompany, loadAgentEmails } from "./agent-records";
 import { agentProductSchema, crmOperationSchema, crmOperationLabels, type CrmOperation, type PreparedCrmAction } from "./crm-tools";
+import { isReplyOperation } from "./crm-reply-tools";
+import { replyOperationTarget, executeReplyOperation } from "./crm-reply-execution";
 import { isProductivityOperation } from "./crm-productivity";
 import { productivityTarget, executeProductivityOperation } from "./crm-productivity-execution";
+import { withPersonalProducts, userProductRows } from "../data/product-personalization";
 
 const adminOperations = new Set(["assign_owner", "delete_company", "invite_member", "update_member", "delete_member"]);
 export function authorizeCrmOperation(viewer: WorkspaceViewer, operation: CrmOperation) {
-  if (viewer.role === "viewer") throw new Error("Your workspace role is read-only.");
+  if (viewer.role === "viewer" && !["update_product", "create_catalog"].includes(operation.op)) throw new Error("Your workspace role is read-only.");
   if (adminOperations.has(operation.op) && viewer.role !== "admin") throw new Error("This action requires a workspace administrator.");
   if (["invoice_lifecycle", "invoice_defaults", "payment_methods", "sync_inventory"].includes(operation.op) && !["admin", "operator"].includes(viewer.role)) throw new Error("This action requires an admin or operator.");
 }
@@ -61,6 +64,7 @@ async function one(table: string, fields: string, key: string, value: string) {
 
 /** Reload only the relevant record, with ownership checked before preparing and executing. */
 async function target(operation: CrmOperation, viewer: WorkspaceViewer): Promise<{ name: string; value: unknown; preview: Record<string, unknown> }> {
+  if (isReplyOperation(operation)) return replyOperationTarget(operation, viewer);
   if (isProductivityOperation(operation)) return productivityTarget(operation, viewer);
   if (operation.op === "create_segment" || operation.op === "update_segment") {
     const saved = operation.op === "update_segment" ? await one("company_segments", "id,name,description,rules", "id", operation.segmentId) : null;
@@ -94,12 +98,13 @@ async function target(operation: CrmOperation, viewer: WorkspaceViewer): Promise
   }
   if (operation.op === "create_product" || operation.op === "update_product") {
     const sku = operation.op === "create_product" ? operation.product.sku : operation.sku;
-    const row = await one("products", "sku,name,material,color,diameter,weight,currency,price,moq,tags,stock_status,lead_time,image_url,active,sheet_updated_at", "sku", sku);
+    const base = await one("products", "sku,name,material,color,diameter,weight,currency,price,moq,tags,stock_status,lead_time,image_url,active,sheet_updated_at", "sku", sku);
+    const row = base ? (await withPersonalProducts([base as typeof base & { sku: string }], viewer.id))[0] : null;
     if (operation.op === "create_product" && row) throw new Error("This product SKU already exists. Update it instead.");
     if (operation.op === "update_product" && !row) throw new Error("This product no longer exists.");
     const current = row ? productFromRow(row) : {};
     const product = agentProductSchema.parse(operation.op === "create_product" ? operation.product : { ...current, ...operation.changes });
-    return { name: product.name, value: row, preview: { product } };
+    return { name: product.name, value: row, preview: { product, overrideVersion: row?.override_version ?? "" } };
   }
   if ("flowId" in operation) {
     const flow = (await listWorkspaceFlows()).find((flow) => flow.id === operation.flowId);
@@ -180,9 +185,7 @@ async function target(operation: CrmOperation, viewer: WorkspaceViewer): Promise
       }
     }
     if (operation.op === "create_catalog") {
-      let products = db.from("products").select("sku,name,currency,price,tags,active").eq("active", true).order("sku");
-      if (operation.productSkus.length) products = products.in("sku", operation.productSkus);
-      const rows = await products.limit(101);
+      const rows = { data: (await userProductRows(viewer.id, operation.productSkus.length ? operation.productSkus : undefined)).filter((row) => row.active), error: null };
       if (rows.error || (operation.productSkus.length && rows.data?.length !== operation.productSkus.length)) throw new Error("One or more selected catalog products are unavailable.");
       if (!operation.productSkus.length && (rows.data?.length ?? 0) > 100) throw new Error("Choose up to 100 specific catalog products.");
       value = { company, products: rows.data };
@@ -228,6 +231,7 @@ export async function executeCrmAction(action: PreparedCrmAction, viewer: Worksp
   authorizeCrmOperation(viewer, operation);
   const current = await target(operation, viewer);
   if (hash(current.value) !== action.fingerprint) throw new Error("This record changed after the proposal. Ask the agent to prepare it again.");
+  if (isReplyOperation(operation)) return executeReplyOperation(operation, viewer, actionId, current.preview);
   if (isProductivityOperation(operation)) return executeProductivityOperation(operation, viewer, actionId, current.preview, request);
   let result: { error?: string; success?: string } | undefined;
   let href = "/";
@@ -253,7 +257,11 @@ export async function executeCrmAction(action: PreparedCrmAction, viewer: Worksp
       result = await crm.createCatalog(undefined, data); href = "/catalogs/companies"; break;
     }
     case "create_product": result = await crm.createProduct(undefined, productForm(agentProductSchema.parse(current.preview.product))); href = "/catalogs"; break;
-    case "update_product": result = await crm.updateProduct(undefined, productForm(agentProductSchema.parse(current.preview.product), operation.sku)); href = "/catalogs"; break;
+    case "update_product": {
+      const data = productForm(agentProductSchema.parse(current.preview.product), operation.sku);
+      data.set("overrideVersion", String(current.preview.overrideVersion ?? ""));
+      result = await crm.updateProduct(undefined, data); href = `/catalogs/products/${encodeURIComponent(operation.sku)}`; break;
+    }
     case "save_order": {
       const saved = await savePurchaseOrder(operation.companyId, operation.orderId ?? null, Number(current.preview.version), current.preview.document);
       result = saved;

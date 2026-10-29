@@ -12,6 +12,10 @@ import { commerceSchema } from "@/lib/company-commerce";
 import { ensureCompanyCatalogPdf } from "@/lib/data/catalog-pdfs";
 import { companyProfileChangesSchema } from "@/lib/company-profile-fields";
 import { productEditMetadata } from "@/lib/product-edit-metadata";
+import { userProductRows } from "@/lib/data/product-personalization";
+import { validProductImage, privateProductImagePattern } from "@/lib/product-images";
+import { crmProduct, variantsFromTags } from "@/lib/product-utils";
+import { normalizeProductVariants, validVariantPrice } from "@/lib/product-pricing";
 
 export type CrmActionState = { error?: string; success?: string; companyId?: string } | undefined;
 
@@ -75,19 +79,19 @@ const productSchema = z.object({
   sku: z.string().trim().min(2).max(100).regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/),
   name: z.string().trim().min(2).max(160),
   material: z.string().trim().min(1).max(100),
-  colors: z.string().trim().min(1).max(2000),
+  colors: z.string().trim().max(2000),
   diameter: optionalText(50),
   weight: optionalText(50),
   currency: z.enum(["USD", "EUR", "GBP", "CNY"]),
   minimum1: z.coerce.number().int().min(1).max(1_000_000),
-  price1: z.coerce.number().min(0).max(1_000_000),
+  price1: z.preprocess((value) => value === "" || value === null ? undefined : value, z.coerce.number().min(0).max(1_000_000)),
   minimum2: z.union([z.literal(""), z.coerce.number().int().min(1).max(1_000_000)]),
   price2: z.union([z.literal(""), z.coerce.number().min(0).max(1_000_000)]),
   minimum3: z.union([z.literal(""), z.coerce.number().int().min(1).max(1_000_000)]),
   price3: z.union([z.literal(""), z.coerce.number().min(0).max(1_000_000)]),
   stockStatus: optionalText(100),
   leadTime: optionalText(100),
-  imageUrl: z.string().trim().url().max(1000).optional().or(z.literal("")),
+  imageUrl: z.string().trim().max(1000).refine(validProductImage, "Choose a valid product image").optional(),
   active: z.enum(["true", "false"]).default("true"),
   variants: z.string().max(50_000),
 });
@@ -98,7 +102,7 @@ const productVariantSchema = z.array(z.object({
   sku: z.string().trim().min(1).max(120),
   price: z.string().trim().max(50),
   stockStatus: z.string().trim().max(100),
-  imageUrl: z.string().trim().url().max(1000).nullable().or(z.literal("")),
+  imageUrl: z.string().trim().max(1000).refine(validProductImage, "Choose a valid variant image").nullable(),
 })).min(1).max(100);
 
 function parseProductVariants(value: string) {
@@ -402,24 +406,25 @@ export async function createEmailDraft(_state: CrmActionState, formData: FormDat
 }
 
 export async function createCatalog(_state: CrmActionState, formData: FormData): Promise<CrmActionState> {
-  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
+  const viewer = await requireWorkspaceMember();
   const parsed = catalogSchema.safeParse({ companyId: formData.get("companyId"), currency: formData.get("currency"), productSkus: formData.getAll("productSkus") });
   if (!parsed.success) return { error: "Choose a company and valid catalog options." };
   const admin = createSupabaseAdmin();
   const { data: company } = await admin.from("companies").select("id,name").eq("id", parsed.data.companyId).maybeSingle();
   if (!company) return { error: "The selected company no longer exists." };
-  if (parsed.data.productSkus.length) {
-    const { count } = await admin.from("products").select("sku", { count: "exact", head: true }).in("sku", parsed.data.productSkus).eq("active", true);
-    if (count !== parsed.data.productSkus.length) return { error: "One or more selected products are no longer active." };
-  }
-  const { data: latest } = await admin.from("catalogs").select("version").eq("company_id", company.id).order("version", { ascending: false }).limit(1).maybeSingle();
-  const version = (latest?.version ?? 0) + 1;
-  const { data: catalog, error } = await admin.from("catalogs").insert({ company_id: company.id, product_skus: parsed.data.productSkus, currency: parsed.data.currency, version }).select("id,price_date,created_at").single();
+  const rows = (await userProductRows(viewer.id, parsed.data.productSkus.length ? parsed.data.productSkus : undefined)).filter((row) => row.active);
+  if (parsed.data.productSkus.length && rows.length !== new Set(parsed.data.productSkus).size) return { error: "One or more selected products are no longer active in your catalog." };
+  if (rows.length > 100) return { error: "Select up to 100 products for this catalog." };
+  if (rows.some((row) => row.currency !== parsed.data.currency)) return { error: "Choose products priced in the catalog currency. Update your product currency first." };
+  const snapshot = rows.map(crmProduct);
+  const productSkus = rows.map((row) => row.sku);
+  const { data: catalog, error } = await admin.from("catalogs").insert({ user_id: viewer.id, company_id: company.id, product_skus: productSkus, product_snapshot: snapshot, currency: parsed.data.currency, version: 1 }).select("id,version,price_date,created_at").single();
   if (error) return { error: "The catalog selection could not be saved." };
-  await admin.from("events").insert({ company_id: company.id, actor_id: viewer.id, type: "catalog_created", data: { catalogId: catalog.id, summary: `Catalog v${version} created with ${parsed.data.productSkus.length} products.` } });
+  const version = catalog.version;
+  await admin.from("events").insert({ company_id: company.id, actor_id: viewer.id, type: "catalog_created", data: { catalogId: catalog.id, summary: `Catalog v${version} created with ${productSkus.length} products.` } });
   let pdfReady = false;
   try {
-    await ensureCompanyCatalogPdf({ id: catalog.id, company: company.name, productSkus: parsed.data.productSkus, currency: parsed.data.currency, version, priceDate: catalog.price_date, createdAt: catalog.created_at, pdfUrl: null });
+    await ensureCompanyCatalogPdf({ id: catalog.id, company: company.name, productSkus, currency: parsed.data.currency, version, priceDate: catalog.price_date, createdAt: catalog.created_at, pdfUrl: null }, snapshot, viewer.id);
     pdfReady = true;
   } catch (error) { console.error("New catalog PDF generation failed", catalog.id, error); }
   refreshCrm();
@@ -488,7 +493,7 @@ export async function createProduct(_state: CrmActionState, formData: FormData):
 }
 
 export async function updateProduct(_state: CrmActionState, formData: FormData): Promise<CrmActionState> {
-  await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
+  const viewer = await requireWorkspaceMember();
   const originalSku = z.string().trim().min(2).max(100).safeParse(formData.get("originalSku"));
   const parsed = productSchema.safeParse({
     sku: formData.get("sku"), name: formData.get("name"), material: formData.get("material"), colors: formData.get("colors") || "",
@@ -497,7 +502,9 @@ export async function updateProduct(_state: CrmActionState, formData: FormData):
     minimum3: formData.get("minimum3") || "", price3: formData.get("price3") || "", stockStatus: formData.get("stockStatus"), leadTime: formData.get("leadTime"),
     imageUrl: formData.get("imageUrl"), active: formData.get("active") || "true", variants: formData.get("variants") || "[]",
   });
-  if (!originalSku.success || !parsed.success) return { error: "Enter valid product and pricing details." };
+  if (!originalSku.success) return { error: "Choose a valid product SKU." };
+  if (!parsed.success) return { error: `Check ${parsed.error.issues[0]?.path.join(".")}: ${parsed.error.issues[0]?.message}` };
+  if (parsed.data.sku.toUpperCase() !== originalSku.data) return { error: "The product SKU is its permanent identifier. Edit variant SKUs instead." };
   const parsedVariants = parseProductVariants(parsed.data.variants);
   if (!parsedVariants.success) return { error: "Add at least one valid product variant." };
   const optionalTiersAreComplete = (parsed.data.minimum2 === "") === (parsed.data.price2 === "") && (parsed.data.minimum3 === "") === (parsed.data.price3 === "");
@@ -510,21 +517,32 @@ export async function updateProduct(_state: CrmActionState, formData: FormData):
   if (new Set(tiers.map((tier) => tier.minimum)).size !== tiers.length) return { error: "Pricing tier quantities must be unique." };
   const colors = parsedVariants.data.map((variant) => variant.name);
   const admin = createSupabaseAdmin();
-  const current = await admin.from("products").select("sku,tags,description,sheet_updated_at").eq("sku", originalSku.data).maybeSingle();
-  if (current.error || !current.data) return { error: "This product is unavailable. Refresh Products before editing." };
-  const metadata = productEditMetadata(current.data, [...tiers.map((tier) => `price-tier:${tier.minimum}:${tier.price}`), variantTag(parsedVariants.data.map((variant) => ({ ...variant, imageUrl: variant.imageUrl || null })))], `Volume pricing: ${tiers.map((tier) => `${tier.minimum}+ ${parsed.data.currency} ${tier.price.toFixed(2)}`).join("; ")}.`);
-  const update = admin.from("products").update({
-    sku: parsed.data.sku.toUpperCase(), name: parsed.data.name, material: parsed.data.material, color: colors.join(", "),
-    diameter: parsed.data.diameter || null, weight: parsed.data.weight || null, price: parsed.data.price1, currency: parsed.data.currency,
-    moq: parsed.data.minimum1, stock_status: parsed.data.stockStatus || "Not specified", lead_time: parsed.data.leadTime || "Not specified",
-    image_url: parsed.data.imageUrl || null, active: parsed.data.active === "true", sheet_updated_at: new Date().toISOString(),
+  const [current] = await userProductRows(viewer.id, [originalSku.data]);
+  if (!current) return { error: "This product is unavailable. Refresh Products before editing." };
+  const expectedVersion = String(formData.get("overrideVersion") || "");
+  if (expectedVersion !== (current.override_version ?? "")) return { error: "Your saved product changed in another tab. Reload this page before saving." };
+  const images = [parsed.data.imageUrl, ...parsedVariants.data.map((variant) => variant.imageUrl)];
+  if (images.some((url) => url && privateProductImagePattern.exec(url)?.[1] && privateProductImagePattern.exec(url)?.[1] !== viewer.id)) return { error: "Choose images from your own account." };
+  if (new Set(parsedVariants.data.map((variant) => variant.sku.trim().toUpperCase())).size !== parsedVariants.data.length) return { error: "Each variant needs a unique SKU." };
+  if (new Set(parsedVariants.data.map((variant) => variant.id)).size !== parsedVariants.data.length) return { error: "Each variant needs a unique identifier. Remove the duplicate and add it again." };
+  if (parsedVariants.data.some((variant) => !validVariantPrice(variant.price))) return { error: "Enter a valid non-negative price for every variant." };
+  const variants = normalizeProductVariants(parsedVariants.data, parsed.data.currency, tiers[0].price, { price: current.price, variants: variantsFromTags(current.tags ?? [], [], current.sku, String(current.price ?? ""), current.stock_status ?? "") });
+  const metadata = productEditMetadata(current, [...tiers.map((tier) => `price-tier:${tier.minimum}:${tier.price}`), variantTag(variants)], `Volume pricing: ${tiers.map((tier) => `${tier.minimum}+ ${parsed.data.currency} ${tier.price.toFixed(2)}`).join("; ")}.`);
+  const changes = {
+    name: parsed.data.name, material: parsed.data.material, color: colors.join(", "),
+    diameter: parsed.data.diameter || null, weight: parsed.data.weight || null, price: tiers[0].price, currency: parsed.data.currency,
+    moq: tiers[0].minimum, stock_status: parsed.data.stockStatus || "Not specified", lead_time: parsed.data.leadTime || "Not specified",
+    image_url: parsed.data.imageUrl || null, active: parsed.data.active === "true",
     ...metadata,
-  }).eq("sku", originalSku.data);
-  const guarded = current.data.sheet_updated_at === null ? update.is("sheet_updated_at", null) : update.eq("sheet_updated_at", current.data.sheet_updated_at);
-  const { data: saved, error } = await guarded.select("sku").maybeSingle();
-  if (error) return { error: error.code === "23505" ? "A product with this SKU already exists." : "The product could not be updated." };
-  if (!saved) return { error: "This product changed or was removed. Refresh Products and try again." };
+  };
+  const values = { user_id: viewer.id, product_sku: originalSku.data, data: changes, updated_at: new Date().toISOString() };
+  const write = expectedVersion
+    ? admin.from("user_product_overrides").update(values).eq("user_id", viewer.id).eq("product_sku", originalSku.data).eq("updated_at", expectedVersion)
+    : admin.from("user_product_overrides").insert(values);
+  const { data: saved, error } = await write.select("product_sku").maybeSingle();
+  if (error || !saved) return { error: error?.code === "23505" || !error ? "Your saved product changed in another tab. Reload before saving." : "Your product details could not be saved. Please retry." };
   revalidatePath("/catalogs");
+  revalidatePath(`/catalogs/products/${encodeURIComponent(originalSku.data)}`);
   revalidatePath("/catalogs/companies");
-  return { success: `${parsed.data.name} was updated.` };
+  return { success: `${parsed.data.name} was saved to your private product catalog.` };
 }

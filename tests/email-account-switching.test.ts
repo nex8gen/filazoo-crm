@@ -20,8 +20,10 @@ function snapshot(id: string): EmailInboxBackendData {
 
 // Exercise the component's async event handlers with deterministic hooks and
 // controlled HTTP responses, including responses arriving after cancellation.
-function mount() {
+function mount(signalStatics: unknown = AbortSignal) {
   const time = { now: 0 };
+  const timers = new Map<number, { at: number; callback: () => void }>();
+  let timerId = 0;
   class Clock extends Date { static now() { return time.now; } }
   const slots: unknown[] = [];
   let cursor = 0;
@@ -68,8 +70,13 @@ function mount() {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
   vm.runInNewContext(code, {
-    exports, require: (name: string) => dependencies[name] ?? require(name), window, URLSearchParams, AbortController, AbortSignal, DOMException, Date: Clock,
-    fetch: (url: string, options: { signal: AbortSignal }) => new Promise<Response>((resolve) => requests.push({ url, signal: options.signal, resolve })),
+    exports, require: (name: string) => dependencies[name] ?? require(name), window, URLSearchParams, AbortController, AbortSignal: signalStatics, DOMException, Error, Date: Clock,
+    setTimeout: (callback: () => void, delay: number) => { const id = ++timerId; timers.set(id, { at: time.now + delay, callback }); return id; },
+    clearTimeout: (id: number) => timers.delete(id),
+    fetch: (url: string, options: { signal: AbortSignal }) => new Promise<Response>((resolve, reject) => {
+      options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true });
+      requests.push({ url, signal: options.signal, resolve });
+    }),
   });
   const initialData = snapshot("mine");
   const render = () => {
@@ -77,8 +84,51 @@ function mount() {
     return exports.EmailAccountsWorkspace({ initialData, products: [], catalogs: [], initialThreadId: "original-thread", initialAgentDraft: "original-draft" }).props;
   };
   render();
-  return { render, requests, history, location, time, back: () => listeners.get("popstate")!(), unmount: () => cleanups.forEach((cleanup) => cleanup()) };
+  const elapse = (milliseconds: number) => {
+    time.now += milliseconds;
+    for (const [id, timer] of timers) {
+      if (timer.at <= time.now) { timers.delete(id); timer.callback(); }
+    }
+  };
+  return { render, requests, history, location, time, timers, elapse, back: () => listeners.get("popstate")!(), unmount: () => cleanups.forEach((cleanup) => cleanup()) };
 }
+
+test("mailbox switching works without AbortSignal.any or AbortSignal.timeout", async () => {
+  const ui = mount({});
+  assert.equal(ui.requests.length, 2);
+  ui.render().onMailboxChange("team");
+  ui.requests[0].resolve(Response.json(snapshot("team")));
+  await tick();
+  assert.equal(ui.render().selectedMailboxId, "team");
+  assert.equal(ui.render().mailboxSwitchError, null);
+  assert.equal(ui.timers.size, 1, "The completed request clears its timeout");
+  ui.elapse(30_000);
+  await tick();
+  assert.equal(ui.requests[0].signal.aborted, false, "A completed request must not be aborted later");
+  ui.unmount();
+});
+
+test("a stalled mailbox request times out after 30 seconds and can be retried", async () => {
+  const ui = mount({});
+  ui.render().onMailboxChange("team");
+  ui.elapse(29_999);
+  assert.equal(ui.requests[0].signal.aborted, false);
+  ui.elapse(1);
+  await tick();
+  assert.equal(ui.requests[0].signal.aborted, true);
+  assert.equal(ui.render().selectedMailboxId, "mine");
+  assert.match(ui.render().mailboxSwitchError!, /timed out/i);
+  assert.equal(ui.render().switchingMailboxId, null);
+  assert.equal(ui.timers.size, 0);
+  ui.render().onMailboxChange("team");
+  assert.equal(ui.requests.length, 3, "Retry starts a new request");
+  ui.requests[2].resolve(Response.json(snapshot("team")));
+  await tick();
+  assert.equal(ui.render().selectedMailboxId, "team");
+  assert.equal(ui.render().mailboxSwitchError, null);
+  assert.equal(ui.timers.size, 0);
+  ui.unmount();
+});
 
 test("other inboxes preload once and switching reuses their in-flight request", async () => {
   const ui = mount();
@@ -172,12 +222,14 @@ test("browser back switches accounts without pushing another history entry", asy
   ui.unmount();
 });
 
-test("leaving the workspace cancels the account request", () => {
+test("leaving the workspace cancels the account request", async () => {
   const ui = mount();
   ui.render().onMailboxChange("team");
   ui.unmount();
   assert.equal(ui.requests[0].signal.aborted, true);
   assert.equal(ui.requests[1].signal.aborted, true);
+  await tick();
+  assert.equal(ui.timers.size, 0);
 });
 
 test("a preloaded account opens synchronously without a spinner or another request", async () => {

@@ -130,6 +130,7 @@ async function setupInbox(role = "operator", assignedContacts: Map<string, strin
   const sentScopes: string[] = [];
   const reads: string[] = [];
   const counts = { auth: 0, mailboxes: 0 };
+  const knownCompanies: { id: string; name: string; email: string }[] = [];
   const viewer: WorkspaceViewer = { id: "actor", role: role as WorkspaceViewer["role"], email: null, displayName: null };
   const backend = loadModule<{ getEmailInboxBackendData: (options?: { mailboxId?: string; syncMailbox?: boolean; context?: { viewer: WorkspaceViewer; mailboxes: WorkspaceMailboxRecord[] } }) => Promise<EmailInboxBackendData> }>("../lib/email-inbox.ts", {
     "./auth.ts": { requireWorkspaceMember: async () => { counts.auth++; return viewer; } },
@@ -142,7 +143,7 @@ async function setupInbox(role = "operator", assignedContacts: Map<string, strin
       mailboxHasSmtp: setupData.mailboxes.mailboxHasSmtp,
       mailboxHasImap: (mailbox: WorkspaceMailboxRecord | null) => Boolean(mailbox?.isActive && mailbox.imapPassword),
     },
-    "./data/inbox-companies.ts": { listInboxCompanies: async () => { reads.push("companies"); return { companies: [] }; } },
+    "./data/inbox-companies.ts": { listInboxCompanies: async () => { reads.push("companies"); return { companies: knownCompanies }; } },
     "./data/crm.ts": {
       listCompanies: async () => { reads.push("companies"); return { companies: [] }; },
       listEmailDrafts: async (authorizedViewer: WorkspaceViewer) => { assert.equal(authorizedViewer, viewer); reads.push("drafts"); return { emails: [{ id: "workspace-draft", subject: "Outreach", contact: "lead@example.com", preview: "Hello", step: 1, status: "Draft" }], mode: "live" }; },
@@ -164,7 +165,7 @@ async function setupInbox(role = "operator", assignedContacts: Map<string, strin
     } },
     "./supabase/admin.ts": { createSupabaseAdmin: () => ({ from: () => ({ select: () => ({ eq: () => ({ order: () => ({ range: async () => ({ data: [], error: null }) }) }) }) }) }) },
   });
-  return { backend, synced, sentScopes, reads, counts, context: { viewer, mailboxes } };
+  return { backend, synced, sentScopes, reads, counts, knownCompanies, context: { viewer, mailboxes } };
 }
 
 test("an authorized route context avoids repeated auth and mailbox queries while validating the selected ID", async () => {
@@ -352,4 +353,13 @@ test("sent attachments use the message's actual personal or workspace mailbox an
   message.user_id = "someone-else";
   assert.equal((await download()).status, 404);
   assert.equal(downloads, 2);
+});
+
+
+test("received and sent email labels use the saved matched customer rather than stale header placeholders", async () => {
+  const f = await setupInbox();
+  f.knownCompanies.push({ id: "company-a", name: "Verified customer", email: "buyer@example.com" });
+  const data = await f.backend.getEmailInboxBackendData({ mailboxId: "mine", syncMailbox: false });
+  assert.equal(data.emails.length, 2);
+  assert.ok(data.emails.every((message) => message.companyId === "company-a" && message.company === "Verified customer"));
 });

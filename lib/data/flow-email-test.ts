@@ -5,7 +5,7 @@ import { generateFlowAiReply, loadFlowReplyProducts, prepareFlowTemplateCatalog,
 import { emailTemplates, renderFlowTemplate } from "../flow-templates.ts";
 
 /** Preview only: never creates a run, writes CRM data, uploads attachments or sends email. */
-export async function testFlowWithEmails(input: FlowEmailTestInput, managerName: string | null): Promise<FlowEmailTestResult> {
+export async function testFlowWithEmails(input: FlowEmailTestInput, managerName: string | null, userId?: string): Promise<FlowEmailTestResult> {
   const config = input.flow.triggerConfig;
   const facts: FlowFacts = { customerReplied: false, openedEmail: false, clickedLink: false,
     category: typeof config.category === "string" ? config.category : null,
@@ -20,7 +20,7 @@ export async function testFlowWithEmails(input: FlowEmailTestInput, managerName:
   const productRows = executedAi.length ? await loadFlowReplyProducts({
     useProducts: executedAi.some((entry) => input.flow.steps[entry.step - 1].config.useProducts === true),
     attachCatalog: executedAi.some((entry) => input.flow.steps[entry.step - 1].config.attachCatalog === true),
-  }) : [];
+  }, userId) : [];
   const result: FlowEmailTestResult = { cases: [] };
   for (const email of input.emails) {
     const testCase: FlowEmailTestResult["cases"][number] = { subject: email.subject, trace: simulation.trace, replies: [] };
@@ -35,7 +35,7 @@ export async function testFlowWithEmails(input: FlowEmailTestInput, managerName:
           const contact = { name: input.customerName, email: email.from };
           const subject = renderFlowTemplate(String(step.config.subject || template.subject), contact);
           const body = renderFlowTemplate(String(step.config.body || template.body), contact);
-          const attachments = step.config.templateId === "send_catalog" ? await prepareFlowTemplateCatalog() : [];
+          const attachments = step.config.templateId === "send_catalog" ? await prepareFlowTemplateCatalog(userId) : [];
           testCase.replies.push({ step: entry.step, subject, body, attachments: attachments.map((attachment) => ({ filename: attachment.filename, size: attachment.content.length })) });
           previousMessages += 1;
           messages.unshift({ subject, body, direction: "sent", created_at: new Date().toISOString() });

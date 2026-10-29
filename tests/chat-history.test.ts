@@ -1,3 +1,4 @@
+import * as readiness from "../lib/ai/invoice-readiness.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -19,7 +20,7 @@ type Handler = (request: Request, context?: { params: Promise<{ id: string }> })
 function load(file: string, dependencies: Record<string, unknown>, env = {}) {
   const exports: Record<string, unknown> = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => dependencies[name] ?? (name === "server-only" ? {} : require(name)), Request, Response, URL, AbortSignal, Date, Error, Object, JSON, console, process: { env }, fetch });
+  vm.runInNewContext(code, { exports, require: (name: string) => dependencies[name] ?? (name === "@/lib/ai/invoice-readiness" ? readiness : undefined) ?? (name === "server-only" ? {} : require(name)), Request, Response, URL, AbortSignal, Date, Error, Object, JSON, console, process: { env }, fetch });
   return exports;
 }
 function req(method: string, body?: unknown, url = "http://localhost:3000/api/ai/history", origin = "http://localhost:3000") {
@@ -199,4 +200,18 @@ test("a completion persistence failure keeps the request locked and flushes usag
   assert.equal(finishes, 1); assert.equal(released, 0); assert.equal(flushed, 1);
   const failed = (await start(reference, scopeInput, viewer, { role: "user", content: "hello" }))!;
   await failed.fail(); assert.equal(released, 1);
+});
+
+test("saved invoice review details survive the next turn without becoming completed work or losing the user's answer", async () => {
+  const sessionModule = load("../lib/ai/chat-session.ts", {
+    "./chat-history-server": {
+      beginSavedTurn: async () => ({ row: { summary: "" }, messages: [{ role: "user", content: "Create an invoice" }, { role: "assistant", content: "Which products and quantities?" }], completedActionIds: [], pendingInvoices: [{ id: conversationId, action: { type: "create_invoice", document: { customerName: "Audit", customerAddress: "Saved billing address", currency: "USD", items: [{ description: "Black PLA", quantity: 100, unitPriceMinor: 500 }] } } }] }),
+      finishSavedTurn: async () => {}, failSavedTurn: async () => {}, saveChatUsage: async () => {},
+    }, "./chat-history": history, "./chat-usage": { trackAiUsage: () => ({ fetcher: fetch, usage: [] }) },
+  });
+  const start = sessionModule.startChatSession as (...args: unknown[]) => Promise<{ summaryPrompt: string; messages: Array<{ content: string }>; completedActionIds: string[] }>;
+  const session = await start(reference, { ...scopeInput, mode: "agent" }, viewer, { role: "user", content: "do you add address of the customer" });
+  assert.match(session.summaryPrompt, /Saved billing address/); assert.match(session.summaryPrompt, /pending approval, not saved or sent/);
+  assert.equal(session.messages.at(-1)?.content, "do you add address of the customer"); assert.equal(session.messages[1].content, "Which products and quantities?");
+  assert.deepEqual(session.completedActionIds, []);
 });

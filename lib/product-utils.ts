@@ -6,6 +6,8 @@ export type CrmProductRow = {
   price: number | string | null; currency: string; moq: number | null;
   stock_status: string | null; lead_time: string | null; tags: string[] | null;
   active: boolean; sheet_updated_at: string | null;
+  override_version?: string | null;
+  description?: string | null;
 };
 
 /** Shared by interactive catalog pages and the background automation worker. */
@@ -23,7 +25,8 @@ export function crmProduct(row: CrmProductRow): Product {
     color: row.color || "—", colors, diameter: row.diameter || "—", weight: row.weight || "—",
     price, moq: row.moq, priceTiers: priceTiers.length ? priceTiers : row.price == null ? [] : [{ minimumQuantity: row.moq ?? 1, price }],
     stockStatus, leadTime: row.lead_time || "Not specified", status: row.active ? "Active" : "Inactive",
-    updatedAt: row.sheet_updated_at, variants: variantsFromTags(row.tags ?? [], colors, row.sku, price, stockStatus),
+    updatedAt: row.override_version ?? row.sheet_updated_at, overrideVersion: row.override_version ?? null, currency: row.currency,
+    variants: variantsFromTags(row.tags ?? [], colors, row.sku, price, stockStatus),
   };
 }
 

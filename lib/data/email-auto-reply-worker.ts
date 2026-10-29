@@ -67,9 +67,9 @@ async function handoff(row: AutoReplyRow, reason: string, history: InboxEmailIte
 async function planReply(row: AutoReplyRow, history: InboxEmailItem[]) {
   const db = createSupabaseAdmin();
   const [profile, products, knowledge, bootstrap] = await Promise.all([
-    customer(row), loadFlowReplyProducts({ useProducts: true }),
+    customer(row), loadFlowReplyProducts({ useProducts: true }, row.user_id),
     db.from("email_reply_knowledge").select("title,content").order("created_at").throwOnError(),
-    invoiceBootstrap({ email: row.recipient, threadId: row.thread_key }),
+    invoiceBootstrap({ userId: row.user_id, email: row.recipient, threadId: row.thread_key }),
   ]);
   const prompt = JSON.stringify({
     recipient: row.recipient, customer: profile.company, contactName: profile.contact?.name,
@@ -102,7 +102,7 @@ async function catalogAttachment(row: AutoReplyRow, plan: AutoReplyPlan, context
   const requested = new Set(plan.catalogSkus);
   if ([...requested].some((sku) => !products.some((product) => product.sku === sku))) throw new Error("A catalog product is unavailable.");
   const db = createSupabaseAdmin();
-  const { data: saved } = profile.company ? await db.from("catalogs").select("*").eq("company_id", profile.company.id)
+  const { data: saved } = profile.company ? await db.from("catalogs").select("*").eq("user_id", row.user_id).eq("company_id", profile.company.id)
     .order("version", { ascending: false }).limit(1).maybeSingle().throwOnError() : { data: null };
   // Keep the customer's saved selection, but create a fresh version with the current
   // template and product photos. Previously issued quote PDFs remain unchanged.
@@ -112,16 +112,17 @@ async function catalogAttachment(row: AutoReplyRow, plan: AutoReplyPlan, context
   if (!selected.length) throw new Error("Add active products before sending a catalog.");
   // Save the actual selection in the customer's catalog history.
   if (profile.company) {
-    const { data: versions } = await db.from("catalogs").select("version").eq("company_id", profile.company.id)
+    const { data: versions } = await db.from("catalogs").select("version").eq("user_id", row.user_id).eq("company_id", profile.company.id)
       .order("version", { ascending: false }).limit(1).maybeSingle().throwOnError();
     const { data: catalog } = await db.from("catalogs").insert({
+      user_id: row.user_id, product_snapshot: selected.map(crmProduct),
       company_id: profile.company.id, product_skus: selected.map((product) => product.sku),
       currency: selected[0].currency, version: (versions?.version ?? 0) + 1,
     }).select().single().throwOnError();
     return { filename: "Filazoo-customer-catalog.pdf", contentType: "application/pdf", content: Buffer.from(await ensureCompanyCatalogPdf({
       id: catalog.id, company: profile.company.name, productSkus: catalog.product_skus, currency: catalog.currency,
       priceDate: catalog.price_date, version: catalog.version, pdfUrl: catalog.pdf_url, createdAt: catalog.created_at,
-    })) };
+    }, selected.map(crmProduct), row.user_id)) };
   }
   return { filename: "Filazoo-customer-catalog.pdf", contentType: "application/pdf",
     content: Buffer.from(await buildServerCatalogPdf(selected.map(crmProduct), { title: "Product catalog", customer: plan.billingName || row.recipient })) };

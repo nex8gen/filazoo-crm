@@ -386,6 +386,7 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
       return {
         ...item,
         ...(states.get(item.id) ?? {}),
+        company: company?.name || item.company,
         companyId: assignedCompanyId ?? company?.id ?? null,
         ownerId: assignedCompanyId ? viewer.id : company?.ownerId ?? null,
         ownerAvatarUrl: company?.ownerAvatarUrl,

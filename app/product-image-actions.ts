@@ -6,7 +6,7 @@ import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { MAX_PRODUCT_IMAGE_SIZE, PRODUCT_IMAGE_BUCKET, PRODUCT_IMAGE_TYPES, productImageError } from "@/lib/product-images";
 
 export async function prepareProductImageUpload(type: string, size: number) {
-  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
+  const viewer = await requireWorkspaceMember();
   const validationError = productImageError(type, size);
   if (validationError) return { error: validationError };
 
@@ -14,7 +14,7 @@ export async function prepareProductImageUpload(type: string, size: number) {
   const { data: bucket } = await supabase.storage.getBucket(PRODUCT_IMAGE_BUCKET);
   if (!bucket) {
     const { error } = await supabase.storage.createBucket(PRODUCT_IMAGE_BUCKET, {
-      public: true,
+      public: false,
       fileSizeLimit: MAX_PRODUCT_IMAGE_SIZE,
       allowedMimeTypes: PRODUCT_IMAGE_TYPES,
     });
@@ -27,6 +27,5 @@ export async function prepareProductImageUpload(type: string, size: number) {
   const path = `${viewer.id}/${randomUUID()}.${extension}`;
   const { data, error } = await supabase.storage.from(PRODUCT_IMAGE_BUCKET).createSignedUploadUrl(path);
   if (error || !data) return { error: "Could not start the image upload. Please try again." };
-  const { data: publicImage } = supabase.storage.from(PRODUCT_IMAGE_BUCKET).getPublicUrl(path);
-  return { path, token: data.token, imageUrl: publicImage.publicUrl };
+  return { path, token: data.token, imageUrl: `/api/product-images/${path}` };
 }

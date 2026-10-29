@@ -8,6 +8,8 @@ import { generateGatewayText, isGeminiRegionError } from "../ai/gateway.ts";
 import { flowReplyInstruction, resolveFlowReply, flowCatalogInstruction, resolveFlowCatalog, flowReplyContainsChinese } from "../ai/flow-reply.ts";
 import { applyEmailSignature, DEFAULT_EMAIL_COMPANY, DEFAULT_EMAIL_TITLE } from "../ai/email-rewrite.ts";
 import type { JsonConfig } from "../flows.ts";
+import { userProductRows } from "./product-personalization.ts";
+import { requireWorkspaceMember } from "../auth.ts";
 
 export function hasFlowReplyProvider() {
   return Boolean(process.env.GEMINI_API_KEY?.trim() || process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim());
@@ -15,20 +17,14 @@ export function hasFlowReplyProvider() {
 
 export type FlowReplyMessage = { subject: string | null; body: string | null; direction: string; message_id?: string | null; thread_id?: string | null; created_at: string };
 
-export async function loadFlowReplyProducts(config: JsonConfig): Promise<CrmProductRow[]> {
+export async function loadFlowReplyProducts(config: JsonConfig, userId?: string): Promise<CrmProductRow[]> {
   if (!config.useProducts && !config.attachCatalog) return [];
-  const products: CrmProductRow[] = [];
-  for (let offset = 0; ; offset += 500) {
-    const { data } = await createSupabaseAdmin().from("products")
-      .select("sku,name,image_url,material,color,diameter,weight,price,currency,moq,stock_status,lead_time,tags,active,sheet_updated_at")
-      .eq("active", true).order("sku").range(offset, offset + 499).throwOnError();
-    products.push(...((data ?? []) as CrmProductRow[]).filter((row) => !row.sku.startsWith("SAMPLE-") && !row.name.toLowerCase().startsWith("[sample]")));
-    if (!data || data.length < 500) return products;
-  }
+  const ownerId = userId ?? (await requireWorkspaceMember()).id;
+  return (await userProductRows(ownerId)).filter((row) => row.active);
 }
 
-export async function prepareFlowTemplateCatalog() {
-  const products = await loadFlowReplyProducts({ attachCatalog: true });
+export async function prepareFlowTemplateCatalog(userId?: string) {
+  const products = await loadFlowReplyProducts({ attachCatalog: true }, userId);
   if (!products.length) throw new Error("Add active products before sending a catalog.");
   const content = Buffer.from(await buildServerCatalogPdf(products.map(crmProduct), { title: "Product catalog" }));
   if (content.length > 7_500_000) throw new Error("The generated catalog exceeds the 7.5 MB attachment limit.");
@@ -50,7 +46,7 @@ export async function prepareFlowAiReply({ userId, contactId, companyId, convers
     admin.from("companies").select("name,country,segment").eq("id", companyId).single().throwOnError(),
     admin.from("workspace_members").select("display_name").eq("user_id", userId).maybeSingle().throwOnError(),
     admin.from("flow_runs").select("id").eq("contact_id", contactId).throwOnError(),
-    loadFlowReplyProducts(config),
+    loadFlowReplyProducts(config, userId),
   ]);
   const runIds = (previousRuns.data ?? []).map((run) => run.id);
   const { count: sentBefore } = runIds.length ? await admin.from("flow_run_logs").select("id", { count: "exact", head: true })

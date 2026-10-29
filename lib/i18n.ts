@@ -6,6 +6,7 @@ import { zhCNInventory } from "./i18n-inventory.ts";
 import { zhCNEmailAutoReply } from "./i18n-email-auto-reply.ts";
 import { zhCNAiHistory } from "./i18n-ai-history.ts";
 import { zhCNTaskActivity } from "./i18n-task-activity.ts";
+import { zhCNPurchaseOrders } from "./i18n-purchase-orders.ts";
 
 export type AppLanguage = "en" | "zh-CN";
 
@@ -14,6 +15,10 @@ export const LANGUAGE_STORAGE_KEY = "filazoo-language";
 // Product terminology is centralized so sales, catalog, mailbox, and
 // automation screens use consistent professional Chinese wording.
 const zhCN: Record<string, string> = {
+  "Your prices, product details, and photos are private to your account. Your catalogs and AI automations use these saved details.": "您的价格、产品资料和图片仅限本人使用。您的目录和 AI 自动流程会采用这些已保存的资料。",
+  "← All products": "← 所有产品",
+  "Download saved product PDF": "下载已保存的产品 PDF",
+  ...zhCNPurchaseOrders,
   "Attachment: Filazoo product catalog PDF ·": "附件：Filazoo 产品目录 PDF ·",
   "active products · Current saved prices and photos": "款在售产品 · 包含当前保存的价格和图片",
   "I could not prepare this request correctly. No actions were prepared. Please try again.": "未能正确处理此请求，未创建任何操作。请重试。",
@@ -280,6 +285,8 @@ const zhCN: Record<string, string> = {
 const translated = (input: string) => translateUiText(input, "zh-CN");
 // Only match known UI sentence shapes; customer names, content and IDs stay intact.
 const patterns: Array<[RegExp, (...parts: string[]) => string]> = [
+  [/^Choose product for item (\d+)$/, (index) => `为第 ${index} 项选择产品`],
+  [/^(\d+) (USD|EUR|GBP|CNY) products$/, (count, currency) => `${count} 款${currency}产品`],
   [/^(\d+) saved · (\d+) business$/, (saved, business) => `${saved} 个已保存 · ${business} 个业务细分`],
   [/^(\d[\d,]*) companies with an email$/, (count) => `${count} 家企业拥有邮箱`],
   [/^Fit score ≥ (\d+)$/, (score) => `匹配评分 ≥ ${score}`],

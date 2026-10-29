@@ -1,3 +1,5 @@
+import * as replyTools from "../lib/ai/crm-reply-tools.ts";
+import * as readiness from "../lib/ai/invoice-readiness.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -20,7 +22,7 @@ class TestHistoryError extends Error { status = 503; }
 function route(file: string, dependencies: Record<string, unknown>, env: Record<string, string> = {}, method: "POST" | "GET" = "POST") {
   const exports: { POST?: (request: Request, context?: { params: Promise<{ id: string }> }) => Promise<Response>; GET?: (request: Request) => Promise<Response> } = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => dependencies[name] ?? (name === "@/lib/ai/chat-session" ? { startChatSession: async () => undefined } : name === "@/lib/ai/chat-history-server" ? { HistoryError: TestHistoryError } : name === "@/lib/ai/chat-history" ? { savedPageContext: (value: unknown) => value ?? {} } : name === "@/lib/ai/crm-tools" ? crmTools : name === "@/lib/ai/crm-records" ? {} : name === "@/lib/i18n" ? i18n : name === "@/lib/ai/customer-research" ? research : name === "@/lib/ai/image-input" ? imageInput : require(name)), Response, Request, URL, AbortSignal, Date, Error, crypto, console, process: { env } });
+  vm.runInNewContext(code, { exports, require: (name: string) => dependencies[name] ?? (name === "./crm-reply-tools" ? replyTools : name === "./crm-reply-execution" ? { replyOperationTarget: () => { throw new Error("Reply workflows use their dedicated fixtures"); } } : name === "../data/customer-reply-requests" ? { listReplyRequests: async () => [] } : name === "@/lib/ai/invoice-readiness" ? readiness : undefined) ?? (name === "@/lib/ai/chat-session" ? { startChatSession: async () => undefined } : name === "@/lib/ai/chat-history-server" ? { HistoryError: TestHistoryError } : name === "@/lib/ai/chat-history" ? { savedPageContext: (value: unknown) => value ?? {} } : name === "@/lib/ai/crm-tools" ? crmTools : name === "@/lib/ai/crm-records" ? {} : name === "@/lib/i18n" ? i18n : name === "@/lib/ai/customer-research" ? research : name === "@/lib/ai/image-input" ? imageInput : require(name)), Response, Request, URL, AbortSignal, Date, Error, crypto, console, process: { env } });
   return exports[method]!;
 }
 
@@ -29,6 +31,94 @@ const id = "15693adc-0bdf-4617-b214-71b1861764a9";
 const company = { type: "create_company", company: { name: "Acme", country: "US", segment: "Retail" } };
 const request = (body: unknown, origin = "http://localhost:3000") => new Request("http://localhost:3000/api/ai/assistant/action", { method: "POST", headers: { "Content-Type": "application/json", origin }, body: JSON.stringify(body) });
 const decision = { id, decision: "approve", approval: "manual" };
+
+function dialogueRoute(generate: (options: { prompt: string }) => Promise<string>, context: object = {}, prepare: (values: unknown, viewer: unknown, mode: string, context?: unknown) => Promise<unknown[]> = async () => []) {
+  return route("../app/api/ai/assistant/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
+    "@/lib/ai/assistant-provider-error": providerError, "@/lib/ai/gateway": {},
+    "@/lib/ai/agent-context": { loadAgentContext: async () => context },
+    "@/lib/ai/gemini": { generateGeminiText: generate }, "@/lib/ai/agent-execution": { prepareAgentActions: prepare },
+  }, { GEMINI_API_KEY: "synthetic" });
+}
+
+test("ambiguous customer lookup stops at a distinguishing question before another model call or invoice proposal", async () => {
+  let generated = 0, prepared = 0;
+  const post = route("../app/api/ai/assistant/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
+    "@/lib/ai/assistant-provider-error": providerError, "@/lib/ai/gateway": {},
+    "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
+    "@/lib/ai/gemini": { generateGeminiText: async () => { generated++; return 'FILAZOO_CRM_READ_JSON: {"resource":"companies","query":"Acme"}'; } },
+    "@/lib/ai/crm-records": { readCrmRecords: async () => ({ records: [{ id, name: "Acme North", city: "Boston", country: "US" }, { id: viewer.id, name: "Acme South", city: "Miami", country: "US" }], coverage: { matching: 2, included: 2 } }) },
+    "@/lib/ai/agent-execution": { prepareAgentActions: async () => { prepared++; return []; } },
+  }, { GEMINI_API_KEY: "synthetic" });
+  const body = await (await post(request({ mode: "work", approvalMode: "auto", pathname: "/companies", pageLabel: "Companies", pageText: "", messages: [{ role: "user", content: "Create an invoice for Acme, 100 Black PLA" }] }))).json();
+  assert.equal(generated, 1); assert.equal(prepared, 0); assert.deepEqual(body.actions, []); assert.match(body.output, /Acme North \(Boston, US\)/); assert.match(body.output, /Acme South \(Miami, US\)/);
+});
+
+test("a bare invoice request asks only for missing details using the open customer and never guesses products", async () => {
+  for (const approvalMode of ["ask", "auto"]) {
+    const post = dialogueRoute(async () => { throw new Error("No model call should guess missing invoice lines"); }, { currentCompanyId: id, currentCompany: { fields: { name: "Open Audit Customer" } } }, async () => { throw new Error("No proposal should be stored"); });
+    const response = await post(request({ mode: "work", approvalMode, pathname: `/companies/${id}`, pageLabel: "Company profile", pageText: "Purchase orders", messages: [{ role: "user", content: "can create a invoice for this costmer" }] }));
+    const body = await response.json();
+    assert.equal(response.status, 200); assert.deepEqual(body.actions, []);
+    assert.match(body.output, /Open Audit Customer/); assert.match(body.output, /products, colors or variants, and quantities/);
+    assert.doesNotMatch(body.output, /Which customer|Basic PLA|No actions were prepared/);
+    assert.equal(body.clarification.question, body.output);
+  }
+});
+
+test("a bare invoice request without an open customer asks for a business identity, including Chinese UI", async () => {
+  const post = dialogueRoute(async () => { throw new Error("Do not invent a customer"); });
+  for (const language of ["en", "zh-CN"]) {
+    const body = await (await post(request({ mode: "work", language, pathname: "/companies", pageLabel: "Companies", pageText: "", messages: [{ role: "user", content: "Please create an invoice" }] }))).json();
+    assert.deepEqual(body.actions, []); assert.match(body.output, language === "en" ? /company name or business email/ : /公司名称或业务邮箱/);
+  }
+});
+
+test("a missing-detail question is a valid agent response in either approval mode and creates no action", async () => {
+  for (const approvalMode of ["ask", "auto"]) {
+    const post = dialogueRoute(async () => 'FILAZOO_QUESTION_JSON: {"question":"Which of the two Acme customers should I use: Acme Boston or Acme Berlin?"}', {}, async () => { throw new Error("Questions cannot execute"); });
+    const body = await (await post(request({ mode: "work", approvalMode, pathname: "/companies", pageLabel: "Companies", pageText: "", messages: [{ role: "user", content: "Invoice Acme for 10 Black PLA" }] }))).json();
+    assert.deepEqual(body.actions, []); assert.match(body.output, /Acme Boston or Acme Berlin/); assert.doesNotMatch(body.output, /FILAZOO_/);
+  }
+});
+
+test("invalid invoice actions recover into a question instead of being forced into another invalid action", async () => {
+  let calls = 0;
+  const post = dialogueRoute(async ({ prompt }) => {
+    if (++calls === 1) return 'FILAZOO_ACTIONS_JSON: [{"type":"create_invoice","companyId":"missing","items":[]}]';
+    assert.match(prompt, /ask a focused FILAZOO_QUESTION_JSON/); assert.match(prompt, /original actions keep their top-level type/);
+    return 'FILAZOO_QUESTION_JSON: {"question":"Which products, variants and quantities should I include for Acme?"}';
+  }, {}, async () => { throw new Error("An invalid or questioning plan must not save proposals"); });
+  const body = await (await post(request({ mode: "work", pathname: "/companies", pageLabel: "Companies", pageText: "", messages: [{ role: "user", content: "Create invoice for Acme" }] }))).json();
+  assert.equal(calls, 2); assert.deepEqual(body.actions, []); assert.match(body.output, /Which products/);
+});
+
+test("a follow-up answer continues the original invoice with its customer, exact quantity and user context", async () => {
+  const question = "Which products, colors and quantities should I include for Audit?";
+  const values = [{ type: "create_invoice", companyId: id, items: [{ productSku: "PLA", variantId: "black", quantity: 100 }] }];
+  const messages = [{ role: "user", content: "can create a invoice for this costmer" }, { role: "assistant", content: question }, { role: "user", content: "100 Black PLA pieces, draft only" }];
+  let prepared = 0;
+  const post = dialogueRoute(async ({ prompt }) => { assert.match(prompt, /100 Black PLA/); assert.match(prompt, /Which products/); return `Review.\nFILAZOO_ACTIONS_JSON: ${JSON.stringify(values)}`; }, { currentCompanyId: id, currentCompany: { fields: { name: "Audit" } } }, async (actions, _viewer, mode, context) => {
+    prepared++; assert.equal(mode, "ask"); assert.deepEqual(JSON.parse(JSON.stringify(actions)), values);
+    assert.deepEqual(JSON.parse(JSON.stringify(context)), { messages }); return [{ id, action: values[0], approvalMode: "ask" }];
+  });
+  const body = await (await post(request({ mode: "work", pathname: `/companies/${id}`, pageLabel: "Company profile", pageText: "", messages }))).json();
+  assert.equal(prepared, 1); assert.equal(body.actions.length, 1);
+});
+
+test("invoice-detail questions cannot produce duplicate invoices even if the model repeats the old creation", async () => {
+  let calls = 0, prepared = 0;
+  const post = dialogueRoute(async ({ prompt }) => { calls++; if (calls === 2) assert.match(prompt, /without creating or changing anything/); return `FILAZOO_ACTIONS_JSON: ${JSON.stringify([{ type: "create_invoice", companyId: id, items: [{ productSku: "PLA", quantity: 100 }] }])}`; }, {}, async () => { prepared++; return []; });
+  const body = await (await post(request({ mode: "work", pathname: "/companies", pageLabel: "Companies", pageText: "", messages: [{ role: "user", content: "do you add address of the customer" }] }))).json();
+  assert.equal(calls, 2); assert.equal(prepared, 0); assert.deepEqual(body.actions, []); assert.match(body.output, /Which part/);
+});
+
+test("catalog business validation returns a focused question and no proposal", async () => {
+  const post = dialogueRoute(async () => `FILAZOO_ACTIONS_JSON: ${JSON.stringify([{ type: "create_invoice", companyId: id, items: [{ productSku: "PLA", quantity: 100 }] }])}`, {}, async () => { throw new actions.AgentClarificationError("Which saved color should I use: Black or White?"); });
+  const body = await (await post(request({ mode: "work", approvalMode: "auto", pathname: "/companies", pageLabel: "Companies", pageText: "", messages: [{ role: "user", content: "100 PLA pieces for Acme" }] }))).json();
+  assert.deepEqual(body.actions, []); assert.equal(body.clarification.question, body.output); assert.match(body.output, /Black or White/);
+});
 
 test("malformed compound actions are replanned once before storing any proposal", async () => {
   let generated = 0, preparations = 0;
@@ -590,7 +680,7 @@ test("agent keeps the existing working Gemini model when no override is configur
     "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
     "@/lib/ai/agent-execution": { prepareAgentActions: async () => [] },
   }, { GEMINI_API_KEY: "existing-gemini-key", GEMINI_EMAIL_MODEL: "existing-working-model" });
-  const response = await post(request({ mode: "work", pathname: "/companies", pageLabel: "Companies", pageText: "", messages: [{ role: "user", content: "Create an invoice" }] }));
+  const response = await post(request({ mode: "work", pathname: "/companies", pageLabel: "Companies", pageText: "", messages: [{ role: "user", content: "Create an invoice for 10 Black PLA" }] }));
   assert.equal(response.status, 200);
   assert.equal(selectedModel, "existing-working-model");
 });

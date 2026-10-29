@@ -174,7 +174,7 @@ async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: F
   const mailbox = await getMailbox(flow, step.config.mailboxId);
   if (!mailbox) throw new Error("The selected sender mailbox is unavailable.");
   const aiReply = step.type === "ai_auto_reply" ? await prepareFlowAiReply({ userId: flow.user_id, contactId: contact.id, companyId: contact.company_id, conversationId: String(run.context?.emailThreadId || run.conversation_id), config: step.config }) : null;
-  const attachments = aiReply?.attachments ?? (step.config.templateId === "send_catalog" ? await prepareFlowTemplateCatalog() : []);
+  const attachments = aiReply?.attachments ?? (step.config.templateId === "send_catalog" ? await prepareFlowTemplateCatalog(flow.user_id) : []);
   if (aiReply) { subject = aiReply.subject; body = aiReply.body; }
   const conversationId = String(run.context?.emailThreadId || run.conversation_id);
   const { data: previous } = step.config.replyInThread !== false

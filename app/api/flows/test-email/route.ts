@@ -13,7 +13,7 @@ export async function POST(request: Request) {
   const parsed = flowEmailTestSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: parsed.error.issues[0]?.message || "Enter a sample email and complete the flow settings." }, { status: 400 });
   try {
-    const result = await testFlowWithEmails(parsed.data, viewer.displayName);
+    const result = await testFlowWithEmails(parsed.data, viewer.displayName, viewer.id);
     return Response.json({ ok: true, ...result }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Flow email test failed." }, { status: 400 });

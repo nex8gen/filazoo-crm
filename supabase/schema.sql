@@ -1560,3 +1560,366 @@ create extension if not exists pg_cron;
 select cron.schedule('filazoo-task-due-reminders','* * * * *','select public.notify_due_crm_tasks();');
 notify pgrst,'reload schema';
 commit;
+
+begin;
+
+-- Preserve historical snapshots, but validate new/changed product links on every write path.
+create or replace function public.guard_purchase_order_products() returns trigger
+language plpgsql security invoker set search_path='' as $$
+declare line jsonb; idx bigint; product public.products; amount numeric := 0;
+begin
+  for line,idx in select value,ordinality from jsonb_array_elements(new.document->'items') with ordinality loop
+    if jsonb_typeof(line) is distinct from 'object'
+      or jsonb_typeof(line->'quantity') is distinct from 'number'
+      or jsonb_typeof(line->'unitPriceMinor') is distinct from 'number' then
+      raise exception 'Order items need a numeric quantity and unit price.';
+    end if;
+    if (line->>'quantity')::numeric <> trunc((line->>'quantity')::numeric)
+      or (line->>'quantity')::numeric not between 1 and 1000000
+      or (line->>'unitPriceMinor')::numeric <> trunc((line->>'unitPriceMinor')::numeric)
+      or (line->>'unitPriceMinor')::numeric not between 0 and 100000000 then
+      raise exception 'Order quantities and prices must be whole units within the supported limits.';
+    end if;
+    amount := amount + (line->>'quantity')::numeric * (line->>'unitPriceMinor')::numeric;
+    if nullif(line->>'productSku','') is null then
+      if line ? 'productSku' or line ? 'variantId' or line ? 'variantSku' or line->>'pricingMode'='catalog' then
+        raise exception 'Select a catalog product before selecting its variant or catalog pricing.';
+      end if;
+      continue;
+    end if;
+    if tg_op='UPDATE' and new.document->>'currency'=old.document->>'currency'
+      and line=old.document->'items'->(idx::integer-1) then
+      continue;
+    end if;
+    if coalesce(line->>'pricingMode','') not in ('catalog','manual') then
+      raise exception 'Choose catalog pricing or an agreed manual price for each linked product.';
+    end if;
+    select * into product from public.products where sku=line->>'productSku' and active;
+    if not found then raise exception 'Product % is unavailable. Choose an active product or use a custom item.',line->>'productSku'; end if;
+    if btrim(product.currency) is distinct from new.document->>'currency' then
+      raise exception 'Product currency must match the purchase order currency.';
+    end if;
+    if nullif(line->>'variantId','') is null and line->>'sku' is distinct from product.sku then
+      raise exception 'The SKU must match the selected product.';
+    end if;
+    if nullif(line->>'variantId','') is not null and
+      (nullif(line->>'variantSku','') is null or line->>'sku' is distinct from line->>'variantSku') then
+      raise exception 'The SKU must match the selected variant.';
+    end if;
+    if line->>'pricingMode'='catalog' and (line->>'quantity')::numeric < greatest(1,coalesce(product.moq,1)) then
+      raise exception 'The product minimum quantity is %. Use an agreed manual price for an exception.',greatest(1,coalesce(product.moq,1));
+    end if;
+  end loop;
+  if amount is distinct from new.total_minor::numeric or amount > 1000000000000 then
+    raise exception 'Purchase order total must equal its line amounts.';
+  end if;
+  if tg_op='UPDATE' and old.document ? 'customer' and new.document->'customer' is distinct from old.document->'customer'
+    and exists(select 1 from public.invoices where purchase_order_id=old.id and status<>'void') then
+    raise exception 'Customer details are locked while linked invoices exist.';
+  end if;
+  return new;
+end;
+$$;
+revoke all on function public.guard_purchase_order_products() from public,anon,authenticated;
+grant execute on function public.guard_purchase_order_products() to service_role;
+create trigger purchase_orders_product_guard before insert or update on public.purchase_orders
+for each row execute function public.guard_purchase_order_products();
+
+-- The invoice must retain the PO product snapshot, including its variant and agreed price.
+create or replace function public.guard_order_invoice_products() returns trigger
+language plpgsql security invoker set search_path='' as $$
+declare po public.purchase_orders; line jsonb; source jsonb; idx integer; po_id uuid;
+begin
+  po_id := nullif(new.document->>'purchaseOrderId','')::uuid;
+  if po_id is null or new.status='void' then return new; end if;
+  select * into po from public.purchase_orders where id=po_id for update;
+  if not found then raise exception 'Customer order not found.'; end if;
+  for line in select * from jsonb_array_elements(new.document->'items') loop
+    if coalesce(line->>'purchaseOrderLineId','') !~ '^line-[1-9][0-9]*$' then
+      raise exception 'Every invoice item must reference an order line.';
+    end if;
+    idx := substring(line->>'purchaseOrderLineId' from 6)::integer - 1;
+    source := po.document->'items'->idx;
+    if source is null or line->>'productSku' is distinct from source->>'productSku'
+      or line->>'variantId' is distinct from source->>'variantId'
+      or line->>'variantSku' is distinct from source->>'variantSku'
+      or line->>'imageUrl' is distinct from source->>'imageUrl'
+      or (source ? 'productSku' and line->>'pricingMode' is distinct from 'manual') then
+      raise exception 'Invoice product, variant, image and agreed pricing must match the purchase order.';
+    end if;
+  end loop;
+  return new;
+end;
+$$;
+revoke all on function public.guard_order_invoice_products() from public,anon,authenticated;
+grant execute on function public.guard_order_invoice_products() to service_role;
+create trigger invoices_order_product_guard before insert or update on public.invoices
+for each row execute function public.guard_order_invoice_products();
+
+commit;
+-- Private customizations never rewrite the synchronized product baseline.
+create table public.user_product_overrides (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  product_sku text not null references public.products(sku) on update cascade on delete cascade,
+  data jsonb not null check (jsonb_typeof(data) = 'object'),
+  updated_at timestamptz not null default clock_timestamp(),
+  primary key (user_id, product_sku)
+);
+alter table public.user_product_overrides enable row level security;
+revoke all on public.user_product_overrides from public, anon, authenticated;
+grant select, insert, update, delete on public.user_product_overrides to service_role;
+
+alter table public.catalogs add column user_id uuid references auth.users(id) on delete cascade;
+alter table public.catalogs add column product_snapshot jsonb check (jsonb_typeof(product_snapshot) = 'array');
+create index catalogs_user_company_idx on public.catalogs(user_id, company_id, version desc);
+
+-- Recover ownership only where historical audit evidence identifies its creator.
+update public.catalogs c set user_id = evidence.actor_id
+from (select distinct on (data->>'catalogId') data->>'catalogId' as catalog_id, actor_id
+      from public.events where type = 'catalog_created' and actor_id is not null order by data->>'catalogId', created_at) evidence
+where c.id::text = evidence.catalog_id;
+
+create function public.guard_private_catalog() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  if tg_op = 'INSERT' then
+    if new.user_id is null or not exists (select 1 from public.workspace_members where user_id = new.user_id and activated_at is not null) then
+      raise exception 'An active catalog owner is required.';
+    end if;
+    perform pg_advisory_xact_lock(hashtextextended(new.user_id::text || ':' || new.company_id::text, 0));
+    select coalesce(max(version), 0) + 1 into new.version from public.catalogs where user_id = new.user_id and company_id = new.company_id;
+  elsif new.user_id is distinct from old.user_id or new.product_snapshot is distinct from old.product_snapshot
+    or new.product_skus is distinct from old.product_skus or new.company_id is distinct from old.company_id
+    or new.version is distinct from old.version or new.currency is distinct from old.currency or new.price_date is distinct from old.price_date then
+    raise exception 'Saved catalog versions are immutable. Create a new version.';
+  end if;
+  return new;
+end;
+$$;
+revoke all on function public.guard_private_catalog() from public, anon, authenticated;
+grant execute on function public.guard_private_catalog() to service_role;
+create trigger guard_private_catalog before insert or update on public.catalogs for each row execute function public.guard_private_catalog();
+
+insert into storage.buckets(id, name, public, file_size_limit, allowed_mime_types)
+values ('user-product-images', 'user-product-images', false, 5242880, array['image/jpeg','image/png','image/webp','image/gif'])
+on conflict (id) do nothing;
+
+-- Customer information requests and durable reply handoffs (2026-10-29)
+begin;
+
+create table public.agent_reply_requests (
+  id uuid primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  owner_role text not null check (owner_role in ('admin','operator','bd_manager')),
+  company_id uuid not null references public.companies(id) on delete cascade,
+  company_name text not null,
+  mailbox_id uuid references public.workspace_mailboxes(id) on delete set null,
+  recipient text not null check (char_length(recipient) between 3 and 320),
+  subject text not null check (char_length(subject) between 1 and 300),
+  body text not null check (char_length(body) <= 10000),
+  needed text[] not null check (cardinality(needed) between 1 and 8),
+  task_title text not null check (char_length(task_title) between 1 and 200),
+  task_notes text not null check (char_length(task_notes) between 1 and 3000),
+  task_priority text not null default 'normal' check (task_priority in ('low','normal','high')),
+  invoice_id uuid references public.invoices(id) on delete set null,
+  invoice_context jsonb,
+  scope_key text not null,
+  status text not null check (status in ('preparing','sending','waiting','received','cancelled','expired','uncertain','blocked')),
+  revision integer not null default 1,
+  message_id text, thread_key text, sent_record_id uuid,
+  waiting_since timestamptz, send_started_at timestamptz,
+  expires_at timestamptz not null,
+  last_checked_at timestamptz, last_error text,
+  reply_evidence jsonb,
+  task_id uuid references public.crm_tasks(id) on delete set null,
+  created_at timestamptz not null default now(), updated_at timestamptz not null default now()
+);
+alter table public.agent_reply_requests enable row level security;
+revoke all on public.agent_reply_requests from public, anon, authenticated;
+grant select,insert,update,delete on public.agent_reply_requests to service_role;
+create index agent_reply_requests_owner on public.agent_reply_requests(user_id,created_at desc);
+create index agent_reply_requests_mailbox on public.agent_reply_requests(mailbox_id,status,last_checked_at);
+create unique index agent_reply_requests_active_scope on public.agent_reply_requests(user_id,scope_key)
+where status in ('preparing','sending','waiting','uncertain');
+
+-- A worker cannot race cancellation, create duplicate tasks, or resurrect a wait.
+create function public.finish_agent_reply_request(p_id uuid,p_user_id uuid,p_revision integer,p_outcome text,p_evidence jsonb,p_notes text,p_thread_url text)
+returns boolean language plpgsql security invoker set search_path = '' as $$
+declare r public.agent_reply_requests; v_title text; v_message text;
+begin
+  select * into r from public.agent_reply_requests where id=p_id and user_id=p_user_id for update;
+  if not found or r.revision<>p_revision then return false; end if;
+  if p_outcome='received' then
+    if r.status<>'waiting' or r.expires_at<=now() then return false; end if;
+    if p_evidence is null or jsonb_typeof(p_evidence)<>'object'
+       or nullif(r.message_id,'') is null or r.waiting_since is null
+       or coalesce(lower(p_evidence->>'sender'),'')<>r.recipient or coalesce((p_evidence->>'automaticResponse')::boolean,true)
+       or nullif(p_evidence->>'messageId','') is null
+       or nullif(p_evidence->>'timestamp','') is null
+       or (p_evidence->>'timestamp')::timestamptz<r.waiting_since
+       or (p_evidence->>'timestamp')::timestamptz>r.expires_at
+       or not coalesce((lower(p_evidence->>'inReplyTo')=lower(r.message_id) or coalesce(p_evidence->'references','[]'::jsonb) ? lower(r.message_id)),false)
+    then return false; end if;
+    v_title:=r.task_title;
+    v_message:='Customer replied: ' || r.company_name || '. Review the reply and continue: ' || r.task_title;
+  elsif p_outcome='expired' then
+    if r.status<>'waiting' or r.expires_at>now() then return false; end if;
+    v_title:=left('Follow up: ' || r.task_title,200);
+    v_message:='Waiting period ended without a confirmed reply: ' || r.company_name || '. Review before following up.';
+  elsif p_outcome='uncertain' then
+    if r.status not in ('sending','uncertain') then return false; end if;
+    v_title:=left('Check email delivery: ' || r.task_title,200);
+    v_message:='Email delivery needs review for ' || r.company_name || '. Check Sent before sending again.';
+  else raise exception 'Unsupported reply request transition'; end if;
+  -- Recheck live membership, mailbox and assignment inside the transaction.
+  -- The server worker checks Auth suspension using the admin Auth API;
+  -- service_role deliberately has no direct access to auth.users.
+  if not exists(select 1 from public.workspace_members m
+    where m.user_id=r.user_id and m.role=r.owner_role and m.activated_at is not null)
+    or not exists(select 1 from public.workspace_mailboxes b where b.id=r.mailbox_id and b.is_active
+      and (b.type='workspace' or b.user_id=r.user_id)
+      and (r.owner_role<>'bd_manager' or b.type='personal' or exists(select 1 from public.pipeline p where p.company_id=r.company_id and p.owner_id=r.user_id)))
+    or not exists(select 1 from public.contacts c where c.company_id=r.company_id and lower(c.email)=r.recipient)
+  then
+    update public.agent_reply_requests set status='blocked',revision=revision+1,last_error='Mailbox, membership or customer access changed.',updated_at=now() where id=r.id;
+    return false;
+  end if;
+  insert into public.crm_tasks(id,company_id,assigned_to,title,notes,priority,status,due_at)
+    values(r.id,r.company_id,r.user_id,v_title,left(p_notes,24000),r.task_priority,'open',null)
+    on conflict(id) do nothing;
+  insert into public.internal_notifications(id,user_id,message,conversation_id,include_thread_link,task_id)
+    values(r.id,r.user_id,left(v_message,500),p_thread_url,false,r.id) on conflict(id) do nothing;
+  update public.agent_reply_requests set status=p_outcome,revision=revision+1,reply_evidence=p_evidence,
+    task_id=r.id,last_checked_at=now(),updated_at=now() where id=r.id;
+  return true;
+end;
+$$;
+revoke all on function public.finish_agent_reply_request(uuid,uuid,integer,text,jsonb,text,text) from public,anon,authenticated;
+grant execute on function public.finish_agent_reply_request(uuid,uuid,integer,text,jsonb,text,text) to service_role;
+
+-- Reuse the existing Vault-held worker origin/credential. Enable after deployment.
+select cron.schedule('filazoo-customer-replies','* * * * *',$job$
+  select net.http_get(
+    url := (select decrypted_secret from vault.decrypted_secrets where name='flow_cron_origin') || '/api/cron/customer-replies',
+    headers := jsonb_build_object('Authorization','Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name='flow_cron_secret')),
+    timeout_milliseconds := 240000
+  );
+$job$);
+select cron.alter_job(jobid,active:=false) from cron.job where jobname='filazoo-customer-replies';
+notify pgrst,'reload schema';
+commit;
+
+-- Reuse task assignment alert for reply handoffs
+begin;
+
+create or replace function public.finish_agent_reply_request(p_id uuid,p_user_id uuid,p_revision integer,p_outcome text,p_evidence jsonb,p_notes text,p_thread_url text)
+returns boolean language plpgsql security invoker set search_path = '' as $$
+declare r public.agent_reply_requests; v_title text; v_message text; v_notification uuid;
+begin
+  select * into r from public.agent_reply_requests where id=p_id and user_id=p_user_id for update;
+  if not found or r.revision<>p_revision then return false; end if;
+  if p_outcome='received' then
+    if r.status<>'waiting' or r.expires_at<=now() then return false; end if;
+    if p_evidence is null or jsonb_typeof(p_evidence)<>'object'
+       or nullif(r.message_id,'') is null or r.waiting_since is null
+       or coalesce(lower(p_evidence->>'sender'),'')<>r.recipient or coalesce((p_evidence->>'automaticResponse')::boolean,true)
+       or nullif(p_evidence->>'messageId','') is null
+       or nullif(p_evidence->>'timestamp','') is null
+       or (p_evidence->>'timestamp')::timestamptz<r.waiting_since
+       or (p_evidence->>'timestamp')::timestamptz>r.expires_at
+       or not coalesce((lower(p_evidence->>'inReplyTo')=lower(r.message_id) or coalesce(p_evidence->'references','[]'::jsonb) ? lower(r.message_id)),false)
+    then return false; end if;
+    v_title:=r.task_title;
+    v_message:='Customer replied: ' || r.company_name || '. Review the reply and continue: ' || r.task_title;
+  elsif p_outcome='expired' then
+    if r.status<>'waiting' or r.expires_at>now() then return false; end if;
+    v_title:=left('Follow up: ' || r.task_title,200);
+    v_message:='Waiting period ended without a confirmed reply: ' || r.company_name || '. Review before following up.';
+  elsif p_outcome='uncertain' then
+    if r.status not in ('sending','uncertain') then return false; end if;
+    v_title:=left('Check email delivery: ' || r.task_title,200);
+    v_message:='Email delivery needs review for ' || r.company_name || '. Check Sent before sending again.';
+  else raise exception 'Unsupported reply request transition'; end if;
+  -- Recheck live membership, mailbox and assignment inside the transaction.
+  -- The server worker checks Auth suspension using the admin Auth API;
+  -- service_role deliberately has no direct access to auth.users.
+  if not exists(select 1 from public.workspace_members m
+    where m.user_id=r.user_id and m.role=r.owner_role and m.activated_at is not null)
+    or not exists(select 1 from public.workspace_mailboxes b where b.id=r.mailbox_id and b.is_active
+      and (b.type='workspace' or b.user_id=r.user_id)
+      and (r.owner_role<>'bd_manager' or b.type='personal' or exists(select 1 from public.pipeline p where p.company_id=r.company_id and p.owner_id=r.user_id)))
+    or not exists(select 1 from public.contacts c where c.company_id=r.company_id and lower(c.email)=r.recipient)
+  then
+    update public.agent_reply_requests set status='blocked',revision=revision+1,last_error='Mailbox, membership or customer access changed.',updated_at=now() where id=r.id;
+    return false;
+  end if;
+  insert into public.crm_tasks(id,company_id,assigned_to,title,notes,priority,status,due_at)
+    values(r.id,r.company_id,r.user_id,v_title,left(p_notes,24000),r.task_priority,'open',null)
+    on conflict(id) do nothing;
+  -- Task assignment may already have created an alert through crm_tasks_activity.
+  -- Reuse it in this same transaction instead of notifying the user twice.
+  select id into v_notification from public.internal_notifications
+    where task_id=r.id and user_id=r.user_id order by created_at,id limit 1;
+  if v_notification is null then
+    insert into public.internal_notifications(id,user_id,message,conversation_id,include_thread_link,task_id)
+      values(r.id,r.user_id,left(v_message,500),p_thread_url,false,r.id) on conflict(id) do nothing;
+  else
+    update public.internal_notifications set message=left(v_message,500),conversation_id=p_thread_url,include_thread_link=false
+      where id=v_notification and user_id=r.user_id;
+  end if;
+  update public.agent_reply_requests set status=p_outcome,revision=revision+1,reply_evidence=p_evidence,
+    task_id=r.id,last_checked_at=now(),updated_at=now() where id=r.id;
+  return true;
+end;
+$$;
+notify pgrst,'reload schema';
+commit;
+
+-- Workspace task assignment and completion tracking.
+begin;
+alter table public.crm_tasks
+  add column created_by uuid references auth.users(id) on delete set null,
+  add column assigned_by uuid references auth.users(id) on delete set null;
+create index crm_tasks_created_by_idx on public.crm_tasks(created_by) where created_by is not null;
+create index crm_tasks_assigned_by_status_idx on public.crm_tasks(assigned_by,status,created_at desc) where assigned_by is not null;
+
+-- Validate the recipient inside the write transaction, including assignments
+-- made by flows and concurrent membership changes. No new browser grants.
+create function public.validate_crm_task_recipient() returns trigger
+language plpgsql security invoker set search_path='' as $$
+begin
+  if tg_op='UPDATE' then
+    if new.assigned_to is not distinct from old.assigned_to then return new; end if;
+  end if;
+  if new.assigned_to is not null then
+    perform 1 from public.workspace_members
+    where user_id=new.assigned_to and activated_at is not null and role in ('admin','operator','bd_manager') for share;
+    if not found then raise exception 'Choose an active workspace member who can manage tasks.'; end if;
+  end if;
+  return new;
+end;
+$$;
+revoke all on function public.validate_crm_task_recipient() from public,anon,authenticated;
+grant execute on function public.validate_crm_task_recipient() to service_role;
+create trigger crm_tasks_validate_recipient before insert or update of assigned_to on public.crm_tasks
+for each row execute function public.validate_crm_task_recipient();
+
+create function public.notify_task_assigner_on_completion() returns trigger
+language plpgsql security invoker set search_path='' as $$
+begin
+  if new.status='done' and old.status<>'done' and new.assigned_by is not null
+     and new.assigned_by is distinct from new.assigned_to
+     and exists(select 1 from public.workspace_members where user_id=new.assigned_by and activated_at is not null) then
+    insert into public.internal_notifications(user_id,task_id,message,event_key,include_thread_link)
+    values(new.assigned_by,new.id,left('Task completed: '||new.title,500),'task-completed:'||new.id||':'||extract(epoch from new.updated_at),false)
+    on conflict(event_key) do nothing;
+  end if;
+  return new;
+end;
+$$;
+revoke all on function public.notify_task_assigner_on_completion() from public,anon,authenticated;
+grant execute on function public.notify_task_assigner_on_completion() to service_role;
+create trigger crm_tasks_notify_assigner after update of status on public.crm_tasks
+for each row execute function public.notify_task_assigner_on_completion();
+notify pgrst,'reload schema';
+commit;

@@ -7,6 +7,7 @@ import { env, hasSupabaseConfig } from "../env.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 import type { ActivityItem, Catalog, Company, CompanyActivity, CompanyDetails, ContactOption, DataMode, EmailDraft, Product, Reply } from "../types.ts";
 import { crmProduct } from "../product-utils.ts";
+import { withPersonalProducts } from "./product-personalization.ts";
 import { metaOrderLabel } from "../order-estimate.ts";
 import { billingActivity, sentMailActivity, mergeCompanyActivity, type ActivityInvoice, type ActivityInvoiceEvent, type ActivityPayment, type ActivitySentMail } from "../company-activity.ts";
 import { readActivityHistory } from "./activity-history.ts";
@@ -304,14 +305,14 @@ export async function getCompanyProfile(id: string): Promise<{ mode: DataMode; d
 export async function getCompanyDetails(id: string): Promise<{ mode: DataMode; details: CompanyDetails | null }> {
   const mode = getCrmDataMode();
   if (mode === "demo") return { mode, details: null };
-  await authorizeLiveRead();
+  const viewer = await requireWorkspaceMember();
   const admin = createSupabaseAdmin();
   const [companyResult, contactsResult, eventsResult, emailsResult, catalogsResult, commerceResult] = await Promise.all([
     admin.from("companies").select("id,name,website,domain,country,city,segment,source,status,meta_leads(created_at,field_data),company_profiles(summary,fit_score,interest_tags),contacts(id,name,role,email,verification_status,emails(status,direction,created_at)),pipeline(stage,next_followup_at,estimated_order_quantity,estimated_value,currency,owner_id)").eq("id", id).maybeSingle(),
     admin.from("contacts").select("id,name,role,email,verification_status").eq("company_id", id).order("created_at").order("id"),
     readActivityHistory((from, to) => admin.from("events").select("id,type,data,actor_id,created_at").eq("company_id", id).order("created_at", { ascending: false }).order("id").range(from, to)),
     readActivityHistory((from, to) => admin.from("emails").select("id,message_id,subject,body,status,direction,approved_by,sent_at,created_at,contacts!inner(name,email,company_id)").eq("contacts.company_id", id).order("created_at", { ascending: false }).order("id").range(from, to)),
-    readActivityHistory((from, to) => admin.from("catalogs").select("id,version,product_skus,created_at").eq("company_id", id).order("created_at", { ascending: false }).order("id").range(from, to)),
+    readActivityHistory((from, to) => admin.from("catalogs").select("id,version,product_skus,created_at").eq("user_id", viewer.id).eq("company_id", id).order("created_at", { ascending: false }).order("id").range(from, to)),
     admin.from("customer_billing_profiles").select("profile").eq("company_id", id).maybeSingle(),
   ]);
   if (companyResult.error) throw new Error(`Unable to load company: ${companyResult.error.message}`);
@@ -349,7 +350,7 @@ export async function getCompanyDetails(id: string): Promise<{ mode: DataMode; d
 
   const activity: CompanyActivity[] = mergeCompanyActivity([
     // Billing audit rows and payments provide one detailed entry per action.
-    ...events.filter((event) => !invoices.some((invoice) => invoice.id === event.data?.invoiceId && event.type.startsWith("invoice_")) && !(event.type === "catalog_created" && (catalogsResult as CompanyCatalogRow[]).some((catalog) => catalog.id === event.data?.catalogId))).map((event) => ({
+    ...events.filter((event) => !(event.type === "catalog_created" && event.actor_id !== viewer.id) && !invoices.some((invoice) => invoice.id === event.data?.invoiceId && event.type.startsWith("invoice_")) && !(event.type === "catalog_created" && (catalogsResult as CompanyCatalogRow[]).some((catalog) => catalog.id === event.data?.catalogId))).map((event) => ({
       id: `event-${event.id}`,
       type: "event" as const,
       title: event.type.replaceAll("_", " "),
@@ -487,11 +488,12 @@ export async function listContactOptions(): Promise<{ mode: DataMode; contacts: 
 export async function listCatalogs(): Promise<{ mode: DataMode; catalogs: Catalog[] }> {
   const mode = getCrmDataMode();
   if (mode === "demo") return { mode, catalogs: [] };
-  await authorizeLiveRead();
+  const viewer = await requireWorkspaceMember();
 
   const { data, error } = await createSupabaseAdmin()
     .from("catalogs")
     .select("id,product_skus,currency,price_date,version,pdf_url,created_at,companies(name)")
+    .eq("user_id", viewer.id)
     .order("created_at", { ascending: false })
     .limit(200);
   if (error) throw new Error(`Unable to load catalogs: ${error.message}`);
@@ -545,7 +547,7 @@ export async function listReplies(authorizedViewer?: WorkspaceViewer): Promise<{
 export async function listProducts(skus?: string[], options: { requireComplete?: boolean } = {}): Promise<{ mode: DataMode; products: Product[] }> {
   const mode = getCrmDataMode();
   if (mode === "demo") return { mode, products: [] };
-  await authorizeLiveRead();
+  const viewer = await requireWorkspaceMember();
 
   const query = createSupabaseAdmin()
     .from("products")
@@ -559,7 +561,7 @@ export async function listProducts(skus?: string[], options: { requireComplete?:
   ]);
   if (error) throw new Error(`Unable to load products: ${error.message}`);
   if (options.requireComplete && (data?.length ?? 0) > 500) throw new Error("The complete product catalog exceeds the lookup limit. Choose products in the inbox catalog picker.");
-  const syncedProducts = (data ?? []).filter((row) => !row.sku.startsWith("SAMPLE-") && !row.name.toLowerCase().startsWith("[sample]")).map(crmProduct);
+  const syncedProducts = (await withPersonalProducts(data ?? [], viewer.id)).filter((row) => !row.sku.startsWith("SAMPLE-") && !row.name.toLowerCase().startsWith("[sample]")).map(crmProduct);
   return { mode, products: await inventoryModule.withErpInventory(syncedProducts, inventory) };
 }
 

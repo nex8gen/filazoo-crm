@@ -130,6 +130,12 @@ export type OrderInvoice = {
 export function orderLineId(index: number) {
   return `line-${index + 1}`;
 }
+export function orderHasUnreservedItems(order: PurchaseOrder) {
+  const summary = orderBillingSummary(order);
+  return order.document.items.some(
+    (item, index) => item.quantity > (summary.quantities.get(orderLineId(index)) ?? 0),
+  );
+}
 export function orderBillingSummary(order: PurchaseOrder) {
   const invoices = order.invoices ?? [];
   const issued = invoices.filter((invoice) => invoice.status === "issued");
@@ -167,7 +173,7 @@ export function orderBillingSummary(order: PurchaseOrder) {
     quantities,
     canShip:
       percent === 0 ||
-      (fullyInvoiced && paid >= Math.ceil((total * percent) / 100)),
+      (fullyInvoiced && total > 0 && paid >= Math.ceil((total * percent) / 100)),
   };
 }
 export function purchaseOrderTotal(

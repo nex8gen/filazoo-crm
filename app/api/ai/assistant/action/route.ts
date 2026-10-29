@@ -25,7 +25,6 @@ export async function POST(request: Request) {
   if (origin && origin !== new URL(request.url).origin) return Response.json({ error: "Invalid request origin." }, { status: 403, headers });
   const viewer = await getWorkspaceViewer();
   if (!viewer) return Response.json({ error: "Sign in with an active workspace account." }, { status: 401, headers });
-  if (viewer.role === "viewer") return Response.json({ error: "Your workspace role is read-only." }, { status: 403, headers });
   const parsed = decisionSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Approve or decline a saved agent proposal." }, { status: 400, headers });
   const { id, decision, approval } = parsed.data;
@@ -39,6 +38,7 @@ export async function POST(request: Request) {
   if (!agentApprovalAllowed(row.approval_mode, approval)) return Response.json({ error: "This proposal requires your manual approval." }, { status: 403, headers });
   const action = preparedAgentActionSchema.safeParse(row.action);
   if (!action.success) return Response.json({ error: "The saved proposal is invalid." }, { status: 400, headers });
+  if (viewer.role === "viewer" && (action.data.type !== "crm_action" || !["update_product", "create_catalog"].includes(action.data.operation.op))) return Response.json({ error: "Your workspace role is read-only outside your private product catalog." }, { status: 403, headers });
   // Compare-and-set is the execution lock across clicks, retries and server instances.
   const { data: claimed, error: claimError } = await db.from("workspace_agent_actions").update({ status: decision === "decline" ? "declined" : "running", approval }).eq("id", id).eq("user_id", viewer.id).eq("status", "pending").select("id").maybeSingle();
   if (claimError || !claimed) return Response.json({ error: "Another request already handled this action. Check its result.", status: "running" }, { status: 409, headers });

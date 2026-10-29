@@ -1,4 +1,7 @@
+import * as replyTools from "../lib/ai/crm-reply-tools.ts";
+import * as readiness from "../lib/ai/invoice-readiness.ts";
 import test from "node:test";
+import { personalProductService } from "./helpers/personal-products.ts";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -27,7 +30,7 @@ const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(valu
 function load<T>(file: string, dependencies: Record<string, unknown>) {
   const exports = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => name === "server-only" ? {} : dependencies[name] ?? require(name), crypto, Date, Intl, URL, Request, Response, FormData, Error, console });
+  vm.runInNewContext(code, { exports, require: (name: string) => name === "server-only" ? {} : dependencies[name] ?? (name === "./crm-reply-tools" ? replyTools : name === "./crm-reply-execution" ? { replyOperationTarget: () => { throw new Error("Reply workflows use their dedicated fixtures"); } } : name === "../data/customer-reply-requests" ? { listReplyRequests: async () => [] } : name === "@/lib/ai/invoice-readiness" ? readiness : undefined) ?? require(name), crypto, Date, Intl, URL, Request, Response, FormData, Error, console });
   return exports as T;
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- This fake database stores heterogeneous service rows.
@@ -36,7 +39,8 @@ function fixture() {
   const tables: Record<string, Row[]> = {
     crm_tasks: [{ id: recordId, assigned_to: actorId, company_id: companyId, title: "Call buyer", notes: "Keep notes", priority: "normal", status: "open", due_at: "2099-10-30T01:00:00Z", updated_at: "2026-10-29T00:00:00Z" }],
     email_auto_replies: [], workspace_agent_actions: [],
-    catalogs: [{ id: recordId, company_id: companyId, version: 2, currency: "USD", product_skus: ["PLA"] }],
+    workspace_members: [{ user_id: actorId, role: "admin", activated_at: "2026-01-01" }, { user_id: otherId, role: "operator", activated_at: "2026-01-01" }],
+    catalogs: [{ id: recordId, user_id: actorId, company_id: companyId, version: 2, currency: "USD", product_skus: ["PLA"] }],
     email_reply_knowledge: [{ id: recordId, title: "Agreed policy", content: "Only approved lead times may be quoted." }],
   };
   let failTable = "";
@@ -55,7 +59,7 @@ function fixture() {
       return { data: rows.map((row) => ({ ...row })), error: null, count: rows.length };
     };
     const q = { select() { return q; }, eq(key: string, value: unknown) { filters.push((row) => row[key] === value); return q; },
-      in(key: string, values: unknown[]) { filters.push((row) => values.includes(row[key])); return q; }, order() { return q; }, range() { return q; },
+      in(key: string, values: unknown[]) { filters.push((row) => values.includes(row[key])); return q; }, not(key: string, _operator: string, value: unknown) { filters.push(row => (row[key] ?? null) !== value); return q; }, order() { return q; }, range() { return q; },
       update(value: Row) { patch = value; return q; }, insert(value: Row) { insertion = value; return q; }, upsert(value: Row) { insertion = value; upsert = true; return q; },
       async maybeSingle() { const r = run(); return { ...r, data: r.data?.[0] ?? null }; }, async single() { return q.maybeSingle(); },
       then(resolve: (value: unknown) => unknown) { return Promise.resolve(run()).then(resolve); } };
@@ -68,6 +72,7 @@ function fixture() {
   let foundAutomation: Row | null = automation;
   let inbound = true, routeFailure = false;
   const dependencies: Record<string, unknown> = {
+    "../data/product-personalization": personalProductService(tables),
     "next/cache": { revalidatePath() {} },
     "../supabase/admin": { createSupabaseAdmin: () => db }, "../auth": {},
     "../email-auto-reply": { isAutoReplySchemaMissing: () => false }, "../ai/crm-productivity": productivity,
@@ -80,6 +85,7 @@ function fixture() {
     "@/app/api/email/auto-reply/route": { POST: async (input: Request) => { calls.push({ name: "autoReply", body: await input.json() }); assert.equal(input.headers.get("origin"), "https://crm.example.com"); return Response.json(routeFailure ? { error: "Automation changed" } : { ok: true, automation }, { status: routeFailure ? 409 : 200 }); } },
     "@/app/api/email/auto-reply/knowledge/route": { POST: async (input: Request) => { calls.push({ name: "addFact", body: await input.json() }); return Response.json({ ok: true, fact: { id: actionId } }); }, DELETE: async (input: Request) => { calls.push({ name: "deleteFact", body: { url: input.url } }); return Response.json({ ok: true }); } },
   };
+  dependencies["./task-assignees"] = load<typeof import("../lib/data/task-assignees.ts")>("../lib/data/task-assignees.ts", dependencies);
   const taskService = load<typeof import("../lib/data/agent-tasks.ts")>("../lib/data/agent-tasks.ts", dependencies);
   dependencies["../data/agent-tasks"] = taskService;
   const exportService = load<typeof import("../lib/ai/company-export-records.ts")>("../lib/ai/company-export-records.ts", dependencies);
@@ -140,6 +146,24 @@ test("task timestamp races and database failures never report a saved update", a
   assert.equal(f.tables.crm_tasks[0].title, "Call buyer");
   f.fail("crm_tasks");
   await assert.rejects(() => f.taskService.createAgentTask(viewer, actionId, { op: "create_task", title: "Fail" }), /Unable to create/);
+});
+
+test("workspace task assignment validates active writers and keeps creator access without exposing unrelated tasks", async () => {
+  const f = fixture();
+  const operation = { op: "create_task", title: "Team follow-up" };
+  const task = await f.taskService.createAgentTask(viewer, actionId, operation, otherId);
+  assert.equal(task.assigned_to, otherId); assert.equal(task.created_by, actorId); assert.equal(task.assigned_by, actorId);
+  await f.taskService.createAgentTask(viewer, actionId, operation, otherId);
+  assert.equal(f.tables.crm_tasks.filter(row => row.id === actionId).length, 1);
+  await f.taskService.updateAgentTask(viewer, actionId, task.updated_at, { priority: "high" });
+  await assert.rejects(() => f.taskService.editableAgentTask({ ...viewer, id: companyId }, actionId), /another teammate/);
+  f.tables.workspace_members[1].role = "viewer";
+  await assert.rejects(() => f.taskService.createAgentTask(viewer, companyId, operation, otherId), /active workspace member/);
+  f.tables.workspace_members[1].role = "operator"; f.tables.workspace_members[1].activated_at = null;
+  await assert.rejects(() => f.taskService.createAgentTask(viewer, companyId, operation, otherId), /active workspace member/);
+  await assert.rejects(() => f.taskService.createAgentTask(viewer, companyId, operation, companyId), /active workspace member/);
+  f.tables.crm_tasks[0].follows_company_owner = true;
+  await assert.rejects(() => f.taskService.updateAgentTask(viewer, recordId, f.tables.crm_tasks[0].updated_at, { title: "Keep company link" }, otherId), /account owner/);
 });
 
 test("company task markers stay linked and scheduled follow-ups cannot silently lose their due time", async () => {

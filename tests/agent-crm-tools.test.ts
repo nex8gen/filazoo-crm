@@ -1,3 +1,5 @@
+import * as replyTools from "../lib/ai/crm-reply-tools.ts";
+import * as readiness from "../lib/ai/invoice-readiness.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -19,6 +21,7 @@ import * as progress from "../lib/ai/agent-progress.ts";
 import * as profileFields from "../lib/company-profile-fields.ts";
 import * as segments from "../lib/segments.ts";
 import * as productivity from "../lib/ai/crm-productivity.ts";
+import { personalProductService } from "./helpers/personal-products.ts";
 
 const require = createRequire(import.meta.url);
 const companyId = "a1111111-1111-4111-8111-111111111111";
@@ -31,7 +34,7 @@ const request = new Request("http://localhost:3000/api/ai/assistant/action");
 function moduleUnderTest<T>(file: string, dependencies: Record<string, unknown>): T {
   const exports = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => name === "server-only" ? {} : dependencies[name] ?? require(name), Request, Response, FormData, URL, Date, Intl, Error, crypto, console });
+  vm.runInNewContext(code, { exports, require: (name: string) => name === "server-only" ? {} : dependencies[name] ?? (name === "./crm-reply-tools" ? replyTools : name === "./crm-reply-execution" ? { replyOperationTarget: () => { throw new Error("Reply workflows use their dedicated fixtures"); } } : name === "../data/customer-reply-requests" ? { listReplyRequests: async () => [] } : name === "@/lib/ai/invoice-readiness" ? readiness : undefined) ?? require(name), Request, Response, FormData, URL, Date, Intl, Error, crypto, console });
   return exports as T;
 }
 function fixture() {
@@ -69,6 +72,7 @@ function fixture() {
   } };
   const shared = (name: string) => async (...args: unknown[]) => { calls.push({ name, args }); return failure ? { error: "Shared CRM validation failed" } : { success: "Saved by shared service" }; };
   const dependencies = {
+    "../data/product-personalization": personalProductService(tables),
     "./crm-productivity": productivity, "./crm-productivity-execution": {}, "./crm-productivity-records": {},
     "next/cache": { revalidatePath() {} }, "./crm-tools": tools, "../supabase/admin": { createSupabaseAdmin: () => db },
     "@/app/crm-actions": Object.fromEntries(["scheduleCompanyFollowup", "assignPipelineOwner", "bulkUpdateCompanies", "createCatalog", "createProduct", "updateProduct"].map((name) => [name, shared(name)])),

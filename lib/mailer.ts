@@ -38,6 +38,7 @@ export async function sendMailboxEmail(
   mail: {
     to: string;
     subject: string;
+    messageId?: string;
     text?: string;
     html?: string;
     inReplyTo?: string;
@@ -61,6 +62,7 @@ export async function sendMailboxEmail(
       from: config.from,
       to: mail.to,
       subject: mail.subject,
+      messageId: mail.messageId,
       text: mail.text,
       html: mail.html,
       inReplyTo: mail.inReplyTo,

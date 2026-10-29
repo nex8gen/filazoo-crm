@@ -2,7 +2,7 @@ import "server-only";
 import { z } from "zod";
 import type { WorkspaceViewer } from "../auth";
 import { createSupabaseAdmin } from "../supabase/admin";
-import { invoiceBootstrap, invoiceCustomers, invoiceProductSelect } from "../data/invoice-connections";
+import { invoiceBootstrap, invoiceCustomers } from "../data/invoice-connections";
 import { invoiceBankAccounts } from "../data/invoice-banks";
 import { invoicePaymentMethods } from "../data/invoice-payment-methods";
 import { getInvoice } from "../data/invoices";
@@ -13,6 +13,7 @@ import { loadAgentCompany, loadAgentEmails, presentAgentEmail } from "./agent-re
 import { threadKeyForEmail } from "../email-threading";
 import { flowAgentCapabilities } from "../flows";
 import { loadAgentConversation, loadAgentFlow } from "./agent-page-records";
+import { userProductRows } from "../data/product-personalization";
 
 export { searchAgentEmails } from "./agent-records";
 
@@ -47,14 +48,16 @@ export async function loadAgentContext(input: WorkspaceAssistantInput, viewer: W
     ...(emailHistory?.messages.slice(-6).flatMap((email) => `${email.subject} ${email.body}`.match(/[\p{L}\p{N}_-]{2,80}/gu) ?? []) ?? []),
     ...(invoice?.document.items.flatMap((item) => [item.productSku || ""]) ?? []),
   ].filter(Boolean))].slice(0, 150);
-  let productsQuery = db.from("products").select(invoiceProductSelect, { count: "exact" }).eq("active", true).not("sku", "like", "SAMPLE-%");
-  if (terms.length) productsQuery = productsQuery.or(terms.flatMap((term) => [`name.ilike.%${term}%`, `sku.ilike.%${term}%`]).join(","));
+  const productsQuery = userProductRows(viewer.id).then((rows) => {
+    const matching = rows.filter((row) => row.active && (!terms.length || terms.some((term) => `${row.name} ${row.sku} ${row.color}`.toLowerCase().includes(term.toLowerCase()))));
+    return { data: matching.slice(0, 100), count: matching.length, error: null };
+  });
   const customerQuery = terms.length ? db.from("companies").select("id,name,city,country,contacts(id,name,email)", { count: "exact" }).or(terms.map((term) => `name.ilike.%${term}%`).join(",")).order("name").limit(25) : null;
   const flowTask = Boolean(currentFlow || input.pageContext?.flowDraft) || /flow|automat|follow.?up/i.test(`${input.pathname} ${input.messages.at(-1)?.content ?? ""}`);
   const [bootstrap, customers, products, banks, paymentMethods, mailbox, matchingCustomers, flowMailboxes, flowMembers, flows] = await Promise.all([
     optional("Invoice defaults", () => invoiceBootstrap({ companyId, ...(emailContext?.current && companyId ? { email: emailContext.current.contact, threadId: threadKeyForEmail(emailContext.current) } : {}) }), null),
     optional("Customer choices", () => invoiceCustomers(), null),
-    productsQuery.order("name").limit(100),
+    productsQuery,
     optional("Legacy banks", () => invoiceBankAccounts(), []),
     optional("Payment methods", () => invoicePaymentMethods(), []),
     optional("Default sender", () => getEffectiveMailbox(viewer.id), null),
@@ -95,6 +98,6 @@ export async function loadAgentContext(input: WorkspaceAssistantInput, viewer: W
     sender: mailboxHasSmtp(mailbox) ? mailbox?.email : null,
     EXECUTION_RESULTS: completed,
     contextWarnings,
-    permissions: { role: viewer.role, canAct: viewer.role !== "viewer" },
+    permissions: { role: viewer.role, canAct: viewer.role !== "viewer", canEditOwnProducts: true, canCreateOwnCatalogs: true },
   };
 }

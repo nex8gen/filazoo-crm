@@ -13,7 +13,7 @@ import { flowInputSchema } from "../flows";
 import { getEffectiveMailbox, getViewerMailbox, mailboxHasSmtp } from "../data/mailboxes";
 import { canEditInvoice } from "../invoice-permissions";
 import { invoiceLabel, invoiceTotals, type InvoiceDocument } from "../invoices";
-import { buildAgentInvoice, type AgentProposal, type PreparedAgentAction } from "./agent-actions";
+import { buildAgentInvoice, groundInvoiceVariant, groundInvoiceEmailIntent, type AgentPlanningContext, type AgentProposal, type PreparedAgentAction } from "./agent-actions";
 import type { WorkspaceAction } from "./workspace-assistant";
 import { actionWorkProgress, type AgentWorkProgress } from "./agent-progress";
 import { loadAgentCompany, loadAgentEmails, prepareAgentEmail } from "./agent-records";
@@ -31,10 +31,11 @@ async function validateCustomerEmailSource(action: { companyId: string; sourceEm
   }
 }
 
-export async function prepareAgentActions(actions: WorkspaceAction[], viewer: WorkspaceViewer, approvalMode: "ask" | "auto") {
-  if (viewer.role === "viewer") throw new Error("Your workspace role is read-only.");
+export async function prepareAgentActions(actions: WorkspaceAction[], viewer: WorkspaceViewer, approvalMode: "ask" | "auto", context?: AgentPlanningContext) {
+  if (viewer.role === "viewer" && (!actions.length || actions.some((action) => action.type !== "crm_action" || !["update_product", "create_catalog"].includes(action.operation.op)))) throw new Error("Your workspace role is read-only outside your private product catalog.");
   const proposals: AgentProposal[] = [];
-  for (const action of actions) {
+  for (const candidate of actions) {
+    const action = groundInvoiceEmailIntent(candidate, context);
     let prepared: PreparedAgentAction;
     if (action.type === "crm_action") prepared = await prepareCrmAction(action.operation, viewer);
     else if (action.type === "create_company" || action.type === "create_flow") prepared = action;
@@ -76,7 +77,7 @@ export async function prepareAgentActions(actions: WorkspaceAction[], viewer: Wo
           invoicePaymentMethods(),
         ]);
         const base = existing?.document ?? bootstrap.document;
-        const document = buildAgentInvoice(base, action, catalog.products, banks, payments, { creating: action.type === "create_invoice" });
+        const document = buildAgentInvoice(base, groundInvoiceVariant(action, catalog.products, context), catalog.products, banks, payments, { creating: action.type === "create_invoice" });
         await validateInvoiceConnections(document);
         prepared = action.type === "create_invoice"
           ? { type: action.type, document, ...(action.email ? { email: await prepareAgentCatalog(await prepareAgentEmail(action.email, viewer)) } : {}) }

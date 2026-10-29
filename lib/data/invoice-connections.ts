@@ -1,5 +1,6 @@
 import "server-only";
 import { createSupabaseAdmin } from "../supabase/admin";
+import { requireWorkspaceMember } from "../auth";
 import { type InvoiceDocument } from "../invoices";
 import { invoiceDocumentWithDefaults } from "../invoice-defaults";
 import { relatedInvoices } from "./invoice-related";
@@ -78,8 +79,9 @@ export async function invoiceProducts(
     count: count ?? 0,
   };
 }
-export async function customerBilling(companyId: string) {
+export async function customerBilling(companyId: string, authorizedUserId?: string) {
   const db = createSupabaseAdmin();
+  const userId = authorizedUserId ?? (await requireWorkspaceMember()).id;
   const [customer, profile, catalogs] = await Promise.all([
     db
       .from("companies")
@@ -94,6 +96,7 @@ export async function customerBilling(companyId: string) {
     db
       .from("catalogs")
       .select("id,version,currency,product_skus,price_date")
+      .eq("user_id", userId)
       .eq("company_id", companyId)
       .order("created_at", { ascending: false })
       .limit(25),
@@ -109,6 +112,7 @@ export async function customerBilling(companyId: string) {
   };
 }
 export async function invoiceBootstrap(input: {
+  userId?: string;
   companyId?: string;
   email?: string;
   threadId?: string;
@@ -134,7 +138,7 @@ export async function invoiceBootstrap(input: {
       .select("settings")
       .eq("singleton", true)
       .maybeSingle(),
-    companyId ? customerBilling(companyId) : Promise.resolve(null),
+    companyId ? customerBilling(companyId, input.userId) : Promise.resolve(null),
     relatedInvoices({ companyId, email: input.email, threadId: input.threadId }),
   ]);
   if (settings.error) throw settings.error;

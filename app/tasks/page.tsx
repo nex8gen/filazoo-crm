@@ -3,13 +3,20 @@ import { FlowActivity, type FlowActivityData } from "@/components/flow-activity"
 import { listFlowActivity } from "@/lib/data/flow-activity";
 import { requireWorkspaceMember } from "@/lib/auth";
 import { z } from "zod";
+import { CustomerReplyRequests } from "@/components/customer-reply-requests";
+import { listReplyRequests } from "@/lib/data/customer-reply-requests";
 
 export const metadata: Metadata = { title: "Tasks and notifications" };
 
-export default async function TasksPage({ searchParams }: { searchParams: Promise<{ task?: string }> }) {
-  const selected = z.uuid().safeParse((await searchParams).task);
+export default async function TasksPage({ searchParams }: { searchParams: Promise<{ task?: string; view?: string }> }) {
+  const params = await searchParams;
+  const selected = z.uuid().safeParse(params.task);
   const taskId = selected.success ? selected.data : undefined;
-  const activity = await listFlowActivity(false, { taskPage: 0, alertPage: 0, taskId }) as FlowActivityData;
   const viewer = await requireWorkspaceMember();
-  return <div className="mx-auto max-w-6xl space-y-6"><div><h1 className="text-2xl font-semibold">Tasks and notifications</h1><p className="mt-2 text-sm text-muted-foreground">Your personal tasks, company follow-ups, automation alerts and AI email reviews.</p></div><FlowActivity initial={activity} taskId={taskId} canManage={viewer.role !== "viewer"} /></div>;
+  const [activity, waits] = await Promise.all([
+    listFlowActivity(false, { taskPage: 0, alertPage: 0, taskId }),
+    viewer.role !== "viewer" ? listReplyRequests(viewer).then((requests) => ({ requests, error: "" })).catch(() => ({ requests: [], error: "Unable to load customer waits. Please refresh." })) : null,
+  ]);
+  const initialView = params.view === "notifications" ? "notifications" : params.view === "replies" && waits ? "replies" : "tasks";
+  return <FlowActivity key={`${taskId ?? "work"}:${params.view ?? "tasks"}`} initial={activity as FlowActivityData} taskId={taskId} initialView={initialView} canManage={viewer.role !== "viewer"} customerReplies={waits ? <CustomerReplyRequests initial={waits.requests} initialError={waits.error} /> : undefined} />;
 }

@@ -18,7 +18,7 @@ export const billingProfileSchema = z.object({
   currency: z.enum(invoiceCurrencies),
   termsDays: z.number().int().min(0).max(365),
 });
-export type BillingProfile = z.infer<typeof billingProfileSchema>;
+export type BillingProfile = z.infer<typeof billingProfileSchema> & { shippingRecipient?: string; shippingAddress?: string; shippingPhone?: string };
 export const sellerSettingsSchema = z.object({
   sellerName: z.string().trim().min(1).max(200),
   sellerAddress: z.string().trim().max(2000),
@@ -170,16 +170,23 @@ export function withInvoiceProductImages(
 export function withBillingCustomer(
   doc: InvoiceDocument,
   customer: BillingCustomer,
-  profile?: BillingProfile | null,
+  profile?: Partial<BillingProfile> | null,
   contactId?: string,
 ): InvoiceDocument {
   const contact =
     customer.contacts.find((item) => item.id === contactId) ??
     customer.contacts[0];
+  // Profile patches can contain only shipping fields. They must not erase
+  // valid workspace currency/terms with undefined values.
+  const currency = billingProfileSchema.shape.currency.safeParse(profile?.currency);
+  const terms = billingProfileSchema.shape.termsDays.safeParse(profile?.termsDays);
+  if (profile?.currency && !currency.success) throw new Error("The customer's saved billing currency is invalid. Choose a supported currency in the customer profile.");
+  if (profile?.termsDays != null && !terms.success) throw new Error("The customer's saved payment terms are invalid. Review the customer billing profile.");
+  const shipping = z.object({ shippingRecipient: z.string().max(160).nullish(), shippingAddress: z.string().max(2000).nullish(), shippingPhone: z.string().max(80).nullish() }).parse(profile ?? {});
   const due = z.iso.date().safeParse(doc.issueDate).success
     ? new Date(`${doc.issueDate}T00:00:00Z`)
     : null;
-  if (due) due.setUTCDate(due.getUTCDate() + (profile?.termsDays ?? 0));
+  if (due && terms.success) due.setUTCDate(due.getUTCDate() + terms.data);
   return {
     ...doc,
     companyId: customer.id,
@@ -190,9 +197,12 @@ export function withBillingCustomer(
       profile?.address ??
       [customer.city, customer.country].filter(Boolean).join(", "),
     customerTaxId: profile?.taxId ?? "",
-    ...(doc.items.every((item) => !item.description) && profile
-      ? { currency: profile.currency }
+    shippingRecipient: shipping.shippingRecipient ?? "",
+    shippingAddress: shipping.shippingAddress ?? "",
+    shippingPhone: shipping.shippingPhone ?? "",
+    ...(doc.items.every((item) => !item.description) && currency.success
+      ? { currency: currency.data }
       : {}),
-    dueDate: due && profile ? due.toISOString().slice(0, 10) : doc.dueDate,
+    dueDate: due && terms.success ? due.toISOString().slice(0, 10) : doc.dueDate,
   };
 }

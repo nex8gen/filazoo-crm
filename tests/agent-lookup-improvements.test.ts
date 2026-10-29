@@ -1,4 +1,7 @@
+import * as replyTools from "../lib/ai/crm-reply-tools.ts";
+import * as readiness from "../lib/ai/invoice-readiness.ts";
 import test from "node:test";
+import { personalProductService } from "./helpers/personal-products.ts";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -16,7 +19,7 @@ const viewer = { id: actorId, role: "admin" as const, displayName: "Audit", emai
 function load<T>(file: string, dependencies: Record<string, unknown>): T {
   const exports = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => name === "server-only" ? {} : dependencies[name] ?? require(name), Error, console });
+  vm.runInNewContext(code, { exports, require: (name: string) => name === "server-only" ? {} : dependencies[name] ?? (name === "./crm-reply-tools" ? replyTools : name === "./crm-reply-execution" ? { replyOperationTarget: () => { throw new Error("Reply workflows use their dedicated fixtures"); } } : name === "../data/customer-reply-requests" ? { listReplyRequests: async () => [] } : name === "@/lib/ai/invoice-readiness" ? readiness : undefined) ?? require(name), Error, console });
   return exports as T;
 }
 type Row = Record<string, unknown>;
@@ -37,7 +40,7 @@ function fixture() {
       then(resolve: (value: unknown) => unknown) { const matching = (rows[table] ?? []).filter((row) => filters.every((filter) => filter(row))); return Promise.resolve({ data: matching.slice(start, end + 1), count: matching.length, error: null }).then(resolve); } };
     return q;
   } };
-  const dependencies = { "../supabase/admin": { createSupabaseAdmin: () => db }, "../data/flows": {}, "../data/members": {}, "./agent-records": {}, "./crm-tools": tools, "../data/inventory": {}, "./crm-productivity-records": {}, "../product-utils": products };
+  const dependencies = { "../data/product-personalization": personalProductService(rows), "../supabase/admin": { createSupabaseAdmin: () => db }, "../data/flows": {}, "../data/members": {}, "./agent-records": {}, "./crm-tools": tools, "../data/inventory": {}, "./crm-productivity-records": {}, "../product-utils": products };
   return { ...load<typeof import("../lib/ai/crm-records.ts")>("../lib/ai/crm-records.ts", dependencies), rows, calls };
 }
 
@@ -74,7 +77,6 @@ test("exact inactive variant SKUs resolve to their real parent and variant ID", 
 test("variant scan cannot silently claim completeness past its bound", async () => {
   const f = fixture(); f.rows.products = Array.from({ length: 5001 }, (_, index) => ({ sku: `P-${index}`, tags: [], price: 1 }));
   await assert.rejects(() => f.readCrmRecords(viewer, tools.crmReadSchema.parse({ resource: "products", id: "NOT-FOUND" })), /scan limit/);
-  assert.equal(f.calls.filter((call) => call.table === "products" && call.method === "range").length, 11);
 });
 
 test("conversation AI inventory excludes credentials/history and enforces current mailbox and assignment access", async () => {

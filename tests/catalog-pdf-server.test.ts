@@ -10,6 +10,7 @@ import * as catalogPdf from "../lib/catalog-pdf.ts";
 import * as imageLayout from "../lib/catalog-image-layout.ts";
 import { b2bProducts } from "../lib/data/b2b-products.ts";
 import type { Product } from "../lib/types.ts";
+import * as productImages from "../lib/product-images.ts";
 
 const require = createRequire(import.meta.url);
 async function fixture() {
@@ -32,6 +33,7 @@ async function fixture() {
       files.push(url); if (!assets.has(url)) throw new Error("Missing photo"); return assets.get(url);
     } }, "node:path": path, sharp,
     "./catalog-pdf.ts": catalogPdf, "./catalog-image-layout.ts": imageLayout,
+    "./product-images.ts": productImages,
   };
   const code = ts.transpileModule(readFileSync(new URL("../lib/catalog-pdf-server.ts", import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },

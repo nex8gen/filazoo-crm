@@ -18,6 +18,7 @@ async function currentCatalog() {
     sku: product.sku, name: product.name, imageUrl: product.imageUrl, material: product.material,
     color: product.color, colors: product.colors, diameter: product.diameter, weight: product.weight,
     price: product.price, moq: product.moq, priceTiers: product.priceTiers, variants: product.variants,
+    currency: product.currency, stockStatus: product.stockStatus, leadTime: product.leadTime,
   })))).digest("hex");
   return { products: active, snapshot: { productSkus: active.map((product) => product.sku), fingerprint } };
 }

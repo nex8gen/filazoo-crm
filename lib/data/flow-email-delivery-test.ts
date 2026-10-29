@@ -123,8 +123,8 @@ export async function processFlowEmailDeliveryTest(id: string, userId: string) {
     const render = (value: string) => value.replaceAll("{{first_name}}", firstName);
     const reply = step.type === "ai_auto_reply" ? await generateFlowAiReply({ config: step.config, contact: { name: input.customerName, email: sample.from },
       company: { name: input.companyName }, managerName: row.manager_name, messages: history,
-      productRows: await loadFlowReplyProducts(step.config), previousAutomatedMessages: row.result.length + (input.firstMessage ? 0 : 1) })
-      : { subject: render(String(step.config.subject || template?.subject || "")), body: render(String(step.config.body || template?.body || "")), attachments: step.config.templateId === "send_catalog" ? await prepareFlowTemplateCatalog() : [] };
+      productRows: await loadFlowReplyProducts(step.config, userId), previousAutomatedMessages: row.result.length + (input.firstMessage ? 0 : 1) })
+      : { subject: render(String(step.config.subject || template?.subject || "")), body: render(String(step.config.body || template?.body || "")), attachments: step.config.templateId === "send_catalog" ? await prepareFlowTemplateCatalog(userId) : [] };
     if (!reply.subject || !reply.body) throw new Error("The email step did not produce a subject and body.");
     const subject = `[Flow test] ${reply.subject}`;
     const threadId = `flow-test:${id}`;

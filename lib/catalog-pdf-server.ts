@@ -5,15 +5,23 @@ import sharp from "sharp";
 import { buildCatalogPdf, catalogVariantImage, DEFAULT_CATALOG_IMAGE, type CatalogImage, type CatalogOptions } from "./catalog-pdf.ts";
 import { catalogImageCrop } from "./catalog-image-layout.ts";
 import type { Product } from "./types.ts";
+import { privateProductImagePattern, PRODUCT_IMAGE_BUCKET } from "./product-images.ts";
 
 export async function loadCatalogImages(products: Product[]) {
   const urls = [...new Set([DEFAULT_CATALOG_IMAGE, ...products.flatMap(product => [catalogVariantImage(product), ...product.variants.map(variant => catalogVariantImage(product, variant))])])];
   const images = new Map<string, CatalogImage>();
-  for (let index = 0; index < urls.length; index += 6) {
-    await Promise.all(urls.slice(index, index + 6).map(async url => {
+  for (let index = 0; index < urls.length; index += 12) {
+    await Promise.all(urls.slice(index, index + 12).map(async url => {
       try {
         let input: Buffer;
-        if (url.startsWith("/") && !url.startsWith("//")) {
+        const privateImage = privateProductImagePattern.exec(url);
+        if (privateImage) {
+          const { createSupabaseAdmin } = await import("./supabase/admin.ts");
+          const { data, error } = await createSupabaseAdmin().storage.from(PRODUCT_IMAGE_BUCKET).download(`${privateImage[1]}/${privateImage[2]}`);
+          if (error || !data) return;
+          input = Buffer.from(await data.arrayBuffer());
+          if (input.length > 10_000_000) return;
+        } else if (url.startsWith("/") && !url.startsWith("//")) {
           const root = path.resolve(process.cwd(), "public");
           const file = path.resolve(root, `.${url}`);
           if (!file.startsWith(root + path.sep)) return;

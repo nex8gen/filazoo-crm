@@ -40,7 +40,8 @@ export async function productivityTarget(operation: ProductivityOperation, viewe
       if (!invoice) throw new Error("The invoice is unavailable.");
       return { name: `INV-${String(invoice.number).padStart(6, "0")}`, value: invoice, preview: { documentType: "Invoice PDF", customer: invoice.document.customerName, status: invoice.status } };
     }
-    const catalog = await one("catalogs", "id,company_id,currency,version,product_skus,price_date,pdf_url", operation.id);
+    const catalog = await one("catalogs", "id,user_id,company_id,currency,version,product_skus,price_date,pdf_url", operation.id);
+    if (catalog.user_id !== viewer.id) throw new Error("This catalog belongs to another account or is unavailable.");
     return { name: `Catalog v${catalog.version}`, value: catalog, preview: { documentType: "Catalog PDF", currency: catalog.currency, version: catalog.version, products: catalog.product_skus } };
   }
   if (operation.op === "conversation_auto_reply") {

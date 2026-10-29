@@ -26,11 +26,13 @@ export function EmailAccountsWorkspace({ initialData, ...props }: Props) {
     const pending = loads.current.get(mailboxId);
     if (pending && !pending.controller.signal.aborted) return pending.promise;
     const controller = new AbortController();
+    // Older browsers support AbortController but not AbortSignal.any/timeout.
+    const timeout = setTimeout(() => controller.abort(new DOMException("Mailbox request timed out. Please try again.", "TimeoutError")), 30_000);
     const promise = (async () => {
       try {
         const response = await fetch(`/api/email/inbox?mailboxId=${encodeURIComponent(mailboxId)}&refresh=false`, {
           cache: "no-store",
-          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]),
+          signal: controller.signal,
         });
         const next = await response.json();
         if (controller.signal.aborted) throw new DOMException("Mailbox request cancelled", "AbortError");
@@ -40,6 +42,7 @@ export function EmailAccountsWorkspace({ initialData, ...props }: Props) {
         snapshots.current.set(mailboxId, next);
         return next as EmailInboxBackendData;
       } finally {
+        clearTimeout(timeout);
         if (loads.current.get(mailboxId)?.controller === controller) loads.current.delete(mailboxId);
       }
     })();

@@ -1,0 +1,17 @@
+export const zhCNPurchaseOrders: Record<string, string> = {
+  "Available catalog:": "可用产品目录：",
+  "Cancel selection": "取消选择",
+  "Change product": "更换产品",
+  "Choose a product in the catalog above. The quantity and agreed price will be kept.": "请从上方目录中选择产品，数量和约定价格将保持不变。",
+  "Connect to product": "关联产品",
+  "Convert to custom item": "转换为自定义项目",
+  "Custom item · Not connected to Products": "自定义项目 · 尚未关联产品目录",
+  "Refresh details, keep agreed price": "刷新详情并保留约定价格",
+  "Save your order changes before creating an invoice.": "请先保存订单更改，再创建发票。",
+  "Change the order currency above to match the catalog before adding products.": "添加产品前，请在上方将订单币种改为与产品目录一致。",
+  "No active products": "暂无在售产品",
+  "Catalog currencies could not be loaded.": "无法加载产品目录币种。",
+  "This product is unavailable in the order currency. Choose another product or convert the line to a custom item.": "此产品不支持订单币种，请选择其他产品或转换为自定义项目。",
+  "This variant is no longer available. Use Change product to choose a current variant.": "此规格已不可用，请点击“更换产品”选择当前规格。",
+  "Unable to refresh product details.": "无法刷新产品详情。",
+};

@@ -15,7 +15,7 @@ declare
   marker constant text := 'Scheduled from intelligent next follow-up recommendation.';
 begin
   select user_id into strict actor from public.workspace_members where activated_at is not null and role='admin' limit 1;
-  select user_id into strict teammate from public.workspace_members where activated_at is not null and user_id<>actor limit 1;
+  select user_id into strict teammate from public.workspace_members where activated_at is not null and role in ('admin','operator','bd_manager') and user_id<>actor limit 1;
   insert into public.companies(name) values('Task notification rollback verification') returning id into company;
   insert into public.pipeline(company_id,owner_id,next_followup_at) values(company,actor,old_due);
   select id into strict scheduled from public.crm_tasks where company_id=company and notes=marker and status='open';

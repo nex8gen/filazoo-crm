@@ -32,6 +32,7 @@ const authPaths = [
 ];
 
 function itemIsActive(pathname: string, item: NavigationItem) {
+  if (item.activePrefix && pathname.startsWith(item.activePrefix)) return true;
   if (item.href === "/" || item.exact) return pathname === item.href;
   return pathname === item.href || pathname.startsWith(`${item.href}/`);
 }

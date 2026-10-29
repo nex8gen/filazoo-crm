@@ -1,4 +1,7 @@
+import * as replyTools from "../lib/ai/crm-reply-tools.ts";
+import * as readiness from "../lib/ai/invoice-readiness.ts";
 import test from "node:test";
+import { personalProductService } from "./helpers/personal-products.ts";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -21,7 +24,7 @@ const require = createRequire(import.meta.url);
 function moduleUnderTest<T>(file: string, dependencies: Record<string, unknown>): T {
   const exports = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => name === "server-only" ? {} : dependencies[name] ?? require(name), Response, Request, URL, FormData, Date, Error, crypto, console, Buffer, Intl });
+  vm.runInNewContext(code, { exports, require: (name: string) => name === "server-only" ? {} : dependencies[name] ?? (name === "./crm-reply-tools" ? replyTools : name === "./crm-reply-execution" ? { replyOperationTarget: () => { throw new Error("Reply workflows use their dedicated fixtures"); } } : name === "../data/customer-reply-requests" ? { listReplyRequests: async () => [] } : name === "@/lib/ai/invoice-readiness" ? readiness : undefined) ?? require(name), Response, Request, URL, FormData, Date, Error, crypto, console, Buffer, Intl });
   return exports as T;
 }
 
@@ -99,6 +102,22 @@ function executionFixture() {
   const execution = moduleUnderTest<typeof import("../lib/ai/agent-execution.ts")>("../lib/ai/agent-execution.ts", dependencies);
   return { ...execution, tables, savedForms, savedPatches, savedFlows, savedInvoices, payments, sent, dependencies, changeCustomer: () => { fingerprint = "b".repeat(64); }, invoiceReads: () => invoiceReads, bootstrapInput: () => bootstrapInput };
 }
+
+test("preparation grounds explicit variant colors in the actual catalog before saving any review card", async () => {
+  const f = executionFixture();
+  Object.assign(f.dependencies["../data/invoice-connections"], { invoiceProducts: async () => ({ products: [{ sku: "SILK", name: "Silk PLA", currency: "USD", moq: 1, priceMinor: 500, tiers: [], stockStatus: "Available", imageUrl: null, variants: [
+    { id: "red-gold", name: "Red Gold", sku: "SILK-01", priceMinor: 566, stockStatus: "Available" }, { id: "black-gold", name: "Black Gold", sku: "SILK-02", priceMinor: 650, stockStatus: "Available" },
+  ] }] }) });
+  const input = { type: "create_invoice" as const, companyId, items: [{ productSku: "SILK", variantId: "red-gold", quantity: 100 }] };
+  const [proposal] = await f.prepareAgentActions([input], viewer, "ask", { messages: [{ role: "user", content: "100 PLA silk black and gold pieces" }] });
+  assert.equal(proposal.action.type, "create_invoice");
+  if (proposal.action.type !== "create_invoice") throw new Error("Expected draft invoice");
+  assert.equal(proposal.action.document.items[0].variantId, "black-gold"); assert.equal(proposal.action.document.items[0].unitPriceMinor, 650);
+  assert.equal(f.savedInvoices.length, 0); assert.equal(f.sent.length, 0);
+  const count = f.tables.workspace_agent_actions.length;
+  await assert.rejects(() => f.prepareAgentActions([input], viewer, "auto", { messages: [{ role: "user", content: "100 PLA purple gold pieces" }] }), /Which saved variant/);
+  assert.equal(f.tables.workspace_agent_actions.length, count, "A missing variant must not create even an auto-approved proposal");
+});
 
 test("company creation returns its verified saved ID for dependent actions and never invents a success", async () => {
   const f = executionFixture();
@@ -182,18 +201,19 @@ test("email lookup loads full accessible inbound bodies, matches secondary conta
     { ...base, id: "ambiguous", contact: "shared@example.com" },
     ...Array.from({ length: 7 }, (_, index) => ({ ...base, id: `recent-${index}` })),
     { ...base, id: "demo", demo: true }, { ...base, id: "outbound", direction: "outbound" },
-    { ...base, id: "other-customer", companyId: invoiceId, contact: "other@example.com" },
+    { ...base, id: "other-customer", companyId: invoiceId, contact: "other@example.com", bodyLoaded: false },
   ];
   let reads = 0;
   const records = moduleUnderTest<typeof import("../lib/ai/agent-records.ts")>("../lib/ai/agent-records.ts", {
     "../supabase/admin": { createSupabaseAdmin: () => database(tables) }, "../company-commerce": commerce,
     "../email-inbox": { getEmailInboxBackendData: async (options: { syncMailbox: boolean; history: boolean }) => { assert.equal(options.syncMailbox, false); assert.equal(options.history, true); return { emails: messages, inboxError: "Some mailbox history unavailable" }; } },
-    "../data/mailboxes": { getViewerMailboxes: async () => [], getEffectiveMailbox: async () => ({ id: "mailbox" }) },
+    "../data/mailboxes": { getViewerMailboxes: async () => [{ id: "mailbox" }], getEffectiveMailbox: async () => ({ id: "mailbox" }) },
     "../data/mailbox-sync": { mailboxSyncKey: () => "key", loadMailboxMessageContent: async (_mailbox: unknown, uid: number) => { reads++; if (uid === 2) throw new Error("Body unavailable"); return { body: "Ship to 99 New Road, Shanghai 200000, China" }; } },
     "../email-threading": threading,
   });
   const result = await records.searchAgentEmails(viewer, { companyId, query: "", offset: 0 });
   assert.equal(result.coverage.matching, 10);
+  assert.equal(result.coverage.unloadedBodiesNotSearched, 2, "Other customers' unloaded bodies do not make this customer search incomplete");
   assert.equal(result.coverage.included, 8);
   assert.equal(result.coverage.nextOffset, 8);
   assert.match(result.coverage.mailboxError || "", /history unavailable/);
@@ -463,6 +483,7 @@ test("open email scope overrides an old company and does not reuse another custo
   const context = moduleUnderTest<typeof import("../lib/ai/agent-context.ts")>("../lib/ai/agent-context.ts", {
     "./agent-page-records": {},
     "../supabase/admin": { createSupabaseAdmin: () => database({ workspace_agent_actions: [{ id: actionId, user_id: viewer.id, status: "completed", result: { invoiceId } }], products: [], companies: [] }) },
+    "../data/product-personalization": personalProductService({ products: [] }),
     "../data/invoice-connections": { invoiceBootstrap: async ({ companyId }: { companyId?: string }) => { if (supportingFailure) throw new Error("Billing unavailable"); bootstrapCompany = companyId; return { document, billing: {} }; }, invoiceCustomers: async () => ({ customers: [], count: 0 }), invoiceProductSelect: "sku,name" },
     "../data/invoice-banks": { invoiceBankAccounts: async () => [] },
     "../data/invoice-payment-methods": { invoicePaymentMethods: async () => [] },
@@ -554,4 +575,14 @@ test("catalog draft retrieval returns PDF data only after owner and source acces
   stale = true;
   assert.equal((await route.GET(request)).status, 409);
   assert.equal(renderCount, 1);
+});
+
+
+test("invoice preparation removes invented email sends before SMTP checks and execution", async () => {
+  const f = executionFixture();
+  const [proposal] = await f.prepareAgentActions([{ type: "create_invoice", companyId, items: [{ productSku: "PLA", quantity: 100 }], email: { ...email, delivery: "send" } }], viewer, "ask", { messages: [{ role: "user", content: "Prepare a draft invoice for review only" }] });
+  assert.equal("email" in proposal.action, false);
+  await f.executeAgentAction(actionId, proposal.action, viewer, request);
+  assert.equal(f.savedInvoices.length, 1);
+  assert.equal(f.sent.length, 0);
 });

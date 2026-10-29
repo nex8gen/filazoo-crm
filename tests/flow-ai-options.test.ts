@@ -23,6 +23,8 @@ function fixture() {
   const query = { select: () => query, eq: () => query, order: () => query, range: () => query, throwOnError: async () => ({ data: productRows }) };
   const dependencies: Record<string, unknown> = {
     "server-only": {}, "../supabase/admin.ts": { createSupabaseAdmin: () => ({ from: () => query }) },
+    "./product-personalization.ts": { userProductRows: async (userId: string) => { assert.equal(userId, "synthetic-owner"); return productRows; } },
+    "../auth.ts": { requireWorkspaceMember: async () => ({ id: "synthetic-owner" }) },
     "../product-utils.ts": { crmProduct },
     "../invoice-links.ts": { invoiceProduct },
     "../catalog-pdf-server.ts": { buildServerCatalogPdf: async (...args: Parameters<typeof buildCatalogPdf>) => { catalogRequests.push(args[0]); return buildCatalogPdf(...args); } },

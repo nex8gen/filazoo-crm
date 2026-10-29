@@ -47,6 +47,8 @@ privileges with all test data rolled back.
 
 ## Chat and agent behavior
 
+Missing business details are a conversation step. Agent mode can return a validated question without creating proposals, retain the answer in saved history and continue the original task. A bare invoice request uses the verified open customer and asks for products, colors and quantities; without a customer it asks for a name/email. Multiple company matches require a distinguishing choice. Saved, unexpired invoice review cards are available as bounded, owner-scoped planning evidence on the next turn, so address questions can be answered without preparing duplicate invoices. Explicit single-line colors/SKUs are checked against the actual catalog before review; unavailable or ambiguous variants produce a question. See [clarification verification](agent-clarification-2026-10-29.md).
+
 Chat is read-only. The assistant route discards action output in chat mode and never creates proposals for it.
 
 The sidebar captures the open email and mailbox, Messenger conversation, or flow editor when a request is submitted. Chat also reloads selected records for accurate replies and summaries, while keeping actions disabled. Each mailbox/conversation/flow has its own sidebar history. Source emails are reloaded through accessible mailboxes again at approval and execution; replies retain the selected sender mailbox and threading. Unavailable invoice defaults, payment settings or older message bodies are reported as coverage limits rather than blocking an otherwise accessible selected email. A failed selected-message read still blocks the request.
@@ -144,3 +146,6 @@ The report covers company identity, activities, sourced size signals, buying pot
 - `node --env-file=.env.local --experimental-strip-types scripts/verify-agent-email-profile.ts` checks real provider behavior for email lookup without an open conversation, a misspelled address request, latest-address corrections and missing shipping details using synthetic messages only.
 - `node --env-file=.env.local --experimental-strip-types scripts/verify-customer-research.ts` checks live Google Search and website grounding using public Prusa company information. It reports source labels and safe error categories without printing credentials or CRM data.
 - Authenticated browser verification requires signing in to the local CRM. Live email delivery requires an explicit recipient and send request.
+# Customer reply handoffs
+
+The agent can request missing customer information and persist a one-shot reply wait through `request_customer_information`, watch an existing sent email with `wait_for_customer_reply`, and stop a wait with `cancel_reply_request`. These operations require review. Inspect saved status through the `reply_requests` resource and Tasks → Waiting on customers. A matching human reply creates a review task and notification; it does not automatically create, issue or send an invoice. See [customer handoff behavior and validation](agent-customer-handoffs-2026-10-29.md).

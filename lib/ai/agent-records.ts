@@ -62,24 +62,30 @@ export function presentAgentEmail(email: InboxEmailItem) {
 
 /** Uses the same access-filtered inbox as the email UI; never searches raw mailbox tables. */
 export async function searchAgentEmails(viewer: WorkspaceViewer, search: AgentEmailSearch) {
-  const inbox = await getEmailInboxBackendData({ syncMailbox: false, history: true });
+  const mailboxes = await getViewerMailboxes(viewer.id);
+  const searched = mailboxes.slice(0, 8);
+  const sources = await Promise.all(searched.map(async (mailbox) => {
+    try { return { mailboxId: mailbox.id, inbox: await getEmailInboxBackendData({ syncMailbox: false, history: true, mailboxId: mailbox.id }), error: null }; }
+    catch { return { mailboxId: mailbox.id, inbox: null, error: "Mailbox history unavailable" }; }
+  }));
+  const inbox = { emails: sources.flatMap((source) => (source.inbox?.emails ?? []).map((email) => ({ ...email, mailboxId: source.mailboxId }))), inboxError: sources.some((source) => source.error || source.inbox?.inboxError) ? "Some mailbox history unavailable" : null };
   const db = createSupabaseAdmin();
   const contacts = search.companyId ? await db.from("contacts").select("email").eq("company_id", search.companyId) : null;
   if (contacts?.error) throw new Error("Unable to load this customer's email addresses.");
   const addresses = new Set((contacts?.data ?? []).map((row) => row.email?.trim().toLowerCase()).filter(Boolean));
   const query = search.query.toLowerCase();
-  const candidates = inbox.emails.filter((email) => !email.demo && email.direction === "inbound"
+  const accessibleCandidates = inbox.emails.filter((email) => !email.demo && email.direction === "inbound"
     && (!search.companyId || addresses.has(email.contact.trim().toLowerCase()))
-    && (!search.emailId || email.id === search.emailId)
-    && (!query || `${email.contact}\n${email.company}\n${email.subject}\n${email.body}`.toLowerCase().includes(query)))
+    && (!search.emailId || email.id === search.emailId));
+  const candidates = accessibleCandidates.filter((email) => (!query || `${email.contact}\n${email.company}\n${email.subject}\n${email.body}`.toLowerCase().includes(query)))
     .sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp));
   if (search.emailId && !candidates.length) throw new Error("The requested customer email is unavailable or does not match this search.");
   const selected = candidates.slice(search.offset, search.offset + 8);
   const senders = [...new Set(selected.map((email) => email.contact.trim().toLowerCase()))];
   const matches = senders.length ? await db.from("contacts").select("company_id,email").in("email", senders) : null;
   if (matches?.error) throw new Error("Unable to match emails to customer profiles.");
-  const mailbox = await getEffectiveMailbox(viewer.id);
   const messages = await Promise.all(selected.map(async (email) => {
+    const mailbox = searched.find((candidate) => candidate.id === email.mailboxId);
     const companyIds = [...new Set((matches?.data ?? []).filter((row) => row.email?.trim().toLowerCase() === email.contact.trim().toLowerCase()).map((row) => row.company_id as string))];
     const companyId = companyIds.length === 1 ? companyIds[0] : null;
     try {
@@ -99,10 +105,11 @@ export async function searchAgentEmails(viewer: WorkspaceViewer, search: AgentEm
     messages,
     companies: await Promise.all(companyIds.map(loadAgentCompany)),
     coverage: {
-      scope: "accessible synced inbound emails; no live mailbox sync",
+      scope: "accessible synced inbound emails across up to 8 mailboxes; no live mailbox sync; query matches only loaded bodies and headers",
+      mailboxesSearched: searched.length, mailboxesOmitted: Math.max(0, mailboxes.length - searched.length),
       matching: candidates.length, included: messages.length, offset: search.offset,
       nextOffset: candidates.length > search.offset + 8 ? search.offset + 8 : null,
-      unloadedBodiesNotSearched: inbox.emails.filter((email) => !email.demo && email.direction === "inbound" && email.bodyLoaded === false).length,
+      unloadedBodiesNotSearched: accessibleCandidates.filter((email) => email.bodyLoaded === false).length,
       mailboxError: inbox.inboxError,
     },
   };

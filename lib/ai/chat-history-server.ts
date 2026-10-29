@@ -89,9 +89,9 @@ export async function beginSavedTurn(reference: HistoryReference, input: Convers
   if (data?.response) return { row, replay: data.response, messages: [] as HistoryMessage[], completedActionIds: [] as string[] };
   try {
     const { messages } = await conversationMessages(row.id, 10);
-    const { data: actions, error: actionError } = await db.from("workspace_agent_actions").select("id").eq("user_id", viewer.id).eq("conversation_id", row.id).in("status", ["completed", "failed", "running"]).order("created_at", { ascending: false }).limit(20);
+    const { data: actions, error: actionError } = await db.from("workspace_agent_actions").select("id,status,action,expires_at").eq("user_id", viewer.id).eq("conversation_id", row.id).in("status", ["pending", "completed", "failed", "running"]).order("created_at", { ascending: false }).limit(20);
     if (actionError) throw new Error("Unable to load saved agent results.");
-    return { row, replay: undefined, messages, completedActionIds: (actions ?? []).map((a) => a.id as string) };
+    return { row, replay: undefined, messages, completedActionIds: (actions ?? []).filter((a) => a.status !== "pending").map((a) => a.id as string), pendingInvoices: (actions ?? []).filter((a) => a.status === "pending" && Date.parse(a.expires_at) > Date.now()).slice(0, 5) };
   } catch (error) { await failSavedTurn(reference, viewer); throw error; }
 }
 

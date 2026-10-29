@@ -17,6 +17,8 @@ import {
   orderInvoiceItem,
   orderInvoiceProductMatches,
   applyOrderCustomerToInvoice,
+  refreshOrderProductLine,
+  customOrderLine,
 } from "../lib/purchase-order-links.ts";
 
 const product = invoiceProduct({
@@ -122,6 +124,35 @@ test("PO save validation rejects wrong currency, identity, stale prices, MOQ and
   );
   assert.equal(orderProductError(document.items[0], undefined, "USD"), null);
 });
+test("refreshing catalog pricing also refreshes changed names and images so the order can save", () => {
+  const line = orderProductLine(product, 100);
+  const changed = { ...product, name: "Renamed PLA", imageUrl: "https://example.com/new.jpg", tiers: [{ minimumQuantity: 100, priceMinor: 750 }] };
+  assert.ok(orderProductError(line, changed, "USD"));
+  const refreshed = refreshOrderProductLine(line, changed, true);
+  assert.equal(refreshed.description, "Renamed PLA");
+  assert.equal(refreshed.imageUrl, changed.imageUrl);
+  assert.equal(refreshed.unitPriceMinor, 750);
+  assert.equal(orderProductError(refreshed, changed, "USD"), null);
+});
+
+test("refreshing details preserves an agreed price and converting to custom removes all catalog metadata", () => {
+  const line = { ...orderProductLine(product, 100), unitPriceMinor: 650, pricingMode: "manual" as const };
+  const changed = { ...product, name: "Current PLA", imageUrl: "https://example.com/current.jpg" };
+  const refreshed = refreshOrderProductLine(line, changed, false);
+  assert.equal(refreshed.unitPriceMinor, 650);
+  assert.equal(refreshed.pricingMode, "manual");
+  assert.equal(orderProductError(refreshed, changed, "USD"), null);
+  const custom = customOrderLine(refreshed);
+  assert.deepEqual(custom, { description: "Current PLA", sku: product.sku, quantity: 100, unitPriceMinor: 650 });
+  assert.equal(purchaseOrderSchema.safeParse({ ...document, items: [custom] }).success, true);
+});
+
+test("new linked product writes require an explicit pricing mode while historical snapshots remain readable", () => {
+  const line = { ...orderProductLine(product, 100), pricingMode: undefined };
+  assert.equal(purchaseOrderSchema.safeParse({ ...document, items: [line] }).success, true);
+  assert.match(orderProductError(line, product, "USD")!, /pricing|price/);
+});
+
 test("profile refresh copies contact/billing/shipping without altering order items, reference or payment policy", () => {
   const next = applyOrderProfile(document, profile);
   assert.equal(next.customer?.companyName, "Customer Ltd");

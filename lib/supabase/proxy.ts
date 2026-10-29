@@ -43,6 +43,7 @@ export async function updateSession(request: NextRequest) {
     // These handlers validate their own signed token / cron bearer secret.
     "/api/flows/track",
     "/api/cron/flows",
+    "/api/cron/customer-replies",
     "/api/cron/inventory",
     "/api/meta/webhook",
     "/api/twilio/webhook",
@@ -53,6 +54,9 @@ export async function updateSession(request: NextRequest) {
   ];
   const isPublic = publicPaths.includes(request.nextUrl.pathname) || request.nextUrl.pathname.startsWith("/auth/");
   if (process.env.AUTH_REQUIRED === "true" && !data?.claims && !isPublic) {
+    if (request.nextUrl.pathname.startsWith("/api/catalogs/")) {
+      return NextResponse.json({ error: "Sign in with an active workspace account." }, { status: 401, headers: { "Cache-Control": "private, no-store" } });
+    }
     const invoiceQr = /^\/invoices\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/?$/i.exec(request.nextUrl.pathname);
     if (invoiceQr) {
       const customerUrl = request.nextUrl.clone();

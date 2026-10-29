@@ -8,6 +8,7 @@ export type NavigationItem = {
   icon: ComponentType<{ className?: string }>;
   description: string;
   exact?: boolean;
+  activePrefix?: string;
 };
 
 export type NavigationGroup = {
@@ -70,7 +71,7 @@ export const navigation: NavigationGroup[] = [
     eyebrow: "Product management",
     icon: Package2,
     items: [
-      { label: "Products", href: "/catalogs", icon: Package2, description: "Products, pricing and availability", exact: true },
+      { label: "Products", href: "/catalogs", icon: Package2, description: "Products, pricing and availability", exact: true, activePrefix: "/catalogs/products/" },
       { label: "Company Catalogs", href: "/catalogs/companies", icon: BookOpen, description: "Tailored selections for each company" },
     ],
   },

@@ -32,6 +32,8 @@ export function orderProductError(
   if (!item.productSku) return null;
   if (!product)
     return `Product ${item.productSku} is unavailable. Choose an active product or use a custom item.`;
+  if (!item.pricingMode)
+    return `Choose catalog pricing or an agreed manual price for ${product.name}.`;
   if (product.currency !== currency)
     return `${product.name} is priced in ${product.currency}. Choose a product in the order currency.`;
   const variant = product.variants.find((value) => value.id === item.variantId);
@@ -57,6 +59,29 @@ export function orderProductError(
   }
   return null;
 }
+
+/** Refresh identity and images together; retain negotiated prices unless explicitly repricing. */
+export function refreshOrderProductLine(
+  item: PurchaseOrderDocument["items"][number],
+  product: InvoiceProduct,
+  useCatalogPrice = item.pricingMode === "catalog",
+): PurchaseOrderDocument["items"][number] {
+  const refreshed = orderProductLine(product, item.quantity, item.variantId);
+  return useCatalogPrice
+    ? refreshed
+    : { ...refreshed, unitPriceMinor: item.unitPriceMinor, pricingMode: "manual" };
+}
+
+/** A custom item keeps the agreed description, SKU, quantity, and amount. */
+export function customOrderLine(item: PurchaseOrderDocument["items"][number]) {
+  return {
+    description: item.description,
+    sku: item.sku,
+    quantity: item.quantity,
+    unitPriceMinor: item.unitPriceMinor,
+  };
+}
+
 export function applyOrderProfile(
   document: PurchaseOrderDocument,
   profile: OrderProfile,

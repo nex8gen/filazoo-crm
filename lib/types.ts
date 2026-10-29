@@ -132,6 +132,8 @@ export type Reply = {
 export type ProductStock = { available: number; onHand: number; locked: number; warehouseIds: string[]; syncedAt: string };
 
 export type Product = {
+  currency?: string;
+  overrideVersion?: string | null;
   sku: string;
   name: string;
   imageUrl: string | null;

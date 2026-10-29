@@ -2,7 +2,8 @@
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2, ClipboardList, X } from "lucide-react";
@@ -18,12 +19,13 @@ import {
   poStatusLabels,
   purchaseOrderTotal,
   orderBillingSummary,
+  orderHasUnreservedItems,
   type PurchaseOrder,
   type PurchaseOrderDocument,
   type OrderProfile,
 } from "@/lib/purchase-orders";
 import { commerceDefaults, type CompanyCommerce } from "@/lib/company-commerce";
-import { applyOrderProfile } from "@/lib/purchase-order-links";
+import { applyOrderProfile, customOrderLine, orderProductLine, refreshOrderProductLine } from "@/lib/purchase-order-links";
 import { productUnitPrice, type InvoiceProduct } from "@/lib/invoice-links";
 import { PurchaseOrderProductPicker } from "@/components/purchase-order-product-picker";
 import { PurchaseOrderProfileFields } from "@/components/purchase-order-profile-fields";
@@ -55,6 +57,7 @@ export function PurchaseOrderWorkspace({
   canWrite,
   initial,
   profile: initialProfile,
+  catalogAvailability,
 }: {
   companyId: string;
   companyName: string;
@@ -62,6 +65,7 @@ export function PurchaseOrderWorkspace({
   canWrite: boolean;
   initial: Result;
   profile: OrderProfile;
+  catalogAvailability: { currency: string; count: number }[];
 }) {
   const [profile, setProfile] = useState(initialProfile);
   const [result, setResult] = useState(initial);
@@ -132,6 +136,7 @@ export function PurchaseOrderWorkspace({
           order={editing === "new" ? null : editing}
           commerce={commerce}
           profile={profile}
+          catalogAvailability={catalogAvailability}
           canWrite={canWrite}
           onClose={() => setEditing(null)}
           onSaved={() => {
@@ -187,6 +192,7 @@ export function PurchaseOrderWorkspace({
                   <Button
                     variant="ghost"
                     size="sm"
+                    disabled={pending}
                     onClick={() => setEditing(order)}
                   >
                     {canWrite ? "View / edit" : "View"}
@@ -239,6 +245,7 @@ function PurchaseOrderEditor({
   order,
   commerce,
   profile: initialProfile,
+  catalogAvailability,
   canWrite,
   onClose,
   onSaved,
@@ -247,6 +254,7 @@ function PurchaseOrderEditor({
   order: PurchaseOrder | null;
   commerce?: CompanyCommerce;
   profile: OrderProfile;
+  catalogAvailability: { currency: string; count: number }[];
   canWrite: boolean;
   onClose: () => void;
   onSaved: () => void;
@@ -282,12 +290,15 @@ function PurchaseOrderEditor({
   });
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState("");
+  const [savedDocument] = useState(document);
+  const dirty = JSON.stringify(document) !== JSON.stringify(savedDocument);
+  const [linkingIndex, setLinkingIndex] = useState<number | null>(null);
   const router = useRouter();
   const summary = order ? orderBillingSummary(order) : null;
   const locked = Boolean(
     order?.invoices?.some((invoice) => invoice.status !== "void"),
   );
-  const productCache = useRef(new Map<string, InvoiceProduct>());
+  const [productCache, setProductCache] = useState(new Map<string, InvoiceProduct>());
   const linkedSkus = JSON.stringify(
     [
       ...new Set(
@@ -304,8 +315,12 @@ function PurchaseOrderEditor({
     loadPurchaseOrderProducts(skus)
       .then((result) => {
         if (!cancelled)
-          for (const product of result.products)
-            productCache.current.set(product.sku, product);
+          setProductCache((current) => {
+            const next = new Map(current);
+            for (const sku of skus) next.delete(sku);
+            for (const product of result.products) next.set(product.sku, product);
+            return next;
+          });
       })
       .catch(() => {
         if (!cancelled)
@@ -335,7 +350,7 @@ function PurchaseOrderEditor({
           item.pricingMode === "catalog" &&
           item.productSku
         ) {
-          const product = productCache.current.get(item.productSku);
+          const product = productCache.get(item.productSku);
           const price = product
             ? productUnitPrice(product, patch.quantity, item.variantId)
             : null;
@@ -346,6 +361,26 @@ function PurchaseOrderEditor({
         return updated;
       }),
     }));
+  const refreshProduct = (index: number, useCatalogPrice: boolean) =>
+    startTransition(async () => {
+      const item = document.items[index];
+      try {
+        const { products } = await loadPurchaseOrderProducts([item.productSku!]);
+        const product = products[0];
+        if (!product || product.currency !== document.currency)
+          throw new Error("This product is unavailable in the order currency. Choose another product or convert the line to a custom item.");
+        if (item.variantId && !product.variants.some((variant) => variant.id === item.variantId))
+          throw new Error("This variant is no longer available. Use Change product to choose a current variant.");
+        if (useCatalogPrice && productUnitPrice(product, item.quantity, item.variantId) === null)
+          throw new Error("No current catalog quote is available. Enter an agreed unit price.");
+        setProductCache((current) => new Map(current).set(product.sku, product));
+        setDocument((current) => ({ ...current, items: current.items.map((line, i) =>
+          i === index ? refreshOrderProductLine(item, product, useCatalogPrice) : line) }));
+        setError("");
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Unable to refresh product details.");
+      }
+    });
   const field = (
     key:
       | "reference"
@@ -402,6 +437,8 @@ function PurchaseOrderEditor({
                   variant="outline"
                   disabled={
                     pending ||
+                    dirty ||
+                    !orderHasUnreservedItems(order) ||
                     ["draft", "cancelled"].includes(order.document.status)
                   }
                   onClick={() =>
@@ -466,6 +503,7 @@ function PurchaseOrderEditor({
               billing and payment status. Edit the linked draft for a partial
               invoice; create another invoice for the remaining items.
             </p>
+            {dirty && <p className="text-sm text-muted-foreground">Save your order changes before creating an invoice.</p>}
           </div>
         )}
         <form
@@ -612,18 +650,26 @@ function PurchaseOrderEditor({
               )}
               <PurchaseOrderProductPicker
                 currency={document.currency}
-                disabled={locked || !canWrite || document.items.length >= 100}
+                catalogAvailability={catalogAvailability}
+                title={linkingIndex === null ? "Add from product catalog" : `Choose product for item ${linkingIndex + 1}`}
+                onCancel={linkingIndex === null ? undefined : () => setLinkingIndex(null)}
+                disabled={locked || !canWrite || (document.items.length >= 100 && linkingIndex === null)}
                 onAdd={(item, product) => {
-                  productCache.current.set(product.sku, product);
+                  setProductCache((current) => new Map(current).set(product.sku, product));
                   setDocument((current) => ({
                     ...current,
                     items:
-                      current.items.length === 1 &&
+                      linkingIndex !== null
+                        ? current.items.map((line, index) => index === linkingIndex
+                          ? { ...orderProductLine(product, line.quantity, item.variantId), unitPriceMinor: line.unitPriceMinor, pricingMode: "manual" as const }
+                          : line)
+                        : current.items.length === 1 &&
                       !current.items[0].description &&
                       !current.items[0].sku
                         ? [item]
                         : [...current.items, item],
                   }));
+                  setLinkingIndex(null);
                 }}
               />
               {document.items.map((item, index) => (
@@ -645,6 +691,7 @@ function PurchaseOrderEditor({
                         changeItem(index, { description: event.target.value })
                       }
                     />
+                    {item.imageUrl && <Image src={item.imageUrl} alt={item.description} width={48} height={48} unoptimized className="size-12 rounded-md border object-cover" />}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor={`po-sku-${index}`}>SKU</Label>
@@ -665,7 +712,7 @@ function PurchaseOrderEditor({
                       type="number"
                       required
                       min={1}
-                      readOnly={locked}
+                      readOnly={locked || (item.pricingMode === "catalog" && !productCache.has(item.productSku!))}
                       max={1000000}
                       step={1}
                       value={Number.isNaN(item.quantity) ? "" : item.quantity}
@@ -714,13 +761,14 @@ function PurchaseOrderEditor({
                     size="icon"
                     className="self-end"
                     aria-label={`Remove item ${index + 1}`}
-                    disabled={locked || document.items.length === 1}
-                    onClick={() =>
+                    disabled={locked}
+                    onClick={() => {
+                      setLinkingIndex(null);
                       change(
                         "items",
-                        document.items.filter((_, i) => i !== index),
-                      )
-                    }
+                        document.items.length === 1 ? [blankItem()] : document.items.filter((_, i) => i !== index),
+                      );
+                    }}
                   >
                     <Trash2 />
                   </Button>
@@ -733,47 +781,22 @@ function PurchaseOrderEditor({
                           ? "Catalog quantity pricing"
                           : "Agreed manual price"}
                       </span>
-                      {!locked && (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => {
-                            const product = productCache.current.get(
-                              item.productSku!,
-                            );
-                            const price = product
-                              ? productUnitPrice(
-                                  product,
-                                  item.quantity,
-                                  item.variantId,
-                                )
-                              : null;
-                            if (price === null) {
-                              setError(
-                                "No current catalog quote is available. Enter an agreed unit price.",
-                              );
-                              return;
-                            }
-                            setDocument((current) => ({
-                              ...current,
-                              items: current.items.map((line, i) =>
-                                i === index
-                                  ? {
-                                      ...line,
-                                      unitPriceMinor: price,
-                                      pricingMode: "catalog",
-                                    }
-                                  : line,
-                              ),
-                            }));
-                          }}
-                        >
-                          Use catalog price
-                        </Button>
-                      )}
+                      {!locked && canWrite && <>
+                        <Button type="button" size="sm" variant="ghost" onClick={() => refreshProduct(index, true)}>Use catalog price</Button>
+                        <Button type="button" size="sm" variant="ghost" onClick={() => refreshProduct(index, false)}>Refresh details, keep agreed price</Button>
+                        <Button type="button" size="sm" variant="ghost" onClick={() => setLinkingIndex(index)}>Change product</Button>
+                        <Button type="button" size="sm" variant="ghost" onClick={() => {
+                          setLinkingIndex(null);
+                          change("items", document.items.map((line, i) => i === index ? customOrderLine(line) : line));
+                        }}>Convert to custom item</Button>
+                      </>}
                     </div>
                   )}
+                  {!item.productSku && !locked && canWrite && <div className="flex flex-wrap items-center gap-3 text-xs sm:col-span-2 lg:col-span-6">
+                    <span className="text-muted-foreground">Custom item · Not connected to Products</span>
+                    <Button type="button" size="sm" variant="ghost" onClick={() => setLinkingIndex(index)}>Connect to product</Button>
+                    {linkingIndex === index && <span role="status">Choose a product in the catalog above. The quantity and agreed price will be kept.</span>}
+                  </div>}
                 </div>
               ))}
               <div className="flex flex-wrap items-center justify-between gap-3">

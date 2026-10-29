@@ -13,7 +13,7 @@ The feature was partially working. Tasks and flow alerts were saved and scoped t
 | AI email / invoice handoffs | Shipping approvals and AI review tasks retain their dedicated controls. Ordinary editing/completion cannot bypass an active AI review. Handoff notifications link to the review task and become read when the task is resolved or cancelled. |
 | Assignment and due dates | New assignments create in-app alerts. A database job checks due tasks every minute and creates one reminder per task, due time and recipient. Rescheduling retires the old due reminder; closing a task retires its linked unread alerts. |
 | Ownership and member removal | Account-owner follow-ups transfer with the company. Existing member-removal redistribution remains in place. Unassigned work has no notification recipient until it is assigned. |
-| Notification bell | Counts all assigned open tasks plus unread alerts. Updates after task/company/AI actions, on focus and visibility changes, and through polling. |
+| Notification bell | The badge counts unread notifications once. The activity panel separately previews open tasks and notifications. Updates after task/company/AI actions, on focus and visibility changes, and through polling. |
 
 Incoming email, Shopify leads and Meta enquiries can create work through their configured automation flows. This feature does not automatically alert on every incoming message, invoice payment, overdue invoice or inventory change. Email delivery remains controlled by an explicitly configured email-alert flow; new assignment and due reminders are in-app notifications.
 
@@ -46,3 +46,41 @@ Incoming email, Shopify leads and Meta enquiries can create work through their c
 Database changes and the reminder scheduler are live. The application changes are built and verified locally. A read-only browser check of the production Tasks page still showed the previous screen, so the new task controls and revised activity API have not been verified in a deployed browser session. No application deployment was performed as part of this audit; the workspace also contains unrelated work in progress.
 
 The new activity API and its UI must be deployed together: task edits require the saved revision and an explicit change set. The database migration is additive and compatible with the previous application.
+
+## UI refresh
+
+Replaced the two-column task/alert cards with a focused work inbox. The page now has an actionable overview, separate task and notification views, urgency groups, a completed-task view, server-side search and filters, compact task actions, and more useful empty states. Internal follow-up linkage markers are presented as readable source labels.
+
+The header bell opens an activity panel with task previews, notification previews, separate counts, mark-read actions and links to the full inbox. Its detailed content loads on opening and is limited to five records per list. AI review controls load only when a full managed task requires them.
+
+The task editor has clearer fields and responsive spacing. Browser testing found and corrected a save button that used the component library's default `type="button"`; it now explicitly submits its form. Editing an unchanged due time also preserves the original stored seconds instead of silently rounding to the minute.
+
+Verification for the UI refresh:
+
+- `npm run verify` passed: **795 tests**, lint, production build and bundle budgets.
+- Real task and alert reads against the connected CRM passed for preview counts, completed/unread filters and literal search characters. These checks did not write CRM records.
+- An isolated browser preview using the production UI components and synthetic data verified empty/populated lists, header previews, mark-read count synchronization, completed views and successful task creation.
+- Checked desktop, 390 × 844 mobile, short 390 × 600 mobile, and dark mode. The header panel stayed within the viewport and the task editor remained scrollable on the short screen.
+- Added regression coverage for submit controls, exact due-time preservation, revision handling, retry IDs, source labels, timezone boundaries, global filtering and bounded preview payloads.
+
+These application changes are ready locally; this UI refresh did not perform an application deployment.
+
+## Task assignment and layout corrections
+
+Removed the marked workspace/date line, subtitle and four summary cards. Customer reply tracking now lives in a tab within the work inbox. The page toolbar stacks within narrower content areas, and all three tabs fit on mobile. The bell's unread count sits inside its button, so task totals cannot inflate the notification number or push the badge outside its border.
+
+The task editor now has a searchable workspace-user picker. Eligible assignees are activated admins, operators and business development managers. New tasks record their creator and assigner; the Assigned by me view keeps delegated and subsequently unassigned work discoverable. Only the assignee, creator or last assigner can access an individual task through these controls. Read-only users cannot mutate tasks or retrieve the assignment directory. Company-owned follow-ups remain tied to the account owner, and active AI reviews retain their dedicated controls. Unchanged long system evidence is preserved when editing other task fields.
+
+Assignment validation is enforced by both the service and database. Completing delegated work sends one completion notification to its assigner. Applied `20261029071433_task_team_assignment.sql`; the change is additive and the new trigger functions retain invoker security and restricted grants.
+
+A production read found an older activity response without the new filter and assignment metadata; the screenshot's transient refresh failure was not reproduced during that read. The revised interface uses the dedicated `/api/tasks` endpoint and validates the saved recipient before reporting assignment success. Refresh errors retain the last available work and offer retry; missing legacy timestamps no longer use an artificial fixed date.
+
+Final verification:
+
+- `npm run verify` passed: **804 tests**, lint, production build and bundle checks.
+- Task assignment, notification lifecycle and AI auto-reply SQL regression checks passed against the connected database using rollback transactions.
+- Real activity and assignment-directory reads passed without modifying CRM records.
+- Browser checks with production components and synthetic records verified teammate assignment, delegated-task visibility, searchable-picker keyboard focus, integrated customer replies, contained bell counts and responsive layouts.
+- Security advisors returned the same findings as before this migration; no new findings were introduced.
+
+The database changes are applied. Application changes are verified locally and still require a deployment; this work did not deploy the unrelated changes also present in the workspace.
