@@ -4,10 +4,12 @@ import { randomUUID } from "node:crypto";
 import { buildFlowEmail } from "../flow-tracking.ts";
 import { emailTemplates, renderFlowTemplate as renderTemplate } from "../flow-templates.ts";
 
-import { calculateWaitUntil, conditionMatches, triggerMatches, flowConversationPath, nextBusinessWindow, type FlowFacts, type TriggerEvent } from "../flow-engine.ts";
+import { calculateWaitUntil, conditionMatches, triggerMatches, matchesFlowCustomer, matchesFlowScope, flowConversationPath, nextBusinessWindow, type FlowFacts, type TriggerEvent } from "../flow-engine.ts";
 import { flowInputSchema, flowLeadListForSource, type FlowInput, type FlowStep, type JsonConfig, type TriggerType } from "../flows.ts";
 import { env } from "../env.ts";
 import { sendMailboxEmail } from "../mailer.ts";
+import { getUserEmailFooter, prepareUserEmail } from "./email-footers.ts";
+import { removeStandardSignoff } from "../email-footer.ts";
 import { normalizeMailboxRow } from "../mailbox-utils.ts";
 import { evaluateSend } from "../outreach-policy.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
@@ -130,6 +132,11 @@ async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: F
   }
   const contact = await getContact(run.contact_id);
   if (!contact) throw new Error("Email step requires a CRM contact.");
+  if (!matchesFlowCustomer(flow.trigger_config ?? {}, contact.id) || !matchesFlowScope(flow.trigger_config ?? {}, contact.company_id, contact.id)) {
+    await logRun(run.id, step.id, { action: "cancelled", reason: "Customer is no longer selected for this flow." });
+    await finishRun(run.id, "cancelled");
+    return "terminal" as const;
+  }
   const admin = createSupabaseAdmin();
   const automatedMailbox = await getMailbox(flow, step.config.mailboxId);
   const { data: conversationAutomation, error: automationError } = await admin.from("email_auto_replies").select("id").eq("recipient", contact.email.toLowerCase())
@@ -174,7 +181,7 @@ async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: F
   const mailbox = await getMailbox(flow, step.config.mailboxId);
   if (!mailbox) throw new Error("The selected sender mailbox is unavailable.");
   const aiReply = step.type === "ai_auto_reply" ? await prepareFlowAiReply({ userId: flow.user_id, contactId: contact.id, companyId: contact.company_id, conversationId: String(run.context?.emailThreadId || run.conversation_id), config: step.config }) : null;
-  const attachments = aiReply?.attachments ?? (step.config.templateId === "send_catalog" ? await prepareFlowTemplateCatalog(flow.user_id) : []);
+  let attachments = aiReply?.attachments ?? (step.config.templateId === "send_catalog" ? await prepareFlowTemplateCatalog(flow.user_id) : []);
   if (aiReply) { subject = aiReply.subject; body = aiReply.body; }
   const conversationId = String(run.context?.emailThreadId || run.conversation_id);
   const { data: previous } = step.config.replyInThread !== false
@@ -183,16 +190,20 @@ async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: F
   const inReplyTo = aiReply?.inReplyTo || previous?.message_id;
   const threadId = step.config.replyInThread === false ? `flow:${randomUUID()}` : aiReply?.threadId || conversationId;
   const replyHeaders = inReplyTo ? { inReplyTo, references: [inReplyTo] } : {};
-  const content = buildFlowEmail({ body, config: step.config, runId: run.id, stepId: step.id, flowId: flow.id, appUrl: env.NEXT_PUBLIC_APP_URL, secret: env.supabaseSecretKey! });
+  const footer = await getUserEmailFooter(flow.user_id);
+  if (footer?.html) body = removeStandardSignoff(body);
+  const content = await prepareUserEmail(flow.user_id, { ...buildFlowEmail({ body, config: step.config, runId: run.id, stepId: step.id, flowId: flow.id, appUrl: env.NEXT_PUBLIC_APP_URL, secret: env.supabaseSecretKey! }), attachments }, false, footer);
+  attachments = content.attachments as typeof attachments;
+  body = content.text;
   const sentRecordId = randomUUID();
-  const storedAttachments: Array<{ filename: string; contentType: string; size: number; path: string }> = [];
+  const storedAttachments: Array<{ filename: string; contentType: string; size: number; path: string; cid?: string }> = [];
   let sent;
   try {
     for (const [index, attachment] of attachments.entries()) {
       const path = `${flow.user_id}/${sentRecordId}/${index}`;
       const { error } = await admin.storage.from("mailbox-attachments").upload(path, attachment.content, { contentType: attachment.contentType, upsert: false });
       if (error) throw new Error(`Could not store the AI reply catalog: ${error.message}`);
-      storedAttachments.push({ filename: attachment.filename, contentType: attachment.contentType, size: attachment.content.length, path });
+      storedAttachments.push({ filename: attachment.filename, contentType: attachment.contentType, size: attachment.content.length, path, ...( "cid" in attachment ? { cid: attachment.cid as string } : {}) });
     }
     sent = await sendMailboxEmail({ host: mailbox.smtpHost, port: mailbox.smtpPort, user: mailbox.smtpUsername, pass: mailbox.smtpPassword, from: mailbox.email }, { to: contact.email, subject, ...content, ...replyHeaders, attachments });
   } catch (error) {
@@ -202,7 +213,7 @@ async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: F
   run.context = { ...run.context, emailThreadId: threadId, replySince: new Date().toISOString() };
   await Promise.all([
     admin.from("flow_runs").update({ context: run.context }).eq("id", run.id).throwOnError(),
-    admin.from("mailbox_sent_messages").insert({ id: sentRecordId, user_id: flow.user_id, mailbox_id: mailbox.id, message_id: sent.messageId || null, thread_key: threadId, in_reply_to: inReplyTo || null, reference_ids: inReplyTo ? [inReplyTo] : [], from_email: mailbox.email, to_email: contact.email, subject, body, status: "sent", attachments: storedAttachments }).throwOnError(),
+    admin.from("mailbox_sent_messages").insert({ id: sentRecordId, user_id: flow.user_id, mailbox_id: mailbox.id, message_id: sent.messageId || null, thread_key: threadId, in_reply_to: inReplyTo || null, reference_ids: inReplyTo ? [inReplyTo] : [], from_email: mailbox.email, to_email: contact.email, subject, body, body_html: content.html || null, status: "sent", attachments: storedAttachments }).throwOnError(),
     admin.from("emails").insert({ contact_id: contact.id, direction: "sent", subject, body, thread_id: threadId, owner_id: flow.user_id, message_id: sent.messageId || null, status: "sent", step: run.current_step + 1, sent_at: new Date().toISOString() }).throwOnError(),
     logRun(run.id, step.id, { action: "email_sent", to: contact.email, subject, messageId: sent.messageId || null, aiGenerated: Boolean(aiReply), catalogAttached: Boolean(attachments.length) }),
   ]);
@@ -261,6 +272,15 @@ export async function processFlowRun(runId: string) {
   let index = run.current_step;
   let processed = 0;
   try {
+    if (flow.trigger_config.flowScope) {
+      const contact = run.contact_id ? await getContact(run.contact_id) : null;
+      const currentCompanyId = run.contact_id ? contact?.company_id : run.company_id;
+      if (!matchesFlowScope(flow.trigger_config, currentCompanyId, contact?.id)) {
+        await logRun(run.id, null, { action: "cancelled", reason: "Contact no longer matches this email or company flow." });
+        await finishRun(run.id, "cancelled");
+        return { status: "cancelled", processed: 0 };
+      }
+    }
     const snapshot = typeof run.context?.definition === "string" ? JSON.parse(run.context.definition) as FlowStep[] : stepRows;
     const savedSteps = (snapshot ?? []) as FlowStep[];
     const validated = flowInputSchema.parse({ name: "Runtime validation", triggerType: flow.trigger_type, triggerConfig: flow.trigger_config, status: "live", steps: savedSteps });
@@ -335,14 +355,23 @@ export async function enrollMatchingFlows(event: TriggerEvent) {
   const { data: flowRows, error } = await flowQuery;
   if (error) throw new Error(`Unable to load matching flows: ${error.message}`);
   const companyId = await resolveCompanyId(event.contactId, event.companyId);
+  event = { ...event, companyId };
   const eventKey = event.eventKey || `${event.type}:${event.conversationId}:${randomUUID()}`;
   const results: Array<{ flowId: string; runId?: string; enrolled: boolean; reason?: string }> = [];
   for (const row of (flowRows ?? []) as FlowRow[]) {
-    const facts = await loadFlowFacts({ userId: row.user_id, contactId: event.contactId, companyId, messageKey: event.messageKey });
-    if (!triggerMatches(row.trigger_type, row.trigger_config ?? {}, event, facts)) { results.push({ flowId: row.id, enrolled: false, reason: "Trigger filters did not match" }); continue; }
+    let contactId = event.contactId;
+    // Company changes are emitted with a representative contact. An email-only
+    // flow must instead enroll its own saved contact at that same company.
+    if (["company_segment_changed", "pipeline_stage_changed"].includes(event.type) && row.trigger_config?.flowScope === "email" && row.trigger_config.scopeCompanyId === companyId) {
+      const contact = await getContact(String(row.trigger_config.scopeContactId || ""));
+      contactId = contact && contact.company_id === companyId ? contact.id : null;
+    }
+    const scopedEvent = { ...event, contactId };
+    const facts = await loadFlowFacts({ userId: row.user_id, contactId, companyId, messageKey: event.messageKey });
+    if (!triggerMatches(row.trigger_type, row.trigger_config ?? {}, scopedEvent, facts)) { results.push({ flowId: row.id, enrolled: false, reason: "Trigger filters did not match" }); continue; }
     const { data: definition } = await admin.from("flow_steps").select("id,position,type,config").eq("flow_id", row.id).order("position").throwOnError();
     flowInputSchema.parse({ name: "Enrollment validation", triggerType: row.trigger_type, triggerConfig: row.trigger_config, status: "live", steps: definition });
-    const { data: run, error: insertError } = await admin.from("flow_runs").insert({ flow_id: row.id, conversation_id: event.conversationId, event_key: eventKey, contact_id: event.contactId ?? null, company_id: companyId, current_step: 0, status: "active", next_run_at: new Date().toISOString(), context: { messageKey: event.messageKey ?? null, category: event.category ?? null, listId: event.listId ?? null, segment: event.segment ?? null, stage: event.stage ?? null, replySince: event.occurredAt ?? new Date().toISOString(), definition: JSON.stringify(definition) } }).select("id").single();
+    const { data: run, error: insertError } = await admin.from("flow_runs").insert({ flow_id: row.id, conversation_id: event.conversationId, event_key: eventKey, contact_id: contactId ?? null, company_id: companyId, current_step: 0, status: "active", next_run_at: new Date().toISOString(), context: { messageKey: event.messageKey ?? null, category: event.category ?? null, listId: event.listId ?? null, segment: event.segment ?? null, stage: event.stage ?? null, replySince: event.occurredAt ?? new Date().toISOString(), definition: JSON.stringify(definition) } }).select("id").single();
     if (insertError) {
       if (insertError.code === "23505") results.push({ flowId: row.id, enrolled: false, reason: "Conversation already has an active run" });
       else results.push({ flowId: row.id, enrolled: false, reason: insertError.message });

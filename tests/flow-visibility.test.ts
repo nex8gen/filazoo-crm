@@ -87,6 +87,17 @@ test("shared reads reject nonmembers before issuing privileged queries", async (
   assert.equal(f.calls.length, 0);
 });
 
+test("email and company flows are absent from shared and legacy lists and cannot be broadened on edit", async () => {
+  for (const scope of ["email", "company"]) {
+    const f = fixture();
+    f.rows.flows[0].trigger_config = { flowScope: scope, scopeCompanyId: "company", ...(scope === "email" ? { scopeContactId: "contact" } : {}) };
+    assert.equal((await f.flows.listWorkspaceFlows() as flowModel.AutomationFlow[]).length, 1);
+    assert.equal((await f.flows.listFlows("alice") as flowModel.AutomationFlow[]).length, 0);
+    await assert.rejects(f.flows.updateFlow("alice", "flow-alice", flowModel.defaultFlowInput), /must keep its original/);
+    assert.equal(f.calls.filter((call) => call.operation === "save_automation_flow").length, 0);
+  }
+});
+
 test("owner-scoped reads remain isolated for legacy automation and save responses", async () => {
   const f = fixture();
   const flows = await f.flows.listFlows("alice") as Array<{ id: string }>;
@@ -380,6 +391,26 @@ test("shared deep links open a read-only builder and the default shortcut select
     assert.equal(canvas.props.canEdit, !expectedDisabled);
     if (initialFlowId === "default") assert.equal((canvas.props.draft as { id: string }).id, "flow-alice");
   }
+});
+
+test("email builder prefills the scoped trigger and changing events retains its fixed recipient", async () => {
+  const scope = { flowScope: "email", scopeCompanyId: "11111111-1111-4111-8111-111111111111", scopeContactId: "22222222-2222-4222-8222-222222222222", scopeLabel: "customer@example.com" };
+  const hooks = { values: [] as unknown[], cursor: 0 };
+  const render = builder(hooks);
+  const props = { initialFlows: [], viewerId: "alice", canEdit: true, mailboxOptions: [], memberOptions: [], filterOptions: { segments: [], countries: [] }, initialDraft: { ...flowModel.defaultFlowInput, triggerType: "email_received", triggerConfig: scope }, scopedContext: { config: scope, refreshUrl: "/api/email/flows?recipient=customer@example.com", returnHref: "/emails?thread=test" } };
+  const tree = await render(props);
+  const inspector = elements(tree).find((node) => typeof node.type === "function" && node.type.name === "TriggerInspector")!;
+  const output = (inspector.type as (props: Element["props"]) => Element)(inspector.props);
+  assert.equal(elements(output).some((node) => node.type === "FlowCustomerPicker"), false);
+  const selector = elements(output).find((node) => typeof node.type === "function" && node.type.name === "FlowSelect")!;
+  (selector.props.onChange as (value: string) => void)("no_reply");
+  hooks.cursor = 0;
+  const updated = await render(props);
+  const canvas = elements(updated).find((node) => typeof node.type === "function" && node.type.name === "FlowCanvas")!;
+  const draft = canvas.props.draft as flowModel.FlowInput;
+  assert.equal(draft.triggerType, "no_reply");
+  assert.equal(draft.triggerConfig.scopeContactId, scope.scopeContactId);
+  assert.equal(draft.triggerConfig.scopeCompanyId, scope.scopeCompanyId);
 });
 
 async function flowListHarness(count: number, isAdmin = true, canEdit = true, onBulkAction: (ids: string[], action: flowModel.FlowBulkAction) => Promise<flowModel.FlowBulkResult[]> = async (ids) => ids.map((id) => ({ id, ok: true }))) {

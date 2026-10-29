@@ -29,11 +29,12 @@ export async function GET(_request: Request, context: RouteContext<"/api/email/a
   if (downloadError || !data) return new Response("Attachment unavailable.", { status: 404 });
   const filename = attachment.filename.replace(/[\r\n"\\]/g, "_");
   const fallbackFilename = filename.replace(/[^\x20-\x7e]/g, "_");
-  const contentType = attachment.contentType === "application/pdf" ? "application/pdf" : "application/octet-stream";
+  const inlineTypes = new Set(["application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp"]);
+  const contentType = inlineTypes.has(attachment.contentType) ? attachment.contentType : "application/octet-stream";
   return new Response(data, {
     headers: {
       "Content-Type": contentType,
-      "Content-Disposition": `${contentType === "application/pdf" ? "inline" : "attachment"}; filename="${fallbackFilename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+      "Content-Disposition": `${contentType !== "application/octet-stream" ? "inline" : "attachment"}; filename="${fallbackFilename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
       "Cache-Control": "private, no-store",
       "X-Content-Type-Options": "nosniff",
     },

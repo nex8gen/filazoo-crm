@@ -2,8 +2,9 @@ import "server-only";
 
 import { requireWorkspaceMember } from "../auth.ts";
 import { validateFlowResources } from "./flow-runtime.ts";
+import { validateEmailFlowScope } from "./email-flows.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
-import { flowInputSchema, type FlowBulkAction, type FlowBulkResult, type AutomationFlow, type FlowInput, type FlowStep, type FlowStepType, type JsonConfig, type TriggerType, type FlowStatus } from "../flows.ts";
+import { flowInputSchema, isEmailScopedFlow, type FlowBulkAction, type FlowBulkResult, type AutomationFlow, type FlowInput, type FlowStep, type FlowStepType, type JsonConfig, type TriggerType, type FlowStatus } from "../flows.ts";
 
 type FlowRow = {
   id: string;
@@ -39,6 +40,7 @@ function mapFlows(rows: FlowRow[], steps: StepRow[], runs: RunRow[]): Automation
 }
 
 async function insertFlow(userId: string, input: FlowInput) {
+  if (isEmailScopedFlow(input.triggerConfig)) input = { ...input, triggerConfig: await validateEmailFlowScope(input.triggerConfig) };
   if (input.status === "live") await validateFlowResources(userId, input);
   const { data, error } = await createSupabaseAdmin().rpc("save_automation_flow", { p_user_id: userId, p_flow_id: null, p_input: input });
   if (error) throw new Error(`Unable to create flow: ${error.message}`);
@@ -49,11 +51,19 @@ async function insertFlow(userId: string, input: FlowInput) {
 // identity; owners and workspace administrators can manage the definition.
 export async function listWorkspaceFlows(): Promise<AutomationFlow[]> {
   await requireWorkspaceMember();
-  return loadFlows();
+  return (await loadFlows()).filter((flow) => !isEmailScopedFlow(flow.triggerConfig));
 }
 
 export async function listFlows(userId: string): Promise<AutomationFlow[]> {
-  return loadFlows(userId);
+  return (await loadFlows(userId)).filter((flow) => !isEmailScopedFlow(flow.triggerConfig));
+}
+
+export async function listEmailFlows(scope: JsonConfig): Promise<AutomationFlow[]> {
+  // Scoped flows are retrieved only from the email workspace.
+  await validateEmailFlowScope(scope);
+  return (await loadFlows(undefined, undefined, scope)).filter((flow) => flow.triggerConfig.flowScope === scope.flowScope
+    && flow.triggerConfig.scopeCompanyId === scope.scopeCompanyId
+    && flow.triggerConfig.scopeContactId === scope.scopeContactId);
 }
 
 async function loadFlowSteps(ids: string[]): Promise<StepRow[]> {
@@ -70,13 +80,17 @@ async function loadFlowSteps(ids: string[]): Promise<StepRow[]> {
   }
 }
 
-async function loadFlows(userId?: string, flowIds?: string[]): Promise<AutomationFlow[]> {
+async function loadFlows(userId?: string, flowIds?: string[], scope?: JsonConfig): Promise<AutomationFlow[]> {
   const admin = createSupabaseAdmin();
   let query = admin.from("flows")
     .select("id,name,trigger_type,trigger_config,status,created_by,created_at,updated_at")
     .order("updated_at", { ascending: false });
   if (userId) query = query.eq("user_id", userId);
   if (flowIds) query = query.in("id", flowIds);
+  if (scope) {
+    query = query.eq("trigger_config->>flowScope", scope.flowScope).eq("trigger_config->>scopeCompanyId", scope.scopeCompanyId);
+    if (scope.flowScope === "email") query = query.eq("trigger_config->>scopeContactId", scope.scopeContactId);
+  }
   const { data: rows, error } = await query;
   if (error) throw new Error(`Unable to load flows: ${error.message}`);
   const ids = (rows ?? []).map((row) => row.id);
@@ -91,7 +105,7 @@ async function loadFlows(userId?: string, flowIds?: string[]): Promise<Automatio
 
 export async function createFlow(userId: string, input: FlowInput) {
   const id = await insertFlow(userId, input);
-  return (await listFlows(userId)).find((flow) => flow.id === id)!;
+  return (await loadFlows(userId, [id]))[0]!;
 }
 
 async function requireFlowManager(userId: string) {
@@ -103,11 +117,16 @@ async function requireFlowManager(userId: string) {
 export async function updateFlow(userId: string, flowId: string, input: FlowInput) {
   const viewer = await requireFlowManager(userId);
   const admin = createSupabaseAdmin();
-  let query = admin.from("flows").select("user_id").eq("id", flowId);
+  let query = admin.from("flows").select("user_id,trigger_config").eq("id", flowId);
   if (viewer.role !== "admin") query = query.eq("user_id", viewer.id);
   const { data: flow, error: lookupError } = await query.maybeSingle();
   if (lookupError) throw new Error(`Unable to load flow: ${lookupError.message}`);
   if (!flow) throw new Error("Flow not found.");
+  const previous = (flow.trigger_config ?? {}) as JsonConfig;
+  if (isEmailScopedFlow(previous) && ["flowScope", "scopeCompanyId", "scopeContactId"].some((key) => previous[key] !== input.triggerConfig[key])) {
+    throw new Error("An email flow must keep its original email or company scope.");
+  }
+  if (isEmailScopedFlow(input.triggerConfig)) input = { ...input, triggerConfig: await validateEmailFlowScope(input.triggerConfig) };
   // Authorize the actor above, then save using the existing owner identity so
   // admin edits retain the original sender, notifications, and runtime scope.
   const ownerId = flow.user_id as string;

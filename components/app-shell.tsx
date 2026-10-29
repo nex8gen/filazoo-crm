@@ -118,7 +118,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
   const router = useRouter();
   const isMessenger = pathname === "/messenger" || pathname.startsWith("/messenger/");
   const isFlowBuilder = pathname === "/lead-channel/ai-agent" || pathname.startsWith("/lead-channel/ai-agent/");
-  const isEmails = pathname === "/emails";
+  const isEmails = pathname === "/emails" || pathname.startsWith("/emails/flows");
   const isSettings = pathname === "/settings" || pathname.startsWith("/settings/");
   const usesViewportCanvas = isMessenger || isFlowBuilder || isEmails;
   const [commandOpen, setCommandOpen] = useState(false);
@@ -200,7 +200,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
       </Sheet>
 
       <div className={`min-w-0 pt-12 transition-transform duration-300 ease-out ${activeGroup.direct ? "lg:pl-16" : "lg:pl-80"} ${aiOpen ? "max-lg:-translate-x-full lg:mr-[var(--workspace-ai-width)]" : "translate-x-0 lg:mr-0"}`}>
-        <main id="workspace-content" tabIndex={-1} className={`${pathname === "/emails" || isSettings ? "" : "crm-workspace-content"} outline-none ${usesViewportCanvas ? "h-[calc(100dvh-3rem)] min-h-0 w-full overflow-hidden p-0" : isSettings ? "min-h-[calc(100dvh-3rem)] w-full" : "min-h-[calc(100svh-3rem)] w-full px-5 py-7 sm:px-7 lg:px-10 lg:py-10"}`}>{children}</main>
+        <main id="workspace-content" tabIndex={-1} className={`${isEmails || isSettings ? "" : "crm-workspace-content"} outline-none ${usesViewportCanvas ? "h-[calc(100dvh-3rem)] min-h-0 w-full overflow-hidden p-0" : isSettings ? "min-h-[calc(100dvh-3rem)] w-full" : "min-h-[calc(100svh-3rem)] w-full px-5 py-7 sm:px-7 lg:px-10 lg:py-10"}`}>{children}</main>
       </div>
 
       {commandOpen ? (

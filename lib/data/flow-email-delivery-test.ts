@@ -6,6 +6,8 @@ import { createSupabaseAdmin } from "../supabase/admin.ts";
 import { env } from "../env.ts";
 import { evaluateSend } from "../outreach-policy.ts";
 import { sendMailboxEmail } from "../mailer.ts";
+import { getUserEmailFooter, prepareUserEmail } from "./email-footers.ts";
+import { removeStandardSignoff } from "../email-footer.ts";
 import { buildFlowEmail } from "../flow-tracking.ts";
 import { emailTemplates, getFlowTestMailbox } from "./flow-runtime.ts";
 import { generateFlowAiReply, hasFlowReplyProvider, loadFlowReplyProducts, prepareFlowTemplateCatalog } from "./flow-ai-reply.ts";
@@ -128,19 +130,20 @@ export async function processFlowEmailDeliveryTest(id: string, userId: string) {
     if (!reply.subject || !reply.body) throw new Error("The email step did not produce a subject and body.");
     const subject = `[Flow test] ${reply.subject}`;
     const threadId = `flow-test:${id}`;
-    const content = buildFlowEmail({ body: reply.body, config: { ...step.config, trackOpens: false, trackClicks: false, utmTracking: false },
-      runId: id, stepId: step.id || id, flowId: id, appUrl: env.NEXT_PUBLIC_APP_URL, secret: env.supabaseSecretKey! });
+    const footer = await getUserEmailFooter(userId);
+    const content = await prepareUserEmail(userId, { ...buildFlowEmail({ body: footer?.html ? removeStandardSignoff(reply.body) : reply.body, config: { ...step.config, trackOpens: false, trackClicks: false, utmTracking: false },
+      runId: id, stepId: step.id || id, flowId: id, appUrl: env.NEXT_PUBLIC_APP_URL, secret: env.supabaseSecretKey! }), attachments: reply.attachments }, false, footer);
     const recordId = randomUUID();
-    const stored: Array<{ filename: string; contentType: string; size: number; path: string }> = [];
-    for (const [index, attachment] of reply.attachments.entries()) {
+    const stored: Array<{ filename: string; contentType?: string; size: number; path: string; cid?: string }> = [];
+    for (const [index, attachment] of content.attachments.entries()) {
       const path = `${userId}/${recordId}/${index}`;
       const upload = await admin.storage.from("mailbox-attachments").upload(path, attachment.content, { contentType: attachment.contentType, upsert: false });
       if (upload.error) throw new Error(`Could not store the test attachment: ${upload.error.message}`);
       uploadedPaths.push(path);
-      stored.push({ filename: attachment.filename, contentType: attachment.contentType, size: attachment.content.length, path });
+      stored.push({ filename: attachment.filename, contentType: attachment.contentType, size: attachment.content.length, path, cid: attachment.cid });
     }
     const sent = await sendMailboxEmail({ host: mailbox.smtpHost, port: mailbox.smtpPort, user: mailbox.smtpUsername, pass: mailbox.smtpPassword, from: mailbox.email },
-      { to: row.recipient, subject, ...content, attachments: reply.attachments });
+      { to: row.recipient, subject, ...content });
     smtpAccepted = true;
     const sentAt = new Date().toISOString();
     row.result.push({ step: action.step, subject, body: reply.body, messageId: sent.messageId || null, sentAt, attachments: stored.map(({ filename, size }) => ({ filename, size })) });
@@ -148,7 +151,7 @@ export async function processFlowEmailDeliveryTest(id: string, userId: string) {
     // terminal and retains this evidence rather than resending the message.
     await admin.from(table).update({ result: row.result }).eq("id", id).eq("user_id", userId).throwOnError();
     await admin.from("mailbox_sent_messages").insert({ id: recordId, user_id: userId, mailbox_id: mailbox.id, message_id: sent.messageId || null,
-      thread_key: threadId, from_email: mailbox.email, to_email: row.recipient, subject, body: reply.body, status: "sent", attachments: stored }).throwOnError();
+      thread_key: threadId, from_email: mailbox.email, to_email: row.recipient, subject, body: content.text, body_html: content.html || null, status: "sent", attachments: stored }).throwOnError();
     const nextAction = row.current_action + 1;
     const next = row.plan[nextAction];
     await admin.from(table).update({ current_action: nextAction, locked_at: null, next_run_at: next?.sendAt || null,

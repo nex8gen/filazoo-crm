@@ -92,6 +92,8 @@ function runtime(options: { businessWindow?: Date | null } = {}) {
     return query;
   }
   const dependencies: Record<string, unknown> = {
+    "./email-footers.ts": { getUserEmailFooter: async () => null, prepareUserEmail: async (_userId: string, input: unknown) => input },
+    "../email-footer.ts": { removeStandardSignoff: (text: string) => text },
     "../email-auto-reply.ts": autoReply,
     "server-only": {}, "../auth.ts": { requireWorkspaceMember: async () => ({ id: "owner" }) },
     "../flow-engine.ts": { ...engine, ...(Object.hasOwn(options, "businessWindow") ? { nextBusinessWindow: () => options.businessWindow } : {}) }, "../flows.ts": flows, "../outreach-policy.ts": policy, "../flow-templates.ts": templates,
@@ -103,6 +105,8 @@ function runtime(options: { businessWindow?: Date | null } = {}) {
     }) },
     "../mailbox-utils.ts": { normalizeMailboxRow: (row: unknown) => row },
     "../flow-tracking.ts": tracking,
+    "./email-footers.ts": { getUserEmailFooter: async () => null, prepareUserEmail: async (_id: string, mail: unknown) => mail },
+    "../email-footer.ts": { removeStandardSignoff: (text: string) => text },
     "../mailer.ts": { sendMailboxEmail: async (mailbox: Row, mail: Row) => { delivered++; deliveries.push({ mailbox, mail }); return { messageId: `<test-${delivered}@example.com>` }; } },
     "./flow-mail-sync.ts": { syncFlowMailboxMessages: async () => { throw new Error("Resume worker must not wait for IMAP"); } },
     "./flow-ai-reply.ts": { hasFlowReplyProvider: () => true, prepareFlowAiReply: async (input: Row) => { aiCalls.push(input); return { subject: "AI reply", body: "Synthetic provider reply", attachments: [] }; }, prepareFlowTemplateCatalog: async () => [{ filename: "Filazoo-product-catalog.pdf", content: Buffer.from("test catalog"), contentType: "application/pdf" }] },
@@ -129,6 +133,105 @@ test("a saved new lead immediately executes email and scanner retries cannot sen
   const retry = await app.exports.enrollMatchingFlows({ type: "new_lead", contactId: app.contactId, conversationId: "different", eventKey: "different" });
   assert.equal(retry[0]?.enrolled, false);
   assert.equal(app.delivered(), 1);
+});
+
+test("individual email/company automations send only to eligible contacts and preserve wait/pause/resume", async () => {
+  for (const flowScope of ["email", "company"]) {
+    const app = runtime();
+    const sibling = { ...app.db.contacts[0], id: randomUUID(), email: "sibling@example.com" };
+    const outsider = { ...app.db.contacts[0], id: randomUUID(), company_id: randomUUID(), email: "outsider@example.com" };
+    app.db.contacts.push(sibling, outsider);
+    Object.assign(app.db.flows[0], { trigger_type: "email_received", email_enrollment_started_at: new Date(Date.now() - 60_000).toISOString(), trigger_config: { flowScope, scopeCompanyId: app.companyId, ...(flowScope === "email" ? { scopeContactId: app.contactId } : {}) } });
+    app.db.flow_steps = [{ id: randomUUID(), flow_id: app.flowId, position: 0, type: "wait", config: { amount: 1, unit: "minutes" } }, ...app.db.flow_steps.map((step) => ({ ...step, position: 1 }))];
+    for (const contact of app.db.contacts) {
+      await app.exports.enrollMatchingFlows({ type: "email_received", contactId: String(contact.id), conversationId: String(contact.id), occurredAt: new Date().toISOString(), eventKey: String(contact.id) });
+    }
+    assert.equal(app.db.flow_runs.length, flowScope === "email" ? 1 : 2);
+    assert.equal(app.delivered(), 0);
+    app.db.flows[0].status = "paused";
+    for (const run of app.db.flow_runs) {
+      run.next_run_at = new Date(Date.now() - 1).toISOString();
+      assert.equal((await app.exports.processFlowRun(String(run.id))).status, "paused");
+    }
+    app.db.flows[0].status = "live";
+    for (const run of app.db.flow_runs) {
+      assert.equal((await app.exports.processFlowRun(String(run.id))).status, "done");
+      await app.exports.processFlowRun(String(run.id));
+    }
+    assert.equal(app.delivered(), flowScope === "email" ? 1 : 2);
+    assert.ok(app.deliveries.every(({ mail }) => mail.to !== "outsider@example.com"));
+  }
+});
+
+test("a company contact moved during a wait cannot receive queued actions", async () => {
+  for (const type of ["send_email", "ai_auto_reply", "create_task"] as const) {
+    const app = runtime();
+    app.db.flows[0].trigger_config = { flowScope: "company", scopeCompanyId: app.companyId };
+    app.db.flow_steps = [{ id: randomUUID(), flow_id: app.flowId, position: 0, type: "wait", config: { amount: 1, unit: "minutes" } }, { ...flows.blankStep(type), id: randomUUID(), flow_id: app.flowId, position: 1, config: type === "send_email" ? app.db.flow_steps[0].config : flows.blankStep(type).config }];
+    await app.exports.enrollNewLeadFlows(app.contactId);
+    app.db.contacts[0].company_id = randomUUID();
+    app.db.flow_runs[0].next_run_at = new Date(Date.now() - 1).toISOString();
+    assert.equal((await app.exports.processFlowRun(String(app.db.flow_runs[0].id))).status, "cancelled");
+    assert.equal(app.delivered(), 0);
+    assert.equal(app.aiCalls.length, 0);
+    assert.equal(app.db.crm_tasks?.length ?? 0, 0);
+  }
+});
+
+test("company stage and segment changes enroll the email flow's contact even when another contact represents the company", async () => {
+  for (const type of ["company_segment_changed", "pipeline_stage_changed"] as const) {
+    const app = runtime();
+    const representativeId = randomUUID();
+    app.db.contacts.push({ ...app.db.contacts[0], id: representativeId, email: "representative@example.com" });
+    Object.assign(app.db.flows[0], { trigger_type: type, trigger_config: { flowScope: "email", scopeCompanyId: app.companyId, scopeContactId: app.contactId, ...(type === "company_segment_changed" ? { segment: "Shopify B2B lead" } : { stage: "new" }) } });
+    const result = await app.exports.enrollMatchingFlows({ type, contactId: representativeId, companyId: app.companyId, conversationId: `company:${app.companyId}`, segment: "Shopify B2B lead", stage: "new" });
+    assert.equal(result[0].enrolled, true);
+    assert.equal(app.db.flow_runs[0].contact_id, app.contactId);
+    assert.equal(app.delivered(), 1);
+    assert.equal(app.deliveries[0].mail.to, "lead@example.com");
+  }
+});
+
+test("selected customers receive flow emails while other contacts at the same company do not enroll", async () => {
+  const app = runtime();
+  const otherId = randomUUID();
+  app.db.contacts.push({ ...app.db.contacts[0], id: otherId, email: "other@example.com" });
+  app.db.flows[0].trigger_config = { contactIds: [app.contactId] };
+  const excluded = await app.exports.enrollNewLeadFlows(otherId);
+  assert.equal(excluded[0]?.enrolled, false);
+  assert.equal(app.delivered(), 0);
+  await app.exports.enrollNewLeadFlows(app.contactId);
+  assert.equal(app.delivered(), 1);
+  assert.equal(app.deliveries[0].mail.to, "lead@example.com");
+});
+
+test("multiple selected customers each receive their own flow email", async () => {
+  const app = runtime();
+  const otherId = randomUUID();
+  app.db.contacts.push({ ...app.db.contacts[0], id: otherId, email: "other@example.com" });
+  app.db.flows[0].trigger_config = { contactIds: [app.contactId, otherId] };
+  await app.exports.enrollNewLeadFlows(app.contactId);
+  await app.exports.enrollNewLeadFlows(otherId);
+  assert.equal(app.delivered(), 2);
+  assert.deepEqual(app.deliveries.map((delivery) => delivery.mail.to).sort(), ["lead@example.com", "other@example.com"]);
+});
+
+test("removing a selected customer cancels their waiting email for both email action types", async () => {
+  for (const type of ["send_email", "ai_auto_reply"] as const) {
+    const app = runtime();
+    const config = type === "send_email" ? { ...app.db.flow_steps[0].config as flows.JsonConfig } : { ...flows.blankStep(type).config };
+    steps(app, [{ type: "wait", config: { amount: 1, unit: "hours" } }, { type, config }]);
+    app.db.flows[0].trigger_config = { contactIds: [app.contactId] };
+    await app.exports.enrollNewLeadFlows(app.contactId);
+    assert.equal(app.db.flow_runs[0].status, "active");
+    app.db.flows[0].trigger_config = { contactIds: [randomUUID()] };
+    app.db.flow_runs[0].next_run_at = null;
+    const result = await app.exports.processFlowRun(String(app.db.flow_runs[0].id));
+    assert.equal(result.status, "cancelled");
+    assert.equal(app.delivered(), 0);
+    assert.equal(app.aiCalls.length, 0);
+    assert.match(JSON.stringify(app.db.flow_run_logs), /no longer selected/);
+  }
 });
 
 function steps(app: ReturnType<typeof runtime>, definitions: Array<{ type: flows.FlowStepType; config: flows.JsonConfig }>) {

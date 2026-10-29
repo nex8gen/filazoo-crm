@@ -21,7 +21,7 @@ export type FlowBulkAction = z.infer<typeof flowBulkInputSchema>["action"];
 export type FlowBulkResult = { id: string; ok: true; flow?: AutomationFlow } | { id: string; ok: false; error: string };
 export type TriggerType = (typeof triggerTypes)[number];
 export type FlowStepType = (typeof stepTypes)[number];
-export type JsonConfig = Record<string, string | number | boolean | null>;
+export type JsonConfig = Record<string, string | number | boolean | null | string[]>;
 
 export type FlowStep = {
   id: string;
@@ -65,10 +65,15 @@ export const stepLabels: Record<FlowStepType, string> = {
   stop: "Stop",
 };
 
-const configValue = z.union([z.string(), z.number(), z.boolean(), z.null()]);
+const configValue = z.union([z.string(), z.number(), z.boolean(), z.null(), z.array(z.string())]);
 const configSchema = z.record(z.string(), configValue);
 
 const profileFilters = {
+  flowScope: z.enum(["email", "company"]).optional(),
+  scopeCompanyId: z.uuid().optional(),
+  scopeContactId: z.uuid().optional(),
+  scopeLabel: z.string().trim().min(1).max(320).optional(),
+  contactIds: z.array(z.uuid().transform((id) => id.toLowerCase())).min(1, "Choose at least one customer or select all customers.").max(200).transform((ids) => [...new Set(ids)]).optional(),
   segment: z.string().trim().max(120).optional(),
   country: z.string().trim().max(100).optional(),
   companyStatus: z.enum(companyStatuses).optional(),
@@ -82,7 +87,7 @@ const triggerConfigSchemas: Record<TriggerType, z.ZodType<JsonConfig>> = {
   category_changed: z.object({ category: z.enum(emailCategories), ...profileFilters }),
   no_reply: z.object({ amount: z.number().int().min(1).max(365), unit: z.enum(["hours", "days"]), businessDays: z.boolean().optional(), ...profileFilters }),
   lead_added_to_list: z.object({ listId: z.enum(flowLeadLists), ...profileFilters }),
-  company_segment_changed: z.object({ segment: z.string().trim().min(1).max(120), country: profileFilters.country, companyStatus: profileFilters.companyStatus, pipelineStage: profileFilters.pipelineStage, minFitScore: profileFilters.minFitScore }),
+  company_segment_changed: z.object({ ...profileFilters, segment: z.string().trim().min(1).max(120) }),
   pipeline_stage_changed: z.object({ stage: z.enum(pipelineStages), ...profileFilters }),
 };
 
@@ -157,8 +162,18 @@ export const flowInputSchema = z.object({
     config: configSchema,
   })).min(1, "Add at least one step.").max(50),
 }).superRefine((flow, context) => {
+  const scope = flow.triggerConfig;
+  if (scope.flowScope && (!scope.scopeCompanyId || (scope.flowScope === "email" && !scope.scopeContactId))) {
+    context.addIssue({ code: "custom", path: ["triggerConfig"], message: "Choose the email or company for this flow." });
+  }
+  if (!scope.flowScope && (scope.scopeCompanyId || scope.scopeContactId || scope.scopeLabel)) {
+    context.addIssue({ code: "custom", path: ["triggerConfig"], message: "A scoped flow must retain its email or company scope." });
+  }
+  if (scope.flowScope === "company" && scope.scopeContactId) {
+    context.addIssue({ code: "custom", path: ["triggerConfig"], message: "Company flows cannot specify an individual email scope." });
+  }
   const trigger = triggerConfigSchemas[flow.triggerType].safeParse(flow.triggerConfig);
-  if (!trigger.success) context.addIssue({ code: "custom", path: ["triggerConfig"], message: "Complete the trigger settings." });
+  if (!trigger.success) context.addIssue({ code: "custom", path: ["triggerConfig"], message: trigger.error.issues[0]?.message || "Complete the trigger settings." });
   flow.steps.forEach((step, index) => {
     const result = stepConfigSchemas[step.type].safeParse(step.config);
     if (!result.success) context.addIssue({ code: "custom", path: ["steps", index, "config"], message: result.error.issues[0]?.message || "Complete this step." });
@@ -170,6 +185,14 @@ export const flowInputSchema = z.object({
 }));
 
 export type FlowInput = z.infer<typeof flowInputSchema>;
+
+export function isEmailScopedFlow(config: JsonConfig) {
+  return Boolean(config.flowScope || config.scopeCompanyId || config.scopeContactId);
+}
+
+export function emailFlowScope(config: JsonConfig): JsonConfig {
+  return Object.fromEntries(["flowScope", "scopeCompanyId", "scopeContactId", "scopeLabel"].filter((key) => key in config).map((key) => [key, config[key]]));
+}
 
 export const defaultFlowInput: FlowInput = {
   name: "3-step follow-up",

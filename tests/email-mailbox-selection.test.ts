@@ -58,6 +58,8 @@ function setup() {
     } },
     "@/lib/supabase/admin": { createSupabaseAdmin: () => db },
     "@/lib/email-threading": threading,
+    "@/lib/email-content": emailContent,
+    "@/lib/data/email-footers": { prepareUserEmail: async (_id: string, mail: unknown) => mail },
     "@/lib/data/email-auto-reply": { stopAutoReplyForManualSend: async () => undefined },
   });
   const send = (input: Record<string, unknown> = {}) => route.POST(new Request("http://localhost/api/email/send", {

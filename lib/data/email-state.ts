@@ -1,5 +1,6 @@
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 import type { AutomationFlowStep, InboxEmailItem } from "../email-inbox.ts";
+import { resolveEmailContentIds } from "../email-content.ts";
 
 export type EmailCategory = "Needs follow-up" | "Waiting on customer" | "Interested" | "Big order" | "No action";
 export type EmailFolderState = "inbox" | "archive" | "trash";
@@ -80,7 +81,7 @@ export async function saveEmailAutomationSettings(userId: string, enabled: boole
 export async function listSentMailboxMessages(userId: string, mailboxId?: string): Promise<InboxEmailItem[]> {
   let query = createSupabaseAdmin()
     .from("mailbox_sent_messages")
-    .select("id,mailbox_id,from_email,to_email,subject,body,status,sent_at,message_id,thread_key,in_reply_to,reference_ids,attachments")
+    .select("id,mailbox_id,from_email,to_email,subject,body,body_html,status,sent_at,message_id,thread_key,in_reply_to,reference_ids,attachments")
     .eq("user_id", userId);
   if (mailboxId !== undefined) query = query.eq("mailbox_id", mailboxId);
   const { data, error } = await query.order("sent_at", { ascending: false })
@@ -98,6 +99,7 @@ export async function listSentMailboxMessages(userId: string, mailboxId?: string
       company: "Direct email",
       preview: row.body.replace(/\s+/g, " ").slice(0, 160),
       body: row.body,
+      html: row.body_html ? resolveEmailContentIds(row.body_html, Array.isArray(row.attachments) ? row.attachments.map((value, index) => ({ cid: value && typeof value === "object" && typeof value.cid === "string" ? value.cid : undefined, url: `/api/email/attachments/${row.id}/${index}` })) : []) : null,
       timestamp: row.sent_at,
       messageId: row.message_id,
       threadId: row.thread_key,
@@ -105,7 +107,7 @@ export async function listSentMailboxMessages(userId: string, mailboxId?: string
       references: Array.isArray(row.reference_ids) ? row.reference_ids : [],
       attachments: Array.isArray(row.attachments) ? row.attachments.flatMap((value, index) => {
         if (!value || typeof value !== "object" || typeof value.filename !== "string" || typeof value.contentType !== "string" || typeof value.size !== "number") return [];
-        return [{ filename: value.filename, contentType: value.contentType, size: value.size, url: `/api/email/attachments/${row.id}/${index}` }];
+        return [{ filename: value.filename, contentType: value.contentType, size: value.size, cid: typeof value.cid === "string" ? value.cid : undefined, url: `/api/email/attachments/${row.id}/${index}` }];
       }) : [],
     };
     return item;

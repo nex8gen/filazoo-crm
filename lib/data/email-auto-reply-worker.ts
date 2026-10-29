@@ -1,5 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
+import { prepareUserEmail } from "./email-footers";
 import { createSupabaseAdmin } from "../supabase/admin";
 import type { WorkspaceViewer } from "../auth";
 import { autoReplyConversation, autoReplyInstruction, autoReplyPlanSchema, latestCustomerMessage, mergeAutoReplyHistory, messageIdentity, isAutoReplySchemaMissing, type AutoReplyPlan } from "../email-auto-reply";
@@ -194,6 +195,9 @@ async function deliver(row: AutoReplyRow, history: InboxEmailItem[], latest: Inb
     if (attachments.some((attachment) => attachment.content.length > 7_500_000)) throw new Error("An attachment exceeds 7.5 MB.");
     const { data: manager } = await db.from("workspace_members").select("display_name").eq("user_id", row.assigned_to).single().throwOnError();
     body = applyEmailSignature(body, { name: manager.display_name || "Filazoo Sales Team", title: DEFAULT_EMAIL_TITLE, company: DEFAULT_EMAIL_COMPANY }, "en");
+    const emailContent = await prepareUserEmail(row.user_id, { text: body, attachments });
+    body = emailContent.text;
+    attachments = emailContent.attachments as Attachment[];
     const subject = `Re: ${latest.subject.replace(/^(re:\s*)+/i, "")}`.replace(/[\r\n]/g, " ").slice(0, 300);
     const references = replyReferences(latest);
     const sentId = randomUUID();
@@ -201,19 +205,19 @@ async function deliver(row: AutoReplyRow, history: InboxEmailItem[], latest: Inb
     for (const [index, attachment] of attachments.entries()) {
       const path = `${row.user_id}/${sentId}/${index}`;
       await db.storage.from("mailbox-attachments").upload(path, attachment.content, { contentType: attachment.contentType, upsert: false }).then(({ error }) => { if (error) throw error; });
-      stored.push({ filename: attachment.filename, contentType: attachment.contentType, size: attachment.content.length, path });
+      stored.push({ filename: attachment.filename, contentType: attachment.contentType, size: attachment.content.length, path, ...( "cid" in attachment ? { cid: attachment.cid } : {}) });
     }
     const fresh = await currentConversation(row, true);
     if (!fresh.latest || messageIdentity(fresh.latest) !== key) throw new Error("A newer customer message arrived. Review before replying.");
     const sender = await checkCanSend(row);
     const sent = await sendMailboxEmail({ host: sender.smtpHost, port: sender.smtpPort, user: sender.smtpUsername, pass: sender.smtpPassword, from: sender.email }, {
-      to: row.recipient, subject, text: body, inReplyTo: latest.messageId || undefined, references, attachments,
+      to: row.recipient, subject, text: body, html: emailContent.html, inReplyTo: latest.messageId || undefined, references, attachments,
     });
     const sentAt = new Date().toISOString();
     await db.from("mailbox_sent_messages").insert({
       id: sentId, user_id: row.user_id, mailbox_id: row.sender_id, from_email: sender.email, to_email: row.recipient,
       message_id: sent.messageId, thread_key: row.thread_key, in_reply_to: latest.messageId, reference_ids: references,
-      subject, body, status: "sent", sent_at: sentAt, attachments: stored,
+      subject, body, body_html: emailContent.html || null, status: "sent", sent_at: sentAt, attachments: stored,
     }).throwOnError();
     await db.from("email_auto_reply_deliveries").update({ status: "sent", message_id: sent.messageId, sent_at: sentAt }).eq("id", delivery.id).throwOnError();
     const sentMessage: InboxEmailItem = { id: `sent-${sentId}`, direction: "outbound", contact: row.recipient, subject, body, timestamp: sentAt,

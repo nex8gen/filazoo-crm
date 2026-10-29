@@ -20,6 +20,8 @@ test("read-only viewers cannot send email, even by calling the HTTP handler dire
     "@/lib/mailer": { sendMailboxEmail: () => { throw new Error("Tests must not send emails"); } },
     "@/lib/supabase/admin": {},
     "@/lib/email-threading": {},
+    "@/lib/email-content": {},
+    "@/lib/data/email-footers": {},
   };
   const code = ts.transpileModule(readFileSync(new URL("../app/api/email/send/route.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   vm.runInNewContext(code, { exports, require: (name: string) => dependencies[name] ?? require(name), Response, Request, Buffer, crypto, console });

@@ -120,11 +120,22 @@ create table public.mailbox_sent_messages (
   to_email citext not null,
   subject text not null,
   body text not null default '',
+  body_html text,
   attachments jsonb not null default '[]'::jsonb check (jsonb_typeof(attachments) = 'array'),
   status text not null default 'sent' check (status in ('sent','failed')),
   sent_at timestamptz not null default now(),
   created_at timestamptz not null default now()
 );
+
+create table public.email_footers (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  text text not null default '' check (char_length(text) <= 10000),
+  html text not null default '' check (char_length(html) <= 100000),
+  updated_at timestamptz not null default now()
+);
+alter table public.email_footers enable row level security;
+revoke all on public.email_footers from anon, authenticated;
+grant all on public.email_footers to service_role;
 
 create table public.companies (
   id uuid primary key default gen_random_uuid(), name text not null, website text,

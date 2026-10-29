@@ -42,7 +42,7 @@
 .mail-reply-panel[data-expanded="true"] .mail-reply-content { display: flex; flex-direction: column; padding-top: 4px; }
 .mail-reply-editor { display: flex; flex: 1; flex-direction: column; min-height: 0; width: 100%; }
 .mail-reply-input { display: flex; flex: 1; flex-direction: column; min-height: 120px; }
-.mail-reply-input textarea { flex: 1; min-height: 60px; resize: none; }
+.mail-reply-input .email-body-editor { flex: 1; min-height: 60px; }
 .mail-reply-input > :last-child { flex-shrink: 0; }
 .mail-reply-editor > [role="status"] { max-height: 3rem; flex-shrink: 0; overflow-y: auto; overflow-wrap: anywhere; }
 .column-resize-handle.mail-reply-resize { position: relative; inset: auto; flex: 0 0 8px; width: 100%; transform: none; cursor: row-resize; }
@@ -79,7 +79,7 @@ body:has(.mail-reply-resize[data-dragging]) { cursor: row-resize; }
   .mail-sender-address { display: none; }
   .mail-row time { grid-column: 3; grid-row: 1; }
   .mail-reader > div:first-of-type { padding-inline: 12px; }
-  .mail-reader textarea { font-size: 16px; }
+  .mail-reader .email-body-editor { font-size: 16px; }
 }
 
 /* Company profiles already supply account navigation and customer context. */
@@ -110,3 +110,11 @@ body:has(.mail-reply-resize[data-dragging]) { cursor: row-resize; }
   .company-email-workspace .mail-layout[data-reading="true"] .mail-reader { display: flex; }
   .company-email-workspace .mail-layout[data-reading="true"] .mail-list { display: none; }
 }
+.email-body-editor { position: relative; overflow-wrap: anywhere; }
+.email-body-editor[aria-busy="true"] { cursor: progress; opacity: .65; }
+.email-body-editor[data-empty="true"]::before { position: absolute; content: attr(data-placeholder); color: var(--muted-foreground); pointer-events: none; }
+.email-body-editor img { display: inline-block; max-width: 100%; height: auto; vertical-align: middle; }
+.email-body-editor table { max-width: 100%; }
+.email-body-editor a { color: var(--primary); text-decoration: underline; }
+.email-body-editor ul { padding-left: 1.5rem; list-style: disc; }
+.email-body-editor ol { padding-left: 1.5rem; list-style: decimal; }

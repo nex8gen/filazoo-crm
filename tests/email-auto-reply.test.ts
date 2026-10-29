@@ -105,6 +105,7 @@ function workerFixture() {
   const rpc = db.rpc;
   Object.assign(db, { rpc: (...args: Parameters<typeof rpc>) => ({ throwOnError: () => rpc(...args) }) });
   const dependencies: Record<string, unknown> = {
+    "./email-footers": { prepareUserEmail: async (_id: string, mail: unknown) => mail },
     "server-only": {}, "node:crypto": { randomUUID: () => "sent-record" },
     "../supabase/admin": { createSupabaseAdmin: () => db }, "../email-auto-reply": autoReply,
     "./email-auto-reply": { authorizeAutoReply: async () => undefined,

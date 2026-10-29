@@ -12,6 +12,7 @@ import { getInvoice } from "./invoices";
 import { canReadInvoices } from "../invoice-permissions";
 import type { ReplyRequestInput } from "../ai/crm-reply-tools";
 import { sendMailboxEmail } from "../mailer";
+import { prepareUserEmail } from "./email-footers";
 import { stopAutoReplyForManualSend } from "./email-auto-reply";
 import { normalizeMessageId, threadKeyForEmail } from "../email-threading";
 import { replyRequestThreadUrl, type ReplyRequestSummary, type ReplyRequestStatus } from "../customer-reply-workflow";
@@ -141,13 +142,21 @@ export async function startReplyRequest(input: ReplyRequestInput, viewer: Worksp
   if (!email) return { success: "Waiting for a new reply to the selected sent email. A matching human reply will create one review task; no email was resent.", requestId: actionId, href: "/tasks" };
   try {
     if (email.inReplyTo || email.references?.length) await stopAutoReplyForManualSend(viewer, [...(email.references ?? []), ...(email.inReplyTo ? [email.inReplyTo] : [])], recipient);
+    const content = await prepareUserEmail(viewer.id, { text: email.text });
+    const stored = [];
+    for (const [index, attachment] of content.attachments.entries()) {
+      const path = `${viewer.id}/${actionId}/${index}`;
+      const { error: uploadError } = await db.storage.from("mailbox-attachments").upload(path, attachment.content, { contentType: attachment.contentType, upsert: false });
+      if (uploadError) throw new Error("Unable to store the email footer.");
+      stored.push({ filename: attachment.filename, contentType: attachment.contentType, size: attachment.content.length, path, cid: attachment.cid });
+    }
     const sent = await sendMailboxEmail({ host: mailbox.smtpHost, port: mailbox.smtpPort, user: mailbox.smtpUsername, pass: mailbox.smtpPassword, from: mailbox.email },
-      { to: recipient, subject: input.op === "request_customer_information" ? input.subject : "", text: email.text, messageId, inReplyTo: email.inReplyTo, references: email.references });
+      { to: recipient, subject: input.op === "request_customer_information" ? input.subject : "", ...content, messageId, inReplyTo: email.inReplyTo, references: email.references });
     const actualMessageId = normalizeMessageId(sent.messageId);
     if (!actualMessageId) throw new Error("SMTP did not confirm a message identity.");
     const { error: saveError } = await db.from("mailbox_sent_messages").insert({ id: actionId, user_id: viewer.id, mailbox_id: mailbox.id,
-      message_id: sent.messageId, from_email: mailbox.email, to_email: recipient, subject: email.subject, body: email.text,
-      thread_key: threadKey, in_reply_to: email.inReplyTo ?? null, reference_ids: email.references ?? [], status: "sent", sent_at: new Date().toISOString(), attachments: [] });
+      message_id: sent.messageId, from_email: mailbox.email, to_email: recipient, subject: email.subject, body: content.text, body_html: content.html || null,
+      thread_key: threadKey, in_reply_to: email.inReplyTo ?? null, reference_ids: email.references ?? [], status: "sent", sent_at: new Date().toISOString(), attachments: stored });
     const { data: armed, error: armError } = await db.from("agent_reply_requests").update({ status: "waiting", message_id: actualMessageId, sent_record_id: saveError ? null : actionId,
       last_error: saveError ? "Email was accepted but its Sent copy could not be saved. Do not resend automatically." : null, updated_at: new Date().toISOString(),
     }).eq("id", actionId).eq("user_id", viewer.id).eq("status", "sending").select("id").maybeSingle();

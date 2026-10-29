@@ -16,6 +16,22 @@ Reviewed October 27, 2026. This audit covers the full builder, rather than one e
 
 ## Actions and options
 
+### Email and company flows (October 29, 2026)
+
+The email contact panel replaces Next follow-up and the workspace automation toggle with **Automation flow → Open flow builder**. The builder opens with Email received and the selected CRM contact prefilled. **This email address** restricts enrollment to that contact; **This company** allows matching contacts at that company. Triggers and actions remain customizable, while the scope stays fixed. Existing flows can be reopened, paused, duplicated, or managed from Email; they are excluded from the main Flows list and the legacy workspace follow-up shortcut.
+
+The server resolves the contact/company, checks company assignment for BD managers, rejects attempts to remove or change a saved scope, and rechecks the current company before queued actions execute. Company stage/segment events use an email-specific flow's selected contact even when the event carries another representative contact. Unknown or ambiguous addresses require a saved CRM contact first. Email received starts on future incoming messages after activation; selecting an existing conversation does not immediately send email.
+
+Verification: schema and all-trigger filtering, draft persistence/reopening, API permissions, list isolation, wait/pause/resume, contact reassignment and company event targeting are covered by the email-flow, flow visibility, flow runtime, and flow model suites. The local browser confirmed the new card, both scopes, and trigger customization using an existing company without saving a live flow or sending customer mail. SMTP/AI execution is intercepted in runtime tests; actual provider credentials and inbox delivery remain external dependencies.
+
+### Selected customer enrollment (October 29, 2026)
+
+In Trigger → Configure → Customers in this flow, choose **Selected customers only**, search for a company, and check one or more saved customers. Selections can span companies, remain selected while browsing or changing trigger events, and are saved with the flow. Search results are paginated; existing selections reload by contact ID. Up to 200 customers can be selected. An empty selection cannot be saved; choose **All matching customers** to remove the restriction.
+
+Every trigger applies the selected contact IDs together with existing company filters. Email and AI auto-reply actions recheck the current selection before sending, so removing a customer also blocks their queued email steps. Existing flows without a customer selection retain their current enrollment behavior. Selecting customers restricts eligibility; the configured trigger must still occur.
+
+Validation: `tests/flows.test.ts`, `tests/flow-customers.test.ts`, and `tests/flow-runtime.test.ts` cover schema persistence for all trigger types, single/multiple recipients, exclusion of other contacts at the same company, missing contacts, empty selections, authenticated searches, pagination, and removing a recipient during a wait. Browser verification loaded real company/contact options and checked selection across companies without saving a live flow or sending email. TypeScript, changed-file ESLint, and the production build passed.
+
 | Action | Controls verified |
 | --- | --- |
 | Wait | Minutes, hours, calendar days, business days, optional resume time, successive waits, pause/resume and stored due timestamps. Business-time minute/hour durations exclude weekends throughout the interval. Execution uses UTC, matching the editor labels and assistant capability guide. |

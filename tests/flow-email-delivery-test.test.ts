@@ -59,6 +59,8 @@ function fixture() {
     return query;
   }
   const dependencies = {
+    "./email-footers.ts": { getUserEmailFooter: async () => null, prepareUserEmail: async (_id: string, mail: unknown) => mail },
+    "../email-footer.ts": { removeStandardSignoff: (text: string) => text },
     "../flow-email-test.ts": schema, "../flow-engine.ts": engine, "../outreach-policy.ts": policy,
     "../env.ts": { env: { DAILY_SEND_LIMIT: 20, BOUNCE_PAUSE_PERCENT: 3, dryRun: true, NEXT_PUBLIC_APP_URL: "https://crm.example.com", supabaseSecretKey: "test" } },
     "../supabase/admin.ts": { createSupabaseAdmin: () => ({ from, storage: { from: () => ({ upload: async (path: string) => { uploads.push(path); return { error: null }; }, remove: async () => ({ error: null }) }) } }) },

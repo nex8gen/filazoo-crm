@@ -53,8 +53,24 @@ export function matchesProfileFilters(config: JsonConfig, facts: FlowFacts) {
   return true;
 }
 
+export function matchesFlowCustomer(config: JsonConfig, contactId?: string | null) {
+  if (config.flowScope === "email" && (!contactId || normalized(config.scopeContactId) !== normalized(contactId))) return false;
+  // An absent selection preserves existing flows. An empty or malformed
+  // selection must never broaden a restricted flow to everyone.
+  if (!("contactIds" in config)) return true;
+  return Array.isArray(config.contactIds) && Boolean(contactId)
+    && config.contactIds.some((id) => normalized(id) === normalized(contactId));
+}
+
+export function matchesFlowScope(config: JsonConfig, companyId?: string | null, contactId?: string | null) {
+  if (!config.flowScope) return !config.scopeCompanyId && !config.scopeContactId;
+  if (!["email", "company"].includes(String(config.flowScope)) || !companyId || !config.scopeCompanyId) return false;
+  return normalized(config.scopeCompanyId) === normalized(companyId)
+    && (config.flowScope !== "email" || Boolean(contactId && config.scopeContactId && normalized(config.scopeContactId) === normalized(contactId)));
+}
+
 export function triggerMatches(type: TriggerType, config: JsonConfig, event: TriggerEvent, facts: FlowFacts) {
-  if (event.type !== type || !matchesProfileFilters(config, facts)) return false;
+  if (event.type !== type || !matchesFlowScope(config, event.companyId, event.contactId) || !matchesFlowCustomer(config, event.contactId) || !matchesProfileFilters(config, facts)) return false;
   if (type === "category_changed") return normalized(config.category) === normalized(event.category);
   if (type === "lead_added_to_list") return normalized(config.listId) === normalized(event.listId);
   if (type === "company_segment_changed") return normalized(config.segment) === normalized(event.segment ?? facts.segment);

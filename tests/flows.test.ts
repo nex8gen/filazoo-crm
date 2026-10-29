@@ -1,10 +1,60 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { defaultFlowInput, flowInputSchema } from "../lib/flows.ts";
+import { defaultFlowInput, flowInputSchema, triggerTypes } from "../lib/flows.ts";
 import { calculateWaitUntil, simulateFlow, triggerMatches, flowConversationPath, nextBusinessWindow, type FlowFacts } from "../lib/flow-engine.ts";
 import { buildFlowEmail, signTracking, verifyTracking } from "../lib/flow-tracking.ts";
 
 const facts: FlowFacts = { customerReplied: false, openedEmail: false, clickedLink: false, category: "Interested", segment: "Print farm", country: "US", companyStatus: "qualified", pipelineStage: "interested", fitScore: 8 };
+
+const customerA = "11111111-1111-4111-8111-111111111111";
+const customerB = "22222222-2222-4222-8222-222222222222";
+
+test("every trigger persists email/company scope and excludes other companies and addresses", () => {
+  for (const triggerType of triggerTypes) {
+    for (const flowScope of ["email", "company"]) {
+      const config = { flowScope, scopeCompanyId: customerA, ...(flowScope === "email" ? { scopeContactId: customerB } : {}), scopeLabel: "customer@example.com", amount: 2, unit: "days", category: "Interested", listId: "Shopify B2B leads", segment: "Print farm", stage: "interested" };
+      const saved = flowInputSchema.parse({ ...defaultFlowInput, triggerType, triggerConfig: config });
+      const reopened = flowInputSchema.parse(JSON.parse(JSON.stringify(saved)));
+      assert.equal(reopened.triggerConfig.flowScope, flowScope);
+      assert.equal(reopened.triggerConfig.scopeCompanyId, customerA);
+      const event = { type: triggerType, companyId: customerA, contactId: customerB, conversationId: "thread", category: "Interested", listId: "Shopify B2B leads", segment: "Print farm", stage: "interested" };
+      assert.equal(triggerMatches(triggerType, reopened.triggerConfig, event, facts), true);
+      assert.equal(triggerMatches(triggerType, reopened.triggerConfig, { ...event, companyId: customerB }, facts), false);
+      assert.equal(triggerMatches(triggerType, reopened.triggerConfig, { ...event, contactId: customerA }, facts), flowScope === "company");
+      assert.equal(triggerMatches(triggerType, reopened.triggerConfig, { ...event, companyId: null }, facts), false);
+    }
+  }
+  for (const triggerConfig of [{ flowScope: "email", scopeCompanyId: customerA }, { flowScope: "company" }, { scopeCompanyId: customerA }, { flowScope: "email", scopeCompanyId: "bad", scopeContactId: customerB }]) {
+    assert.equal(flowInputSchema.safeParse({ ...defaultFlowInput, triggerConfig }).success, false);
+  }
+});
+
+test("every trigger saves one or multiple selected customers and retains company filters", () => {
+  for (const triggerType of triggerTypes) {
+    for (const contactIds of [[customerA], [customerA, customerB, customerA]]) {
+      const triggerConfig = { amount: 2, unit: "days", category: "Interested", listId: "Shopify B2B leads", segment: "Print farm", stage: "interested", country: "US", contactIds };
+      const saved = flowInputSchema.parse({ ...defaultFlowInput, triggerType, triggerConfig });
+      const reopened = flowInputSchema.parse(JSON.parse(JSON.stringify(saved)));
+      assert.deepEqual(reopened.triggerConfig.contactIds, [...new Set(contactIds)]);
+      assert.equal(reopened.triggerConfig.country, "US");
+      for (const contactId of [customerA, customerB, null, "33333333-3333-4333-8333-333333333333"]) {
+        const event = { type: triggerType, conversationId: "company:1", contactId, category: "Interested", listId: "Shopify B2B leads", segment: "Print farm", stage: "interested" };
+        assert.equal(triggerMatches(triggerType, reopened.triggerConfig, event, facts), Boolean(contactId && contactIds.includes(contactId)));
+        assert.equal(triggerMatches(triggerType, reopened.triggerConfig, event, { ...facts, country: "UK" }), false);
+      }
+    }
+  }
+});
+
+test("restricted flows reject an empty, oversized or malformed customer selection", () => {
+  for (const contactIds of [[], ["bad-id"], customerA, null, Array(201).fill(customerA)]) {
+    assert.equal(flowInputSchema.safeParse({ ...defaultFlowInput, triggerConfig: { ...defaultFlowInput.triggerConfig, contactIds } }).success, false);
+  }
+  for (const contactIds of [[], "bad-id", null]) {
+    assert.equal(triggerMatches("email_received", { contactIds }, { type: "email_received", conversationId: "thread", contactId: customerA }, facts), false);
+  }
+  assert.equal(triggerMatches("email_received", {}, { type: "email_received", conversationId: "thread", contactId: customerB }, facts), true);
+});
 
 test("the shipped 3-step follow-up is a valid flow", () => {
   const parsed = flowInputSchema.safeParse(defaultFlowInput);
