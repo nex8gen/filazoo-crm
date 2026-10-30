@@ -26,6 +26,9 @@ export async function generateGatewayText({
   maxOutputTokens = 1_200,
   fetcher = fetch,
 }: GenerateGatewayTextOptions) {
+  let expiresAt: unknown;
+  try { if (token.split(".").length === 3) expiresAt = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString()).exp; } catch { /* Opaque API keys need no JWT inspection. */ }
+  if (typeof expiresAt === "number" && expiresAt * 1000 <= Date.now()) throw new Error("AI Gateway authentication has expired. Refresh the linked project's local development token with vercel env pull, then reload the server environment.");
   const response = await fetcher("https://ai-gateway.vercel.sh/v1/chat/completions", {
     method: "POST",
     headers: {

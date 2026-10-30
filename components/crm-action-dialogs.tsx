@@ -5,15 +5,14 @@ import { PackageSearch } from "lucide-react";
 import { useActionState, useState } from "react";
 import { Download, FileText, MailPlus, Plus } from "lucide-react";
 import { toast } from "sonner";
-import { createCatalog, createCompany, createEmailDraft, createOpportunity, type CrmActionState } from "@/app/crm-actions";
+import { createCatalog, createCompany, createEmailDraft, type CrmActionState } from "@/app/crm-actions";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { pipelineStageLabels, pipelineStageValues, type Company, type ContactOption, type Product } from "@/lib/types";
-import { followupInstant } from "@/lib/company-followup";
+import { type Company, type ContactOption, type Product } from "@/lib/types";
 import { companyExportCsv } from "@/lib/company-export";
 
 function ActionMessage({ state }: { state: CrmActionState }) {
@@ -47,7 +46,7 @@ export function AddCompanyButton({ canWrite, compact = false }: { canWrite: bool
       <Button size="sm" disabled={!canWrite} title={canWrite ? "Add a company" : "Viewer access is read-only"} onClick={() => dialog.setOpen(true)}><Plus />{compact ? "Add" : "Add company"}</Button>
       <Dialog open={dialog.open} onOpenChange={dialog.setOpen}>
         <DialogContent className="sm:max-w-2xl">
-          <DialogHeader><DialogTitle>Add company</DialogTitle><DialogDescription>Create a prospect, pipeline entry, optional contact, and audit event.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>Add company</DialogTitle><DialogDescription>Create a company profile, optional contact, and audit event.</DialogDescription></DialogHeader>
           <form action={dialog.action} className="grid gap-4 sm:grid-cols-2">
             <Field label="Company name" id="company-name"><Input id="company-name" name="name" required autoFocus /></Field>
             <Field label="Website" id="company-website"><Input id="company-website" name="website" inputMode="url" placeholder="https://example.com" /></Field>
@@ -84,35 +83,6 @@ export function ExportCompaniesButton({ companies }: { companies: Company[] }) {
   return <Button size="sm" variant="outline" disabled={!companies.length} onClick={exportCsv}><Download />Export</Button>;
 }
 
-export function AddOpportunityButton({ companies, canWrite }: { companies: Company[]; canWrite: boolean }) {
-  const dialog = useActionDialog(createOpportunity);
-  const [followup, setFollowup] = useState("");
-  const enabled = canWrite && companies.length > 0;
-  return (
-    <>
-      <Button size="sm" disabled={!enabled} title={!canWrite ? "Viewer access is read-only" : companies.length ? "Add an opportunity" : "Add a company first"} onClick={() => dialog.setOpen(true)}><Plus />Add opportunity</Button>
-      <Dialog open={dialog.open} onOpenChange={dialog.setOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader><DialogTitle>Add opportunity</DialogTitle><DialogDescription>Set the pipeline stage, value, owner, and next follow-up.</DialogDescription></DialogHeader>
-          <form action={dialog.action} className="space-y-4">
-            <input type="hidden" name="nextFollowupAt" value={followupInstant(followup)} />
-            <Field label="Company" id="opportunity-company"><Select name="companyId" required><SelectTrigger id="opportunity-company" className="w-full"><SelectValue placeholder="Choose a company" /></SelectTrigger><SelectContent>{companies.map((company) => <SelectItem key={company.id} value={company.id}>{company.name}</SelectItem>)}</SelectContent></Select></Field>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Stage" id="opportunity-stage"><Select name="stage" defaultValue="new"><SelectTrigger id="opportunity-stage" className="w-full"><SelectValue /></SelectTrigger><SelectContent>{pipelineStageValues.map((value) => <SelectItem key={value} value={value}>{pipelineStageLabels[value]}</SelectItem>)}</SelectContent></Select></Field>
-              <Field label="Next follow-up" id="opportunity-followup"><Input id="opportunity-followup" type="datetime-local" value={followup} onChange={(event) => setFollowup(event.target.value)} /></Field>
-              <Field label="Estimated value" id="opportunity-value"><Input id="opportunity-value" name="estimatedValue" type="number" min="0" step="0.01" /></Field>
-              <Field label="Currency" id="opportunity-currency"><Select name="currency" defaultValue="USD"><SelectTrigger id="opportunity-currency" className="w-full"><SelectValue /></SelectTrigger><SelectContent>{["USD", "EUR", "GBP", "CNY"].map((currency) => <SelectItem key={currency} value={currency}>{currency}</SelectItem>)}</SelectContent></Select></Field>
-            </div>
-            <Field label="Notes" id="opportunity-notes"><Textarea id="opportunity-notes" name="notes" /></Field>
-            <ActionMessage state={dialog.state} />
-            <DialogFooter><Button type="button" variant="outline" onClick={() => dialog.setOpen(false)}>Cancel</Button><Button type="submit" disabled={dialog.pending}>{dialog.pending ? "Saving…" : "Save opportunity"}</Button></DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-}
-
 export function NewEmailDraftButton({ contacts, canWrite, label = "New sequence" }: { contacts: ContactOption[]; canWrite: boolean; label?: string }) {
   const dialog = useActionDialog(createEmailDraft);
   const enabled = canWrite && contacts.length > 0;
@@ -135,7 +105,7 @@ export function NewEmailDraftButton({ contacts, canWrite, label = "New sequence"
   );
 }
 
-export function NewCatalogButton({ companies, products, canWrite, label = "New catalog" }: { companies: Pick<Company, "id" | "name">[]; products: Product[]; canWrite: boolean; label?: string }) {
+export function NewCatalogButton({ companies, products, canWrite, label = "New quotation" }: { companies: Pick<Company, "id" | "name">[]; products: Product[]; canWrite: boolean; label?: string }) {
   const dialog = useActionDialog(createCatalog);
   const enabled = canWrite && companies.length > 0;
   return (
@@ -143,7 +113,7 @@ export function NewCatalogButton({ companies, products, canWrite, label = "New c
       <Button size="sm" disabled={!enabled} title={!canWrite ? "Viewer access is read-only" : companies.length ? "Create a catalog selection" : "Add a company first"} onClick={() => dialog.setOpen(true)}><FileText />{label}</Button>
       <Dialog open={dialog.open} onOpenChange={dialog.setOpen}>
         <DialogContent className="sm:max-w-2xl">
-          <DialogHeader><DialogTitle>Create catalog selection</DialogTitle><DialogDescription>Save the company, currency, and focused product set. A PDF is generated automatically, ready to preview and download from Company Catalogs. Prices keep their original product currency.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>Create quotation selection</DialogTitle><DialogDescription>Save a private product snapshot. Open the quotation afterward to set quantities, shipping and payment terms.</DialogDescription></DialogHeader>
           <form action={dialog.action} className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Company" id="catalog-company"><Select name="companyId" required><SelectTrigger id="catalog-company" className="w-full"><SelectValue placeholder="Choose a company" /></SelectTrigger><SelectContent>{companies.map((company) => <SelectItem key={company.id} value={company.id}>{company.name}</SelectItem>)}</SelectContent></Select></Field>

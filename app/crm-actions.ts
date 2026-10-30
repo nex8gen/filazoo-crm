@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireWorkspaceMember } from "@/lib/auth";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
-import { pipelineStageValues } from "@/lib/types";
 import { variantTag } from "@/lib/product-utils";
 import { enrollMatchingFlows, enrollNewLeadFlows } from "@/lib/data/flow-runtime";
 import { claimNextBdSalesManager } from "@/lib/lead-assignment";
@@ -48,22 +47,10 @@ const companySchema = z.object({
   contactEmail: z.string().trim().toLowerCase().email().optional().or(z.literal("")),
 });
 const companyUpdateSchema = companySchema.extend({
-  stage: z.enum(pipelineStageValues),
-  estimatedOrderQuantity: z.union([z.literal(""), z.coerce.number().int().min(0).max(100_000_000)]),
-  estimatedValue: z.union([z.literal(""), z.coerce.number().min(0).max(1_000_000_000)]),
-  currency: z.enum(["USD", "EUR", "GBP", "CNY"]),
   nextFollowupAt: optionalDateTime,
   summary: optionalText(5000),
   fitScore: z.union([z.literal(""), z.coerce.number().int().min(1).max(10)]),
   tags: optionalText(2000),
-});
-const opportunitySchema = z.object({
-  companyId: z.string().uuid(),
-  stage: z.enum(pipelineStageValues),
-  estimatedValue: z.union([z.literal(""), z.coerce.number().min(0).max(1_000_000_000)]),
-  currency: z.enum(["USD", "EUR", "GBP", "CNY"]),
-  nextFollowupAt: optionalDateTime,
-  notes: optionalText(2000),
 });
 const emailSchema = z.object({
   contactId: z.string().uuid(),
@@ -128,7 +115,7 @@ function domainFromWebsite(website: string | null) {
 }
 
 function refreshCrm() {
-  ["/", "/companies", "/segments", "/pipeline", "/emails", "/catalogs", "/catalogs/companies"].forEach((path) => revalidatePath(path));
+  ["/", "/companies", "/segments", "/emails", "/catalogs", "/catalogs/companies"].forEach((path) => revalidatePath(path));
 }
 
 function refreshCompany(companyId: string) {
@@ -178,7 +165,7 @@ export async function createCompany(_state: CrmActionState, formData: FormData):
 
   const assignedOwnerId = await claimNextBdSalesManager(admin);
   const relatedWrites = [
-    admin.from("pipeline").insert({ company_id: company.id, stage: "new", owner_id: assignedOwnerId }),
+    admin.from("pipeline").insert({ company_id: company.id, owner_id: assignedOwnerId }),
     admin.from("events").insert({ company_id: company.id, actor_id: viewer.id, type: "company_created", data: { summary: `${parsed.data.name} was added manually.` } }),
   ];
   if (parsed.data.contactEmail) {
@@ -223,7 +210,6 @@ export async function updateCompanyFields(companyId: string, input: unknown): Pr
     catch (reason) { console.error("Contact saved, but flow enrollment failed:", reason); }
   }
   if (data.segmentChanged) await enrollCompanyEvent({ type: "company_segment_changed", conversationId: `company:${companyId}`, companyId, contactId: data.contactId, segment: changes.segment! });
-  if (data.stageChanged) await enrollCompanyEvent({ type: "pipeline_stage_changed", conversationId: `company:${companyId}:pipeline`, companyId, contactId: data.contactId, stage: changes.stage! });
   refreshCompany(companyId);
   return { success: `${data.companyName} was updated.` };
 }
@@ -236,20 +222,19 @@ export async function updateCompany(companyId: string, _state: CrmActionState, f
   const parsed = companyUpdateSchema.safeParse({
     name: formData.get("name"), website: formData.get("website"), country: formData.get("country"), city: formData.get("city"),
     segment: formData.get("segment"), contactName: formData.get("contactName"), contactRole: formData.get("contactRole"), contactEmail: formData.get("contactEmail"),
-    stage: formData.get("stage"), estimatedOrderQuantity: formData.get("estimatedOrderQuantity") || "", estimatedValue: formData.get("estimatedValue") || "",
-    currency: formData.get("currency"), nextFollowupAt: formData.get("nextFollowupAt"), summary: formData.get("summary"), fitScore: formData.get("fitScore") || "", tags: formData.get("tags"),
+    nextFollowupAt: formData.get("nextFollowupAt"), summary: formData.get("summary"), fitScore: formData.get("fitScore") || "", tags: formData.get("tags"),
   });
-  if (!id.success || !parsed.success) return { error: "Review the company, contact, and pipeline fields and try again." };
+  if (!id.success || !parsed.success) return { error: "Review the company and contact fields and try again." };
   const website = normalizeWebsite(parsed.data.website);
   if (parsed.data.website && !website) return { error: "Enter a valid company website." };
 
   const admin = createSupabaseAdmin();
   const [{ data: company }, { data: previousPipeline, error: pipelineReadError }] = await Promise.all([
     admin.from("companies").select("id,name,segment").eq("id", id.data).maybeSingle(),
-    admin.from("pipeline").select("stage,owner_id,next_followup_at").eq("company_id", id.data).maybeSingle(),
+    admin.from("pipeline").select("owner_id,next_followup_at").eq("company_id", id.data).maybeSingle(),
   ]);
   if (!company) return { error: "The company no longer exists." };
-  if (pipelineReadError) return { error: "The pipeline could not be loaded. Please try again." };
+  if (pipelineReadError) return { error: "The account follow-up could not be loaded. Please try again." };
   const tags = (parsed.data.tags || "").split(",").map((tag) => tag.trim()).filter(Boolean).slice(0, 50);
   const existingBilling = await admin.from("customer_billing_profiles").select("profile").eq("company_id", id.data).maybeSingle();
   if (existingBilling.error) return { error: "Billing details could not be loaded. Please try again." };
@@ -257,12 +242,10 @@ export async function updateCompany(companyId: string, _state: CrmActionState, f
     admin.from("customer_billing_profiles").upsert({ company_id: id.data, profile: { ...existingBilling.data?.profile, ...commerce.data }, updated_by: viewer.id, updated_at: new Date().toISOString() }),
     admin.from("companies").update({
       name: parsed.data.name, website, domain: domainFromWebsite(website), country: parsed.data.country, city: parsed.data.city || null,
-      segment: parsed.data.segment, status: parsed.data.stage === "won" ? "customer" : parsed.data.stage === "lost" ? "disqualified" : "engaged",
+      segment: parsed.data.segment,
     }).eq("id", id.data),
     admin.from("pipeline").upsert({
-      company_id: id.data, stage: parsed.data.stage, estimated_order_quantity: parsed.data.estimatedOrderQuantity === "" ? null : parsed.data.estimatedOrderQuantity,
-      estimated_value: parsed.data.estimatedValue === "" ? null : parsed.data.estimatedValue, currency: parsed.data.currency,
-      next_followup_at: parsed.data.nextFollowupAt ? new Date(parsed.data.nextFollowupAt).toISOString() : null, updated_at: new Date().toISOString(),
+      company_id: id.data, next_followup_at: parsed.data.nextFollowupAt ? new Date(parsed.data.nextFollowupAt).toISOString() : null, updated_at: new Date().toISOString(),
     }, { onConflict: "company_id" }),
     admin.from("company_profiles").upsert({
       company_id: id.data, summary: parsed.data.summary || null, fit_score: parsed.data.fitScore === "" ? null : parsed.data.fitScore,
@@ -285,15 +268,14 @@ export async function updateCompany(companyId: string, _state: CrmActionState, f
   const { data: automationContact } = await admin.from("contacts").select("id").eq("company_id", id.data).order("created_at").limit(1).maybeSingle();
   if (!primaryContact && parsed.data.contactEmail && automationContact) await enrollNewLeadFlows(automationContact.id);
   if (company.segment !== parsed.data.segment) await enrollCompanyEvent({ type: "company_segment_changed", conversationId: `company:${id.data}`, companyId: id.data, contactId: automationContact?.id ?? null, segment: parsed.data.segment });
-  if (previousPipeline?.stage !== parsed.data.stage) await enrollCompanyEvent({ type: "pipeline_stage_changed", conversationId: `company:${id.data}:pipeline`, companyId: id.data, contactId: automationContact?.id ?? null, stage: parsed.data.stage });
   refreshCompany(id.data);
   return { success: `${parsed.data.name} was updated.` };
 }
 
 export async function bulkUpdateCompanies(companyIds: string[], action: string): Promise<CrmActionState> {
-  const parsed = z.object({ ids: z.array(z.string().uuid()).min(1).max(500), action: z.enum(["contacted", "interested", "delete"]) }).safeParse({ ids: companyIds, action });
+  const parsed = z.object({ ids: z.array(z.string().uuid()).min(1).max(500), action: z.enum(["delete"]) }).safeParse({ ids: companyIds, action });
   if (!parsed.success) return { error: "Select at least one valid company." };
-  const viewer = await requireWorkspaceMember(parsed.data.action === "delete" ? ["admin"] : ["admin", "operator", "bd_manager"]);
+  await requireWorkspaceMember(["admin"]);
   const admin = createSupabaseAdmin();
   if (parsed.data.action === "delete") {
     const { data, error } = await admin.from("companies").delete().in("id", parsed.data.ids).select("id");
@@ -304,58 +286,7 @@ export async function bulkUpdateCompanies(companyIds: string[], action: string):
     revalidatePath("/invoices");
     return { success: `${data.length} ${data.length === 1 ? "company" : "companies"} deleted.` };
   }
-  const rows = parsed.data.ids.map((companyId) => ({ company_id: companyId, stage: parsed.data.action, updated_at: new Date().toISOString() }));
-  const { error } = await admin.from("pipeline").upsert(rows, { onConflict: "company_id" });
-  if (error) return { error: "The bulk update could not be completed." };
-  await admin.from("events").insert(parsed.data.ids.map((companyId) => ({ company_id: companyId, actor_id: viewer.id, type: "bulk_pipeline_update", data: { summary: `Pipeline status changed to ${parsed.data.action}.` } })));
-  refreshCrm();
-  return { success: `${parsed.data.ids.length} ${parsed.data.ids.length === 1 ? "company" : "companies"} updated.` };
-}
-
-export async function createOpportunity(_state: CrmActionState, formData: FormData): Promise<CrmActionState> {
-  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
-  const parsed = opportunitySchema.safeParse({
-    companyId: formData.get("companyId"),
-    stage: formData.get("stage"),
-    estimatedValue: formData.get("estimatedValue") || "",
-    currency: formData.get("currency"),
-    nextFollowupAt: formData.get("nextFollowupAt"),
-    notes: formData.get("notes"),
-  });
-  if (!parsed.success) return { error: "Choose a company and enter valid opportunity details." };
-
-  const admin = createSupabaseAdmin();
-  const { data: company } = await admin.from("companies").select("id,name").eq("id", parsed.data.companyId).maybeSingle();
-  if (!company) return { error: "The selected company no longer exists." };
-  const { error } = await admin.from("pipeline").upsert({
-    company_id: company.id,
-    stage: parsed.data.stage,
-    estimated_value: parsed.data.estimatedValue === "" ? null : parsed.data.estimatedValue,
-    currency: parsed.data.currency,
-    next_followup_at: parsed.data.nextFollowupAt ? new Date(parsed.data.nextFollowupAt).toISOString() : null,
-    notes: parsed.data.notes || null,
-    updated_at: new Date().toISOString(),
-  }, { onConflict: "company_id" });
-  if (error) return { error: "The opportunity could not be saved." };
-  await admin.from("events").insert({ company_id: company.id, actor_id: viewer.id, type: "opportunity_updated", data: { summary: `${company.name} moved to ${parsed.data.stage.replaceAll("_", " ")}.` } });
-  refreshCompany(company.id);
-  return { success: `Opportunity saved for ${company.name}.` };
-}
-
-export async function updatePipelineStage(companyId: string, stage: string): Promise<CrmActionState> {
-  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
-  const parsed = z.object({ companyId: z.string().uuid(), stage: z.enum(pipelineStageValues) }).safeParse({ companyId, stage });
-  if (!parsed.success) return { error: "Invalid pipeline update." };
-  const admin = createSupabaseAdmin();
-  const { data: company } = await admin.from("companies").select("id,name").eq("id", parsed.data.companyId).maybeSingle();
-  if (!company) return { error: "The company no longer exists." };
-  const { error } = await admin.from("pipeline").upsert({ company_id: company.id, stage: parsed.data.stage, updated_at: new Date().toISOString() }, { onConflict: "company_id" });
-  if (error) return { error: "The pipeline stage could not be updated." };
-  await admin.from("events").insert({ company_id: company.id, actor_id: viewer.id, type: "pipeline_stage_changed", data: { summary: `${company.name} moved to ${parsed.data.stage.replaceAll("_", " ")}.` } });
-  const { data: contact } = await admin.from("contacts").select("id").eq("company_id", company.id).order("created_at").limit(1).maybeSingle();
-  await enrollCompanyEvent({ type: "pipeline_stage_changed", conversationId: `company:${company.id}:pipeline`, companyId: company.id, contactId: contact?.id ?? null, stage: parsed.data.stage });
-  refreshCompany(company.id);
-  return { success: "Pipeline stage updated." };
+  return { error: "Unsupported company action." };
 }
 
 export async function assignPipelineOwner(companyId: string, ownerId: string | null): Promise<CrmActionState> {

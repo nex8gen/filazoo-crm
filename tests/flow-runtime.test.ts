@@ -11,6 +11,8 @@ import * as policy from "../lib/outreach-policy.ts";
 import * as templates from "../lib/flow-templates.ts";
 import * as tracking from "../lib/flow-tracking.ts";
 import * as autoReply from "../lib/email-auto-reply.ts";
+import * as attachmentUpload from "../lib/attachment-upload.ts";
+import * as flowSmtp from "../lib/flow-smtp.ts";
 
 type Row = Record<string, unknown>;
 const require = createRequire(import.meta.url);
@@ -92,6 +94,8 @@ function runtime(options: { businessWindow?: Date | null } = {}) {
     return query;
   }
   const dependencies: Record<string, unknown> = {
+    "../attachment-upload.ts": attachmentUpload,
+    "../flow-smtp.ts": flowSmtp,
     "./email-footers.ts": { getUserEmailFooter: async () => null, prepareUserEmail: async (_userId: string, input: unknown) => input },
     "../email-footer.ts": { removeStandardSignoff: (text: string) => text },
     "../email-auto-reply.ts": autoReply,
@@ -133,6 +137,66 @@ test("a saved new lead immediately executes email and scanner retries cannot sen
   const retry = await app.exports.enrollMatchingFlows({ type: "new_lead", contactId: app.contactId, conversationId: "different", eventKey: "different" });
   assert.equal(retry[0]?.enrolled, false);
   assert.equal(app.delivered(), 1);
+});
+
+test("queued legacy sales actions cancel before sending or changing account data", async () => {
+  const app = runtime();
+  const mail = app.db.flow_steps[0];
+  steps(app, [{ type: "wait", config: { amount: 1, unit: "minutes" } }, { type: "send_email", config: mail.config }]);
+  await app.exports.enrollNewLeadFlows(app.contactId);
+  const run = app.db.flow_runs[0];
+  const context = run.context as Record<string, unknown>;
+  const definition = JSON.parse(String(context.definition));
+  definition[1] = { ...definition[1], type: "update_company", config: { pipelineStage: "won" } };
+  context.definition = JSON.stringify(definition);
+  run.next_run_at = new Date(Date.now() - 1).toISOString();
+  assert.equal((await app.exports.processFlowRun(String(run.id))).status, "cancelled");
+  assert.equal(app.delivered(), 0);
+  assert.equal(app.db.pipeline[0].stage, "new");
+});
+
+test("nested live branches resume from waits, reread CRM changes and execute every action once", async () => {
+  for (const country of ["US", "GB"]) {
+    const app = runtime();
+    app.db.companies[0].country = country;
+    const makeSplit = (id: string, condition: Row, yes: Row[], no: Row[]) => ({ id, type: "split", config: { name: id, paths: [
+      { id: `${id}-yes`, name: "Match", condition, steps: yes }, { id: `${id}-no`, name: "Everyone else", condition: null, steps: no },
+    ] } });
+    const mail = app.db.flow_steps[0];
+    const inner = makeSplit("inner", { field: "company_status_is", companyStatus: "qualified" }, [
+      { ...flows.blankStep("ai_auto_reply"), id: "ai" },
+      { ...flows.blankStep("create_task"), id: "task" },
+      { ...flows.blankStep("internal_alert"), id: "alert" },
+    ], [{ ...flows.blankStep("stop"), id: "unexpected-stop" }]);
+    const outer = makeSplit("outer", { field: "country_is", value: "US" }, [
+      { ...flows.blankStep("wait"), id: "wait", config: { amount: 1, unit: "minutes" } }, inner,
+    ], [{ ...mail, id: "fallback-email" }]);
+    app.db.flow_steps = [{ ...outer, flow_id: app.flowId, position: 0 },
+      { ...flows.blankStep("change_category"), id: "category", flow_id: app.flowId, position: 1 },
+      { ...flows.blankStep("update_company"), id: "company", config: { companyStatus: "qualified", segment: "Qualified" }, flow_id: app.flowId, position: 2 },
+      { ...flows.blankStep("stop"), id: "end", flow_id: app.flowId, position: 3 }];
+    const first = await app.exports.enrollNewLeadFlows(app.contactId);
+    if (country === "US") {
+      assert.equal(first[0]?.reason, "waiting");
+      app.db.companies[0].status = "qualified";
+      app.db.flow_runs[0].next_run_at = new Date(Date.now() - 1).toISOString();
+      assert.equal((await app.exports.processFlowRun(String(app.db.flow_runs[0].id))).status, "done");
+      assert.equal(app.aiCalls.length, 1);
+      assert.equal(app.db.crm_tasks.length, 1);
+      assert.equal(app.db.internal_notifications.length, 1);
+    } else {
+      assert.equal(first[0]?.reason, "done");
+      assert.equal(app.aiCalls.length, 0);
+      assert.equal(app.db.crm_tasks?.length ?? 0, 0);
+    }
+    assert.equal(app.db.pipeline[0].stage, "new", "account follow-ups must not mutate retired stages");
+    assert.equal(app.db.companies[0].segment, "Qualified");
+    assert.equal(app.db.email_inbox_state[0].category, "Needs follow-up");
+    const logs = app.db.flow_run_logs.length;
+    await app.exports.processFlowRun(String(app.db.flow_runs[0].id));
+    assert.equal(app.db.flow_run_logs.length, logs);
+    assert.equal(app.delivered(), 1);
+  }
 });
 
 test("a live split expands only the first matching path and executes its saved actions", async () => {
@@ -230,8 +294,8 @@ test("a company contact moved during a wait cannot receive queued actions", asyn
   }
 });
 
-test("company stage and segment changes enroll the email flow's contact even when another contact represents the company", async () => {
-  for (const type of ["company_segment_changed", "pipeline_stage_changed"] as const) {
+test("company segment changes enroll the email flow's contact even when another contact represents the company", async () => {
+  for (const type of ["company_segment_changed"] as const) {
     const app = runtime();
     const representativeId = randomUUID();
     app.db.contacts.push({ ...app.db.contacts[0], id: representativeId, email: "representative@example.com" });
@@ -315,13 +379,33 @@ test("custom subject, body, preheader and tracking toggles reach the delivered e
   }
 });
 
-test("sender choices resolve workspace, owner personal and explicit mailboxes", async () => {
-  for (const [choice, expected] of [["default", "sales@example.com"], ["owner", "personal@example.com"], ["explicit", "specific@example.com"]]) {
-    const app = runtime();
-    app.db.workspace_mailboxes.push({ ...app.db.workspace_mailboxes[0], id: "personal", type: "personal", user_id: "owner", email: "personal@example.com" }, { ...app.db.workspace_mailboxes[0], id: "explicit", is_default: false, email: "specific@example.com" });
-    (app.db.flow_steps[0].config as Row).mailboxId = choice;
-    await app.exports.enrollNewLeadFlows(app.contactId);
-    assert.equal(app.deliveries[0].mailbox.from, expected);
+test("template emails, AI replies and email alerts send using their selected personal or team account", async () => {
+  for (const type of ["send_email", "ai_auto_reply", "internal_alert"] as const) {
+    for (const [choice, expected] of [["default", "sales@example.com"], ["owner", "personal@example.com"], ["personal", "personal@example.com"], ["explicit", "specific@example.com"]]) {
+      const app = runtime();
+      app.db.workspace_mailboxes.push({ ...app.db.workspace_mailboxes[0], id: "personal", type: "personal", user_id: "owner", email: "personal@example.com", smtpUsername: "personal-login" }, { ...app.db.workspace_mailboxes[0], id: "explicit", is_default: false, email: "specific@example.com", smtpUsername: "team-login" });
+      steps(app, [{ type, config: { ...flows.blankStep(type).config, templateId: "welcome_intro", sendWindow: "anytime", mailboxId: choice, channel: "email" } }]);
+      await app.exports.enrollNewLeadFlows(app.contactId);
+      assert.equal(app.deliveries[0].mailbox.from, expected);
+      assert.equal(app.deliveries[0].mailbox.user, choice === "default" ? "sales" : choice === "explicit" ? "team-login" : "personal-login");
+      if (type !== "internal_alert") assert.equal(app.db.mailbox_sent_messages[0].mailbox_id, choice === "owner" ? "personal" : choice === "default" ? "sender" : choice);
+    }
+  }
+});
+
+test("unavailable or another user's personal sender never falls back to team email", async () => {
+  for (const type of ["send_email", "ai_auto_reply", "internal_alert"] as const) {
+    for (const choice of ["owner", "private", "stopped", "removed"]) {
+      const app = runtime();
+      app.db.workspace_mailboxes.push(
+        { ...app.db.workspace_mailboxes[0], id: "private", type: "personal", user_id: "someone-else", email: "private@example.com" },
+        { ...app.db.workspace_mailboxes[0], id: "stopped", is_active: false },
+      );
+      steps(app, [{ type, config: { ...flows.blankStep(type).config, templateId: "welcome_intro", sendWindow: "anytime", mailboxId: choice, channel: "email" } }]);
+      await app.exports.enrollNewLeadFlows(app.contactId);
+      assert.equal(app.deliveries.length, 0, `${type}: ${choice}`);
+      assert.equal(app.db.flow_runs[0].status, "failed");
+    }
   }
 });
 
@@ -452,15 +536,15 @@ test("both real source lists enroll immediately and scanner recovery cannot dupl
   }
 });
 
-test("segment and stage events respect every company filter", async () => {
-  for (const type of ["company_segment_changed", "pipeline_stage_changed"] as const) {
+test("segment events respect every company filter", async () => {
+  for (const type of ["company_segment_changed"] as const) {
     const app = runtime();
-    const config = { segment: "Shopify B2B lead", country: "US", companyStatus: "new", pipelineStage: "new", minFitScore: 7, ...(type === "pipeline_stage_changed" ? { stage: "new" } : {}) };
+    const config = { segment: "Shopify B2B lead", country: "US", companyStatus: "new", minFitScore: 7, ...(type === "pipeline_stage_changed" ? { stage: "new" } : {}) };
     Object.assign(app.db.flows[0], { trigger_type: type, trigger_config: config });
     app.db.company_profiles = [{ company_id: app.companyId, fit_score: 8 }];
     const event = { type, contactId: app.contactId, companyId: app.companyId, conversationId: "company-change", segment: "Shopify B2B lead", stage: "new" };
     assert.equal((await app.exports.enrollMatchingFlows(event))[0]?.reason, "done");
-    for (const mismatch of [{ country: "GB" }, { segment: "Reseller" }, { companyStatus: "customer" }, { pipelineStage: "won" }, { minFitScore: 10 }]) {
+    for (const mismatch of [{ country: "GB" }, { segment: "Reseller" }, { companyStatus: "customer" }, { minFitScore: 10 }]) {
       app.db.flows[0].trigger_config = { ...config, ...mismatch };
       assert.equal((await app.exports.enrollMatchingFlows(event))[0]?.enrolled, false);
     }

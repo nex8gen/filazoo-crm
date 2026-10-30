@@ -3,7 +3,7 @@ import { appendEmailFooter, type EmailFooter } from "./email-footer.ts";
 import { emailTextHtml, emailSafeStyle, escapeEmailHtml } from "./email-markup.ts";
 export { emailTextHtml } from "./email-markup.ts";
 
-export const inlineImageTypes = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+export const inlineImageTypes = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp", "image/avif", "image/x-icon", "image/vnd.microsoft.icon"]);
 export const maxInlineImageBytes = 7_500_000;
 
 export function initialComposerHtml(text: string, signature: string) {
@@ -27,7 +27,7 @@ export function sanitizeComposerHtml(html: string, document: Document, preserveI
     const tag = element.tagName.toLowerCase();
     if (tag === "img") {
       const src = element.getAttribute("src") || "";
-      const supported = /^https?:\/\/[^\s]+$/i.test(src) || /^\/api\/email\/footer\/assets\/[a-f0-9-]{36}$/i.test(src) || /^data:image\/(?:png|jpeg|gif|webp);base64,[a-z\d+/]+=*$/i.test(src);
+      const supported = /^https?:\/\/[^\s]+$/i.test(src) || /^\/api\/email\/footer\/assets\/[a-f0-9-]{36}$/i.test(src) || /^data:image\/(?:png|jpeg|gif|webp|bmp|avif|x-icon|vnd\.microsoft\.icon);base64,[a-z\d+/]+=*$/i.test(src);
       if (!supported && !preserveImagePlaceholders) return "";
       if (src.startsWith("data:") && src.length > 10_000_050) throw new Error("Each inline image must be 7.5 MB or smaller.");
       const width = Number(element.getAttribute("width") || element.style.width.replace(/px$/, ""));
@@ -46,19 +46,19 @@ export function sanitizeComposerHtml(html: string, document: Document, preserveI
 export type InlineEmailAttachment = { filename: string; content: string; contentType: string; cid: string };
 
 /** Keep GIF bytes untouched; only replace the data URL with a MIME Content-ID. */
-export function prepareComposerMessage(text: string, html: string, signature: string, footer?: EmailFooter | null) {
+export function prepareComposerMessage(text: string, html: string, signature: string, footer?: EmailFooter | null, requestId?: string) {
   const attachments: InlineEmailAttachment[] = [];
   const content = html ? { text: text.trim(), html } : footer ? appendEmailFooter(text, undefined, footer) : { text: withEmailSignature(text, signature), html: initialComposerHtml(text, signature) };
   const signedText = content.text;
   const contentIds = new Map<string, string>();
-  const body = (content.html || "").replace(/src="data:(image\/(?:png|jpeg|gif|webp));base64,([a-z\d+/]+=*)"/gi, (_match, contentType: string, content: string) => {
+  const body = (content.html || "").replace(/src="data:(image\/(?:png|jpeg|gif|webp|bmp|avif|x-icon|vnd\.microsoft\.icon));base64,([a-z\d+/]+=*)"/gi, (_match, contentType: string, content: string) => {
     const key = `${contentType}:${content}`;
     let cid = contentIds.get(key);
     if (!cid) {
       if (content.length * 3 / 4 - (content.match(/=*$/)?.[0].length || 0) > maxInlineImageBytes) throw new Error("Each inline image must be 7.5 MB or smaller.");
-      cid = `image-${crypto.randomUUID()}@filazoo.com`;
+      cid = `image-${requestId ? `${requestId}-${attachments.length}` : crypto.randomUUID()}@filazoo.com`;
       contentIds.set(key, cid);
-      attachments.push({ filename: `image-${attachments.length + 1}.${contentType === "image/jpeg" ? "jpg" : contentType.split("/")[1]}`, content, contentType, cid });
+      attachments.push({ filename: `image-${attachments.length + 1}.${contentType === "image/jpeg" ? "jpg" : /icon$/.test(contentType) ? "ico" : contentType.split("/")[1]}`, content, contentType, cid });
     }
     return `src="cid:${cid}"`;
   }).replace(/<img\b[^>]*>/gi, (tag) => tag.replace(/\sstyle="[^"]*"/gi, "").replace(/\s*\/?>$/, ' style="max-width:100%;height:auto">'));

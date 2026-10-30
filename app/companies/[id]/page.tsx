@@ -16,6 +16,7 @@ import { CompanyBillingSkeleton } from "@/components/workspace-skeletons";
 import { CompanyTimeline } from "@/components/company-timeline";
 import { AssignedOwner } from "@/components/assigned-owner";
 import { CompanyAvatar } from "@/components/company-avatar";
+import { CompanyOrderBadge } from "@/components/company-order-badge";
 import { buttonVariants } from "@/components/ui/button";
 import { requireWorkspaceMember } from "@/lib/auth";
 import { getCompanyDetails, getCompanyProfile } from "@/lib/data/crm";
@@ -25,14 +26,14 @@ import { listBdSalesManagers } from "@/lib/data/members";
 
 export const instant = false;
 
-type CompanyPageProps = { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; compose?: string; invoiceId?: string }> };
+type CompanyPageProps = { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; compose?: string; invoiceId?: string; orderId?: string }> };
 
 export default function CompanyPage({ params, searchParams }: CompanyPageProps) {
   return <Suspense fallback={<CompanyDetailsSkeleton />}><CompanyPageContent params={params} searchParams={searchParams} /></Suspense>;
 }
 
 async function CompanyPageContent({ params, searchParams }: CompanyPageProps) {
-  const [{ id }, viewer, { tab, compose, invoiceId }] = await Promise.all([params, requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]), searchParams]);
+  const [{ id }, viewer, { tab, compose, invoiceId, orderId }] = await Promise.all([params, requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]), searchParams]);
   const activeTab = companyTab(tab);
   const [{ details }, managers] = await Promise.all([
     getCompanyProfile(id),
@@ -44,7 +45,8 @@ async function CompanyPageContent({ params, searchParams }: CompanyPageProps) {
     <CompanyWorkspace key={id} companyId={id} initialTab={activeTab}
       toolbar={<div className="order-1 flex min-w-0 items-center gap-4 pb-2 sm:order-2 sm:shrink-0 sm:pb-0">
           <div className="flex min-w-0 items-center gap-2.5">
-            <CompanyAvatar company={details.company} />
+            <CompanyOrderBadge count={details.company.paidOrderCount} />
+            <CompanyAvatar company={details.company} size="lg" />
             <h1 data-no-translate title={details.company.name} className="max-w-32 truncate text-sm font-semibold tracking-tight xl:max-w-48">{details.company.name}</h1>
           </div>
           <div className="flex shrink-0 items-center gap-1 border-l pl-4">
@@ -54,13 +56,13 @@ async function CompanyPageContent({ params, searchParams }: CompanyPageProps) {
           {viewer.role === "viewer" ? <span className="text-[11px] text-muted-foreground">Read-only</span> : null}
         </div>}
       profile={<CompanyDetails key={`${id}:${details.company.nextFollowupAt || ""}`} details={details} canWrite={viewer.role !== "viewer"} />}
-      section={activeTab === "profile" ? null : <Suspense key={`${activeTab}:${compose || ""}:${invoiceId || ""}`} fallback={<CompanyBillingSkeleton />}><CompanySection tab={activeTab} id={id} details={details} viewer={viewer} compose={compose} invoiceId={invoiceId} /></Suspense>}
+      section={activeTab === "profile" ? null : <Suspense key={`${activeTab}:${compose || ""}:${invoiceId || ""}:${orderId || ""}`} fallback={<CompanyBillingSkeleton />}><CompanySection tab={activeTab} id={id} details={details} viewer={viewer} compose={compose} invoiceId={invoiceId} orderId={orderId} /></Suspense>}
     />
   </div>;
 }
 
-async function CompanySection({ tab, id, details, viewer, compose, invoiceId }: {
-  tab: CompanyTab; id: string; details: CompanyDetailsData; viewer: WorkspaceViewer; compose?: string; invoiceId?: string;
+async function CompanySection({ tab, id, details, viewer, compose, invoiceId, orderId }: {
+  tab: CompanyTab; id: string; details: CompanyDetailsData; viewer: WorkspaceViewer; compose?: string; invoiceId?: string; orderId?: string;
 }) {
   const canWrite = viewer.role !== "viewer";
   switch (tab) {
@@ -68,7 +70,7 @@ async function CompanySection({ tab, id, details, viewer, compose, invoiceId }: 
     case "invoices": return <CompanyInvoices companyId={id} canWrite={canWrite} />;
     case "customer-portal": return <CompanyCustomerPortal companyId={id} companyName={details.company.name} invoiceId={invoiceId} canWrite={canWrite} />;
     case "email": return <CompanyEmails company={{ id, name: details.company.name, ownerId: details.company.ownerId, emails: [...new Set([details.company.email, ...details.contacts.map(contact => contact.email)])] }} viewer={{ id: viewer.id, role: viewer.role }} composeTo={compose === "1" && canWrite ? details.company.email : undefined} />;
-    case "purchase-orders": return <CompanyPurchaseOrders companyId={id} companyName={details.company.name} commerce={details.commerce} canWrite={canWrite} />;
+    case "purchase-orders": return <CompanyPurchaseOrders companyId={id} companyName={details.company.name} commerce={details.commerce} canWrite={canWrite} orderId={orderId && /^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(orderId) ? orderId : undefined} />;
     case "history": {
       const { details: history } = await getCompanyDetails(id);
       return <CompanyTimeline companyId={id} activity={history?.activity ?? []} canWrite={canWrite} viewerName={viewer.displayName || viewer.email || "Staff"} />;

@@ -6,14 +6,14 @@ import { loadSyncedMailbox, loadMailboxMessageContent } from "./mailbox-sync";
 import { matchesCustomerReply, replyTaskEvidence, replyTaskNotes, replyRequestThreadUrl } from "../customer-reply-workflow";
 
 /** Bounded, restart-safe polling. Database CAS and an atomic RPC arbitrate concurrent workers. */
-export async function processCustomerReplies(options: { mailboxId?: string; sync?: boolean } = {}) {
+export async function processCustomerReplies(options: { mailboxId?: string; sync?: boolean; budgetMs?: number } = {}) {
   const db = createSupabaseAdmin();
   let query = db.from("agent_reply_requests").select("*").in("status", ["sending", "waiting", "uncertain"]).is("task_id", null)
     .order("last_checked_at", { ascending: true, nullsFirst: true }).limit(50);
   if (options.mailboxId) query = query.eq("mailbox_id", options.mailboxId);
   const { data } = await query.throwOnError();
   const mailboxLoads = new Map<string, ReturnType<typeof loadSyncedMailbox>>();
-  const deadline = Date.now() + 180000;
+  const deadline = Date.now() + (options.budgetMs ?? 150000);
   let checked = 0, completed = 0, errors = 0;
   for (const row of (data ?? []) as ReplyRequestRow[]) {
     if (Date.now() >= deadline) break;
@@ -54,7 +54,7 @@ export async function processCustomerReplies(options: { mailboxId?: string; sync
       if (row.status === "uncertain") { await finish("uncertain"); continue; }
       if (Date.parse(row.expires_at) <= Date.now()) { await finish("expired"); continue; }
       let loaded = mailboxLoads.get(mailbox.id);
-      if (!loaded) { loaded = loadSyncedMailbox(mailbox, { sync: options.sync !== false, includeContent: false }); mailboxLoads.set(mailbox.id, loaded); }
+      if (!loaded) { loaded = loadSyncedMailbox(mailbox, { sync: false, includeContent: false }); mailboxLoads.set(mailbox.id, loaded); }
       const inbox = await loaded;
       if (inbox.error) throw new Error("Incoming email could not be refreshed; waiting continues.");
       const candidate = inbox.messages.filter((email) => matchesCustomerReply(row, email)).sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp))[0];

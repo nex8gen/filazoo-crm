@@ -1,20 +1,20 @@
 "use client";
 
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { type SortingState, flexRender } from "@tanstack/react-table";
 import { type LegacyColumnDef as ColumnDef, getCoreRowModel, getPaginationRowModel, getSortedRowModel, useLegacyTable as useReactTable } from "@tanstack/react-table/legacy";
-import { Building2, ChevronsUpDown, CircleAlert, Columns3, Globe2, Mail, PackageCheck, Trash2, UserRoundCheck } from "lucide-react";
+import { Building2, ChevronsUpDown, CircleAlert, Columns3, Globe2, Mail, PackageCheck, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { bulkUpdateCompanies } from "@/app/crm-actions";
 import { AssignedOwner } from "@/components/assigned-owner";
 import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { EmptyState } from "@/components/data-state";
 import { CompanyAvatar } from "@/components/company-avatar";
-import { Badge } from "@/components/ui/badge";
+import { CompanyOrderBadge } from "@/components/company-order-badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -25,6 +25,7 @@ import { TableFilters, TableFilter } from "@/components/ui/table-filters";
 import { TablePagination } from "@/components/ui/table-pagination";
 import type { Company, DataMode } from "@/lib/types";
 import { usePreferences } from "@/components/preferences-provider";
+import { useWorkspaceState } from "@/components/workspace-memory";
 import { countryFlagCode } from "@/lib/country-flags";
 
 const addedAtFormatter = new Intl.DateTimeFormat(undefined, {
@@ -33,18 +34,10 @@ const addedAtFormatter = new Intl.DateTimeFormat(undefined, {
   timeStyle: "short",
 });
 
-const statusClass: Record<Company["stage"], string> = {
-  "Profile created": "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900 dark:bg-sky-950/60 dark:text-sky-300",
-  "Catalog sent": "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/60 dark:text-amber-300",
-  "Customer replied": "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-900 dark:bg-violet-950/60 dark:text-violet-300",
-  "Qualified interest": "border-primary/30 bg-brand-soft text-primary", "Quote / bulk order": "border-primary/30 bg-brand-soft text-primary",
-  "Order confirmed": "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300",
-  "Closed / not proceeding": "border-border bg-muted text-muted-foreground",
-};
-
 function CompanyIdentity({ company }: { company: Company }) {
   return (
     <div className="flex min-w-0 items-center gap-3.5 md:min-w-60">
+      <CompanyOrderBadge count={company.paidOrderCount} />
       <CompanyAvatar company={company} />
       <div className="min-w-0">
         <p className="truncate text-sm font-semibold leading-5 text-primary">{company.name}</p>
@@ -64,27 +57,26 @@ function CountryFlag({ country }: { country: string }) {
   </span>;
 }
 
-export function CompaniesTable({ companies, mode, canWrite, canDelete }: { companies: Company[]; mode: DataMode; canWrite: boolean; canDelete: boolean }) {
+export function CompaniesTable({ companies, mode, canDelete, viewKey = "all" }: { companies: Company[]; mode: DataMode; canWrite: boolean; canDelete: boolean; viewKey?: string }) {
   const { preferences } = usePreferences();
-  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: preferences.tablePageSize as number });
+  const memoryKey = `companies.${viewKey}`;
+  const [pagination, setPagination] = useWorkspaceState(`${memoryKey}.pagination`, { pageIndex: 0, pageSize: preferences.tablePageSize as number });
   const router = useRouter();
-  const [query, setQuery] = useState("");
-  const [status, setStatus] = useState("all");
-  const [country, setCountry] = useState("all");
-  const [draft, setDraft] = useState({ query: "", status: "all", country: "all" });
-  const [sorting, setSorting] = useState<SortingState>([]);
-  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>({});
+  const [query, setQuery] = useWorkspaceState(`${memoryKey}.query`, "");
+  const [country, setCountry] = useWorkspaceState(`${memoryKey}.country`, "all");
+  const [draft, setDraft] = useWorkspaceState(`${memoryKey}.filters`, { query: "", country: "all" });
+  const [sorting, setSorting] = useWorkspaceState<SortingState>(`${memoryKey}.sorting`, []);
+  const [columnVisibility, setColumnVisibility] = useWorkspaceState<Record<string, boolean>>(`${memoryKey}.columns`, {});
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [pending, startTransition] = useTransition();
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   const countries = useMemo(() => [...new Set(companies.map((company) => company.country))].sort(), [companies]);
   const filtered = useMemo(() => companies.filter((company) => {
     const matchesQuery = `${company.name} ${company.domain} ${company.email} ${company.segment} ${company.ownerName}`.toLowerCase().includes(query.toLowerCase());
-    return matchesQuery && (status === "all" || company.stage === status) && (country === "all" || company.country === country);
-  }), [companies, country, query, status]);
+    return matchesQuery && (country === "all" || company.country === country);
+  }), [companies, country, query]);
   const shopifyCount = useMemo(() => companies.filter((company) => company.source.includes("shopify")).length, [companies]);
-  const needsReviewCount = useMemo(() => companies.filter((company) => company.country === "Unknown" || company.estimatedOrderQuantity == null).length, [companies]);
+  const needsReviewCount = useMemo(() => companies.filter((company) => company.country === "Unknown" || !company.email).length, [companies]);
   const knownCountryCount = useMemo(() => new Set(companies.map((company) => company.country).filter((item) => item !== "Unknown")).size, [companies]);
 
   const toggleOne = (id: string, checked: boolean) => setSelectedIds((current) => {
@@ -112,14 +104,7 @@ export function CompaniesTable({ companies, mode, canWrite, canDelete }: { compa
     { accessorKey: "addedAt", header: "Added", cell: ({ getValue }) => { const value = getValue<string | undefined>(); return <span className="whitespace-nowrap" title={value || undefined}>{value ? addedAtFormatter.format(new Date(value)) : "Unknown"}</span>; } },
     { accessorKey: "country", header: "Country", cell: ({ getValue }) => <CountryFlag country={getValue<string>()} /> },
     { accessorKey: "segment", header: "Segment", cell: ({ getValue }) => <span className="block max-w-44 truncate">{getValue<string>()}</span> },
-    { accessorKey: "stage", header: "Status", cell: ({ getValue }) => { const value = getValue<Company["stage"]>(); return <Badge variant="outline" className={statusClass[value]}>{value}</Badge>; } },
     { accessorKey: "outreachStatus", header: "Outreach", cell: ({ getValue }) => <span className="whitespace-nowrap">{getValue<string>()}</span> },
-    { accessorKey: "estimatedOrderQuantity", header: "Est. order", cell: ({ row, getValue }) => {
-      const value = getValue<number | null>();
-      const label = row.original.estimatedOrderLabel;
-      if (label) return <span className="whitespace-nowrap font-medium text-foreground" title="Customer's submitted initial order estimate">{label}</span>;
-      return value == null ? <span className="text-muted-foreground/60">Not set</span> : <span className="whitespace-nowrap font-medium text-foreground">{value.toLocaleString()} <span className="font-normal text-muted-foreground">{row.original.source.includes("shopify") ? "kg/mo" : "kg"}</span></span>;
-    } },
     { accessorKey: "nextAction", header: "Next action", cell: ({ getValue }) => <span className="block max-w-48 truncate">{getValue<string>()}</span> },
   ], [selectedIds]);
 
@@ -128,24 +113,10 @@ export function CompaniesTable({ companies, mode, canWrite, canDelete }: { compa
     getCoreRowModel: getCoreRowModel(), getSortedRowModel: getSortedRowModel(), getPaginationRowModel: getPaginationRowModel(),
   });
 
-  const runBulkAction = (action: "contacted" | "interested" | "delete") => {
-    if (!selectedIds.size) return;
-    if (pending) return;
-    startTransition(async () => {
-      try {
-        const result = await bulkUpdateCompanies([...selectedIds], action);
-        if (result?.error) toast.error(result.error);
-        if (result?.success) { toast.success(result.success); setSelectedIds(new Set()); router.refresh(); }
-      } catch {
-        toast.error("Unable to update the selected companies. Please retry.");
-      }
-    });
-  };
-
   if (companies.length === 0) return <EmptyState icon={Building2} title={mode === "live" ? "No companies yet" : "Supabase setup required"} description={mode === "live" ? "Your Supabase companies table is connected and empty. Add or import the first company to begin." : "Add a valid project secret key to the server environment, then redeploy the app."} />;
 
   return <div className="flex min-w-0 flex-col gap-6">
-    <ConfirmActionDialog open={deleteOpen} onOpenChange={setDeleteOpen} title="Delete selected companies?" description={`Delete ${selectedIds.size} selected companies and their contacts, catalogs, and pipeline history? This cannot be undone.`} onConfirm={async () => {
+    <ConfirmActionDialog open={deleteOpen} onOpenChange={setDeleteOpen} title="Delete selected companies?" description={`Delete ${selectedIds.size} selected companies and their contacts, catalogs, and account history? This cannot be undone.`} onConfirm={async () => {
       const result = await bulkUpdateCompanies([...selectedIds], "delete");
       if (!result?.success) throw new Error(result?.error || "Unable to delete the selected companies.");
       toast.success(result.success);
@@ -157,12 +128,12 @@ export function CompaniesTable({ companies, mode, canWrite, canDelete }: { compa
         { label: "Total companies", value: companies.length, detail: "Accounts and prospects", icon: Building2, tone: "bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300" },
         { label: "Shopify leads", value: shopifyCount, detail: "Captured from your store", icon: PackageCheck, tone: "bg-[#95bf47]/12 text-[#5c7f18] dark:text-[#b5d66e]" },
         { label: "Markets", value: knownCountryCount, detail: "Countries identified", icon: Globe2, tone: "bg-violet-50 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300" },
-        { label: "Needs review", value: needsReviewCount, detail: "Missing country or estimate", icon: CircleAlert, tone: "bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300" },
+        { label: "Needs review", value: needsReviewCount, detail: "Missing country or email", icon: CircleAlert, tone: "bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300" },
       ].map((metric) => <Card key={metric.label} className="gap-0 border-border/70 p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-medium text-muted-foreground">{metric.label}</p><p className="mt-1 text-2xl font-semibold tracking-tight">{metric.value.toLocaleString()}</p><p className="mt-1 text-xs text-muted-foreground">{metric.detail}</p></div><span className={`grid size-9 place-items-center rounded-xl ${metric.tone}`}><metric.icon className="size-4" /></span></div></Card>)}
     </div>
 
     
-    <TableFilters onApply={() => { setQuery(draft.query); setStatus(draft.status); setCountry(draft.country); table.setPageIndex(0); }} actions={
+    <TableFilters onApply={() => { setQuery(draft.query); setCountry(draft.country); table.setPageIndex(0); }} actions={
       <DropdownMenu>
         <DropdownMenuTrigger render={<Button variant="outline" />}><Columns3 />Columns</DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
@@ -176,11 +147,10 @@ export function CompaniesTable({ companies, mode, canWrite, canDelete }: { compa
       </DropdownMenu>
     }>
       <TableFilter label="Search company" search><Input value={draft.query} onChange={(event) => setDraft({ ...draft, query: event.target.value })} placeholder="Company, email, domain, or segment" /></TableFilter>
-      <TableFilter label="Status"><Select value={draft.status} onValueChange={(value) => setDraft({ ...draft, status: value ?? "all" })}><SelectTrigger><SelectValue>{draft.status === "all" ? "All statuses" : draft.status}</SelectValue></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem>{Object.keys(statusClass).map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></TableFilter>
       <TableFilter label="Country"><Select value={draft.country} onValueChange={(value) => setDraft({ ...draft, country: value ?? "all" })}><SelectTrigger><SelectValue>{draft.country === "all" ? "All countries" : draft.country}</SelectValue></SelectTrigger><SelectContent><SelectItem value="all">All countries</SelectItem>{countries.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></TableFilter>
     </TableFilters>
     <Card className="crm-table-frame gap-0 py-0">
-    {selectedIds.size > 0 && <div className="flex flex-wrap items-center gap-2 border-b bg-brand-soft px-4 py-3"><p className="mr-auto text-sm font-semibold text-primary">{selectedIds.size} selected</p><Button size="sm" variant="outline" disabled={!canWrite || pending} onClick={() => runBulkAction("contacted")}><UserRoundCheck />Mark contacted</Button><Button size="sm" variant="outline" disabled={!canWrite || pending} onClick={() => runBulkAction("interested")}>Mark interested</Button><Button size="sm" variant="destructive" disabled={!canDelete || pending} title={canDelete ? "Delete selected companies" : "Only admins can delete companies"} onClick={() => setDeleteOpen(true)}><Trash2 />Delete</Button></div>}
+    {selectedIds.size > 0 && <div className="flex flex-wrap items-center gap-2 border-b bg-brand-soft px-4 py-3"><p className="mr-auto text-sm font-semibold text-primary">{selectedIds.size} selected</p><Button size="sm" variant="destructive" disabled={!canDelete} title={canDelete ? "Delete selected companies" : "Only admins can delete companies"} onClick={() => setDeleteOpen(true)}><Trash2 />Delete</Button></div>}
 
     {filtered.length === 0 ? <div className="p-8"><EmptyState icon={Building2} title="No companies found" description="Try changing your search or filters to see more results." /></div> : <>
       <div className="crm-table-flex-body"><Table>

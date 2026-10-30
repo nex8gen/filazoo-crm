@@ -1,0 +1,17 @@
+{
+  "project": "hukbmbicpdmhoxpkvljz",
+  "migration": "20261030085033_task_workflow_legacy_review_compatibility.sql",
+  "explicitUserApproval": true,
+  "applied": true,
+  "databaseTestsPassed": true,
+  "fixturesRolledBack": true,
+  "untouchedLegacyReviewCanComplete": true,
+  "explicitWorkflowCannotBypassActions": true,
+  "preparedWorkCannotBypassActions": true,
+  "activeLeaseCannotBypassActions": true,
+  "deliveryAttemptCannotBypassActions": true,
+  "readySendingAndUncertainCannotBypassActions": true,
+  "functionPermissionsUnchanged": true,
+  "newSecurityWarnings": 0,
+  "applicationDeploymentIncluded": false
+}

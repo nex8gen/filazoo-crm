@@ -27,7 +27,7 @@ export async function productivityTarget(operation: ProductivityOperation, viewe
   if (operation.op === "create_task") {
     const company = operation.companyId ? await loadAgentCompany(operation.companyId) : null;
     return { name: operation.title, value: company ? { id: company.id, name: company.fields.name } : null,
-      preview: { title: operation.title, notes: operation.notes, priority: operation.priority, dueAt: operation.dueAt, assignedTo: "Me", ...(company ? { company: company.fields.name } : {}) } };
+      preview: { title: operation.title, notes: operation.notes, priority: operation.priority, dueAt: operation.dueAt, assignedTo: "Me", workflow: operation.workflow, ...(company ? { company: company.fields.name } : {}) } };
   }
   if (operation.op === "update_task") {
     const task = await editableAgentTask(viewer, operation.taskId);

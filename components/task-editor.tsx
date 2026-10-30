@@ -1,4 +1,5 @@
 "use client";
+import { DatePicker } from "@/components/ui/date-picker";
 
 import { useEffect, useRef, useState } from "react";
 import { CalendarClock, ClipboardCheck, Flag, LoaderCircle, LockKeyhole, UserRound } from "lucide-react";
@@ -21,6 +22,41 @@ export function TaskEditor({ task, viewerId = "", onClose, onSaved }: { task?: A
   const [memberRetry, setMemberRetry] = useState(0);
   const [currentUserId, setCurrentUserId] = useState(viewerId);
   const [assignedTo, setAssignedTo] = useState(task?.assigned_to ?? viewerId);
+  const [workKind, setWorkKind] = useState("");
+  const [companyId, setCompanyId] = useState("");
+  const [companySearch, changeCompanySearch] = useState("");
+  const [companies, setCompanies] = useState<Array<{ id: string; name: string }>>([]);
+  const [invoiceId, setInvoiceId] = useState("");
+  const [invoices, setInvoices] = useState<Array<{ id: string; number: number; status: string }>>([]);
+  const setCompanySearch = (value: string) => {
+    changeCompanySearch(value); setCompanyId(""); setInvoiceId(""); setInvoices([]);
+  };
+  const [contextLoading, setContextLoading] = useState(false);
+  useEffect(() => {
+    if (task || !workKind) return;
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      setContextLoading(true);
+      try {
+        const response = await fetch(`/api/invoices/context?kind=customers&search=${encodeURIComponent(companySearch)}`, { signal: controller.signal });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Unable to load companies.");
+        if (!controller.signal.aborted) setCompanies(result.customers ?? []);
+      } catch (cause) { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Unable to load companies."); }
+      finally { if (!controller.signal.aborted) setContextLoading(false); }
+    }, 250);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [task, workKind, companySearch]);
+  useEffect(() => {
+    if (!companyId || !["invoice_review", "payment_follow_up"].includes(workKind)) return;
+    const controller = new AbortController();
+    void fetch(`/api/invoices?companyId=${encodeURIComponent(companyId)}`, { signal: controller.signal }).then(async response => {
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Unable to load invoices.");
+      if (!controller.signal.aborted) setInvoices((result.invoices ?? []).filter((invoice: { status: string }) => invoice.status !== "void"));
+    }).catch(cause => { if (!controller.signal.aborted) setError(cause.message); });
+    return () => controller.abort();
+  }, [companyId, workKind]);
   const saving = useRef(false);
   const requestId = useRef<string | null>(null);
   const managedNotes = task?.notes === "Scheduled from intelligent next follow-up recommendation." || task?.notes?.startsWith("Company purchase analysis:");
@@ -53,7 +89,7 @@ export function TaskEditor({ task, viewerId = "", onClose, onSaved }: { task?: A
     const fields = { title, ...(managedNotes || (task && notes === (task.notes ?? "")) ? {} : { notes }), priority, ...(!task || followupLocalTime(task.due_at) !== dueAt ? { dueAt: dueAt ? followupInstant(dueAt) : null } : {}) };
     const assignment = assignedTo && (!task || assignedTo !== task.assigned_to) ? { assignedTo } : {};
     try {
-      const response = await fetch("/api/tasks", { method: task ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(task ? { kind: "task", id: task.id, expectedUpdatedAt: task.updated_at, changes: fields, ...assignment } : { requestId: requestId.current, task: { op: "create_task", ...fields }, ...assignment }) });
+      const response = await fetch("/api/tasks", { method: task ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(task ? { kind: "task", id: task.id, expectedUpdatedAt: task.updated_at, changes: fields, ...assignment } : { requestId: requestId.current, task: { op: "create_task", ...fields, ...(workKind ? { companyId, workflow: { kind: workKind, ...(invoiceId ? { invoiceId } : {}) } } : {}) }, ...assignment }) });
       const result = await response.json().catch(() => ({ ok: false, error: "The task service is unavailable. Reload this page before trying again." }));
       if (!response.ok || !result.ok) throw new Error(result.error || "The task could not be saved.");
       if (result.version !== 2 || !result.task || (assignedTo && result.task.assigned_to !== assignedTo)) throw new Error("The saved assignee could not be confirmed. Refresh tasks before retrying.");
@@ -62,13 +98,14 @@ export function TaskEditor({ task, viewerId = "", onClose, onSaved }: { task?: A
     finally { saving.current = false; setPending(false); }
   }
 
-  return <Dialog open onOpenChange={(open) => { if (!open && !pending) onClose(); }}><DialogContent className="gap-0 overflow-x-hidden overflow-y-auto rounded-2xl p-0 sm:max-w-[520px]"><DialogHeader className="px-6 pb-5 pt-6"><div className="mb-3 grid size-10 place-items-center rounded-xl border border-primary/10 bg-primary/5 text-primary"><ClipboardCheck className="size-5" strokeWidth={1.6} /></div><DialogTitle className="text-xl tracking-tight">{task ? "Edit task" : "New task"}</DialogTitle><DialogDescription className="mt-1 text-sm leading-6">{"Set an assignee, priority and due date."}</DialogDescription></DialogHeader>
+  return <Dialog open onOpenChange={(open) => { if (!open && !pending) onClose(); }}><DialogContent className="max-h-[90dvh] gap-0 overflow-x-hidden overflow-y-auto rounded-2xl p-0 sm:max-w-[520px]"><DialogHeader className="px-6 pb-5 pt-6"><div className="mb-3 grid size-10 place-items-center rounded-xl border border-primary/10 bg-primary/5 text-primary"><ClipboardCheck className="size-5" strokeWidth={1.6} /></div><DialogTitle className="text-xl tracking-tight">{task ? "Edit task" : "New task"}</DialogTitle><DialogDescription className="mt-1 text-sm leading-6">{"Set an assignee, priority and due date."}</DialogDescription></DialogHeader>
     <form onSubmit={save}>
       <fieldset disabled={pending} className="space-y-5 px-6 pb-6 disabled:opacity-70">
+        {!task ? <div className="space-y-3"><label className="grid gap-2 text-xs font-medium">Task type<select value={workKind} onChange={event => { setWorkKind(event.target.value); setInvoiceId(""); }} className="h-10 rounded-lg border bg-background px-3 text-sm font-normal"><option value="">General to-do</option><option value="invoice_review">Prepare and review invoice</option><option value="email_follow_up">Email follow-up</option><option value="payment_follow_up">Payment follow-up</option><option value="customer_details">Review customer details</option></select></label>{workKind ? <><label className="grid gap-2 text-xs font-medium">Find company<input value={companySearch} onChange={event => setCompanySearch(event.target.value)} placeholder="Search company name or email" className="h-10 rounded-lg border bg-background px-3 text-sm font-normal" /></label><label className="grid gap-2 text-xs font-medium">Company<select required value={companyId} disabled={contextLoading} onChange={event => { setCompanyId(event.target.value); setInvoiceId(""); }} className="h-10 rounded-lg border bg-background px-3 text-sm font-normal"><option value="">{contextLoading ? "Loading companies…" : "Choose a company"}</option>{companies.map(company => <option key={company.id} value={company.id}>{company.name}</option>)}</select></label>{["invoice_review", "payment_follow_up"].includes(workKind) ? <label className="grid gap-2 text-xs font-medium">Linked invoice<select required={workKind === "payment_follow_up"} value={invoiceId} onChange={event => setInvoiceId(event.target.value)} className="h-10 rounded-lg border bg-background px-3 text-sm font-normal"><option value="">{workKind === "payment_follow_up" ? "Choose an issued invoice" : "Prepare a new draft from task details"}</option>{invoices.filter(invoice => workKind !== "payment_follow_up" || invoice.status === "issued").map(invoice => <option data-no-translate key={invoice.id} value={invoice.id}>INV-{String(invoice.number).padStart(6, "0")} · {invoice.status}</option>)}</select></label> : null}<p className="text-xs leading-5 text-muted-foreground">Include the agreed products, quantities and next step in Details. Prepared work stays in the task for review before sending.</p></> : null}</div> : null}
         <label className="grid gap-2 text-xs font-medium">Task title<input autoFocus required maxLength={200} placeholder="What needs to happen?" value={title} onChange={event => setTitle(event.target.value)} className="h-11 rounded-lg border border-border bg-background px-3 text-sm font-normal outline-none placeholder:text-muted-foreground/60 focus:border-primary/40 focus:ring-2 focus:ring-primary/10" /></label>
         <div className="grid gap-2 text-xs font-medium"><span className="inline-flex items-center gap-1.5"><UserRound className="size-3.5 text-muted-foreground" />Assignee</span>{managedFollowup ? <div className="flex h-11 items-center gap-2 rounded-lg border bg-muted/25 px-3 text-sm font-normal text-muted-foreground"><LockKeyhole className="size-3.5" /><span>{task?.assignee_name || "Follows account owner"}</span></div> : <TaskAssigneePicker members={members} value={assignedTo} viewerId={currentUserId} loading={memberLoading} disabled={pending} onChange={setAssignedTo} />}{memberError ? <p role="alert" className="flex items-center justify-between gap-2 text-xs font-normal text-destructive"><span>{memberError}</span><button type="button" onClick={() => setMemberRetry(value => value + 1)} className="underline">Retry</button></p> : null}</div>
         {!managedNotes ? <label className="grid gap-2 text-xs font-medium"><span className="flex justify-between">Details<span className="font-normal text-muted-foreground">Optional</span></span><textarea placeholder="Add a little context, a link or a reminder…" maxLength={4000} rows={3} readOnly={longContext} value={notes} onChange={event => setNotes(event.target.value)} className="resize-y rounded-lg border bg-background px-3 py-2.5 text-sm font-normal leading-6 outline-none placeholder:text-muted-foreground/60 focus:border-primary/40 focus:ring-2 focus:ring-primary/10" /></label> : <div className="rounded-lg border border-primary/10 bg-primary/5 px-3 py-2.5 text-xs leading-5 text-muted-foreground">This follow-up stays linked to the company. Date changes sync automatically.</div>}
-        <div className="grid gap-4 sm:grid-cols-[140px_1fr]"><label className="grid content-start gap-2 text-xs font-medium"><span className="flex items-center gap-1.5"><Flag className="size-3.5 text-muted-foreground" />Priority</span><select value={priority} onChange={event => setPriority(event.target.value)} className="h-10 rounded-lg border bg-background px-3 text-sm font-normal outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option></select></label><label className="grid gap-2 text-xs font-medium"><span className="flex items-center gap-1.5"><CalendarClock className="size-3.5 text-muted-foreground" />Due date & time</span><input type="datetime-local" value={dueAt} onChange={event => setDueAt(event.target.value)} className="h-10 min-w-0 rounded-lg border bg-background px-3 text-sm font-normal outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10" /><span className="text-[10px] font-normal text-muted-foreground">Uses your local time</span></label></div>
+        <div className="grid gap-4 sm:grid-cols-[140px_1fr]"><label className="grid content-start gap-2 text-xs font-medium"><span className="flex items-center gap-1.5"><Flag className="size-3.5 text-muted-foreground" />Priority</span><select value={priority} onChange={event => setPriority(event.target.value)} className="h-10 rounded-lg border bg-background px-3 text-sm font-normal outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option></select></label><label className="grid gap-2 text-xs font-medium"><span className="flex items-center gap-1.5"><CalendarClock className="size-3.5 text-muted-foreground" />Due date & time</span><DatePicker includeTime value={dueAt} onValueChange={value => setDueAt(value)} className="h-10 min-w-0 rounded-lg border bg-background px-3 text-sm font-normal outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10" /><span className="text-[10px] font-normal text-muted-foreground">Uses your local time</span></label></div>
         {longContext ? <p className="text-xs leading-5 text-muted-foreground">System context is preserved. You can update the task without changing its saved evidence.</p> : null}
         {error ? <p role="alert" className="rounded-lg border border-destructive/15 bg-destructive/5 px-3 py-2 text-xs text-destructive">{error}</p> : null}
       </fieldset>

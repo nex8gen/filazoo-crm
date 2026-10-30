@@ -13,6 +13,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { FlowActivityBell } from "@/components/flow-activity-bell";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { useVisitedPageRefresh } from "@/components/use-visited-page-refresh";
 
 const WorkspaceAiAssistant = lazy(() => import("@/components/workspace-ai-assistant").then((module) => ({ default: module.WorkspaceAiAssistant })));
 
@@ -126,6 +127,9 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
   const [aiOpen, setAiOpen] = useState(false);
   const [aiLoaded, setAiLoaded] = useState(false);
   const navigationTriggerRef = useRef<HTMLButtonElement>(null);
+  const isPublicPage = authPaths.some((path) => pathname === path || (path.endsWith("/") && pathname.startsWith(path)));
+  // Inbox, My Day and automation already refresh their own data in place.
+  useVisitedPageRefresh(pathname, !isPublicPage && !usesViewportCanvas && pathname !== "/my-day");
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -138,7 +142,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  if (authPaths.some((path) => pathname === path || (path.endsWith("/") && pathname.startsWith(path)))) return children;
+  if (isPublicPage) return children;
 
   const activeItem = allItems.find((item) => itemIsActive(pathname, item)) ?? allItems[0];
   const activeGroup = navigation.find((group) => group.items.includes(activeItem)) ?? navigation[0];

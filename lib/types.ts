@@ -41,12 +41,9 @@ export type Company = {
   source: string;
   sourceLabel: string;
   addedAt?: string;
+  paidOrderCount: number;
   fitScore: number;
-  stage: PipelineStage;
   outreachStatus: string;
-  estimatedOrderQuantity: number | null;
-  estimatedOrderLabel?: string | null;
-  estimatedValue: number | null;
   currency: string;
   nextFollowupAt: string | null;
   nextAction: string;
@@ -117,6 +114,9 @@ export type Catalog = {
   version: number;
   pdfUrl: string | null;
   createdAt: string;
+  quoteStatus?: import("./quotations").QuotationStatus;
+  quoteOrderId?: string | null;
+  quoteValidUntil?: string | null;
 };
 
 export type Reply = {

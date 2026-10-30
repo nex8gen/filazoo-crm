@@ -36,3 +36,9 @@ test("single-part, HTML-only and empty messages have predictable body selection"
   assert.deepEqual(mailboxTextParts([{ partID: "1", type: "text", subtype: "HTML" }]).map((part) => part.partID), ["1"]);
   assert.deepEqual(mailboxTextParts(null), []);
 });
+
+test("extended UTF-8 attachment names never become the message's HTML alternative", () => {
+  const structure = [{ type: "mixed" }, [{ partID: "1", type: "text", subtype: "plain" }],
+    [{ partID: "2", type: "text", subtype: "html", disposition: { type: "inline", params: { "filename*": "utf-8''report.html" } } }]];
+  assert.deepEqual(mailboxTextParts(structure).map((part) => part.partID), ["1"]);
+});

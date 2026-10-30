@@ -1,11 +1,13 @@
 import "server-only";
 import { requireWorkspaceMember } from "../auth.ts";
 import { randomUUID } from "node:crypto";
+import { uploadFlowAttachment } from "../attachment-upload.ts";
+import { submitFlowEmail } from "../flow-smtp.ts";
 import { buildFlowEmail } from "../flow-tracking.ts";
 import { emailTemplates, renderFlowTemplate as renderTemplate } from "../flow-templates.ts";
 
 import { allFlowActions, calculateWaitUntil, conditionMatches, triggerMatches, matchesFlowCustomer, matchesFlowScope, matchesProfileFilters, flowConversationPath, nextBusinessWindow, type FlowFacts, type TriggerEvent } from "../flow-engine.ts";
-import { flowInputSchema, flowLeadListForSource, type FlowInput, type FlowStep, type JsonConfig, type TriggerType } from "../flows.ts";
+import { flowInputSchema, flowLeadListForSource, hasRetiredSalesConfig, retiredSalesMessage, type FlowInput, type FlowStep, type JsonConfig, type TriggerType } from "../flows.ts";
 import { env } from "../env.ts";
 import { sendMailboxEmail } from "../mailer.ts";
 import { getUserEmailFooter, prepareUserEmail } from "./email-footers.ts";
@@ -49,9 +51,8 @@ export async function loadFlowFacts({ userId, contactId, companyId, messageKey, 
   let replyQuery = admin.from("emails").select("id", { count: "exact", head: true }).eq("contact_id", contactId || "00000000-0000-0000-0000-000000000000").eq("direction", "received").or(`owner_id.is.null,owner_id.eq.${userId}`).gt("created_at", since);
   if (conversationId && !/^(company:|shopify:)/.test(conversationId)) replyQuery = replyQuery.eq("thread_id", conversationId);
   const engagement = runId ? await admin.from("flow_run_logs").select("result").eq("run_id", runId).gte("created_at", since).in("result->>action", ["email_opened", "link_clicked"]).throwOnError() : { data: [] };
-  const [companyResult, pipelineResult, profileResult, replyResult, categoryResult] = await Promise.all([
+  const [companyResult, profileResult, replyResult, categoryResult] = await Promise.all([
     resolvedCompanyId ? admin.from("companies").select("segment,country,status").eq("id", resolvedCompanyId).maybeSingle().throwOnError() : Promise.resolve({ data: null }),
-    resolvedCompanyId ? admin.from("pipeline").select("stage").eq("company_id", resolvedCompanyId).maybeSingle().throwOnError() : Promise.resolve({ data: null }),
     resolvedCompanyId ? admin.from("company_profiles").select("fit_score").eq("company_id", resolvedCompanyId).maybeSingle().throwOnError() : Promise.resolve({ data: null }),
     contactId ? replyQuery.throwOnError() : Promise.resolve({ count: 0 }),
     messageKey ? admin.from("email_inbox_state").select("category").eq("user_id", userId).eq("message_key", messageKey).maybeSingle().throwOnError() : Promise.resolve({ data: null }),
@@ -62,7 +63,7 @@ export async function loadFlowFacts({ userId, contactId, companyId, messageKey, 
     segment: companyResult.data?.segment ?? null,
     country: companyResult.data?.country ?? null,
     companyStatus: companyResult.data?.status ?? null,
-    pipelineStage: pipelineResult.data?.stage ?? null,
+    pipelineStage: null,
     fitScore: profileResult.data?.fit_score == null ? null : Number(profileResult.data.fit_score),
   };
 }
@@ -103,8 +104,8 @@ export async function validateFlowResources(userId: string, input: FlowInput) {
   const admin = createSupabaseAdmin();
   for (const step of allFlowActions(input.steps)) {
     if (step.type === "internal_alert" && step.config.channel === "email") {
-      const mailbox = await getMailbox({ id: "", user_id: userId, trigger_type: input.triggerType, trigger_config: input.triggerConfig, status: input.status }, "default");
-      if (!mailbox?.smtpHost || !mailbox.smtpUsername || !mailbox.smtpPassword) throw new Error("Configure the default workspace SMTP mailbox before enabling email alerts.");
+      const mailbox = await getMailbox({ id: "", user_id: userId, trigger_type: input.triggerType, trigger_config: input.triggerConfig, status: input.status }, step.config.mailboxId);
+      if (!mailbox?.smtpHost || !mailbox.smtpUsername || !mailbox.smtpPassword) throw new Error("The selected sender mailbox needs complete SMTP settings before enabling email alerts.");
     }
     if (step.type === "send_email" || step.type === "ai_auto_reply") {
       const mailbox = await getMailbox({ id: "", user_id: userId, trigger_type: input.triggerType, trigger_config: input.triggerConfig, status: input.status }, step.config.mailboxId);
@@ -206,17 +207,18 @@ async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: F
   body = content.text;
   const sentRecordId = randomUUID();
   const storedAttachments: Array<{ filename: string; contentType: string; size: number; path: string; cid?: string }> = [];
+  const uploadPaths: string[] = [];
   let sent;
   try {
     for (const [index, attachment] of attachments.entries()) {
       const path = `${flow.user_id}/${sentRecordId}/${index}`;
-      const { error } = await admin.storage.from("mailbox-attachments").upload(path, attachment.content, { contentType: attachment.contentType, upsert: false });
-      if (error) throw new Error(`Could not store the AI reply catalog: ${error.message}`);
+      uploadPaths.push(path);
+      await uploadFlowAttachment((options) => admin.storage.from("mailbox-attachments").upload(path, attachment.content, { contentType: attachment.contentType, ...options }));
       storedAttachments.push({ filename: attachment.filename, contentType: attachment.contentType, size: attachment.content.length, path, ...( "cid" in attachment ? { cid: attachment.cid as string } : {}) });
     }
-    sent = await sendMailboxEmail({ host: mailbox.smtpHost, port: mailbox.smtpPort, user: mailbox.smtpUsername, pass: mailbox.smtpPassword, from: mailbox.email }, { to: contact.email, subject, ...content, ...replyHeaders, attachments });
+    sent = await submitFlowEmail(() => sendMailboxEmail({ host: mailbox.smtpHost, port: mailbox.smtpPort, user: mailbox.smtpUsername, pass: mailbox.smtpPassword, from: mailbox.email }, { to: contact.email, subject, ...content, ...replyHeaders, attachments }));
   } catch (error) {
-    if (storedAttachments.length) await admin.storage.from("mailbox-attachments").remove(storedAttachments.map((attachment) => attachment.path));
+    if (uploadPaths.length) await admin.storage.from("mailbox-attachments").remove(uploadPaths);
     throw error;
   }
   run.context = { ...run.context, emailThreadId: threadId, replySince: new Date().toISOString() };
@@ -250,12 +252,11 @@ async function executeAction(run: RunRow, flow: FlowRow, step: FlowStep, facts: 
       ...(step.config.companyStatus ? { status: step.config.companyStatus } : {}),
       ...(step.config.segment ? { segment: step.config.segment } : {}),
     }).eq("id", run.company_id));
-    if (step.config.pipelineStage) writes.push(admin.from("pipeline").upsert({ company_id: run.company_id, stage: step.config.pipelineStage, updated_at: new Date().toISOString() }, { onConflict: "company_id" }));
     const results = await Promise.all(writes);
     const failed = results.find((result) => result.error);
     if (failed?.error) throw failed.error;
     await admin.from("events").insert({ company_id: run.company_id, actor_id: flow.user_id, type: "flow_company_updated", data: { summary: step.config.note || "Company fields updated by automation.", flow_id: flow.id } }).throwOnError();
-    await logRun(run.id, step.id, { action: "company_updated", companyStatus: step.config.companyStatus || null, pipelineStage: step.config.pipelineStage || null, segment: step.config.segment || null });
+    await logRun(run.id, step.id, { action: "company_updated", companyStatus: step.config.companyStatus || null, segment: step.config.segment || null });
   } else if (step.type === "internal_alert") {
     const { data: pipeline } = run.company_id ? await admin.from("pipeline").select("owner_id").eq("company_id", run.company_id).maybeSingle().throwOnError() : { data: null };
     const userId = String(step.config.userId === "owner" ? pipeline?.owner_id || flow.user_id : step.config.userId);
@@ -264,7 +265,7 @@ async function executeAction(run: RunRow, flow: FlowRow, step: FlowStep, facts: 
     if (step.config.channel === "email") {
       if (env.dryRun) delivery = "email_dry_run";
       else {
-        const [{ data: recipient }, mailbox] = await Promise.all([admin.auth.admin.getUserById(userId), getMailbox(flow, "default")]);
+        const [{ data: recipient }, mailbox] = await Promise.all([admin.auth.admin.getUserById(userId), getMailbox(flow, step.config.mailboxId)]);
         if (!recipient.user?.email || !mailbox) throw new Error("The alert recipient or sender mailbox is unavailable.");
         await sendMailboxEmail({ host: mailbox.smtpHost, port: mailbox.smtpPort, user: mailbox.smtpUsername, pass: mailbox.smtpPassword, from: mailbox.email }, { to: recipient.user.email, subject: `Filazoo CRM alert · ${flow.id.slice(0, 8)}`, text: `${step.config.message}${step.config.includeThreadLink !== false ? `\n\n${env.NEXT_PUBLIC_APP_URL}${flowConversationPath(run.conversation_id)}` : ""}` });
         delivery = "email_sent";
@@ -305,6 +306,11 @@ export async function processFlowRun(runId: string) {
     }
     const snapshot = typeof run.context?.definition === "string" ? JSON.parse(run.context.definition) as FlowStep[] : stepRows;
     const savedSteps = (snapshot ?? []) as FlowStep[];
+    if (hasRetiredSalesConfig({ triggerType: flow.trigger_type, triggerConfig: flow.trigger_config, steps: savedSteps })) {
+      await logRun(run.id, null, { action: "cancelled", reason: retiredSalesMessage });
+      await finishRun(run.id, "cancelled");
+      return { status: "cancelled", processed: 0 };
+    }
     const validated = flowInputSchema.parse({ name: "Runtime validation", triggerType: flow.trigger_type, triggerConfig: flow.trigger_config, status: "live", steps: savedSteps });
     const steps = savedSteps.map((step, index) => ({ ...step, config: validated.steps[index].config }));
     while (index < steps.length) {

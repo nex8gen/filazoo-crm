@@ -6,15 +6,13 @@ import { updateCompany, type CrmActionState } from "@/app/crm-actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { CompanyCommerceFields } from "@/components/company-commerce-fields";
 import { followupInstant, followupLocalTime } from "@/lib/company-followup";
-import { pipelineStageLabels, pipelineStageValues, type CompanyDetails as CompanyDetailsType, type PipelineStageValue } from "@/lib/types";
+import { type CompanyDetails as CompanyDetailsType } from "@/lib/types";
 
-const stageOptions = pipelineStageValues.map((value) => [value, pipelineStageLabels[value]] as const);
-const stageValue = Object.fromEntries(stageOptions.map(([value, label]) => [label, value])) as Record<string, PipelineStageValue>;
 const subscribeToHydration = () => () => {};
 const clientSnapshot = () => true;
 const serverSnapshot = () => false;
@@ -27,7 +25,6 @@ export function CompanyDetails({ details, canWrite }: { details: CompanyDetailsT
   const company = details.company;
   const updateWithId = updateCompany.bind(null, company.id);
   const [state, action, pending] = useActionState<CrmActionState, FormData>(updateWithId, undefined);
-  const [stage, setStage] = useState<PipelineStageValue>(stageValue[company.stage] || "new");
   const clientReady = useSyncExternalStore(subscribeToHydration, clientSnapshot, serverSnapshot);
   const [editedFollowup, setNextFollowup] = useState<string | null>(null);
   const nextFollowup = editedFollowup ?? (clientReady ? followupLocalTime(company.nextFollowupAt) : "");
@@ -53,12 +50,8 @@ export function CompanyDetails({ details, canWrite }: { details: CompanyDetailsT
 
           <CompanyCommerceFields profile={details.commerce} />
           <Card>
-            <CardHeader><CardTitle>Sales & account notes</CardTitle><CardDescription>Track the opportunity and keep useful customer preferences together.</CardDescription></CardHeader>
+            <CardHeader><CardTitle>Account notes</CardTitle><CardDescription>Keep useful customer preferences and profile notes together.</CardDescription></CardHeader>
             <CardContent className="grid gap-4 sm:grid-cols-2">
-              <div className="sm:col-span-2"><Field label="Sales category" id="company-stage" hint="Changing this also moves the profile to the matching pipeline stage."><Select name="stage" value={stage} onValueChange={(value) => value && setStage(value as PipelineStageValue)}><SelectTrigger id="company-stage" className="w-full"><SelectValue /></SelectTrigger><SelectContent>{stageOptions.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></Field></div>
-              <Field label="Estimated order quantity" id="company-quantity"><Input id="company-quantity" name="estimatedOrderQuantity" type="number" min="0" step="1" defaultValue={company.estimatedOrderQuantity ?? ""} /></Field>
-              <Field label="Estimated value" id="company-value"><Input id="company-value" name="estimatedValue" type="number" min="0" step="0.01" defaultValue={company.estimatedValue ?? ""} /></Field>
-              <Field label="Currency" id="company-currency"><Select name="currency" defaultValue={company.currency}><SelectTrigger id="company-currency" className="w-full"><SelectValue /></SelectTrigger><SelectContent>{["USD", "EUR", "GBP", "CNY"].map((currency) => <SelectItem key={currency} value={currency}>{currency}</SelectItem>)}</SelectContent></Select></Field>
               <details className="sm:col-span-2 rounded-lg border p-3"><summary className="cursor-pointer text-sm font-medium">Optional qualification</summary><div className="mt-4 grid gap-4 sm:grid-cols-2">              <Field label="Fit score (1–10)" id="company-fit"><Input id="company-fit" name="fitScore" type="number" min="1" max="10" defaultValue={company.fitScore || ""} /></Field>
               <div className="sm:col-span-2"><Field label="Interest tags (comma separated)" id="company-tags"><Input id="company-tags" name="tags" defaultValue={company.tags.join(", ")} /></Field></div>
 </div></details>
@@ -72,7 +65,7 @@ export function CompanyDetails({ details, canWrite }: { details: CompanyDetailsT
         <div className="space-y-6">
           <Card>
             <CardHeader><CardTitle className="flex items-center gap-2"><Clock3 className="size-4" />Follow-up schedule</CardTitle><CardDescription>Set the confirmed follow-up date here.</CardDescription></CardHeader>
-            <CardContent className="space-y-4"><Field label="Scheduled date and time" id="company-followup"><Input id="company-followup" type="datetime-local" value={nextFollowup} onChange={(event) => setNextFollowup(event.target.value)} /></Field><div className="flex gap-2 rounded-lg border bg-background/80 p-3 text-xs leading-5 text-muted-foreground"><Workflow className="mt-0.5 size-4 shrink-0 text-primary" /><span>A saved follow-up date creates a reminder for the account owner.</span></div></CardContent>
+            <CardContent className="space-y-4"><Field label="Scheduled date and time" id="company-followup"><DatePicker id="company-followup" includeTime value={nextFollowup} onValueChange={setNextFollowup} /></Field><div className="flex gap-2 rounded-lg border bg-background/80 p-3 text-xs leading-5 text-muted-foreground"><Workflow className="mt-0.5 size-4 shrink-0 text-primary" /><span>A saved follow-up date creates a reminder for the account owner.</span></div></CardContent>
           </Card>
 
         </div>

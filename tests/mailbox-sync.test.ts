@@ -26,6 +26,24 @@ test("initial import fetches recent messages; incremental bursts drain without g
   assert.deepEqual(selectMailboxUids([250], 100, 251), []);
 });
 
+test("large history batches expose continuation without rewinding the new-mail cursor", async () => {
+  const store = memoryStore({ messages: [message(1000)], cursor: { uidValidity: 1, lastUid: 1000 } });
+  const snapshot = await synchronizeMailbox(store, async ({ limit, beforeUid, onMailbox, onBatch }) => {
+    assert.equal(limit, 200); assert.equal(beforeUid, 1000);
+    onMailbox({ uidValidity: 1, lastUid: 999 });
+    onBatch({ received: 200, hasMore: true, totalMessages: 1000 });
+    return Array.from({ length: 200 }, (_, i) => message(800 + i));
+  }, { history: true, batchSize: 200 });
+  assert.equal(snapshot.cursor?.lastUid, 1000);
+  assert.equal(snapshot.messages.length, 201);
+  assert.equal(snapshot.batch?.hasMore, true);
+  await synchronizeMailbox(store, async ({ beforeUid, onMailbox, onBatch }) => {
+    assert.equal(beforeUid, 800);
+    onMailbox({ uidValidity: 1, lastUid: 799 }); onBatch({ received: 0, hasMore: false }); return [];
+  }, { history: true, batchSize: 200 });
+  assert.equal((await store.read()).batch?.hasMore, false);
+});
+
 test("initial sync persists unknown senders and reload reads cache without IMAP", async () => {
   const store = memoryStore();
   const first = await synchronizeMailbox(store, async ({ cursor, onMailbox, limit }) => {
@@ -103,6 +121,39 @@ test("empty incremental result advances only the acknowledged checkpoint", async
   });
   assert.equal(result.messages.length, 1);
   assert.equal(result.cursor?.lastUid, 1);
+});
+
+test("empty polls keep history out of the database write while advancing the checkpoint", async () => {
+  const store = memoryStore({ messages: [message(1)], cursor: { uidValidity: 1, lastUid: 1 } });
+  const commit = store.commit;
+  let messagesChanged: boolean | undefined;
+  store.commit = async (token, snapshot, options) => {
+    messagesChanged = options?.messagesChanged;
+    await commit(token, snapshot, options);
+  };
+  const result = await synchronizeMailbox(store, async ({ onMailbox }) => {
+    onMailbox({ uidValidity: 1, lastUid: 2 }); return [];
+  });
+  assert.equal(messagesChanged, false);
+  assert.equal(result.cursor?.lastUid, 2);
+  assert.equal(result.messages[0].uid, 1);
+  assert.ok(result.syncedAt);
+});
+
+test("an empty mailbox after an epoch reset must replace the old message history", async () => {
+  const store = memoryStore({ messages: [message(1)], cursor: { uidValidity: 1, lastUid: 1 } });
+  const commit = store.commit;
+  let messagesChanged: boolean | undefined;
+  store.commit = async (token, snapshot, options) => {
+    messagesChanged = options?.messagesChanged;
+    await commit(token, snapshot, options);
+  };
+  const result = await synchronizeMailbox(store, async ({ onMailbox }) => {
+    onMailbox({ uidValidity: 2, lastUid: 0 }); return [];
+  });
+  assert.equal(messagesChanged, true);
+  assert.equal(result.cursor?.uidValidity, 2);
+  assert.deepEqual(result.messages, []);
 });
 
 test("missing checkpoint is rejected without losing cached mail", async () => {

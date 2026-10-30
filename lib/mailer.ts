@@ -36,7 +36,9 @@ export function buildMailerTransportConfig(input: MailboxTransportInput = {}) {
 export async function sendMailboxEmail(
   mailbox: MailboxTransportInput,
   mail: {
-    to: string;
+    to: string | string[];
+    cc?: string | string[];
+    bcc?: string | string[];
     subject: string;
     messageId?: string;
     text?: string;
@@ -61,6 +63,8 @@ export async function sendMailboxEmail(
     return await transport.sendMail({
       from: config.from,
       to: mail.to,
+      cc: mail.cc,
+      bcc: mail.bcc,
       subject: mail.subject,
       messageId: mail.messageId,
       text: mail.text,
@@ -88,4 +92,12 @@ export async function verifyMailboxSmtp(mailbox: MailboxTransportInput) {
   } finally {
     transport.close();
   }
+}
+
+export async function buildMailboxMime(from: string, mail: Parameters<typeof sendMailboxEmail>[1]) {
+  const transport = nodemailer.createTransport({ streamTransport: true, buffer: true });
+  try {
+    const result = await transport.sendMail({ from, ...mail });
+    return result.message as Buffer;
+  } finally { transport.close(); }
 }

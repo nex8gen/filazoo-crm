@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-30",
+  "local": {
+    "suppliedKeyMatchedBeforeRepair": false,
+    "oneExtraFinalCharacterRemoved": true,
+    "publishedSecretChanged": false,
+    "googleResponseAfterRepair": {
+      "status": 400,
+      "message": "User location is not supported for the API use."
+    }
+  },
+  "supportedRegion": {
+    "project": "filazoo-crm",
+    "region": "iad1",
+    "sameSuppliedKey": true,
+    "commandId": "cmd_c4555a5753a54024bf2806a6a271",
+    "result": {
+      "status": 200,
+      "text": "OK"
+    }
+  },
+  "fallback": {
+    "previousLocalOidcExpired": true,
+    "freshOidcAuthenticated": true,
+    "gatewayRequiresBilling": true,
+    "publishedConfigurationChanged": false
+  },
+  "fullAiEmailTest": {
+    "status": "passed_after_explicit_user_approval",
+    "nestedSplits": true,
+    "oneMinuteWait": true,
+    "geminiGeneratedReply": true,
+    "catalogPdfReceivedOverImap": true,
+    "completedRetryDidNotResend": true,
+    "temporarySandboxStoppedAndRemoved": true,
+    "evidence": "flow-live-ai-email-20261030.json",
+    "recipient": "raul@filazoo.com",
+    "preparedScript": "scripts/verify-flow-live-ai-email.ts"
+  }
+}

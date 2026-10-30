@@ -11,6 +11,11 @@ export async function POST(request: Request) {
     return Response.json({ ok: false, error: "Invalid email state." }, { status: 400 });
   }
   try {
+    if (viewer.role === "viewer" && parsed.data.provider?.destination) return Response.json({ ok: false, error: "Read-only users cannot move provider emails." }, { status: 403 });
+    if (parsed.data.provider) {
+      const { syncProviderState } = await import("@/lib/data/email-provider-state");
+      await syncProviderState(viewer, parsed.data.messageKey, parsed.data.provider);
+    }
     const saved = await saveEmailInboxState(viewer.id, parsed.data);
     let automation: Awaited<ReturnType<typeof enrollMatchingFlows>> = [];
     if (saved.categoryChanged && parsed.data.category) {

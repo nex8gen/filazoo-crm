@@ -1,0 +1,86 @@
+[
+  {
+    "route": "/",
+    "scripts": 18,
+    "bytes": 1061023,
+    "gzipBytes": 337822,
+    "pass": true
+  },
+  {
+    "route": "/companies",
+    "scripts": 18,
+    "bytes": 1061023,
+    "gzipBytes": 337822,
+    "pass": true
+  },
+  {
+    "route": "/tasks",
+    "scripts": 18,
+    "bytes": 1061023,
+    "gzipBytes": 337822,
+    "pass": true
+  },
+  {
+    "route": "/my-day",
+    "scripts": 18,
+    "bytes": 1061023,
+    "gzipBytes": 337822,
+    "pass": true
+  },
+  {
+    "route": "/segments",
+    "scripts": 18,
+    "bytes": 1061023,
+    "gzipBytes": 337822,
+    "pass": true
+  },
+  {
+    "route": "/catalogs",
+    "scripts": 18,
+    "bytes": 1061023,
+    "gzipBytes": 337822,
+    "pass": true
+  },
+  {
+    "route": "/catalogs/companies",
+    "scripts": 18,
+    "bytes": 1061023,
+    "gzipBytes": 337822,
+    "pass": true
+  },
+  {
+    "route": "/invoices",
+    "scripts": 18,
+    "bytes": 1061023,
+    "gzipBytes": 337822,
+    "pass": true
+  },
+  {
+    "route": "/emails",
+    "scripts": 19,
+    "bytes": 1071217,
+    "gzipBytes": 340111,
+    "pass": true
+  },
+  {
+    "route": "/messenger",
+    "scripts": 18,
+    "bytes": 1061023,
+    "gzipBytes": 337822,
+    "pass": true
+  },
+  {
+    "route": "/settings",
+    "scripts": 19,
+    "bytes": 1076612,
+    "gzipBytes": 342149,
+    "pass": true
+  },
+  {
+    "route": "/lead-channel/ai-agent",
+    "scripts": 19,
+    "bytes": 1067580,
+    "gzipBytes": 339488,
+    "pass": true
+  }
+]

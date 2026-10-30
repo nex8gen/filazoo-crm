@@ -121,11 +121,12 @@ export async function invoiceBootstrap(input: {
   let companyId = input.companyId;
   let contactId: string | undefined;
   if (input.email) {
-    const contact = await db
+    let contactQuery = db
       .from("contacts")
       .select("id,company_id")
-      .eq("email", input.email.trim().toLowerCase())
-      .maybeSingle();
+      .eq("email", input.email.trim().toLowerCase());
+    if (companyId) contactQuery = contactQuery.eq("company_id", companyId);
+    const contact = await contactQuery.maybeSingle();
     if (contact.error) throw contact.error;
     if (contact.data && (!companyId || companyId === contact.data.company_id)) {
       companyId = contact.data.company_id;

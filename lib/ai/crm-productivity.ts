@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { taskWorkflowInputSchema } from "../task-workflows.ts";
 
 const text = (maximum: number) => z.string().trim().min(1).max(maximum);
 export const exportSelectionSchema = z.discriminatedUnion("scope", [
@@ -15,7 +16,7 @@ export const taskChangesSchema = z.object({
 }).strict().refine((changes) => Object.keys(changes).length > 0, "Specify a task change.");
 
 export const productivityOperationSchemas = [
-  z.object({ op: z.literal("create_task"), title: text(200), notes: z.string().trim().max(4000).default(""), companyId: z.uuid().optional(), priority: z.enum(["low", "normal", "high"]).default("normal"), dueAt: z.iso.datetime({ offset: true }).nullable().default(null) }).strict(),
+  z.object({ op: z.literal("create_task"), title: text(200), notes: z.string().trim().max(4000).default(""), companyId: z.uuid().optional(), workflow: taskWorkflowInputSchema.optional(), priority: z.enum(["low", "normal", "high"]).default("normal"), dueAt: z.iso.datetime({ offset: true }).nullable().default(null) }).strict().refine(v => !v.workflow || Boolean(v.companyId), "An actionable task needs a company."),
   z.object({ op: z.literal("update_task"), taskId: z.uuid(), changes: taskChangesSchema }).strict(),
   z.object({ op: z.literal("export_companies"), selection: exportSelectionSchema }).strict(),
   z.object({ op: z.literal("download_document"), kind: z.enum(["invoice", "catalog"]), id: z.uuid() }).strict(),

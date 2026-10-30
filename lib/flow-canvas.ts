@@ -3,6 +3,17 @@ export type CanvasNode = CanvasPoint & { id: string; width: number; height: numb
 
 export const CANVAS_NODE_WIDTH = 440;
 export const CANVAS_START_X = 180;
+export const MIN_FLOW_ZOOM = 0.001;
+
+export function fitFlowCanvas(nodes: CanvasNode[], viewport: { width: number; height: number }) {
+  if (!nodes.length) return { zoom: 1, pan: { x: 0, y: 0 } };
+  const left = Math.min(...nodes.map((node) => node.x));
+  const top = Math.min(...nodes.map((node) => node.y));
+  const right = Math.max(...nodes.map((node) => node.x + node.width));
+  const bottom = Math.max(...nodes.map((node) => node.y + node.height));
+  const zoom = Math.min(1, Math.max(MIN_FLOW_ZOOM, Math.min(Math.max(1, viewport.width - 120) / Math.max(1, right - left), Math.max(1, viewport.height - 100) / Math.max(1, bottom - top))));
+  return { zoom, pan: { x: (viewport.width - (right - left) * zoom) / 2 - left * zoom, y: (viewport.height - (bottom - top) * zoom) / 2 - top * zoom } };
+}
 
 // Layout always follows execution order, including after inserting or moving a step.
 export function layoutFlowNodes(stepIds: string[], heights: Record<string, number>, width = CANVAS_NODE_WIDTH) {

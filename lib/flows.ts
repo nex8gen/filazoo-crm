@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { hasRetiredSalesConfig, retiredSalesMessage } from "./retired-sales.ts";
+export { hasRetiredSalesConfig, retiredSalesMessage } from "./retired-sales.ts";
 
 export const flowStatuses = ["draft", "live", "paused"] as const;
 export const triggerTypes = ["new_lead", "email_received", "category_changed", "no_reply", "lead_added_to_list", "company_segment_changed", "pipeline_stage_changed"] as const;
@@ -52,7 +54,7 @@ export const triggerLabels: Record<TriggerType, string> = {
   no_reply: "No reply after",
   lead_added_to_list: "Lead added to list",
   company_segment_changed: "Company enters segment",
-  pipeline_stage_changed: "Pipeline stage changed",
+  pipeline_stage_changed: "Retired sales trigger",
 };
 
 export const stepLabels: Record<FlowStepType, string> = {
@@ -119,7 +121,6 @@ export const flowConditionCriteriaSchema = z.union([
   z.object({ match: z.enum(["all", "any"]), rules: z.array(flowConditionRuleSchema).min(1).max(20) }),
 ]);
 
-const branchStepTypes = stepTypes.filter((type) => type !== "split") as Exclude<FlowStepType, "split">[];
 const stepConfigSchemas: Record<FlowStepType, z.ZodType<JsonConfig>> = {
   ai_auto_reply: z.object({
     filters: flowConditionCriteriaSchema.optional(),
@@ -151,7 +152,7 @@ const stepConfigSchemas: Record<FlowStepType, z.ZodType<JsonConfig>> = {
       id: z.string().trim().min(1).max(100),
       name: z.string().trim().min(1).max(120),
       condition: configSchema.nullable(),
-      steps: z.array(z.object({ id: z.string().trim().min(1).max(100), type: z.enum(branchStepTypes), config: configSchema })).max(25),
+      steps: z.array(z.object({ id: z.string().trim().min(1).max(100), type: z.enum(stepTypes), config: configSchema })).max(25),
     })).min(2).max(20),
   }).superRefine((value, context) => {
     const defaults = value.paths.filter((path) => path.condition === null);
@@ -216,7 +217,7 @@ const stepConfigSchemas: Record<FlowStepType, z.ZodType<JsonConfig>> = {
     segment: z.string().trim().min(1).max(120).optional(),
     note: z.string().trim().max(500).optional(),
   }).refine((value) => Boolean(value.companyStatus || value.pipelineStage || value.segment), "Choose at least one company field to update."),
-  internal_alert: z.object({ userId: z.string().trim().min(1), message: z.string().trim().min(1).max(500), includeThreadLink: z.boolean().optional(), channel: z.enum(["in_app", "email"]).optional() }),
+  internal_alert: z.object({ userId: z.string().trim().min(1), message: z.string().trim().min(1).max(500), includeThreadLink: z.boolean().optional(), channel: z.enum(["in_app", "email"]).optional(), mailboxId: z.string().trim().min(1).optional() }),
   stop: z.object({ reason: z.string().trim().max(300).optional(), outcome: z.enum(["completed", "cancelled"]).optional() }),
 };
 
@@ -231,8 +232,36 @@ export const flowInputSchema = z.object({
     config: configSchema,
   })).min(1, "Add at least one step.").max(500),
 }).superRefine((flow, context) => {
-  const totalActions = flow.steps.reduce((total, step) => total + 1 + (step.type === "split" && Array.isArray(step.config.paths) ? step.config.paths.reduce<number>((count, path) => count + (path && typeof path === "object" && !Array.isArray(path) && Array.isArray(path.steps) ? path.steps.length : 0), 0) : 0), 0);
-  if (totalActions > 500) context.addIssue({ code: "custom", path: ["steps"], message: "A flow can contain up to 500 actions across its paths." });
+  if (hasRetiredSalesConfig(flow)) {
+    context.addIssue({ code: "custom", message: retiredSalesMessage });
+    return;
+  }
+  let totalActions = 0;
+  let treeError = "";
+  const identities = new Set<string>();
+  function inspect(steps: Array<{ id?: string; type: string; config: JsonConfig }>, depth = 0) {
+    for (const step of steps) {
+      if (!step || typeof step !== "object" || !step.config || typeof step.config !== "object") continue;
+      if (++totalActions > 500) { treeError = "A flow can contain up to 500 actions across its paths."; return; }
+      if (step.id) {
+        if (identities.has(step.id)) treeError = "Every action and path needs a unique ID. Duplicate the action to create an independent copy.";
+        identities.add(step.id);
+      }
+      if (step.type !== "split") continue;
+      if (depth >= 5) { treeError = "A flow supports up to five levels of splits."; return; }
+      for (const path of Array.isArray(step.config.paths) ? step.config.paths : []) {
+        if (!path || typeof path !== "object" || Array.isArray(path)) continue;
+        if (typeof path.id === "string") {
+          if (identities.has(path.id)) treeError = "Every action and path needs a unique ID.";
+          identities.add(path.id);
+        }
+        if (Array.isArray(path.steps)) inspect(path.steps as unknown as typeof steps, depth + 1);
+        if (treeError) return;
+      }
+    }
+  }
+  inspect(flow.steps);
+  if (treeError) { context.addIssue({ code: "custom", path: ["steps"], message: treeError }); return; }
   const scope = flow.triggerConfig;
   if (scope.flowScope && (!scope.scopeCompanyId || (scope.flowScope === "email" && !scope.scopeContactId))) {
     context.addIssue({ code: "custom", path: ["triggerConfig"], message: "Choose the email or company for this flow." });
@@ -290,7 +319,7 @@ export function blankStep(type: FlowStepType = "wait"): FlowInput["steps"][numbe
     send_email: { templateId: "", mailboxId: "default", replyInThread: true, subject: "", preheader: "", trackOpens: true, trackClicks: true, utmTracking: true, stopOnReply: true, sendWindow: "business_hours" },
     create_task: { assigneeType: "owner", assigneeId: null, dueInDays: 1, title: "Follow up with customer", priority: "normal", notes: "" },
     change_category: { category: "Needs follow-up", reason: "" },
-    update_company: { companyStatus: "engaged", pipelineStage: "contacted", note: "Updated by automation" },
+    update_company: { companyStatus: "engaged", note: "Updated by automation" },
     internal_alert: { userId: "owner", message: "This conversation needs attention.", includeThreadLink: true, channel: "in_app" },
     stop: { reason: "Automation completed", outcome: "completed" },
   };
@@ -311,9 +340,14 @@ export function cloneFlowStep(step: FlowInput["steps"][number]): FlowInput["step
 
 /** Keep the assistant's configuration guide tied to the same validators as the flow editor. */
 export function flowAgentCapabilities() {
+  function currentSchema(value: unknown): unknown {
+    if (Array.isArray(value)) return value.filter(item => item !== "pipeline_stage_is" && item !== "pipeline_stage_changed").map(currentSchema);
+    if (!value || typeof value !== "object") return value;
+    return Object.fromEntries(Object.entries(value).filter(([key]) => key !== "pipelineStage").map(([key, field]) => [key, currentSchema(field)]));
+  }
   return {
-    triggerConfigs: Object.fromEntries(triggerTypes.map((type) => [type, z.toJSONSchema(triggerConfigSchemas[type], { io: "input" })])),
-    stepConfigs: Object.fromEntries(stepTypes.map((type) => [type, z.toJSONSchema(stepConfigSchemas[type], { io: "input" })])),
+    triggerConfigs: Object.fromEntries(triggerTypes.filter(type => type !== "pipeline_stage_changed").map((type) => [type, currentSchema(z.toJSONSchema(triggerConfigSchemas[type], { io: "input" }))])),
+    stepConfigs: Object.fromEntries(stepTypes.map((type) => [type, currentSchema(z.toJSONSchema(stepConfigSchemas[type], { io: "input" }))])),
     stepDefaults: Object.fromEntries(stepTypes.map((type) => [type, { ...blankStep(type).config, ...(type === "send_email" ? { templateId: "helpful_reminder" } : {}) }])),
     emailTemplates: ["helpful_reminder", "send_catalog", "quote_follow_up", "welcome_intro", "last_chance"],
     timezone: "UTC",
@@ -325,6 +359,6 @@ export function formatTrigger(type: TriggerType, config: JsonConfig) {
   if (type === "no_reply") return `No reply after ${config.amount || "…"} ${config.unit || "days"}`;
   if (type === "lead_added_to_list") return `Lead added to ${config.listId || "list"}`;
   if (type === "company_segment_changed") return `Company enters ${config.segment || "a segment"}`;
-  if (type === "pipeline_stage_changed") return `Pipeline stage changed to ${String(config.stage || "stage").replaceAll("_", " ")}`;
+  if (type === "pipeline_stage_changed") return "Retired sales trigger";
   return triggerLabels[type];
 }

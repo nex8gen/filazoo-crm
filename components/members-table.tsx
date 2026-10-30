@@ -8,7 +8,7 @@ import { deleteMember, updateMember } from "@/app/settings/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -41,7 +41,7 @@ function EditMemberDialog({ member, open, onOpenChange }: { member: WorkspaceMem
           <div className="space-y-2"><Label htmlFor={`member-name-${member.id}`}>Name</Label><Input id={`member-name-${member.id}`} name="displayName" defaultValue={member.displayName || ""} required /></div>
           <div className="space-y-2"><Label htmlFor={`member-email-${member.id}`}>Email</Label><Input id={`member-email-${member.id}`} name="email" type="email" defaultValue={member.email} required /></div>
           <div className="space-y-2"><Label htmlFor={`member-role-${member.id}`}>Role</Label><Select name="role" value={role} onValueChange={(value) => setRole(value as WorkspaceMemberRecord["role"])}><SelectTrigger id={`member-role-${member.id}`} className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="admin">Admin</SelectItem><SelectItem value="operator">Operator</SelectItem><SelectItem value="bd_manager">BD Sales Manager</SelectItem><SelectItem value="viewer">Viewer</SelectItem></SelectContent></Select></div>
-          <label className="flex items-start gap-3 rounded-lg border p-3 text-sm"><Checkbox name="autoAssignLeads" defaultChecked={member.autoAssignLeads} disabled={role !== "bd_manager"} /><span><span className="block font-medium">Automatic lead assignment</span><span className="mt-1 block text-xs text-muted-foreground">Include this BD Sales Manager in round-robin assignments.</span></span></label>
+          <div className="flex items-center justify-between gap-5 rounded-xl border p-4 text-sm"><div><Label htmlFor={`member-assignment-${member.id}`} className="cursor-pointer font-medium">Automatic lead assignment</Label><p id={`member-assignment-help-${member.id}`} className="mt-1 text-xs text-muted-foreground">Include this BD Sales Manager in automatic lead assignment.</p></div><Switch id={`member-assignment-${member.id}`} aria-describedby={`member-assignment-help-${member.id}`} name="autoAssignLeads" defaultChecked={member.autoAssignLeads} disabled={pending || role !== "bd_manager"} /></div>
           {state?.error ? <p role="alert" className="text-xs text-destructive">{state.error}</p> : null}
           <DialogFooter><DialogClose render={<Button type="button" variant="outline" />}>Cancel</DialogClose><Button type="submit" disabled={pending}>{pending ? "Saving..." : "Save changes"}</Button></DialogFooter>
         </form>

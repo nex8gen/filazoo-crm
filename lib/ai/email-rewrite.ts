@@ -17,9 +17,6 @@ export type CustomerProfileContext = {
   summary?: string;
   interests?: string[];
   fitScore?: number;
-  pipelineStage?: string;
-  estimatedOrderQuantity?: number;
-  estimatedValue?: number;
   currency?: string;
 };
 
@@ -47,7 +44,7 @@ export function buildEmailRewriteInstruction(signature: EmailSignature) {
     "Write concise, natural, professional prose that sounds like a thoughtful real person.",
     "Directly answer or acknowledge the customer's latest message, avoid repeating information already established, and use the customer's first name when known.",
     "Preserve every fact, number, product name, commitment, and question. Do not invent pricing or promises.",
-    "Never expose internal CRM fields such as fit score, pipeline stage, internal tags, or profile notes to the customer.",
+    "Never expose internal CRM fields such as fit score, internal tags, or profile notes to the customer.",
     "Return only the finished email body with an appropriate greeting and clear paragraphs.",
     "Do not copy a signature from the BD MANAGER INPUT or CONVERSATION HISTORY and never output placeholders such as [Your Name], [Your Title], or [Your Company].",
     `End the email with exactly this signature:\nBest regards,\n\n${signature.name}\n${signature.title}\n${signature.company}`,

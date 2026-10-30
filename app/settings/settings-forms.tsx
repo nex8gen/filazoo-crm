@@ -1,10 +1,12 @@
 "use client";
 
 import { useActionState } from "react";
+import { useWorkspaceState } from "@/components/workspace-memory";
 import { Mail, Send, ShieldCheck, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { inviteMember, savePersonalMailbox, saveWorkspaceMailbox, updateMemberRole, updateProfile } from "./actions";
 
@@ -15,12 +17,17 @@ function FormMessage({ error, success }: { error?: string; success?: string }) {
 }
 
 export function ProfileForm({ displayName }: { displayName: string }) {
-  const [state, action, pending] = useActionState(updateProfile, undefined);
+  const [draftName, setDraftName] = useWorkspaceState<string | null>("settings.profile.name", null);
+  const [state, action, pending] = useActionState(async (previous: Parameters<typeof updateProfile>[0], form: FormData) => {
+    const result = await updateProfile(previous, form);
+    if (result?.success) setDraftName(null);
+    return result;
+  }, undefined);
   return (
     <form action={action} className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor="displayName">Display name</Label>
-        <Input id="displayName" name="displayName" defaultValue={displayName} autoComplete="name" required />
+        <Input id="displayName" name="displayName" value={draftName ?? displayName} onChange={event => setDraftName(event.target.value)} autoComplete="name" required />
       </div>
       <FormMessage error={state?.error} success={state?.success} />
       <Button type="submit" disabled={pending}><UserRound />{pending ? "Saving..." : "Save profile"}</Button>
@@ -121,10 +128,10 @@ function MailboxFields({
         <Label htmlFor={`${prefix}MailboxNotes`}>Notes</Label>
         <Input id={`${prefix}MailboxNotes`} name="notes" defaultValue={prefix === "workspace" ? "Primary workspace mailbox" : "Personal manager mailbox"} />
       </div>
-      <label className="flex items-center gap-2 text-xs text-muted-foreground">
-        <input type="checkbox" name="isDefault" defaultChecked />
-        {prefix === "workspace" ? "Use this as the default workspace mailbox" : "Make this my default personal mailbox"}
-      </label>
+      <div className="flex items-center justify-between gap-5 rounded-xl border bg-muted/20 p-4">
+        <Label htmlFor={`${prefix}-default-mailbox`} className="cursor-pointer text-sm">{prefix === "workspace" ? "Use this as the default workspace mailbox" : "Make this my default personal mailbox"}</Label>
+        <Switch id={`${prefix}-default-mailbox`} name="isDefault" defaultChecked />
+      </div>
     </>
   );
 }

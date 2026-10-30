@@ -5,11 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { companyStatuses, emailCategories, pipelineStages, type JsonConfig } from "@/lib/flows";
+import { companyStatuses, emailCategories, type JsonConfig } from "@/lib/flows";
 
 const fields = [
   ["customer_replied", "Customer replied"], ["opened_email", "Opened email"], ["clicked_link", "Clicked link"],
-  ["company_status_is", "Company status"], ["pipeline_stage_is", "Pipeline stage"], ["segment_is", "Company segment"],
+  ["company_status_is", "Company status"], ["segment_is", "Company segment"],
   ["country_is", "Country"], ["fit_score_at_least", "Fit score"], ["category_is", "Email category"],
 ] as const;
 const operators = [["equals", "Equals"], ["not_equals", "Does not equal"], ["contains", "Contains"], ["not_contains", "Does not contain"], ["starts_with", "Starts with"], ["ends_with", "Ends with"], ["is_set", "Is set"], ["is_not_set", "Is not set"], ["gte", "At least"], ["gt", "Greater than"], ["lte", "At most"], ["lt", "Less than"]] as const;
@@ -28,7 +28,7 @@ export function FlowConditionEditor({ config, onChange, disabled = false }: { co
     {rules.map((rule, index) => {
       const field = String(rule.field || "customer_replied"), boolean = ["customer_replied", "opened_email", "clicked_link"].includes(field), numeric = field === "fit_score_at_least";
       const key = field === "category_is" ? "category" : field === "company_status_is" ? "companyStatus" : field === "pipeline_stage_is" ? "pipelineStage" : numeric ? "fitScore" : "value";
-      const values = key === "category" ? emailCategories : key === "companyStatus" ? companyStatuses : key === "pipelineStage" ? pipelineStages : null;
+      const values = key === "category" ? emailCategories : key === "companyStatus" ? companyStatuses : key === "pipelineStage" ? [] : null;
       const set = (name: string, value: JsonConfig[string]) => update(index, { ...rule, [name]: value });
       const operator = String(rule.operator || (numeric ? "gte" : "equals"));
       return <div key={index} className="space-y-3 rounded-lg border bg-background p-3"><div className="flex items-center gap-2"><div className="min-w-0 flex-1"><Choice label={`Rule ${index + 1} field`} value={field} options={fields} onChange={(next) => update(index, { field: next, ...(next === "company_status_is" ? { companyStatus: "engaged" } : next === "pipeline_stage_is" ? { pipelineStage: "contacted" } : next === "category_is" ? { category: "Interested" } : next === "fit_score_at_least" ? { fitScore: 7 } : {}) })} disabled={disabled} /></div>{rules.length > 1 ? <Button variant="ghost" size="icon-xs" aria-label={`Remove rule ${index + 1}`} disabled={disabled} onClick={() => { const next = rules.filter((_, i) => i !== index); onChange(next.length === 1 ? next[0] : { match: config.match || "all", rules: next }); }}><Trash2 /></Button> : null}</div>

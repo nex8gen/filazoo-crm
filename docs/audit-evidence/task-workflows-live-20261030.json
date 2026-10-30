@@ -1,0 +1,51 @@
+{
+  "qaSandboxRemoved": true,
+  "credentialStagingRemoved": true,
+  "applicationDeployed": false,
+  "legacyCompatibilityApprovalPending": false,
+  "legacyCompatibilityMigrationApplied": true,
+  "legacyCompatibilityDatabaseTestsPassed": true,
+  "strictDatabaseRollbackTestsPassed": true,
+  "taskShellGzipBytes": 337822,
+  "desktopPdfPreviewVerified": true,
+  "mobileDialogHorizontalOverflow": false,
+  "finalFullSuite": { "tests": 1014, "passed": 1014, "failed": 0 },
+  "testedAt": "2026-10-30T08:31:52.662Z",
+  "companyId": "63cf64b5-2df9-4b0a-8201-878c723a946b",
+  "taskId": "bcc52529-0eaa-4445-8364-733aadf5f78a",
+  "invoiceId": "bcc52529-0eaa-4445-8364-733aadf5f78a",
+  "validatedReplyHandoff": true,
+  "selfMailSyntheticEventBoundary": true,
+  "automaticExternalInboundMatchingProvenByThisLiveTest": false,
+  "draftInvoiceFromReply": true,
+  "oldQuotedAddressIgnored": true,
+  "pdfBytes": 68236,
+  "smtpAccepted": true,
+  "imapReceivedPdf": true,
+  "duplicateSendBlocked": true,
+  "notificationCount": 1,
+  "unreadAfterCompletion": 0,
+  "followupReady": true,
+  "customerDetailsSavedAndCompleted": true,
+  "invoiceStatus": "draft",
+  "sentToOwnedMailboxOnly": true,
+  "receivedPdf": [
+    {
+      "filename": "INV-000041-DRAFT.pdf",
+      "size": 93378
+    }
+  ],
+  "billingRegression": {
+    "taskId": "41bc3e0a-67de-41d5-b942-de3cfa41ca89",
+    "invoiceId": "41bc3e0a-67de-41d5-b942-de3cfa41ca89",
+    "fullBillingAddressExtracted": true,
+    "fullShippingAddressExtracted": true,
+    "quotedAddressIgnored": true,
+    "originalThreadSubjectPreserved": true,
+    "shippingStillRequiresConfirmation": true,
+    "initialQaPdfHadCountryOnlyBilling": true,
+    "originalDraftCorrectedWithoutResend": true,
+    "additionalEmailSent": false,
+    "correctedPdfBytes": 68284
+  }
+}

@@ -6,7 +6,7 @@ import { invoicePdfFilename } from "@/lib/invoice-pdf-meta";
 
 export const maxDuration = 60;
 
-export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   const access = await invoiceAccess();
   if (access.response) return access.response;
   const { id } = await context.params;
@@ -16,7 +16,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     if (!invoice) return Response.json({ error: "Invoice not found." }, { status: 404 });
     const bytes = await renderInvoicePdf(invoice, new Date().toISOString().slice(0, 10));
     return new Response(new Uint8Array(bytes), { headers: {
-      "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="${invoicePdfFilename(invoice)}"`,
+      "Content-Type": "application/pdf", "Content-Disposition": `${new URL(request.url).searchParams.get("inline") === "1" ? "inline" : "attachment"}; filename="${invoicePdfFilename(invoice)}"`,
       "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "X-Invoice-Revision": String(invoice.revision),
       "X-Invoice-Filename": invoicePdfFilename(invoice),
     } });

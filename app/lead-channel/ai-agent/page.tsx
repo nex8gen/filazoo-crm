@@ -3,6 +3,7 @@ import { FlowBuilder } from "@/components/flow-builder";
 import { requireWorkspaceMember } from "@/lib/auth";
 import { listFlowFilterOptions, listFlowMemberOptions, listWorkspaceFlows } from "@/lib/data/flows";
 import { listMailboxes } from "@/lib/data/mailboxes";
+import { flowMailboxOptions } from "@/lib/flow-mailboxes";
 
 export const metadata: Metadata = { title: "AI Automation" };
 
@@ -24,7 +25,7 @@ export default async function AiAgentPage({ searchParams }: PageProps<"/lead-cha
       isAdmin={viewer.role === "admin"}
       initialFlowId={typeof params.flow === "string" ? params.flow : undefined}
       canEdit={viewer.role === "admin" || viewer.role === "operator" || viewer.role === "bd_manager"}
-      mailboxOptions={mailboxes.map((mailbox) => ({ id: mailbox.id, label: `${mailbox.displayName || mailbox.email} · ${mailbox.email}` }))}
+      mailboxOptions={flowMailboxOptions(mailboxes)}
       memberOptions={members}
       filterOptions={filterOptions}
     />

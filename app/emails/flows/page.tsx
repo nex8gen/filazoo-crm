@@ -4,6 +4,7 @@ import { requireWorkspaceMember } from "@/lib/auth";
 import { resolveEmailFlowScope } from "@/lib/data/email-flows";
 import { listEmailFlows, listFlowFilterOptions, listFlowMemberOptions } from "@/lib/data/flows";
 import { listMailboxes } from "@/lib/data/mailboxes";
+import { flowMailboxOptions } from "@/lib/flow-mailboxes";
 import { defaultFlowInput, type JsonConfig } from "@/lib/flows";
 
 export default async function EmailFlowsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
@@ -39,7 +40,7 @@ export default async function EmailFlowsPage({ searchParams }: { searchParams: P
         initialDraft={{ ...defaultFlowInput, name: `${scope.scopeLabel} automation`.slice(0, 160), triggerType: "email_received", triggerConfig: scope,
           steps: defaultFlowInput.steps.map((step) => ({ ...step, config: { ...step.config, ...(step.type === "send_email" && selectedMailbox ? { mailboxId: selectedMailbox.id } : {}) } })) }}
         scopedContext={{ config: scope, refreshUrl: `/api/email/flows?${query}`, returnHref: `/emails?${returnQuery}` }}
-        canEdit={viewer.role !== "viewer"} mailboxOptions={mailboxes.map((mailbox) => ({ id: mailbox.id, label: `${mailbox.displayName || mailbox.email} · ${mailbox.email}` }))}
+        canEdit={viewer.role !== "viewer"} mailboxOptions={flowMailboxOptions(mailboxes)}
         memberOptions={members} filterOptions={filterOptions} />
     </div>
   </div>;

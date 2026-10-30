@@ -12,4 +12,5 @@ test("filters company catalogs by company name, product, and currency", () => {
   assert.deepEqual(filterCompanyCatalogs(catalogs, "ABS", "all"), [catalogs[0]]);
   assert.deepEqual(filterCompanyCatalogs(catalogs, "", "EUR"), [catalogs[1]]);
   assert.deepEqual(filterCompanyCatalogs(catalogs, "", "all"), catalogs);
+  assert.deepEqual(filterCompanyCatalogs(catalogs, "Q-B-V2", "all"), [catalogs[1]]);
 });

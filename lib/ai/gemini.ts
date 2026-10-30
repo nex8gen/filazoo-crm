@@ -5,6 +5,14 @@ type GeminiResponse = {
   error?: { message?: string };
 };
 
+// Large length/range combinations can exceed Gemini's constrained-decoder
+// complexity limit. Keep the structural contract here; Zod enforces every bound
+// on the server before any CRM state or invoice can be changed.
+function generationSchema(schema: Record<string, unknown>) {
+  const bounds = new Set(["minLength", "maxLength", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "minItems", "maxItems"]);
+  return JSON.parse(JSON.stringify(schema, (key, value) => bounds.has(key) ? undefined : value));
+}
+
 export type GenerateGeminiTextOptions = {
   apiKey: string;
   model?: string;
@@ -12,6 +20,7 @@ export type GenerateGeminiTextOptions = {
   prompt: string;
   images?: ProviderImage[];
   maxOutputTokens?: number;
+  responseJsonSchema?: Record<string, unknown>;
   fetcher?: typeof fetch;
 };
 
@@ -22,6 +31,7 @@ export async function generateGeminiText({
   prompt,
   images = [],
   maxOutputTokens = 1_200,
+  responseJsonSchema,
   fetcher = fetch,
 }: GenerateGeminiTextOptions) {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
@@ -40,7 +50,7 @@ export async function generateGeminiText({
           { inlineData: { mimeType: image.dataUrl.slice(5, image.dataUrl.indexOf(";")), data: image.dataUrl.slice(image.dataUrl.indexOf(",") + 1) } },
         ]),
       ] }],
-      generationConfig: { maxOutputTokens },
+      generationConfig: { maxOutputTokens, ...(responseJsonSchema ? { responseFormat: { text: { mimeType: "APPLICATION_JSON", schema: generationSchema(responseJsonSchema) } } } : {}) },
     }),
     cache: "no-store",
   });

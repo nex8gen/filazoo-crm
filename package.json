@@ -10,6 +10,7 @@
     "lint": "eslint",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "perf:bundles": "node scripts/audit-client-bundles.mjs",
+    "mail:worker": "node --env-file=.env.local --experimental-strip-types scripts/mail-sync-worker.ts",
     "verify": "npm run lint && npm run test && npm run build && npm run perf:bundles"
   },
   "dependencies": {
@@ -31,6 +32,8 @@
     "geist": "^1.7.2",
     "htmlparser2": "10.1.0",
     "imap": "^0.8.19",
+    "imapflow": "2.10.0",
+    "libmime": "5.4.7",
     "lucide-react": "^1.54.0",
     "mailparser": "^3.9.38",
     "motion": "^14.6.0",

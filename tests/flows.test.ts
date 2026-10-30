@@ -24,14 +24,14 @@ test("duplicating a split gives every path and nested action an independent iden
 });
 
 test("every trigger persists email/company scope and excludes other companies and addresses", () => {
-  for (const triggerType of triggerTypes) {
+  for (const triggerType of triggerTypes.filter(type => type !== "pipeline_stage_changed")) {
     for (const flowScope of ["email", "company"]) {
-      const config = { flowScope, scopeCompanyId: customerA, ...(flowScope === "email" ? { scopeContactId: customerB } : {}), scopeLabel: "customer@example.com", amount: 2, unit: "days", category: "Interested", listId: "Shopify B2B leads", segment: "Print farm", stage: "interested" };
+      const config = { flowScope, scopeCompanyId: customerA, ...(flowScope === "email" ? { scopeContactId: customerB } : {}), scopeLabel: "customer@example.com", amount: 2, unit: "days", category: "Interested", listId: "Shopify B2B leads", segment: "Print farm" };
       const saved = flowInputSchema.parse({ ...defaultFlowInput, triggerType, triggerConfig: config });
       const reopened = flowInputSchema.parse(JSON.parse(JSON.stringify(saved)));
       assert.equal(reopened.triggerConfig.flowScope, flowScope);
       assert.equal(reopened.triggerConfig.scopeCompanyId, customerA);
-      const event = { type: triggerType, companyId: customerA, contactId: customerB, conversationId: "thread", category: "Interested", listId: "Shopify B2B leads", segment: "Print farm", stage: "interested" };
+      const event = { type: triggerType, companyId: customerA, contactId: customerB, conversationId: "thread", category: "Interested", listId: "Shopify B2B leads", segment: "Print farm" };
       assert.equal(triggerMatches(triggerType, reopened.triggerConfig, event, facts), true);
       assert.equal(triggerMatches(triggerType, reopened.triggerConfig, { ...event, companyId: customerB }, facts), false);
       assert.equal(triggerMatches(triggerType, reopened.triggerConfig, { ...event, contactId: customerA }, facts), flowScope === "company");
@@ -44,15 +44,15 @@ test("every trigger persists email/company scope and excludes other companies an
 });
 
 test("every trigger saves one or multiple selected customers and retains company filters", () => {
-  for (const triggerType of triggerTypes) {
+  for (const triggerType of triggerTypes.filter(type => type !== "pipeline_stage_changed")) {
     for (const contactIds of [[customerA], [customerA, customerB, customerA]]) {
-      const triggerConfig = { amount: 2, unit: "days", category: "Interested", listId: "Shopify B2B leads", segment: "Print farm", stage: "interested", country: "US", contactIds };
+      const triggerConfig = { amount: 2, unit: "days", category: "Interested", listId: "Shopify B2B leads", segment: "Print farm", country: "US", contactIds };
       const saved = flowInputSchema.parse({ ...defaultFlowInput, triggerType, triggerConfig });
       const reopened = flowInputSchema.parse(JSON.parse(JSON.stringify(saved)));
       assert.deepEqual(reopened.triggerConfig.contactIds, [...new Set(contactIds)]);
       assert.equal(reopened.triggerConfig.country, "US");
       for (const contactId of [customerA, customerB, null, "33333333-3333-4333-8333-333333333333"]) {
-        const event = { type: triggerType, conversationId: "company:1", contactId, category: "Interested", listId: "Shopify B2B leads", segment: "Print farm", stage: "interested" };
+        const event = { type: triggerType, conversationId: "company:1", contactId, category: "Interested", listId: "Shopify B2B leads", segment: "Print farm" };
         assert.equal(triggerMatches(triggerType, reopened.triggerConfig, event, facts), Boolean(contactId && contactIds.includes(contactId)));
         assert.equal(triggerMatches(triggerType, reopened.triggerConfig, event, { ...facts, country: "UK" }), false);
       }

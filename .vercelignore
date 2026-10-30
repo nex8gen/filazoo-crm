@@ -1,0 +1,14 @@
+.git/
+.next/
+.vercel/
+.worktrees/
+.agents/
+.codex/
+.aws/
+node_modules/
+tmp/
+output/
+.env*
+*.tsbuildinfo
+dev-server.*.log
+company-email-verification.jpg

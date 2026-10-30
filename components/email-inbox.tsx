@@ -1,9 +1,25 @@
 "use client";
+import { attachmentMimeType } from "@/lib/email-files";
+import { DatePicker } from "@/components/ui/date-picker";
+import { EmailSyncStatus } from "@/components/email-sync-status";
+import type { MailSyncHealth } from "@/lib/mail-sync-jobs";
 import { usePreferences } from "@/components/preferences-provider";
 import { useBackgroundRefresh } from "@/components/use-background-refresh";
 import { prepareComposerMessage } from "@/lib/email-composer";
 import { EmailBodyEditor, useEmailEditorValue, type EmailBodyEditorHandle } from "@/components/email-body-editor";
 import { useEmailFooter } from "@/components/use-email-footer";
+import { useMailDrafts } from "@/components/use-mail-drafts";
+import { EmailRecipientFields } from "@/components/email-recipient-fields";
+import { EmailReaderMessage } from "@/components/email-reader-message";
+import { EmailFormatToolbar } from "@/components/email-format-toolbar";
+import { EmailDraftStatus } from "@/components/email-draft-status";
+import { emailAddresses, emailSubject, replyRecipients } from "@/lib/email-addresses";
+import { hasEmailDraft, type EmailDraft as SavedEmailDraft, type ProviderDraft, type EmailSendInput } from "@/lib/email-workbench";
+import { preparePastedEmailHtml } from "@/lib/email-paste";
+import { sanitizeComposerHtml } from "@/lib/email-composer";
+import { emailTextHtml } from "@/lib/email-markup";
+import { isInlineEmailAttachment } from "@/lib/email-content";
+import type { ProviderFolder } from "@/lib/email-provider";
 
 import { useLanguage } from "@/components/language-provider";
 
@@ -20,7 +36,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive, ArrowLeft, ChevronLeft, ChevronRight, PanelRight, MailOpen, CalendarClock, Check,
   Clock3, FileText, Filter, Forward, Inbox, Languages, Mail, MoreHorizontal,
-  LoaderCircle, Library, Paperclip, Plus, RefreshCw, Reply, Search, Send,
+  LoaderCircle, Library, Paperclip, Plus, RefreshCw, Reply, ReplyAll, Search, Send,
   Smile, Star, Trash2, Workflow, X, ReceiptText, Settings2, UserRound, UsersRound,
 } from "lucide-react";
 import {
@@ -28,7 +44,7 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { InboxCalculator } from "@/components/inbox-calculator";
 import { EmailCatalogDialog } from "@/components/email-catalog-dialog";
@@ -42,7 +58,6 @@ import { AssignedOwner } from "@/components/assigned-owner";
 import { ContactSummary } from "@/components/contact-summary";
 import { groupEmailConversations, replyReferences, replyTarget, threadKeyForEmail } from "@/lib/email-threading";
 import { buildCatalogPdfWithImages } from "@/lib/catalog-pdf";
-import { emailContentSandbox, emailDocument, splitQuotedEmail } from "@/lib/email-content";
 import { prepareEmailTranslation } from "@/lib/email-translation-document";
 import { requestEmailTranslation } from "@/lib/email-translation-client";
 import type { Catalog, Product } from "@/lib/types";
@@ -57,7 +72,14 @@ const InvoiceCreateDialog = dynamic(()=>import("@/components/invoice-create-dial
 
 export type EmailWorkspaceItem = {
   id: string;
+  crmEmailId?: string;
   from?: string;
+  to?: import("@/lib/email-addresses").EmailAddress[];
+  cc?: import("@/lib/email-addresses").EmailAddress[];
+  bcc?: import("@/lib/email-addresses").EmailAddress[];
+  providerFolder?: string;
+  providerKind?: string;
+  providerLocations?: Array<{ folder: string; kind: string; mailboxKey: string; uid: number; validity: number }>;
   replyTo?: string | null;
   uid?: number;
   uidValidity?: number;
@@ -84,7 +106,7 @@ export type EmailWorkspaceItem = {
   messageId?: string | null;
   inReplyTo?: string | null;
   references?: string[];
-  attachments?: Array<{ filename: string; contentType: string; size: number; url?: string }>;
+  attachments?: Array<{ filename: string; contentType: string; size: number; url?: string; cid?: string; contentLocation?: string; partId?: string; inline?: boolean }>;
   timestamp: string;
   step?: string;
   demo?: boolean;
@@ -95,7 +117,7 @@ export type EmailWorkspaceItem = {
   followUpAt?: string | null;
 };
 
-type Folder = "inbox" | "unread" | "followup" | "all" | "drafts" | "scheduled" | "sent" | "starred" | "archive" | "trash";
+type Folder = "inbox" | "unread" | "followup" | "all" | "drafts" | "scheduled" | "sent" | "starred" | "archive" | "trash" | "spam" | `provider:${string}`;
 type SourceFilter = "all" | "shopify" | "replies" | "unread";
 type Category = "Needs follow-up" | "Waiting on customer" | "Interested" | "Big order" | "No action";
 type Automation = { enabled: boolean; queueCount: number; steps: Array<{ id: string; title: string; delay: string; action: string; enabled: boolean }> };
@@ -116,12 +138,6 @@ const categoryStyles: Record<Category, string> = {
   "No action": "border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-500/30 dark:bg-slate-500/10 dark:text-slate-300",
 };
 
-function formatTime(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(date);
-}
-
 type EmailConversation = { id: string; messages: EmailWorkspaceItem[]; latest: EmailWorkspaceItem };
 
 function buildConversations(emails: EmailWorkspaceItem[]): EmailConversation[] {
@@ -131,50 +147,9 @@ function buildConversations(emails: EmailWorkspaceItem[]): EmailConversation[] {
   });
 }
 
-function PlainEmailBody({ body }: { body: string }) {
-  const linkPattern = /(https?:\/\/[^\s<>]+|www\.[^\s<>]+|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,})/gi;
-  return <div data-no-translate className="whitespace-pre-wrap text-sm leading-7">{body.split(linkPattern).map((part, index) => {
-    if (!part) return null;
-    const isWebLink = /^(https?:\/\/|www\.)/i.test(part);
-    const isEmail = /^[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}$/i.test(part);
-    if (!isWebLink && !isEmail) return <span key={index}>{part}</span>;
-    const trailing = isWebLink ? part.match(/[),.!?;:]+$/)?.[0] ?? "" : "";
-    const label = trailing ? part.slice(0, -trailing.length) : part;
-    const href = isEmail ? `mailto:${label}` : /^https?:\/\//i.test(label) ? label : `https://${label}`;
-    return <span key={index}><a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline decoration-primary/40 underline-offset-2 hover:decoration-primary">{label}</a>{trailing}</span>;
-  })}</div>;
-}
-
-function OriginalEmailBody({ email }: { email: EmailWorkspaceItem }) {
-  if (!email.html) return <PlainEmailBody body={email.body} />;
-  return <iframe title={`Email content from ${email.contact}`} srcDoc={emailDocument(email.html)} sandbox={emailContentSandbox} className="min-h-[420px] w-full border-0 bg-white" />;
-}
-
-function EmailBody({ email, onLoad, loading, error }: { email: EmailWorkspaceItem; onLoad: () => void; loading: boolean; error?: string }) {
-  if (email.bodyLoaded === false) return <div className="py-4 text-sm text-muted-foreground">{loading ? <span className="inline-flex items-center gap-2"><LoaderCircle className="size-4 animate-spin" />Loading message…</span> : <><p>{error || "Message content is ready to download."}</p><button type="button" onClick={onLoad} className="mt-2 rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-muted">{error ? "Retry loading message" : "Load message"}</button></>}</div>;
-  if (email.html) return <OriginalEmailBody email={email} />;
-  const split = email.direction === "inbound" ? splitQuotedEmail(email.body) : null;
-  if (!split?.quoted) return <OriginalEmailBody email={email} />;
-  return <><PlainEmailBody body={split.current} /><details className="mt-3 border-t pt-3"><summary className="cursor-pointer text-xs text-muted-foreground">Show original email and quoted history</summary><div className="mt-3"><OriginalEmailBody email={email} /></div></details></>;
-}
-
-function SentAttachments({ email }: { email: EmailWorkspaceItem }) {
-  if (!email.attachments?.length) return null;
-  return <div className="mt-2 flex flex-wrap gap-2" aria-label="Attachments">{email.attachments.map((attachment, index) => {
-    const content = <><FileText className="size-4 shrink-0 text-sky-700" /><span className="max-w-52 truncate">{attachment.filename}</span><span className="text-muted-foreground">{Math.max(1, Math.round(attachment.size / 1024))} KB</span></>;
-    return attachment.url ? <a key={index} href={attachment.url} target="_blank" rel="noopener noreferrer" className="inline-flex max-w-full items-center gap-2 rounded-lg border bg-background px-3 py-2 text-xs font-medium hover:border-primary/40 hover:bg-muted/30">{content}</a> : <span key={index} className="inline-flex max-w-full items-center gap-2 rounded-lg border bg-background px-3 py-2 text-xs font-medium">{content}</span>;
-  })}</div>;
-}
-
 function Toggle({ checked, onChange, label }: { checked: boolean; onChange: () => void; label: string }) {
   return <button type="button" role="switch" aria-checked={checked} aria-label={label} onClick={onChange} className={`relative h-5 w-9 rounded-full ${checked ? "bg-primary" : "bg-muted-foreground/30"}`}><span className={`absolute left-0.5 top-0.5 size-4 rounded-full bg-white shadow-sm ring-1 ring-black/5 transition-transform ${checked ? "translate-x-4" : ""}`} /></button>;
 }
-
-const allowedAttachmentTypes = new Set([
-  "application/pdf", "text/csv", "text/plain", "image/jpeg", "image/png", "image/webp", "image/gif",
-  "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-]);
 
 function bytesToBase64(bytes: Uint8Array) {
   let binary = "";
@@ -186,12 +161,11 @@ function bytesToBase64(bytes: Uint8Array) {
 
 async function fileToAttachment(file: File): Promise<ComposerAttachment> {
   if (file.size > 7_500_000) throw new Error(`${file.name} is larger than the 7.5 MB attachment limit.`);
-  if (!allowedAttachmentTypes.has(file.type)) throw new Error(`${file.name} is not a supported photo, PDF, CSV, document, or spreadsheet.`);
   return {
     id: `${file.name}-${file.lastModified}-${crypto.randomUUID()}`,
     filename: file.name,
     content: bytesToBase64(new Uint8Array(await file.arrayBuffer())),
-    contentType: file.type,
+    contentType: attachmentMimeType(file.name, file.type),
     size: file.size,
   };
 }
@@ -232,10 +206,13 @@ function emailMatchesFolder(
   categories: Record<string, Category>,
 ) {
   const state = folderStates[email.id] ?? "inbox";
+  if (folder.startsWith("provider:")) return email.providerFolder === folder.slice(9) || Boolean(email.providerLocations?.some((item) => item.folder === folder.slice(9)));
+  if (folder === "spam") return email.providerKind === "spam" && state !== "trash";
+  if (email.providerKind === "spam" && folder !== "trash") return false;
   if (folder === "unread") return state === "inbox" && email.direction === "inbound" && !readMessages.has(email.id);
   if (folder === "followup") return state !== "trash" && categories[email.id] === "Needs follow-up";
   if (folder === "all") return state !== "trash";
-  if (folder === "inbox") return state === "inbox" && email.direction === "inbound";
+  if (folder === "inbox") return state === "inbox" && email.direction === "inbound" && (!email.providerKind || email.providerKind === "inbox");
   if (folder === "drafts") return state !== "trash" && email.status.toLowerCase().includes("draft");
   if (folder === "scheduled") return state !== "trash" && email.status.toLowerCase().includes("scheduled");
   if (folder === "sent") return state !== "trash" && email.direction === "outbound";
@@ -256,6 +233,8 @@ export function EmailInboxWorkspace({
   initialComposeTo,
   inboxConfigured,
   inboxError,
+  lastMailboxSync,
+  syncHealth: initialSyncHealth = {},
   aiConfigured,
   defaultMailboxEmail,
   mailboxes,
@@ -272,6 +251,7 @@ export function EmailInboxWorkspace({
   onMailboxSnapshot,
   switchingMailboxId,
   mailboxSwitchError,
+  providerFolders: initialProviderFolders = [],
 }: {
   initialEmails: EmailWorkspaceItem[];
   initialThreadId?: string;
@@ -281,6 +261,8 @@ export function EmailInboxWorkspace({
   sendConfigured: boolean;
   inboxConfigured: boolean;
   inboxError: string | null;
+  lastMailboxSync?: string | null;
+  syncHealth?: Record<string, MailSyncHealth>;
   aiConfigured: boolean;
   defaultMailboxEmail: string | null;
   mailboxes: MailboxOption[];
@@ -298,11 +280,35 @@ export function EmailInboxWorkspace({
   onMailboxSnapshot?: (mailboxId: string | null, emails: EmailWorkspaceItem[]) => void;
   switchingMailboxId?: string | null;
   mailboxSwitchError?: string | null;
+  providerFolders?: ProviderFolder[];
 }) {
   const sourceEmails = companyScope ? filterCompanyEmails(initialEmails, companyScope) : initialEmails;
   const { preferences } = usePreferences();
   const { footer: personalFooter, loading: footerLoading, error: footerError } = useEmailFooter();
   const { language } = useLanguage();
+  const draftMailboxId = selectedMailboxId || defaultSenderId || "";
+  const savedDrafts = useMailDrafts(invoiceViewer?.id || "", draftMailboxId);
+  const { ready: draftsReady, put: saveDraft } = savedDrafts;
+  const [providerFolders, setProviderFolders] = useState(initialProviderFolders);
+  const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set());
+  const [replyParentId, setReplyParentId] = useState<string | null>(null);
+  const [replyAll, setReplyAll] = useState(false);
+  const [replyTo, setReplyTo] = useState<string | null>(null);
+  const [replyCc, setReplyCc] = useState<string | null>(null);
+  const [replyBcc, setReplyBcc] = useState("");
+  const [replyDraftId, setReplyDraftId] = useState("");
+  const [replyRequestId, setReplyRequestId] = useState("");
+  const [composeDraftId, setComposeDraftId] = useState("");
+  const [composeRequestId, setComposeRequestId] = useState("");
+  const [composeCc, setComposeCc] = useState("");
+  const [composeBcc, setComposeBcc] = useState("");
+  const [composeProviderDraft, setComposeProviderDraft] = useState<ProviderDraft | undefined>();
+  const [scheduleAt, setScheduleAt] = useState("");
+  const [replyScheduleOpen, setReplyScheduleOpen] = useState(false);
+  const [composeScheduleAt, setComposeScheduleAt] = useState("");
+  const [composeScheduleOpen, setComposeScheduleOpen] = useState(false);
+  const [scheduledEmails, setScheduledEmails] = useState<Array<{ id: string; status: string; scheduled_at: string; payload: EmailSendInput; error?: string }>>([]);
+  const [scheduledError, setScheduledError] = useState("");
   const initialTarget = initialThreadId ? sourceEmails.find((email) => threadKeyForEmail(email) === initialThreadId || email.id === initialThreadId) : undefined;
   const pendingThread = useRef(initialTarget ? null : initialThreadId);
   const [emails, setEmails] = useState(sourceEmails);
@@ -315,6 +321,8 @@ export function EmailInboxWorkspace({
   const [bulkBusy, setBulkBusy] = useState(false);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<EmailWorkspaceItem[]>([]);
+  const [searchStatus, setSearchStatus] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<Category | null>(null);
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const { text: draft, html: draftHtml, bodyText: replyBodyText, hasImages: replyHasImages, setText: setDraft, onChange: editReply } = useEmailEditorValue();
@@ -327,8 +335,11 @@ export function EmailInboxWorkspace({
   const [composeOpen, setComposeOpen] = useState(Boolean(initialComposeTo));
   const [composeTo, setComposeTo] = useState(initialComposeTo || "");
   const [composeSubject, setComposeSubject] = useState("");
-  const { text: composeBody, html: composeHtml, hasImages: composeHasImages, setText: setComposeBody, onChange: editCompose } = useEmailEditorValue();
+  const { text: composeBody, html: composeHtml, bodyText: composeBodyText, hasImages: composeHasImages, setText: setComposeBody, onChange: editCompose } = useEmailEditorValue();
   const [composeThread, setComposeThread] = useState<{ to: string; threadId?: string; inReplyTo?: string; references?: string[] } | null>(null);
+  useEffect(() => {
+    if (composeOpen && savedDrafts.ready && !composeDraftId) { setComposeDraftId(crypto.randomUUID()); setComposeRequestId(crypto.randomUUID()); }
+  }, [composeOpen, savedDrafts.ready, composeDraftId]);
   const loadedAgentDraft = useRef<string | null>(null);
   const unsentDraft = useRef(false);
   const [composeError, setComposeError] = useState<string | null>(null);
@@ -361,6 +372,8 @@ export function EmailInboxWorkspace({
   const [sending, setSending] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(inboxError);
+  const [syncHealth, setSyncHealth] = useState<Record<string, MailSyncHealth>>(initialSyncHealth);
+  const [lastSuccessfulSync, setLastSuccessfulSync] = useState(lastMailboxSync);
   const [syncing, setSyncing] = useState(false);
   const syncInProgress = useRef(false);
   const bodyRequests = useRef(new Set<string>());
@@ -371,6 +384,9 @@ export function EmailInboxWorkspace({
   const replyFileInput = useRef<HTMLInputElement>(null);
   const composeFileInput = useRef<HTMLInputElement>(null);
   const replyInput = useRef<EmailBodyEditorHandle>(null);
+  const composeInput = useRef<EmailBodyEditorHandle>(null);
+  const replyPayload = useRef<{ fingerprint: string; id: string } | null>(null);
+  const composePayload = useRef<{ fingerprint: string; id: string } | null>(null);
   const replySession = useRef(0);
   const stateRevision = useRef(0);
   const pendingStateWrites = useRef(0);
@@ -447,7 +463,9 @@ export function EmailInboxWorkspace({
       const loaded = new Map(current.filter((email) => email.bodyLoaded).map((email) => [email.id, email]));
       return nextEmails.map((email) => {
         const previous = loaded.get(email.id);
-        return email.bodyLoaded === false && previous ? { ...email, body: previous.body, html: previous.html, preview: previous.preview, bodyLoaded: true } : email;
+        const sameLocation = previous && email.uid === previous.uid && email.uidValidity === previous.uidValidity && email.mailboxKey === previous.mailboxKey && email.providerFolder === previous.providerFolder;
+        return email.bodyLoaded === false && previous && sameLocation ? { ...email, body: previous.body, html: previous.html, preview: previous.preview, attachments: previous.attachments,
+          from: previous.from, to: previous.to, cc: previous.cc, bcc: previous.bcc, replyTo: previous.replyTo, bodyLoaded: true } : email;
       });
     });
     setStarred(new Set(nextEmails.filter((email) => email.starred).map((email) => email.id)));
@@ -463,39 +481,60 @@ export function EmailInboxWorkspace({
     setSelectedId((current) => target?.id ?? (nextEmails.some((email) => email.id === current) ? current : ""));
   }, [companyScope]);
 
-  const syncInbox = useCallback(async (manual = false) => {
+  const syncInbox = useCallback(async (manual = false, refreshRequested = false) => {
     if (!inboxConfigured || syncInProgress.current) return;
     syncInProgress.current = true;
     setSyncing(true);
     const revision = stateRevision.current;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30_000);
     try {
       const params = new URLSearchParams();
+      if (!manual && !refreshRequested) params.set("refresh", "false");
       if (selectedMailboxId && !companyScope) params.set("mailboxId", selectedMailboxId);
       if (manual) params.set("scope", "history");
+      const providerFolder = folder.startsWith("provider:") ? folder.slice(9) : providerFolders.find((item) => item.kind === folder)?.path;
+      if (providerFolder && providerFolder !== "INBOX") params.set("providerFolder", providerFolder);
       if (companyScope) params.set("companyId", companyScope.id);
-      const response = await fetch(`/api/email/inbox?${params}`, { cache: "no-store" });
+      const response = await fetch(`/api/email/inbox?${params}`, { cache: "no-store", signal: controller.signal });
       const result = await response.json().catch(() => ({ error: "The inbox returned an invalid response." }));
       if (!response.ok || !Array.isArray(result.emails)) {
         throw new Error(result.error || "Unable to sync the mailbox inbox.");
       }
+      if (Array.isArray(result.providerFolders)) setProviderFolders(result.providerFolders);
+      if (result.syncHealth) setSyncHealth(result.syncHealth);
+      setLastSuccessfulSync(result.lastMailboxSync || null);
       // A poll started before a user action must not undo that action.
       if (revision !== stateRevision.current || pendingStateWrites.current) return;
       applyMailboxSnapshot(result.emails as EmailWorkspaceItem[]);
-      setSyncError(result.inboxError || null);
+      setSyncError(result.syncQueueError || null);
       if (manual) setNotice("Loading the next batch of older emails. They will appear automatically as they are imported.");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to sync the mailbox inbox.";
       setSyncError(message);
       if (manual) setNotice(message);
     } finally {
+      clearTimeout(timeout);
       syncInProgress.current = false;
       setSyncing(false);
     }
-  }, [applyMailboxSnapshot, companyScope, inboxConfigured, selectedMailboxId]);
+  }, [applyMailboxSnapshot, companyScope, inboxConfigured, selectedMailboxId, folder, providerFolders]);
 
   useBackgroundRefresh(syncInbox, inboxConfigured, preferences.emailSyncSeconds);
 
-  const conversations = useMemo(() => buildConversations(emails), [emails]);
+  useEffect(() => {
+    const query = search.trim();
+    setSearchResults([]); setSearchStatus("");
+    if (query.length < 2 || !selectedMailboxId || companyScope) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      setSearchStatus("Searching provider…");
+      const params = new URLSearchParams({ q: query, mailboxId: selectedMailboxId, folder: folder.startsWith("provider:") ? folder.slice(9) : ["inbox", "sent", "archive", "trash", "spam"].includes(folder) ? folder : "all" });
+      void fetch(`/api/email/search?${params}`, { signal: controller.signal, cache: "no-store" }).then(async (response) => { const result = await response.json(); if (!response.ok) throw new Error(result.error); if (!controller.signal.aborted) { setSearchResults(result.emails || []); setSearchStatus(result.error || (result.limited ? "Showing up to 50 matches per folder. Refine your search for more." : "Provider search complete")); } }).catch((reason) => { if (!controller.signal.aborted) setSearchStatus(reason instanceof Error ? reason.message : "Provider search failed."); });
+    }, 700);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [search, selectedMailboxId, companyScope, folder]);
+  const conversations = useMemo(() => buildConversations([...new Map([...searchResults, ...emails].map((email) => [email.id, email])).values()]), [emails, searchResults]);
   const visible = useMemo(() => {
     const query = search.trim().toLowerCase();
     return conversations.filter((conversation) => {
@@ -507,10 +546,10 @@ export function EmailInboxWorkspace({
         || (sourceFilter === "shopify" && conversation.messages.some((email) => email.source === "shopify"))
         || (sourceFilter === "replies" && conversation.messages.some((email) => email.direction === "inbound" && email.source !== "shopify"))
         || (sourceFilter === "unread" && conversation.messages.some((email) => email.id === selectedId || (email.direction === "inbound" && !readMessages.has(email.id))));
-      const searchable = conversation.messages.map((email) => `${email.subject} ${email.contactName || ""} ${email.contact} ${email.company} ${email.preview}`).join(" ").toLowerCase();
-      return matchesFolder && matchesCategory && matchesSource && (!query || searchable.includes(query));
+      const searchable = conversation.messages.map((email) => `${email.subject} ${email.contactName || ""} ${email.contact} ${email.company} ${email.preview} ${email.body} ${(email.to || []).map((item) => item.address).join(" ")} ${(email.attachments || []).map((item) => item.filename).join(" ")}`).join(" ").toLowerCase();
+      return matchesFolder && matchesCategory && matchesSource && (!query || searchable.includes(query) || searchResults.some((message) => conversation.messages.some((item) => item.id === message.id)));
     }).sort((a, b) => new Date(b.latest.timestamp).getTime() - new Date(a.latest.timestamp).getTime());
-  }, [categories, categoryFilter, conversations, folder, folderStates, mobileReading, readMessages, search, selectedId, sourceFilter, starred]);
+  }, [categories, categoryFilter, conversations, folder, folderStates, mobileReading, readMessages, search, selectedId, sourceFilter, starred, searchResults]);
   const selectedConversation = visible.find((item) => item.messages.some((email) => email.id === selectedId));
   const selected = selectedConversation?.latest;
   const reading = mobileReading && Boolean(selected);
@@ -553,34 +592,69 @@ export function EmailInboxWorkspace({
     if (!failures.length) setCheckedIds(new Set());
     setBulkBusy(false);
   }
-  const [composerConversationId, setComposerConversationId] = useState(selectedConversation?.id);
-  if (composerConversationId !== selectedConversation?.id) {
+  const [composerConversationId, setComposerConversationId] = useState<string | undefined>();
+  const draftConversationKey = selectedConversation?.messages[0] ? threadKeyForEmail(selectedConversation.messages[0]) : undefined;
+  if (savedDrafts.ready && composerConversationId !== draftConversationKey) {
     // Also covers selection changes caused by search, folders, filters and sync.
-    setComposerConversationId(selectedConversation?.id);
-    setReplyExpanded(Boolean(companyScope));
-    setDraft("");
+    setComposerConversationId(draftConversationKey);
+    const retained = Object.values(savedDrafts.drafts).find((item) => item.kind === "reply" && item.threadId === draftConversationKey);
+    setReplyExpanded(Boolean(companyScope) || Boolean(retained));
+    editReply(retained?.text || "", retained?.html || "", retained?.bodyText || "");
+    setReplyDraftId(retained?.id || crypto.randomUUID());
+    setReplyRequestId(retained?.requestId || crypto.randomUUID());
+    setReplyParentId(retained?.parentId || null);
+    setReplyAll(retained?.replyAll || false);
+    setReplyTo(retained?.to ?? null); setReplyCc(retained?.cc ?? null); setReplyBcc(retained?.bcc || "");
+    setScheduleAt(""); setReplyScheduleOpen(false);
+    if (retained?.senderId) setReplySenderId(retained.senderId);
     setAiDraft("");
     setAiDraftSource("");
     setAiWriting(false);
     setAiWritingError(null);
-    setReplyAttachments([]);
+    setReplyAttachments(retained?.attachments.map((item) => ({ ...item, contentType: item.contentType || "application/octet-stream" })) || []);
     setAiReplyInvoiceId(null);
     setNotice(null);
   }
   const conversation = useMemo(() => selectedConversation?.messages ?? [], [selectedConversation]);
   const target = replyTarget(conversation);
-  const replyRecipient = target?.recipient || selected?.contact || "";
+  const explicitParent = conversation.find((message) => message.id === replyParentId);
+  const replyParent = explicitParent || target?.parent;
+  const automaticRecipients = replyParent ? replyRecipients(replyParent, mailboxes.map((mailbox) => mailbox.email || ""), replyAll) : { to: [], cc: [] };
+  const replyRecipient = replyTo ?? (automaticRecipients.to.join(", ") || target?.recipient || selected?.contact || "");
+  const effectiveReplyCc = replyCc ?? automaticRecipients.cc.join(", ");
+  useEffect(() => {
+    if (!draftsReady || !composerConversationId || !replyDraftId || !draftMailboxId || invoiceViewer?.role === "viewer") return;
+    const value: SavedEmailDraft = { id: replyDraftId, mailboxId: draftMailboxId, senderId: replySenderId, kind: "reply", threadId: composerConversationId, to: replyRecipient, cc: effectiveReplyCc, bcc: replyBcc, subject: selected?.subject || "", text: draft, html: draftHtml, bodyText: replyBodyText, parentId: replyParent?.id, replyAll, attachments: replyAttachments, requestId: replyRequestId, revision: 0 };
+    if (hasEmailDraft(value)) saveDraft(value);
+  }, [draftsReady, saveDraft, composerConversationId, replyDraftId, draftMailboxId, replySenderId, replyRecipient, effectiveReplyCc, replyBcc, selected?.subject, draft, draftHtml, replyBodyText, replyParent?.id, replyAll, replyAttachments, replyRequestId, invoiceViewer?.role]);
+  useEffect(() => {
+    if (!draftsReady || !composeDraftId || !draftMailboxId || invoiceViewer?.role === "viewer") return;
+    const value: SavedEmailDraft = { id: composeDraftId, mailboxId: draftMailboxId, senderId: composeSenderId, kind: "compose", to: composeTo, cc: composeCc, bcc: composeBcc, subject: composeSubject, text: composeBody, html: composeHtml, bodyText: composeBodyText, attachments: composeAttachments, requestId: composeRequestId, revision: 0, threadId: composeThread?.threadId, inReplyTo: composeThread?.inReplyTo, references: composeThread?.references, replyAll: false, providerDraft: composeProviderDraft };
+    if (hasEmailDraft(value)) saveDraft(value);
+  }, [draftsReady, saveDraft, composeDraftId, draftMailboxId, composeSenderId, composeTo, composeCc, composeBcc, composeSubject, composeBody, composeHtml, composeBodyText, composeAttachments, composeRequestId, composeThread, composeProviderDraft, invoiceViewer?.role]);
+
+  useEffect(() => {
+    if (folder !== "scheduled") return;
+    let cancelled = false;
+    const refresh = async () => {
+      try { const response = await fetch("/api/email/scheduled", { cache: "no-store" }); const result = await response.json(); if (!response.ok) throw new Error(result.error); if (!cancelled) { setScheduledEmails(result.emails); setScheduledError(""); } }
+      catch (reason) { if (!cancelled) setScheduledError(reason instanceof Error ? reason.message : "Unable to load scheduled emails."); }
+    };
+    void refresh(); const timer = setInterval(() => void refresh(), 10_000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [folder]);
   const loadMessage = useCallback(async (email: EmailWorkspaceItem) => {
-    if (!email.uid || !email.uidValidity || !email.mailboxKey || bodyRequests.current.has(email.id)) return;
+    if ((!email.crmEmailId && (!email.uid || !email.uidValidity || !email.mailboxKey)) || bodyRequests.current.has(email.id)) return;
     bodyRequests.current.add(email.id);
     setLoadingBodies((current) => new Set(current).add(email.id));
     setBodyErrors((current) => { const next = { ...current }; delete next[email.id]; return next; });
     try {
-      const params = new URLSearchParams({ uid: String(email.uid), validity: String(email.uidValidity), mailbox: email.mailboxKey });
-      const response = await fetch(`/api/email/message?${params}`, { cache: "no-store" });
+      const params = new URLSearchParams({ uid: String(email.uid), validity: String(email.uidValidity), mailbox: email.mailboxKey || "", folder: email.providerFolder || "INBOX" });
+      const response = await fetch(email.crmEmailId ? `/api/email/crm-message?id=${encodeURIComponent(email.crmEmailId)}` : `/api/email/message?${params}`, { cache: "no-store" });
       const result = await response.json();
       if (!response.ok || !result.email) throw new Error(result.error || "Unable to load this message.");
       setEmails((current) => current.map((message) => message.id === email.id ? { ...message, ...result.email, mailboxKey: email.mailboxKey } : message));
+      setSearchResults((current) => current.map((message) => message.id === email.id ? { ...message, ...result.email, mailboxKey: email.mailboxKey } : message));
     } catch (error) {
       setBodyErrors((current) => ({ ...current, [email.id]: error instanceof Error ? error.message : "Unable to load this message." }));
     } finally {
@@ -710,7 +784,8 @@ export function EmailInboxWorkspace({
   }, [aiPreviewVisible]);
 
   const folderCounts = useMemo(() => {
-    const counts: Record<Folder, number> = { inbox: 0, unread: 0, followup: 0, all: 0, drafts: 0, scheduled: 0, sent: 0, starred: 0, archive: 0, trash: 0 };
+    const counts: Record<Folder, number> = { inbox: 0, unread: 0, followup: 0, all: 0, drafts: 0, scheduled: scheduledEmails.length, sent: 0, starred: 0, archive: 0, trash: 0, spam: 0 };
+    for (const item of providerFolders.filter((item) => item.kind === "custom")) counts[`provider:${item.path}`] = 0;
     const folders = Object.keys(counts) as Folder[];
     for (const item of conversations) {
       for (const targetFolder of folders) {
@@ -719,13 +794,14 @@ export function EmailInboxWorkspace({
         }
       }
     }
+    counts.drafts += Object.values(savedDrafts.drafts).length;
     return counts;
-  }, [categories, conversations, folderStates, starred, readMessages]);
+  }, [categories, conversations, folderStates, starred, readMessages, savedDrafts.drafts, providerFolders, scheduledEmails.length]);
 
   async function persistState(id: string, override: Partial<MessageState>) {
     stateRevision.current += 1;
     pendingStateWrites.current += 1;
-    const email = emails.find((item) => item.id === id);
+    const email = emails.find((item) => item.id === id) || searchResults.find((item) => item.id === id);
     const previousWrite = stateWrites.current.get(id);
     const write = (async () => {
       await previousWrite?.catch(() => undefined);
@@ -738,6 +814,7 @@ export function EmailInboxWorkspace({
           ...state,
           contactEmail: email?.contact.includes("@") ? email.contact : undefined,
           threadId: email?.threadId ?? null,
+          ...(email?.uid && email.uidValidity && email.mailboxKey ? { provider: { mailboxKey: email.mailboxKey, uid: email.uid, validity: email.uidValidity, folder: email.providerFolder || "INBOX", read: override.read, starred: override.starred, destination: override.folder } } : {}),
         }),
       });
       const result = await response.json().catch(() => ({ ok: false, error: "Unable to save this change." }));
@@ -777,9 +854,11 @@ export function EmailInboxWorkspace({
     setAiWriting(false);
     setAiWritingError(null);
     setReplyAttachments([]);
+    setScheduleAt(""); setReplyScheduleOpen(false);
   }
 
   function updateDraft(value: string, html: string, bodyText = value) {
+    if (!replyParentId && replyParent) setReplyParentId(replyParent.id);
     editReply(value, html, bodyText);
     setAiWritingError(null);
     if (bodyText.trim().length >= 2) return;
@@ -788,6 +867,46 @@ export function EmailInboxWorkspace({
     setAiDraftSource("");
     setAiWriting(false);
     setAiWritingError(null);
+  }
+
+  function replyToMessage(message: EmailWorkspaceItem, all = false) {
+    const recipients = replyRecipients(message, mailboxes.map((mailbox) => mailbox.email || ""), all);
+    setReplyParentId(message.id); setReplyAll(all);
+    setReplyTo(recipients.to.join(", ")); setReplyCc(recipients.cc.join(", ")); setReplyBcc("");
+    const sender = mailboxes.find((mailbox) => mailbox.id === message.mailboxId && mailbox.sendConfigured)
+      || mailboxes.find((mailbox) => message.to?.some((item) => item.address.toLowerCase() === mailbox.email?.toLowerCase()) && mailbox.sendConfigured);
+    if (sender) setReplySenderId(sender.id);
+    startReply();
+  }
+
+  function resumeDraft(value: SavedEmailDraft) {
+    if (value.kind === "reply") {
+      const thread = conversations.find((item) => item.messages.some((message) => threadKeyForEmail(message) === value.threadId || message.id === value.parentId));
+      if (thread) { setFolder("all"); setSelectedId(thread.latest.id); setMobileReading(true); return; }
+    }
+    setComposeDraftId(value.id); setComposeRequestId(value.requestId); setComposeTo(value.to); setComposeCc(value.cc); setComposeBcc(value.bcc);
+    setComposeSubject(value.subject); editCompose(value.text, value.html, value.bodyText);
+    setComposeThread(value.inReplyTo || value.threadId ? { to: value.to, threadId: value.threadId, inReplyTo: value.inReplyTo, references: value.references } : null);
+    setComposeProviderDraft(value.providerDraft);
+    setComposeAttachments(value.attachments.map((item) => ({ ...item, contentType: item.contentType || "application/octet-stream" })));
+    if (value.senderId) setComposeSenderId(value.senderId);
+    if (value.id !== composeDraftId) { setComposeScheduleAt(""); setComposeScheduleOpen(false); }
+    setComposeOpen(true);
+  }
+
+  async function editScheduledEmail(value: { id: string; payload: EmailSendInput }) {
+    try {
+      const response = await fetch("/api/email/scheduled", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: value.id }) });
+      const result = await response.json(); if (!response.ok) throw new Error(result.error);
+      setScheduledEmails((current) => current.filter((item) => item.id !== value.id));
+      const message = value.payload;
+      const html = (message.html || "").replace(/cid:([^\s"'<>]+)/g, (original, cid) => {
+        const image = message.attachments.find((attachment) => attachment.cid === cid);
+        return image ? `data:${image.contentType};base64,${image.content}` : original;
+      });
+      resumeDraft({ id: crypto.randomUUID(), mailboxId: draftMailboxId, senderId: message.mailboxId, kind: "compose", to: message.to.join(", "), cc: message.cc.join(", "), bcc: message.bcc.join(", "), subject: message.subject, text: message.text, bodyText: message.text, html, replyAll: false, threadId: message.threadId, inReplyTo: message.inReplyTo, references: message.references, providerDraft: message.providerDraft, requestId: crypto.randomUUID(), revision: 0, attachments: message.attachments.filter((attachment) => !attachment.cid).map((attachment) => ({ ...attachment, id: crypto.randomUUID(), size: Math.floor(attachment.content.length * 3 / 4) })) });
+      setComposeScheduleAt(""); setComposeScheduleOpen(false);
+    } catch (reason) { setScheduledError(reason instanceof Error ? reason.message : "Unable to edit this scheduled email."); }
   }
 
   function toggleAiWriting() {
@@ -960,9 +1079,9 @@ export function EmailInboxWorkspace({
       // IMAP list rows can contain only a preview. Load original bodies first.
       const history = await Promise.all(conversation.slice(-8).map(async (message) => {
         if (message.bodyLoaded !== false) return message;
-        if (!message.uid || !message.uidValidity || !message.mailboxKey) throw new Error("Load the conversation messages before generating a reply.");
-        const params = new URLSearchParams({ uid: String(message.uid), validity: String(message.uidValidity), mailbox: message.mailboxKey });
-        const response = await fetch(`/api/email/message?${params}`, { cache: "no-store" });
+        if (!message.crmEmailId && (!message.uid || !message.uidValidity || !message.mailboxKey)) throw new Error("Load the conversation messages before generating a reply.");
+        const params = new URLSearchParams({ uid: String(message.uid), validity: String(message.uidValidity), mailbox: message.mailboxKey || "", folder: message.providerFolder || "INBOX" });
+        const response = await fetch(message.crmEmailId ? `/api/email/crm-message?id=${encodeURIComponent(message.crmEmailId)}` : `/api/email/message?${params}`, { cache: "no-store" });
         const result = await response.json();
         if (!response.ok || !result.email) throw new Error(result.error || "Unable to read the conversation.");
         return { ...message, ...result.email } as EmailWorkspaceItem;
@@ -1018,17 +1137,21 @@ export function EmailInboxWorkspace({
   }
 
   async function saveReply() {
+    if (replyScheduleOpen && (!scheduleAt || !Number.isFinite(Date.parse(scheduleAt)) || Date.parse(scheduleAt) <= Date.now())) {
+      setNotice("Choose a future date and time to schedule this email.");
+      return;
+    }
     if (footerError || footerLoading) { setNotice(footerError || "Your email footer is loading. Please try again."); return; }
     if (invoiceViewer?.role === "viewer") { setNotice("Viewer access is read-only"); return; }
-    if (!selected || (!draft.trim() && !replyHasImages) || sending || (aiWriting && !replyHasImages) || replyMediaBusy) return;
+    if (!selected || (!replyBodyText.trim() && !replyHasImages) || sending || (aiWriting && !replyHasImages) || replyMediaBusy) return;
     const session = replySession.current;
     if (attachmentBusy) return;
     const useAiDraft = aiReplyOn && !replyHasImages && aiDraft && aiDraftSource === draft.trim();
     const trimmedDraft = useAiDraft ? aiDraft.trim() : draft.trim();
     const recipient = replyRecipient;
-    const replyParent = target?.parent ?? selected;
-    if (replyParent.bodyLoaded === false) {
-      void loadMessage(replyParent);
+    const parent = replyParent ?? selected;
+    if (parent.bodyLoaded === false) {
+      void loadMessage(parent);
       setNotice("The customer's email is loading. Review it before sending your reply.");
       return;
     }
@@ -1049,7 +1172,10 @@ export function EmailInboxWorkspace({
     }
 
     try {
-      const message = prepareComposerMessage(trimmedDraft, useAiDraft ? "" : draftHtml, preferences.emailSignature, replyInput.current?.currentFooter() || personalFooter);
+      const fingerprint = JSON.stringify([replySenderId, recipient, effectiveReplyCc, replyBcc, trimmedDraft, draftHtml, replyAttachments, parent.messageId]);
+      const requestId = replyPayload.current?.fingerprint === fingerprint ? replyPayload.current.id : replyPayload.current ? crypto.randomUUID() : replyRequestId || crypto.randomUUID();
+      replyPayload.current = { fingerprint, id: requestId }; setReplyRequestId(requestId);
+      const message = prepareComposerMessage(trimmedDraft, useAiDraft ? "" : draftHtml, preferences.emailSignature, replyInput.current?.currentFooter() || personalFooter, requestId);
       if (message.attachments.length + replyAttachments.length > 10) throw new Error("An email supports up to 10 images and attachments combined.");
       setSending(true);
       const response = await fetch("/api/email/send", {
@@ -1058,14 +1184,17 @@ export function EmailInboxWorkspace({
         body: JSON.stringify({
           mailboxId: replySenderId,
           to: recipient,
-          subject: `Re: ${selected.subject.replace(/^Re:\s*/i, "")}`,
+          cc: effectiveReplyCc, bcc: replyBcc,
+          requestId, draftId: replyDraftId,
+          ...(scheduleAt ? { scheduleAt: new Date(scheduleAt).toISOString() } : {}),
+          subject: emailSubject(parent.subject, "reply"),
           text: message.text,
           html: message.html,
           footerIncluded: true,
           attachments: [...replyAttachments.map(({ filename, content, contentType }) => ({ filename, content, contentType })), ...message.attachments],
           threadId: selectedConversation?.id,
-          inReplyTo: replyParent.messageId || undefined,
-          references: replyReferences(replyParent),
+          inReplyTo: parent.messageId || undefined,
+          references: replyReferences(parent),
         }),
       });
 
@@ -1074,6 +1203,9 @@ export function EmailInboxWorkspace({
         throw new Error(result.error || "Unable to send the email.");
       }
       window.dispatchEvent(new Event("email-auto-reply-updated"));
+      const saved = savedDrafts.get(replyDraftId); if (saved) savedDrafts.remove(saved);
+      setReplyDraftId(crypto.randomUUID()); setReplyRequestId(crypto.randomUUID()); replyPayload.current = null;
+      if (result.scheduled) { setDraft(""); setReplyAttachments([]); setScheduleAt(""); setReplyScheduleOpen(false); setNotice(`Email scheduled for ${new Date(result.scheduleAt).toLocaleString()}.`); return; }
 
       const reply: EmailWorkspaceItem = {
         ...result.email,
@@ -1093,7 +1225,7 @@ export function EmailInboxWorkspace({
       setAiDraft("");
       setAiDraftSource("");
       setReplyAttachments([]);
-      setNotice(result.saved ? `Email sent successfully from ${result.sentVia}.` : "Email sent, but its CRM history could not be saved. Check the recipient's mailbox for the attachment.");
+      setNotice(result.providerWarning || (result.saved ? `Email sent successfully from ${result.sentVia}.` : "Email sent, but its CRM history could not be saved. Check the recipient's mailbox for the attachment."));
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "The CRM could not send this email.");
     } finally {
@@ -1105,28 +1237,62 @@ export function EmailInboxWorkspace({
     if (invoiceViewer?.role === "viewer") { setNotice("Viewer access is read-only"); return; }
     if (companyScope && !composeTo) setComposeTo(companyScope.emails.find((email) => email.trim()) || "");
     setComposeError(null);
+    if (!composeDraftId) { setComposeDraftId(crypto.randomUUID()); setComposeRequestId(crypto.randomUUID()); setComposeProviderDraft(undefined); }
     setComposeOpen(true);
   }
 
-  function forwardSelected() {
-    if (!selected) return;
-    setComposeTo("");
-    setComposeThread(null);
-    setComposeSubject(`Fwd: ${selected.subject.replace(/^(?:fwd?|re):\s*/i, "")}`);
-    setComposeBody(`\n\n---------- Forwarded message ----------\nFrom: ${selected.from || selected.contact}\nDate: ${formatTime(selected.timestamp)}\nSubject: ${selected.subject}\n\n${selected.body}`);
-    setComposeAttachments([]);
-    openComposer();
+  async function forwardSelected(message = selected, editingDraft = false) {
+    if (!message || attachmentBusy) return;
+    const session = replySession.current;
+    setAttachmentBusy(true);
+    try {
+      let original = message;
+      if (original.bodyLoaded === false && (original.crmEmailId || original.uid && original.uidValidity && original.mailboxKey)) {
+        const params = new URLSearchParams({ mailbox: original.mailboxKey || "", uid: String(original.uid), validity: String(original.uidValidity), folder: original.providerFolder || "INBOX" });
+        const response = await fetch(original.crmEmailId ? `/api/email/crm-message?id=${encodeURIComponent(original.crmEmailId)}` : `/api/email/message?${params}`); const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Unable to load the forwarded message.");
+        original = { ...original, ...result.email };
+      }
+      const header = `---------- Forwarded message ----------\nFrom: ${original.from || original.contact}\nDate: ${new Date(original.timestamp).toLocaleString()}\nSubject: ${original.subject}\nTo: ${(original.to || []).map((item) => item.address).join(", ")}\n${original.cc?.length ? `Cc: ${original.cc.map((item) => item.address).join(", ")}\n` : ""}`;
+      const prepared = await preparePastedEmailHtml(sanitizeComposerHtml(original.html || `<div>${emailTextHtml(original.body)}</div>`, document, true), document, [], fetch, { importRemoteImages: false });
+      if (prepared.missing) throw new Error("Some forwarded images could not be copied. Retry after loading the original message.");
+      const files: ComposerAttachment[] = [];
+      for (const attachment of original.attachments?.filter((item) => !isInlineEmailAttachment(item, original.html)) || []) {
+        if (!attachment.url) throw new Error(`${attachment.filename} is unavailable.`);
+        const response = await fetch(attachment.url);
+        if (!response.ok) throw new Error(`Unable to copy ${attachment.filename}.`);
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        if (bytes.length > 7_500_000) throw new Error(`${attachment.filename} exceeds the 7.5 MB attachment limit.`);
+        files.push({ id: crypto.randomUUID(), filename: attachment.filename, contentType: attachment.contentType, size: bytes.length, content: bytesToBase64(bytes) });
+      }
+      if (files.length > 10) throw new Error("This forwarded email has more than 10 attachments. Forward it from your provider's app.");
+      if (session !== replySession.current) return;
+      setComposeDraftId(crypto.randomUUID()); setComposeRequestId(crypto.randomUUID()); composePayload.current = null;
+      const to = editingDraft ? (original.to || []).map((item) => item.address).join(", ") : "";
+      setComposeTo(to); setComposeCc(editingDraft ? (original.cc || []).map((item) => item.address).join(", ") : ""); setComposeBcc(editingDraft ? (original.bcc || []).map((item) => item.address).join(", ") : "");
+      setComposeThread(editingDraft && original.inReplyTo ? { to, threadId: original.threadId || undefined, inReplyTo: original.inReplyTo, references: original.references } : null);
+      setComposeSubject(editingDraft ? original.subject : emailSubject(original.subject, "forward"));
+      setComposeProviderDraft(editingDraft && original.uid && original.uidValidity && original.mailboxKey ? { mailboxKey: original.mailboxKey, uid: original.uid, validity: original.uidValidity, folder: original.providerFolder || "INBOX" } : undefined);
+      setComposeScheduleAt(""); setComposeScheduleOpen(false);
+      editCompose(editingDraft ? original.body : `\n\n${header}\n${original.body}`, editingDraft ? prepared.html : `<div><br><br>${emailTextHtml(header)}</div>${prepared.html}`);
+      setComposeAttachments(files); setComposeError(null); setComposeOpen(true);
+    } catch (reason) { setNotice(reason instanceof Error ? reason.message : "Unable to prepare this forward."); }
+    finally { setAttachmentBusy(false); }
   }
 
   async function sendNewEmail(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (composeScheduleOpen && (!composeScheduleAt || !Number.isFinite(Date.parse(composeScheduleAt)) || Date.parse(composeScheduleAt) <= Date.now())) {
+      setComposeError("Choose a future date and time to schedule this email.");
+      return;
+    }
     if (footerError || footerLoading) { setComposeError(footerError || "Your email footer is loading. Please try again."); return; }
     if (invoiceViewer?.role === "viewer") { setComposeError("Viewer access is read-only"); return; }
     if (attachmentBusy || composeSending || composeMediaBusy) return;
     const to = composeTo.trim();
     const subject = composeSubject.trim();
     const text = composeBody.trim();
-    if (companyScope && !filterCompanyEmails([{ contact: to }], companyScope).length) {
+    if (companyScope && [...emailAddresses(to), ...emailAddresses(composeCc), ...emailAddresses(composeBcc)].some((contact) => !filterCompanyEmails([{ contact }], companyScope).length)) {
       setComposeError("Choose one of this company's saved contact email addresses.");
       return;
     }
@@ -1138,23 +1304,28 @@ export function EmailInboxWorkspace({
       setComposeError("Choose an active sender with SMTP configured, or update your mailbox in Settings.");
       return;
     }
-    if (!to || !subject || (!text && !composeHasImages)) {
+    if (!to || (!composeBodyText.trim() && !composeHasImages)) {
       setComposeError("Enter a recipient, subject, and message.");
       return;
     }
 
     try {
-      const message = prepareComposerMessage(text, composeHtml, preferences.emailSignature, personalFooter);
+      const fingerprint = JSON.stringify([composeSenderId, to, composeCc, composeBcc, subject, text, composeHtml, composeAttachments]);
+      const requestId = composePayload.current?.fingerprint === fingerprint ? composePayload.current.id : composePayload.current ? crypto.randomUUID() : composeRequestId || crypto.randomUUID();
+      composePayload.current = { fingerprint, id: requestId }; setComposeRequestId(requestId);
+      const message = prepareComposerMessage(text, composeHtml, preferences.emailSignature, personalFooter, requestId);
       if (message.attachments.length + composeAttachments.length > 10) throw new Error("An email supports up to 10 images and attachments combined.");
       setComposeSending(true);
       setComposeError(null);
       const response = await fetch("/api/email/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mailboxId: composeSenderId, to, subject, text: message.text, html: message.html, footerIncluded: true, ...(composeThread?.to === to ? { threadId: composeThread.threadId, inReplyTo: composeThread.inReplyTo, references: composeThread.references } : {}), attachments: [...composeAttachments.map(({ filename, content, contentType }) => ({ filename, content, contentType })), ...message.attachments] }),
+        body: JSON.stringify({ mailboxId: composeSenderId, to, cc: composeCc, bcc: composeBcc, subject, text: message.text, html: message.html, footerIncluded: true, requestId, draftId: composeDraftId, providerDraft: composeProviderDraft, ...(composeScheduleOpen && composeScheduleAt ? { scheduleAt: new Date(composeScheduleAt).toISOString() } : {}), ...(composeThread?.to === to ? { threadId: composeThread.threadId, inReplyTo: composeThread.inReplyTo, references: composeThread.references } : {}), attachments: [...composeAttachments.map(({ filename, content, contentType }) => ({ filename, content, contentType })), ...message.attachments] }),
       });
       const result = await response.json().catch(() => ({ ok: false, error: "Unable to send the email." }));
       if (!response.ok || !result.ok) throw new Error(result.error || "Unable to send the email.");
+      const saved = savedDrafts.get(composeDraftId); if (saved) savedDrafts.remove(saved);
+      if (result.scheduled) { setComposeOpen(false); setComposeDraftId(""); setComposeTo(""); setComposeCc(""); setComposeBcc(""); setComposeSubject(""); setComposeBody(""); setComposeAttachments([]); setComposeScheduleAt(""); setComposeScheduleOpen(false); setNotice(`Email scheduled for ${new Date(result.scheduleAt).toLocaleString()}.`); return; }
 
       const sentEmail: EmailWorkspaceItem = result.email;
       stateRevision.current += 1;
@@ -1171,7 +1342,9 @@ export function EmailInboxWorkspace({
       setComposeThread(null);
       setComposeAttachments([]);
       setComposeOpen(false);
-      setNotice(result.saved ? `Email sent successfully from ${result.sentVia}.` : "Email sent, but its CRM history could not be saved. Check the recipient's mailbox for the attachment.");
+      setComposeScheduleAt(""); setComposeScheduleOpen(false);
+      setComposeCc(""); setComposeBcc(""); setComposeDraftId(""); setComposeRequestId(""); composePayload.current = null;
+      setNotice(result.providerWarning || (result.saved ? `Email sent successfully from ${result.sentVia}.` : "Email sent, but its CRM history could not be saved. Check the recipient's mailbox for the attachment."));
     } catch (error) {
       setComposeError(error instanceof Error ? error.message : "The CRM could not send this email.");
     } finally {
@@ -1179,11 +1352,14 @@ export function EmailInboxWorkspace({
     }
   }
 
+  const replyEditorDisabled = aiReplyBusy || sending || footerLoading || !savedDrafts.ready;
+  const replyDraftNeedsRetry = savedDrafts.status !== "Draft saved" && !/^(Saving|Loading) drafts?/.test(savedDrafts.status);
+  const replySendHint = !savedDrafts.ready ? "Loading your draft…" : footerLoading ? "Loading your email footer…" : aiReplyBusy ? "Preparing your reply…" : attachmentBusy || replyMediaBusy ? "Preparing attachments…" : !replySender?.sendConfigured ? "Choose a configured sender." : !replyRecipient.trim() ? "Add a recipient to send." : !replyBodyText.trim() && !replyHasImages ? "Write a message to send." : replyScheduleOpen && !scheduleAt ? "Choose a send date and time." : "";
   const folderItems: Array<{ id: Folder; label: string; icon: typeof Inbox }> = [
     { id: "inbox", label: "Inbox", icon: Inbox }, { id: "followup", label: "Needs follow-up", icon: CalendarClock }, { id: "unread", label: "Unread", icon: MailOpen }, { id: "all", label: "All mail", icon: Mail },
     { id: "drafts", label: "Drafts", icon: FileText }, { id: "scheduled", label: "Scheduled", icon: Clock3 },
     { id: "sent", label: "Sent", icon: Send }, { id: "starred", label: "Starred", icon: Star },
-    { id: "archive", label: "Archive", icon: Archive }, { id: "trash", label: "Trash", icon: Trash2 },
+    { id: "archive", label: "Archive", icon: Archive }, { id: "spam", label: "Spam", icon: Inbox }, { id: "trash", label: "Trash", icon: Trash2 },
   ];
   const sourceFilters: Array<{ id: SourceFilter; label: string }> = [
     { id: "all", label: "All messages" },
@@ -1192,6 +1368,7 @@ export function EmailInboxWorkspace({
     { id: "unread", label: "Unread" },
   ];
 
+  for (const item of providerFolders.filter((item) => item.kind === "custom")) folderItems.push({ id: `provider:${item.path}`, label: item.name, icon: Inbox });
   return (
     <div data-ai-mailbox-id={selectedMailboxId || undefined} data-ai-email-id={reading ? selected?.id : undefined} data-ai-company-id={reading ? selected?.companyId || undefined : companyScope?.id} className={`email-workspace flex min-w-0 flex-col overflow-hidden bg-background ${companyScope ? "company-email-workspace h-[clamp(520px,calc(100dvh-14rem),900px)] rounded-xl border" : "h-[calc(100dvh-3rem)]"}`}>
       {companyScope ? <h3 className="sr-only">Customer mailbox</h3> : <h1 className="sr-only">Email</h1>}
@@ -1199,7 +1376,7 @@ export function EmailInboxWorkspace({
         <div className="flex min-w-0 flex-1 gap-5 overflow-x-auto">
         {(["personal", "workspace"] as const).map(type => mailboxes.some(mailbox => mailbox.type === type) ? <div key={type} className="flex shrink-0 items-center gap-2.5"><span className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">{type === "personal" ? <UserRound className="size-3.5" /> : <UsersRound className="size-3.5" />}{type === "personal" ? "My email" : "Team email"}</span><div className="flex gap-1">
         {mailboxes.filter(mailbox => mailbox.type === type).map((mailbox) => <Link key={mailbox.id} href={`/emails?mailbox=${encodeURIComponent(mailbox.id)}`} prefetch={false} aria-label={`${type === "personal" ? "My email" : "Team email"}: ${mailbox.email}`} aria-current={selectedMailboxId === mailbox.id ? "page" : undefined} aria-busy={switchingMailboxId === mailbox.id} onNavigate={(event) => {
-          if (unsentDraft.current || composeOpen || sending || composeSending || attachmentBusy || aiReplyBusy || pendingStateWrites.current) { event.preventDefault(); setNotice("Finish or clear your draft before switching mailboxes."); return; }
+          if (sending || composeSending || attachmentBusy || aiReplyBusy || pendingStateWrites.current || savedDrafts.status === "Saving draft…") { event.preventDefault(); setNotice("Wait for the current operation or draft save before switching mailboxes."); return; }
           if (onMailboxChange) { event.preventDefault(); onMailboxChange(mailbox.id); return; }
           if (mailbox.id === selectedMailboxId) event.preventDefault();
         }} className={`flex max-w-72 shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-xs ${selectedMailboxId === mailbox.id ? "border-primary/30 bg-primary/5 font-medium text-primary" : "border-transparent text-muted-foreground hover:bg-muted"}`}>
@@ -1208,7 +1385,7 @@ export function EmailInboxWorkspace({
         </div></div> : null)}
         {!mailboxes.length ? <span className="text-sm text-muted-foreground">Connect an email account to get started.</span> : null}
         </div>
-        <Link href={`/settings/apps?view=${mailboxes.find(mailbox => mailbox.id === selectedMailboxId)?.type === "workspace" ? "team" : "personal"}`} onNavigate={event => { if (unsentDraft.current || composeOpen || sending || composeSending || attachmentBusy || aiReplyBusy || pendingStateWrites.current) { event.preventDefault(); setNotice("Finish or clear your draft before managing connections."); } }} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted"><Settings2 className="size-3.5" />{mailboxes.length ? "Manage connections" : "Connect email"}</Link>
+        <Link href={`/settings/apps?view=${mailboxes.find(mailbox => mailbox.id === selectedMailboxId)?.type === "workspace" ? "team" : "personal"}`} onNavigate={event => { if (sending || composeSending || attachmentBusy || aiReplyBusy || pendingStateWrites.current || savedDrafts.status === "Saving draft…") { event.preventDefault(); setNotice("Wait for the current operation or draft save before managing connections."); } }} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted"><Settings2 className="size-3.5" />{mailboxes.length ? "Manage connections" : "Connect email"}</Link>
       </nav> : null}
       {switchingMailboxId ? <p role="status" className="border-b px-4 py-2 text-xs text-muted-foreground">Switching mailbox…</p> : null}
       {mailboxSwitchError ? <p role="alert" className="border-b px-4 py-2 text-xs text-destructive">{mailboxSwitchError}</p> : null}
@@ -1219,7 +1396,7 @@ export function EmailInboxWorkspace({
         <ColumnResizeHandle label="Conversation list width" variable="--mail-list-width" container=".mail-layout" panel=".mail-list" min={220} max={600} storageKey={companyScope ? "company-mail-list" : "mail-list"} className="mail-list-resize" />
         {selected && !companyScope ? <ColumnResizeHandle label="Contact details width" variable="--mail-details-width" container=".mail-layout" panel=".mail-details" min={280} max={560} reverse className="mail-details-resize" /> : null}
         {!companyScope ? <aside className="mail-folders min-h-0 flex-col border-r bg-muted/20" aria-label="Email folders">
-          <div className="p-3"><button type="button" onClick={openComposer} className="flex h-10 w-full items-center justify-center gap-2 rounded-md bg-foreground text-xs font-semibold text-background hover:bg-foreground/90"><Plus className="size-4" />Compose</button></div>
+          <div className="p-3"><button type="button" onClick={openComposer} className="flex h-10 w-full items-center justify-center gap-2 rounded-md bg-foreground text-xs font-semibold text-background hover:bg-foreground/90"><Plus className="size-4" />New email</button></div>
           <nav className="space-y-1 px-2 py-1">
             {folderItems.map((item) => <button key={item.id} type="button" onClick={() => changeFolder(item.id)} aria-current={folder === item.id ? "page" : undefined} className={`flex h-10 w-full items-center gap-3 rounded-md px-3 text-xs font-medium ${folder === item.id ? "bg-primary/10 text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}><item.icon className={`size-4 ${folder === item.id ? "text-primary" : ""}`} /><span className="flex-1 text-left">{item.label}</span><span className="text-xs">{folderCounts[item.id]}</span></button>)}
           </nav>
@@ -1229,7 +1406,7 @@ export function EmailInboxWorkspace({
 
         <section className="mail-list" aria-label="Email list">
 {companyScope ? <div className="space-y-3 border-b p-4">
-  <div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold">Conversations <span className="ml-1 font-normal text-muted-foreground">{conversations.length}</span></h3><div className="flex items-center gap-1"><button type="button" aria-label="Refresh customer emails" title="Refresh" disabled={syncing || !inboxConfigured} onClick={() => void syncInbox(false)} className="rounded-md p-2 text-muted-foreground hover:bg-muted disabled:opacity-40"><RefreshCw className={syncing ? "size-4 animate-spin" : "size-4"} /></button><button type="button" onClick={openComposer} className="inline-flex h-8 items-center gap-1.5 rounded-md bg-foreground px-2.5 text-xs font-medium text-background"><Plus className="size-3.5" />New email</button></div></div>
+  <div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold">Conversations <span className="ml-1 font-normal text-muted-foreground">{conversations.length}</span></h3><div className="flex items-center gap-1"><button type="button" aria-label="Refresh customer emails" title="Refresh" disabled={syncing || !inboxConfigured} onClick={() => void syncInbox(false, true)} className="rounded-md p-2 text-muted-foreground hover:bg-muted disabled:opacity-40"><RefreshCw className={syncing ? "size-4 animate-spin" : "size-4"} /></button><button type="button" onClick={openComposer} className="inline-flex h-8 items-center gap-1.5 rounded-md bg-foreground px-2.5 text-xs font-medium text-background"><Plus className="size-3.5" />New email</button></div></div>
   <div className="mail-search" role="search"><Search className="size-4 shrink-0 text-muted-foreground" /><input aria-label="Search customer emails" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search conversations" />{search ? <button type="button" aria-label="Clear search" onClick={() => setSearch("")}><X className="size-3.5" /></button> : null}</div>
   <div className="flex gap-1" aria-label="Customer email filter">{([{ id: "all", label: "All" }, { id: "unread", label: "Unread" }] as const).map((item) => <button key={item.id} type="button" aria-pressed={folder === item.id} onClick={() => changeFolder(item.id)} className={"rounded-md px-3 py-1 text-xs font-medium " + (folder === item.id ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/50")}>{item.label}</button>)}</div>
 </div> : <>
@@ -1240,15 +1417,19 @@ export function EmailInboxWorkspace({
           </div>
           <div className="flex min-h-11 flex-wrap items-center gap-2 border-b px-3 text-xs">
             <input type="checkbox" aria-label="Select all conversations on this page" checked={allPageChecked} onChange={() => setCheckedIds((current) => { const next = new Set(current); for (const item of pageItems) { if (allPageChecked) next.delete(item.id); else next.add(item.id); } return next; })} />
-            {checkedVisible.length ? <><span>{checkedVisible.length} selected</span><button type="button" disabled={bulkBusy} title="Mark selected as read" onClick={() => void bulkUpdate({ read: true })} className="rounded p-2 hover:bg-muted disabled:opacity-40"><MailOpen className="size-4" /></button><button type="button" disabled={bulkBusy} title="Mark selected as unread" onClick={() => void bulkUpdate({ read: false })} className="rounded p-2 hover:bg-muted disabled:opacity-40"><Mail className="size-4" /></button><button type="button" disabled={bulkBusy} title={folder === "trash" || folder === "archive" ? "Restore selected to inbox" : "Archive selected"} onClick={() => void bulkUpdate({ folder: folder === "trash" || folder === "archive" ? "inbox" : "archive" })} className="rounded p-2 hover:bg-muted disabled:opacity-40"><Archive className="size-4" /></button><button type="button" disabled={bulkBusy} title="Move selected to trash" onClick={() => void bulkUpdate({ folder: "trash" })} className="rounded p-2 hover:bg-muted disabled:opacity-40"><Trash2 className="size-4" /></button></> : <><button type="button" title="Refresh inbox" disabled={syncing || !inboxConfigured} onClick={() => void syncInbox(false)} className="rounded p-2 hover:bg-muted disabled:opacity-40"><RefreshCw className={syncing ? "size-4 animate-spin" : "size-4"} /></button><span className="text-muted-foreground">{visible.length} conversations</span></>}
+            {checkedVisible.length ? <><span>{checkedVisible.length} selected</span><button type="button" disabled={bulkBusy} title="Mark selected as read" onClick={() => void bulkUpdate({ read: true })} className="rounded p-2 hover:bg-muted disabled:opacity-40"><MailOpen className="size-4" /></button><button type="button" disabled={bulkBusy} title="Mark selected as unread" onClick={() => void bulkUpdate({ read: false })} className="rounded p-2 hover:bg-muted disabled:opacity-40"><Mail className="size-4" /></button><button type="button" disabled={bulkBusy} title={folder === "trash" || folder === "archive" ? "Restore selected to inbox" : "Archive selected"} onClick={() => void bulkUpdate({ folder: folder === "trash" || folder === "archive" ? "inbox" : "archive" })} className="rounded p-2 hover:bg-muted disabled:opacity-40"><Archive className="size-4" /></button><button type="button" disabled={bulkBusy} title="Move selected to trash" onClick={() => void bulkUpdate({ folder: "trash" })} className="rounded p-2 hover:bg-muted disabled:opacity-40"><Trash2 className="size-4" /></button></> : <><button type="button" title="Refresh inbox" disabled={syncing || !inboxConfigured} onClick={() => void syncInbox(false, true)} className="rounded p-2 hover:bg-muted disabled:opacity-40"><RefreshCw className={syncing ? "size-4 animate-spin" : "size-4"} /></button><span className="text-muted-foreground">{visible.length} conversations</span></>}
           </div>
-          <div className="mail-header-compose border-b px-3 py-2"><button type="button" onClick={openComposer} className="inline-flex h-8 items-center gap-2 rounded-md bg-foreground px-3 text-xs font-semibold text-background"><Plus className="size-4" />Compose</button></div>
+          <div className="mail-header-compose border-b px-3 py-2"><button type="button" onClick={openComposer} className="inline-flex h-8 items-center gap-2 rounded-md bg-foreground px-3 text-xs font-semibold text-background"><Plus className="size-4" />New email</button></div>
 
 </>}
-          {syncError ? <p role="alert" className="border-b px-3 py-2 text-xs text-amber-700 dark:text-amber-300">Inbox sync failed: {syncError}</p> : null}
+          {inboxConfigured ? <EmailSyncStatus health={Object.values(syncHealth)} lastSuccessAt={lastSuccessfulSync} error={syncError} /> : null}
+          {searchStatus ? <p role="status" className="border-b px-3 py-2 text-xs text-muted-foreground">{searchStatus}</p> : null}
+          {!companyScope && !["drafts", "scheduled"].includes(folder) && !Object.values(syncHealth).some((item) => item.history !== "idle" || item.historyComplete) ? <button type="button" disabled={syncing || !inboxConfigured} onClick={() => void syncInbox(true)} className="border-b px-3 py-2 text-left text-xs text-muted-foreground hover:bg-muted disabled:opacity-40">Load older emails</button> : null}
           {notice ? <p role="status" className="border-b bg-muted/30 px-3 py-2 text-xs">{notice}</p> : null}
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
-            <EmailMessageList emptyIcon={folderItems.find((item) => item.id === folder)?.icon} conversations={pageItems} compact={Boolean(companyScope) || reading} simple={Boolean(companyScope)} activeId={reading ? selectedConversation?.id : undefined} checked={checkedIds} readMessages={readMessages} starred={starred} onCheck={(id) => setCheckedIds((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; })} onOpen={openConversation} onStar={toggleStar} />
+{folder === "drafts" ? <div className="divide-y">{Object.values(savedDrafts.drafts).length ? Object.values(savedDrafts.drafts).map((value) => <div key={value.id} className="flex items-center gap-3 px-4 py-4"><button type="button" onClick={() => resumeDraft(value)} className="min-w-0 flex-1 text-left"><span className="block truncate text-sm font-medium">{value.subject || "(No subject)"}</span><span className="block truncate text-xs text-muted-foreground">{value.to || "No recipient"} · {value.bodyText.slice(0, 100)}</span></button><button type="button" onClick={() => { savedDrafts.remove(value); if (value.id === composeDraftId) { setComposeDraftId(""); setComposeTo(""); setComposeCc(""); setComposeBcc(""); setComposeBody(""); setComposeSubject(""); setComposeAttachments([]); setComposeProviderDraft(undefined); } }} aria-label={"Discard draft " + value.subject} className="rounded p-2 text-muted-foreground"><Trash2 className="size-4" /></button></div>) : <p className="p-5 text-sm text-muted-foreground">No saved drafts.</p>}<EmailMessageList emptyIcon={FileText} conversations={pageItems} compact={reading} activeId={selectedConversation?.id} checked={checkedIds} readMessages={readMessages} starred={starred} onCheck={() => undefined} onOpen={openConversation} onStar={toggleStar} /></div> : folder === "scheduled" ? <div className="divide-y">{scheduledError ? <p role="alert" className="p-4 text-xs text-red-600">{scheduledError}</p> : null}{scheduledEmails.map((value) => <div key={value.id} className="p-4"><p className="font-medium">{value.payload.subject || "(No subject)"}</p><p className="mt-1 text-xs text-muted-foreground">{value.payload.to?.join(", ")} · {new Date(value.scheduled_at).toLocaleString()} · {value.status}</p>{value.error ? <p className="mt-2 text-xs text-red-600">{value.error}</p> : null}{value.status === "scheduled" ? <button type="button" className="mt-2 text-xs underline" onClick={async () => { const response = await fetch("/api/email/scheduled", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: value.id }) }); const result = await response.json(); if (response.ok) setScheduledEmails((current) => current.filter((item) => item.id !== value.id)); else setScheduledError(result.error); }}>Cancel scheduled send</button> : null}{["scheduled", "failed"].includes(value.status) ? <button type="button" className="ml-4 mt-2 text-xs underline" onClick={() => void editScheduledEmail(value)}>Edit scheduled email</button> : null}</div>)}{!scheduledEmails.length && !scheduledError ? <p className="p-5 text-sm text-muted-foreground">No scheduled emails.</p> : null}</div> : <>
+            <EmailMessageList emptyIcon={folderItems.find((item) => item.id === folder)?.icon} conversations={pageItems} compact={Boolean(companyScope) || reading} simple={Boolean(companyScope)} activeId={reading ? selectedConversation?.id : undefined} checked={checkedIds} readMessages={readMessages} starred={starred} onCheck={(id) => setCheckedIds((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; })} onOpen={openConversation} onStar={toggleStar} /></>}
+
           </div>
           <div className="flex min-h-12 items-center justify-end gap-3 border-t px-3 text-xs text-muted-foreground">
             <span>{visible.length ? (currentPage - 1) * pageSize + 1 : 0}–{Math.min(currentPage * pageSize, visible.length)} of {visible.length}</span>
@@ -1268,11 +1449,16 @@ export function EmailInboxWorkspace({
           </div>
           {selected ? <>
 {companyScope ? <div className="border-b px-6 py-5"><h2 className="text-lg font-semibold leading-7">{selected.subject}</h2><p className="mt-1 text-xs text-muted-foreground">{selectedConversation?.messages.length} {selectedConversation?.messages.length === 1 ? "message" : "messages"} in this conversation</p></div> : <>
-            <div className="flex min-h-20 shrink-0 items-center justify-between gap-3 border-b bg-background px-5"><div className="min-w-0"><h2 className="text-base font-semibold">{selected.subject}</h2><p className="mt-1 text-xs text-muted-foreground">{selected.direction === "inbound" ? "From" : "To"} {selected.contact} · {selected.company}</p></div><div className="flex items-center gap-3"><AssignedOwner imageUrl={selected.ownerAvatarUrl} name={selected.ownerName || "Unassigned"} initials={selected.ownerInitials || "—"} assigned={Boolean(selected.ownerId)} compact className="hidden lg:inline-flex" /><div className="flex items-center gap-1"><button type="button" title={starred.has(selected.id) ? "Remove star" : "Star email"} onClick={() => toggleStar(selected.id)} className={`rounded-md p-2 hover:bg-muted ${starred.has(selected.id) ? "text-amber-500" : "text-muted-foreground"}`}><Star className="size-4" fill={starred.has(selected.id) ? "currentColor" : "none"} /></button><button type="button" title="Archive" onClick={() => void moveSelected("archive")} className="rounded-md p-2 text-muted-foreground hover:bg-muted"><Archive className="size-4" /></button><DropdownMenu><DropdownMenuTrigger aria-label="More email actions" className="rounded-md p-2 text-muted-foreground outline-none hover:bg-muted"><MoreHorizontal className="size-4" /></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-48"><DropdownMenuGroup><DropdownMenuLabel>Email actions</DropdownMenuLabel></DropdownMenuGroup><DropdownMenuItem onClick={startReply}><Reply />Reply</DropdownMenuItem><DropdownMenuItem onClick={forwardSelected}><Forward />Forward</DropdownMenuItem><DropdownMenuSeparator />{conversation.some((message) => folderStates[message.id] && folderStates[message.id] !== "inbox") ? <DropdownMenuItem onClick={() => void moveSelected("inbox")}><Inbox />Move to inbox</DropdownMenuItem> : null}<DropdownMenuItem variant="destructive" onClick={() => void moveSelected("trash")}><Trash2 />Move to trash</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div></div></div>
+            <div className="flex min-h-20 shrink-0 items-center justify-between gap-3 border-b bg-background px-5"><div className="min-w-0"><h2 className="text-base font-semibold">{selected.subject}</h2><p className="mt-1 text-xs text-muted-foreground">{selected.direction === "inbound" ? "From" : "To"} {selected.contact} · {selected.company}</p></div><div className="flex items-center gap-3"><AssignedOwner imageUrl={selected.ownerAvatarUrl} name={selected.ownerName || "Unassigned"} initials={selected.ownerInitials || "—"} assigned={Boolean(selected.ownerId)} compact className="hidden lg:inline-flex" /><div className="flex items-center gap-1"><button type="button" title={starred.has(selected.id) ? "Remove star" : "Star email"} onClick={() => toggleStar(selected.id)} className={`rounded-md p-2 hover:bg-muted ${starred.has(selected.id) ? "text-amber-500" : "text-muted-foreground"}`}><Star className="size-4" fill={starred.has(selected.id) ? "currentColor" : "none"} /></button><button type="button" title="Archive" onClick={() => void moveSelected("archive")} className="rounded-md p-2 text-muted-foreground hover:bg-muted"><Archive className="size-4" /></button><DropdownMenu><DropdownMenuTrigger aria-label="More email actions" className="rounded-md p-2 text-muted-foreground outline-none hover:bg-muted"><MoreHorizontal className="size-4" /></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-48"><DropdownMenuGroup><DropdownMenuLabel>Email actions</DropdownMenuLabel></DropdownMenuGroup><DropdownMenuItem onClick={() => replyParent && replyToMessage(replyParent)}><Reply />Reply</DropdownMenuItem><DropdownMenuItem onClick={() => replyParent && replyToMessage(replyParent, true)}><ReplyAll />Reply all</DropdownMenuItem><DropdownMenuItem onClick={() => void forwardSelected()}><Forward />Forward</DropdownMenuItem><DropdownMenuSeparator />{conversation.some((message) => folderStates[message.id] && folderStates[message.id] !== "inbox") ? <DropdownMenuItem onClick={() => void moveSelected("inbox")}><Inbox />Move to inbox</DropdownMenuItem> : null}<DropdownMenuItem variant="destructive" onClick={() => void moveSelected("trash")}><Trash2 />Move to trash</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div></div></div>
             <div className="flex shrink-0 items-center gap-2 border-b bg-muted/20 px-5 py-2 text-xs text-muted-foreground"><Languages className="size-3.5" /><span>Auto-translate to Chinese</span><Toggle checked={translationOn} onChange={() => setTranslationOn((value) => !value)} label="Toggle email translation" /></div>
 
 </>}
-            <div ref={conversationScroll} className="mail-conversation min-h-0 flex-1 overflow-y-auto overscroll-y-contain scroll-smooth px-5 py-5"><div className="mx-auto max-w-3xl space-y-6">{conversation.map((message) => <article key={message.id} className="border-b pb-6"><div className="min-w-0"><div className="flex flex-wrap items-baseline justify-between gap-2"><div><p className="text-sm font-semibold">{message.direction === "outbound" ? message.from || defaultMailboxEmail || "You" : message.contact}</p><p className="mt-0.5 text-xs text-muted-foreground">{message.direction === "outbound" ? `To ${message.contact}` : message.company}</p></div><time className="text-xs text-muted-foreground">{formatTime(message.timestamp)}</time></div><div className="mt-5 overflow-hidden bg-background"><EmailBody email={translationOn && message.direction === "inbound" && translations[message.id] ? { ...message, ...translations[message.id] } : message} onLoad={() => void loadMessage(message)} loading={loadingBodies.has(message.id)} error={bodyErrors[message.id]} /></div><SentAttachments email={message} />{translationOn && message.direction === "inbound" && message.bodyLoaded !== false && !translations[message.id] ? <div className="mt-2 text-xs text-muted-foreground" role="status">{translationErrors[message.id] ? <div className="flex flex-wrap items-center gap-2"><span>{translationErrors[message.id]}</span><button type="button" onClick={() => setTranslationErrors((current) => { const next = { ...current }; delete next[message.id]; return next; })} className="rounded-md border px-2 py-1 font-semibold hover:bg-muted">Retry translation</button></div> : <span className="inline-flex items-center gap-2"><AiIcon className="size-3.5" state="thinking" />Translating email...</span>}</div> : null}</div></article>)}
+            <div ref={conversationScroll} className="mail-conversation min-h-0 flex-1 overflow-y-auto overscroll-y-contain scroll-smooth px-5 py-5"><div className="mx-auto max-w-3xl space-y-6">{conversation.map((message, index) => <EmailReaderMessage key={message.id}
+  email={translationOn && message.direction === "inbound" && translations[message.id] ? { ...message, ...translations[message.id] } : message}
+  expanded={expandedMessages.has(message.id) || (index === conversation.length - 1 && !expandedMessages.has("closed:" + message.id))}
+  starred={starred.has(message.id)} loading={loadingBodies.has(message.id)} error={bodyErrors[message.id]}
+  onToggle={() => { const expanding = !expandedMessages.has(message.id) && (index !== conversation.length - 1 || expandedMessages.has("closed:" + message.id)); setExpandedMessages((current) => { const next = new Set(current); if (expanding) { next.add(message.id); next.delete("closed:" + message.id); } else { next.delete(message.id); next.add("closed:" + message.id); } return next; }); if (expanding && message.bodyLoaded === false) void loadMessage(message); }}
+  onLoad={() => void loadMessage(message)} onReply={(all) => replyToMessage(message, all)} onForward={() => void forwardSelected(message)} onEditDraft={() => void forwardSelected(message, true)} onStar={() => void toggleStar(message.id)} />)}
               {aiPreviewVisible ? (
                 <article className="flex items-start gap-3" aria-label="AI reply draft">
                   <div className="size-10 shrink-0" aria-hidden="true">
@@ -1298,11 +1484,11 @@ export function EmailInboxWorkspace({
                 </article>
               ) : null}
             </div></div>
-            <div className="mail-reply-panel shrink-0 border-t bg-background" data-expanded={replyExpanded}>
-              <ColumnResizeHandle label="Reply area height" variable="--mail-reply-height" container=".mail-reader" panel=".mail-reply-panel" min={180} max={700} reverse orientation="horizontal" className={replyExpanded ? "mail-reply-resize" : "hidden"} />
+            <div className="mail-reply-panel shrink-0 border-t bg-background" data-expanded={replyExpanded} role="region" aria-label="Reply composer">
+              <ColumnResizeHandle label="Reply area height" variable="--mail-reply-height" container=".mail-reader" panel=".mail-reply-panel" min={360} max={700} reverse orientation="horizontal" className={replyExpanded ? "mail-reply-resize" : "hidden"} />
               <div className="mail-reply-content min-h-0 flex-1 overflow-y-auto p-3">
               {!replyExpanded ? <div className="flex items-center gap-2"><button type="button" onClick={startReply} className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-md border bg-muted/20 px-3 text-left text-xs text-muted-foreground"><Reply className="size-4 shrink-0" /><span className="truncate">Quick reply to {replyRecipient}</span></button><button type="button" onClick={() => void generateAiReply()} disabled={aiReplyBusy || attachmentBusy || sending} className="inline-flex h-11 items-center gap-2 rounded-md border px-3 text-xs text-violet-600"><AiIcon className="size-4" />AI reply</button></div> : <>
-              <div className="mb-2 flex items-center justify-between gap-2 text-xs"><span className="font-semibold">Reply</span><div className="flex items-center gap-1">
+              <div className="mb-2 flex shrink-0 items-center justify-between gap-2 text-xs"><span className="font-semibold">{replyAll ? "Reply all" : "Reply"}</span><div className="flex items-center gap-1">
                 <Popover><PopoverTrigger aria-label="AI reply options" className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-violet-600 hover:bg-muted"><AiIcon className="size-3.5" state={aiReplyBusy || aiUpdating ? "thinking" : "idle"} />AI tools<ChevronRight className="size-3 rotate-90" /></PopoverTrigger>
                   <PopoverContent align="end" side="top" className="mail-ai-tools w-80 max-w-[calc(100vw-2rem)] max-h-[min(28rem,var(--available-height))] overflow-y-auto p-3">
                     <PopoverTitle>AI reply tools</PopoverTitle>
@@ -1315,16 +1501,52 @@ export function EmailInboxWorkspace({
                 <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><button type="button" disabled={aiReplyBusy || attachmentBusy || sending || Boolean(draft.trim() || replyHasImages)} onClick={() => void generateAiReply()} className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-violet-600 disabled:opacity-40"><AiIcon className="size-3.5" state={aiReplyBusy ? "thinking" : "idle"} />{aiReplyBusy ? "Preparing reply & PDFs?" : "AI reply"}</button>{aiReplyInvoiceId ? <Link href={`/invoices/${aiReplyInvoiceId}`} target="_blank" className="font-medium text-emerald-700 underline">Review draft invoice</Link> : null}</div>
                   </PopoverContent>
                 </Popover>
-                <button type="button" aria-label="Collapse reply" onClick={() => setReplyExpanded(false)} className="rounded p-1 hover:bg-muted"><X className="size-4" /></button>
+                <button type="button" aria-label="Collapse reply" title="Collapse reply" disabled={sending} onClick={() => setReplyExpanded(false)} className="flex size-8 items-center justify-center rounded-md hover:bg-muted disabled:opacity-40"><X className="size-4" /></button>
               </div></div>
-              <div className="mail-reply-editor mx-auto max-w-3xl">
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-2.5 py-2 text-xs text-muted-foreground"><label className="flex min-w-0 items-center gap-2">From <SenderSelect mailboxes={mailboxes} value={replySenderId} onChange={setReplySenderId} disabled={sending} label="Reply sender email" /></label><span>To <span className="font-medium text-foreground">{replyRecipient}</span></span></div>
-                <div className="mail-reply-input overflow-hidden rounded-xl border bg-background focus-within:border-primary/50">
-                  <EmailBodyEditor ref={replyInput} value={draft} html={draftHtml} signature={preferences.emailSignature} footer={personalFooter} onChange={updateDraft} onError={setNotice} onBusyChange={setReplyMediaBusy} attachmentCount={replyAttachments.length} disabled={aiReplyBusy || sending || footerLoading} label="Reply message" placeholder={`Write in Chinese or English to reply to ${replyRecipient}…`} className="min-h-24 max-h-96 overflow-y-auto p-3.5" />
+              <div className="mail-reply-editor overflow-hidden rounded-lg border bg-background">
+                <div className="mail-reply-scroll px-3 sm:px-4">
+                  <div className="mail-reply-recipient-header">
+                    <EmailRecipientFields key={`recipients:${replyDraftId}`} to={replyRecipient} cc={effectiveReplyCc} bcc={replyBcc} onTo={setReplyTo} onCc={setReplyCc} onBcc={setReplyBcc} disabled={sending} prefix="Reply " sender={<div className="mail-reply-sender flex min-w-0 items-center gap-2 py-1.5"><span className="shrink-0 text-xs text-muted-foreground">From</span><div className="min-w-0"><SenderSelect mailboxes={mailboxes} value={replySenderId} onChange={setReplySenderId} disabled={sending} label="Reply sender email" /></div></div>} />
+                  </div>
+                  <EmailBodyEditor key={replyDraftId} ref={replyInput} value={draft} html={draftHtml} signature={preferences.emailSignature} footer={personalFooter} onChange={updateDraft} onError={setNotice} onBusyChange={setReplyMediaBusy} attachmentCount={replyAttachments.length} disabled={replyEditorDisabled} bodyEmpty={personalFooter?.html ? !replyBodyText.trim() && !replyHasImages : undefined} compactSignature label="Reply message" placeholder="Write your reply…" className="min-h-40 py-3 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring" />
                   <AttachmentChips attachments={replyAttachments} onRemove={(id) => setReplyAttachments((current) => current.filter((item) => item.id !== id))} />
-                  <div className="flex items-center justify-between border-t px-2 py-2"><div className="flex gap-1"><input ref={replyFileInput} type="file" multiple accept=".pdf,.csv,.txt,.jpg,.jpeg,.png,.webp,.gif,.doc,.docx,.xls,.xlsx" className="hidden" onChange={(event) => { void addFiles(event.target.files, "reply"); event.target.value = ""; }} /><button type="button" disabled={attachmentBusy} title="Attach files" onClick={() => replyFileInput.current?.click()} className="rounded-md p-2 text-muted-foreground hover:bg-muted disabled:opacity-40"><Paperclip className="size-4" /></button><button type="button" title="Attach product catalog" onClick={() => openCatalogPicker("reply")} className="rounded-md p-2 text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-500/10"><Library className="size-4" /></button>{canCreateInvoices ? <button type="button" title="Customer invoices" aria-label="Customer invoices" onClick={()=>setInvoiceContext({companyId:selected.companyId,email:replyRecipient,threadId:selectedConversation?.id,customerName:selected.company,target:"reply"})} className="rounded-md p-2 text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-500/10"><ReceiptText className="size-4" /></button> : null}<button type="button" title="Add emoji" onClick={() => replyInput.current?.insertText("😊")} className="rounded-md p-2 text-muted-foreground hover:bg-muted"><Smile className="size-4" /></button><button type="button" title={draft.trim() ? "Clear the message to generate a new AI reply" : "Generate reply from conversation with relevant PDFs"} disabled={aiReplyBusy || attachmentBusy || sending || Boolean(draft.trim() || replyHasImages)} onClick={() => void generateAiReply()} className="rounded-md p-2 text-violet-600 hover:bg-violet-50 disabled:opacity-40"><AiIcon className="size-4" state={aiReplyBusy ? "thinking" : "idle"} /></button><InboxCalculator /></div><button type="button" onClick={saveReply} disabled={(!draft.trim() && !replyHasImages) || sending || (aiWriting && !replyHasImages) || attachmentBusy || replyMediaBusy} className="inline-flex h-9 items-center gap-2 rounded-md bg-foreground px-3 text-xs font-semibold text-background disabled:opacity-40"><Send className="size-4" />{sending ? "Sending..." : aiWriting ? "Writing..." : !replyHasImages && aiDraft && aiDraftSource === draft.trim() ? "Send AI draft" : "Send email"}</button></div>
                 </div>
-                {notice ? <p className="mt-2 text-xs text-muted-foreground" role="status">{notice}</p> : null}
+                <div className="mail-reply-footer shrink-0 border-t bg-muted/20 px-3 py-2">
+                  {replyDraftNeedsRetry ? <div className="mb-2"><EmailDraftStatus status={savedDrafts.status} onRetry={() => void savedDrafts.retry()} disabled={sending} /></div> : null}
+                  {footerError ? <p role="alert" className="mb-2 rounded-md bg-destructive/10 px-2.5 py-2 text-xs text-destructive">{footerError}</p> : null}
+                  {notice ? <div role="status" className="mb-2 flex items-start gap-2 rounded-md bg-muted px-2.5 py-2 text-xs leading-5"><span className="min-w-0 flex-1 break-words">{/Unable to load saved mailbox:|column .* does not exist/i.test(notice) ? "Mailbox sync is temporarily unavailable. Your reply is still open." : notice}</span><button type="button" aria-label="Dismiss reply notice" title="Dismiss notice" onClick={() => setNotice(null)} className="shrink-0 rounded p-0.5 hover:bg-background"><X className="size-3.5" /></button></div> : null}
+                  <div className="mail-reply-actions flex items-center gap-1.5">
+                    <input ref={replyFileInput} type="file" multiple disabled={sending || attachmentBusy} className="hidden" onChange={(event) => { void addFiles(event.target.files, "reply"); event.target.value = ""; }} />
+                    <button type="button" disabled={attachmentBusy || sending} title="Attach files" aria-label="Attach files" onClick={() => replyFileInput.current?.click()} className="flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted disabled:opacity-40"><Paperclip className="size-4" /></button>
+                    <Popover>
+                      <PopoverTrigger aria-label="More reply options" title="Formatting and more options" disabled={sending} onMouseDown={(event) => event.preventDefault()} className="flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted disabled:opacity-40"><MoreHorizontal className="size-4" /></PopoverTrigger>
+                      <PopoverContent align="start" side="top" className="w-64 max-w-[calc(100vw-2rem)] max-h-[min(28rem,var(--available-height))] overflow-y-auto p-3">
+                        <PopoverTitle>Reply options</PopoverTitle>
+                        <p className="text-xs text-muted-foreground">Text formatting</p>
+                        <EmailFormatToolbar editor={replyInput} disabled={replyEditorDisabled} />
+                        <div className="grid gap-1 border-t pt-2">
+                          <button type="button" disabled={attachmentBusy || sending} onClick={() => openCatalogPicker("reply")} className="flex h-9 items-center gap-2 rounded-md px-2 text-left text-xs hover:bg-muted disabled:opacity-40"><Library className="size-4" />Add catalog PDF</button>
+                          {canCreateInvoices ? <button type="button" disabled={attachmentBusy || sending} onClick={() => setInvoiceContext({companyId:selected.companyId,email:replyRecipient,threadId:selectedConversation?.id,customerName:selected.company,target:"reply"})} className="flex h-9 items-center gap-2 rounded-md px-2 text-left text-xs hover:bg-muted disabled:opacity-40"><ReceiptText className="size-4" />Customer invoices</button> : null}
+                          <div className="flex items-center gap-2"><button type="button" disabled={replyEditorDisabled} onMouseDown={(event) => event.preventDefault()} onClick={() => replyInput.current?.insertText(String.fromCodePoint(0x1f60a))} className="flex h-9 flex-1 items-center gap-2 rounded-md px-2 text-xs hover:bg-muted disabled:opacity-40"><Smile className="size-4" />Add emoji</button><InboxCalculator /></div>
+                        </div>
+                        <button type="button" disabled={sending || aiReplyBusy} onClick={() => { const saved = savedDrafts.get(replyDraftId); if (saved) savedDrafts.remove(saved); clearReplyComposer(); setReplyDraftId(crypto.randomUUID()); setReplyRequestId(crypto.randomUUID()); replyPayload.current = null; }} className="flex h-9 items-center gap-2 rounded-md border-t px-2 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-40"><Trash2 className="size-4" />Discard draft</button>
+                      </PopoverContent>
+                    </Popover>
+                    {!replyDraftNeedsRetry ? <div className="mail-reply-save-status min-w-0 flex-1"><EmailDraftStatus status={savedDrafts.status} onRetry={() => void savedDrafts.retry()} disabled={sending} /></div> : <span className="flex-1" />}
+                    {replySendHint ? <span id="reply-send-help" className="sr-only">{replySendHint}</span> : null}
+                    <div className="ml-auto inline-flex shrink-0 items-stretch">
+                      <button type="button" onClick={saveReply} title={replySendHint || (replyScheduleOpen ? "Schedule send" : "Send email")} aria-describedby={replySendHint ? "reply-send-help" : undefined} disabled={(!replyBodyText.trim() && !replyHasImages) || !replyRecipient.trim() || sending || (aiWriting && !replyHasImages) || attachmentBusy || replyMediaBusy || replyEditorDisabled || Boolean(footerError) || !replySender?.sendConfigured || (replyScheduleOpen && !scheduleAt)} className="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-l-md bg-foreground px-3 text-xs font-semibold text-background hover:bg-foreground/90 disabled:opacity-40">{sending ? <LoaderCircle className="size-4 animate-spin" /> : replyScheduleOpen ? <CalendarClock className="size-4" /> : <Send className="size-4" />}{sending ? "Sending…" : aiWriting ? "Writing…" : replyScheduleOpen ? "Schedule send" : !replyHasImages && aiDraft && aiDraftSource === draft.trim() ? "Send AI draft" : "Send email"}</button>
+                      <Popover>
+                        <PopoverTrigger aria-label="Send options" title="Send later" disabled={sending} className="flex w-8 items-center justify-center rounded-r-md border-l border-background/25 bg-foreground text-background hover:bg-foreground/90 disabled:opacity-40"><ChevronRight className="size-3.5 rotate-90" /></PopoverTrigger>
+                        <PopoverContent align="end" side="top" className="w-72 max-w-[calc(100vw-2rem)] p-3">
+                          <PopoverTitle>Send options</PopoverTitle>
+                          <label className="inline-flex cursor-pointer items-center gap-2 text-sm"><input type="checkbox" checked={replyScheduleOpen} disabled={sending} onChange={(event) => { setReplyScheduleOpen(event.target.checked); if (!event.target.checked) setScheduleAt(""); }} className="size-4 accent-primary" /><CalendarClock className="size-4" />Send later</label>
+                          {replyScheduleOpen ? <><DatePicker includeTime aria-label="Reply scheduled send time" aria-describedby="reply-schedule-help" value={scheduleAt} disabled={sending} onValueChange={value => setScheduleAt(value)} className="min-w-0 max-w-full rounded-md border bg-background px-2.5 py-2 text-sm" /><span id="reply-schedule-help" className="text-xs text-muted-foreground">Your local time</span></> : null}
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                  </div>
+                </div>
               </div>
               </>}
               </div>
@@ -1364,25 +1586,41 @@ export function EmailInboxWorkspace({
         </aside> : null}
       </div>
       <Dialog open={composeOpen} onOpenChange={(open) => { if (!composeSending) setComposeOpen(open); }}>
-        <DialogContent className="w-[min(680px,calc(100%-2rem))] max-w-none gap-0 overflow-hidden p-0">
-          <form onSubmit={sendNewEmail}>
-            <DialogHeader className="border-b px-5 py-4">
+        <DialogContent className="mail-compose-dialog gap-0 overflow-hidden p-0">
+          <form onSubmit={sendNewEmail} className="mail-compose-form">
+            <DialogHeader className="shrink-0 border-b px-5 py-4 sm:px-6">
               <DialogTitle>New email</DialogTitle>
-              <DialogDescription>Send a new conversation through {composeSender?.email || "your selected mailbox"}.</DialogDescription>
+              <DialogDescription className="sr-only">Compose an email, add attachments, and send now or schedule for later.</DialogDescription>
             </DialogHeader>
-            <div className="space-y-0 px-5 py-2">
-              <label className="grid grid-cols-[64px_1fr] items-center border-b py-2 text-sm"><span className="text-muted-foreground">From</span><SenderSelect mailboxes={mailboxes} value={composeSenderId} onChange={setComposeSenderId} disabled={composeSending} label="New email sender" /></label>
-              <label className="grid grid-cols-[64px_1fr] items-center border-b py-2 text-sm"><span className="text-muted-foreground">To</span>{companyScope ? <Select required value={composeTo} onValueChange={(selectedValue) => { if (selectedValue === null) return; setComposeTo(selectedValue); }}><SelectTrigger autoFocus aria-label="Recipient" className="w-full min-w-0"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="">Choose customer contact</SelectItem>{companyScope.emails.filter((email) => email.trim()).map((email) => <SelectItem key={email} value={email}>{email}</SelectItem>)}</SelectContent></Select> : <input type="email" required autoFocus value={composeTo} onChange={(event) => setComposeTo(event.target.value)} placeholder="customer@example.com" className="min-w-0 bg-transparent py-1 outline-none placeholder:text-muted-foreground/60" />}</label>
-              <label className="grid grid-cols-[64px_1fr] items-center border-b py-2 text-sm"><span className="text-muted-foreground">Subject</span><input required value={composeSubject} onChange={(event) => setComposeSubject(event.target.value)} placeholder="Email subject" className="min-w-0 bg-transparent py-1 outline-none placeholder:text-muted-foreground/60" /></label>
-              <EmailBodyEditor value={composeBody} html={composeHtml} signature={preferences.emailSignature} footer={personalFooter} onChange={editCompose} onError={setComposeError} onBusyChange={setComposeMediaBusy} attachmentCount={composeAttachments.length} disabled={composeSending || footerLoading} label="New email message" placeholder="Write your message…" className="min-h-64 max-h-[50vh] overflow-y-auto py-4" />
+            <div className="mail-compose-content px-5 sm:px-6">
+              <div className="grid min-h-12 grid-cols-[64px_minmax(0,1fr)] items-center border-b py-2 text-sm"><span className="text-muted-foreground">From</span><div className="min-w-0"><SenderSelect mailboxes={mailboxes} value={composeSenderId} onChange={setComposeSenderId} disabled={composeSending} label="New email sender" /></div></div>
+<EmailRecipientFields to={composeTo} cc={composeCc} bcc={composeBcc} onTo={setComposeTo} onCc={setComposeCc} onBcc={setComposeBcc} disabled={composeSending} prefix="New email " />
+              <label className="grid min-h-12 grid-cols-[64px_minmax(0,1fr)] items-center border-b py-2 text-sm"><span className="text-muted-foreground">Subject</span><input value={composeSubject} onChange={(event) => setComposeSubject(event.target.value)} disabled={composeSending} placeholder="Add a subject" className="min-w-0 rounded-sm bg-transparent py-1 outline-none placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring" /></label>
+              <div className="sticky top-0 z-10 -mx-1 border-b bg-popover py-2"><EmailFormatToolbar editor={composeInput} disabled={composeSending || footerLoading || !savedDrafts.ready} /></div>
+              <EmailBodyEditor key={composeDraftId} ref={composeInput} value={composeBody} html={composeHtml} signature={preferences.emailSignature} footer={personalFooter} onChange={editCompose} onError={setComposeError} onBusyChange={setComposeMediaBusy} attachmentCount={composeAttachments.length} disabled={composeSending || footerLoading || !savedDrafts.ready} bodyEmpty={personalFooter?.html ? !composeBodyText.trim() && !composeHasImages : undefined} compactSignature label="New email message" placeholder="Write your message…" className="min-h-56 py-4 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring" />
               <AttachmentChips attachments={composeAttachments} onRemove={(id) => setComposeAttachments((current) => current.filter((item) => item.id !== id))} />
-              <div className="mb-2 flex items-center gap-2 border-t pt-2"><input ref={composeFileInput} type="file" multiple accept=".pdf,.csv,.txt,.jpg,.jpeg,.png,.webp,.gif,.doc,.docx,.xls,.xlsx" className="hidden" onChange={(event) => { void addFiles(event.target.files, "compose"); event.target.value = ""; }} /><button type="button" onClick={() => composeFileInput.current?.click()} disabled={attachmentBusy} className="inline-flex h-8 items-center gap-2 rounded-md border px-2.5 text-xs font-medium hover:bg-muted disabled:opacity-40"><Paperclip className="size-3.5" />Attach file</button><button type="button" onClick={() => openCatalogPicker("compose")} className="inline-flex h-8 items-center gap-2 rounded-md border px-2.5 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:text-sky-300"><Library className="size-3.5" />Add catalog PDF</button>{canCreateInvoices ? <button type="button" onClick={()=>{if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(composeTo.trim())){setComposeError("Enter one customer email to view or create invoices.");return;}setInvoiceContext({email:composeTo.trim(),target:"compose"});}} className="inline-flex h-8 items-center gap-2 rounded-md border px-2.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300"><ReceiptText className="size-3.5" />Create invoice</button> : null}</div>
-              {composeError ? <p role="alert" className="pb-3 text-xs font-medium text-red-600 dark:text-red-400">{composeError}</p> : null}
+              <div className="mail-compose-tools flex flex-wrap items-center gap-2 border-t py-3">
+                <input ref={composeFileInput} type="file" multiple className="hidden" disabled={composeSending || attachmentBusy} onChange={(event) => { void addFiles(event.target.files, "compose"); event.target.value = ""; }} />
+                <button type="button" onClick={() => composeFileInput.current?.click()} disabled={attachmentBusy || composeSending} className="inline-flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-md border px-3 text-xs font-medium hover:bg-muted disabled:opacity-40"><Paperclip className="size-4 shrink-0" />Attach files</button>
+                <button type="button" onClick={() => openCatalogPicker("compose")} disabled={attachmentBusy || composeSending} className="inline-flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-md border px-3 text-xs font-medium hover:bg-muted disabled:opacity-40"><Library className="size-4 shrink-0" />Add catalog PDF</button>
+                {canCreateInvoices ? <button type="button" disabled={attachmentBusy || composeSending} onClick={()=>{if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(composeTo.trim())){setComposeError("Enter one customer email to view or create invoices.");return;}setInvoiceContext({email:composeTo.trim(),target:"compose"});}} className="inline-flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-md border px-3 text-xs font-medium hover:bg-muted disabled:opacity-40"><ReceiptText className="size-4 shrink-0" />Create invoice</button> : null}
+              </div>
+              <div className="border-t py-3">
+                <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" checked={composeScheduleOpen} disabled={composeSending} onChange={(event) => { setComposeScheduleOpen(event.target.checked); if (!event.target.checked) setComposeScheduleAt(""); }} className="size-4 accent-primary" /><CalendarClock className="size-4" />Send later</label>
+                {composeScheduleOpen ? <div className="mt-3 flex flex-wrap items-center gap-2"><DatePicker includeTime required aria-label="New email scheduled send time" aria-describedby="compose-schedule-help" value={composeScheduleAt} disabled={composeSending} onValueChange={value => setComposeScheduleAt(value)} className="min-w-0 max-w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-ring" /><span id="compose-schedule-help" className="text-xs text-muted-foreground">Your local time</span></div> : null}
+              </div>
             </div>
-            <DialogFooter className="mx-0 mb-0 rounded-none px-5 py-3">
-              <button type="button" onClick={() => setComposeOpen(false)} disabled={composeSending} className="inline-flex h-9 items-center justify-center rounded-md border bg-background px-4 text-xs font-semibold hover:bg-muted disabled:opacity-50">Cancel</button>
-              <button type="submit" disabled={composeSending || attachmentBusy || !composeTo.trim() || !composeSubject.trim() || (!composeBody.trim() && !composeHasImages) || composeMediaBusy} className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-foreground px-4 text-xs font-semibold text-background hover:bg-foreground/90 disabled:opacity-40"><Send className="size-4" />{composeSending ? "Sending…" : "Send email"}</button>
-            </DialogFooter>
+            <div className="shrink-0 border-t bg-muted/30 px-5 py-3 sm:px-6">
+              <div className="mb-3"><EmailDraftStatus status={savedDrafts.status} onRetry={() => void savedDrafts.retry()} disabled={composeSending} /></div>
+              {composeError || footerError ? <p role="alert" className="mb-3 rounded-md bg-destructive/10 px-3 py-2 text-xs leading-5 text-destructive">{composeError || footerError}</p> : null}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <span id="compose-send-help" className="text-xs text-muted-foreground">{!savedDrafts.ready ? "Loading your draft…" : footerLoading ? "Loading your email footer…" : attachmentBusy || composeMediaBusy ? "Preparing attachments…" : !composeSender?.sendConfigured ? "Choose a configured sender." : !composeTo.trim() ? "Add a recipient to send." : !composeBodyText.trim() && !composeHasImages ? "Write a message to send." : composeScheduleOpen && !composeScheduleAt ? "Choose a send date and time." : ""}</span>
+                <div className="ml-auto flex items-center gap-2">
+                  <button type="button" onClick={() => setComposeOpen(false)} disabled={composeSending} className="inline-flex h-10 items-center justify-center whitespace-nowrap rounded-md border bg-background px-4 text-xs font-semibold hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50">Close draft</button>
+                  <button type="submit" aria-describedby="compose-send-help" disabled={composeSending || attachmentBusy || !composeTo.trim() || (!composeBodyText.trim() && !composeHasImages) || composeMediaBusy || footerLoading || Boolean(footerError) || !savedDrafts.ready || !composeSender?.sendConfigured || (composeScheduleOpen && !composeScheduleAt)} className="inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md bg-foreground px-4 text-xs font-semibold text-background hover:bg-foreground/90 focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40">{composeSending ? <LoaderCircle className="size-4 animate-spin" /> : composeScheduleOpen ? <CalendarClock className="size-4" /> : <Send className="size-4" />}{composeSending ? "Sending…" : composeScheduleOpen ? "Schedule send" : "Send email"}</button>
+                </div>
+              </div>
+            </div>
           </form>
         </DialogContent>
       </Dialog>

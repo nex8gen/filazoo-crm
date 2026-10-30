@@ -126,6 +126,9 @@ export function EmailAccountsWorkspace({ initialData, ...props }: Props) {
     sendConfigured={data.sendConfigured}
     inboxConfigured={data.inboxConfigured}
     inboxError={data.inboxError}
+    lastMailboxSync={data.lastMailboxSync}
+    syncHealth={data.syncHealth}
+    providerFolders={data.providerFolders}
     aiConfigured={data.aiConfigured}
     defaultMailboxEmail={data.defaultMailboxEmail}
     dataMode={data.mode}

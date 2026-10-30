@@ -5,8 +5,8 @@ import { workspaceActionSchema, workspaceAssistantInstruction } from "../lib/ai/
 
 export const profileExamples = {
   name: "Updated company", website: "https://example.invalid", country: "United States", city: "Tarrytown", segment: "Manufacturing",
-  contactName: "Jimmy Przybylinski", contactRole: "Purchasing", contactEmail: "buyer@example.invalid", stage: "interested", summary: "Customer account notes",
-  tags: "PLA, PETG", fitScore: 8, estimatedOrderQuantity: 200, estimatedValue: 1234.56, currency: "CAD", nextFollowupAt: "2026-10-29T09:00:00+08:00",
+  contactName: "Jimmy Przybylinski", contactRole: "Purchasing", contactEmail: "buyer@example.invalid", summary: "Customer account notes",
+  tags: "PLA, PETG", fitScore: 8, nextFollowupAt: "2026-10-29T09:00:00+08:00",
   commerce: { phone: "+1 555 0100", shippingRecipient: "Jimmy Przybylinski", shippingPhone: "+1 555 0101", shippingAddress: "1 Dixon Ln, Tarrytown, NY 10591, United States", shippingNotes: "Deliver weekdays", address: "Billing office", taxId: "VAT-42", email: "billing@example.invalid", currency: "USD", termsDays: 30 },
 } as const;
 
@@ -16,7 +16,7 @@ test("every existing editable profile field validates independently without requ
       for (const [key, text] of Object.entries(value)) assert.deepEqual(companyProfileChangesSchema.parse({ commerce: { [key]: text } }), { commerce: { [key]: text } });
     } else assert.deepEqual(companyProfileChangesSchema.parse({ [field]: value }), { [field]: value });
   }
-  for (const key of ["fitScore", "estimatedOrderQuantity", "estimatedValue", "nextFollowupAt"]) assert.deepEqual(companyProfileChangesSchema.parse({ [key]: "" }), { [key]: "" });
+  for (const key of ["fitScore", "nextFollowupAt"]) assert.deepEqual(companyProfileChangesSchema.parse({ [key]: "" }), { [key]: "" });
 });
 
 test("patch validation rejects unsupported fields, empty patches and invalid supplied values", () => {

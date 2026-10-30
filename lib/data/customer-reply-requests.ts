@@ -98,6 +98,10 @@ async function invoiceContext(input: ReplyRequestInput, viewer: WorkspaceViewer)
 }
 export async function prepareReplyRequest(input: ReplyRequestInput, viewer: WorkspaceViewer) {
   canWrite(viewer);
+  if (input.onReply) {
+    const { validateTaskWorkflow } = await import("./task-workflows");
+    await validateTaskWorkflow(viewer, input.companyId, input.onReply);
+  }
   const company = await loadAgentCompany(input.companyId);
   const snapshot = await invoiceContext(input, viewer);
   const source = input.sourceEmailId ? await loadAgentEmails(viewer, input.sourceEmailId, undefined, input.mailboxId) : null;
@@ -133,7 +137,7 @@ export async function startReplyRequest(input: ReplyRequestInput, viewer: Worksp
   const row = { id: actionId, user_id: viewer.id, owner_role: viewer.role, company_id: input.companyId, company_name: company.fields.name,
     mailbox_id: mailbox.id, recipient, subject: input.op === "request_customer_information" ? input.subject : source!.current!.subject,
     body: input.op === "request_customer_information" ? input.text : "", needed: input.needed, task_title: input.task.title, task_notes: input.task.notes,
-    task_priority: input.task.priority, invoice_id: input.invoiceId ?? null, invoice_context: snapshot, scope_key: scopeKey, status,
+    task_priority: input.task.priority, invoice_id: input.invoiceId ?? null, invoice_context: snapshot, on_reply: input.onReply ?? null, scope_key: scopeKey, status,
     revision: 1, message_id: normalizeMessageId(messageId), thread_key: threadKey, waiting_since: now,
     send_started_at: input.op === "request_customer_information" ? now : null, expires_at: new Date(Date.now() + input.expiresInDays * 86400000).toISOString(),
   };

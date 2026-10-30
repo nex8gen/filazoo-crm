@@ -23,11 +23,11 @@ export default async function CompaniesPage({ searchParams }: { searchParams: Pr
       <div>
         <PageHeader
           title="Companies"
-          description={segmentName ? `Companies in the ${segmentName} segment.` : "A clear view of every account, source, market, and next sales opportunity."}
+          description={segmentName ? `Companies in the ${segmentName} segment.` : "A clear view of every account, source, market, and next follow-up."}
           actions={<>{segmentName ? <><Link href="/segments" className="inline-flex min-h-9 items-center px-3 text-sm text-primary underline-offset-4 hover:underline">Segments</Link><Link href="/companies" className="inline-flex min-h-9 items-center px-3 text-sm text-primary underline-offset-4 hover:underline">All companies</Link></> : null}<ExportCompaniesButton companies={visibleCompanies} /><AddCompanyButton canWrite={viewer.role !== "viewer"} /></>}
         />
       </div>
-      <CompaniesTable key={savedSegment?.id ?? selectedSegment ?? "all"} companies={visibleCompanies} mode={mode} canWrite={viewer.role !== "viewer"} canDelete={viewer.role === "admin"} />
+      <CompaniesTable key={savedSegment?.id ?? selectedSegment ?? "all"} viewKey={savedSegment?.id ?? selectedSegment ?? "all"} companies={visibleCompanies} mode={mode} canWrite={viewer.role !== "viewer"} canDelete={viewer.role === "admin"} />
     </div>
   );
 }

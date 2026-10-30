@@ -66,7 +66,7 @@ export async function POST(request: Request) {
   if (!input.success) return Response.json({ ok: false, error: "Enter a valid task title, priority and due time." }, { status: 400, headers });
   try {
     // Company-linked follow-ups keep their account-owner assignment rules.
-    if (input.data.task.companyId) return Response.json({ ok: false, error: "Schedule company follow-ups from the company profile." }, { status: 400, headers });
+    if (input.data.task.companyId && !input.data.task.workflow) return Response.json({ ok: false, error: "Schedule company follow-ups from the company profile." }, { status: 400, headers });
     const task = await createAgentTask(viewer, input.data.requestId, input.data.task, input.data.assignedTo);
     return Response.json({ ok: true, version: 2, task }, { headers });
   } catch (error) {

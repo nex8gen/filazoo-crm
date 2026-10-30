@@ -1,4 +1,5 @@
 "use client";
+import { useWorkspaceState } from "@/components/workspace-memory";
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
@@ -9,16 +10,14 @@ import { EmptyState } from "@/components/data-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { segmentRuleLabels, matchesSegment, summarizeSegment, type SavedSegment, type SegmentCompany } from "@/lib/segments";
-import type { PipelineStageValue } from "@/lib/types";
 
-const stageColors: Record<PipelineStageValue, string> = { new: "bg-slate-300", contacted: "bg-sky-400", replied: "bg-violet-400", interested: "bg-amber-400", big_order: "bg-orange-400", won: "bg-emerald-500", lost: "bg-rose-300" };
 
 export function SegmentsWorkspace({ companies, savedSegments, canWrite }: { companies: SegmentCompany[]; savedSegments: SavedSegment[]; canWrite: boolean }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [editingSegment, setEditingSegment] = useState<SavedSegment | undefined>();
-  const [query, setQuery] = useState("");
-  const [kind, setKind] = useState("all");
-  const [sort, setSort] = useState("largest");
+  const [query, setQuery] = useWorkspaceState("segments.query", "");
+  const [kind, setKind] = useWorkspaceState("segments.kind", "all");
+  const [sort, setSort] = useWorkspaceState("segments.sort", "largest");
   const overview = useMemo(() => summarizeSegment(companies), [companies]);
   const segments = useMemo(() => {
     const sources = Object.fromEntries(companies.map((company) => [company.source, company.sourceLabel]));
@@ -42,7 +41,7 @@ export function SegmentsWorkspace({ companies, savedSegments, canWrite }: { comp
   const createButton = <Button size="sm" onClick={() => setCreateOpen(true)} disabled={!canWrite} title={canWrite ? "Create segment" : "Viewer access is read-only"}><Plus className="size-4" />Create segment</Button>;
 
   return <div className="min-w-0 space-y-6 pb-8">
-    <PageHeader title="Segments" description="Understand your audiences and turn company data into focused sales opportunities." actions={createButton} />
+    <PageHeader title="Segments" description="Understand your audiences and organize company relationships." actions={createButton} />
     <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
       {[
         { label: "Total segments", value: segments.length.toLocaleString(), detail: `${savedSegments.length} saved · ${segments.length - savedSegments.length} business`, icon: Tags },
@@ -66,7 +65,6 @@ export function SegmentsWorkspace({ companies, savedSegments, canWrite }: { comp
           <p className="mt-4 line-clamp-2 min-h-10 text-xs leading-5 text-muted-foreground">{segment.description || "A saved audience built from your company profiles."}</p>
           {segment.kind === "saved" ? <div className="mt-3 flex flex-wrap gap-1.5">{(segment.rules.length ? segment.rules : ["All companies"]).map((rule, index) => <span key={`${rule}:${index}`} className="max-w-full truncate rounded-md border bg-muted/40 px-2 py-1 text-[11px]">{rule}</span>)}</div> : null}
           <dl className="mt-auto grid grid-cols-3 gap-2 pt-5"><div><dt className="text-xs text-muted-foreground">Companies</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{summary.count.toLocaleString()}</dd></div><div><dt className="text-xs text-muted-foreground">With email</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{coverage}%</dd></div><div><dt className="text-xs text-muted-foreground">Avg. fit</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{summary.averageFit === null ? "—" : <>{summary.averageFit.toFixed(1)}<span className="text-xs font-normal text-muted-foreground"> / 10</span></>}</dd></div></dl>
-          <div className="mt-4 border-t pt-4"><div className="mb-2 flex justify-between gap-2 text-xs text-muted-foreground"><span>Sales pipeline</span><span>{summary.active} active · {summary.won} won</span></div><div className="flex h-1.5 overflow-hidden rounded-full bg-muted" role="img" aria-label={summary.stages.filter((stage) => stage.count).map((stage) => `${stage.label}: ${stage.count}`).join(", ") || "No companies yet"}>{summary.stages.filter((stage) => stage.count).map((stage) => <span key={stage.stage} title={`${stage.label}: ${stage.count}`} className={stageColors[stage.stage]} style={{ width: `${stage.count / summary.count * 100}%` }} />)}</div><div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">{summary.stages.filter((stage) => stage.count).map((stage) => <span key={stage.stage} className="inline-flex items-center gap-1"><span className={`size-1.5 rounded-full ${stageColors[stage.stage]}`} />{stage.label} {stage.count}</span>)}</div></div>
           <div className="mt-4 flex items-center justify-between gap-2 text-xs"><span className="inline-flex items-center gap-1 text-muted-foreground"><Globe2 className="size-3" />{summary.countries} markets</span><span className="font-medium text-primary">View companies <span aria-hidden="true">→</span></span></div>
         </Link>{segment.kind === "saved" && canWrite ? <div className="flex justify-end border-t px-3 py-2"><Button type="button" variant="ghost" size="sm" onClick={() => setEditingSegment(savedSegments.find((saved) => saved.id === segment.id))}>Edit segment</Button></div> : null}</li>;
       })}

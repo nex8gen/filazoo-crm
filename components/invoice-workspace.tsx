@@ -1,13 +1,15 @@
 "use client";
+import { useWorkspaceState } from "@/components/workspace-memory";
 import { EmptyState } from "@/components/data-state";
 import { ReceiptText, Wallet } from "lucide-react";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Plus, Printer, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
 import { TablePagination } from "@/components/ui/table-pagination";
 import { TableFilters, TableFilter } from "@/components/ui/table-filters";
 import { InvoiceEditor } from "@/components/invoice-editor";
@@ -36,6 +38,7 @@ export function InvoiceWorkspace({
   initial,
   initialSelected = null,
   initialEditor = null,
+  initialStatus = "",
   companyId,
   initialError,
   canWrite,
@@ -45,6 +48,7 @@ export function InvoiceWorkspace({
   initial: Listing;
   initialSelected?: Invoice | null;
   initialEditor?: InvoiceDocument | null;
+  initialStatus?: string;
   companyId?: string;
   initialError: string;
   canWrite: boolean;
@@ -52,16 +56,35 @@ export function InvoiceWorkspace({
   today: string;
 }) {
   const router = useRouter();
-  const [listing, setListing] = useState(initial);
+  // Keep the matching rows with the remembered query/page. Restoring controls
+  // against the first server page would display the wrong invoices.
+  const memoryKey = initialSelected ? `invoice-detail.${initialSelected.id}`
+    : initialEditor ? `invoice-editor.${companyId || "all"}`
+    : `invoices.${companyId || "all"}.${initialStatus}`;
+  const [listing, setListing] = useWorkspaceState(`${memoryKey}.listing`, initial);
   const [selected, setSelected] = useState<Invoice | null>(initialSelected);
   const [editor, setEditor] = useState<InvoiceDocument | null>(initialEditor);
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState("");
-  const [appliedFilters, setAppliedFilters] = useState({ search: "", status: "" });
-  const [page, setPage] = useState(0);
+  const [search, setSearch] = useWorkspaceState(`${memoryKey}.search`, "");
+  const [status, setStatus] = useWorkspaceState(`${memoryKey}.status`, initialStatus);
+  const [appliedFilters, setAppliedFilters] = useWorkspaceState(`${memoryKey}.filters`, { search: "", status: initialStatus });
+  const [page, setPage] = useWorkspaceState(`${memoryKey}.page`, 0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(initialError);
   const [notice, setNotice] = useState("");
+  const serverSnapshot = useRef(initial);
+  useEffect(() => {
+    if (serverSnapshot.current === initial) return;
+    serverSnapshot.current = initial;
+    if (page === 0 && !appliedFilters.search && appliedFilters.status === initialStatus) {
+      setListing(initial);
+      return;
+    }
+    // A background server refresh must update the remembered filtered page,
+    // rather than replacing it with the server's unfiltered first page.
+    const controller = new AbortController();
+    void api(`/api/invoices?page=${page}&search=${encodeURIComponent(appliedFilters.search)}&status=${appliedFilters.status}${companyId ? `&companyId=${companyId}` : ""}`, undefined, "GET", controller.signal).then(setListing).catch(() => {});
+    return () => controller.abort();
+  }, [initial, page, appliedFilters, companyId, initialStatus, setListing]);
   useEffect(() => {
     const controller = new AbortController();
     const refresh = () => {
@@ -70,7 +93,7 @@ export function InvoiceWorkspace({
     };
     window.addEventListener("filazoo:agent-action", refresh);
     return () => { controller.abort(); window.removeEventListener("filazoo:agent-action", refresh); };
-  }, [page, appliedFilters, companyId, selected?.id]);
+  }, [page, appliedFilters, companyId, selected?.id, setListing]);
   const [confirm, setConfirm] = useState<"issue" | "void" | "delete" | null>(
     null,
   );
@@ -432,6 +455,7 @@ export function InvoiceWorkspace({
                     });
                     await open(selected.id);
                     setNotice("Payment recorded.");
+                    router.refresh();
                   })
                 }
               />
@@ -628,13 +652,12 @@ function PaymentForm({
       </label>
       <label className="grid gap-2 text-sm">
         Payment date
-        <input
+        <DatePicker
           required
-          type="date"
           max={today}
           value={paidOn}
           disabled={busy}
-          onChange={(event) => setPaidOn(event.target.value)}
+          onValueChange={setPaidOn}
         />
       </label>
       <label className="grid gap-2 text-sm">

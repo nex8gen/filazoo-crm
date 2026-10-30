@@ -29,11 +29,11 @@ export default async function CompanyCatalogsPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader title="Company Catalogs" description="Create tailored product selections for each company and buying context." actions={<NewCatalogButton companies={companies} products={products} canWrite={canWrite} />} />
+      <PageHeader title="Company Quotations" description="Prepare customer quotations from saved product selections, then record acceptance and create a draft order." actions={<NewCatalogButton companies={companies} products={products} canWrite={canWrite} label="New quotation" />} />
       <DataModeBanner mode={mode} />
       {catalogs.length === 0 ? (
-        <EmptyState icon={Library} title="No company catalogs yet" description="Create a tailored product selection after a company’s likely materials and products are known.">
-          <NewCatalogButton companies={companies} products={products} canWrite={canWrite} label="Create catalog" />
+        <EmptyState icon={Library} title="No company quotations yet" description="Choose a company and products to prepare your first quotation.">
+          <NewCatalogButton companies={companies} products={products} canWrite={canWrite} label="New quotation" />
         </EmptyState>
       ) : (
         <CompanyCatalogsTable catalogs={catalogs} />

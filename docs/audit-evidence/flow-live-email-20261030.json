@@ -1,0 +1,125 @@
+{
+  "checkedAt": "2026-10-30T03:37:59.102Z",
+  "recipient": "raul@filazoo.com",
+  "token": "workflow-qa-c701371f",
+  "realEmailCount": 2,
+  "receivedCount": 2,
+  "reports": [
+    {
+      "country": "US",
+      "run": {
+        "id": "dd0021bb-aa5b-4db0-8524-ef11b5f7d673",
+        "recipient": "raul@filazoo.com",
+        "status": "failed",
+        "next_run_at": null,
+        "created_at": "2026-10-30T03:19:19.39+00:00",
+        "result": [
+          {
+            "body": "Hello Workflow,\n\nThis is the requested automated workflow verification. No customer action is needed.",
+            "step": 1,
+            "sentAt": "2026-10-30T03:19:41.011Z",
+            "subject": "[Flow test] workflow-qa-c701371f nested match",
+            "messageId": "<5df15e7d-4b2c-e7d3-a2ac-7744a770f4e8@filazoo.com>",
+            "attachments": [
+              {
+                "size": 867243,
+                "filename": "footer-3b9c6e48-4a56-486a-838d-f46924d7c9b7.jpg"
+              },
+              {
+                "size": 566767,
+                "filename": "footer-04c69a3e-f93b-458e-973d-ed71b2f60440.gif"
+              },
+              {
+                "size": 980,
+                "filename": "footer-b75d6f3d-2d77-4481-8454-c32d0ef1b154.png"
+              },
+              {
+                "size": 1078,
+                "filename": "footer-35ee8091-6ca9-4ceb-82f8-04d200fd32af.png"
+              },
+              {
+                "size": 1591,
+                "filename": "footer-be0407da-1ac3-4f2a-a08f-2516fcdc50b2.png"
+              },
+              {
+                "size": 1285,
+                "filename": "footer-6db6e17e-6d59-42a8-8702-7d0a5293ba17.png"
+              },
+              {
+                "size": 738,
+                "filename": "footer-715502da-6bde-46a8-8d60-5d36c7fa71ca.png"
+              }
+            ]
+          }
+        ],
+        "error": "API key not valid. Please pass a valid API key."
+      }
+    },
+    {
+      "country": "GB",
+      "run": {
+        "id": "0ac963e0-4f2f-4b1b-9403-8827a49bbb33",
+        "recipient": "raul@filazoo.com",
+        "status": "completed",
+        "next_run_at": null,
+        "created_at": "2026-10-30T03:36:09.85+00:00",
+        "result": [
+          {
+            "body": "Hello Workflow,\n\nThis is the requested automated workflow verification. No customer action is needed.",
+            "step": 1,
+            "sentAt": "2026-10-30T03:37:30.875Z",
+            "subject": "[Flow test] workflow-qa-c701371f fallback catalog",
+            "messageId": "<be0a5d23-52af-ee88-9d6b-0a5db1fa35bf@filazoo.com>",
+            "attachments": [
+              {
+                "size": 1854113,
+                "filename": "Filazoo-product-catalog.pdf"
+              },
+              {
+                "size": 867243,
+                "filename": "footer-3b9c6e48-4a56-486a-838d-f46924d7c9b7.jpg"
+              },
+              {
+                "size": 566767,
+                "filename": "footer-04c69a3e-f93b-458e-973d-ed71b2f60440.gif"
+              },
+              {
+                "size": 980,
+                "filename": "footer-b75d6f3d-2d77-4481-8454-c32d0ef1b154.png"
+              },
+              {
+                "size": 1078,
+                "filename": "footer-35ee8091-6ca9-4ceb-82f8-04d200fd32af.png"
+              },
+              {
+                "size": 1591,
+                "filename": "footer-be0407da-1ac3-4f2a-a08f-2516fcdc50b2.png"
+              },
+              {
+                "size": 1285,
+                "filename": "footer-6db6e17e-6d59-42a8-8702-7d0a5293ba17.png"
+              },
+              {
+                "size": 738,
+                "filename": "footer-715502da-6bde-46a8-8d60-5d36c7fa71ca.png"
+              }
+            ]
+          }
+        ],
+        "error": null
+      }
+    }
+  ],
+  "received": [
+    {
+      "subject": "[Flow test] workflow-qa-c701371f nested match",
+      "messageId": "<5df15e7d-4b2c-e7d3-a2ac-7744a770f4e8@filazoo.com>",
+      "attachments": 7
+    },
+    {
+      "subject": "[Flow test] workflow-qa-c701371f fallback catalog",
+      "messageId": "<be0a5d23-52af-ee88-9d6b-0a5db1fa35bf@filazoo.com>",
+      "attachments": 8
+    }
+  ]
+}

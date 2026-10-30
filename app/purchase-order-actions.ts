@@ -113,11 +113,12 @@ export async function loadPurchaseOrderProducts(skus: string[]) {
   return invoiceProducts("", 0, "", input);
 }
 
-export async function listCompanyPurchaseOrders(companyId: string, page = 0) {
+export async function listCompanyPurchaseOrders(companyId: string, page = 0, orderId?: string) {
   await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   z.uuid().parse(companyId);
   z.number().int().min(0).max(100000).parse(page);
-  const { data, error, count } = await createSupabaseAdmin()
+  if (orderId) z.uuid().parse(orderId);
+  let query = createSupabaseAdmin()
     .from("purchase_orders")
     .select(
       "id,company_id,version,document,total_minor,created_at,invoices:invoices!invoices_purchase_order_id_fkey(id,number,status,total_minor,paid_minor,document)",
@@ -125,7 +126,9 @@ export async function listCompanyPurchaseOrders(companyId: string, page = 0) {
         count: "exact",
       },
     )
-    .eq("company_id", companyId)
+    .eq("company_id", companyId);
+  if (orderId) query = query.eq("id", orderId);
+  const { data, error, count } = await query
     .order("created_at", { ascending: false })
     .order("id")
     .range(page * 20, page * 20 + 19);

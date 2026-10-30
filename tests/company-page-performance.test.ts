@@ -44,6 +44,7 @@ function profileFixture(options: { denied?: boolean; demo?: boolean; missing?: b
     "../env.ts": { env: { authRequired: true }, hasSupabaseConfig: () => !options.demo },
     "../supabase/admin.ts": { createSupabaseAdmin: () => client },
     "../crm-model.ts": model,
+    "./company-orders.ts": { readCompanyPaidOrderCounts: async () => { assert.ok(authorized); return new Map([[id, 2]]); } },
     "../order-estimate.ts": { metaOrderLabel: () => "" },
     "./cached-member-avatars.ts": { resolveMemberAvatars: async (ids: string[]) => { avatarIds.push([...ids]); releaseOwners(); return new Map([["owner-1", "/owner.png"]]); } },
   });
@@ -58,6 +59,7 @@ test("profile loads only profile tables, retains primary contact and billing fie
   assert.equal(result.details.company.email, contact.email);
   assert.equal(result.details.company.ownerName, "Alice");
   assert.equal(result.details.company.ownerAvatarUrl, "/owner.png");
+  assert.equal(result.details.company.paidOrderCount, 2);
   assert.equal(result.details.contacts.length, 2);
   assert.equal(result.details.commerce.currency, "EUR");
   assert.equal(result.details.activity.length, 0);
@@ -105,6 +107,7 @@ async function renderPage(tab?: string, role = "admin", compose?: string, invoic
     "@/lib/data/crm": { getCompanyProfile: async () => { reads.push("profile"); return { details }; }, getCompanyDetails: async () => { reads.push("history"); return { details }; } },
     "@/lib/data/members": { listBdSalesManagers: async (options: { withAvatars: boolean }) => { assert.equal(options.withAvatars, false); return []; } },
     "@/components/ui/button": { buttonVariants: () => "" },
+    "@/components/company-order-badge": { CompanyOrderBadge: leaf("CompanyOrderBadge") },
     "@/components/company-workspace": { CompanyWorkspace: (props: Record<string, unknown>) => { rendered.push({ name: "CompanyWorkspace", props }); return [props.toolbar, props.profile, props.section]; } },
     "@/components/page-skeletons": { CompanyDetailsSkeleton: leaf("skeleton") },
     "@/components/workspace-skeletons": { CompanyBillingSkeleton: leaf("skeleton") },

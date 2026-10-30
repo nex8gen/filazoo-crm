@@ -1,11 +1,14 @@
 "use client";
+import Link from "next/link";
+import { quotationLabel, quotationStatusLabels, quotationToday } from "@/lib/quotations";
 import { Library } from "lucide-react";
 import { EmptyState } from "@/components/data-state";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 
 import { useLanguage } from "@/components/language-provider";
 import type { AppLanguage } from "@/lib/i18n";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useWorkspaceState } from "@/components/workspace-memory";
 import { filterCompanyCatalogs } from "@/lib/company-catalogs";
 import type { Catalog } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
@@ -25,10 +28,10 @@ export function CompanyCatalogsTable({ catalogs }: { catalogs: Catalog[] }) {
   const { preferences } = usePreferences();
   const PAGE_SIZE = preferences.tablePageSize;
   const { language } = useLanguage();
-  const [query, setQuery] = useState("");
-  const [currency, setCurrency] = useState("all");
-  const [draft, setDraft] = useState({ query: "", currency: "all" });
-  const [page, setPage] = useState(1);
+  const [query, setQuery] = useWorkspaceState("catalogs.query", "");
+  const [currency, setCurrency] = useWorkspaceState("catalogs.currency", "all");
+  const [draft, setDraft] = useWorkspaceState("catalogs.filters", { query: "", currency: "all" });
+  const [page, setPage] = useWorkspaceState("catalogs.page", 1);
 
   const currencies = useMemo(
     () => [...new Set(catalogs.map((catalog) => catalog.currency))].sort(),
@@ -46,7 +49,7 @@ export function CompanyCatalogsTable({ catalogs }: { catalogs: Catalog[] }) {
   return (
     <div className="space-y-6">
       <TableFilters onApply={() => { setQuery(draft.query); setCurrency(draft.currency); setPage(1); }}>
-        <TableFilter label="Search catalog" search><Input value={draft.query} onChange={(event) => setDraft({ ...draft, query: event.target.value })} placeholder="Company, SKU, or version" /></TableFilter>
+        <TableFilter label="Search quotations" search><Input value={draft.query} onChange={(event) => setDraft({ ...draft, query: event.target.value })} placeholder="Company, SKU, or quotation reference" /></TableFilter>
         <TableFilter label="Currency"><Select value={draft.currency} onValueChange={(value) => setDraft({ ...draft, currency: value ?? "all" })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All currencies</SelectItem>{currencies.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select></TableFilter>
       </TableFilters>
 
@@ -68,7 +71,9 @@ export function CompanyCatalogsTable({ catalogs }: { catalogs: Catalog[] }) {
                 <TableCell className="pl-4">
                   <div className="min-w-0">
                     <p className="truncate font-medium">{catalog.company}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">Catalog v{catalog.version}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{quotationLabel(catalog)}</p>
+                    <Link href={`/catalogs/companies/${catalog.id}`} className="mt-2 inline-block text-sm text-primary underline">{language === "zh-CN" ? "打开报价" : "Open quotation"}</Link>
+                    <p className="mt-1 text-xs text-muted-foreground">{(() => { const status = catalog.quoteOrderId ? "converted" : catalog.quoteStatus === "shared" && catalog.quoteValidUntil && catalog.quoteValidUntil < quotationToday() ? "expired" : catalog.quoteStatus ?? "draft"; const zh = { draft: "草稿", shared: "已分享", accepted: "已接受", declined: "已拒绝", cancelled: "已取消", superseded: "已有新版本", expired: "已过期", converted: "已创建订单" }; return language === "zh-CN" ? zh[status] : quotationStatusLabels[status]; })()}</p>
                   </div>
                 </TableCell>
 
@@ -99,7 +104,7 @@ export function CompanyCatalogsTable({ catalogs }: { catalogs: Catalog[] }) {
                 </TableCell>
 
                 <TableCell>
-                  <CompanyCatalogPdfActions catalog={catalog} />
+                  {catalog.quoteValidUntil ? <div className="flex flex-wrap gap-3 text-sm text-primary underline"><a href={`/api/catalogs/${catalog.id}/quotation/pdf`} target="_blank" rel="noreferrer">{language === "zh-CN" ? "预览报价" : "Preview quotation"}</a><a href={`/api/catalogs/${catalog.id}/quotation/pdf?download=1`}>{language === "zh-CN" ? "下载报价" : "Download quotation"}</a></div> : <CompanyCatalogPdfActions catalog={catalog} />}
                   {catalog.pdfUrl && !catalog.pdfUrl.startsWith("/api/catalogs/") ? <a className="mt-2 block text-xs text-primary underline" href={catalog.pdfUrl} target="_blank" rel="noreferrer">Original PDF</a> : null}
                 </TableCell>
 

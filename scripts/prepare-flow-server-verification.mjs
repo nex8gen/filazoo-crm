@@ -1,0 +1,17 @@
+import { cpSync, mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { parseEnv } from "node:util";
+import { randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
+const stage = ".vercel/workflow-server-source-approved";
+mkdirSync(stage, { recursive: true });
+const checkpoint = "docs/audit-evidence/flow-live-ai-email-checkpoint-20261030.json";
+if (!existsSync(checkpoint)) writeFileSync(checkpoint, JSON.stringify({ id: randomUUID() }, null, 2));
+for (const path of ["lib", "public/fonts", "public/catalog-default-product.jpg", "package.json", "package-lock.json", "scripts/verify-flow-live-ai-email.ts", checkpoint]) cpSync(path, `${stage}/${path}`, { recursive: true });
+const local = parseEnv(readFileSync(".env.local", "utf8"));
+const keys = ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY", "GEMINI_API_KEY", "GEMINI_EMAIL_MODEL", "DAILY_SEND_LIMIT", "BOUNCE_PAUSE_PERCENT"];
+const env = Object.fromEntries(keys.filter((key) => local[key]).map((key) => [key, local[key]]));
+env.DRY_RUN = "true";
+env.NEXT_PUBLIC_APP_URL = "https://crm.filazoosupply.com";
+writeFileSync(`${stage}/.env.local`, Object.entries(env).map(([key, value]) => `${key}=${JSON.stringify(value)}`).join("\n"));
+execFileSync("tar", ["-czf", ".vercel/workflow-server-source.tar.gz", "-C", stage, "."], { stdio: "pipe" });
+console.log("Prepared supported-region verification package with only required application credentials. No production flow is activated.");

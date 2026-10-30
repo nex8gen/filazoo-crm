@@ -41,7 +41,7 @@ export function ColumnResizeHandle({ label, variable, container, panel, min, max
     if (horizontal) {
       const conversation = root.querySelector<HTMLElement>(".mail-conversation");
       const height = root.getBoundingClientRect().height;
-      return Math.max(min, Math.min(max, height * 0.65, height - 160, target.getBoundingClientRect().height + (conversation?.getBoundingClientRect().height ?? 0) - 100));
+      return Math.max(min, Math.min(max, height * 0.75, height - 120, target.getBoundingClientRect().height + (conversation?.getBoundingClientRect().height ?? 0) - 100));
     }
     if (variable === "--workspace-ai-preferred-width") return Math.max(min, Math.min(max, window.innerWidth - 600));
     const visibleReader = root.querySelector<HTMLElement>(".mail-reader");

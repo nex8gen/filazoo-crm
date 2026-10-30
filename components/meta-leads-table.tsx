@@ -2,7 +2,7 @@
 import { Users } from "lucide-react";
 
 import { EmptyState } from "@/components/data-state";
-import { useState } from "react";
+import { useWorkspaceState } from "@/components/workspace-memory";
 import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -25,9 +25,9 @@ type Lead = {
 export function MetaLeadsTable({ leads }: { leads: Lead[] }) {
   const { preferences } = usePreferences();
   const pageSize = preferences.tablePageSize;
-  const [search, setSearch] = useState("");
-  const [query, setQuery] = useState("");
-  const [page, setPage] = useState(1);
+  const [search, setSearch] = useWorkspaceState("meta-leads.search", "");
+  const [query, setQuery] = useWorkspaceState("meta-leads.query", "");
+  const [page, setPage] = useWorkspaceState("meta-leads.page", 1);
   const filtered = leads.filter((lead) => [lead.full_name, lead.email, lead.phone, lead.owner, lead.form_id, lead.ad_id].some((value) => value?.toLowerCase().includes(query.trim().toLowerCase())));
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, pageCount);

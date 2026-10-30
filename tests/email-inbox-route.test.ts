@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
 
-function setup() {
+function setup(queueFailure = false) {
   const viewer = { id: "actor", role: "bd_manager" };
   const mailboxes = [{ id: "mine", type: "personal", userId: "actor" }, { id: "team", type: "workspace" }];
   const counts = { auth: 0, mailboxes: 0, inbox: 0, sync: 0 };
@@ -21,7 +21,7 @@ function setup() {
       assert.equal((options.context as { mailboxes: unknown }).mailboxes, mailboxes);
       return { selectedMailboxId: options.mailboxId ?? "mine", emails: [] };
     } },
-    "@/lib/data/mailbox-sync": { loadSyncedMailbox: async () => { counts.sync++; } },
+    "@/lib/data/mail-sync-worker": { enqueueMailboxSync: async () => { counts.sync++; if (queueFailure) throw new Error("Database unavailable"); }, readMailboxSyncHealth: async () => ({ state: "waiting", history: "idle" }) },
     "@/lib/data/crm": { getCompanyDetails: async (id: string) => ({ details: id === "customer" ? { company: { id, name: "Customer", email: "buyer@example.test" }, contacts: [{ email: "accounts@example.test" }] } : null }) },
     "@/lib/data/company-emails": { getCompanyEmailBackendData: async (company: { id: string; emails: string[] }, context: { viewer: unknown; mailboxes: unknown }) => {
       assert.equal(context.viewer, viewer);
@@ -49,11 +49,10 @@ test("preloading authorizes once, reads mailbox settings once and starts no prov
   assert.match(response.headers.get("Server-Timing")!, /auth;dur=.*inbox;dur=/);
 });
 
-test("active inbox refresh reuses authorized mailbox settings for background provider sync", async () => {
+test("active inbox refresh durably enqueues authorized work before returning", async () => {
   const { GET, counts, background } = setup();
   assert.equal((await GET(new Request("http://localhost/api/email/inbox?mailboxId=team"))).status, 200);
-  assert.equal(background.length, 1);
-  await background[0]();
+  assert.equal(background.length, 0, "No IMAP work may depend on Next after() lifetime");
   assert.deepEqual(counts, { auth: 1, mailboxes: 1, inbox: 1, sync: 1 });
 });
 
@@ -74,7 +73,6 @@ test("company refresh reads combined history and refreshes every authorized acco
   assert.equal((await response.json()).emails[0].id, "workspace-message");
   assert.deepEqual(backend.companyReads, ["customer"]);
   assert.equal(backend.counts.inbox, 0, "Company history must not fall back to the default personal inbox");
-  await backend.background[0]();
   assert.equal(backend.counts.sync, 2);
 });
 
@@ -85,4 +83,14 @@ test("missing company cannot read or sync any mailbox", async () => {
   assert.equal(backend.counts.inbox, 0);
   assert.equal(backend.companyReads.length, 0);
   assert.equal(backend.background.length, 0);
+});
+
+test("queue outages still return saved mail and an actionable refresh error", async () => {
+  const backend = setup(true);
+  const response = await backend.GET(new Request("http://localhost/api/email/inbox?mailboxId=team"));
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.deepEqual(data.emails, []);
+  assert.match(data.syncQueueError, /could not be queued/);
+  assert.equal(data.selectedMailboxId, "team");
 });

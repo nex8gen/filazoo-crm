@@ -19,6 +19,8 @@ function fixture() {
   const env: Record<string, string> = { GEMINI_API_KEY: "synthetic-test-key" };
   let catalogPlan = { intent: "none", scope: "all", productSkus: [] as string[] };
   let replyBodies = ["Hello from a synthetic test"];
+  let geminiError: string | null = null;
+  let gatewayError: string | null = null;
   const exports = {} as { generateFlowAiReply: (input: Row) => Promise<{ subject: string; body: string; inReplyTo: string | null; attachments: Array<{ content: Buffer }> }>; prepareFlowTemplateCatalog: () => Promise<Array<{ content: Buffer }>> };
   const query = { select: () => query, eq: () => query, order: () => query, range: () => query, throwOnError: async () => ({ data: productRows }) };
   const dependencies: Record<string, unknown> = {
@@ -29,17 +31,18 @@ function fixture() {
     "../invoice-links.ts": { invoiceProduct },
     "../catalog-pdf-server.ts": { buildServerCatalogPdf: async (...args: Parameters<typeof buildCatalogPdf>) => { catalogRequests.push(args[0]); return buildCatalogPdf(...args); } },
     "../ai/gemini.ts": { generateGeminiText: async (input: typeof calls[number]) => {
+      if (geminiError) throw new Error(geminiError);
       calls.push(input);
       if (JSON.parse(input.prompt).task === "select_catalog_products") return JSON.stringify(catalogPlan);
       const body = replyBodies.length > 1 ? replyBodies.shift()! : replyBodies[0];
       return JSON.stringify({ subject: "Synthetic subject", body, quotes: [] });
     } },
-    "../ai/gateway.ts": {}, "../ai/flow-reply.ts": replyPolicy,
+    "../ai/gateway.ts": { isGeminiRegionError: (error: Error) => /location is not supported/.test(error.message), generateGatewayText: async () => { if (gatewayError) throw new Error(gatewayError); return JSON.stringify({ subject: "Fallback", body: "Fallback reply", quotes: [] }); } }, "../ai/flow-reply.ts": replyPolicy,
     "../ai/email-rewrite.ts": signatures,
   };
   const code = ts.transpileModule(readFileSync(new URL("../lib/data/flow-ai-reply.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => dependencies[name] ?? require(name), process: { env }, Buffer });
-  return { calls, catalogRequests, exports, env, setCatalog: (plan: typeof catalogPlan) => { catalogPlan = plan; }, setBodies: (bodies: string[]) => { replyBodies = [...bodies]; } };
+  vm.runInNewContext(code, { exports, require: (name: string) => dependencies[name] ?? require(name), process: { env }, Buffer, Error });
+  return { calls, catalogRequests, exports, env, setProviderErrors: (primary: string, fallback: string) => { geminiError = primary; gatewayError = fallback; }, setCatalog: (plan: typeof catalogPlan) => { catalogPlan = plan; }, setBodies: (bodies: string[]) => { replyBodies = [...bodies]; } };
 }
 
 const productRows = ["PLA", "PETG", "ABS"].map((material) => ({ sku: material, name: `Synthetic ${material}`, material,
@@ -48,6 +51,13 @@ const productRows = ["PLA", "PETG", "ABS"].map((material) => ({ sku: material, n
 const baseInput = () => ({ config: blankStep("ai_auto_reply").config, contact: { name: "Synthetic customer", email: "synthetic@example.com" },
   company: { name: "Synthetic company" }, managerName: "Synthetic manager", productRows,
   messages: [{ subject: "Material inquiry", body: "Synthetic message", direction: "received", created_at: "2026-10-27T00:00:00Z", message_id: "<synthetic@example.com>", thread_id: "synthetic-thread" }], previousAutomatedMessages: 1 });
+
+test("a failed local fallback preserves the actual Google location blocker in the user-facing error", async () => {
+  const app = fixture();
+  app.env.VERCEL_OIDC_TOKEN = "synthetic-expired-token";
+  app.setProviderErrors("User location is not supported for the API use.", "AI Gateway authentication has expired. Refresh the development token.");
+  await assert.rejects(app.exports.generateFlowAiReply({ ...baseInput(), config: { ...blankStep("ai_auto_reply").config, attachCatalog: false } }), /Gemini is unavailable from this server location.*authentication has expired/);
+});
 
 test("AI product, price, catalog, first-message, language, instructions and threading options reach generation", async () => {
   const app = fixture();

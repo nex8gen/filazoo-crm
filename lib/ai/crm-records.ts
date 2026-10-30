@@ -29,11 +29,11 @@ async function readPersonalProducts(viewer: WorkspaceViewer, input: CrmRead) {
 
 /** Explicit projections prevent credentials, tokens and raw webhook payloads entering prompts. */
 const resources = {
-  companies: { table: "companies", fields: "id,name,website,country,city,segment,status,contacts(id,name,email),pipeline(stage,owner_id,next_followup_at,estimated_value,currency)", search: "name", order: "id" },
+  companies: { table: "companies", fields: "id,name,website,country,city,segment,status,contacts(id,name,email),account: pipeline(owner_id,next_followup_at)", search: "name", order: "id" },
   products: { table: "products", fields: "sku,name,material,color,diameter,weight,price,currency,moq,stock_status,lead_time,image_url,tags,active,sheet_updated_at", search: "name", order: "sku" },
   orders: { table: "purchase_orders", fields: "id,company_id,reference,document,version,total_minor,created_at", search: "reference", order: "created_at" },
   invoices: { table: "invoices", fields: "id,company_id,number,status,revision,total_minor,paid_minor,document,created_by,created_at", search: "number", order: "created_at" },
-  tasks: { table: "crm_tasks", fields: "id,company_id,assigned_to,title,notes,priority,status,due_at,created_at", search: "title", order: "created_at" },
+  tasks: { table: "crm_tasks", fields: "id,company_id,assigned_to,title,notes,priority,status,due_at,created_at,workflow:crm_task_workflows(kind,status,invoice_id,revision)", search: "title", order: "created_at" },
   alerts: { table: "internal_notifications", fields: "id,message,channel,conversation_id,read_at,created_at", search: "message", order: "created_at" },
   catalogs: { table: "catalogs", fields: "id,company_id,currency,product_skus,version,price_date,created_at", search: "id", order: "created_at" },
   messages: { table: "meta_messages", fields: "id,thread_id,sender_id,recipient_id,customer_name,direction,body,source,created_at", search: "customer_name", order: "created_at" },

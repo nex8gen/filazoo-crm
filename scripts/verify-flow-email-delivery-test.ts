@@ -27,7 +27,11 @@ globalThis.fetch = async (input, init) => {
   const url = String(input);
   if (url.startsWith("https://generativelanguage.googleapis.com/")) {
     counters.ai++;
-    return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify({ subject: "Product catalog test", body: "Hi Test,\n\nThe product catalog is attached. Which material and quantity do you need?", quotes: [] }) }] } }] });
+    const body = JSON.parse(String(init?.body || "{}"));
+    const prompt = JSON.parse(body.contents?.[0]?.parts?.[0]?.text || "{}");
+    const output = prompt.task === "select_catalog_products" ? { intent: "requested", scope: "all", productSkus: [] }
+      : { subject: "Product catalog test", body: "Hi Test,\n\nThe product catalog is attached. Which material and quantity do you need?", quotes: [] };
+    return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify(output) }] } }] });
   }
   if (url.startsWith("https://ai-gateway.vercel.sh/")) throw new Error("Unexpected AI fallback during verification.");
   return originalFetch(input, init);
@@ -56,9 +60,9 @@ try {
   assert.equal(completed.status, "completed", completed.error || "");
   assert.equal(completed.result.length, 1);
   assert.equal(completed.result[0].messageId, "<flow-test-intercepted@example.invalid>");
-  assert.equal(completed.result[0].attachments.length, 1);
-  assert.ok(completed.result[0].attachments[0].size > 100);
-  assert.equal(counters.smtp, 1); assert.equal(counters.ai, 1);
+  assert.equal(completed.result[0].attachments.filter((item) => item.filename.endsWith(".pdf")).length, 1);
+  assert.ok(completed.result[0].attachments.find((item) => item.filename.endsWith(".pdf"))!.size > 100);
+  assert.equal(counters.smtp, 1); assert.equal(counters.ai, 2);
   await processFlowEmailDeliveryTest(id, userId);
   assert.equal(counters.smtp, 1);
   const { count: sent } = await admin.from("mailbox_sent_messages").select("id", { count: "exact", head: true }).eq("thread_key", `flow-test:${id}`).throwOnError();

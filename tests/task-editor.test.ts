@@ -30,6 +30,7 @@ function editor(task?: ActivityTask) {
   const dependencies: Record<string, unknown> = {
     react, "react/jsx-runtime": { jsx, jsxs: jsx }, "lucide-react": {},
     "@/components/ui/button": { Button: "button" }, "@/components/ui/dialog": {}, "@/lib/company-followup": dates,
+    "@/components/ui/date-picker": { DatePicker: "date-picker" },
     "./task-assignee-picker": { TaskAssigneePicker: "assignee-picker" },
   };
   const exports = {} as { TaskEditor: (props: unknown) => Element };

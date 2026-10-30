@@ -1,5 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
+import { uploadFlowAttachment } from "../attachment-upload.ts";
+import { submitFlowEmail } from "../flow-smtp.ts";
 import { flowEmailDeliveryTestSchema, flowEmailTestTrace, type FlowEmailDeliveryTestInput, type FlowEmailDeliveryTestRun } from "../flow-email-test.ts";
 import { flowStepAtPath } from "../flow-engine.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
@@ -131,13 +133,12 @@ export async function processFlowEmailDeliveryTest(id: string, userId: string) {
     const stored: Array<{ filename: string; contentType?: string; size: number; path: string; cid?: string }> = [];
     for (const [index, attachment] of content.attachments.entries()) {
       const path = `${userId}/${recordId}/${index}`;
-      const upload = await admin.storage.from("mailbox-attachments").upload(path, attachment.content, { contentType: attachment.contentType, upsert: false });
-      if (upload.error) throw new Error(`Could not store the test attachment: ${upload.error.message}`);
       uploadedPaths.push(path);
+      await uploadFlowAttachment((options) => admin.storage.from("mailbox-attachments").upload(path, attachment.content, { contentType: attachment.contentType, ...options }));
       stored.push({ filename: attachment.filename, contentType: attachment.contentType, size: attachment.content.length, path, cid: attachment.cid });
     }
-    const sent = await sendMailboxEmail({ host: mailbox.smtpHost, port: mailbox.smtpPort, user: mailbox.smtpUsername, pass: mailbox.smtpPassword, from: mailbox.email },
-      { to: row.recipient, subject, ...content });
+    const sent = await submitFlowEmail(() => sendMailboxEmail({ host: mailbox.smtpHost, port: mailbox.smtpPort, user: mailbox.smtpUsername, pass: mailbox.smtpPassword, from: mailbox.email },
+      { to: row.recipient, subject, ...content }));
     smtpAccepted = true;
     const sentAt = new Date().toISOString();
     row.result.push({ step: action.step, subject, body: reply.body, messageId: sent.messageId || null, sentAt, attachments: stored.map(({ filename, size }) => ({ filename, size })) });

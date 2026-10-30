@@ -2,17 +2,17 @@ import { isSampleEmailSubject } from "../email-samples.ts";
 export { isSampleEmailSubject } from "../email-samples.ts";
 import { requireWorkspaceMember } from "../auth.ts";
 import type { WorkspaceViewer } from "../auth.ts";
-import { formatRelativeDate, getInitials, getPipelineStageLabel } from "../crm-model.ts";
+import { formatRelativeDate, getInitials } from "../crm-model.ts";
 import { env, hasSupabaseConfig } from "../env.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
-import type { ActivityItem, Catalog, Company, CompanyActivity, CompanyDetails, ContactOption, DataMode, EmailDraft, Product, Reply } from "../types.ts";
+import type { Catalog, Company, CompanyActivity, CompanyDetails, ContactOption, DataMode, EmailDraft, Product, Reply } from "../types.ts";
 import { crmProduct } from "../product-utils.ts";
 import { withPersonalProducts } from "./product-personalization.ts";
-import { metaOrderLabel } from "../order-estimate.ts";
 import { billingActivity, sentMailActivity, mergeCompanyActivity, type ActivityInvoice, type ActivityInvoiceEvent, type ActivityPayment, type ActivitySentMail } from "../company-activity.ts";
 import { readActivityHistory } from "./activity-history.ts";
 import { literalInvoiceEmail } from "../invoice-related.ts";
 import { resolveMemberAvatars } from "./cached-member-avatars.ts";
+import { readCompanyPaidOrderCounts } from "./company-orders.ts";
 
 type Relation<T> = T | T[] | null;
 
@@ -70,13 +70,6 @@ type EmailRow = {
   }>;
 };
 
-type EventRow = {
-  type: string;
-  data: Record<string, unknown> | null;
-  created_at: string;
-  companies: Relation<{ name: string }>;
-};
-
 type ContactOptionRow = {
   id: string;
   company_id: string;
@@ -95,6 +88,9 @@ type CatalogRow = {
   pdf_url: string | null;
   created_at: string;
   companies: Relation<{ name: string }>;
+  quote_status?: Catalog["quoteStatus"];
+  quote_order_id?: string | null;
+  quote_valid_until?: string | null;
 };
 
 type ReplyRow = {
@@ -157,7 +153,7 @@ async function authorizeLiveRead() {
   }
 }
 
-function mapCompany(row: CompanyRow, ownerNames = new Map<string, string>(), ownerAvatars = new Map<string, string>()): Company {
+function mapCompany(row: CompanyRow, ownerNames = new Map<string, string>(), ownerAvatars = new Map<string, string>(), paidOrderCount = 0): Company {
   const profile = first(row.company_profiles);
   const contact = first(row.contacts);
   const pipeline = first(row.pipeline);
@@ -180,12 +176,9 @@ function mapCompany(row: CompanyRow, ownerNames = new Map<string, string>(), own
     source: row.source || "imported",
     sourceLabel: sourceLabel(row.source),
     addedAt: row.discovered_at || row.created_at,
+    paidOrderCount,
     fitScore: profile?.fit_score ?? 0,
-    stage: getPipelineStageLabel(pipeline?.stage || row.status),
     outreachStatus: getOutreachStatus(row.contacts, row.source),
-    estimatedOrderQuantity: pipeline?.estimated_order_quantity ?? null,
-    estimatedOrderLabel: metaOrderLabel(Array.isArray(row.meta_leads) ? row.meta_leads : row.meta_leads ? [row.meta_leads] : [], pipeline?.estimated_order_quantity ?? null),
-    estimatedValue: pipeline?.estimated_value == null ? null : Number(pipeline.estimated_value),
     currency: pipeline?.currency || "USD",
     nextFollowupAt: pipeline?.next_followup_at || null,
     nextAction: pipeline?.next_followup_at ? `Follow up ${formatRelativeDate(pipeline.next_followup_at).toLowerCase()}` : "Review company",
@@ -220,13 +213,13 @@ export async function listSegmentCompanies(): Promise<{ mode: DataMode; companie
   const companies: import("../segments.ts").SegmentCompany[] = [];
   for (let offset = 0; ; offset += 500) {
     const { data, error } = await createSupabaseAdmin().from("companies")
-      .select("id,name,segment,country,source,status,company_profiles(fit_score),contacts(email),pipeline(stage)")
+      .select("id,name,segment,country,source,status,company_profiles(fit_score),contacts(email)")
       .or("source.is.null,source.neq.sample_seed").order("created_at", { ascending: false }).order("id").range(offset, offset + 499);
     if (error) throw new Error(`Unable to load segments: ${error.message}`);
     for (const row of (data ?? []) as unknown as CompanyRow[]) companies.push({
       id: row.id, name: row.name, segment: row.segment || "Unclassified", country: row.country || "Unknown",
       source: row.source || "imported", sourceLabel: sourceLabel(row.source),
-      stage: getPipelineStageLabel(first(row.pipeline)?.stage || row.status), fitScore: first(row.company_profiles)?.fit_score ?? 0,
+      fitScore: first(row.company_profiles)?.fit_score ?? 0,
       hasEmail: Boolean(first(row.contacts)?.email?.trim()),
     });
     if ((data?.length ?? 0) < 500) break;
@@ -247,7 +240,7 @@ async function queryCompanies(id?: string, options: { ids?: string[]; maxCompani
   for (let offset = 0; ; offset += 500) {
     const query = createSupabaseAdmin()
       .from("companies")
-      .select("id,name,website,domain,country,city,segment,source,status,discovered_at,created_at,meta_leads(created_at,field_data),company_profiles(summary,fit_score,interest_tags),contacts(id,name,role,email,verification_status,emails(status,direction,created_at)),pipeline(stage,next_followup_at,estimated_order_quantity,estimated_value,currency,owner_id)")
+      .select("id,name,website,domain,country,city,segment,source,status,discovered_at,created_at,meta_leads(created_at,field_data),company_profiles(summary,fit_score,interest_tags),contacts(id,name,role,email,verification_status,emails(status,direction,created_at)),pipeline(next_followup_at,currency,owner_id)")
       .or("source.is.null,source.neq.sample_seed")
       .order("created_at", { ascending: false })
       .order("id")
@@ -260,12 +253,13 @@ async function queryCompanies(id?: string, options: { ids?: string[]; maxCompani
     if (!data || data.length < 500) break;
   }
   const ownerIds = [...new Set(rows.map((row) => first(row.pipeline)?.owner_id).filter((value): value is string => Boolean(value)))];
-  const [{ data: owners }, ownerAvatars] = await Promise.all([
+  const [{ data: owners }, ownerAvatars, paidOrders] = await Promise.all([
     ownerIds.length ? createSupabaseAdmin().from("workspace_members").select("user_id,display_name").in("user_id", ownerIds) : Promise.resolve({ data: [] }),
     resolveMemberAvatars(ownerIds),
+    readCompanyPaidOrderCounts(createSupabaseAdmin(), rows.map(row => row.id)),
   ]);
   const ownerNames = new Map((owners ?? []).map((owner) => [owner.user_id, owner.display_name || "BD Sales Manager"]));
-  return rows.map((row) => mapCompany(row, ownerNames, ownerAvatars));
+  return rows.map((row) => mapCompany(row, ownerNames, ownerAvatars, paidOrders.get(row.id) ?? 0));
 }
 
 type CompanyEventRow = { id: string; type: string; data: Record<string, unknown> | null; actor_id: string | null; created_at: string };
@@ -280,7 +274,7 @@ export async function getCompanyProfile(id: string): Promise<{ mode: DataMode; d
   if (!/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(id)) return { mode, details: null };
   const admin = createSupabaseAdmin();
   const companyResult = await admin.from("companies")
-    .select("id,name,website,domain,country,city,segment,source,status,discovered_at,created_at,meta_leads(created_at,field_data),company_profiles(summary,fit_score,interest_tags),pipeline(stage,next_followup_at,estimated_order_quantity,estimated_value,currency,owner_id),contacts(id,name,role,email,verification_status),customer_billing_profiles(profile)")
+    .select("id,name,website,domain,country,city,segment,source,status,discovered_at,created_at,meta_leads(created_at,field_data),company_profiles(summary,fit_score,interest_tags),pipeline(next_followup_at,currency,owner_id),contacts(id,name,role,email,verification_status),customer_billing_profiles(profile)")
     .eq("id", id).order("created_at", { referencedTable: "contacts" }).order("id", { referencedTable: "contacts" }).maybeSingle();
   if (companyResult.error) throw new Error(`Unable to load company profile: ${companyResult.error.message}`);
   if (!companyResult.data) return { mode, details: null };
@@ -288,16 +282,17 @@ export async function getCompanyProfile(id: string): Promise<{ mode: DataMode; d
   const contacts = row.contacts ?? [];
   const companyRow = row as unknown as CompanyRow;
   const ownerId = first(companyRow.pipeline)?.owner_id;
-  const [{ data: owner }, avatars] = await Promise.all([
+  const [{ data: owner }, avatars, paidOrders] = await Promise.all([
     ownerId ? admin.from("workspace_members").select("display_name").eq("user_id", ownerId).maybeSingle() : Promise.resolve({ data: null }),
     resolveMemberAvatars(ownerId ? [ownerId] : []),
+    readCompanyPaidOrderCounts(admin, [id]),
   ]);
   const ownerNames = new Map<string, string>();
   if (ownerId) ownerNames.set(ownerId, owner?.display_name || "BD Sales Manager");
   return {
     mode,
     details: {
-      company: mapCompany(companyRow, ownerNames, avatars),
+      company: mapCompany(companyRow, ownerNames, avatars, paidOrders.get(id) ?? 0),
       contacts: contacts.map(contact => ({ id: contact.id, name: contact.name || "No name", role: contact.role || "Role not confirmed", email: contact.email, verificationStatus: contact.verification_status })),
       commerce: first(row.customer_billing_profiles)?.profile,
       activity: [],
@@ -311,7 +306,7 @@ export async function getCompanyDetails(id: string): Promise<{ mode: DataMode; d
   const viewer = await requireWorkspaceMember();
   const admin = createSupabaseAdmin();
   const [companyResult, contactsResult, eventsResult, emailsResult, catalogsResult, commerceResult] = await Promise.all([
-    admin.from("companies").select("id,name,website,domain,country,city,segment,source,status,discovered_at,created_at,meta_leads(created_at,field_data),company_profiles(summary,fit_score,interest_tags),contacts(id,name,role,email,verification_status,emails(status,direction,created_at)),pipeline(stage,next_followup_at,estimated_order_quantity,estimated_value,currency,owner_id)").eq("id", id).maybeSingle(),
+    admin.from("companies").select("id,name,website,domain,country,city,segment,source,status,discovered_at,created_at,meta_leads(created_at,field_data),company_profiles(summary,fit_score,interest_tags),contacts(id,name,role,email,verification_status,emails(status,direction,created_at)),pipeline(next_followup_at,currency,owner_id)").eq("id", id).maybeSingle(),
     admin.from("contacts").select("id,name,role,email,verification_status").eq("company_id", id).order("created_at").order("id"),
     readActivityHistory((from, to) => admin.from("events").select("id,type,data,actor_id,created_at").eq("company_id", id).order("created_at", { ascending: false }).order("id").range(from, to)),
     readActivityHistory((from, to) => admin.from("emails").select("id,message_id,subject,body,status,direction,approved_by,sent_at,created_at,contacts!inner(name,email,company_id)").eq("contacts.company_id", id).order("created_at", { ascending: false }).order("id").range(from, to)),
@@ -326,7 +321,7 @@ export async function getCompanyDetails(id: string): Promise<{ mode: DataMode; d
   const events = eventsResult as CompanyEventRow[];
   const emails = emailsResult as unknown as CompanyEmailRow[];
   const addresses = [...new Set((contactsResult.data ?? []).map((contact) => contact.email))];
-  const [sentMail, invoiceGroups] = await Promise.all([
+  const [sentMail, invoiceGroups, paidOrders] = await Promise.all([
     addresses.length ? readActivityHistory<ActivitySentMail>((from, to) => admin.from("mailbox_sent_messages").select("id,user_id,from_email,to_email,subject,body,status,sent_at,message_id,attachments").in("to_email", addresses).order("sent_at", { ascending: false }).order("id").range(from, to)) : Promise.resolve([]),
     // Legacy invoices
     // match exact customer emails only when not linked to another company.
@@ -334,6 +329,7 @@ export async function getCompanyDetails(id: string): Promise<{ mode: DataMode; d
       readActivityHistory<ActivityInvoice>((from, to) => admin.from("invoices").select("id,number,status,total_minor,paid_minor,created_by,created_at,document").eq("company_id", id).order("id").range(from, to)),
       ...addresses.map((email) => readActivityHistory<ActivityInvoice>((from, to) => admin.from("invoices").select("id,number,status,total_minor,paid_minor,created_by,created_at,document").is("company_id", null).ilike("document->>customerEmail", literalInvoiceEmail(email)).order("id").range(from, to))),
     ]),
+    readCompanyPaidOrderCounts(admin, [id]),
   ]);
   const invoices = [...new Map(invoiceGroups.flat().map((invoice) => [invoice.id, invoice])).values()];
   const invoiceIds = invoices.map((invoice) => invoice.id);
@@ -353,7 +349,7 @@ export async function getCompanyDetails(id: string): Promise<{ mode: DataMode; d
 
   const activity: CompanyActivity[] = mergeCompanyActivity([
     // Billing audit rows and payments provide one detailed entry per action.
-    ...events.filter((event) => !(event.type === "catalog_created" && event.actor_id !== viewer.id) && !invoices.some((invoice) => invoice.id === event.data?.invoiceId && event.type.startsWith("invoice_")) && !(event.type === "catalog_created" && (catalogsResult as CompanyCatalogRow[]).some((catalog) => catalog.id === event.data?.catalogId))).map((event) => ({
+    ...events.filter((event) => !((event.type === "catalog_created" || event.type.startsWith("catalog_quotation_")) && event.actor_id !== viewer.id) && !invoices.some((invoice) => invoice.id === event.data?.invoiceId && event.type.startsWith("invoice_")) && !(event.type === "catalog_created" && (catalogsResult as CompanyCatalogRow[]).some((catalog) => catalog.id === event.data?.catalogId))).map((event) => ({
       id: `event-${event.id}`,
       type: "event" as const,
       title: event.type.replaceAll("_", " "),
@@ -385,6 +381,7 @@ export async function getCompanyDetails(id: string): Promise<{ mode: DataMode; d
         id: `catalog-${catalog.id}`,
         type: "catalog" as const,
         title: `Catalog v${catalog.version} created`,
+        href: `/catalogs/companies/${catalog.id}`,
         detail: `${catalog.product_skus?.length ?? 0} products included.`,
         actor: creatorId ? memberNames.get(creatorId) || "Workspace member" : "Creator not recorded",
         actorId: creatorId,
@@ -402,7 +399,7 @@ export async function getCompanyDetails(id: string): Promise<{ mode: DataMode; d
     mode,
     details: {
       commerce: commerceResult.data?.profile,
-      company: { ...mapCompany(companyRow, ownerNames, actorAvatars), ...(contactsResult.data?.[0] ? { contact: contactsResult.data[0].name || "No contact yet", contactRole: contactsResult.data[0].role || "Role not confirmed", email: contactsResult.data[0].email } : {}) },
+      company: { ...mapCompany(companyRow, ownerNames, actorAvatars, paidOrders.get(id) ?? 0), ...(contactsResult.data?.[0] ? { contact: contactsResult.data[0].name || "No contact yet", contactRole: contactsResult.data[0].role || "Role not confirmed", email: contactsResult.data[0].email } : {}) },
       contacts: (contactsResult.data ?? []).map((contact) => ({
         id: contact.id,
         name: contact.name || "No name",
@@ -495,7 +492,7 @@ export async function listCatalogs(): Promise<{ mode: DataMode; catalogs: Catalo
 
   const { data, error } = await createSupabaseAdmin()
     .from("catalogs")
-    .select("id,product_skus,currency,price_date,version,pdf_url,created_at,companies(name)")
+    .select("id,product_skus,currency,price_date,version,pdf_url,created_at,quote_status,quote_order_id,quote_valid_until:quote_document->>validUntil,companies(name)")
     .eq("user_id", viewer.id)
     .order("created_at", { ascending: false })
     .limit(200);
@@ -512,6 +509,9 @@ export async function listCatalogs(): Promise<{ mode: DataMode; catalogs: Catalo
       version: row.version,
       pdfUrl: row.pdf_url,
       createdAt: row.created_at,
+      quoteStatus: row.quote_status,
+      quoteOrderId: row.quote_order_id,
+      quoteValidUntil: row.quote_valid_until,
     })),
   };
 }
@@ -566,54 +566,4 @@ export async function listProducts(skus?: string[], options: { requireComplete?:
   if (options.requireComplete && (data?.length ?? 0) > 500) throw new Error("The complete product catalog exceeds the lookup limit. Choose products in the inbox catalog picker.");
   const syncedProducts = (await withPersonalProducts(data ?? [], viewer.id)).filter((row) => !row.sku.startsWith("SAMPLE-") && !row.name.toLowerCase().startsWith("[sample]")).map(crmProduct);
   return { mode, products: await inventoryModule.withErpInventory(syncedProducts, inventory) };
-}
-
-function eventTone(type: string) {
-  if (type.includes("reply") || type.includes("interest")) return "green";
-  if (type.includes("catalog")) return "violet";
-  if (type.includes("sync")) return "amber";
-  return "blue";
-}
-
-export async function getDashboardData() {
-  const mode = getCrmDataMode();
-  if (mode === "demo") {
-    return {
-      mode,
-      companies: [],
-      activity: [],
-      emailQueueCount: 0,
-      sentCount: 0,
-      replyCount: 0,
-      bigOrderCount: 0,
-    };
-  }
-
-  await authorizeLiveRead();
-  const client = createSupabaseAdmin();
-  const [companies, eventsResult, queuedResult, sentResult, repliesResult, bigOrdersResult] = await Promise.all([
-    queryCompanies(),
-    client.from("events").select("type,data,created_at,companies(name)").order("created_at", { ascending: false }).limit(4),
-    client.from("emails").select("id", { count: "exact", head: true }).in("status", ["draft", "pending_approval", "approved", "scheduled"]),
-    client.from("emails").select("id", { count: "exact", head: true }).eq("status", "sent"),
-    client.from("emails").select("id", { count: "exact", head: true }).eq("direction", "received"),
-    client.from("pipeline").select("company_id", { count: "exact", head: true }).eq("stage", "big_order"),
-  ]);
-  if (eventsResult.error) throw new Error(`Unable to load activity: ${eventsResult.error.message}`);
-
-  const activity: ActivityItem[] = ((eventsResult.data ?? []) as unknown as EventRow[]).map((row) => {
-    const company = first(row.companies);
-    const detail = typeof row.data?.summary === "string" ? row.data.summary : company?.name || "CRM event recorded";
-    return { title: row.type.replaceAll("_", " "), detail, time: formatRelativeDate(row.created_at), tone: eventTone(row.type) };
-  });
-
-  return {
-    mode,
-    companies,
-    activity,
-    emailQueueCount: queuedResult.count ?? 0,
-    sentCount: sentResult.count ?? 0,
-    replyCount: repliesResult.count ?? 0,
-    bigOrderCount: bigOrdersResult.count ?? 0,
-  };
 }

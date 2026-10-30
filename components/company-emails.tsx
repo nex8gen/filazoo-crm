@@ -22,6 +22,8 @@ export async function CompanyEmails({ company, viewer, composeTo }: { company: C
       sendConfigured={data.sendConfigured}
       inboxConfigured={data.inboxConfigured}
       inboxError={data.inboxError}
+      lastMailboxSync={data.lastMailboxSync}
+      syncHealth={data.syncHealth}
       aiConfigured={data.aiConfigured}
       defaultMailboxEmail={data.defaultMailboxEmail}
       initialEmails={filterCompanyEmails(data.emails, company)}

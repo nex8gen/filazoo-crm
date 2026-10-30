@@ -57,7 +57,9 @@ export async function PATCH(request: Request, context: Context) {
     );
     revalidatePath(`/invoices/${id}`);
     revalidatePath("/invoices");
+    revalidatePath("/companies");
     if (existing.company_id) revalidatePath(`/companies/${existing.company_id}`);
+    if (invoice?.company_id && invoice.company_id !== existing.company_id) revalidatePath(`/companies/${invoice.company_id}`);
     return Response.json({ invoice: input.action === "delete" ? invoice : await getInvoice(id) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return invoiceError(error);

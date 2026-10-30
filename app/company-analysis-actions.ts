@@ -38,6 +38,5 @@ export async function createAnalysisFollowup(input: { companyId: string; product
   const { data: task, error: readError } = await db.from("crm_tasks").select("id,notes,due_at").eq("id", requestId).eq("company_id", companyId).single();
   if (readError || !task) return { error: "The follow-up could not be confirmed. Refresh before retrying." };
   revalidatePath(`/companies/${companyId}`);
-  revalidatePath("/pipeline");
   return { success: "Product follow-up created and assigned to the account owner.", task };
 }

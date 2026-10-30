@@ -52,7 +52,7 @@ export function matchesProfileFilters(config: JsonConfig, facts: FlowFacts) {
   if (config.segment && normalized(config.segment) !== normalized(facts.segment)) return false;
   if (config.country && normalized(config.country) !== normalized(facts.country)) return false;
   if (config.companyStatus && config.companyStatus !== facts.companyStatus) return false;
-  if (config.pipelineStage && config.pipelineStage !== facts.pipelineStage) return false;
+  if (config.pipelineStage) return false;
   if (typeof config.minFitScore === "number" && (facts.fitScore ?? 0) < config.minFitScore) return false;
   return true;
 }
@@ -78,7 +78,7 @@ export function triggerMatches(type: TriggerType, config: JsonConfig, event: Tri
   if (type === "category_changed") return normalized(config.category) === normalized(event.category);
   if (type === "lead_added_to_list") return normalized(config.listId) === normalized(event.listId);
   if (type === "company_segment_changed") return normalized(config.segment) === normalized(event.segment ?? facts.segment);
-  if (type === "pipeline_stage_changed") return config.stage === (event.stage ?? facts.pipelineStage);
+  if (type === "pipeline_stage_changed") return false;
   return true;
 }
 
@@ -149,7 +149,7 @@ export function conditionMatches(config: JsonConfig, facts: FlowFacts): boolean 
     case "clicked_link": actual = facts.clickedLink; expected = true; break;
     case "category_is": actual = facts.category; expected = String(config.category ?? ""); break;
     case "company_status_is": actual = facts.companyStatus; expected = String(config.companyStatus ?? ""); break;
-    case "pipeline_stage_is": actual = facts.pipelineStage; expected = String(config.pipelineStage ?? ""); break;
+    case "pipeline_stage_is": return false;
     case "segment_is": actual = facts.segment; expected = String(config.value ?? ""); break;
     case "country_is": actual = facts.country; expected = String(config.value ?? ""); break;
     case "fit_score_at_least": actual = facts.fitScore; expected = Number(config.fitScore ?? 0); break;
@@ -172,8 +172,10 @@ export function conditionMatches(config: JsonConfig, facts: FlowFacts): boolean 
 }
 
 export function flowStepAtPath(flow: Pick<FlowInput, "steps">, path: number[]) {
+  if (!path.length || path.length % 2 !== 1 || path.some((index) => !Number.isInteger(index) || index < 0)) return undefined;
   let step: FlowInput["steps"][number] | undefined = flow.steps[path[0]];
   for (let index = 1; step && index < path.length; index += 2) {
+    if (step.type !== "split") return undefined;
     const branches = Array.isArray(step.config.paths) ? step.config.paths : [];
     const branch = branches[path[index]];
     if (!branch || typeof branch !== "object" || Array.isArray(branch) || !Array.isArray(branch.steps)) return undefined;
@@ -194,11 +196,12 @@ function actionForCondition(config: JsonConfig, matched: boolean) {
   return String(matched ? config.action || "continue" : config.unmatchedAction || "continue");
 }
 
-export function simulateFlow(flow: FlowInput, facts: FlowFacts, from = new Date()) {
+export function simulateFlow(flow: FlowInput, facts: FlowFacts, from = new Date(), scenario: { afterWait?: { number: number; facts: Partial<FlowFacts> } } = {}) {
   const trace: SimulationEntry[] = [];
   const currentFacts = { ...facts };
   let cursor = new Date(from);
   let index = 0;
+  let waitsReached = 0;
   const steps = flow.steps.map((step, index) => ({ step, path: [index] }));
   while (index < steps.length) {
     const { step, path } = steps[index]!;
@@ -221,6 +224,8 @@ export function simulateFlow(flow: FlowInput, facts: FlowFacts, from = new Date(
     if (step.type === "wait") {
       cursor = calculateWaitUntil(step.config, cursor);
       push({ step: index + 1, type: step.type, status: "waiting", scheduledAt: cursor.toISOString(), detail: `Would resume at ${cursor.toISOString()}` });
+      waitsReached++;
+      if (scenario.afterWait?.number === waitsReached) Object.assign(currentFacts, scenario.afterWait.facts);
       index += 1;
       continue;
     }
@@ -248,7 +253,6 @@ export function simulateFlow(flow: FlowInput, facts: FlowFacts, from = new Date(
     if (step.type === "change_category") currentFacts.category = String(step.config.category);
     if (step.type === "update_company") {
       if (step.config.companyStatus) currentFacts.companyStatus = String(step.config.companyStatus);
-      if (step.config.pipelineStage) currentFacts.pipelineStage = String(step.config.pipelineStage);
       if (step.config.segment) currentFacts.segment = String(step.config.segment);
     }
     if (step.type === "ai_auto_reply") {
@@ -265,7 +269,7 @@ export function simulateFlow(flow: FlowInput, facts: FlowFacts, from = new Date(
     const detail = step.type === "stop" ? String(step.config.reason || "Flow would end here.")
       : step.type === "create_task" ? `Would create “${String(step.config.title)}”; due in ${Number(step.config.dueInDays || 0)} days.`
       : step.type === "change_category" ? `Would set the email category to ${String(step.config.category)}.`
-      : step.type === "update_company" ? `Would update ${[step.config.companyStatus && `status: ${step.config.companyStatus}`, step.config.pipelineStage && `stage: ${step.config.pipelineStage}`, step.config.segment && `segment: ${step.config.segment}`].filter(Boolean).join(", ")}.`
+      : step.type === "update_company" ? `Would update ${[step.config.companyStatus && `status: ${step.config.companyStatus}`, step.config.segment && `segment: ${step.config.segment}`].filter(Boolean).join(", ")}.`
       : step.type === "internal_alert" ? `Would send an ${step.config.channel === "email" ? "email" : "in-app"} alert: ${String(step.config.message)}`
       : step.type === "send_email" ? `Would send ${String(step.config.subject || step.config.templateId || "email")}${step.config.replyInThread ? " in the same thread" : " as a new thread"}.`
       : "Action configured.";

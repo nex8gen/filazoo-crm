@@ -1,7 +1,5 @@
 import { z } from "zod";
 import { commerceSchema } from "./company-commerce.ts";
-import { invoiceCurrencies } from "./invoices.ts";
-import { pipelineStageValues } from "./types.ts";
 
 /** A patch validates only supplied fields; incomplete imported profiles remain editable. */
 export const companyProfileChangesSchema = z.object({
@@ -13,13 +11,9 @@ export const companyProfileChangesSchema = z.object({
   contactName: z.string().trim().max(120).optional(),
   contactRole: z.string().trim().max(120).optional(),
   contactEmail: z.email().optional(),
-  stage: z.enum(pipelineStageValues).optional(),
   summary: z.string().trim().max(5000).optional(),
   tags: z.string().trim().max(2000).optional(),
   fitScore: z.union([z.number().int().min(1).max(10), z.literal("")]).optional(),
-  estimatedOrderQuantity: z.union([z.number().int().min(0).max(100_000_000), z.literal("")]).optional(),
-  estimatedValue: z.union([z.number().min(0).max(1_000_000_000), z.literal("")]).optional(),
-  currency: z.enum(invoiceCurrencies).optional(),
   nextFollowupAt: z.union([z.iso.datetime({ offset: true }), z.literal("")]).optional(),
   commerce: commerceSchema.partial().strict().optional(),
 }).strict().refine((value) => Object.entries(value).some(([key, field]) => field !== undefined && (key !== "commerce" || Object.values(field ?? {}).some((value) => value !== undefined))), "Specify at least one field to update.");

@@ -3,14 +3,14 @@ import { EmptyState } from "@/components/data-state";
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarClock, Clipboard, ExternalLink, History, Mail, MoreHorizontal, PanelsTopLeft, UserRoundCog } from "lucide-react";
+import { CalendarClock, Clipboard, ExternalLink, History, Mail, MoreHorizontal, UserRoundCog } from "lucide-react";
 import { toast } from "sonner";
 import { assignPipelineOwner, scheduleCompanyFollowup } from "@/app/crm-actions";
 import { followupInstant, followupLocalTime } from "@/lib/company-followup";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { BdSalesManager } from "@/lib/data/members";
 
@@ -123,7 +123,6 @@ export function CompanyActionsMenu({ companyId, ownerId, managers, canAssign, ca
         {canAssign ? <button type="button" role="menuitem" className={actionClass} onClick={() => { setMenuOpen(false); setSelectedOwner(ownerId || "unassigned"); setAssignmentOpen(true); }}><UserRoundCog />Change assignee</button> : null}
         {canWrite ? <button type="button" role="menuitem" className={actionClass} onClick={() => { setMenuOpen(false); setFollowup(followupLocalTime(nextFollowupAt)); setFollowupOpen(true); }}><CalendarClock />Schedule follow-up</button> : null}
         <button type="button" role="menuitem" className={actionClass} onClick={() => { setMenuOpen(false); router.push(`/companies/${companyId}?tab=history`); }}><History />View activity history</button>
-        <button type="button" role="menuitem" className={actionClass} onClick={() => { setMenuOpen(false); router.push(`/pipeline?company=${encodeURIComponent(companyId)}`); }}><PanelsTopLeft />Open in pipeline</button>
         <div role="separator" className="-mx-1 my-1 h-px bg-border" />
         {canWrite ? <button type="button" role="menuitem" className={actionClass} disabled={!email} onClick={() => { setMenuOpen(false); router.push(`/companies/${companyId}?tab=email&compose=1`); }}><Mail />Email customer</button> : null}
         <button type="button" role="menuitem" className={actionClass} disabled={!websiteUrl} onClick={() => { setMenuOpen(false); if (websiteUrl) window.open(websiteUrl, "_blank", "noopener,noreferrer"); }}><ExternalLink />Visit website</button>
@@ -137,7 +136,7 @@ export function CompanyActionsMenu({ companyId, ownerId, managers, canAssign, ca
       <DialogContent showCloseButton={!pending}>
         <DialogHeader><DialogTitle>Schedule follow-up</DialogTitle><DialogDescription>Choose a time in your local timezone. Clear the date to cancel the reminder.</DialogDescription></DialogHeader>
         <form onSubmit={(event) => { event.preventDefault(); saveFollowup(); }} className="space-y-4">
-          <div className="space-y-2"><Label htmlFor="action-followup">Scheduled date and time</Label><Input id="action-followup" type="datetime-local" value={followup} onChange={(event) => setFollowup(event.target.value)} disabled={pending} /></div>
+          <div className="space-y-2"><Label htmlFor="action-followup">Scheduled date and time</Label><DatePicker id="action-followup" includeTime value={followup} onValueChange={setFollowup} disabled={pending} /></div>
           <DialogFooter><Button type="button" variant="outline" disabled={pending} onClick={() => setFollowupOpen(false)}>Cancel</Button><Button type="submit" disabled={pending}>{pending ? "Saving…" : "Save follow-up"}</Button></DialogFooter>
         </form>
       </DialogContent>

@@ -1,137 +1,145 @@
 "use client";
+import { useWorkspaceState } from "@/components/workspace-memory";
 
-import { EmptyState } from "@/components/data-state";
+import { useMemo, useTransition, type ReactNode } from "react";
+import Link from "next/link";
+import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
+import { ArrowDownRight, ArrowRight, ArrowUpRight, Building2, Check, CircleAlert, Download, Mail, MessageSquare, Package, RefreshCw, Sparkles, Workflow } from "lucide-react";
 import { useLanguage } from "@/components/language-provider";
-import { useMemo, useState } from "react";
-import { ArrowDownRight, ArrowUpRight, ChartNoAxesCombined, Check, Eye, Funnel, LayoutGrid, Package, Users, X } from "lucide-react";
-import { Area, AreaChart, CartesianGrid, Tooltip, XAxis, YAxis } from "recharts";
-import { AnalyticsFilters, type AnalyticsFiltersValue } from "@/components/analytics-filters";
-import { dashboardLayout, type AnalyticsChannel, type AnalyticsDashboardData, type DashboardWidgetId } from "@/lib/analytics-dashboard";
+import { AnalyticsFilters, initialAnalyticsFilters } from "@/components/analytics-filters";
+import { analyticsChange, analyticsCsv, channelLabels, computeAnalytics, type AnalyticsDashboardData, type AnalyticsSource } from "@/lib/analytics-dashboard";
 import { Button } from "@/components/ui/button";
-import { ChartContainer, type ChartConfig } from "@/components/ui/chart";
 
-type PeriodValue = { currentPeriod: number; previousPeriod: number };
-type Range = { from: Date; to: Date };
-const channelLabels: Record<AnalyticsChannel, string> = { meta: "Meta", store: "Direct / Shopify", partner: "Partner / referral" };
-const channelColors: Record<AnalyticsChannel, string> = { meta: "#3b82f6", store: "#10b981", partner: "#f59e0b" };
-const stageLabels: Record<string, string> = { new: "Profile created", contacted: "Catalog sent", replied: "Customer replied", interested: "Qualified interest", big_order: "Quote / bulk order", won: "Order confirmed", lost: "Closed / not proceeding" };
-const stageRanks: Record<string, number> = { new: 0, contacted: 1, replied: 2, interested: 3, big_order: 4, won: 5, lost: -1 };
-
-function atDay(value: string | Date) { const date = new Date(value); date.setHours(0, 0, 0, 0); return date; }
-function addDays(value: Date, amount: number) { const date = new Date(value); date.setDate(date.getDate() + amount); return date; }
-function dateKey(value: string | Date) { const date = atDay(value); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; }
-function inRange(value: string, range: Range) { const date = atDay(value).getTime(); return date >= atDay(range.from).getTime() && date <= atDay(range.to).getTime(); }
-function daysIn(range: Range) { return Math.round((atDay(range.to).getTime() - atDay(range.from).getTime()) / 86_400_000) + 1; }
-function datesIn(range: Range) { return Array.from({ length: daysIn(range) }, (_, index) => addDays(range.from, index)); }
-function comparisonRange(range: Range, mode: AnalyticsFiltersValue["comparison"]): Range {
-  if (mode === "previous_year") { const from = new Date(range.from); const to = new Date(range.to); from.setFullYear(from.getFullYear() - 1); to.setFullYear(to.getFullYear() - 1); return { from, to }; }
-  const to = addDays(range.from, -1); return { from: addDays(to, -(daysIn(range) - 1)), to };
+const AnalyticsChart = dynamic(() => import("@/components/analytics-chart").then(module => module.AnalyticsChart), { loading: () => <div className="h-[250px] animate-pulse rounded-lg bg-muted/50" aria-label="Loading chart" /> });
+const count = (value: number) => value.toLocaleString();
+function ReportLink({ href, children }: { href: string; children: ReactNode }) {
+  return <Link href={href} className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">{children}<ArrowRight className="size-3.5" /></Link>;
 }
-const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
-const compact = (value: number) => new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value);
-const money = (value: number, currency: string) => new Intl.NumberFormat("en-US", { style: "currency", currency, maximumFractionDigits: 2 }).format(value);
-const delta = (current: number, previous: number) => previous === 0 ? (current === 0 ? 0 : 100) : ((current - previous) / Math.abs(previous)) * 100;
-
-function Trend({ current, previous }: { current: number; previous: number }) {
-  const change = delta(current, previous);
-  const positive = change >= 0;
-  const Icon = positive ? ArrowUpRight : ArrowDownRight;
-  return <span className={`inline-flex items-center gap-1 text-xs font-medium ${positive ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}><Icon className="size-3.5" />{Math.abs(change).toFixed(1)}%</span>;
+function Panel({ id, title, subtitle, link, children, available = true, className = "" }: { id?: string; title: string; subtitle: string; link?: { href: string; label: string }; children: ReactNode; available?: boolean; className?: string }) {
+  return <section id={id} className={`min-w-0 scroll-mt-5 rounded-xl border bg-card ${className}`}>
+    <header className="flex flex-wrap items-start justify-between gap-3 border-b px-5 py-4"><div><h2 className="text-sm font-semibold">{title}</h2><p className="mt-1 text-xs leading-relaxed text-muted-foreground">{subtitle}</p></div>{link ? <ReportLink href={link.href}>{link.label}</ReportLink> : null}</header>
+    <div className="p-5">{available ? children : <Unavailable />}</div>
+  </section>;
 }
-function LineChart({ current, previous, labels, previousLabels, metricLabel, showComparison, valueFormatter = compact, axisFormatter = compact }: { current: number[]; previous: number[]; labels: string[]; previousLabels: string[]; metricLabel: string; showComparison: boolean; valueFormatter?: (value: number) => string; axisFormatter?: (value: number) => string }) {
-  const currentTotal = sum(current); const previousTotal = sum(previous);
-  const chartData = current.map((value, index) => ({ date: labels[index], previousDate: previousLabels[index], current: value, previous: previous[index] ?? 0 }));
-  const chartConfig = { current: { label: "Current period", color: "#0ea5e9" }, previous: { label: "Comparison period", color: "#bae6fd" } } satisfies ChartConfig;
-  return <div><div className="mb-3 flex flex-wrap items-end justify-between gap-4"><div><div className="flex items-center gap-2"><p className="text-2xl font-semibold tracking-tight">{valueFormatter(currentTotal)}</p>{showComparison ? <Trend current={currentTotal} previous={previousTotal} /> : null}</div><p className="mt-1 text-xs text-muted-foreground">{showComparison ? `Compared with ${valueFormatter(previousTotal)} in the comparison period` : "Comparison is turned off"}</p></div></div>{chartData.length ? <ChartContainer config={chartConfig} className="h-[320px] w-full aspect-auto"><AreaChart accessibilityLayer data={chartData} margin={{ top: 12, right: 10, left: 4, bottom: 4 }}><defs><linearGradient id={`fill-${metricLabel.replaceAll(" ", "-")}`} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="var(--color-current)" stopOpacity={0.2} /><stop offset="95%" stopColor="var(--color-current)" stopOpacity={0.01} /></linearGradient></defs><CartesianGrid vertical={false} /><XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={10} minTickGap={44} /><YAxis tickLine={false} axisLine={false} tickMargin={10} width={66} tickFormatter={axisFormatter} /><Tooltip cursor={{ stroke: "var(--border)", strokeWidth: 1 }} formatter={(value, name, item) => [valueFormatter(Number(value)), name === "current" ? item.payload.date : item.payload.previousDate]} contentStyle={{ borderRadius: 8, borderColor: "var(--border)", background: "var(--popover)", color: "var(--popover-foreground)", fontSize: 13 }} />{showComparison ? <Area dataKey="previous" type="monotone" stroke="var(--color-previous)" strokeWidth={2} strokeDasharray="5 5" fill="transparent" dot={false} isAnimationActive={false} /> : null}<Area dataKey="current" type="monotone" stroke="var(--color-current)" strokeWidth={2.5} fill={`url(#fill-${metricLabel.replaceAll(" ", "-")})`} dot={false} isAnimationActive={false} /></AreaChart></ChartContainer> : <EmptyState compact icon={ChartNoAxesCombined} title="No CRM records in this period." description="Try another date range to see activity." />}</div>;
+function Unavailable() { return <div role="status" className="flex min-h-24 items-center gap-2 rounded-lg bg-muted/40 p-4 text-sm text-muted-foreground"><CircleAlert className="size-4 shrink-0" />This report is unavailable. Refresh to retry.</div>; }
+function Empty({ children }: { children: ReactNode }) { return <p className="rounded-lg bg-muted/30 px-4 py-8 text-center text-xs text-muted-foreground">{children}</p>; }
+function Change({ current, previous, enabled }: { current: number; previous: number; enabled: boolean }) {
+  if (!enabled) return <span className="text-[11px] text-muted-foreground">Comparison off</span>;
+  const change = analyticsChange(current, previous);
+  if (change === null) return <span className="text-[11px] text-muted-foreground">No prior activity</span>;
+  const Icon = change < 0 ? ArrowDownRight : ArrowUpRight;
+  return <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"><Icon className="size-3.5" />{change > 0 ? "+" : ""}{change.toFixed(1)}% vs comparison</span>;
 }
-
-function Widget({ title, subtitle, children, className = "", onOptions }: { title: string; subtitle: string; children: React.ReactNode; className?: string; onOptions: () => void }) {
-  return <section className={`min-w-0 rounded-xl border bg-card shadow-sm ${className}`}><header className="flex items-start justify-between gap-4 border-b px-5 py-4"><div><h2 className="font-medium">{title}</h2><p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p></div><Button variant="ghost" size="icon-sm" aria-label={`Options for ${title}`} onClick={onOptions}><LayoutGrid /></Button></header><div className="p-5">{children}</div></section>;
+function Metric({ label, value, detail, children, available = true }: { label: string; value: string; detail: string; children?: ReactNode; available?: boolean }) {
+  return <article className="min-w-0 rounded-xl border bg-card p-5"><p className="text-xs font-medium text-muted-foreground">{label}</p><p className="mt-3 break-words text-2xl font-semibold tracking-tight tabular-nums 2xl:text-3xl">{available ? value : "Unavailable"}</p><p className="mt-1 text-[11px] text-muted-foreground">{detail}</p><div className="mt-4 border-t pt-3">{available ? children : <span className="text-[11px] text-muted-foreground">Refresh to retry</span>}</div></article>;
 }
-
-function OpportunityChannels({ counts }: { counts: Array<{ channel: AnalyticsChannel; count: number }> }) {
-  const total = sum(counts.map((item) => item.count));
-  if (!total) return <EmptyState compact icon={Users} title="No attributed opportunities in this period." />;
-  const gradient = counts.filter((item) => item.count > 0).map((item, index, visible) => { const start = (sum(visible.slice(0, index).map((entry) => entry.count)) / total) * 100; const end = start + (item.count / total) * 100; return `${channelColors[item.channel]} ${start}% ${end}%`; }).join(", ");
-  return <div className="flex flex-col items-center gap-6 sm:flex-row xl:flex-col 2xl:flex-row"><div className="relative size-44 shrink-0 rounded-full" style={{ background: `conic-gradient(${gradient})` }}><div className="absolute inset-6 grid place-items-center rounded-full bg-card text-center"><div><p className="text-xl font-semibold">{total}</p><p className="text-xs text-muted-foreground">opportunities</p></div></div></div><div className="w-full space-y-3">{counts.map((item) => <div key={item.channel} className="flex items-center gap-2"><i className="size-2.5 rounded-full" style={{ background: channelColors[item.channel] }} /><span className="min-w-0 flex-1 truncate text-xs">{channelLabels[item.channel]}</span><span className="text-xs font-medium">{item.count}</span></div>)}</div></div>;
+function SmallMetric({ label, value, warning = false }: { label: string; value: string | number; warning?: boolean }) {
+  return <div className="min-w-0"><p className={`break-words text-xl font-semibold tabular-nums ${warning ? "text-amber-600 dark:text-amber-400" : ""}`}>{value}</p><p className="mt-1 text-[11px] text-muted-foreground">{label}</p></div>;
 }
-
-function ConversionFunnel({ current, previous }: { current: Array<{ label: string; count: number }>; previous: number[] }) {
-  const base = current[0]?.count ?? 0;
-  if (!base) return <EmptyState compact icon={Funnel} title="No opportunities entered the CRM in this period." />;
-  return <div className="space-y-4">{current.map((item, index) => { const width = Math.max(item.count ? 8 : 0, (item.count / base) * 100); return <div key={item.label}><div className="mb-1.5 flex items-end justify-between gap-3"><div><p className="text-xs font-medium">{item.label}</p><p className="mt-0.5 text-xs text-muted-foreground">{index === 0 ? "100%" : `${((item.count / base) * 100).toFixed(1)}% of opportunities`}</p></div><div className="text-right"><p className="text-sm font-semibold">{item.count}</p><Trend current={item.count} previous={previous[index] ?? 0} /></div></div><div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${width}%` }} /></div></div>; })}</div>;
-}
-
-function PipelineBreakdown({ rows, currency }: { rows: Array<{ stage: string; count: number; value: number }>; currency: string }) {
-  if (!rows.some((row) => row.count)) return <EmptyState compact icon={Funnel} title="No pipeline records in this period." />;
-  return <div className="space-y-1">{rows.map((row) => <div key={row.stage} className="flex items-center justify-between border-b py-2.5 last:border-0"><span className="text-sm">{stageLabels[row.stage] ?? row.stage}<small className="ml-2 text-muted-foreground">{row.count}</small></span><span className="font-mono text-sm">{money(row.value, currency)}</span></div>)}</div>;
-}
-
-function TopProducts({ rows }: { rows: Array<{ sku: string; name: string; current: number; previous: number }> }) {
-  if (!rows.length) return <EmptyState compact icon={Package} title="No products were included in catalogs during this period." />;
-  return <div className="crm-table-frame overflow-x-auto"><table className="crm-table w-full min-w-[520px]"><thead><tr><th>Product</th><th className="text-right">Catalogs</th><th className="text-right">Change</th></tr></thead><tbody>{rows.map((product, index) => <tr key={product.sku}><td><div className="flex items-center gap-3"><span className="grid size-7 place-items-center rounded-md bg-muted text-xs font-semibold">{index + 1}</span><div><p className="text-sm font-medium">{product.name}</p><p className="text-xs text-muted-foreground">{product.sku}</p></div></div></td><td className="text-right text-sm">{product.current}</td><td className="text-right"><Trend current={product.current} previous={product.previous} /></td></tr>)}</tbody></table></div>;
-}
-
-function CustomizationPanel({ visibleWidgets, onToggle, onClose }: { visibleWidgets: DashboardWidgetId[]; onToggle: (id: DashboardWidgetId) => void; onClose: () => void }) {
-  return <div className="fixed inset-0 z-[80]"><button aria-label="Close customization panel" className="absolute inset-0 bg-black/30 backdrop-blur-[1px]" onClick={onClose} /><aside className="absolute inset-y-0 right-0 w-full max-w-md overflow-y-auto border-l bg-background p-6 shadow-2xl"><div className="flex items-start justify-between"><div><h2 className="text-lg font-semibold">Customize dashboard</h2><p className="mt-1 text-sm text-muted-foreground">Choose which widgets appear in your overview.</p></div><Button variant="ghost" size="icon" onClick={onClose} aria-label="Close"><X /></Button></div><div className="mt-7 space-y-2">{dashboardLayout.chartWidgets.map((widget) => { const enabled = visibleWidgets.includes(widget.id); return <button key={widget.id} onClick={() => onToggle(widget.id)} className="flex w-full items-center gap-3 rounded-lg border p-3 text-left hover:bg-muted"><span className={`grid size-5 place-items-center rounded border ${enabled ? "border-primary bg-primary text-primary-foreground" : "bg-background"}`}>{enabled && <Check className="size-3.5" />}</span><span className="min-w-0 flex-1"><span className="block text-sm font-medium">{widget.title}</span><span className="block text-xs text-muted-foreground">{widget.type.replaceAll("_", " ").toLowerCase()}</span></span><Eye className={`size-4 ${enabled ? "text-primary" : "text-muted-foreground"}`} /></button>; })}</div><div className="mt-8 flex justify-end"><Button onClick={onClose}>Done</Button></div></aside></div>;
-}
+const channelColors = ["bg-blue-500", "bg-emerald-500", "bg-violet-500", "bg-slate-500", "bg-amber-500", "bg-stone-400"];
 
 export function AnalyticsDashboard({ data }: { data: AnalyticsDashboardData }) {
-  const minDate = atDay(`${data.minDate}T00:00:00`); const maxDate = atDay(`${data.maxDate}T00:00:00`);
-  const initialFrom = new Date(Math.max(minDate.getTime(), addDays(maxDate, -29).getTime()));
-  const [filters, setFilters] = useState<AnalyticsFiltersValue>({ range: { from: initialFrom, to: maxDate }, channels: ["meta", "store", "partner"], currency: data.currencies[0] ?? "USD", comparison: "previous_period" });
+  const [filters, setFilters] = useWorkspaceState("analytics.filters", () => initialAnalyticsFilters(data));
+  const [trend, setTrend] = useWorkspaceState<"companies" | "collected">("analytics.trend", "companies");
+  const [refreshing, startRefresh] = useTransition();
+  const router = useRouter();
   const { language } = useLanguage();
   const locale = language === "zh-CN" ? "zh-CN" : "en-US";
-  const [customizing, setCustomizing] = useState(false);
-  const [visibleWidgets, setVisibleWidgets] = useState<DashboardWidgetId[]>(dashboardLayout.chartWidgets.map((widget) => widget.id));
-  const computed = useMemo(() => {
-    const previousRange = comparisonRange(filters.range, filters.comparison);
-    const opportunityFilter = (range: Range) => data.opportunities.filter((item) => inRange(item.createdAt, range) && filters.channels.includes(item.channel) && item.currency === filters.currency);
-    const leadFilter = (range: Range) => data.leads.filter((item) => inRange(item.createdAt, range) && filters.channels.includes(item.channel));
-    const currentOpps = opportunityFilter(filters.range); const previousOpps = opportunityFilter(previousRange);
-    const currentLeads = leadFilter(filters.range); const previousLeads = leadFilter(previousRange);
-    const currentDates = datesIn(filters.range); const previousDates = datesIn(previousRange);
-    const daily = (rows: typeof currentOpps, dates: Date[], field: "value" | "count") => dates.map((date) => { const matches = rows.filter((row) => dateKey(row.createdAt) === dateKey(date)); return field === "value" ? sum(matches.map((row) => row.estimatedValue)) : matches.length; });
-    const dailyLeads = (rows: typeof currentLeads, dates: Date[]) => dates.map((date) => rows.filter((row) => dateKey(row.createdAt) === dateKey(date)).length);
-    const labels = currentDates.map((date) => date.toLocaleDateString(locale, { month: "short", day: "numeric" }));
-    const previousLabels = previousDates.map((date) => date.toLocaleDateString(locale, { month: "short", day: "numeric" }));
-    const won = (rows: typeof currentOpps) => rows.filter((row) => row.stage === "won").length;
-    const funnel = (rows: typeof currentOpps) => [
-      { label: "Incoming opportunities", count: rows.length },
-      { label: "Catalog sent", count: rows.filter((row) => stageRanks[row.stage] >= 1).length },
-      { label: "Customer replied", count: rows.filter((row) => stageRanks[row.stage] >= 2).length },
-      { label: "Qualified / quote", count: rows.filter((row) => stageRanks[row.stage] >= 3).length },
-      { label: "Order confirmed", count: won(rows) },
-    ];
-    const catalogCounts = (range: Range) => { const counts = new Map<string, number>(); for (const catalog of data.catalogs.filter((item) => inRange(item.createdAt, range) && filters.channels.includes(item.channel) && item.currency === filters.currency)) for (const sku of new Set(catalog.productSkus)) counts.set(sku, (counts.get(sku) ?? 0) + 1); return counts; };
-    const currentCatalogs = catalogCounts(filters.range); const previousCatalogs = catalogCounts(previousRange);
-    const topProducts = [...currentCatalogs].map(([sku, current]) => ({ sku, name: data.products[sku] ?? sku, current, previous: previousCatalogs.get(sku) ?? 0 })).sort((a, b) => b.current - a.current || a.name.localeCompare(b.name)).slice(0, 10);
-    return {
-      currentOpps, previousOpps, labels, previousLabels,
-      pipelineCurrent: daily(currentOpps, currentDates, "value"), pipelinePrevious: daily(previousOpps, previousDates, "value"),
-      leadsCurrent: dailyLeads(currentLeads, currentDates), leadsPrevious: dailyLeads(previousLeads, previousDates),
-      summary: {
-        pipelineValue: { currentPeriod: sum(currentOpps.map((row) => row.estimatedValue)), previousPeriod: sum(previousOpps.map((row) => row.estimatedValue)) },
-        conversionRate: { currentPeriod: currentOpps.length ? won(currentOpps) / currentOpps.length * 100 : 0, previousPeriod: previousOpps.length ? won(previousOpps) / previousOpps.length * 100 : 0 },
-        dealsWon: { currentPeriod: won(currentOpps), previousPeriod: won(previousOpps) },
-        opportunities: { currentPeriod: currentOpps.length, previousPeriod: previousOpps.length },
-      } satisfies Record<string, PeriodValue>,
-      channelCounts: (["meta", "store", "partner"] as const).filter((channel) => filters.channels.includes(channel)).map((channel) => ({ channel, count: currentOpps.filter((row) => row.channel === channel).length })),
-      funnelCurrent: funnel(currentOpps), funnelPrevious: funnel(previousOpps).map((item) => item.count),
-      breakdown: ["new", "contacted", "replied", "interested", "big_order", "won", "lost"].map((stage) => ({ stage, count: currentOpps.filter((row) => row.stage === stage).length, value: sum(currentOpps.filter((row) => row.stage === stage).map((row) => row.estimatedValue)) })),
-      topProducts,
-    };
-  }, [data, filters, locale]);
+  const money = (value: number) => new Intl.NumberFormat(locale, { style: "currency", currency: filters.currency, maximumFractionDigits: 2 }).format(value);
+  const report = useMemo(() => computeAnalytics(data, filters), [data, filters]);
+  const ready = (...ids: AnalyticsSource["id"][]) => ids.every(id => data.sources.find(source => source.id === id)?.ok);
+  const failures = data.sources.filter(source => !source.ok);
+  const compare = filters.comparison !== "none";
+  const companyReady = ready("companies"), billingReady = ready("companies", "invoices"), cashReady = ready("companies", "invoices", "payments");
+  const emails = report.current.emails;
+  const sent = emails.filter(row => row.direction === "sent" && row.status === "sent").length;
+  const replies = emails.filter(row => row.direction === "received" && row.status === "received").length;
+  const failedMail = emails.filter(row => row.status === "failed").length;
+  const messages = report.current.messages;
+  const flowFailed = report.current.runs.filter(row => row.status === "failed").length;
+  const flowDone = report.current.runs.filter(row => row.status === "done").length;
+  const overdueInvoices = [...report.overdueInvoices].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  const refreshed = new Intl.DateTimeFormat(locale, { timeZone: "Asia/Shanghai", hour: "2-digit", minute: "2-digit" }).format(new Date(data.asOf));
 
-  const visible = (id: DashboardWidgetId) => visibleWidgets.includes(id);
-  const toggleWidget = (id: DashboardWidgetId) => setVisibleWidgets((items) => items.includes(id) ? items.filter((item) => item !== id) : [...items, id]);
-  const formatCard = (format: string, value: number) => format === "currency" ? money(value, filters.currency) : format === "percentage" ? `${value.toFixed(1)}%` : Math.round(value).toLocaleString();
-  const channelDescription = filters.channels.length === 3 ? "All attributed channels" : filters.channels.map((item) => channelLabels[item]).join(", ");
-  const dateLabel = `${filters.range.from.toLocaleDateString(locale, { month: "short", day: "numeric" })} – ${filters.range.to.toLocaleDateString(locale, { month: "short", day: "numeric", year: "numeric" })}`;
+  function exportReport() {
+    const value = (available: boolean, amount: string | number) => available ? amount : "Unavailable";
+    const csv = analyticsCsv([
+      ["Filazoo analytics", "Value"], ["From", filters.from], ["To", filters.to], ["Source", filters.channel], ["Owner", filters.owner], ["Currency (no FX conversion)", filters.currency], ["Snapshot at", data.asOf],
+      ["Issued invoices (minor units)", value(billingReady, report.current.invoiced)], ["Cash collected (minor units)", value(cashReady, report.current.collected)],
+      ["Outstanding (current, minor units)", value(billingReady, report.outstanding)], ["Overdue (current, minor units)", value(billingReady, report.overdue)],
+      ["Confirmed order value (minor units)", value(ready("companies", "orders"), report.current.orderValue)], ["Your catalogs", value(ready("companies", "catalogs"), report.current.catalogs.length)],
+      ["CRM emails sent", value(ready("companies", "emails"), sent)], ["CRM replies received", value(ready("companies", "emails"), replies)],
+      ["Your open tasks (current)", value(ready("tasks"), report.openTasks.length)], ["Your overdue tasks (current)", value(ready("tasks"), report.overdueTasks.length)],
+      ["Workspace runs started", value(ready("flows", "runs"), report.current.runs.length)], ["Workspace failed runs", value(ready("flows", "runs"), flowFailed)],
+      ...report.channels.map(row => [`New companies: ${channelLabels[row.channel]}`, value(companyReady, row.count)]),
+      ...report.topProducts.map(row => [`Catalog product: ${row.sku}`, value(ready("companies", "catalogs"), row.count)]),
+    ]);
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+    const anchor = document.createElement("a"); anchor.href = url; anchor.download = `filazoo-analytics-${filters.from}-${filters.to}.csv`; anchor.click(); URL.revokeObjectURL(url);
+  }
 
-  return <div className="mx-auto max-w-[1500px] space-y-6"><div className="rounded-xl border bg-card p-5 shadow-sm"><div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between"><div><div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground"><LayoutGrid className="size-3.5" /><span>Analytics</span><span>/</span><span>Executive overview</span></div><h1 className="text-2xl font-semibold tracking-tight">CRM performance</h1><p className="mt-1 text-sm text-muted-foreground">Live opportunity, pipeline, and acquisition data from your CRM.</p></div><div className="xl:max-w-[850px]"><AnalyticsFilters value={filters} minDate={minDate} maxDate={maxDate} currencies={data.currencies} onChange={setFilters} onCustomize={() => setCustomizing(true)} /></div></div></div>
-    <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"><span className="font-medium text-foreground">{dateLabel}</span><span>{filters.comparison === "none" ? "No comparison" : filters.comparison === "previous_year" ? "compared with the same period last year" : `compared with the preceding ${daysIn(filters.range)} days`}</span><span>{channelDescription}</span><span className="ml-auto flex items-center gap-1.5"><i className="size-1.5 rounded-full bg-emerald-500" />Live CRM records</span></div>
-    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{dashboardLayout.summaryCards.map((card) => { const values = computed.summary[card.metricKey]; return <article key={card.id} className="rounded-xl border bg-card p-5 shadow-sm"><div className="flex items-start justify-between"><p className="text-xs font-medium text-muted-foreground">{card.title}</p>{filters.comparison !== "none" ? <Trend current={values.currentPeriod} previous={values.previousPeriod} /> : null}</div><p className="mt-3 text-2xl font-semibold tracking-tight">{formatCard(card.format, values.currentPeriod)}</p><p className="mt-1 text-xs text-muted-foreground">{filters.comparison !== "none" ? `from ${formatCard(card.format, values.previousPeriod)}` : "Current selection"}</p></article>; })}</section>
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">{visible("pipeline-over-time") && <Widget onOptions={() => setCustomizing(true)} title="Pipeline value over time" subtitle="Estimated opportunity value by date added" className="xl:col-span-12"><LineChart current={computed.pipelineCurrent} previous={computed.pipelinePrevious} labels={computed.labels} previousLabels={computed.previousLabels} metricLabel="Pipeline value" showComparison={filters.comparison !== "none"} valueFormatter={(value) => money(value, filters.currency)} axisFormatter={(value) => money(value, filters.currency)} /></Widget>}{visible("opportunity-channels") && <Widget onOptions={() => setCustomizing(true)} title="Opportunity channels" subtitle="Companies added by source" className="xl:col-span-4"><OpportunityChannels counts={computed.channelCounts} /></Widget>}{visible("lead-attribution") && <Widget onOptions={() => setCustomizing(true)} title="Lead attribution" subtitle={`${channelDescription}, current vs comparison period`} className="xl:col-span-8"><LineChart current={computed.leadsCurrent} previous={computed.leadsPrevious} labels={computed.labels} previousLabels={computed.previousLabels} metricLabel="Captured leads" showComparison={filters.comparison !== "none"} valueFormatter={(value) => `${Math.round(value)} leads`} /></Widget>}{visible("conversion-funnel") && <Widget onOptions={() => setCustomizing(true)} title="Conversion funnel" subtitle="CRM stage progression for opportunities added in this period" className="xl:col-span-4"><ConversionFunnel current={computed.funnelCurrent} previous={computed.funnelPrevious} /></Widget>}{visible("pipeline-breakdown") && <Widget onOptions={() => setCustomizing(true)} title="Pipeline breakdown" subtitle={`Estimated value and deal count in ${filters.currency}`} className="xl:col-span-5"><PipelineBreakdown rows={computed.breakdown} currency={filters.currency} /></Widget>}{visible("top-products") && <Widget onOptions={() => setCustomizing(true)} title="Top catalog products" subtitle="Ranked by inclusion in generated catalogs" className="xl:col-span-7"><TopProducts rows={computed.topProducts} /></Widget>}</div>
-    {customizing && <CustomizationPanel visibleWidgets={visibleWidgets} onToggle={toggleWidget} onClose={() => setCustomizing(false)} />}</div>;
+  return <div className="mx-auto max-w-[1500px] space-y-5 pb-8">
+    <header className="flex flex-wrap items-start justify-between gap-4">
+      <div><p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Workspace overview</p><h1 className="text-3xl font-semibold tracking-tight">Analytics</h1><p className="mt-2 text-sm text-muted-foreground">From first conversation to paid invoice.</p></div>
+      <div className="flex flex-wrap items-center gap-2"><span className="mr-2 inline-flex items-center gap-1.5 text-[11px] text-muted-foreground"><span className={`size-1.5 rounded-full ${failures.length ? "bg-amber-500" : "bg-emerald-500"}`} />Updated {refreshed} CST</span><Button size="sm" variant="outline" disabled={refreshing} onClick={() => startRefresh(() => router.refresh())}><RefreshCw className={refreshing ? "animate-spin" : ""} />{refreshing ? "Refreshing…" : "Refresh"}</Button><Button size="sm" variant="outline" onClick={exportReport}><Download />Export CSV</Button></div>
+    </header>
+    <AnalyticsFilters value={filters} data={data} onChange={setFilters} />
+    {failures.length ? <div role="alert" className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-xs"><CircleAlert className="size-4 shrink-0 text-amber-600" /><div><p className="font-medium">Some reports could not be loaded</p><p className="mt-1 text-muted-foreground">{failures.map(source => source.label).join(", ")}. Affected metrics are marked unavailable.</p></div></div> : null}
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <Metric label="New companies" value={count(report.current.newCompanies)} detail="Created in the selected period · all currencies" available={companyReady}><Change current={report.current.newCompanies} previous={report.previous.newCompanies} enabled={compare} /></Metric>
+      <Metric label="Confirmed orders" value={money(report.current.orderValue / 100)} detail="Order value in the selected period" available={companyReady && ready("orders")}><Change current={report.current.orderValue} previous={report.previous.orderValue} enabled={compare} /></Metric>
+      <Metric label="Invoiced" value={money(report.current.invoiced / 100)} detail="Issued invoices by issue date · excludes drafts" available={billingReady}><Change current={report.current.invoiced} previous={report.previous.invoiced} enabled={compare} /></Metric>
+      <Metric label="Cash collected" value={money(report.current.collected / 100)} detail="Recorded payments by payment date" available={cashReady}><Change current={report.current.collected} previous={report.previous.collected} enabled={compare} /></Metric>
+    </div>
+    <nav aria-label="Analytics sections" className="flex flex-wrap gap-x-5 gap-y-2 border-b pb-3 text-xs text-muted-foreground">{[{ id: "sales", label: "Sales & acquisition" }, { id: "billing", label: "Orders & receivables" }, { id: "engagement", label: "Engagement" }, { id: "operations", label: "Products & automation" }].map(item => <a key={item.id} href={`#${item.id}`} className="hover:text-foreground">{item.label}</a>)}</nav>
+    <div id="sales" className="grid scroll-mt-5 gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
+      <Panel title="Activity over time" subtitle={`${filters.from} – ${filters.to} · daily or grouped into up to 90 intervals`} available={trend === "companies" ? companyReady : cashReady}>
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div><p className="text-2xl font-semibold tracking-tight">{trend === "companies" ? count(report.current.newCompanies) : money(report.current.collected / 100)}</p><p className="mt-1 text-xs text-muted-foreground">{trend === "companies" ? "New companies" : "Cash collected"}</p></div><div className="flex rounded-lg bg-muted/60 p-1">{[{ id: "companies", label: "Companies" }, { id: "collected", label: "Collections" }].map(item => <button type="button" aria-pressed={trend === item.id} key={item.id} onClick={() => setTrend(item.id as typeof trend)} className={`rounded-md px-3 py-1.5 text-xs ${trend === item.id ? "bg-background font-medium shadow-xs" : "text-muted-foreground"}`}>{item.label}</button>)}</div></div>
+        <AnalyticsChart data={report.series} metric={trend} currency={filters.currency} locale={locale} />
+      </Panel>
+      <Panel title="Acquisition sources" subtitle="Unique new companies · multiple sources kept separate" link={{ href: "/companies", label: "Companies" }} available={companyReady}>
+        <div className="space-y-5">{report.channels.map((row, index) => <div key={row.channel}><div className="mb-2 flex items-center justify-between gap-2 text-xs"><span className="flex items-center gap-2"><span className={`size-2 rounded-full ${channelColors[index]}`} />{channelLabels[row.channel]}</span><span className="tabular-nums">{row.count}<span className="ml-3 text-muted-foreground">{report.current.newCompanies ? Math.round(row.count / report.current.newCompanies * 100) : 0}%</span></span></div><div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className={`h-full rounded-full ${channelColors[index]}`} style={{ width: `${report.current.newCompanies ? row.count / report.current.newCompanies * 100 : 0}%` }} /></div></div>)}</div>
+      </Panel>
+    </div>
+    <div className="grid gap-4">
+      <Panel title="Needs attention" subtitle="Current overdue work · personal tasks and company follow-ups" link={{ href: "/tasks", label: "Your tasks" }} available={companyReady && ready("tasks")}>
+        <div className="mb-5 grid grid-cols-3 gap-3"><SmallMetric label="Your overdue tasks" value={report.overdueTasks.length} warning={report.overdueTasks.length > 0} /><SmallMetric label="Overdue follow-ups" value={report.followups.length} warning={report.followups.length > 0} /><SmallMetric label="Your open tasks" value={report.openTasks.length} /></div>
+        <div className="divide-y">{report.overdueTasks.slice(0, 3).map(task => <Link key={task.id} href={`/tasks?task=${task.id}`} className="flex items-center gap-3 py-3 text-xs hover:text-primary"><CircleAlert className="size-4 shrink-0 text-amber-600" /><span className="min-w-0 flex-1 truncate">{task.title}</span><ArrowRight className="size-3.5 shrink-0" /></Link>)}{report.followups.slice(0, 3).map(company => <Link key={company.id} href={`/companies/${company.id}`} className="flex items-center gap-3 py-3 text-xs hover:text-primary"><Building2 className="size-4 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1 truncate">Follow up with {company.name}</span><ArrowRight className="size-3.5 shrink-0" /></Link>)}</div>
+        {!report.overdueTasks.length && !report.followups.length ? <Empty>No overdue tasks or company follow-ups.</Empty> : null}
+        <p className="mt-4 text-[11px] text-muted-foreground">{report.completedTasks} of your tasks completed during the selected period. Company filters do not change personal tasks.</p>
+      </Panel>
+    </div>
+    <div id="billing" className="grid scroll-mt-5 gap-4 xl:grid-cols-2">
+      <Panel title="Orders & receivables" subtitle="Order activity for the period · balances as of now" link={{ href: "/invoices", label: "Invoices" }} available={billingReady && ready("orders")}>
+        <div className="grid grid-cols-2 gap-x-6 gap-y-7"><SmallMetric label="Confirmed order value" value={money(report.current.orderValue / 100)} /><SmallMetric label="Outstanding balance" value={money(report.outstanding / 100)} /><SmallMetric label="Orders in period" value={report.current.periodOrders.length} /><SmallMetric label="Overdue balance" value={money(report.overdue / 100)} warning={report.overdue > 0} /></div>
+        <p className="mt-5 border-t pt-3 text-[11px] leading-relaxed text-muted-foreground">Orders use their order date and exclude drafts and cancellations. Receivables include all issued unpaid invoices in {filters.currency}, regardless of the date range.</p>
+      </Panel>
+      <Panel title="Overdue invoices" subtitle="Unpaid issued invoices past their due date · current" link={{ href: "/invoices?status=issued", label: "View issued" }} available={billingReady}>
+        {overdueInvoices.length ? <div className="divide-y">{overdueInvoices.slice(0, 5).map(invoice => <Link key={invoice.id} href={`/invoices/${invoice.id}`} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0 hover:text-primary"><div className="min-w-0"><p className="truncate text-xs font-medium">Invoice #{invoice.number}{invoice.companyId ? ` · ${report.companyMap.get(invoice.companyId)?.name ?? "Company"}` : ""}</p><p className="mt-1 text-[11px] text-muted-foreground">Due {invoice.dueDate}</p></div><span className="shrink-0 text-xs font-medium tabular-nums">{money((invoice.totalMinor - invoice.paidMinor) / 100)}</span></Link>)}</div> : <Empty>No overdue invoices in this currency and company scope.</Empty>}
+      </Panel>
+    </div>
+    <div id="engagement" className="grid scroll-mt-5 gap-4 lg:grid-cols-3">
+      <Panel title="CRM outreach" subtitle="Company-linked email activity · selected period" link={{ href: "/emails", label: "Email" }} available={companyReady && ready("emails")}><Mail className="mb-5 size-5 text-muted-foreground" /><div className="grid grid-cols-3 gap-2"><SmallMetric label="Sent" value={sent} /><SmallMetric label="Replies" value={replies} /><SmallMetric label="Failed" value={failedMail} warning={failedMail > 0} /></div><p className="mt-5 text-[11px] leading-relaxed text-muted-foreground">CRM outreach records only. Personal inbox mail, provider delivery and email opens are not counted.</p></Panel>
+      <Panel title="Messenger" subtitle="Workspace messages · selected period · all sources" link={{ href: "/messenger", label: "Messenger" }} available={ready("messages")}><MessageSquare className="mb-5 size-5 text-muted-foreground" /><div className="grid grid-cols-3 gap-2"><SmallMetric label="Received" value={messages.filter(row => row.direction === "inbound").length} /><SmallMetric label="Sent" value={messages.filter(row => row.direction === "outbound" && row.status === "sent").length} /><SmallMetric label="Failed" value={messages.filter(row => row.status === "failed").length} /></div><p className="mt-5 text-[11px] leading-relaxed text-muted-foreground">Facebook and Instagram messages. Company source, account owner and currency filters do not apply.</p></Panel>
+      <Panel title="Your AI usage" subtitle="Your assistant calls · selected period" available={ready("ai")}><Sparkles className="mb-5 size-5 text-muted-foreground" /><div className="grid grid-cols-3 gap-2"><SmallMetric label="Calls" value={report.current.ai.length} /><SmallMetric label="Tokens" value={count(report.current.ai.reduce((total, row) => total + row.tokens, 0))} /><SmallMetric label="Failed calls" value={report.current.ai.filter(row => !row.success).length} /></div><p className="mt-5 text-[11px] text-muted-foreground">Estimated usage cost: {new Intl.NumberFormat(locale, { style: "currency", currency: "USD", minimumFractionDigits: 4 }).format(report.current.ai.reduce((total, row) => total + row.cost, 0))} USD</p></Panel>
+    </div>
+    <div id="operations" className="grid scroll-mt-5 gap-4 xl:grid-cols-2">
+      <Panel title="Your catalog activity" subtitle="Product selections in your catalogs · selected period" link={{ href: "/catalogs/companies", label: "Your catalogs" }} available={companyReady && ready("catalogs", "products")}>
+        <div className="mb-5 flex items-center gap-3"><span className="grid size-10 place-items-center rounded-lg bg-muted/60"><Package className="size-5 text-muted-foreground" /></span><div><p className="text-xl font-semibold">{report.current.catalogs.length}</p><p className="text-[11px] text-muted-foreground">Catalogs created in {filters.currency}</p></div></div>
+        {report.topProducts.length ? <div className="divide-y">{report.topProducts.map((product, index) => <Link key={product.sku} href={`/catalogs/products/${encodeURIComponent(product.sku)}`} className="flex items-center gap-3 py-3 text-xs hover:text-primary"><span className="w-4 text-muted-foreground">{index + 1}</span><span className="min-w-0 flex-1"><span className="block truncate font-medium">{product.name}</span><span className="mt-1 block text-[11px] text-muted-foreground">{product.sku}</span></span><span className="shrink-0 text-muted-foreground">{product.count} catalogs</span></Link>)}</div> : <Empty>No catalog product selections in this period.</Empty>}
+        <p className="mt-4 text-[11px] text-muted-foreground">Each SKU counts once per catalog. Catalog selections do not measure purchases.</p>
+      </Panel>
+      <Panel title="Automation performance" subtitle="Workspace flows · runs started in the selected period" link={{ href: "/lead-channel/ai-agent", label: "Automation" }} available={ready("flows", "runs")}>
+        <div className="mb-5 grid grid-cols-3 gap-3"><SmallMetric label="Live flows now" value={data.flows.filter(flow => flow.status === "live").length} /><SmallMetric label="Completed runs" value={flowDone} /><SmallMetric label="Failed runs" value={flowFailed} warning={flowFailed > 0} /></div>
+        {report.flowRows.length ? <div className="divide-y">{[...report.flowRows].sort((a, b) => b.failed - a.failed || b.active - a.active).slice(0, 5).map(flow => <div key={flow.id} className="flex items-center gap-3 py-3 text-xs"><Workflow className="size-4 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1 truncate">{flow.name}</span><span className={flow.failed ? "shrink-0 text-amber-600 dark:text-amber-400" : "shrink-0 text-muted-foreground"}>{flow.failed ? `${flow.failed} failed` : `${flow.active} active now`}</span></div>)}</div> : <Empty>No workspace flows configured.</Empty>}
+        <p className="mt-4 text-[11px] leading-relaxed text-muted-foreground">Company and email-scoped flows are managed inside their own workspaces. Company filters do not apply here.</p>
+      </Panel>
+    </div>
+    <Panel title="Product & inventory status" subtitle="Current active catalog and configured ERP stock snapshot" link={{ href: "/catalogs", label: "Products" }} available={ready("products", "inventory")}>
+      <div className="grid grid-cols-2 gap-5 md:grid-cols-4"><SmallMetric label="Active products" value={data.products.length} /><SmallMetric label="ERP stock records" value={data.inventory.configured ? data.inventory.tracked : "Not connected"} /><SmallMetric label="Unavailable stock records" value={data.inventory.configured ? data.inventory.unavailable : "—"} /><SmallMetric label="Inventory sync" value={data.inventory.error ? "Needs attention" : !data.inventory.configured ? "Not configured" : !data.inventory.lastSyncedAt ? "Awaiting sync" : data.inventory.stale ? "Stale" : "Up to date"} warning={data.inventory.error || data.inventory.stale} /></div>
+      {data.inventory.lastSyncedAt ? <p className="mt-5 text-[11px] text-muted-foreground">Last stock sync: {new Intl.DateTimeFormat(locale, { timeZone: "Asia/Shanghai", dateStyle: "medium", timeStyle: "short" }).format(new Date(data.inventory.lastSyncedAt))} CST</p> : null}
+    </Panel>
+    <details className="rounded-xl border bg-card text-xs"><summary className="cursor-pointer px-5 py-4 font-medium">Report definitions & data availability <span className="ml-2 font-normal text-muted-foreground">{data.sources.filter(source => source.ok).length}/{data.sources.length} sources loaded</span></summary><div className="space-y-4 border-t p-5"><p className="max-w-4xl leading-relaxed text-muted-foreground">Activity uses the selected dates. Receivables, overdue work, product inventory and live-flow counts show the current state. Source attribution uses the saved company source, with combined sources grouped separately.</p><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{data.sources.map(source => <div key={source.id} className="flex items-center gap-2">{source.ok ? <Check className="size-3.5 text-emerald-600" /> : <CircleAlert className="size-3.5 text-amber-600" />}<span>{source.label}</span><span className="ml-auto text-muted-foreground">{source.ok ? `${source.count} records` : "Unavailable"}</span></div>)}</div><p className="text-muted-foreground">Snapshot: {data.asOf}. Refresh retrieves the latest saved CRM data. Revenue recognition, historical stage transitions, portal visits and provider delivery rates are not tracked by this report.</p></div></details>
+  </div>;
 }

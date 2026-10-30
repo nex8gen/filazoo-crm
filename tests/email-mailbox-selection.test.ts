@@ -9,12 +9,21 @@ import * as threading from "../lib/email-threading.ts";
 import { canViewEmail } from "../lib/email-access.ts";
 import { synchronizeMailbox } from "../lib/mailbox-sync.ts";
 import * as emailContent from "../lib/email-content.ts";
+import * as workbench from "../lib/email-workbench.ts";
+import * as provider from "../lib/email-provider.ts";
+import * as emailFiles from "../lib/email-files.ts";
+import * as emailMime from "../lib/email-mime.ts";
 import type { EmailInboxBackendData, InboxEmailItem } from "../lib/email-inbox.ts";
 import type { WorkspaceMailboxRecord } from "../lib/data/mailboxes.ts";
 import type { WorkspaceViewer } from "../lib/auth.ts";
 
 const require = createRequire(import.meta.url);
 function loadModule<T>(path: string, dependencies: Record<string, unknown>): T {
+  dependencies["../email-workbench"] = workbench;
+  dependencies["@/lib/email-provider"] = provider;
+  dependencies["@/lib/email-files"] = emailFiles;
+  dependencies["../email-mime.ts"] = emailMime;
+  if (path === "../app/api/email/send/route.ts") dependencies["@/lib/data/manual-email-send"] = loadModule("../lib/data/manual-email-send.ts", dependencies);
   const exports = {};
   const code = ts.transpileModule(readFileSync(new URL(path, import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
@@ -159,9 +168,8 @@ async function setupInbox(role = "operator", assignedContacts: Map<string, strin
       },
       getEmailAutomationSettings: async () => ({ enabled: false, steps: [], queueCount: 0 }),
     },
-    "./data/mailbox-sync.ts": { loadSyncedMailbox: async (mailbox: WorkspaceMailboxRecord, options: { sync: boolean; includeContent: boolean }) => {
+    "./data/mailbox-sync.ts": { loadMailboxWorkspace: async (mailbox: WorkspaceMailboxRecord, options: { sync: boolean; includeContent: boolean }) => {
       assert.equal(options.sync, false);
-      assert.equal(options.includeContent, false);
       synced.push(mailbox.id);
       return { messages: [{ id: `received-${mailbox.id}`, source: "mailbox", contact: "buyer@example.com", body: "Hello" }], error: null, syncedAt: null };
     } },

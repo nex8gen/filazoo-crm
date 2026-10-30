@@ -35,9 +35,6 @@ const requestSchema = z.object({
     summary: z.string().max(4_000).optional(),
     interests: z.array(z.string().max(300)).max(30).optional(),
     fitScore: z.number().finite().optional(),
-    pipelineStage: z.string().max(200).optional(),
-    estimatedOrderQuantity: z.number().finite().optional(),
-    estimatedValue: z.number().finite().optional(),
     currency: z.string().max(20).optional(),
   }).optional(),
   conversationHistory: z.array(z.object({

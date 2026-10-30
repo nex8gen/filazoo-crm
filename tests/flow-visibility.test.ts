@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import * as flowTree from "../lib/flow-tree.ts";
+import * as flowMailboxes from "../lib/flow-mailboxes.ts";
 import vm from "node:vm";
 import ts from "typescript";
 import { flowInputSchema } from "../lib/flows.ts";
@@ -335,6 +337,8 @@ function builder(hooks?: { values: unknown[]; cursor: number }) {
     "@dnd-kit/core": { ...components, useSensors: () => [], useSensor: () => ({}) },
     "@/lib/flows": flowModel,
     "@/lib/flow-audit": flowAudit,
+    "@/lib/flow-tree": flowTree,
+    "@/lib/flow-mailboxes": flowMailboxes,
     sonner: { toast: { error: () => {}, success: () => {} } },
     "@/components/language-provider": { useLanguage: () => ({ language: "en", t: (text: string) => text }) },
   }, { get: (target, name) => Reflect.get(target, name) ?? components });

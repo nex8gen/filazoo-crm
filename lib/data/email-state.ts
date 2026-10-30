@@ -81,16 +81,19 @@ export async function saveEmailAutomationSettings(userId: string, enabled: boole
 export async function listSentMailboxMessages(userId: string, mailboxId?: string): Promise<InboxEmailItem[]> {
   let query = createSupabaseAdmin()
     .from("mailbox_sent_messages")
-    .select("id,mailbox_id,from_email,to_email,subject,body,body_html,status,sent_at,message_id,thread_key,in_reply_to,reference_ids,attachments")
+    .select("id,mailbox_id,from_email,to_email,to_recipients,cc_recipients,bcc_recipients,subject,body,body_html,status,sent_at,message_id,thread_key,in_reply_to,reference_ids,attachments")
     .eq("user_id", userId);
   if (mailboxId !== undefined) query = query.eq("mailbox_id", mailboxId);
   const { data, error } = await query.order("sent_at", { ascending: false })
-    .limit(100);
+    .limit(1000);
   if (error) throw new Error(`Unable to load sent mailbox messages: ${error.message}`);
   return (data ?? []).map((row) => {
     const item: InboxEmailItem = {
       id: `sent-${row.id}`,
       from: row.from_email,
+      to: row.to_recipients?.length ? row.to_recipients : [{ address: row.to_email }],
+      cc: row.cc_recipients || [],
+      bcc: row.bcc_recipients || [],
       mailboxId: row.mailbox_id,
       direction: "outbound" as const,
       status: row.status === "sent" ? "Sent" : "Failed",

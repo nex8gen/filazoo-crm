@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useWorkspaceState } from "@/components/workspace-memory";
 import Link from "next/link";
-import { Check, Plus, Search } from "lucide-react";
+import { ArrowUpRight, Check, Clock3, Plus, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,20 +11,20 @@ import { appCategories, connectionApps, type Category } from "@/lib/connection-a
 import { connectionStatusLabel, type AppConnectionSummary } from "@/lib/app-connection-status";
 import { emailProviderHref } from "@/lib/email-connections";
 
-type Filter = "all" | "connected" | "planned";
+type Filter = "available" | "connected" | "planned";
 const filters: { value: Filter; label: string }[] = [
-  { value: "all", label: "All apps" },
+  { value: "available", label: "Available apps" },
   { value: "connected", label: "Connected" },
   { value: "planned", label: "Coming soon" },
 ];
 
 export function AppsConnections({ connections }: { connections: Record<string, AppConnectionSummary> }) {
-  const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<Filter>("all");
-  const [category, setCategory] = useState<Category | "all">("all");
+  const [query, setQuery] = useWorkspaceState("settings.apps.query", "");
+  const [filter, setFilter] = useWorkspaceState<Filter>("settings.apps.filter", "available");
+  const [category, setCategory] = useWorkspaceState<Category | "all">("settings.apps.category", "all");
   const normalizedQuery = query.trim().toLowerCase();
   const filteredApps = connectionApps.filter((app) =>
-    (filter === "all" || (filter === "connected" ? connections[app.id]?.status === "connected" : app.availability === "planned"))
+    (filter === "available" ? app.availability === "existing" : filter === "connected" ? connections[app.id]?.status === "connected" : app.availability === "planned")
     && (category === "all" || app.category === category)
     && `${app.name} ${app.category} ${app.description} ${app.keywords ?? ""}`.toLowerCase().includes(normalizedQuery),
   );
@@ -75,9 +75,9 @@ export function AppsConnections({ connections }: { connections: Record<string, A
                         </div>
                         <div className="mt-auto flex flex-wrap items-center justify-between gap-3 border-t pt-4">
                           <Badge variant="outline" className="text-muted-foreground">{connected ? emailCounts || app.scope : app.availability === "planned" ? "Coming soon" : connectionStatusLabel(summary?.status ?? "unavailable")}</Badge>
-                          <Button nativeButton={false} render={<Link href={href} />} size="sm" variant={connected ? "outline" : "default"}
-                            aria-label={`${connected ? "Connected" : "Connect"}: ${app.name}`} className={connected ? "border-emerald-600/20 text-emerald-700 dark:text-emerald-400" : ""}>
-                            {connected ? <Check /> : <Plus />}{connected ? "Connected" : "Connect"}
+                          <Button nativeButton={false} render={<Link href={href} />} size="sm" variant={connected || app.availability === "planned" ? "outline" : "default"}
+                            aria-label={`${app.availability === "planned" ? "View details" : connected ? "Manage" : "Connect"}: ${app.name}`} className={connected ? "border-emerald-600/20 text-emerald-700 dark:text-emerald-400" : ""}>
+                            {app.availability === "planned" ? <Clock3 /> : connected ? <Check /> : <Plus />}{app.availability === "planned" ? "View details" : connected ? "Manage" : "Connect"}
                           </Button>
                         </div>
                       </article>
@@ -92,9 +92,10 @@ export function AppsConnections({ connections }: { connections: Record<string, A
         <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed px-5 py-14 text-center">
           <Search aria-hidden="true" className="size-7 text-muted-foreground" /><h2 className="font-medium">No apps found</h2>
           <p className="text-sm text-muted-foreground">Try a different search or clear your filters.</p>
-          <Button variant="outline" size="sm" onClick={() => { setQuery(""); setFilter("all"); setCategory("all"); }}>Clear filters</Button>
+          <Button variant="outline" size="sm" onClick={() => { setQuery(""); setFilter("available"); setCategory("all"); }}>Clear filters</Button>
         </div>
       )}
+      <section className="border-t pt-6" aria-labelledby="settings-workflows"><h2 id="settings-workflows" className="text-sm font-semibold">Related workspaces</h2><div className="mt-3 grid gap-3 sm:grid-cols-2">{[{ label: "Delivery checks", href: "/deliverability" }, { label: "Manage automation", href: "/lead-channel/ai-agent" }, { label: "Manage products", href: "/catalogs" }, { label: "Company catalogs", href: "/catalogs/companies" }].map(link => <Link key={link.href} href={link.href} className="flex min-h-11 items-center justify-between rounded-xl border bg-card px-4 py-3 text-sm outline-none hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring">{link.label}<ArrowUpRight aria-hidden="true" className="size-4 text-muted-foreground" /></Link>)}</div></section>
     </div>
   );
 }

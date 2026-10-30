@@ -10,6 +10,7 @@ import sharp from "sharp";
 import { initialComposerHtml, prepareComposerMessage } from "../lib/email-composer.ts";
 import * as emailContent from "../lib/email-content.ts";
 import * as threading from "../lib/email-threading.ts";
+import * as workbench from "../lib/email-workbench.ts";
 
 const require = createRequire(import.meta.url);
 // Two frames, 100 ms each, with a repeat loop: animation must survive MIME encoding.
@@ -18,6 +19,8 @@ const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
 const gifHtml = `<img src="data:image/gif;base64,${gif.toString("base64")}" alt="Signature animation">`;
 
 function load<T>(path: string, dependencies: Record<string, unknown>): T {
+  dependencies["../email-workbench"] = workbench;
+  if (path === "../app/api/email/send/route.ts") dependencies["@/lib/data/manual-email-send"] = load("../lib/data/manual-email-send.ts", dependencies);
   const exports = {};
   const code = ts.transpileModule(readFileSync(new URL(path, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   vm.runInNewContext(code, { exports, require: (name: string) => dependencies[name] ?? require(name), Response, Request, Buffer, crypto, console });

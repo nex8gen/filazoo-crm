@@ -61,7 +61,7 @@ export async function readAutoReplySetting(viewer: WorkspaceViewer, mailboxId: s
 export async function mailboxHistory(mailboxId: string, userId: string, sync = false, includeContent = true) {
   const mailbox = await getViewerMailbox(userId, mailboxId);
   if (!mailbox || !mailboxHasImap(mailbox)) throw new Error("The receiving mailbox is stopped or unavailable.");
-  const snapshot = await loadSyncedMailbox(mailbox, { sync, includeContent });
+  const snapshot = await loadSyncedMailbox(mailbox, { sync: false, includeContent });
   if (snapshot.error && sync) throw new Error(snapshot.error);
   const columns = includeContent ? "*" : "id,from_email,to_email,subject,sent_at,message_id,thread_key,in_reply_to,reference_ids";
   const { data } = await createSupabaseAdmin().from("mailbox_sent_messages").select(columns)

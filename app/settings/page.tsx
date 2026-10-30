@@ -1,15 +1,13 @@
 import { EmptyState } from "@/components/data-state";
 import { Mail } from "lucide-react";
 import Link from "next/link";
-import { CheckCircle2, KeyRound, Settings2, ShieldCheck, Shuffle, UserRoundCheck, UsersRound, Workflow } from "lucide-react";
-import { PageHeader } from "@/components/page-header";
+import { CheckCircle2, KeyRound, Settings2, ShieldCheck, Shuffle, UserRoundCheck, UsersRound } from "lucide-react";
 import { MembersTable } from "@/components/members-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { notFound } from "next/navigation";
-import { SettingsNavigation } from "./settings-navigation";
+import { notFound, redirect } from "next/navigation";
 import { AppearanceSettings } from "./appearance-settings";
 import { ProfilePhotoForm } from "./profile-photo-form";
 import { profileAvatarUrl } from "@/lib/profile-avatar";
@@ -22,7 +20,10 @@ import { PaymentMethodsForm } from "./payment-methods-form";
 import { invoicePaymentMethods } from "@/lib/data/invoice-payment-methods";
 import { canManageBilling } from "@/lib/invoice-permissions";
 import { PreferencesForm, SessionSettings } from "./preferences-form";
-import { LanguageSwitcher } from "@/components/language-switcher";
+import { SettingsLanguage } from "./settings-language";
+import { settingsSections } from "@/lib/settings-sections";
+import { Suspense } from "react";
+import { SettingsSkeleton } from "@/components/settings-skeleton";
 import { InvoiceDefaultsForm } from "./invoice-defaults-form";
 import { getInvoiceDefaults } from "@/lib/data/invoice-defaults";
 import { getErpSettingsView } from "@/lib/data/erp-settings";
@@ -30,18 +31,25 @@ import { getInventoryState } from "@/lib/data/inventory";
 import { listProducts } from "@/lib/data/crm";
 import { ErpConnectionForm } from "./erp-connection-form";
 
-export default async function SettingsPage({ params }: { params?: Promise<{ section?: string }> }) {
+type SettingsPageProps = { params?: Promise<{ section?: string }> };
+
+export default function SettingsPage(props: SettingsPageProps) {
+  return <Suspense fallback={<SettingsSkeleton />}><SettingsWorkspace {...props} /></Suspense>;
+}
+
+async function SettingsWorkspace({ params }: SettingsPageProps) {
   const section = (await params)?.section || "general";
-  const titles: Record<string, string> = { general: "General", appearance: "Appearance", profile: "Profile", security: "Security and login", email: "Email preferences", invoices: "Invoice defaults", mailboxes: "My mailbox", integrations: "Connected channels", erp: "ERP connection", payments: "Payment methods", team: "Team and access", advanced: "Assignment and automation" };
+  if (section === "integrations") redirect("/settings/apps");
+  const titles: Record<string, string> = Object.fromEntries(settingsSections.map(item => [item.id, item.title]));
+  const currentSection = settingsSections.find(item => item.id === section);
   if (!titles[section]) notFound();
   const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   if ((section === "team" || section === "advanced" || section === "erp") && viewer.role !== "admin") notFound();
-  const members = viewer.role === "admin" && (section === "team" || section === "advanced") ? await listWorkspaceMembers() : [];
-  const paymentMethods = section === "payments" ? await invoicePaymentMethods() : [];
-  const invoiceDefaults = section === "invoices" ? await getInvoiceDefaults() : null;
-  const erp = section === "erp" ? await Promise.all([getErpSettingsView(), getInventoryState(), listProducts()]) : null;
-
-  const [defaultWorkspaceMailbox, personalMailbox, mailboxResult] = await Promise.all([
+  const [members, paymentMethods, invoiceDefaults, erp, defaultWorkspaceMailbox, personalMailbox, mailboxResult] = await Promise.all([
+    viewer.role === "admin" && (section === "team" || section === "advanced") ? listWorkspaceMembers() : Promise.resolve([]),
+    section === "payments" ? invoicePaymentMethods() : Promise.resolve([]),
+    section === "invoices" ? getInvoiceDefaults() : Promise.resolve(null),
+    section === "erp" ? Promise.all([getErpSettingsView(), getInventoryState(), listProducts()]) : Promise.resolve(null),
     section === "team" ? getDefaultWorkspaceMailbox().catch(() => null) : Promise.resolve(null),
     section === "mailboxes" ? getUserMailbox(viewer.id).catch(() => null) : Promise.resolve(null),
     section === "mailboxes" || section === "team" ? listMailboxes().then((mailboxes) => ({ mailboxes, error: "" })).catch(() => ({ mailboxes: [], error: "Unable to load configured mailboxes. Please refresh Settings." })) : Promise.resolve({ mailboxes: [], error: "" }),
@@ -51,27 +59,17 @@ export default async function SettingsPage({ params }: { params?: Promise<{ sect
   const assignmentManagers = members.filter((member) => member.role === "bd_manager" && member.autoAssignLeads && member.activated);
 
   return (
-    <div className="flex min-h-[calc(100dvh-3rem)] flex-col md:flex-row">
-      <SettingsNavigation isAdmin={viewer.role === "admin"} />
-      <div className="min-w-0 flex-1 p-5 sm:p-8 lg:p-10">
-      <PageHeader title={titles[section]} description="Manage your personal preferences and workspace." />
+    <div key={section} className={`settings-content settings-section-enter space-y-5 ${section === "team" || section === "advanced" || section === "erp" ? "!max-w-5xl" : "!max-w-3xl"}`}>
+      <header className="mb-6 border-b pb-6"><p className="mb-3 text-xs font-medium text-primary">{currentSection?.group || "Email & connections"}</p><h1 className="text-2xl font-semibold tracking-tight">{titles[section]}</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">{currentSection?.description || "Manage connected channels and open their workspaces."}</p></header>
       {erp ? <ErpConnectionForm key={erp[0].revision} initial={erp[0]} status={erp[1].status} products={[...new Map(erp[2].products.flatMap(product => [{ sku: product.sku, name: product.name }, ...product.variants.map(variant => ({ sku: variant.sku, name: `${product.name} — ${variant.name}` }))]).map(product => [product.sku, product])).values()]} /> : null}
-      {section === "general" ? <div className="mb-4 grid max-w-2xl gap-4"><Card className="shadow-none"><CardHeader><CardTitle>Language</CardTitle><CardDescription>Choose English or Chinese for this browser.</CardDescription></CardHeader><CardContent><LanguageSwitcher /></CardContent></Card><Card className="shadow-none"><CardHeader><CardTitle>List preferences</CardTitle><CardDescription>Choose how many records you see when browsing your CRM.</CardDescription></CardHeader><CardContent><PreferencesForm section="general" /></CardContent></Card></div> : null}
+      {section === "general" ? <div className="grid gap-5"><Card className="shadow-none"><CardHeader><CardTitle>Language</CardTitle><CardDescription>Choose English or Chinese for this browser.</CardDescription></CardHeader><CardContent><SettingsLanguage /></CardContent></Card><Card className="shadow-none"><CardHeader><CardTitle>List preferences</CardTitle><CardDescription>Choose how many records you see when browsing your CRM.</CardDescription></CardHeader><CardContent><PreferencesForm section="general" /></CardContent></Card></div> : null}
+      {section === "appearance" ? <Card className="shadow-none"><CardHeader><CardTitle>Color theme</CardTitle><CardDescription>Choose a theme or follow your device settings.</CardDescription></CardHeader><CardContent><AppearanceSettings /></CardContent></Card> : null}
       {section === "appearance" ? <Card className="mb-4 max-w-2xl shadow-none"><CardHeader><CardTitle>Display and accessibility</CardTitle><CardDescription>Control table spacing and animation across your workspace.</CardDescription></CardHeader><CardContent><PreferencesForm section="appearance" /></CardContent></Card> : null}
       {section === "email" ? <Card className="max-w-2xl shadow-none"><CardHeader><CardTitle>Reading and sending</CardTitle><CardDescription>Your defaults for the email inbox and company conversations.</CardDescription></CardHeader><CardContent><PreferencesForm section="email" /><Separator className="my-5" /><Button variant="outline" nativeButton={false} render={<Link href="/settings/mailboxes" />}>Manage my mailbox</Button></CardContent></Card> : null}
       {section === "invoices" && invoiceDefaults ? <Card className="max-w-2xl shadow-none"><CardHeader><CardTitle>Seller and invoice defaults</CardTitle><CardDescription>Shared workspace defaults for new invoices. Customer billing profiles can override currency and due dates. Existing invoices keep their saved details.</CardDescription></CardHeader><CardContent><InvoiceDefaultsForm initial={invoiceDefaults} canManage={canManageBilling(viewer.role)} /></CardContent></Card> : null}
       {section === "security" ? <Card className="mb-4 max-w-2xl shadow-none"><CardHeader><CardTitle>Other devices</CardTitle><CardDescription>End your other signed-in sessions.</CardDescription></CardHeader><CardContent><SessionSettings /></CardContent></Card> : null}
-      {section === "integrations" ? <div className="mb-4 grid max-w-2xl gap-4">{[
-        ...(viewer.role === "admin" ? [{ title: "ERP product stock", description: "Add API credentials, choose warehouses, map product SKUs, and schedule stock updates without editing code.", links: [{ label: "Manage ERP connection", href: "/settings/erp" }] }] : []),
-        { title: "Email and delivery", description: "Manage your sending mailbox, shared team inbox, and delivery readiness.", links: [{ label: "My mailbox", href: "/settings/mailboxes" }, { label: "Delivery checks", href: "/deliverability" }, ...(viewer.role === "admin" ? [{ label: "Shared inbox", href: "/settings/team" }] : [])] },
-        { title: "Customer messaging", description: "View channel connection status and manage customer conversations.", links: [{ label: "Open Messenger", href: "/messenger" }] },
-        { title: "Automation and follow-ups", description: "Configure flow triggers, business days, stop-on-reply rules, and AI approval controls in the automation workspace.", links: [{ label: "Manage automation", href: "/lead-channel/ai-agent" }] },
-        { title: "Products and customer catalogs", description: "Manage product pricing, minimum quantities, variants, availability, and the selections shared with each customer.", links: [{ label: "Manage products", href: "/catalogs" }, { label: "Company catalogs", href: "/catalogs/companies" }] },
-      ].map((feature) => <Card key={feature.title} className="shadow-none"><CardHeader><CardTitle>{feature.title}</CardTitle><CardDescription>{feature.description}</CardDescription></CardHeader><CardContent className="flex flex-wrap gap-2">{feature.links.map((link) => <Button key={link.href} variant="outline" nativeButton={false} render={<Link href={link.href} />}>{link.label}</Button>)}</CardContent></Card>)}</div> : null}
       {section === "payments" ? <Card className="max-w-2xl shadow-none"><CardHeader><CardTitle>Customer payment methods</CardTitle><CardDescription>Add bank transfer, PayPal, and other payment instructions to offer on customer invoices.</CardDescription></CardHeader><CardContent><PaymentMethodsForm initial={paymentMethods} canManage={canManageBilling(viewer.role)} /></CardContent></Card> : null}
-      {section === "integrations" ? <Card className="max-w-2xl shadow-none"><CardHeader><CardTitle>Meta lead connection</CardTitle><CardDescription>Connect Facebook and Instagram ad forms through Make and view incoming leads.</CardDescription></CardHeader><CardContent><Button nativeButton={false} render={<Link href="/lead-channel/meta" />}>Manage connection</Button></CardContent></Card> : null}
       {section === "general" ? <Card className="max-w-2xl shadow-none"><CardHeader><CardTitle>Account overview</CardTitle><CardDescription>Your Filazoo workspace account and preferences.</CardDescription></CardHeader><CardContent className="space-y-5"><div><p className="text-sm font-medium">{viewer.displayName || "Account"}</p><p className="mt-1 text-sm text-muted-foreground">{viewer.email}</p><Badge variant="outline" className="mt-3 capitalize">{viewer.role}</Badge></div><Separator /><div className="flex flex-wrap gap-3"><Button nativeButton={false} render={<Link href="/settings/profile" />}>Edit profile</Button><Button variant="outline" nativeButton={false} render={<Link href="/settings/appearance" />}>Appearance</Button></div></CardContent></Card> : null}
-      {section === "appearance" ? <Card className="max-w-2xl shadow-none"><CardHeader><CardTitle>Color theme</CardTitle><CardDescription>Choose a theme or follow your device settings.</CardDescription></CardHeader><CardContent><AppearanceSettings /></CardContent></Card> : null}
 
         {section === "profile" ? <div className="space-y-4">
           <Card className="max-w-2xl shadow-none"><CardHeader><CardTitle className="text-sm">Profile</CardTitle><CardDescription className="text-xs">This name appears throughout the Filazoo workspace.</CardDescription></CardHeader><CardContent className="space-y-4"><div className="grid gap-1"><span className="text-xs text-muted-foreground">Email</span><span className="text-sm">{viewer.email}</span></div><Separator /><ProfilePhotoForm userId={viewer.id} name={viewer.displayName || "Account"} imageUrl={profileAvatarUrl(viewer.id, viewer.avatarPath)} preset={viewer.avatarPreset || "male"} /><Separator /><ProfileForm displayName={viewer.displayName || ""} /></CardContent></Card>
@@ -107,17 +105,12 @@ export default async function SettingsPage({ params }: { params?: Promise<{ sect
 
               <Card className="shadow-none">
                 <CardHeader><div className="mb-2 grid size-9 place-items-center rounded-lg border bg-muted"><Settings2 className="size-4 text-muted-foreground" /></div><CardTitle className="text-sm">Manual assignment</CardTitle><CardDescription className="text-xs">Admins can override ownership for exceptions without disabling the automatic rule.</CardDescription></CardHeader>
-                <CardContent className="space-y-4"><div className="rounded-lg border bg-muted/30 p-4"><p className="text-sm font-medium">Pipeline ownership controls</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Open a pipeline card and choose a BD Manager. The change is recorded while future profiles continue using automatic assignment.</p></div><Button nativeButton={false} variant="outline" render={<Link href="/pipeline" />}><UsersRound />Open pipeline assignments</Button></CardContent>
+                <CardContent className="space-y-4"><div className="rounded-lg border bg-muted/30 p-4"><p className="text-sm font-medium">Account ownership controls</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Open a company profile and choose a BD Manager. The change is recorded while future profiles continue using automatic assignment.</p></div><Button nativeButton={false} variant="outline" render={<Link href="/companies" />}><UsersRound />Open company assignments</Button></CardContent>
               </Card>
             </div>
 
-            <Card className="shadow-none">
-              <CardHeader><div className="mb-2 grid size-9 place-items-center rounded-lg border bg-muted"><Workflow className="size-4 text-muted-foreground" /></div><CardTitle className="text-sm">Unified sales lifecycle</CardTitle><CardDescription className="text-xs">Customer categories and pipeline stages share one status, so automation always sees the same state.</CardDescription></CardHeader>
-              <CardContent><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{["Profile created", "Catalog sent", "Customer replied", "Qualified interest", "Quote / bulk order", "Order confirmed", "Closed / not proceeding"].map((stage, index) => <div key={stage} className="flex items-center gap-3 rounded-lg border p-3"><span className="grid size-6 shrink-0 place-items-center rounded-full bg-muted text-xs font-semibold">{index + 1}</span><span className="text-xs font-medium">{stage}</span></div>)}</div><p className="mt-4 text-xs leading-5 text-muted-foreground">Stage changes can trigger follow-up flows, create tasks, and reschedule the next action from the customer profile.</p></CardContent>
-            </Card>
           </div>
         ) : null}
-      </div>
     </div>
   );
 }

@@ -128,7 +128,7 @@ export async function loadAgentCompany(companyId: string) {
   const db = createSupabaseAdmin();
   const [company, pipeline, profile, billing, contacts] = await Promise.all([
     db.from("companies").select("id,name,website,country,city,segment").eq("id", companyId).maybeSingle(),
-    db.from("pipeline").select("stage,currency,estimated_order_quantity,estimated_value,next_followup_at").eq("company_id", companyId).maybeSingle(),
+    db.from("pipeline").select("next_followup_at").eq("company_id", companyId).maybeSingle(),
     db.from("company_profiles").select("summary,fit_score,interest_tags").eq("company_id", companyId).maybeSingle(),
     db.from("customer_billing_profiles").select("profile").eq("company_id", companyId).maybeSingle(),
     db.from("contacts").select("id,name,role,email").eq("company_id", companyId).order("created_at").order("id"),
@@ -139,8 +139,7 @@ export async function loadAgentCompany(companyId: string) {
   const fields: Record<string, string> = {
     name: company.data.name, website: company.data.website || "", country: company.data.country || "", city: company.data.city || "", segment: company.data.segment || "",
     contactName: contact?.name || "", contactRole: contact?.role || "", contactEmail: contact?.email || "",
-    stage: pipeline.data?.stage || "new", currency: pipeline.data?.currency || "USD",
-    estimatedOrderQuantity: String(pipeline.data?.estimated_order_quantity ?? ""), estimatedValue: String(pipeline.data?.estimated_value ?? ""), nextFollowupAt: pipeline.data?.next_followup_at || "",
+    nextFollowupAt: pipeline.data?.next_followup_at || "",
     summary: profile.data?.summary || "", fitScore: String(profile.data?.fit_score ?? ""), tags: (profile.data?.interest_tags ?? []).join(", "),
     ...Object.fromEntries(Object.entries(commerceDefaults(billing.data?.profile)).map(([key, value]) => [`commerce.${key}`, String(value)])),
   };

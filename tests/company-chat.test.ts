@@ -27,7 +27,8 @@ const email: CompanyActivity = {
 test("builds customer evidence from the authorized profile, contacts and saved email bodies", () => {
   const { context, sources } = buildCompanyChatContext(customer([email]), true);
   assert.equal(context.profile.name, "Example Print Studio");
-  assert.equal(context.profile.estimatedOrderQuantity, 500);
+  assert.equal("estimatedOrderQuantity" in context.profile, false);
+  assert.equal("stage" in context.profile, false);
   assert.equal(context.contacts.records[0].email, "buyer@example.com");
   assert.equal(context.activity[0].body, email.body);
   assert.equal(context.activity[0].direction, "received");

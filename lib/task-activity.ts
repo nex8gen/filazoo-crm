@@ -1,4 +1,5 @@
 export const activityPageSize = 100;
+export type ActivityCompany = { id: string; name: string };
 export type ActivityTask = {
   id: string; title: string; notes: string | null; priority: string;
   due_at: string | null; company_id: string | null; updated_at: string;
@@ -10,11 +11,15 @@ export type ActivityTask = {
   assigned_by?: string | null;
   assignee_name?: string | null;
   follows_company_owner?: boolean;
+  company?: ActivityCompany | null;
+  workflow?: import("./task-workflows").TaskWorkflowSummary | null;
 };
 export type ActivityAlert = {
   id: string; message: string; channel: string; conversation_id: string | null;
   include_thread_link: boolean; read_at: string | null; created_at: string;
   task_id?: string | null;
+  workflow?: import("./task-workflows").TaskWorkflowSummary | null;
+  company?: ActivityCompany | null;
 };
 export type FlowActivityData = {
   tasks: ActivityTask[]; alerts: ActivityAlert[];

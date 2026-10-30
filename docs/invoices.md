@@ -40,6 +40,8 @@ The product picker uses active database products, variants, currencies, MOQ, and
 
 Record payments after money arrives. Partial payments reduce the balance; paid and overdue states are derived from the balance and due date. Payment methods describe external receipts; this feature does not charge cards or move money. Unpaid issued invoices can be voided. Only drafts can be deleted. Payment reversals, credit notes, recurring billing, and automated email delivery are not implemented.
 
+Company list rows and profile headers show a circular paid-order badge before the avatar: black with no number for zero, bronze **1**, silver **2**, gold **3**, and gold **3+** above three. The tooltip and accessible label retain the exact count. Counts are derived from positive-value, fully paid issued invoices explicitly linked to the company, across all invoice pages. Split invoices linked to the same purchase order count once when the first invoice is fully paid; standalone invoices count separately. Draft, unpaid, partially paid, void, zero-value, and unlinked invoices do not count. Recording a payment refreshes the current profile and invalidates the company list and affected profile pages. No stored counter or backfill is needed; existing paid invoices count automatically.
+
 Fully paid issued invoices automatically display a red circular **PAID / Thank you** stamp with a scalloped edge and worn ink texture over the amount due on screen, in print, and in generated email PDFs. The stamp is a translucent overlay and adds no document space. The same transparent artwork is used in the browser and PDF. The stamp uses the existing derived paid status; partial, unpaid, draft, and void invoices do not display it.
 
 ## Amounts and rounding

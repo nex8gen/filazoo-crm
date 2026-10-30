@@ -1,5 +1,5 @@
 import { createSupabaseAdmin } from "../supabase/admin.ts";
-import { getInitials, getPipelineStageLabel } from "../crm-model.ts";
+import { getInitials } from "../crm-model.ts";
 import type { InboxEmailItem } from "../email-inbox.ts";
 import type { AssignedEmailContacts } from "../email-access.ts";
 
@@ -10,7 +10,7 @@ type CompanyRow = {
   company_profiles: Relation<{ summary: string | null; fit_score: number | null; interest_tags: string[] | null }>;
   pipeline: Relation<{ stage: string; estimated_order_quantity: number | null; estimated_value: number | null; currency: string; owner_id: string | null }>;
 };
-const fields = "id,name,website,country,city,segment,status,source,contacts(name,role,email),company_profiles(summary,fit_score,interest_tags),pipeline(stage,estimated_order_quantity,estimated_value,currency,owner_id)";
+const fields = "id,name,website,country,city,segment,status,source,contacts(name,role,email),company_profiles(summary,fit_score,interest_tags),pipeline(currency,owner_id)";
 const first = <T>(value: Relation<T>) => Array.isArray(value) ? value[0] : value;
 const literalPattern = (value: string) => JSON.stringify(value.replace(/[\\%_]/g, "\\$&"));
 
@@ -68,8 +68,7 @@ export async function listInboxCompanies(messages: InboxEmailItem[], assigned: A
       id: row.id, name: row.name, email, contact: contact?.name || "No contact yet", contactRole: contact?.role || "Role not confirmed",
       website: row.website || "", country: row.country || "Unknown", city: row.city || "", segment: row.segment || "Unclassified",
       summary: profile?.summary || "This company has not been profiled yet.", tags: profile?.interest_tags ?? [], fitScore: profile?.fit_score ?? 0,
-      stage: getPipelineStageLabel(pipeline?.stage || row.status), estimatedOrderQuantity: pipeline?.estimated_order_quantity ?? null,
-      estimatedValue: pipeline?.estimated_value == null ? null : Number(pipeline.estimated_value), currency: pipeline?.currency || "USD",
+      currency: pipeline?.currency || "USD",
       ownerId, ownerName, ownerInitials: ownerId ? getInitials(ownerName) : "—", ownerAvatarUrl: undefined as string | undefined,
     }));
   }) };

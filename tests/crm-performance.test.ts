@@ -41,6 +41,7 @@ function load(options: { demo?: boolean; denied?: boolean; failure?: boolean; ro
     "../env.ts": { env: { authRequired: true }, hasSupabaseConfig: () => !options.demo },
     "../supabase/admin.ts": { createSupabaseAdmin: () => client },
     "../crm-model.ts": model,
+    "./company-orders.ts": { readCompanyPaidOrderCounts: async () => { assert.ok(authorized); return new Map([[row.id, 4]]); } },
     "../order-estimate.ts": { metaOrderLabel: () => "" },
     "./cached-member-avatars.ts": { resolveMemberAvatars: async () => { avatarStarted = true; releaseOwners(); return new Map([["owner-1", "/avatar.png"]]); } },
   };
@@ -56,6 +57,7 @@ test("single-company reads filter in the database and retain the existing compan
   assert.equal(result.company?.id, row.id);
   assert.equal(result.company?.name, "Acme");
   assert.equal(result.company?.domain, "acme.test");
+  assert.equal(result.company?.paidOrderCount, 4);
   assert.ok(calls.some(call => call.table === "companies" && call.method === "eq" && call.args[0] === "id" && call.args[1] === row.id));
   assert.ok(calls.some(call => call.method === "or" && call.args[0] === "source.is.null,source.neq.sample_seed"));
   assert.equal(calls.filter(call => call.table === "companies" && call.method === "range").length, 1);

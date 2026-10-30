@@ -11,7 +11,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { matchesSegment, type SavedSegment, type SegmentCompany, type SegmentRules } from "@/lib/segments";
-import { pipelineStageLabels, pipelineStageValues } from "@/lib/types";
 
 const selectClass = "h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
@@ -46,6 +45,7 @@ export function CreateSegmentDialog({ companies, segment, onClose }: { companies
         <DialogDescription>Choose individual companies or build an audience with rules.</DialogDescription>
       </DialogHeader>
       <form action={action} className="space-y-5">
+        {rules.stage ? <div role="alert" className="rounded-lg border p-3 text-xs"><p>This audience uses a retired sales rule. Review the membership before rebuilding its rules.</p><Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => setRules(({ stage: _stage, ...current }) => { void _stage; return current; })}>Remove retired rule</Button></div> : null}
         <input type="hidden" name="rules" value={JSON.stringify(submittedRules)} />
         {segment ? <input type="hidden" name="segmentId" value={segment.id} /> : null}
         <fieldset disabled={pending} className="grid min-w-0 gap-5 md:grid-cols-[minmax(0,1fr)_16rem]">
@@ -59,7 +59,6 @@ export function CreateSegmentDialog({ companies, segment, onClose }: { companies
               <div className="space-y-1.5"><Label htmlFor="segment-business">Business segment</Label><select id="segment-business" className={selectClass} value={rules.businessSegment ?? ""} onChange={(event) => setRule("businessSegment", event.target.value)}><option value="">Any business segment</option>{businessSegments.map((value) => <option key={value} value={value}>{value}</option>)}</select></div>
               <div className="space-y-1.5"><Label htmlFor="segment-country">Country</Label><select id="segment-country" className={selectClass} value={rules.country ?? ""} onChange={(event) => setRule("country", event.target.value)}><option value="">Any country</option>{countries.map((value) => <option key={value} value={value}>{value}</option>)}</select></div>
               <div className="space-y-1.5"><Label htmlFor="segment-source">Lead source</Label><select id="segment-source" className={selectClass} value={rules.source ?? ""} onChange={(event) => setRule("source", event.target.value)}><option value="">Any lead source</option>{sources.map(([value, label]) => <option key={value} value={value}>{label} ({value.replaceAll("_", " ")})</option>)}</select></div>
-              <div className="space-y-1.5"><Label htmlFor="segment-stage">Sales stage</Label><select id="segment-stage" className={selectClass} value={rules.stage ?? ""} onChange={(event) => setRule("stage", event.target.value)}><option value="">Any sales stage</option>{pipelineStageValues.map((value) => <option key={value} value={value}>{pipelineStageLabels[value]}</option>)}</select></div>
               <div className="space-y-1.5"><Label htmlFor="segment-fit">Minimum fit score</Label><select id="segment-fit" className={selectClass} value={rules.minFitScore ?? ""} onChange={(event) => setRule("minFitScore", event.target.value ? Number(event.target.value) : undefined)}><option value="">Any fit score</option>{Array.from({ length: 10 }, (_, index) => <option key={index + 1} value={index + 1}>{index + 1} / 10 or higher</option>)}</select></div>
               <div className="space-y-1.5"><Label htmlFor="segment-email">Contact email</Label><select id="segment-email" className={selectClass} value={rules.hasEmail === undefined ? "" : String(rules.hasEmail)} onChange={(event) => setRule("hasEmail", event.target.value ? event.target.value === "true" : undefined)}><option value="">Any email availability</option><option value="true">Has contact email</option><option value="false">Missing contact email</option></select></div>
             </div></>}

@@ -39,7 +39,7 @@ export default async function MetaLeadsPage() {
   } else loadError = "Connect the CRM database before receiving leads.";
 
   return <div className="space-y-6">
-    <PageHeader title="Meta Leads" description="Submissions create company profiles, contacts, and pipeline leads automatically. This connection log refreshes every 15 seconds." actions={<MetaLeadRefresh />} />
+    <PageHeader title="Meta Leads" description="Submissions create company profiles and contacts automatically. This connection log refreshes every 15 seconds." actions={<MetaLeadRefresh />} />
     <p className="text-sm"><Link href="/companies" className="font-medium underline">Open Companies</Link> to manage Meta and Shopify leads together.</p>
     {isAdmin ? <Card>
       <CardHeader><CardTitle>Simple connection with Make</CardTitle></CardHeader>

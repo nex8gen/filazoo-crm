@@ -48,7 +48,7 @@ test("company selectors and segments read all pages without loading history or s
   assert.equal(segments.companies[0].fitScore, 7);
   assert.equal(segments.companies[0].hasEmail, true);
   assert.equal(segments.companies[0].sourceLabel, "Shopify B2B");
-  assert.equal(segments.companies[0].stage, "Qualified interest");
+  assert.equal("stage" in segments.companies[0], false);
   assert.ok(fields.every(field => !/emails|owner_id|meta_leads|summary/.test(field)));
   assert.deepEqual(ranges, [0, 500, 0, 500]);
 });

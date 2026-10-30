@@ -3,8 +3,9 @@ import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { getAssignedEmailContacts } from "@/lib/data/email-access";
 import { canViewEmail } from "@/lib/email-access";
 import { getViewerMailbox } from "@/lib/data/mailboxes";
+import { emailAttachmentHeaders } from "@/lib/email-files";
 
-export async function GET(_request: Request, context: RouteContext<"/api/email/attachments/[id]/[index]">) {
+export async function GET(request: Request, context: RouteContext<"/api/email/attachments/[id]/[index]">) {
   const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   const { id, index: indexText } = await context.params;
   const index = Number(indexText);
@@ -27,16 +28,8 @@ export async function GET(_request: Request, context: RouteContext<"/api/email/a
 
   const { data, error: downloadError } = await admin.storage.from("mailbox-attachments").download(attachment.path);
   if (downloadError || !data) return new Response("Attachment unavailable.", { status: 404 });
-  const filename = attachment.filename.replace(/[\r\n"\\]/g, "_");
-  const fallbackFilename = filename.replace(/[^\x20-\x7e]/g, "_");
-  const inlineTypes = new Set(["application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp"]);
-  const contentType = inlineTypes.has(attachment.contentType) ? attachment.contentType : "application/octet-stream";
+  const bytes = new Uint8Array(await data.arrayBuffer());
   return new Response(data, {
-    headers: {
-      "Content-Type": contentType,
-      "Content-Disposition": `${contentType !== "application/octet-stream" ? "inline" : "attachment"}; filename="${fallbackFilename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
-      "Cache-Control": "private, no-store",
-      "X-Content-Type-Options": "nosniff",
-    },
+    headers: emailAttachmentHeaders(attachment.filename, attachment.contentType, bytes, new URL(request.url).searchParams.get("download") === "1"),
   });
 }

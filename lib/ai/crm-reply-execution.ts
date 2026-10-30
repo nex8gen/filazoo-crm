@@ -12,7 +12,7 @@ export async function replyOperationTarget(operation: ReplyOperation, viewer: Wo
   return { name: ready.company.fields.name, value: ready.fingerprint, preview: {
     recipient: ready.recipient, from: ready.mailbox.email, subject: ready.email?.subject ?? ready.source?.current?.subject,
     ...(ready.email ? { emailText: ready.email.text } : {}), needed: operation.needed, nextTask: operation.task,
-    expiresInDays: operation.expiresInDays, invoiceContext: ready.snapshot,
+    expiresInDays: operation.expiresInDays, invoiceContext: ready.snapshot, onReply: operation.onReply,
     effect: operation.op === "request_customer_information" ? "Send this request once and save a wait. A matching human reply creates one task and notification. No invoice is sent." : "Watch for new replies to this actual sent email. No email is resent. A matching human reply creates one task and notification.",
   } };
 }

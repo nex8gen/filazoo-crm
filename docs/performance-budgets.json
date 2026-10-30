@@ -3,12 +3,13 @@
   "routes": [
     "index",
     "companies",
+    "tasks",
+    "my-day",
     "segments",
     "catalogs",
     "catalogs/companies",
     "invoices",
     "emails",
-    "pipeline",
     "messenger",
     "settings",
     "lead-channel/ai-agent"

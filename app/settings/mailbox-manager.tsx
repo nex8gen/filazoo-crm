@@ -1,9 +1,10 @@
 "use client";
 
-import { useActionState, useState } from "react";
-import { Pause, Play, Trash2 } from "lucide-react";
+import { startTransition, useActionState, useState } from "react";
+import { LoaderCircle, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { manageMailbox } from "./actions";
 
 type MailboxSummary = {
@@ -28,12 +29,7 @@ export function MailboxManager({ mailbox }: { mailbox: MailboxSummary }) {
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline">{mailbox.type}</Badge>
           <Badge variant={mailbox.isActive ? "secondary" : "outline"}>{mailbox.isActive ? "Active" : "Stopped"}</Badge>
-          <form action={action}>
-            <input type="hidden" name="mailboxId" value={mailbox.id} />
-            <Button type="submit" name="operation" value={mailbox.isActive ? "stop" : "resume"} variant="outline" size="sm" disabled={pending} aria-label={`${mailbox.isActive ? "Stop" : "Resume"} ${mailbox.email}`}>
-              {mailbox.isActive ? <Pause /> : <Play />}{mailbox.isActive ? "Stop" : "Resume"}
-            </Button>
-          </form>
+          <div className="flex items-center gap-2">{pending ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin text-muted-foreground" /> : null}<Switch checked={mailbox.isActive} disabled={pending} aria-label={`Sending and syncing: ${mailbox.email}`} onCheckedChange={enabled => { const data = new FormData(); data.set("mailboxId", mailbox.id); data.set("operation", enabled ? "resume" : "stop"); startTransition(() => action(data)); }} /></div>
           <Button type="button" variant="outline" size="sm" disabled={pending} onClick={() => setConfirmDelete(true)} aria-label={`Delete ${mailbox.email}`}><Trash2 />Delete</Button>
         </div>
       </div>

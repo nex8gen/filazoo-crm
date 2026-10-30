@@ -1,6 +1,7 @@
 "use client";
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DatePicker } from "@/components/ui/date-picker";
 
 import { useEffect, useState, useTransition } from "react";
 import Image from "next/image";
@@ -58,6 +59,7 @@ export function PurchaseOrderWorkspace({
   initial,
   profile: initialProfile,
   catalogAvailability,
+  focusedOrderId,
 }: {
   companyId: string;
   companyName: string;
@@ -66,6 +68,7 @@ export function PurchaseOrderWorkspace({
   initial: Result;
   profile: OrderProfile;
   catalogAvailability: { currency: string; count: number }[];
+  focusedOrderId?: string;
 }) {
   const [profile, setProfile] = useState(initialProfile);
   const [result, setResult] = useState(initial);
@@ -76,7 +79,7 @@ export function PurchaseOrderWorkspace({
   const load = (nextPage: number) =>
     startTransition(async () => {
       try {
-        setResult(await listCompanyPurchaseOrders(companyId, nextPage));
+        setResult(await listCompanyPurchaseOrders(companyId, nextPage, focusedOrderId));
         setPage(nextPage);
         setError("");
       } catch (error) {
@@ -87,6 +90,7 @@ export function PurchaseOrderWorkspace({
     });
   return (
     <section className="space-y-5">
+      {focusedOrderId ? <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/20 px-4 py-3 text-xs"><span>Showing the selected purchase order.</span><Link className="font-medium text-primary underline" href={`/companies/${companyId}?tab=purchase-orders`}>View all customer orders</Link></div> : null}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">Purchase orders</h2>
@@ -394,7 +398,7 @@ function PurchaseOrderEditor({
   ) => (
     <div className="space-y-2">
       <Label htmlFor={`po-${key}`}>{label}</Label>
-      <Input
+      {type === "date" ? <DatePicker id={`po-${key}`} required={required} value={document[key]} onValueChange={value => change(key, value)} /> : <Input
         id={`po-${key}`}
         type={type}
         required={required}
@@ -402,7 +406,7 @@ function PurchaseOrderEditor({
         onChange={(event) => change(key, event.target.value)}
         maxLength={type === "text" ? 160 : undefined}
         readOnly={locked && key === "reference"}
-      />
+      />}
     </div>
   );
   return (

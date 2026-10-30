@@ -54,6 +54,8 @@ npm run dev
 
 Open `http://localhost:3000`.
 
+`npm run dev` checks the Supabase keys and makes read-only authentication and database connection checks before starting. If startup reports blocked network permissions, run it from a terminal with network access. Fix missing keys in `.env.development.local`; do not replace secrets with redacted values downloaded from deployment settings. A connection failure stops startup instead of opening a CRM that cannot sign users in.
+
 ## Supabase setup
 
 For a new project, run `supabase/schema.sql` in the Supabase SQL editor.
@@ -176,7 +178,7 @@ Implemented:
 - Supabase Auth session handling
 - Workspace role enforcement
 - Server-only CRM data-access layer
-- Database-backed dashboard, companies, pipeline, email queue, and catalog views
+- Database-backed analytics, companies, email queue, and catalog views
 - Explicit empty/offline fallback when live data is unavailable
 - Dry-run outreach safety policy and mock AI diagnostics
 

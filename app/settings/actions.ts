@@ -169,7 +169,7 @@ export async function updateMemberRole(_state: SettingsActionState, formData: Fo
 
 export async function updateMember(_state: SettingsActionState, formData: FormData): Promise<SettingsActionState> {
   const viewer = await requireWorkspaceMember(["admin"]);
-  const parsed = memberSchema.safeParse({ userId: formData.get("userId"), displayName: formData.get("displayName"), email: formData.get("email"), role: formData.get("role"), autoAssignLeads: formData.get("autoAssignLeads") });
+  const parsed = memberSchema.safeParse({ userId: formData.get("userId"), displayName: formData.get("displayName"), email: formData.get("email"), role: formData.get("role"), autoAssignLeads: formData.get("autoAssignLeads") ?? undefined });
   if (!parsed.success) return { error: "Enter a valid name, email, and workspace role." };
   if (parsed.data.userId === viewer.id) return { error: "Edit your own name from the Account tab. Your administrator role is protected." };
 
@@ -224,7 +224,7 @@ export async function saveWorkspaceMailbox(_state: SettingsActionState, formData
     displayName: formData.get("displayName"),
     provider: formData.get("provider") ?? "smtp",
     notes: formData.get("notes"),
-    isDefault: formData.get("isDefault"),
+    isDefault: formData.get("isDefault") ?? undefined,
     smtpHost: formData.get("smtpHost"),
     smtpPort: formData.get("smtpPort"),
     smtpUsername: formData.get("smtpUsername"),
@@ -307,7 +307,7 @@ export async function savePersonalMailbox(_state: SettingsActionState, formData:
     displayName: formData.get("displayName"),
     provider: formData.get("provider") ?? "smtp",
     notes: formData.get("notes"),
-    isDefault: formData.get("isDefault"),
+    isDefault: formData.get("isDefault") ?? undefined,
     smtpHost: formData.get("smtpHost"),
     smtpPort: formData.get("smtpPort"),
     smtpUsername: formData.get("smtpUsername"),

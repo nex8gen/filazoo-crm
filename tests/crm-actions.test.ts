@@ -71,8 +71,8 @@ test("manual lead creation starts new-lead flows after saving the contact and pi
 test("partial profile saves validate only requested fields and retain strict creation requirements", async () => {
   const examples = {
     name: "Customer", website: "example.invalid", country: "United States", city: "Tarrytown", segment: "Manufacturing",
-    contactName: "Jimmy", contactRole: "Buyer", contactEmail: "buyer@example.invalid", stage: "interested", summary: "Keep account notes", tags: "PLA, PETG", fitScore: 8,
-    estimatedOrderQuantity: 200, estimatedValue: 1200.5, currency: "CAD", nextFollowupAt: "2026-10-29T09:00:00+08:00",
+    contactName: "Jimmy", contactRole: "Buyer", contactEmail: "buyer@example.invalid", summary: "Keep account notes", tags: "PLA, PETG", fitScore: 8,
+    nextFollowupAt: "2026-10-29T09:00:00+08:00",
   };
   for (const [field, value] of Object.entries(examples)) {
     state.calls = [];
@@ -115,7 +115,7 @@ test("company deletion reports actual deleted rows and refreshes linked screens"
   assert.deepEqual(await bulkUpdateCompanies([id, otherId], "delete"), { success: "1 company deleted." });
   assert.ok(state.calls.some((call) => call[0] === "in" && call[1] === "id"));
   assert.ok(state.calls.some((call) => call[0] === "select" && call[1] === "id"));
-  for (const path of ["/companies", "/pipeline", "/invoices", `/companies/${id}`]) assert.ok(state.paths.includes(path));
+  for (const path of ["/companies", "/invoices", `/companies/${id}`]) assert.ok(state.paths.includes(path));
 });
 test("missing records and database errors never produce delete success", async () => {
   state.rows = [];

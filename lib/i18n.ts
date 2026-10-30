@@ -1,4 +1,11 @@
 import { zhCNApps } from "./i18n-apps.ts";
+import { zhCNCustomerPortal } from "./i18n-customer-portal.ts";
+import { zhCNAnalytics } from "./i18n-analytics.ts";
+import { zhCNMyDay } from "./i18n-my-day.ts";
+import { zhCNWorkspaceSearch } from "./i18n-workspace-search.ts";
+import { zhCNQuotations } from "./i18n-quotations.ts";
+import { zhCNFlowScenarios } from "./i18n-flow-scenarios.ts";
+import { zhCNEmailWorkbench } from "./i18n-email-workbench.ts";
 import { zhCNAdditional } from "./i18n-zh-cn.ts";
 import { zhCNSettings } from "./i18n-settings.ts";
 import { zhCNSegments } from "./i18n-segments.ts";
@@ -15,6 +22,18 @@ export { LANGUAGE_STORAGE_KEY } from "./app-language.ts";
 // Product terminology is centralized so sales, catalog, mailbox, and
 // automation screens use consistent professional Chinese wording.
 const zhCN: Record<string, string> = {
+  ...zhCNCustomerPortal,
+  ...zhCNAnalytics,
+  ...zhCNMyDay,
+  ...zhCNWorkspaceSearch,
+  ...zhCNQuotations,
+  "= Yes": "= 是",
+  "Choose a starting point": "选择起点",
+  "Start from scratch": "从空白流程开始",
+  "All starters open as drafts. Check the sender mailbox and audience before launch.": "所有起始模板均以草稿打开。启用前请检查发件邮箱与受众。",
+  "Start with a complete journey, customize its audience and actions, then preview and test before turning it on.": "从完整的客户流程开始，自定义受众及操作，预览并测试后再启用。",
+  ...zhCNFlowScenarios,
+  ...zhCNEmailWorkbench,
   "Your prices, product details, and photos are private to your account. Your catalogs and AI automations use these saved details.": "您的价格、产品资料和图片仅限本人使用。您的目录和 AI 自动流程会采用这些已保存的资料。",
   "← All products": "← 所有产品",
   "Download saved product PDF": "下载已保存的产品 PDF",

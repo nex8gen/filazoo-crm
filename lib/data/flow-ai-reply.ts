@@ -73,7 +73,10 @@ export async function generateFlowAiReply({ config, contact, company, managerNam
       return apiKey ? await generateGeminiText({ ...options, apiKey, model: process.env.GEMINI_EMAIL_MODEL?.trim() }) : await gateway();
     } catch (error) {
       if (!apiKey || !token || !isGeminiRegionError(error)) throw error;
-      return gateway();
+      try { return await gateway(); }
+      catch (fallbackError) {
+        throw new Error(`Gemini is unavailable from this server location. The fallback provider also failed: ${fallbackError instanceof Error ? fallbackError.message : "Unknown provider error"}`);
+      }
     }
   };
   // Resolve the attachment before drafting so the email describes exactly what will be sent.

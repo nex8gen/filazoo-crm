@@ -3,6 +3,7 @@
 import { PackageSearch } from "lucide-react";
 import { EmptyState } from "@/components/data-state";
 import { useMemo, useState } from "react";
+import { useWorkspaceState } from "@/components/workspace-memory";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
@@ -208,11 +209,11 @@ export function ProductsCatalogV2({ products: initialProducts, canWrite, mode }:
     setPreviousProducts(initialProducts);
     setProducts(initialProducts);
   }
-  const [query, setQuery] = useState("");
-  const [material, setMaterial] = useState("all");
-  const [status, setStatus] = useState("all");
-  const [draft, setDraft] = useState({ query: "", material: "all", status: "all" });
-  const [page, setPage] = useState(1);
+  const [query, setQuery] = useWorkspaceState("products.query", "");
+  const [material, setMaterial] = useWorkspaceState("products.material", "all");
+  const [status, setStatus] = useWorkspaceState("products.status", "all");
+  const [draft, setDraft] = useWorkspaceState("products.filters", { query: "", material: "all", status: "all" });
+  const [page, setPage] = useWorkspaceState("products.page", 1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);

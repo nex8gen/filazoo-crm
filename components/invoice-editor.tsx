@@ -3,6 +3,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 
 import { useCallback, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
 import { InvoiceConnections } from "@/components/invoice-connections";
 import { InvoicePaymentSelect } from "@/components/invoice-payment-select";
 import { productUnitPrice, type InvoiceProduct } from "@/lib/invoice-links";
@@ -97,13 +98,13 @@ export function InvoiceEditor({
   ) => (
     <label className="grid gap-2 text-sm">
       {label}
-      <input
+      {type === "date" ? <DatePicker value={doc[key]} required={required} onValueChange={value => field(key, value)} /> : <input
         type={type}
         value={doc[key]}
         required={required}
         maxLength={key.includes("TaxId") ? 100 : 200}
         onChange={(event) => field(key, event.target.value)}
-      />
+      />}
     </label>
   );
   const areaField = (

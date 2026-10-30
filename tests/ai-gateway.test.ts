@@ -27,3 +27,10 @@ test("detects Gemini regional availability errors", () => {
   assert.equal(isGeminiRegionError(new Error("User location is not supported for the API use.")), true);
   assert.equal(isGeminiRegionError(new Error("Rate limit exceeded")), false);
 });
+
+test("expired local OIDC tokens fail with a refresh instruction before making a provider request", async () => {
+  const payload = Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) - 60 })).toString("base64url");
+  let requests = 0;
+  await assert.rejects(generateGatewayText({ token: `header.${payload}.signature`, systemInstruction: "Test", prompt: "Test", fetcher: async () => { requests++; throw new Error("Must not fetch"); } }), /authentication has expired.*vercel env pull/);
+  assert.equal(requests, 0);
+});

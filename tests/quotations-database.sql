@@ -1,0 +1,61 @@
+-- Transactional integration test: creates only temporary QA records, rolls back all data.
+begin;
+set local statement_timeout = '20s';
+do $$
+declare
+  actor uuid; other_actor uuid; customer uuid; sku text; quote_id uuid; legacy_id uuid; result jsonb; doc jsonb; po jsonb; saved_order uuid; new_quote uuid; ref text; v integer; n integer; denied boolean;
+begin
+  select user_id into actor from public.workspace_members where role='admin' and activated_at is not null order by user_id limit 1;
+  select user_id into other_actor from public.workspace_members where user_id<>actor and activated_at is not null order by user_id limit 1;
+  assert actor is not null and other_actor is not null, 'Need two active QA actors';
+  select id into customer from public.companies where name like '%DO NOT CONTACT%' order by created_at limit 1;
+  select p.sku into sku from public.products p where active and btrim(currency)='USD' order by p.sku limit 1;
+  assert customer is not null and sku is not null, 'Need existing internal QA customer and USD product';
+  insert into public.catalogs(user_id,company_id,product_skus,product_snapshot,currency,version) values(actor,customer,array[sku],jsonb_build_array(jsonb_build_object('sku',sku)),'USD',1) returning id,version into quote_id,v;
+  ref := 'Q-'||upper(left(replace(quote_id::text,'-',''),8))||'-V'||v;
+  doc := jsonb_build_object('sellerName','QA','sellerAddress','China','customerName','QA ONLY','issueDate',((now() at time zone 'Asia/Shanghai')::date)::text,'validUntil',((now() at time zone 'Asia/Shanghai')::date+14)::text,'currency','USD','customerEmail','','billingAddress','QA','taxId','','shippingAddress','QA','shippingRecipient','QA','shippingPhone','','shippingMinor',1234,'shippingConfirmed',false,'preShipmentPercent',30,'paymentTerms','30% deposit, balance before shipment','notes','QA only','subtotalMinor',50000,'totalMinor',51234,'items',jsonb_build_array(jsonb_build_object('productSku',sku,'sku',sku,'description','QA product','quantity',100,'unitPriceMinor',500,'pricingMode','agreed')));
+  denied := false; begin perform public.mutate_catalog_quotation(quote_id,other_actor,0,'save',doc); exception when raise_exception then denied:=true; end; assert denied, 'Private ownership must be enforced';
+  perform public.mutate_catalog_quotation(quote_id,actor,0,'save',doc);
+  denied := false; begin perform public.mutate_catalog_quotation(quote_id,actor,0,'save',doc); exception when raise_exception then denied:=true; end; assert denied, 'Stale revision must be blocked';
+  denied := false; begin perform public.mutate_catalog_quotation(quote_id,actor,1,'share'); exception when raise_exception then denied:=true; end; assert denied, 'Unconfirmed shipping must block sharing';
+  doc := doc || '{"shippingConfirmed":true}'::jsonb;
+  perform public.mutate_catalog_quotation(quote_id,actor,1,'save',doc);
+  perform public.mutate_catalog_quotation(quote_id,actor,2,'share');
+  denied := false; begin perform public.mutate_catalog_quotation(quote_id,actor,3,'save',doc); exception when raise_exception then denied:=true; end; assert denied, 'Shared prices must be immutable';
+  denied := false; begin perform public.mutate_catalog_quotation(quote_id,actor,3,'accept',p_note=>' '); exception when raise_exception then denied:=true; end; assert denied, 'Acceptance evidence must be required';
+  perform public.mutate_catalog_quotation(quote_id,actor,3,'accept',p_note=>'Synthetic acceptance for QA only');
+  po := jsonb_build_object('reference',ref,'currency','USD','orderDate',((now() at time zone 'Asia/Shanghai')::date)::text,'deliveryDate','','status','draft','paymentPolicy','custom','preShipmentPercent',30,'paymentTerms',doc->>'paymentTerms','shippingAddress','QA','shippingRecipient','QA','shippingPhone','','notes','QA only','items',jsonb_build_array(jsonb_build_object('description','QA product','sku',sku,'quantity',100,'unitPriceMinor',499),jsonb_build_object('description','Shipping','sku','FREIGHT','quantity',1,'unitPriceMinor',1234)));
+  denied := false; begin perform public.mutate_catalog_quotation(quote_id,actor,4,'convert',p_order=>po); exception when raise_exception then denied:=true; end; assert denied, 'Changed accepted price must not convert';
+  po := jsonb_set(po,'{items,0,unitPriceMinor}','500');
+  result := public.mutate_catalog_quotation(quote_id,actor,4,'convert',p_order=>po); saved_order:=(result->>'orderId')::uuid;
+  assert saved_order is not null;
+  result := public.mutate_catalog_quotation(quote_id,actor,0,'convert');
+  assert (result->>'orderId')::uuid=saved_order, 'Repeat conversion must return same order';
+  select count(*) into n from public.purchase_orders where company_id=customer and reference=ref; assert n=1, 'Exactly one order';
+  assert (select total_minor=51234 and document->>'status'='draft' and jsonb_array_length(document->'items')=2 from public.purchase_orders where id=saved_order), 'Draft total and freight must be preserved';
+  select count(*) into n from public.events where data->>'catalogId'=quote_id::text and type='catalog_quotation_convert'; assert n=1, 'Retry must not duplicate conversion events';
+  assert exists(select 1 from public.events where data->>'catalogId'=quote_id::text and data->>'acceptanceNote'='Synthetic acceptance for QA only'), 'Acceptance must be audited';
+  result:=public.mutate_catalog_quotation(quote_id,actor,5,'revise'); new_quote:=(result->>'newId')::uuid;
+  assert (select quote_order_id=saved_order and quote_status='accepted' from public.catalogs where id=quote_id), 'Revision must preserve accepted historical order';
+  assert (select quote_status='draft' and quote_previous_id=quote_id and quote_order_id is null and quote_document->>'shippingConfirmed'='false' from public.catalogs where id=new_quote), 'New version must be a separate draft requiring freight confirmation';
+  -- Simulate an older already-saved offer to verify database-side expiry checks.
+  doc:=doc||jsonb_build_object('issueDate','2025-01-01','validUntil','2025-01-02');
+  perform public.mutate_catalog_quotation(new_quote,actor,1,'save',doc);
+  denied:=false; begin perform public.mutate_catalog_quotation(new_quote,actor,2,'share'); exception when raise_exception then denied:=true; end; assert denied, 'Expired draft cannot be shared';
+  update public.catalogs set quote_status='shared' where id=new_quote;
+  denied:=false; begin perform public.mutate_catalog_quotation(new_quote,actor,2,'accept',p_note=>'QA'); exception when raise_exception then denied:=true; end; assert denied, 'Expired shared offer cannot be accepted';
+  result:=public.mutate_catalog_quotation(new_quote,actor,2,'revise');
+  assert (select quote_status='superseded' from public.catalogs where id=new_quote), 'Shared old version must be superseded';
+  insert into public.catalogs(user_id,company_id,product_skus,currency,version) values(actor,customer,array[sku],'USD',1) returning id into legacy_id;
+  denied:=false; begin perform public.mutate_catalog_quotation(legacy_id,actor,0,'save',doc); exception when raise_exception then denied:=true; end; assert denied, 'Legacy selection must not receive invented historical prices';
+  result:=public.mutate_catalog_quotation(legacy_id,actor,0,'revise',p_snapshot=>jsonb_build_array(jsonb_build_object('sku',sku)));
+  assert (select product_snapshot is null from public.catalogs where id=legacy_id), 'Legacy snapshot stays unchanged';
+  perform public.mutate_catalog_quotation(legacy_id,actor,1,'cancel');
+  assert (select quote_status='cancelled' and quote_document is null from public.catalogs where id=legacy_id), 'Unsaved draft can be cancelled without inventing a quotation document';
+  assert not has_function_privilege('anon','public.mutate_catalog_quotation(uuid,uuid,integer,text,jsonb,jsonb,text,jsonb)','EXECUTE');
+  assert not has_function_privilege('authenticated','public.mutate_catalog_quotation(uuid,uuid,integer,text,jsonb,jsonb,text,jsonb)','EXECUTE');
+  assert has_function_privilege('service_role','public.mutate_catalog_quotation(uuid,uuid,integer,text,jsonb,jsonb,text,jsonb)','EXECUTE');
+end;
+$$;
+select 'quotation lifecycle, private ownership, stale revisions, freight, acceptance, expiry, version history and idempotent conversion passed; all QA data rolled back' as verification;
+rollback;

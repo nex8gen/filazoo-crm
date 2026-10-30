@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import vm from "node:vm";
 import ts from "typescript";
+import * as workbench from "../lib/email-workbench.ts";
 
 const require = createRequire(import.meta.url);
 
@@ -24,6 +25,11 @@ test("read-only viewers cannot send email, even by calling the HTTP handler dire
     "@/lib/data/email-footers": {},
   };
   const code = ts.transpileModule(readFileSync(new URL("../app/api/email/send/route.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const sendExports = {};
+  const sendCode = ts.transpileModule(readFileSync(new URL("../lib/data/manual-email-send.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  dependencies["../email-workbench"] = workbench;
+  vm.runInNewContext(sendCode, { exports: sendExports, require: (name: string) => dependencies[name] ?? require(name), Response, Request, Buffer, crypto, console });
+  dependencies["@/lib/data/manual-email-send"] = sendExports;
   vm.runInNewContext(code, { exports, require: (name: string) => dependencies[name] ?? require(name), Response, Request, Buffer, crypto, console });
   const request = () => new Request("http://localhost:3000/api/email/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
   await assert.rejects(exports.POST!(request()), /Access denied/);

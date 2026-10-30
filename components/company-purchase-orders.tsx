@@ -12,14 +12,16 @@ export async function CompanyPurchaseOrders({
   companyName,
   commerce,
   canWrite,
+  orderId,
 }: {
   companyId: string;
   companyName: string;
   commerce?: CompanyCommerce;
   canWrite: boolean;
+  orderId?: string;
 }) {
   const [initial, profile, catalogAvailability] = await Promise.all([
-    listCompanyPurchaseOrders(companyId),
+    listCompanyPurchaseOrders(companyId, 0, orderId),
     getPurchaseOrderProfile(companyId),
     getPurchaseOrderCatalogAvailability(),
   ]);
@@ -32,6 +34,7 @@ export async function CompanyPurchaseOrders({
       companyName={companyName}
       commerce={commerce}
       canWrite={canWrite}
+      focusedOrderId={orderId}
       initial={initial}
       profile={profile}
       catalogAvailability={catalogAvailability}

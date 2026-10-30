@@ -26,6 +26,10 @@ export async function createAgentTask(viewer: WorkspaceViewer, actionId: string,
   canWrite(viewer); z.uuid().parse(actionId);
   const operation = productivityOperationSchema.parse(input);
   if (operation.op !== "create_task") throw new Error("Invalid task operation.");
+  if (operation.workflow) {
+    const { validateTaskWorkflow } = await import("./task-workflows");
+    await validateTaskWorkflow(viewer, operation.companyId!, operation.workflow);
+  }
   if (assignedTo) { z.uuid().parse(assignedTo); await validateTaskAssignee(assignedTo); }
   const payload = { id: actionId, assigned_to: assignedTo ?? viewer.id, created_by: viewer.id, assigned_by: viewer.id, company_id: operation.companyId ?? null, title: operation.title, notes: operation.notes, priority: operation.priority, due_at: operation.dueAt, status: "open" };
   const db = createSupabaseAdmin();
@@ -35,6 +39,10 @@ export async function createAgentTask(viewer: WorkspaceViewer, actionId: string,
   const sameDue = (value: string | null) => value === operation.dueAt || (value !== null && operation.dueAt !== null && Date.parse(value) === Date.parse(operation.dueAt));
   if (readError || !data || data.assigned_to !== payload.assigned_to || data.title !== payload.title || (data.notes ?? "") !== payload.notes || data.priority !== payload.priority || data.company_id !== payload.company_id || data.status !== "open" || !sameDue(data.due_at))
     throw new Error("The task could not be confirmed. Refresh Tasks before retrying.");
+  if (operation.workflow) {
+    const { attachTaskWorkflow } = await import("./task-workflows");
+    await attachTaskWorkflow(viewer, actionId, operation.workflow, payload.assigned_to);
+  }
   return data;
 }
 

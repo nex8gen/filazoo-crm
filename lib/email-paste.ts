@@ -6,12 +6,12 @@ export function crmClipboardAttachment(src: string, baseURI: string, appUrl = pr
     const configured = appUrl ? new URL(appUrl).origin : current.origin;
     const candidate = new URL(src.replace(/^about:(?:blank|srcdoc)?(?=\/api\/email\/)/i, ""), current);
     const path = `${candidate.pathname}${candidate.search}`;
-    return [current.origin, configured, "https://crm.filazoosupply.com"].includes(candidate.origin) && /^\/api\/email\/(?:footer\/assets\/|received-attachment\?|attachments\/)/.test(path) ? path : null;
+    return [current.origin, configured, "https://crm.filazoosupply.com"].includes(candidate.origin) && /^\/api\/email\/(?:footer\/assets\/|received-attachment\?|crm-attachment\?|attachments\/)/.test(path) ? path : null;
   } catch { return null; }
 }
 
 export async function imageFileDataUrl(file: File) {
-  if (!inlineImageTypes.has(file.type)) throw new Error("Choose a PNG, JPG, GIF, or WebP image.");
+  if (!inlineImageTypes.has(file.type)) throw new Error("Choose a PNG, JPG, GIF, WebP, BMP, AVIF, or ICO image. Other formats can be added as file attachments.");
   if (file.size > maxInlineImageBytes) throw new Error("Each inline image must be 7.5 MB or smaller.");
   const bytes = new Uint8Array(await file.arrayBuffer());
   let binary = "";
@@ -21,7 +21,7 @@ export async function imageFileDataUrl(file: File) {
 
 /** Import copied webmail images before insertion; their original URLs may need
  * cookies or expire. Never replace an entire formatted signature with a PNG. */
-export async function preparePastedEmailHtml(html: string, document: Document, files: File[], request: typeof fetch = fetch) {
+export async function preparePastedEmailHtml(html: string, document: Document, files: File[], request: typeof fetch = fetch, options: { importRemoteImages?: boolean } = {}) {
   const template = document.createElement("template");
   template.innerHTML = html;
   const images = Array.from(template.content.querySelectorAll("img"));
@@ -50,6 +50,7 @@ export async function preparePastedEmailHtml(html: string, document: Document, f
       }
       return;
     }
+    if (options.importRemoteImages === false) return;
     let result = imported.get(src);
     if (!result) {
       result = (async () => {

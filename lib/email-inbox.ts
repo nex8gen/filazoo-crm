@@ -13,7 +13,16 @@ import type { CustomerProfileContext } from "./ai/email-rewrite.ts";
 
 export type InboxEmailItem = {
   id: string;
+  crmEmailId?: string;
   from?: string;
+  to?: import("./email-addresses.ts").EmailAddress[];
+  cc?: import("./email-addresses.ts").EmailAddress[];
+  bcc?: import("./email-addresses.ts").EmailAddress[];
+  providerFolder?: string;
+  providerKind?: string;
+  providerLocations?: Array<{ folder: string; kind: string; mailboxKey: string; uid: number; validity: number }>;
+  providerRemoved?: boolean;
+  previewAttemptedAt?: string;
   replyTo?: string | null;
   uid?: number;
   uidValidity?: number;
@@ -41,7 +50,7 @@ export type InboxEmailItem = {
   messageId?: string | null;
   inReplyTo?: string | null;
   references?: string[];
-  attachments?: Array<{ filename: string; contentType: string; size: number; url?: string; partId?: string; cid?: string }>;
+  attachments?: Array<{ filename: string; contentType: string; size: number; url?: string; partId?: string; cid?: string; contentLocation?: string; inline?: boolean }>;
   timestamp: string;
   step?: string;
   demo?: boolean;
@@ -67,6 +76,7 @@ export type EmailInboxBackendData = {
   inboxConfigured: boolean;
   inboxError: string | null;
   lastMailboxSync?: string | null;
+  syncHealth?: Record<string, import("./mail-sync-jobs.ts").MailSyncHealth>;
   aiConfigured: boolean;
   defaultMailboxEmail: string | null;
   mailboxes: MailboxOption[];
@@ -74,6 +84,7 @@ export type EmailInboxBackendData = {
   defaultSenderId: string | null;
   assignedCustomersOnly: boolean;
   emails: InboxEmailItem[];
+  providerFolders?: import("./email-provider.ts").ProviderFolder[];
   automation: {
     enabled: boolean;
     steps: AutomationFlowStep[];
@@ -87,6 +98,7 @@ function toPreview(text: string | null | undefined) {
 }
 
 type MailboxInboxSource = {
+  mailboxId?: string | null;
   demo?: boolean;
   id?: string;
   direction?: "inbound" | "outbound";
@@ -100,6 +112,16 @@ type MailboxInboxSource = {
   bodyLoaded?: boolean;
   contactName?: string;
   source?: "mailbox" | "shopify" | "crm";
+  from?: string;
+  to?: InboxEmailItem["to"];
+  cc?: InboxEmailItem["cc"];
+  bcc?: InboxEmailItem["bcc"];
+  providerFolder?: string;
+  providerKind?: string;
+  providerLocations?: InboxEmailItem["providerLocations"];
+  read?: boolean;
+  starred?: boolean;
+  folder?: EmailFolderState;
   company?: string;
   preview?: string;
   body?: string;
@@ -229,7 +251,17 @@ export function buildInboxEmailItems({
   const inboundItems = inbound.map((message, index) => {
     const item: InboxEmailItem = {
       id: message.id || `imap-${index}`,
-      direction: "inbound",
+      direction: message.direction || "inbound",
+      from: message.from,
+      to: message.to,
+      cc: message.cc,
+      bcc: message.bcc,
+      providerFolder: message.providerFolder,
+      providerKind: message.providerKind,
+      providerLocations: message.providerLocations,
+      read: message.read,
+      starred: message.starred,
+      folder: message.folder,
       status: message.status || "Received",
       subject: message.subject || "New inbound email",
       contact: message.contact || "Unknown contact",
@@ -237,6 +269,7 @@ export function buildInboxEmailItems({
       uid: message.uid,
       uidValidity: message.uidValidity,
       mailboxKey: message.mailboxKey,
+      mailboxId: message.mailboxId,
       bodyLoaded: message.bodyLoaded,
       attachments: message.attachments,
       contactName: message.contactName,
@@ -274,9 +307,11 @@ export function buildInboxEmailItems({
       contact: reply.contact || "Unknown contact",
       company: reply.company || "Unknown company",
       preview: toPreview(reply.body),
-      body: reply.body || "No email body available.",
+      body: reply.messageId ? "" : reply.body || "No email body available.",
       timestamp: reply.receivedAt || new Date().toISOString(),
       source: "crm",
+      crmEmailId: id,
+      bodyLoaded: reply.messageId ? false : true,
       demo: false,
     };
     item.threadId = threadKeyForEmail(item);
@@ -349,8 +384,8 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
   const loadInbound = async () => {
     if (!mailboxHasImap(defaultMailbox) || !defaultMailbox) return { messages: [], error: null, syncedAt: null };
     try {
-      const { loadSyncedMailbox } = await import("./data/mailbox-sync.ts");
-      return await loadSyncedMailbox(defaultMailbox, { sync: syncMailbox, history, includeContent: false });
+      const { loadMailboxWorkspace } = await import("./data/mailbox-sync.ts");
+      return await loadMailboxWorkspace(defaultMailbox, { sync: syncMailbox, history });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to connect to the mailbox inbox.";
       console.warn("Unable to sync mailbox inbox:", message);
@@ -368,7 +403,11 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
   const shopifyMessages = workspace?.shopify ?? [];
   const assignedContacts = workspace?.assigned ?? null;
   const { messages: liveInbound, error: inboxError, syncedAt: lastMailboxSync } = mailboxResult;
-  const visibleInbox = [...buildInboxEmailItems({ drafts: emails, replies, inbound: [...shopifyMessages, ...liveInbound] }), ...sentMessages]
+  const sentIds = new Set(sentMessages.flatMap((item) => item.messageId ? [normalizeMessageId(item.messageId)] : []));
+  const visibleInbox = [...buildInboxEmailItems({ drafts: emails, replies, inbound: [...shopifyMessages, ...liveInbound.filter((item) => !sentIds.has(normalizeMessageId(item.messageId)))] }), ...sentMessages.map((sent) => {
+    const provider = liveInbound.find((item) => item.messageId && normalizeMessageId(item.messageId) === normalizeMessageId(sent.messageId));
+    return provider ? { ...sent, uid: provider.uid, uidValidity: provider.uidValidity, mailboxKey: provider.mailboxKey, providerFolder: provider.providerFolder, providerKind: provider.providerKind, read: provider.read, starred: provider.starred, folder: provider.folder } : sent;
+  })]
     .filter((item) => canViewEmail(viewer, item.contact, assignedContacts, defaultMailbox, context?.allowedPersonalContacts));
   // There is nothing to enrich when access rules exclude the saved messages.
   const [companyResult, automation] = await Promise.all([
@@ -388,6 +427,7 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
       return {
         ...item,
         ...(states.get(item.id) ?? {}),
+        ...(item.providerFolder ? { read: item.read, starred: item.starred, folder: item.folder } : {}),
         company: company?.name || item.company,
         companyId: assignedCompanyId ?? company?.id ?? null,
         ownerId: assignedCompanyId ? viewer.id : company?.ownerId ?? null,
@@ -404,9 +444,6 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
           summary: company.summary,
           interests: company.tags,
           fitScore: company.fitScore,
-          pipelineStage: company.stage,
-          estimatedOrderQuantity: company.estimatedOrderQuantity ?? undefined,
-          estimatedValue: company.estimatedValue ?? undefined,
           currency: company.currency,
         } : undefined,
         ownerInitials: company?.ownerInitials ?? "—",
@@ -436,6 +473,7 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
     defaultSenderId: defaultSender?.id ?? null,
     assignedCustomersOnly: !personal && viewer.role === "bd_manager",
     emails: inbox,
+    providerFolders: "folders" in mailboxResult ? mailboxResult.folders : [],
     automation,
   };
 }

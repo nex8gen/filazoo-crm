@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useImperativeHandle, useLayoutEffect, useRef, useState, type ClipboardEvent, type Ref, type SetStateAction } from "react";
+import { useCallback, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type ClipboardEvent, type Ref, type SetStateAction } from "react";
+import { ChevronRight } from "lucide-react";
 import { emailTextHtml, initialComposerHtml, sanitizeComposerHtml } from "@/lib/email-composer";
 import { appendEmailFooter, withoutComposerFooter, type EmailFooter } from "@/lib/email-footer";
 import { imageFileDataUrl, preparePastedEmailHtml } from "@/lib/email-paste";
@@ -19,10 +20,10 @@ export type EmailBodyEditorHandle = {
   currentFooter: () => EmailFooter | null;
 };
 
-export function EmailBodyEditor({ value, html, signature, footer, onChange, onError, onBusyChange, attachmentCount, disabled, label, placeholder, className = "", ref }: {
+export function EmailBodyEditor({ value, html, signature, footer, onChange, onError, onBusyChange, attachmentCount, disabled, bodyEmpty, compactSignature = false, label, placeholder, className = "", ref }: {
   value: string; html: string; signature: string; footer?: EmailFooter | null;
   onChange: (text: string, html: string, bodyText?: string) => void; onError: (message: string) => void; onBusyChange: (busy: boolean) => void;
-  attachmentCount: number; disabled?: boolean; label: string; placeholder: string; className?: string; ref?: Ref<EmailBodyEditorHandle>;
+  attachmentCount: number; disabled?: boolean; bodyEmpty?: boolean; compactSignature?: boolean; label: string; placeholder: string; className?: string; ref?: Ref<EmailBodyEditorHandle>;
 }) {
   const editor = useRef<HTMLDivElement>(null);
   const selection = useRef<Range | null>(null);
@@ -31,16 +32,44 @@ export function EmailBodyEditor({ value, html, signature, footer, onChange, onEr
   const revision = useRef(0);
   const reading = useRef(false);
   const [busy, setBusy] = useState(false);
+  const [signatureExpanded, setSignatureExpanded] = useState(false);
+  const [hasSignature, setHasSignature] = useState(false);
+  const signatureId = useId();
+  const detachedFooter = useRef<HTMLElement | null>(null);
+  const footerSeparator = useRef<Element | null>(null);
+  const footerText = useRef("");
 
   useLayoutEffect(() => {
     if (editor.current && (lastValue.current.text !== value || lastValue.current.html !== html || !editor.current.innerHTML || (lastFooter.current !== footer && !html))) {
       editor.current.innerHTML = html || (footer ? appendEmailFooter(value, undefined, footer).html || initialComposerHtml(value, "") : initialComposerHtml(value, signature));
+      detachedFooter.current = null;
+      footerSeparator.current = null;
       lastValue.current = { text: value, html };
       lastFooter.current = footer;
       selection.current = null;
       revision.current++;
     }
-  }, [value, html, signature, footer]);
+    const root = editor.current;
+    if (!root) return;
+    const section = root.querySelector<HTMLElement>('[data-email-footer="true"]');
+    if (compactSignature && !signatureExpanded && section) {
+      // Keep the actual signature outside the editable body while collapsed.
+      // Body edits (including Select All) cannot accidentally delete it.
+      footerText.current = section.innerText.trim();
+      const separator = section.previousElementSibling;
+      footerSeparator.current = separator?.tagName === "BR" ? separator : null;
+      footerSeparator.current?.remove();
+      section.remove();
+      detachedFooter.current = section;
+      selection.current = null;
+    } else if ((!compactSignature || signatureExpanded) && detachedFooter.current) {
+      if (footerSeparator.current) root.append(footerSeparator.current);
+      root.append(detachedFooter.current);
+      detachedFooter.current = null;
+      footerSeparator.current = null;
+    }
+    setHasSignature(Boolean(root.querySelector('[data-email-footer="true"]') || detachedFooter.current));
+  }, [value, html, signature, footer, compactSignature, signatureExpanded]);
   useLayoutEffect(() => () => { revision.current++; }, []);
 
   function rememberSelection() {
@@ -48,11 +77,16 @@ export function EmailBodyEditor({ value, html, signature, footer, onChange, onEr
     if (current?.rangeCount && editor.current?.contains(current.anchorNode)) selection.current = current.getRangeAt(0).cloneRange();
   }
   function retainedImageCount() {
-    return Array.from(editor.current?.querySelectorAll("img") || []).filter((image) => !selection.current || selection.current.collapsed || !selection.current.intersectsNode(image)).length;
+    return Array.from(editor.current?.querySelectorAll("img") || []).filter((image) => !selection.current || selection.current.collapsed || !selection.current.intersectsNode(image)).length + (detachedFooter.current?.querySelectorAll("img").length || 0);
   }
   function publish() {
     if (!editor.current) return;
-    const next = { text: editor.current.innerText.replace(/\u00a0/g, " "), html: editor.current.innerHTML || "<div><br></div>" };
+    const content = editor.current.cloneNode(true) as HTMLElement;
+    if (detachedFooter.current) {
+      if (footerSeparator.current) content.append(footerSeparator.current.cloneNode(true));
+      content.append(detachedFooter.current.cloneNode(true));
+    }
+    const next = { text: [editor.current.innerText, ...(detachedFooter.current ? [footerText.current] : [])].filter((text) => text.trim()).join("\n\n").replace(/\u00a0/g, " "), html: content.innerHTML || "<div><br></div>" };
     lastValue.current = next;
     function bodyText(node: Node): string {
       if (node.nodeType === 3) return node.textContent || "";
@@ -95,8 +129,8 @@ export function EmailBodyEditor({ value, html, signature, footer, onChange, onEr
     insertImages: (files) => { void insertFiles(files); },
     selectedText: () => selection.current?.toString() || "",
     currentFooter: () => {
-      const section = editor.current?.querySelector<HTMLElement>('[data-email-footer="true"]');
-      return section ? { html: section.innerHTML, text: section.innerText.trim() } : footer ? { html: "", text: "" } : null;
+      const section = detachedFooter.current || editor.current?.querySelector<HTMLElement>('[data-email-footer="true"]');
+      return section ? { html: section.innerHTML, text: detachedFooter.current ? footerText.current : section.innerText.trim() } : footer ? { html: "", text: "" } : null;
     },
     insertLink: (url, text) => { if (/^(https?:\/\/|mailto:|tel:)/i.test(url)) insertHtml(`<a href="${emailTextHtml(url)}">${emailTextHtml(text || url)}</a>`); },
     format: (command) => {
@@ -145,7 +179,7 @@ export function EmailBodyEditor({ value, html, signature, footer, onChange, onEr
     finally { reading.current = false; setBusy(false); onBusyChange(false); }
   }
 
-  return <div ref={editor} role="textbox" aria-label={label} aria-multiline="true" aria-readonly={disabled} aria-busy={busy} contentEditable={!disabled} suppressContentEditableWarning data-placeholder={placeholder} data-empty={!value.trim() && !/<img\b/i.test(html) && (html || (footer ? !footer.html : !signature.trim())) ? "true" : undefined}
+  return <><div id={signatureId} ref={editor} role="textbox" aria-label={label} aria-multiline="true" aria-readonly={disabled} aria-busy={busy} contentEditable={!disabled} suppressContentEditableWarning data-placeholder={placeholder} data-empty={(bodyEmpty ?? (!value.trim() && !/<img\b/i.test(html) && Boolean(html || (footer ? !footer.html : !signature.trim())))) ? "true" : undefined}
       className={`email-body-editor w-full break-words bg-transparent text-sm leading-6 outline-none ${className}`}
       onInput={publish} onKeyUp={rememberSelection} onMouseUp={rememberSelection} onBlur={rememberSelection}
       onCopy={(event) => copySelection(event)} onCut={(event) => copySelection(event, true)}
@@ -166,5 +200,7 @@ export function EmailBodyEditor({ value, html, signature, footer, onChange, onEr
         insertHtml(clean || emailTextHtml(event.clipboardData.getData("text/plain")));
       }}
       onDragOver={(event) => { event.preventDefault(); }}
-      onDrop={(event) => { event.preventDefault(); onError("Paste an image to place it at the cursor."); }} />;
+      onDrop={(event) => { event.preventDefault(); onError("Paste an image to place it at the cursor."); }} />
+      {compactSignature && hasSignature ? <button type="button" aria-expanded={signatureExpanded} aria-controls={signatureId} disabled={disabled} onClick={() => setSignatureExpanded((expanded) => !expanded)} className="mail-signature-toggle mb-2 flex w-fit shrink-0 items-center gap-1.5 rounded-md px-1 py-1 text-xs text-muted-foreground hover:bg-muted disabled:opacity-40"><ChevronRight className={`size-3.5 ${signatureExpanded ? "rotate-90" : ""}`} />{signatureExpanded ? "Hide signature" : "Signature included"}</button> : null}
+    </>;
 }

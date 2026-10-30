@@ -12,6 +12,8 @@ const require = createRequire(import.meta.url);
 function fixture(role = "operator") {
   const db: Record<string, Row[]> = {
     email_auto_replies: [],
+    crm_task_workflows: [],
+    companies: [],
     workspace_members: [{ user_id: "viewer", display_name: "Current user" }, { user_id: "other", display_name: "Teammate" }],
     crm_tasks: [{ id: "mine", assigned_to: "viewer", status: "open" }, { id: "theirs", assigned_to: "other", status: "open" }],
     internal_notifications: [{ id: "mine", user_id: "viewer", read_at: null }, { id: "theirs", user_id: "other", read_at: null }],
@@ -69,6 +71,17 @@ test("tasks and notifications are visible only to their assigned recipient", asy
   assert.equal((result.alerts as Row[]).length, 1);
   const summary = await app.exports.listFlowActivity(true);
   assert.equal(summary.openTasks, 1); assert.equal(summary.unreadAlerts, 1);
+});
+
+test("prepared work is batched into visible tasks and alerts without including its private payload", async () => {
+  const app = fixture();
+  app.db.crm_task_workflows = [{ task_id: "mine", kind: "invoice_review", status: "ready", invoice_id: "invoice-mine", revision: 3 }, { task_id: "theirs", kind: "email_follow_up", status: "ready", revision: 2 }];
+  app.db.internal_notifications[0].task_id = "mine";
+  const result = await app.exports.listFlowActivity();
+  const mine = (result.tasks as Row[])[0].workflow as Row;
+  assert.equal(mine.kind, "invoice_review"); assert.equal(mine.revision, 3);
+  assert.equal("payload" in mine, false);
+  assert.equal(((result.alerts as Row[])[0].workflow as Row).invoice_id, "invoice-mine");
 });
 
 test("work inbox filters search the full recipient scope before pagination and keep global counts", async () => {

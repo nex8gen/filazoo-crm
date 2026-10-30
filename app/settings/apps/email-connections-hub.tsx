@@ -1,12 +1,13 @@
 "use client";
 
-import { useActionState } from "react";
+import { startTransition, useActionState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowRight, CheckCircle2, LayoutGrid, LockKeyhole, Mail, Pause, Play, Plus, UserRound, UsersRound } from "lucide-react";
+import { ArrowRight, CheckCircle2, LayoutGrid, LoaderCircle, LockKeyhole, Mail, Plus, UserRound, UsersRound } from "lucide-react";
 import { ConnectionAppLogo } from "@/components/connection-app-logo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { connectionApps } from "@/lib/connection-apps";
@@ -39,10 +40,7 @@ function AccountRow({ account, canManage }: { account: EmailConnectionAccount; c
         <Badge variant="outline" className={account.status === "connected" ? "border-emerald-600/20 text-emerald-700 dark:text-emerald-400" : "text-muted-foreground"}>{account.status === "connected" ? <CheckCircle2 /> : null}{connectionStatusLabel(account.status)}</Badge>
         <Button nativeButton={false} render={<Link href={`/emails?mailbox=${encodeURIComponent(account.id)}`} />} variant="outline" size="sm">Open inbox<ArrowRight /></Button>
         {canManage && provider ? <Button nativeButton={false} render={<Link href={`${emailProviderHref(provider.id, account.scope)}#account-${account.id}`} />} variant="ghost" size="sm" aria-label={`Manage ${account.email}`}>Manage</Button> : null}
-        {canManage ? <form action={action}>
-          <input type="hidden" name="id" value={account.id} /><input type="hidden" name="scope" value={account.scope} />
-          <Button type="submit" name="operation" value={account.isActive ? "pause" : "resume"} variant="ghost" size="sm" disabled={pending} aria-label={`${account.isActive ? "Pause" : "Resume"} ${account.email}`}>{account.isActive ? <Pause /> : <Play />}{pending ? "Updating..." : account.isActive ? "Pause" : "Resume"}</Button>
-        </form> : null}
+        {canManage ? <div className="flex items-center gap-2">{pending ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin text-muted-foreground" /> : null}<Switch checked={account.isActive} disabled={pending} aria-label={`Sending and syncing: ${account.email}`} onCheckedChange={enabled => { const data = new FormData(); data.set("id", account.id); data.set("scope", account.scope); data.set("operation", enabled ? "resume" : "pause"); startTransition(() => action(data)); }} /></div> : null}
       </div>
     </div>
     <p className="text-xs text-muted-foreground">{!account.isActive ? "Paused. Saved emails and credentials are kept." : account.sendConfigured && account.inboxConfigured ? "Sending and receiving are configured." : `Setup needed: ${[!account.sendConfigured ? "sending" : "", !account.inboxConfigured ? "receiving" : ""].filter(Boolean).join(" and ")}.`}</p>

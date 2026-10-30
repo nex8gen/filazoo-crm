@@ -6,7 +6,7 @@ export async function GET(){
   let database:"connected"|"not-configured"|"error"="not-configured";
   if(hasSupabaseConfig()){
     try{
-      const {error}=await createSupabaseAdmin().from("companies").select("id",{count:"exact",head:true});
+      const {error}=await createSupabaseAdmin().from("companies").select("id").limit(1);
       database=error?"error":"connected";
     }catch{database="error"}
   }

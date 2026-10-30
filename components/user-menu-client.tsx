@@ -9,6 +9,11 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem,
 
 export function UserMenuClient({ userId, name, email, role, imageUrl, preset }: { userId: string; name: string; email: string; role: string; imageUrl?: string; preset?: AvatarPreset }) {
   const router = useRouter();
+  async function signOut() {
+    await fetch("/auth/signout", { method: "POST" });
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- Logout clears all preserved account state with a document navigation.
+    window.location.assign("/login");
+  }
   return (
     <DropdownMenu>
       <DropdownMenuTrigger aria-label={`Open account menu for ${name}`} render={<Button variant="ghost" className="size-12 rounded-xl p-2 data-popup-open:bg-muted" />}>
@@ -27,7 +32,7 @@ export function UserMenuClient({ userId, name, email, role, imageUrl, preset }: 
         <DropdownMenuItem className="min-h-10 px-3" onClick={() => router.push("/settings/profile")}><UserRound />Profile</DropdownMenuItem>
         <DropdownMenuItem className="min-h-10 px-3" onClick={() => router.push("/settings")}><Settings />Settings</DropdownMenuItem>
         <DropdownMenuSeparator className="mx-2 my-2" />
-        <DropdownMenuItem className="min-h-10 px-3" onClick={async () => { await fetch("/auth/signout", { method: "POST" }); router.push("/login"); router.refresh(); }}><LogOut />Log out</DropdownMenuItem>
+        <DropdownMenuItem className="min-h-10 px-3" onClick={signOut}><LogOut />Log out</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

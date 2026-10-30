@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canvasPointFromClient, flowInsertIndex, layoutFlowNodes, reorderFlowSteps } from "../lib/flow-canvas.ts";
+import { canvasPointFromClient, flowInsertIndex, layoutFlowNodes, reorderFlowSteps, fitFlowCanvas } from "../lib/flow-canvas.ts";
 
 test("palette drops insert at the top, middle, or bottom of the flow", () => {
   const { steps } = layoutFlowNodes(["wait", "email", "task"], {});
@@ -55,4 +55,16 @@ test("invalid moves and single-step moves leave the sequence intact", () => {
   assert.equal(reorderFlowSteps(ids, 0, 1), ids);
   assert.equal(reorderFlowSteps(ids, -1, 0), ids);
   assert.equal(reorderFlowSteps(ids, 0, 0), ids);
+});
+
+test("fit includes wide nested branches and tall journeys instead of cropping them at 45 percent", () => {
+  for (const width of [440, 3600, 180000]) for (const height of [800, 10000]) {
+    const nodes = [{ id: "wide", x: -width / 2, y: 64, width, height }];
+    const viewport = { width: 1280, height: 800 };
+    const { zoom, pan } = fitFlowCanvas(nodes, viewport);
+    assert.ok(nodes[0].x * zoom + pan.x >= 59.99);
+    assert.ok((nodes[0].x + width) * zoom + pan.x <= viewport.width - 59.99);
+    assert.ok(nodes[0].y * zoom + pan.y >= 49.99);
+    assert.ok((nodes[0].y + height) * zoom + pan.y <= viewport.height - 49.99);
+  }
 });

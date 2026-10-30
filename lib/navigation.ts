@@ -26,6 +26,7 @@ export const navigation: NavigationGroup[] = [
     icon: LayoutDashboard,
     items: [
       { label: "Analytics", href: "/", icon: ChartNoAxesCombined, description: "Performance at a glance" },
+      { label: "My Day", href: "/my-day", icon: ListTodo, description: "Your daily priorities and next actions" },
       { label: "Tasks and notifications", href: "/tasks", icon: ListTodo, description: "Assigned work, reminders and alerts" },
     ],
   },
@@ -72,7 +73,7 @@ export const navigation: NavigationGroup[] = [
     icon: Package2,
     items: [
       { label: "Products", href: "/catalogs", icon: Package2, description: "Products, pricing and availability", exact: true, activePrefix: "/catalogs/products/" },
-      { label: "Company Catalogs", href: "/catalogs/companies", icon: BookOpen, description: "Tailored selections for each company" },
+      { label: "Company Quotations", href: "/catalogs/companies", icon: BookOpen, description: "Customer offers, versions and draft orders" },
     ],
   },
   {

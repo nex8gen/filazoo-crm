@@ -1,0 +1,90 @@
+{
+  "scope": "prerendered shell scripts",
+  "maxGzipBytes": 420000,
+  "results": [
+    {
+      "route": "/",
+      "scripts": 18,
+      "bytes": 1062836,
+      "gzipBytes": 339644,
+      "pass": true
+    },
+    {
+      "route": "/companies",
+      "scripts": 18,
+      "bytes": 1062836,
+      "gzipBytes": 339644,
+      "pass": true
+    },
+    {
+      "route": "/tasks",
+      "scripts": 18,
+      "bytes": 1062836,
+      "gzipBytes": 339644,
+      "pass": true
+    },
+    {
+      "route": "/my-day",
+      "scripts": 18,
+      "bytes": 1062836,
+      "gzipBytes": 339644,
+      "pass": true
+    },
+    {
+      "route": "/segments",
+      "scripts": 18,
+      "bytes": 1062836,
+      "gzipBytes": 339644,
+      "pass": true
+    },
+    {
+      "route": "/catalogs",
+      "scripts": 18,
+      "bytes": 1062836,
+      "gzipBytes": 339644,
+      "pass": true
+    },
+    {
+      "route": "/catalogs/companies",
+      "scripts": 18,
+      "bytes": 1062836,
+      "gzipBytes": 339644,
+      "pass": true
+    },
+    {
+      "route": "/invoices",
+      "scripts": 18,
+      "bytes": 1062836,
+      "gzipBytes": 339644,
+      "pass": true
+    },
+    {
+      "route": "/emails",
+      "scripts": 19,
+      "bytes": 1073028,
+      "gzipBytes": 341933,
+      "pass": true
+    },
+    {
+      "route": "/messenger",
+      "scripts": 18,
+      "bytes": 1062836,
+      "gzipBytes": 339644,
+      "pass": true
+    },
+    {
+      "route": "/settings",
+      "scripts": 20,
+      "bytes": 1093413,
+      "gzipBytes": 350134,
+      "pass": true
+    },
+    {
+      "route": "/lead-channel/ai-agent",
+      "scripts": 19,
+      "bytes": 1069393,
+      "gzipBytes": 341309,
+      "pass": true
+    }
+  ]
+}

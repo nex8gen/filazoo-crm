@@ -6,9 +6,9 @@ import { pipelineStageLabels } from "../lib/types.ts";
 const company: SegmentCompany = { id: "one", name: "Example", segment: "Wholesale", country: "United States", source: "manual", sourceLabel: "Manual", stage: pipelineStageLabels.interested, fitScore: 8, hasEmail: true };
 
 test("saved audiences require every selected rule and use an inclusive fit threshold", () => {
-  const rules = { businessSegment: "Wholesale", country: "United States", source: "manual", stage: "interested", minFitScore: 8, hasEmail: true } as const;
+  const rules = { businessSegment: "Wholesale", country: "United States", source: "manual", minFitScore: 8, hasEmail: true } as const;
   assert.equal(matchesSegment(company, rules), true);
-  for (const change of [{ segment: "Retail" }, { country: "Canada" }, { source: "shopify_lead" }, { stage: pipelineStageLabels.won }, { fitScore: 7 }, { hasEmail: false }]) {
+  for (const change of [{ segment: "Retail" }, { country: "Canada" }, { source: "shopify_lead" }, { fitScore: 7 }, { hasEmail: false }]) {
     assert.equal(matchesSegment({ ...company, ...change }, rules), false, JSON.stringify(change));
   }
   assert.equal(matchesSegment({ ...company, fitScore: 0 }, { minFitScore: 1 }), false);
@@ -19,7 +19,7 @@ test("missing-email audiences respect false; empty rules include everyone; membe
   assert.equal(matchesSegment(company, { hasEmail: false }), false);
   assert.equal(matchesSegment({ ...company, hasEmail: false }, { hasEmail: false }), true);
   assert.equal(matchesSegment(company, { stage: "won" }), false);
-  assert.equal(matchesSegment({ ...company, stage: pipelineStageLabels.won }, { stage: "won" }), true);
+  assert.equal(matchesSegment({ ...company, stage: pipelineStageLabels.won }, { stage: "won" }), false);
   assert.equal(matchesSegment(company, { country: "United" }), false);
 });
 
@@ -42,15 +42,12 @@ test("segment rules reject unknown fields and invalid values instead of silently
   assert.deepEqual(segmentInputSchema.parse({ name: "  Prospects  ", description: "  Description  ", rules: {} }), { name: "Prospects", description: "Description", rules: {} });
 });
 
-test("analytics exclude unrated scores and unknown markets and keep won/lost out of active counts", () => {
+test("segment summaries exclude unrated scores and unknown markets without sales stages", () => {
   const summary = summarizeSegment([company, { ...company, id: "two", fitScore: 0, country: "Unknown", hasEmail: false, stage: pipelineStageLabels.won }, { ...company, id: "three", fitScore: 4, country: "Canada", stage: pipelineStageLabels.lost }]);
   assert.equal(summary.count, 3);
   assert.equal(summary.withEmail, 2);
   assert.equal(summary.countries, 2);
   assert.equal(summary.averageFit, 6);
-  assert.equal(summary.won, 1);
-  assert.equal(summary.active, 1);
-  assert.equal(summary.stages.reduce((sum, stage) => sum + stage.count, 0), 3);
   const empty = summarizeSegment([]);
   assert.equal(empty.averageFit, null);
   assert.equal(empty.count, 0);

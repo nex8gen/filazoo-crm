@@ -1,8 +1,7 @@
 import { requireWorkspaceMember } from "@/lib/auth";
 import { getEmailInboxBackendData } from "@/lib/email-inbox";
-import { after } from "next/server";
 import { getUserMailbox, getViewerMailboxes, mailboxHasImap } from "@/lib/data/mailboxes";
-import { loadSyncedMailbox } from "@/lib/data/mailbox-sync";
+import { enqueueMailboxSync, readMailboxSyncHealth } from "@/lib/data/mail-sync-worker";
 import { getCompanyDetails } from "@/lib/data/crm";
 import { getCompanyEmailBackendData } from "@/lib/data/company-emails";
 
@@ -26,24 +25,27 @@ export async function GET(request: Request) {
     ownerId: company.company.ownerId,
     emails: [company.company.email, ...company.contacts.map((contact) => contact.email)],
   }, { viewer, mailboxes }) : await getEmailInboxBackendData({ syncMailbox: false, mailboxId, context: { viewer, mailboxes } });
-  // Return saved mail immediately. Provider login and importing older mail
-  // continue after the response, with a shared lease across server instances.
-  if (params.get("refresh") !== "false") after(async () => {
+  // Persist intent before returning. No provider work depends on this request surviving.
+  const syncHealth: Record<string, Awaited<ReturnType<typeof readMailboxSyncHealth>>> = {};
+  let syncQueueError: string | null = null;
+  {
+    const refreshRequested = params.get("refresh") !== "false";
     const ownerMailbox = company?.company.ownerId ? await getUserMailbox(company.company.ownerId) : null;
     const availableMailboxes = [...new Map([...mailboxes, ...(ownerMailbox ? [ownerMailbox] : [])].map((mailbox) => [mailbox.id, mailbox])).values()];
     const refreshMailboxes = availableMailboxes.filter((item) => (company || item.id === data.selectedMailboxId) && mailboxHasImap(item));
     await Promise.all(refreshMailboxes.map(async (mailbox) => {
       try {
-        await loadSyncedMailbox(mailbox, { history, includeContent: false });
-        const { processEmailAutoReplies } = await import("@/lib/data/email-auto-reply-worker");
-        await processEmailAutoReplies(mailbox.id);
+        if (refreshRequested) await enqueueMailboxSync(mailbox, { history, folder: params.get("providerFolder") || undefined, refresh: true });
+        const folder = params.get("providerFolder") || "INBOX";
+        syncHealth[mailbox.id] = await readMailboxSyncHealth(mailbox, folder === "INBOX" ? data.lastMailboxSync || null : null, folder);
       } catch (error) {
-        console.warn("Mailbox background refresh failed:", error instanceof Error ? error.message : "Unknown error");
+        console.warn("Mailbox queue unavailable:", error instanceof Error ? error.message : "Unknown error");
+        syncQueueError = refreshRequested ? "Mailbox refresh could not be queued. Saved messages are still available." : "Unable to check mailbox updates. Saved messages are still available.";
       }
     }));
-  });
+  }
 
-  return Response.json(data, {
+  return Response.json({ ...data, syncHealth, syncQueueError }, {
     headers: { "Cache-Control": "no-store", "Server-Timing": `auth;dur=${(authorizedAt - start).toFixed(1)},inbox;dur=${(performance.now() - authorizedAt).toFixed(1)}` },
     status: 200,
   });

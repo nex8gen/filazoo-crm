@@ -8,6 +8,8 @@ import ts from "typescript";
 import * as engine from "../lib/flow-engine.ts";
 import * as schema from "../lib/flow-email-test.ts";
 import * as policy from "../lib/outreach-policy.ts";
+import * as attachmentUpload from "../lib/attachment-upload.ts";
+import * as flowSmtp from "../lib/flow-smtp.ts";
 import { blankStep } from "../lib/flows.ts";
 
 type Row = Record<string, unknown>;
@@ -59,6 +61,8 @@ function fixture() {
     return query;
   }
   const dependencies = {
+    "../attachment-upload.ts": attachmentUpload,
+    "../flow-smtp.ts": flowSmtp,
     "./email-footers.ts": { getUserEmailFooter: async () => null, prepareUserEmail: async (_id: string, mail: unknown) => mail },
     "../email-footer.ts": { removeStandardSignoff: (text: string) => text },
     "../flow-email-test.ts": schema, "../flow-engine.ts": engine, "../outreach-policy.ts": policy,

@@ -38,11 +38,9 @@ export function buildCompanyChatContext(details: CompanyDetails, includeBilling:
     profile: {
       source: "P", name: clip(company.name, 300), website: clip(company.website, 500), country: clip(company.country, 200),
       city: clip(company.city, 200), segment: clip(company.segment, 300), acquisition: clip(company.sourceLabel, 200),
-      stage: company.stage, accountManager: clip(company.ownerName, 300), primaryContact: clip(company.contact, 300),
+      accountManager: clip(company.ownerName, 300), primaryContact: clip(company.contact, 300),
       email: clip(company.email, 320), interests: company.tags.slice(0, 40).map((tag) => clip(tag, 200)),
       summary: clip(company.summary, 8_000), fitScore: company.fitScore,
-      estimatedOrderQuantity: company.estimatedOrderQuantity, estimatedOrderLabel: company.estimatedOrderLabel ? clip(company.estimatedOrderLabel, 500) : null,
-      estimatedValue: company.estimatedValue, currency: company.currency,
       scheduledFollowUpAt: company.nextFollowupAt,
     },
     contacts: { source: "C", total: details.contacts.length, records: details.contacts.slice(0, 20).map(({ name, role, email }) => ({ name: clip(name, 300), role: clip(role, 300), email: clip(email, 320) })) },

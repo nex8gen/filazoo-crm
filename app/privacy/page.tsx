@@ -27,7 +27,7 @@ export default function PrivacyPolicyPage() {
         <p>Depending on how the service is used and which integrations are enabled, we may process:</p>
         <ul>
           <li>Account and workspace information, including names, email addresses, roles, and authentication records.</li>
-          <li>CRM information entered by business users, such as company, contact, pipeline, and outreach records.</li>
+          <li>CRM information entered by business users, such as company, contact, billing, and outreach records.</li>
           <li>Facebook Page Messenger information, including Page-scoped user identifiers, profile names made available by Meta, message text, attachment metadata, timestamps, and reply status.</li>
           <li>Facebook Lead Ads information, including form responses such as name, email address, phone number, form identifiers, advertisement identifiers, and submission time.</li>
           <li>Connected commerce information supplied through Shopify, such as store identity, product, catalog, and related operational information selected by the business using Filazoo.</li>

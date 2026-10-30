@@ -1,0 +1,16 @@
+.settings-workspace { background: color-mix(in srgb, var(--muted) 24%, var(--background)); }
+.settings-content { width: 100%; max-width: 76rem; margin-inline: auto; }
+.settings-content > [data-slot="card"], .settings-content > div > [data-slot="card"] { max-width: none; }
+.settings-content [data-slot="card"] { --card-spacing: 1.5rem; border: 1px solid var(--border); border-radius: 1rem; box-shadow: 0 2px 8px rgb(0 0 0 / 2%); }
+.settings-content [data-slot="card-header"] { padding-bottom: .25rem; }
+.settings-content [data-slot="card-title"] { font-size: .9375rem; line-height: 1.5rem; font-weight: 600; }
+.settings-content [data-slot="card-description"] { font-size: .8125rem; line-height: 1.5rem; max-width: 62ch; }
+.settings-content [data-slot="input"], .settings-content [data-slot="select-trigger"], .settings-content [data-slot="textarea"] { border-radius: .625rem; }
+.settings-content [data-slot="button"] { min-height: 2.5rem; border-radius: .625rem; }
+.settings-content p[role="alert"] { border: 1px solid color-mix(in srgb, var(--destructive) 25%, transparent); border-radius: .75rem; background: color-mix(in srgb, var(--destructive) 5%, var(--background)); padding: .75rem 1rem; }
+.settings-content p[role="status"]:not(:empty) { line-height: 1.5rem; }
+.settings-preview-line { height: .3rem; border-radius: 1rem; background: currentColor; opacity: .15; }
+@media (prefers-reduced-motion: no-preference) {
+  .settings-section-enter { animation: settings-enter 180ms ease-out both; }
+  @keyframes settings-enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+}
