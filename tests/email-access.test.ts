@@ -26,6 +26,13 @@ test("personal mailbox owners can see every sender without a customer assignment
   assert.equal(canViewEmail({ role: "bd_manager" }, "buyer@example.com", null, { type: "personal", userId: null }), false);
 });
 
+test("company history exposes only exact saved contacts from the assigned manager's personal mailbox", () => {
+  const allowed = new Set(["buyer@example.com"]);
+  const mailbox = { type: "personal" as const, userId: "assigned-manager" };
+  assert.equal(canViewEmail({ id: "admin", role: "admin" }, " BUYER@EXAMPLE.COM ", null, mailbox, allowed), true);
+  assert.equal(canViewEmail({ id: "admin", role: "admin" }, "another-customer@example.com", null, mailbox, allowed), false);
+});
+
 test("reassignment removes access from the previous BD manager and gives it to the new owner", () => {
   const email = "buyer@example.com";
   const assigned = new Map([[email, "company-a"]]);

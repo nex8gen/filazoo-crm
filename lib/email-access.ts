@@ -8,9 +8,12 @@ export function canViewEmail(
   contact: string,
   assignedContacts: AssignedEmailContacts,
   mailbox?: Pick<NormalizedMailboxRecord, "type" | "userId"> | null,
+  allowedPersonalContacts?: ReadonlySet<string>,
 ) {
-  // Personal accounts belong to their owner regardless of CRM assignments.
-  if (mailbox?.type === "personal") return Boolean(viewer.id && mailbox.userId === viewer.id);
+  // Company history may read only its exact saved contacts from the assigned
+  // manager's personal mailbox. Other personal messages remain private.
+  if (mailbox?.type === "personal") return Boolean((viewer.id && mailbox.userId === viewer.id)
+    || allowedPersonalContacts?.has(contact.trim().toLowerCase()));
   return viewer.role !== "bd_manager"
     || Boolean(assignedContacts?.has(contact.trim().toLowerCase()));
 }

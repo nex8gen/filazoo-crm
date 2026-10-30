@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { buildFlowEmail } from "../flow-tracking.ts";
 import { emailTemplates, renderFlowTemplate as renderTemplate } from "../flow-templates.ts";
 
-import { calculateWaitUntil, conditionMatches, triggerMatches, matchesFlowCustomer, matchesFlowScope, flowConversationPath, nextBusinessWindow, type FlowFacts, type TriggerEvent } from "../flow-engine.ts";
+import { allFlowActions, calculateWaitUntil, conditionMatches, triggerMatches, matchesFlowCustomer, matchesFlowScope, matchesProfileFilters, flowConversationPath, nextBusinessWindow, type FlowFacts, type TriggerEvent } from "../flow-engine.ts";
 import { flowInputSchema, flowLeadListForSource, type FlowInput, type FlowStep, type JsonConfig, type TriggerType } from "../flows.ts";
 import { env } from "../env.ts";
 import { sendMailboxEmail } from "../mailer.ts";
@@ -101,7 +101,7 @@ export async function getFlowTestMailbox(userId: string, mailboxId: unknown) {
 
 export async function validateFlowResources(userId: string, input: FlowInput) {
   const admin = createSupabaseAdmin();
-  for (const step of input.steps) {
+  for (const step of allFlowActions(input.steps)) {
     if (step.type === "internal_alert" && step.config.channel === "email") {
       const mailbox = await getMailbox({ id: "", user_id: userId, trigger_type: input.triggerType, trigger_config: input.triggerConfig, status: input.status }, "default");
       if (!mailbox?.smtpHost || !mailbox.smtpUsername || !mailbox.smtpPassword) throw new Error("Configure the default workspace SMTP mailbox before enabling email alerts.");
@@ -125,6 +125,10 @@ export async function validateFlowResources(userId: string, input: FlowInput) {
 }
 
 async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: FlowFacts) {
+  if (!matchesProfileFilters(flow.trigger_config, facts) || (step.config.filters && !conditionMatches(step.config.filters as JsonConfig, facts))) {
+    await logRun(run.id, step.id, { action: "email_skipped", reason: "Profile or message filters no longer match." });
+    return;
+  }
   if (step.type === "send_email" && step.config.stopOnReply !== false && facts.customerReplied) {
     await logRun(run.id, step.id, { action: "cancelled", reason: "Customer replied" });
     await finishRun(run.id, "cancelled");
@@ -139,6 +143,11 @@ async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: F
   }
   const admin = createSupabaseAdmin();
   const automatedMailbox = await getMailbox(flow, step.config.mailboxId);
+  if (Number(step.config.smartSendingHours) > 0) {
+    const since = new Date(Date.now() - Number(step.config.smartSendingHours) * 3_600_000).toISOString();
+    const { count } = await admin.from("mailbox_sent_messages").select("id", { count: "exact", head: true }).eq("user_id", flow.user_id).eq("to_email", contact.email.toLowerCase()).gte("sent_at", since).throwOnError();
+    if (count) { await logRun(run.id, step.id, { action: "email_skipped", reason: "Smart Sending: this customer was emailed recently." }); return; }
+  }
   const { data: conversationAutomation, error: automationError } = await admin.from("email_auto_replies").select("id").eq("recipient", contact.email.toLowerCase())
     .eq("mailbox_id", automatedMailbox?.id || "00000000-0000-0000-0000-000000000000")
     .eq("thread_key", String(run.context?.emailThreadId || run.conversation_id)).eq("enabled", true).limit(1).maybeSingle();
@@ -234,6 +243,19 @@ async function executeAction(run: RunRow, flow: FlowRow, step: FlowStep, facts: 
     await logRun(run.id, step.id, { action: "category_changed", category: step.config.category, reason: step.config.reason || null });
     if (previous?.category !== step.config.category) await enrollMatchingFlows({ type: "category_changed", conversationId: run.conversation_id, messageKey,
       contactId: run.contact_id, companyId: run.company_id, category: String(step.config.category), eventKey: `category:${run.id}:${step.id}` });
+  } else if (step.type === "update_company") {
+    if (!run.company_id) throw new Error("Update company requires a company-backed flow run.");
+    const writes = [];
+    if (step.config.companyStatus || step.config.segment) writes.push(admin.from("companies").update({
+      ...(step.config.companyStatus ? { status: step.config.companyStatus } : {}),
+      ...(step.config.segment ? { segment: step.config.segment } : {}),
+    }).eq("id", run.company_id));
+    if (step.config.pipelineStage) writes.push(admin.from("pipeline").upsert({ company_id: run.company_id, stage: step.config.pipelineStage, updated_at: new Date().toISOString() }, { onConflict: "company_id" }));
+    const results = await Promise.all(writes);
+    const failed = results.find((result) => result.error);
+    if (failed?.error) throw failed.error;
+    await admin.from("events").insert({ company_id: run.company_id, actor_id: flow.user_id, type: "flow_company_updated", data: { summary: step.config.note || "Company fields updated by automation.", flow_id: flow.id } }).throwOnError();
+    await logRun(run.id, step.id, { action: "company_updated", companyStatus: step.config.companyStatus || null, pipelineStage: step.config.pipelineStage || null, segment: step.config.segment || null });
   } else if (step.type === "internal_alert") {
     const { data: pipeline } = run.company_id ? await admin.from("pipeline").select("owner_id").eq("company_id", run.company_id).maybeSingle().throwOnError() : { data: null };
     const userId = String(step.config.userId === "owner" ? pipeline?.owner_id || flow.user_id : step.config.userId);
@@ -288,6 +310,22 @@ export async function processFlowRun(runId: string) {
     while (index < steps.length) {
       const step = steps[index]!;
       const facts = await loadFlowFacts({ userId: flow.user_id, contactId: run.contact_id, companyId: run.company_id, messageKey: String(run.context?.messageKey || "") || run.conversation_id, lookbackDays: Number(step.config.lookbackDays || 365), conversationId: String(run.context?.emailThreadId || run.conversation_id), since: String(run.context?.replySince || run.started_at), runId: run.id, fallbackCategory: typeof run.context?.category === "string" ? run.context.category : null });
+      if (step.type === "split") {
+        const paths = Array.isArray(step.config.paths) ? step.config.paths : [];
+        const selected = paths.find((path) => path && typeof path === "object" && !Array.isArray(path) && path.condition && typeof path.condition === "object" && !Array.isArray(path.condition) && conditionMatches(path.condition as JsonConfig, facts))
+          ?? paths.find((path) => path && typeof path === "object" && !Array.isArray(path) && path.condition === null);
+        const selectedPath = selected && typeof selected === "object" && !Array.isArray(selected) ? selected : null;
+        const nested = selectedPath && Array.isArray(selectedPath.steps) ? selectedPath.steps as unknown as FlowStep[] : [];
+        const expanded = [...steps.slice(0, index), ...nested, ...steps.slice(index + 1)];
+        run.context = { ...(run.context ?? {}), definition: JSON.stringify(expanded) };
+        await Promise.all([
+          admin.from("flow_runs").update({ context: run.context, current_step: index, next_run_at: null }).eq("id", run.id).throwOnError(),
+          logRun(run.id, step.id, { action: "split_evaluated", pathId: selectedPath?.id || null, pathName: selectedPath?.name || "Everyone else" }),
+        ]);
+        steps.splice(0, steps.length, ...expanded);
+        processed += 1;
+        continue;
+      }
       if (step.type === "wait") {
         // The first delay starts at intake/receipt, including scanner recovery.
         const firstEventAt = new Date(String(run.context?.replySince || run.started_at));
@@ -369,6 +407,20 @@ export async function enrollMatchingFlows(event: TriggerEvent) {
     const scopedEvent = { ...event, contactId };
     const facts = await loadFlowFacts({ userId: row.user_id, contactId, companyId, messageKey: event.messageKey });
     if (!triggerMatches(row.trigger_type, row.trigger_config ?? {}, scopedEvent, facts)) { results.push({ flowId: row.id, enrolled: false, reason: "Trigger filters did not match" }); continue; }
+    const reentryMode = String(row.trigger_config?.reentryMode || "every_event");
+    if (reentryMode !== "every_event") {
+      let previousQuery = admin.from("flow_runs").select("id").eq("flow_id", row.id);
+      if (contactId) previousQuery = previousQuery.eq("contact_id", contactId);
+      else if (companyId) previousQuery = previousQuery.eq("company_id", companyId);
+      else previousQuery = previousQuery.eq("conversation_id", event.conversationId);
+      if (reentryMode === "after_period") {
+        const amount = Number(row.trigger_config?.reentryAfterAmount || 1);
+        const milliseconds = amount * (row.trigger_config?.reentryAfterUnit === "hours" ? 3_600_000 : 86_400_000);
+        previousQuery = previousQuery.gt("started_at", new Date(Date.now() - milliseconds).toISOString());
+      }
+      const { data: previous } = await previousQuery.limit(1).maybeSingle().throwOnError();
+      if (previous) { results.push({ flowId: row.id, enrolled: false, reason: reentryMode === "no_reentry" ? "Customer already entered this flow" : "Customer is still in the re-entry waiting period" }); continue; }
+    }
     const { data: definition } = await admin.from("flow_steps").select("id,position,type,config").eq("flow_id", row.id).order("position").throwOnError();
     flowInputSchema.parse({ name: "Enrollment validation", triggerType: row.trigger_type, triggerConfig: row.trigger_config, status: "live", steps: definition });
     const { data: run, error: insertError } = await admin.from("flow_runs").insert({ flow_id: row.id, conversation_id: event.conversationId, event_key: eventKey, contact_id: contactId ?? null, company_id: companyId, current_step: 0, status: "active", next_run_at: new Date().toISOString(), context: { messageKey: event.messageKey ?? null, category: event.category ?? null, listId: event.listId ?? null, segment: event.segment ?? null, stage: event.stage ?? null, replySince: event.occurredAt ?? new Date().toISOString(), definition: JSON.stringify(definition) } }).select("id").single();

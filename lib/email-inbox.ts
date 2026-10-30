@@ -326,12 +326,14 @@ type EmailInboxReadContext = {
   viewer: WorkspaceViewer; mailboxes: WorkspaceMailboxRecord[];
   states?: ReturnType<typeof listEmailInboxStates>;
   workspace?: ReturnType<typeof readWorkspaceInboxSources>;
+  allowedPersonalContacts?: ReadonlySet<string>;
 };
 
 /** One request's authorized snapshots; never retained between users or requests. */
-export function createEmailInboxReadContext(viewer: WorkspaceViewer, mailboxes: WorkspaceMailboxRecord[]): EmailInboxReadContext {
+export function createEmailInboxReadContext(viewer: WorkspaceViewer, mailboxes: WorkspaceMailboxRecord[], allowedPersonalContacts?: Iterable<string>): EmailInboxReadContext {
   return {
     viewer, mailboxes,
+    allowedPersonalContacts: allowedPersonalContacts ? new Set(Array.from(allowedPersonalContacts, normalizedEmail).filter(Boolean)) : undefined,
     states: listEmailInboxStates(viewer.id).catch(() => new Map()),
     workspace: !mailboxes.length || mailboxes.some(mailbox => mailbox.type === "workspace") ? readWorkspaceInboxSources(viewer) : undefined,
   };
@@ -367,7 +369,7 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
   const assignedContacts = workspace?.assigned ?? null;
   const { messages: liveInbound, error: inboxError, syncedAt: lastMailboxSync } = mailboxResult;
   const visibleInbox = [...buildInboxEmailItems({ drafts: emails, replies, inbound: [...shopifyMessages, ...liveInbound] }), ...sentMessages]
-    .filter((item) => canViewEmail(viewer, item.contact, assignedContacts, defaultMailbox));
+    .filter((item) => canViewEmail(viewer, item.contact, assignedContacts, defaultMailbox, context?.allowedPersonalContacts));
   // There is nothing to enrich when access rules exclude the saved messages.
   const [companyResult, automation] = await Promise.all([
     visibleInbox.length ? listInboxCompanies(visibleInbox, assignedContacts) : Promise.resolve({ companies: [] }),

@@ -143,6 +143,22 @@ test("test paths preserve skipped actions, reject excessive waits, and require o
   assert.equal(schema.flowEmailDeliveryTestSchema.safeParse({ ...payload(), emails: [payload().emails[0], payload().emails[0]] }).success, false);
 });
 
+test("real delivery plans preserve branch addresses and an individual message test bypasses surrounding waits", async () => {
+  const f = fixture(), input = payload();
+  const email = { ...blankStep("send_email"), config: { ...blankStep("send_email").config, templateId: "welcome_intro", subject: "Nested message", sendWindow: "anytime" } };
+  const split = blankStep("split");
+  split.config.paths = [{ id: "yes", name: "Qualified", condition: { field: "country_is", value: "US" }, steps: [email] }, { id: "no", name: "Everyone else", condition: null, steps: [] }];
+  input.flow.steps = [split]; input.facts = schema.flowScenarioSchema.parse({ country: "US" });
+  const started = await f.service.startFlowEmailDeliveryTest(input, "owner", null) as Run;
+  const completed = await f.service.processFlowEmailDeliveryTest(started.id, "owner") as Run;
+  assert.equal(completed.status, "completed");
+  assert.equal(f.mails[0].subject, "[Flow test] Nested message");
+  input.requestId = randomUUID(); input.flow.steps.unshift({ type: "wait", config: { amount: 7, unit: "days" } }); input.messageStepPath = [1, 0, 0];
+  await f.service.startFlowEmailDeliveryTest(input, "owner", null);
+  assert.equal((await f.service.processFlowEmailDeliveryTest(input.requestId, "owner") as Run).status, "completed");
+  assert.equal(f.mails.length, 2);
+});
+
 test("real-send routes require membership, reject other origins and use only the signed-in user's runs", async () => {
   let role: string | null = null, calls = 0;
   const deps = {

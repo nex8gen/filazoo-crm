@@ -6,7 +6,8 @@ import vm from "node:vm";
 import ts from "typescript";
 import * as engine from "../lib/flow-engine.ts";
 import { blankStep, defaultFlowInput } from "../lib/flows.ts";
-import { flowEmailTestSchema } from "../lib/flow-email-test.ts";
+import * as testSchema from "../lib/flow-email-test.ts";
+const { flowEmailTestSchema } = testSchema;
 import * as templates from "../lib/flow-templates.ts";
 
 const require = createRequire(import.meta.url);
@@ -54,6 +55,7 @@ function service(failFirst = false) {
   const calls: Array<{ previousAutomatedMessages: number; messages: Array<{ direction: string; body: string }>; contact: { email: string } }> = [];
   let reads = 0;
   const exports = moduleUnderTest("../lib/data/flow-email-test.ts", {
+    "../flow-email-test.ts": testSchema,
     "../flow-templates.ts": templates,
     "../flow-engine.ts": engine,
     "./flow-ai-reply.ts": {
@@ -119,4 +121,22 @@ test("oversized multi-step tests stop before reading products or calling AI", as
   await assert.rejects(() => mock.run(input, null), /six AI actions/);
   assert.equal(mock.calls.length, 0);
   assert.equal(mock.reads(), 0);
+});
+
+test("branch message previews resolve the actual nested action rather than its flattened position", async () => {
+  const mock = service();
+  const split = blankStep("split");
+  split.config.paths = [
+    { id: "yes", name: "US buyers", condition: { field: "country_is", value: "US" }, steps: [{ ...blankStep("ai_auto_reply"), id: "selected-ai" }] },
+    { id: "else", name: "Everyone else", condition: null, steps: [{ ...blankStep("send_email"), id: "fallback-email", config: { ...blankStep("send_email").config, templateId: "welcome_intro", subject: "Fallback {{first_name}}" } }] },
+  ];
+  const input = flowEmailTestSchema.parse({ ...payload(), flow: { ...payload().flow, steps: [split, { ...blankStep("send_email"), config: { ...blankStep("send_email").config, templateId: "welcome_intro", subject: "Shared continuation" } }] }, facts: { country: "US" } });
+  const result = await mock.run(input, null) as testSchema.FlowEmailTestResult;
+  assert.equal(mock.calls.length, 1);
+  assert.equal(result.cases[0].replies.length, 2);
+  assert.equal(result.cases[0].replies[1].subject, "Shared continuation");
+  assert.deepEqual(result.cases[0].trace[1].stepPath, [0, 0, 0]);
+  const oneMessage = await mock.run({ ...input, messageStepPath: [0, 1, 0] }, null) as testSchema.FlowEmailTestResult;
+  assert.equal(oneMessage.cases[0].replies.length, 1);
+  assert.match(oneMessage.cases[0].replies[0].subject, /^Fallback /);
 });

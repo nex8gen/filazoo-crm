@@ -8,9 +8,9 @@ import { zhCNAiHistory } from "./i18n-ai-history.ts";
 import { zhCNTaskActivity } from "./i18n-task-activity.ts";
 import { zhCNPurchaseOrders } from "./i18n-purchase-orders.ts";
 
-export type AppLanguage = "en" | "zh-CN";
-
-export const LANGUAGE_STORAGE_KEY = "filazoo-language";
+import type { AppLanguage } from "./app-language.ts";
+export type { AppLanguage } from "./app-language.ts";
+export { LANGUAGE_STORAGE_KEY } from "./app-language.ts";
 
 // Product terminology is centralized so sales, catalog, mailbox, and
 // automation screens use consistent professional Chinese wording.

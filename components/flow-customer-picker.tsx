@@ -36,7 +36,7 @@ function useCustomerOptions(params: string | null) {
 
 export function FlowCustomerPicker({ config, onChange, disabled }: { config: JsonConfig; onChange: (config: JsonConfig) => void; disabled: boolean }) {
   const restricted = "contactIds" in config;
-  const selectedIds = Array.isArray(config.contactIds) ? config.contactIds : [];
+  const selectedIds = Array.isArray(config.contactIds) ? config.contactIds.filter((id): id is string => typeof id === "string") : [];
   const [companySearch, setCompanySearch] = useState("");
   const [company, setCompany] = useState<FlowCompany | null>(null);
   const [companyOffset, setCompanyOffset] = useState(0);

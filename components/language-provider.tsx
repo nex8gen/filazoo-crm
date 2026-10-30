@@ -1,7 +1,7 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useSyncExternalStore } from "react";
-import { type AppLanguage, LANGUAGE_STORAGE_KEY, translateUiText } from "@/lib/i18n";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { type AppLanguage, LANGUAGE_STORAGE_KEY } from "@/lib/app-language";
 import { localizedSource } from "@/lib/localized-source";
 
 type LanguageContextValue = { language: AppLanguage; setLanguage: (language: AppLanguage) => void; t: (value: string) => string };
@@ -12,6 +12,8 @@ const originalAttributes = new WeakMap<Element, Map<string, string>>();
 const translatedAttributes = new WeakMap<Element, Map<string, string>>();
 const localizedAttributes = ["aria-label", "aria-description", "aria-valuetext", "placeholder", "title", "alt"] as const;
 const languageChangeEvent = "filazoo-language-change";
+type Translator = (value: string, language: AppLanguage) => string;
+const identityTranslator: Translator = (value) => value;
 
 function subscribeToLanguage(onStoreChange: () => void) {
   window.addEventListener("storage", onStoreChange);
@@ -39,7 +41,7 @@ function shouldSkip(node: Text) {
   return !parent || Boolean(parent.closest("script, style, code, pre, [data-no-translate], [translate='no'], [contenteditable]:not([contenteditable='false'])"));
 }
 
-function localizeTextNode(node: Text, language: AppLanguage) {
+function localizeTextNode(node: Text, language: AppLanguage, translateUiText: Translator) {
   if (shouldSkip(node)) return;
   const current = node.data;
   const previousTranslation = translatedText.get(node);
@@ -49,7 +51,7 @@ function localizeTextNode(node: Text, language: AppLanguage) {
   if (current !== next) node.data = next;
 }
 
-function localizeAttributes(element: Element, language: AppLanguage) {
+function localizeAttributes(element: Element, language: AppLanguage, translateUiText: Translator) {
   if (element.closest("[data-no-translate], [translate='no'], [contenteditable]:not([contenteditable='false'])")) return;
   let sources = originalAttributes.get(element);
   let translations = translatedAttributes.get(element);
@@ -65,48 +67,55 @@ function localizeAttributes(element: Element, language: AppLanguage) {
   }
 }
 
-function localizeTree(root: Node, language: AppLanguage) {
-  if (root.nodeType === Node.TEXT_NODE) { localizeTextNode(root as Text, language); return; }
+function localizeTree(root: Node, language: AppLanguage, translateUiText: Translator) {
+  if (root.nodeType === Node.TEXT_NODE) { localizeTextNode(root as Text, language, translateUiText); return; }
   if (!(root instanceof Element)) return;
-  localizeAttributes(root, language);
+  localizeAttributes(root, language, translateUiText);
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
   let node = walker.nextNode();
   while (node) {
-    if (node.nodeType === Node.TEXT_NODE) localizeTextNode(node as Text, language);
-    else localizeAttributes(node as Element, language);
+    if (node.nodeType === Node.TEXT_NODE) localizeTextNode(node as Text, language, translateUiText);
+    else localizeAttributes(node as Element, language, translateUiText);
     node = walker.nextNode();
   }
 }
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const language = useSyncExternalStore(subscribeToLanguage, getLanguageSnapshot, getServerLanguageSnapshot);
+  const [translateUiText, setTranslator] = useState<Translator>(() => identityTranslator);
+  useEffect(() => {
+    if (language !== "zh-CN") return;
+    let active = true;
+    void import("@/lib/i18n").then((module) => { if (active) setTranslator(() => module.translateUiText); }).catch(() => { /* Keep the English interface usable if the language chunk cannot load. */ });
+    return () => { active = false; };
+  }, [language]);
   const setLanguage = useCallback((next: AppLanguage) => {
     document.documentElement.lang = next;
     try { window.localStorage.setItem(LANGUAGE_STORAGE_KEY, next); } catch { /* Keep language switching available when storage is blocked. */ }
     window.dispatchEvent(new Event(languageChangeEvent));
   }, []);
-  const t = useCallback((value: string) => translateUiText(value, language), [language]);
+  const t = useCallback((value: string) => translateUiText(value, language), [language, translateUiText]);
   const context = useMemo(() => ({ language, setLanguage, t }), [language, setLanguage, t]);
 
   useEffect(() => {
     document.documentElement.lang = language === "zh-CN" ? "zh-CN" : "en";
     document.documentElement.dataset.language = language;
-    localizeTree(document.body, language);
-    localizeTree(document.querySelector("title") ?? document.head, language);
+    localizeTree(document.body, language, translateUiText);
+    localizeTree(document.querySelector("title") ?? document.head, language, translateUiText);
     // Server and React output is already English. Restore any translated nodes
     // above when switching back, then avoid observing every DOM update in English.
     if (language === "en") return;
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
-        if (mutation.type === "characterData") localizeTextNode(mutation.target as Text, language);
-        if (mutation.type === "attributes") localizeAttributes(mutation.target as Element, language);
-        for (const node of mutation.addedNodes) localizeTree(node, language);
+        if (mutation.type === "characterData") localizeTextNode(mutation.target as Text, language, translateUiText);
+        if (mutation.type === "attributes") localizeAttributes(mutation.target as Element, language, translateUiText);
+        for (const node of mutation.addedNodes) localizeTree(node, language, translateUiText);
       }
     });
     observer.observe(document.body, { childList: true, characterData: true, attributes: true, attributeFilter: [...localizedAttributes], subtree: true });
     observer.observe(document.head, { childList: true, characterData: true, subtree: true });
     return () => observer.disconnect();
-  }, [language]);
+  }, [language, translateUiText]);
 
   return <LanguageContext.Provider value={context}>{children}</LanguageContext.Provider>;
 }

@@ -1,7 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { flowEmailDeliveryTestSchema, type FlowEmailDeliveryTestInput, type FlowEmailDeliveryTestRun } from "../flow-email-test.ts";
-import { simulateFlow, type FlowFacts } from "../flow-engine.ts";
+import { flowEmailDeliveryTestSchema, flowEmailTestTrace, type FlowEmailDeliveryTestInput, type FlowEmailDeliveryTestRun } from "../flow-email-test.ts";
+import { flowStepAtPath } from "../flow-engine.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 import { env } from "../env.ts";
 import { evaluateSend } from "../outreach-policy.ts";
@@ -12,7 +12,7 @@ import { buildFlowEmail } from "../flow-tracking.ts";
 import { emailTemplates, getFlowTestMailbox } from "./flow-runtime.ts";
 import { generateFlowAiReply, hasFlowReplyProvider, loadFlowReplyProducts, prepareFlowTemplateCatalog } from "./flow-ai-reply.ts";
 
-type PlanAction = { step: number; sendAt: string };
+type PlanAction = { step: number; stepPath?: number[]; sendAt: string };
 type TestRow = FlowEmailDeliveryTestRun & {
   user_id: string; input: FlowEmailDeliveryTestInput; plan: PlanAction[]; manager_name: string | null;
   current_action: number; locked_at: string | null; expires_at: string;
@@ -20,20 +20,12 @@ type TestRow = FlowEmailDeliveryTestRun & {
 const table = "flow_email_test_runs";
 
 export function planFlowEmailDeliveryTest(input: FlowEmailDeliveryTestInput, now = new Date()): PlanAction[] {
-  const config = input.flow.triggerConfig;
-  const facts: FlowFacts = { customerReplied: false, openedEmail: false, clickedLink: false,
-    category: typeof config.category === "string" ? config.category : null,
-    segment: typeof config.segment === "string" ? config.segment : null,
-    country: typeof config.country === "string" ? config.country : null,
-    companyStatus: typeof config.companyStatus === "string" ? config.companyStatus : null,
-    pipelineStage: typeof config.pipelineStage === "string" ? config.pipelineStage : null,
-    fitScore: typeof config.minFitScore === "number" ? config.minFitScore : null };
-  const trace = simulateFlow(input.flow, facts, now).trace;
+  const trace = flowEmailTestTrace(input, now);
   const actions: PlanAction[] = [];
   let sendAt = now.toISOString();
   for (const entry of trace) {
     if (entry.scheduledAt) sendAt = entry.scheduledAt;
-    if (entry.status === "would_run" && (entry.type === "send_email" || entry.type === "ai_auto_reply")) actions.push({ step: entry.step, sendAt });
+    if (entry.status === "would_run" && (entry.type === "send_email" || entry.type === "ai_auto_reply")) actions.push({ step: entry.step, stepPath: entry.stepPath, sendAt });
   }
   if (!actions.length) throw new Error("This test path does not send an email. Review the flow conditions.");
   if (actions.length > 6) throw new Error("Test up to six email actions at a time.");
@@ -57,7 +49,8 @@ export async function startFlowEmailDeliveryTest(input: FlowEmailDeliveryTestInp
   if (existing.data) return publicRun(existing.data as TestRow);
   let plan = planFlowEmailDeliveryTest(input);
   for (const action of plan) {
-    const step = input.flow.steps[action.step - 1];
+    const step = flowStepAtPath(input.flow, action.stepPath ?? [action.step - 1]);
+    if (!step) throw new Error("The test action no longer exists.");
     const mailbox = await getFlowTestMailbox(userId, step.config.mailboxId);
     if (!mailbox?.smtpHost || !mailbox.smtpUsername || !mailbox.smtpPassword) throw new Error("The test sender needs an active mailbox with complete SMTP settings.");
     if (step.type === "ai_auto_reply" && !hasFlowReplyProvider()) throw new Error("Configure an AI provider before sending an AI test reply.");
@@ -103,7 +96,8 @@ export async function processFlowEmailDeliveryTest(id: string, userId: string) {
   try {
     const input = flowEmailDeliveryTestSchema.parse(row.input);
     const action = row.plan[row.current_action];
-    const step = input.flow.steps[action.step - 1];
+    const step = flowStepAtPath(input.flow, action.stepPath ?? [action.step - 1]);
+    if (!step) throw new Error("The test action no longer exists.");
     const mailbox = await getFlowTestMailbox(userId, step.config.mailboxId);
     if (!mailbox?.smtpHost || !mailbox.smtpUsername || !mailbox.smtpPassword) throw new Error("The selected test sender mailbox is unavailable.");
     const today = new Date(); today.setUTCHours(0, 0, 0, 0);

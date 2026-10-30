@@ -2,13 +2,15 @@ import { requireWorkspaceMember, type WorkspaceViewer } from "../auth.ts";
 import { filterCompanyEmails, type CompanyEmailScope } from "../company-email.ts";
 import { createEmailInboxReadContext, getEmailInboxBackendData, type EmailInboxBackendData } from "../email-inbox.ts";
 import { normalizeMessageId } from "../email-threading.ts";
-import { getViewerMailboxes, type WorkspaceMailboxRecord } from "./mailboxes.ts";
+import { getUserMailbox, getViewerMailboxes, type WorkspaceMailboxRecord } from "./mailboxes.ts";
 
 /** Company history spans authorized accounts, independently of the default sender. */
 export async function getCompanyEmailBackendData(company: CompanyEmailScope, context?: { viewer: WorkspaceViewer; mailboxes: WorkspaceMailboxRecord[] }): Promise<EmailInboxBackendData> {
   const viewer = context?.viewer ?? await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
-  const mailboxes = context?.mailboxes ?? await getViewerMailboxes(viewer.id);
-  const authorized = createEmailInboxReadContext(viewer, mailboxes);
+  const viewerMailboxes = context?.mailboxes ?? await getViewerMailboxes(viewer.id);
+  const ownerMailbox = company.ownerId ? await getUserMailbox(company.ownerId) : null;
+  const mailboxes = [...new Map([...viewerMailboxes, ...(ownerMailbox ? [ownerMailbox] : [])].map((mailbox) => [mailbox.id, mailbox])).values()];
+  const authorized = createEmailInboxReadContext(viewer, mailboxes, company.emails);
   const snapshots = await Promise.all((mailboxes.length ? mailboxes.map((mailbox) => mailbox.id) : [undefined]).map((mailboxId) =>
     getEmailInboxBackendData({ syncMailbox: false, mailboxId, context: authorized }),
   ));

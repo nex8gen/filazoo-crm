@@ -5,6 +5,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import { flowInputSchema } from "../lib/flows.ts";
 import * as flowModel from "../lib/flows.ts";
+import * as flowAudit from "../lib/flow-audit.ts";
 
 function loadModule(file: string, dependencies: Record<string, unknown>) {
   const exports: Record<string, (...args: unknown[]) => Promise<unknown>> = {};
@@ -327,11 +328,13 @@ function builder(hooks?: { values: unknown[]; cursor: number }) {
   const dependencies = new Proxy({
     "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
     react: {
+      lazy: () => "LazyComponent", Suspense: "Suspense",
       useState: state, useRef: (value: unknown) => state({ current: value })[0],
       useEffect: () => {}, useMemo: (fn: () => unknown) => fn(), useCallback: (fn: unknown) => fn,
     },
     "@dnd-kit/core": { ...components, useSensors: () => [], useSensor: () => ({}) },
     "@/lib/flows": flowModel,
+    "@/lib/flow-audit": flowAudit,
     sonner: { toast: { error: () => {}, success: () => {} } },
     "@/components/language-provider": { useLanguage: () => ({ language: "en", t: (text: string) => text }) },
   }, { get: (target, name) => Reflect.get(target, name) ?? components });

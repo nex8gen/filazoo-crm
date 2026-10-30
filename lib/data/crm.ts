@@ -26,6 +26,8 @@ type CompanyRow = {
   segment: string | null;
   source: string | null;
   status: string;
+  discovered_at: string;
+  created_at: string;
   meta_leads: Relation<{ created_at: string; field_data: unknown }>;
   company_profiles: Relation<{
     summary: string | null;
@@ -177,6 +179,7 @@ function mapCompany(row: CompanyRow, ownerNames = new Map<string, string>(), own
     segment: row.segment || "Unclassified",
     source: row.source || "imported",
     sourceLabel: sourceLabel(row.source),
+    addedAt: row.discovered_at || row.created_at,
     fitScore: profile?.fit_score ?? 0,
     stage: getPipelineStageLabel(pipeline?.stage || row.status),
     outreachStatus: getOutreachStatus(row.contacts, row.source),
@@ -244,7 +247,7 @@ async function queryCompanies(id?: string, options: { ids?: string[]; maxCompani
   for (let offset = 0; ; offset += 500) {
     const query = createSupabaseAdmin()
       .from("companies")
-      .select("id,name,website,domain,country,city,segment,source,status,meta_leads(created_at,field_data),company_profiles(summary,fit_score,interest_tags),contacts(id,name,role,email,verification_status,emails(status,direction,created_at)),pipeline(stage,next_followup_at,estimated_order_quantity,estimated_value,currency,owner_id)")
+      .select("id,name,website,domain,country,city,segment,source,status,discovered_at,created_at,meta_leads(created_at,field_data),company_profiles(summary,fit_score,interest_tags),contacts(id,name,role,email,verification_status,emails(status,direction,created_at)),pipeline(stage,next_followup_at,estimated_order_quantity,estimated_value,currency,owner_id)")
       .or("source.is.null,source.neq.sample_seed")
       .order("created_at", { ascending: false })
       .order("id")
@@ -277,7 +280,7 @@ export async function getCompanyProfile(id: string): Promise<{ mode: DataMode; d
   if (!/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(id)) return { mode, details: null };
   const admin = createSupabaseAdmin();
   const companyResult = await admin.from("companies")
-    .select("id,name,website,domain,country,city,segment,source,status,meta_leads(created_at,field_data),company_profiles(summary,fit_score,interest_tags),pipeline(stage,next_followup_at,estimated_order_quantity,estimated_value,currency,owner_id),contacts(id,name,role,email,verification_status),customer_billing_profiles(profile)")
+    .select("id,name,website,domain,country,city,segment,source,status,discovered_at,created_at,meta_leads(created_at,field_data),company_profiles(summary,fit_score,interest_tags),pipeline(stage,next_followup_at,estimated_order_quantity,estimated_value,currency,owner_id),contacts(id,name,role,email,verification_status),customer_billing_profiles(profile)")
     .eq("id", id).order("created_at", { referencedTable: "contacts" }).order("id", { referencedTable: "contacts" }).maybeSingle();
   if (companyResult.error) throw new Error(`Unable to load company profile: ${companyResult.error.message}`);
   if (!companyResult.data) return { mode, details: null };
@@ -308,7 +311,7 @@ export async function getCompanyDetails(id: string): Promise<{ mode: DataMode; d
   const viewer = await requireWorkspaceMember();
   const admin = createSupabaseAdmin();
   const [companyResult, contactsResult, eventsResult, emailsResult, catalogsResult, commerceResult] = await Promise.all([
-    admin.from("companies").select("id,name,website,domain,country,city,segment,source,status,meta_leads(created_at,field_data),company_profiles(summary,fit_score,interest_tags),contacts(id,name,role,email,verification_status,emails(status,direction,created_at)),pipeline(stage,next_followup_at,estimated_order_quantity,estimated_value,currency,owner_id)").eq("id", id).maybeSingle(),
+    admin.from("companies").select("id,name,website,domain,country,city,segment,source,status,discovered_at,created_at,meta_leads(created_at,field_data),company_profiles(summary,fit_score,interest_tags),contacts(id,name,role,email,verification_status,emails(status,direction,created_at)),pipeline(stage,next_followup_at,estimated_order_quantity,estimated_value,currency,owner_id)").eq("id", id).maybeSingle(),
     admin.from("contacts").select("id,name,role,email,verification_status").eq("company_id", id).order("created_at").order("id"),
     readActivityHistory((from, to) => admin.from("events").select("id,type,data,actor_id,created_at").eq("company_id", id).order("created_at", { ascending: false }).order("id").range(from, to)),
     readActivityHistory((from, to) => admin.from("emails").select("id,message_id,subject,body,status,direction,approved_by,sent_at,created_at,contacts!inner(name,email,company_id)").eq("contacts.company_id", id).order("created_at", { ascending: false }).order("id").range(from, to)),

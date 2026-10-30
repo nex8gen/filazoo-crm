@@ -40,6 +40,7 @@ export type Company = {
   segment: string;
   source: string;
   sourceLabel: string;
+  addedAt?: string;
   fitScore: number;
   stage: PipelineStage;
   outreachStatus: string;

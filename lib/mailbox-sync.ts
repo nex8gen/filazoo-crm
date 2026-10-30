@@ -20,8 +20,8 @@ export function mergeMailboxSnapshot(previous: MailboxSnapshot, messages: InboxE
   const byId = new Map((sameMailboxEpoch ? previous.messages : []).map((message) => [message.id, message]));
   for (const message of messages) byId.set(message.id, message);
   return {
-    // Bound the UI cache; importing history expands the initial 100 to 1000.
-    messages: [...byId.values()].sort((a, b) => (b.uid ?? 0) - (a.uid ?? 0)).slice(0, 1000),
+    // Bound the UI cache while retaining complete history for larger team mailboxes.
+    messages: [...byId.values()].sort((a, b) => (b.uid ?? 0) - (a.uid ?? 0)).slice(0, 5000),
     cursor: sameMailboxEpoch ? { ...cursor, lastUid: Math.max(cursor.lastUid, previous.cursor!.lastUid) } : cursor,
     syncedAt: new Date().toISOString(),
     error: null,
@@ -41,7 +41,7 @@ export async function synchronizeMailbox(
   { sync = true, history = false }: { sync?: boolean; history?: boolean } = {},
 ): Promise<MailboxSnapshot> {
   const saved = await store.read();
-  if (history && saved.messages.length >= 1000) return saved;
+  if (history && saved.messages.length >= 5000) return saved;
   if (!sync || (!history && saved.syncedAt && Date.now() - Date.parse(saved.syncedAt) < 5000)) return saved;
   const token = crypto.randomUUID();
   if (!await store.acquire(token)) return store.read();

@@ -135,6 +135,58 @@ test("a saved new lead immediately executes email and scanner retries cannot sen
   assert.equal(app.delivered(), 1);
 });
 
+test("a live split expands only the first matching path and executes its saved actions", async () => {
+  const app = runtime();
+  const splitId = randomUUID();
+  app.db.flow_steps = [{ id: splitId, flow_id: app.flowId, position: 0, type: "split", config: {
+    name: "Qualification",
+    paths: [
+      { id: "qualified", name: "Qualified", condition: { field: "fit_score_at_least", fitScore: 7, lookbackDays: 7 }, steps: [{ id: "qualified-task", type: "create_task", config: flows.blankStep("create_task").config }] },
+      { id: "otherwise", name: "Everyone else", condition: null, steps: [{ id: "fallback-email", type: "send_email", config: { ...flows.blankStep("send_email").config, templateId: "welcome_intro", sendWindow: "anytime" } }] },
+    ],
+  } }];
+  const result = await app.exports.enrollNewLeadFlows(app.contactId);
+  assert.equal(result[0]?.reason, "done", JSON.stringify(app.db.flow_run_logs));
+  assert.equal(app.delivered(), 1);
+  assert.equal(app.db.crm_tasks?.length ?? 0, 0);
+  assert.equal((app.db.flow_run_logs.find((log) => (log.result as Row)?.action === "split_evaluated")?.result as Row)?.pathId, "otherwise");
+  assert.ok(String((app.db.flow_runs[0].context as Row).definition).includes("send_email"));
+});
+
+test("trigger re-entry rules block repeat customers or enforce a cooldown", async () => {
+  for (const mode of ["no_reentry", "after_period"] as const) {
+    const app = runtime();
+    Object.assign(app.db.flows[0], { trigger_type: "category_changed", trigger_config: { category: "Interested", reentryMode: mode, ...(mode === "after_period" ? { reentryAfterAmount: 30, reentryAfterUnit: "days" } : {}) } });
+    const event = { type: "category_changed" as const, contactId: app.contactId, companyId: app.companyId, conversationId: `company:${app.companyId}`, category: "Interested" };
+    assert.equal((await app.exports.enrollMatchingFlows({ ...event, eventKey: `${mode}-first` }))[0]?.enrolled, true);
+    const repeat = await app.exports.enrollMatchingFlows({ ...event, eventKey: `${mode}-second` });
+    assert.equal(repeat[0]?.enrolled, false);
+    assert.match(String(repeat[0]?.reason), mode === "no_reentry" ? /already entered/ : /waiting period/);
+    assert.equal(app.delivered(), 1);
+  }
+});
+
+test("send-time profile filters, message filters and Smart Sending skip one email while later CRM actions continue", async () => {
+  for (const reason of ["profile", "message", "frequency"]) {
+    const app = runtime();
+    const email = app.db.flow_steps[0];
+    if (reason === "profile") app.db.flows[0].trigger_config = { companyStatus: "new" };
+    if (reason === "message") (email.config as Row).filters = { field: "country_is", value: "GB" };
+    if (reason === "frequency") {
+      (email.config as Row).smartSendingHours = 16;
+      app.db.mailbox_sent_messages = [{ user_id: "owner", to_email: "lead@example.com", sent_at: new Date().toISOString() }];
+    }
+    app.db.flow_steps = [{ ...flows.blankStep("wait"), id: randomUUID(), flow_id: app.flowId, position: 0 }, { ...email, position: 1 }, { ...flows.blankStep("create_task"), id: randomUUID(), flow_id: app.flowId, position: 2 }];
+    assert.equal((await app.exports.enrollNewLeadFlows(app.contactId))[0]?.reason, "waiting");
+    if (reason === "profile") app.db.companies[0].status = "engaged";
+    const run = app.db.flow_runs[0]; run.next_run_at = new Date(Date.now() - 1).toISOString();
+    assert.equal((await app.exports.processFlowRun(String(run.id))).status, "done");
+    assert.equal(app.delivered(), 0);
+    assert.equal(app.db.crm_tasks.length, 1);
+    assert.ok(app.db.flow_run_logs.some((row) => (row.result as Row)?.action === "email_skipped"));
+  }
+});
+
 test("individual email/company automations send only to eligible contacts and preserve wait/pause/resume", async () => {
   for (const flowScope of ["email", "company"]) {
     const app = runtime();

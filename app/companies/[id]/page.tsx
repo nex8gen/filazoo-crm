@@ -67,7 +67,7 @@ async function CompanySection({ tab, id, details, viewer, compose, invoiceId }: 
     case "analyse": return <CompanyAnalysis companyId={id} canWrite={canWrite} preferredCurrency={details.commerce?.currency || details.company.currency} />;
     case "invoices": return <CompanyInvoices companyId={id} canWrite={canWrite} />;
     case "customer-portal": return <CompanyCustomerPortal companyId={id} companyName={details.company.name} invoiceId={invoiceId} canWrite={canWrite} />;
-    case "email": return <CompanyEmails company={{ id, name: details.company.name, emails: [...new Set([details.company.email, ...details.contacts.map(contact => contact.email)])] }} viewer={{ id: viewer.id, role: viewer.role }} composeTo={compose === "1" && canWrite ? details.company.email : undefined} />;
+    case "email": return <CompanyEmails company={{ id, name: details.company.name, ownerId: details.company.ownerId, emails: [...new Set([details.company.email, ...details.contacts.map(contact => contact.email)])] }} viewer={{ id: viewer.id, role: viewer.role }} composeTo={compose === "1" && canWrite ? details.company.email : undefined} />;
     case "purchase-orders": return <CompanyPurchaseOrders companyId={id} companyName={details.company.name} commerce={details.commerce} canWrite={canWrite} />;
     case "history": {
       const { details: history } = await getCompanyDetails(id);

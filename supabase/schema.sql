@@ -517,7 +517,7 @@ create table if not exists public.mailbox_sync_state (
   lease_token uuid,
   lease_until timestamptz,
   check (last_uid >= 0),
-  check (jsonb_typeof(messages) = 'array' and jsonb_array_length(messages) <= 1000)
+  check (jsonb_typeof(messages) = 'array' and jsonb_array_length(messages) <= 5000)
 );
 alter table public.mailbox_sync_state enable row level security;
 revoke all on public.mailbox_sync_state from anon, authenticated;

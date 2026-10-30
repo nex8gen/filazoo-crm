@@ -17,10 +17,12 @@ function item(id: string, contact = "buyer@example.test", extra: Partial<InboxEm
 function setup({ empty = false, denied = false } = {}) {
   const viewer = { id: "actor", role: "bd_manager" } as WorkspaceViewer;
   const mailboxes = (empty ? [] : [{ id: "mine", type: "personal", userId: "actor" }, { id: "team", type: "workspace" }]) as WorkspaceMailboxRecord[];
+  const ownerMailbox = { id: "assigned", type: "personal", userId: "assigned-owner" } as WorkspaceMailboxRecord;
   const reads: Array<string | undefined> = [];
   const messages: Record<string, InboxEmailItem[]> = {
     mine: [item("personal-only"), item("personal-copy", "buyer@example.test", { messageId: "<Copy@example.test>" }), item("unrelated", "stranger@example.test")],
     team: [item("workspace-only"), item("workspace-copy", "buyer@example.test", { messageId: "<copy@example.test>" }), item("sent", "accounts@example.test", { direction: "outbound", mailboxId: "team" })],
+    assigned: [item("assigned-owner-only"), item("assigned-unrelated", "stranger@example.test")],
   };
   const snapshot = (id?: string): EmailInboxBackendData => ({
     selectedMailboxId: id ?? null, defaultSenderId: "mine", defaultMailboxEmail: "me@example.test", mailboxes: [],
@@ -31,11 +33,11 @@ function setup({ empty = false, denied = false } = {}) {
   const dependencies: Record<string, unknown> = {
     "../auth.ts": { requireWorkspaceMember: async () => { if (denied) throw new Error("Unauthorized"); return viewer; } },
     "../company-email.ts": { filterCompanyEmails }, "../email-threading.ts": { normalizeMessageId },
-    "./mailboxes.ts": { getViewerMailboxes: async (id: string) => { assert.equal(id, viewer.id); return mailboxes; } },
+    "./mailboxes.ts": { getViewerMailboxes: async (id: string) => { assert.equal(id, viewer.id); return mailboxes; }, getUserMailbox: async (id: string) => { assert.equal(id, "assigned-owner"); return ownerMailbox; } },
     "../email-inbox.ts": { createEmailInboxReadContext: (viewer: WorkspaceViewer, mailboxes: WorkspaceMailboxRecord[]) => ({ viewer, mailboxes }), getEmailInboxBackendData: async (options: { mailboxId?: string; syncMailbox: boolean; context: { viewer: WorkspaceViewer; mailboxes: WorkspaceMailboxRecord[] } }) => {
       assert.equal(options.syncMailbox, false);
       assert.equal(options.context.viewer, viewer);
-      assert.equal(options.context.mailboxes, mailboxes);
+      assert.equal(options.context.mailboxes.slice(0, mailboxes.length).map((mailbox) => mailbox.id).join(","), mailboxes.map((mailbox) => mailbox.id).join(","));
       reads.push(options.mailboxId);
       return snapshot(options.mailboxId);
     } },
@@ -79,4 +81,12 @@ test("companies without connected mailboxes still load CRM history safely", asyn
   assert.deepEqual(backend.reads, [undefined]);
   assert.equal(data.emails.length, 0);
   assert.equal(data.inboxConfigured, false);
+});
+
+test("company history includes the assigned owner's personal mailbox without exposing it in the normal inbox", async () => {
+  const backend = setup();
+  const data = await backend.getCompanyEmailBackendData({ ...company, ownerId: "assigned-owner" });
+  assert.deepEqual(backend.reads, ["mine", "team", "assigned"]);
+  assert.equal(data.emails.some((email) => email.id === "assigned-owner-only"), true);
+  assert.equal(data.emails.some((email) => email.id === "assigned-unrelated"), false);
 });

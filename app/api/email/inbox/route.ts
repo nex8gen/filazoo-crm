@@ -1,7 +1,7 @@
 import { requireWorkspaceMember } from "@/lib/auth";
 import { getEmailInboxBackendData } from "@/lib/email-inbox";
 import { after } from "next/server";
-import { getViewerMailboxes, mailboxHasImap } from "@/lib/data/mailboxes";
+import { getUserMailbox, getViewerMailboxes, mailboxHasImap } from "@/lib/data/mailboxes";
 import { loadSyncedMailbox } from "@/lib/data/mailbox-sync";
 import { getCompanyDetails } from "@/lib/data/crm";
 import { getCompanyEmailBackendData } from "@/lib/data/company-emails";
@@ -23,12 +23,15 @@ export async function GET(request: Request) {
   const data = company ? await getCompanyEmailBackendData({
     id: company.company.id,
     name: company.company.name,
+    ownerId: company.company.ownerId,
     emails: [company.company.email, ...company.contacts.map((contact) => contact.email)],
   }, { viewer, mailboxes }) : await getEmailInboxBackendData({ syncMailbox: false, mailboxId, context: { viewer, mailboxes } });
   // Return saved mail immediately. Provider login and importing older mail
   // continue after the response, with a shared lease across server instances.
   if (params.get("refresh") !== "false") after(async () => {
-    const refreshMailboxes = mailboxes.filter((item) => (company || item.id === data.selectedMailboxId) && mailboxHasImap(item));
+    const ownerMailbox = company?.company.ownerId ? await getUserMailbox(company.company.ownerId) : null;
+    const availableMailboxes = [...new Map([...mailboxes, ...(ownerMailbox ? [ownerMailbox] : [])].map((mailbox) => [mailbox.id, mailbox])).values()];
+    const refreshMailboxes = availableMailboxes.filter((item) => (company || item.id === data.selectedMailboxId) && mailboxHasImap(item));
     await Promise.all(refreshMailboxes.map(async (mailbox) => {
       try {
         await loadSyncedMailbox(mailbox, { history, includeContent: false });

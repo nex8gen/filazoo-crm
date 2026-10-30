@@ -1,25 +1,18 @@
 import "server-only";
-import { simulateFlow, type FlowFacts } from "../flow-engine.ts";
-import type { FlowEmailTestInput, FlowEmailTestResult } from "../flow-email-test.ts";
+import { flowStepAtPath } from "../flow-engine.ts";
+import { flowEmailTestFacts, flowEmailTestTrace, type FlowEmailTestInput, type FlowEmailTestResult } from "../flow-email-test.ts";
 import { generateFlowAiReply, loadFlowReplyProducts, prepareFlowTemplateCatalog, type FlowReplyMessage } from "./flow-ai-reply.ts";
 import { emailTemplates, renderFlowTemplate } from "../flow-templates.ts";
 
 /** Preview only: never creates a run, writes CRM data, uploads attachments or sends email. */
 export async function testFlowWithEmails(input: FlowEmailTestInput, managerName: string | null, userId?: string): Promise<FlowEmailTestResult> {
-  const config = input.flow.triggerConfig;
-  const facts: FlowFacts = { customerReplied: false, openedEmail: false, clickedLink: false,
-    category: typeof config.category === "string" ? config.category : null,
-    segment: typeof config.segment === "string" ? config.segment : null,
-    country: typeof config.country === "string" ? config.country : null,
-    companyStatus: typeof config.companyStatus === "string" ? config.companyStatus : null,
-    pipelineStage: typeof config.pipelineStage === "string" ? config.pipelineStage : null,
-    fitScore: typeof config.minFitScore === "number" ? config.minFitScore : null };
-  const simulation = simulateFlow(input.flow, facts);
+  const facts = flowEmailTestFacts(input);
+  const simulation = { trace: flowEmailTestTrace(input) };
   const executedAi = simulation.trace.filter((entry) => entry.type === "ai_auto_reply" && entry.status === "would_run");
   if (executedAi.length * input.emails.length > 6) throw new Error("Test up to six AI actions at a time. Use fewer sample emails.");
   const productRows = executedAi.length ? await loadFlowReplyProducts({
-    useProducts: executedAi.some((entry) => input.flow.steps[entry.step - 1].config.useProducts === true),
-    attachCatalog: executedAi.some((entry) => input.flow.steps[entry.step - 1].config.attachCatalog === true),
+    useProducts: executedAi.some((entry) => flowStepAtPath(input.flow, entry.stepPath ?? [entry.step - 1])!.config.useProducts === true),
+    attachCatalog: executedAi.some((entry) => flowStepAtPath(input.flow, entry.stepPath ?? [entry.step - 1])!.config.attachCatalog === true),
   }, userId) : [];
   const result: FlowEmailTestResult = { cases: [] };
   for (const email of input.emails) {
@@ -28,7 +21,8 @@ export async function testFlowWithEmails(input: FlowEmailTestInput, managerName:
     let previousMessages = input.firstMessage ? 0 : 1;
     for (const entry of simulation.trace) {
       if (entry.status !== "would_run") continue;
-      const step = input.flow.steps[entry.step - 1];
+      const step = flowStepAtPath(input.flow, entry.stepPath ?? [entry.step - 1]);
+      if (!step) throw new Error("The test action no longer exists.");
       if (step.type === "send_email") {
         try {
           const template = emailTemplates[String(step.config.templateId)];

@@ -27,6 +27,12 @@ import type { Company, DataMode } from "@/lib/types";
 import { usePreferences } from "@/components/preferences-provider";
 import { countryFlagCode } from "@/lib/country-flags";
 
+const addedAtFormatter = new Intl.DateTimeFormat(undefined, {
+  timeZone: "Asia/Shanghai",
+  dateStyle: "medium",
+  timeStyle: "short",
+});
+
 const statusClass: Record<Company["stage"], string> = {
   "Profile created": "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900 dark:bg-sky-950/60 dark:text-sky-300",
   "Catalog sent": "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/60 dark:text-amber-300",
@@ -103,6 +109,7 @@ export function CompaniesTable({ companies, mode, canWrite, canDelete }: { compa
     },
     { accessorKey: "email", header: "Email", cell: ({ getValue }) => <span className="flex max-w-52 items-center gap-1.5 truncate"><Mail className="size-3.5 shrink-0 text-muted-foreground/70" />{getValue<string>() || "No email"}</span> },
     { accessorKey: "ownerName", header: "Assigned manager", cell: ({ row }) => <AssignedOwner name={row.original.ownerName} initials={row.original.ownerInitials} imageUrl={row.original.ownerAvatarUrl} assigned={Boolean(row.original.ownerId)} compact /> },
+    { accessorKey: "addedAt", header: "Added", cell: ({ getValue }) => { const value = getValue<string | undefined>(); return <span className="whitespace-nowrap" title={value || undefined}>{value ? addedAtFormatter.format(new Date(value)) : "Unknown"}</span>; } },
     { accessorKey: "country", header: "Country", cell: ({ getValue }) => <CountryFlag country={getValue<string>()} /> },
     { accessorKey: "segment", header: "Segment", cell: ({ getValue }) => <span className="block max-w-44 truncate">{getValue<string>()}</span> },
     { accessorKey: "stage", header: "Status", cell: ({ getValue }) => { const value = getValue<Company["stage"]>(); return <Badge variant="outline" className={statusClass[value]}>{value}</Badge>; } },

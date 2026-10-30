@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { defaultFlowInput, flowInputSchema, triggerTypes } from "../lib/flows.ts";
+import { blankStep, cloneFlowStep, defaultFlowInput, flowInputSchema, triggerTypes } from "../lib/flows.ts";
 import { calculateWaitUntil, simulateFlow, triggerMatches, flowConversationPath, nextBusinessWindow, type FlowFacts } from "../lib/flow-engine.ts";
 import { buildFlowEmail, signTracking, verifyTracking } from "../lib/flow-tracking.ts";
 
@@ -8,6 +8,20 @@ const facts: FlowFacts = { customerReplied: false, openedEmail: false, clickedLi
 
 const customerA = "11111111-1111-4111-8111-111111111111";
 const customerB = "22222222-2222-4222-8222-222222222222";
+
+test("duplicating a split gives every path and nested action an independent identity", () => {
+  const split = blankStep("split");
+  const paths = split.config.paths as Array<{ id: string; name: string; condition: null; steps: Array<ReturnType<typeof blankStep>> }>;
+  paths[0].steps.push(blankStep("create_task"));
+  const before = JSON.stringify(split);
+  const copy = cloneFlowStep(split);
+  const copiedPaths = copy.config.paths as typeof paths;
+  assert.notEqual(copy.id, split.id);
+  assert.notEqual(copiedPaths[0].id, paths[0].id);
+  assert.notEqual(copiedPaths[0].steps[0].id, paths[0].steps[0].id);
+  copiedPaths[0].steps[0].config.title = "Changed copy";
+  assert.equal(JSON.stringify(split), before);
+});
 
 test("every trigger persists email/company scope and excludes other companies and addresses", () => {
   for (const triggerType of triggerTypes) {
@@ -98,6 +112,30 @@ test("condition branches can skip the next action and stop later", () => {
   }, facts);
   assert.equal(result.trace.some((entry) => entry.type === "send_email" && entry.status === "skipped"), true);
   assert.equal(result.terminal, "stopped");
+});
+
+test("multi-path splits select the first matching path and expand its actions", () => {
+  const split = {
+    id: "split-1", type: "split" as const, config: {
+      name: "B2B qualification",
+      paths: [
+        { id: "qualified", name: "High-fit opportunity", condition: { field: "fit_score_at_least", fitScore: 7, lookbackDays: 7 }, steps: [{ id: "task-high-fit", type: "create_task", config: { assigneeType: "owner", assigneeId: null, dueInDays: 0, title: "Call high-fit buyer", priority: "high", notes: "" } }] },
+        { id: "otherwise", name: "Everyone else", condition: null, steps: [{ id: "wait-other", type: "wait", config: { amount: 2, unit: "days", businessDays: true, resumeAt: "09:00" } }] },
+      ],
+    },
+  };
+  const flow = flowInputSchema.parse({ ...defaultFlowInput, steps: [split] });
+  const matched = simulateFlow(flow, facts, new Date("2026-10-26T09:00:00Z")).trace;
+  assert.equal(matched[0]?.detail, "Would enter High-fit opportunity");
+  assert.equal(matched[1]?.type, "create_task");
+  const fallback = simulateFlow(flow, { ...facts, fitScore: 2 }, new Date("2026-10-26T09:00:00Z")).trace;
+  assert.equal(fallback[0]?.detail, "Would enter Everyone else");
+  assert.equal(fallback[1]?.type, "wait");
+});
+
+test("splits require one final default path and validate every nested action", () => {
+  const invalid = { id: "split", type: "split", config: { name: "Invalid", paths: [{ id: "one", name: "One", condition: { field: "customer_replied" }, steps: [] }, { id: "two", name: "Two", condition: { field: "country_is", value: "US" }, steps: [{ id: "bad", type: "send_email", config: {} }] }] } };
+  assert.equal(flowInputSchema.safeParse({ ...defaultFlowInput, steps: [invalid] }).success, false);
 });
 
 test("resume time never shortens the configured wait", () => {

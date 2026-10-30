@@ -33,6 +33,10 @@ export type SimulationEntry = {
   status: "would_run" | "waiting" | "skipped" | "stopped";
   detail: string;
   scheduledAt?: string;
+  /** Original definition address: root index, then (path index, action index) pairs. */
+  stepPath?: number[];
+  pathId?: string;
+  pathChecks?: Array<{ name: string; matched: boolean | null }>;
 };
 
 function normalized(value: unknown) {
@@ -132,12 +136,58 @@ export function nextBusinessWindow(now = new Date()) {
   return moveOffWeekend(next);
 }
 
-export function conditionMatches(config: JsonConfig, facts: FlowFacts) {
-  if (config.field === "customer_replied") return facts.customerReplied;
-  if (config.field === "opened_email") return facts.openedEmail;
-  if (config.field === "clicked_link") return facts.clickedLink;
-  if (config.field === "category_is") return normalized(config.category) === normalized(facts.category);
-  return false;
+export function conditionMatches(config: JsonConfig, facts: FlowFacts): boolean {
+  if (Array.isArray(config.rules)) {
+    const rules = config.rules.filter((rule): rule is JsonConfig => Boolean(rule && typeof rule === "object" && !Array.isArray(rule)));
+    if (!rules.length) return false;
+    return config.match === "any" ? rules.some((rule) => conditionMatches(rule, facts)) : rules.every((rule) => conditionMatches(rule, facts));
+  }
+  let actual: string | number | boolean | null, expected: string | number | boolean | null;
+  switch (config.field) {
+    case "customer_replied": actual = facts.customerReplied; expected = true; break;
+    case "opened_email": actual = facts.openedEmail; expected = true; break;
+    case "clicked_link": actual = facts.clickedLink; expected = true; break;
+    case "category_is": actual = facts.category; expected = String(config.category ?? ""); break;
+    case "company_status_is": actual = facts.companyStatus; expected = String(config.companyStatus ?? ""); break;
+    case "pipeline_stage_is": actual = facts.pipelineStage; expected = String(config.pipelineStage ?? ""); break;
+    case "segment_is": actual = facts.segment; expected = String(config.value ?? ""); break;
+    case "country_is": actual = facts.country; expected = String(config.value ?? ""); break;
+    case "fit_score_at_least": actual = facts.fitScore; expected = Number(config.fitScore ?? 0); break;
+    default: return false;
+  }
+  const operator = String(config.operator || (config.field === "fit_score_at_least" ? "gte" : "equals"));
+  const left = normalized(actual), right = normalized(expected);
+  let matched = false;
+  if (operator === "is_set") matched = actual !== null && actual !== "";
+  else if (operator === "is_not_set") matched = actual === null || actual === "";
+  else if (operator === "not_equals") matched = left !== right;
+  else if (operator === "contains") matched = left.includes(right);
+  else if (operator === "not_contains") matched = !left.includes(right);
+  else if (operator === "starts_with") matched = left.startsWith(right);
+  else if (operator === "ends_with") matched = left.endsWith(right);
+  else if (["gte", "gt", "lte", "lt"].includes(operator)) {
+    if (actual !== null) matched = operator === "gte" ? Number(actual) >= Number(expected) : operator === "gt" ? Number(actual) > Number(expected) : operator === "lte" ? Number(actual) <= Number(expected) : Number(actual) < Number(expected);
+  } else matched = left === right;
+  return config.negate ? !matched : matched;
+}
+
+export function flowStepAtPath(flow: Pick<FlowInput, "steps">, path: number[]) {
+  let step: FlowInput["steps"][number] | undefined = flow.steps[path[0]];
+  for (let index = 1; step && index < path.length; index += 2) {
+    const branches = Array.isArray(step.config.paths) ? step.config.paths : [];
+    const branch = branches[path[index]];
+    if (!branch || typeof branch !== "object" || Array.isArray(branch) || !Array.isArray(branch.steps)) return undefined;
+    step = branch.steps[path[index + 1]] as FlowInput["steps"][number] | undefined;
+  }
+  return step;
+}
+
+export function allFlowActions(steps: FlowInput["steps"]): FlowInput["steps"] {
+  return steps.flatMap((step) => {
+    if (step.type !== "split" || !Array.isArray(step.config.paths)) return [step];
+    const nested = step.config.paths.flatMap((path) => path && typeof path === "object" && !Array.isArray(path) && Array.isArray(path.steps) ? path.steps : []) as FlowInput["steps"];
+    return [step, ...allFlowActions(nested)];
+  });
 }
 
 function actionForCondition(config: JsonConfig, matched: boolean) {
@@ -149,43 +199,77 @@ export function simulateFlow(flow: FlowInput, facts: FlowFacts, from = new Date(
   const currentFacts = { ...facts };
   let cursor = new Date(from);
   let index = 0;
-  while (index < flow.steps.length) {
-    const step = flow.steps[index]!;
+  const steps = flow.steps.map((step, index) => ({ step, path: [index] }));
+  while (index < steps.length) {
+    const { step, path } = steps[index]!;
+    const push = (entry: SimulationEntry) => trace.push({ stepPath: path, ...entry });
+    if (step.type === "split") {
+      const paths = Array.isArray(step.config.paths) ? step.config.paths : [];
+      const selected = paths.find((path) => path && typeof path === "object" && !Array.isArray(path) && path.condition && typeof path.condition === "object" && !Array.isArray(path.condition) && conditionMatches(path.condition as JsonConfig, currentFacts))
+        ?? paths.find((path) => path && typeof path === "object" && !Array.isArray(path) && path.condition === null);
+      const selectedPath = selected && typeof selected === "object" && !Array.isArray(selected) ? selected : null;
+      const nested = selectedPath && Array.isArray(selectedPath.steps) ? selectedPath.steps as FlowInput["steps"] : [];
+      const selectedIndex = paths.indexOf(selected!);
+      const pathChecks = paths.map((item, pathIndex) => {
+        const candidate = item && typeof item === "object" && !Array.isArray(item) ? item : {};
+        return { name: String(candidate.name || "Path"), matched: pathIndex > selectedIndex ? null : pathIndex === selectedIndex };
+      });
+      push({ step: index + 1, type: step.type, status: "would_run", pathId: String(selectedPath?.id || ""), pathChecks, detail: `Would enter ${String(selectedPath?.name || "Everyone else")}` });
+      steps.splice(index, 1, ...nested.map((action, actionIndex) => ({ step: action, path: [...path, paths.indexOf(selected!), actionIndex] })));
+      continue;
+    }
     if (step.type === "wait") {
       cursor = calculateWaitUntil(step.config, cursor);
-      trace.push({ step: index + 1, type: step.type, status: "waiting", scheduledAt: cursor.toISOString(), detail: `Would resume at ${cursor.toISOString()}` });
+      push({ step: index + 1, type: step.type, status: "waiting", scheduledAt: cursor.toISOString(), detail: `Would resume at ${cursor.toISOString()}` });
       index += 1;
       continue;
     }
     if (step.type === "if_condition") {
       const matched = conditionMatches(step.config, currentFacts);
       const action = actionForCondition(step.config, matched);
-      trace.push({ step: index + 1, type: step.type, status: "would_run", detail: `Condition ${matched ? "matched" : "did not match"}; ${action.replaceAll("_", " ")}` });
+      push({ step: index + 1, type: step.type, status: "would_run", detail: `Condition ${matched ? "matched" : "did not match"}; ${action.replaceAll("_", " ")}` });
       if (action === "stop_flow") {
-        trace.push({ step: index + 1, type: step.type, status: "stopped", detail: "Flow would end here." });
+        push({ step: index + 1, type: step.type, status: "stopped", detail: "Flow would end here." });
         break;
       }
-      if (action === "skip_next" && flow.steps[index + 1]) {
-        trace.push({ step: index + 2, type: flow.steps[index + 1]!.type, status: "skipped", detail: "Skipped by the preceding condition." });
+      if (action === "skip_next" && steps[index + 1]) {
+        push({ step: index + 2, type: steps[index + 1]!.step.type, status: "skipped", detail: "Skipped by the preceding condition.", stepPath: steps[index + 1]!.path });
         index += 2;
         continue;
       }
       index += 1;
       continue;
     }
+    if (["send_email", "ai_auto_reply"].includes(step.type) && (!matchesProfileFilters(flow.triggerConfig, currentFacts) || (step.config.filters && !conditionMatches(step.config.filters as JsonConfig, currentFacts)))) {
+      push({ step: index + 1, type: step.type, status: "skipped", detail: "Message filters did not match; continues to the next action." });
+      index += 1;
+      continue;
+    }
     if (step.type === "change_category") currentFacts.category = String(step.config.category);
+    if (step.type === "update_company") {
+      if (step.config.companyStatus) currentFacts.companyStatus = String(step.config.companyStatus);
+      if (step.config.pipelineStage) currentFacts.pipelineStage = String(step.config.pipelineStage);
+      if (step.config.segment) currentFacts.segment = String(step.config.segment);
+    }
     if (step.type === "ai_auto_reply") {
       if (step.config.sendWindow === "business_hours") cursor = nextBusinessWindow(cursor) ?? cursor;
-      trace.push({ step: index + 1, type: step.type, status: "would_run", scheduledAt: cursor.toISOString(), detail: `Would read the latest email and draft a personalized English reply${step.config.useProducts ? " using active CRM products" : ""}${step.config.usePrices ? " and verified prices" : ""}${step.config.attachCatalog ? "; attach a matching-product catalog PDF when requested or clearly needed" + (step.config.catalogFirstMessageOnly !== false ? ", also on the first automated email" : "") : ""}. No AI request or email is sent in simulation.` });
+      push({ step: index + 1, type: step.type, status: "would_run", scheduledAt: cursor.toISOString(), detail: `Would read the latest email and draft a personalized English reply${step.config.useProducts ? " using active CRM products" : ""}${step.config.usePrices ? " and verified prices" : ""}${step.config.attachCatalog ? "; attach a matching-product catalog PDF when requested or clearly needed" + (step.config.catalogFirstMessageOnly !== false ? ", also on the first automated email" : "") : ""}. No AI request or email is sent in simulation.` });
       index += 1;
       continue;
     }
     if (step.type === "send_email" && step.config.stopOnReply !== false && currentFacts.customerReplied) {
-      trace.push({ step: index + 1, type: step.type, status: "stopped", detail: "Customer replied; run would be cancelled." });
+      push({ step: index + 1, type: step.type, status: "stopped", detail: "Customer replied; run would be cancelled." });
       break;
     }
     if (step.type === "send_email" && step.config.sendWindow === "business_hours") cursor = nextBusinessWindow(cursor) ?? cursor;
-    trace.push({ step: index + 1, type: step.type, status: step.type === "stop" ? "stopped" : "would_run", scheduledAt: cursor.toISOString(), detail: step.type === "stop" ? String(step.config.reason || "Flow would end here.") : `${step.type.replaceAll("_", " ")} is configured.` });
+    const detail = step.type === "stop" ? String(step.config.reason || "Flow would end here.")
+      : step.type === "create_task" ? `Would create “${String(step.config.title)}”; due in ${Number(step.config.dueInDays || 0)} days.`
+      : step.type === "change_category" ? `Would set the email category to ${String(step.config.category)}.`
+      : step.type === "update_company" ? `Would update ${[step.config.companyStatus && `status: ${step.config.companyStatus}`, step.config.pipelineStage && `stage: ${step.config.pipelineStage}`, step.config.segment && `segment: ${step.config.segment}`].filter(Boolean).join(", ")}.`
+      : step.type === "internal_alert" ? `Would send an ${step.config.channel === "email" ? "email" : "in-app"} alert: ${String(step.config.message)}`
+      : step.type === "send_email" ? `Would send ${String(step.config.subject || step.config.templateId || "email")}${step.config.replyInThread ? " in the same thread" : " as a new thread"}.`
+      : "Action configured.";
+    push({ step: index + 1, type: step.type, status: step.type === "stop" ? "stopped" : "would_run", scheduledAt: cursor.toISOString(), detail });
     if (step.type === "stop") break;
     index += 1;
   }

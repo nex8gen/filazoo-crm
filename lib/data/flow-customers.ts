@@ -20,7 +20,7 @@ export async function listFlowCustomers(input: unknown) {
   let query = admin.from("contacts").select("id,name,email,company_id,companies!inner(name)").order("name", { nullsFirst: false }).order("id");
   if (parsed.ids) query = query.in("id", parsed.ids);
   else {
-    query = query.eq("company_id", parsed.companyId!);
+    if (parsed.companyId) query = query.eq("company_id", parsed.companyId);
     if (search) query = query.or(`name.ilike.%${search}%,email.ilike.%${search}%`);
     query = query.range(parsed.offset, parsed.offset + pageSize);
   }
