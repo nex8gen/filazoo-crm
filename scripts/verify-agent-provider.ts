@@ -62,7 +62,7 @@ const serverData = {
   ],
   banks: [{ id: bankId, label: "USD bank", currency: "USD" }], sender: "sales@example.com", permissions: { role: "admin", canAct: true },
 };
-const emailInput = workspaceAssistantSchema.parse({ mode: "work", pathname: "/emails", pageLabel: "Email", pageText: "Synthetic email", pageContext: { emailId: sourceEmail.id }, messages: [{ role: "user", content: "Create an invoice from this email and prepare a reply in the inbox with its PDF attached. Do not send the email." }] });
+const emailInput = workspaceAssistantSchema.parse({ mode: "work", pathname: "/email", pageLabel: "Email", pageText: "Synthetic email", pageContext: { emailId: sourceEmail.id }, messages: [{ role: "user", content: "Create an invoice from this email and prepare a reply in the inbox with its PDF attached. Do not send the email." }] });
 const emailOutput = await generate(buildWorkspaceAssistantPrompt(emailInput, serverData));
 const emailActions = extractWorkspaceActions(emailOutput).actions;
 assert.equal(emailActions.length, 1, emailOutput);
@@ -122,7 +122,7 @@ assert.equal(shipping.details?.shippingMinor, 3900);
 assert.equal(shipping.items, undefined);
 console.log("PASS: shipping-only correction preserves existing custom invoice prices by omitting item changes.");
 
-const flowInput = workspaceAssistantSchema.parse({ ...input, pathname: "/lead-channel/ai-agent", pageLabel: "Flows", pageText: "", messages: [{ role: "user", content: 'Create a draft flow called "Two day reminder". When a customer has not replied for 2 calendar days, stop if they have replied; otherwise send a helpful reminder in the same thread from the default workspace mailbox, then create a high priority task for the owner due today titled "Call customer". Do not add another wait and do not activate the flow.' }] });
+const flowInput = workspaceAssistantSchema.parse({ ...input, pathname: "/workflow", pageLabel: "Flows", pageText: "", messages: [{ role: "user", content: 'Create a draft flow called "Two day reminder". When a customer has not replied for 2 calendar days, stop if they have replied; otherwise send a helpful reminder in the same thread from the default workspace mailbox, then create a high priority task for the owner due today titled "Call customer". Do not add another wait and do not activate the flow.' }] });
 const flowOutput = await generate(buildWorkspaceAssistantPrompt(flowInput, { flowCapabilities: flowAgentCapabilities(), flowResources: { mailboxes: [], members: [], recentFlows: [] }, permissions: { role: "admin", canAct: true } }));
 const flowActions = extractWorkspaceActions(flowOutput).actions;
 assert.equal(flowActions.length, 1, flowOutput);

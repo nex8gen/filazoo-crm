@@ -35,15 +35,15 @@ const pageNames: Array<[RegExp, string]> = [
   [/^\/companies/, "Companies"],
   [/^\/segments/, "Segments"],
   [/^\/invoices/, "Invoices"],
-  [/^\/emails/, "Email"],
+  [/^\/email(?:\/|$)/, "Email"],
   [/^\/messenger/, "Messenger"],
-  [/^\/lead-channel\/ai-agent/, "AI Automation"],
-  [/^\/catalogs\/companies/, "Company Catalogs"],
-  [/^\/catalogs/, "Products"],
+  [/^\/workflow(?:\/|$)/, "Workflow"],
+  [/^\/company-quotations(?:\/|$)/, "Company Quotations"],
+  [/^\/products(?:\/|$)/, "Products"],
   [/^\/settings/, "Settings"],
   [/^\/overview\/pages$/, "Pages"],
   [/^\/overview\/sections$/, "Sections"],
-  [/^\/$/, "Analytics"],
+  [/^\/analytics$/, "Analytics"],
 ];
 
 const chatStarters = [
@@ -272,7 +272,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
       if (decision === "approve") {
         router.refresh();
         window.dispatchEvent(new CustomEvent("filazoo:agent-action", { detail: { draftId: result.draft ? actionId : undefined, draftMessage: result.draftMessage, flowId: result.flowId, flowEditorBefore: proposalContexts.current.get(actionId)?.flowDraft } }));
-        if (result.draft && !document.querySelector(".email-workspace")) router.push(`/emails?agentDraft=${actionId}`);
+        if (result.draft && !document.querySelector(".email-workspace")) router.push(`/email?agentDraft=${actionId}`);
       }
       return true;
     } catch (reason) {

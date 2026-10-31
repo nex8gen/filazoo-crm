@@ -290,7 +290,7 @@ export function InvoiceWorkspace({
             ) : null}
             {selected.source_thread_id ? (
               <Link
-                href={`/emails?thread=${encodeURIComponent(selected.source_thread_id)}`}
+                href={`/email?thread=${encodeURIComponent(selected.source_thread_id)}`}
                 className="text-primary underline"
               >
                 Email conversation

@@ -7,7 +7,7 @@ export const aiFeatures = {
   automation: ["AI automations", "Background AI replies and AI preparation of follow-up tasks."],
   webSearch: ["Web research", "Send customer identity and research questions to the research provider."],
   images: ["Image inputs", "Send user-attached images to the AI provider."],
-  pageContext: ["Visible page context", "Include visible page text and unsaved flow edits. Automatically withheld when any data access is off."],
+  pageContext: ["Visible page context", "Include visible page text and unsaved workflow edits. Automatically withheld when any data access is off."],
 } as const;
 export const aiDataAccess = {
   customers: ["Customers & contacts", "Company profiles, contact details, addresses, notes, and segments."],
@@ -15,7 +15,7 @@ export const aiDataAccess = {
   products: ["Products & inventory", "Product specifications, prices, variants, stock, and catalogs."],
   billing: ["Orders, invoices & payment details", "Purchase orders, invoice documents, billing profiles, and payment instructions."],
   tasks: ["Tasks & notifications", "Follow-ups, customer reply requests, tasks, and internal alerts."],
-  flows: ["Automation definitions", "Saved flows, triggers, steps, and flow resources."],
+  flows: ["Workflow definitions", "Saved workflows, triggers, steps, and workflow resources."],
   team: ["Team directory", "Member names, roles, assignments, and mailbox metadata. Credentials are always excluded."],
   settings: ["Workspace preferences", "Profile, personal preferences, and billing defaults."],
   knowledge: ["Approved business facts", "The shared facts used by automatic email replies."],
@@ -30,7 +30,7 @@ export const aiActionAccess = {
   emailDrafts: ["Prepare email & message drafts", "Fill an email or Messenger draft without sending it."],
   tagging: ["Automatically tag conversations", "Read each email subject and conversation to update its shared customer tag when new activity arrives."],
   sending: ["Send customer messages", "Send email, invoice PDFs, Messenger replies, or requests for customer information."],
-  flows: ["Manage automations", "Create, update, activate, or pause flows and conversation auto-replies."],
+  flows: ["Manage workflows", "Create, update, activate, or pause workflows and conversation auto-replies."],
   administration: ["Change workspace settings & access", "Change profiles, preferences, members, mailboxes, invoice defaults, or payment methods."],
   exports: ["Export & download", "Export customer lists or download saved invoice and catalog documents."],
   destructive: ["Delete records & financial actions", "Delete records, issue or void invoices, and record payments. Existing mandatory reviews still apply."],

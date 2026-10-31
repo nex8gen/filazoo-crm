@@ -54,7 +54,7 @@ export function FlowCustomerPicker({ config, onChange, disabled }: { config: Jso
   const selectedById = new Map([...(selected.data?.customers ?? []), ...(customers.data?.customers ?? [])].map((customer) => [customer.id, customer]));
 
   return <section className="space-y-3 border-t pt-4" aria-label="Customer enrollment">
-    <div><p className="text-xs font-semibold">Customers in this flow</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Choose who can enter this flow. Company filters must also match.</p></div>
+    <div><p className="text-xs font-semibold">Customers in this workflow</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Choose who can enter this workflow. Company filters must also match.</p></div>
     <Select value={restricted ? "selected" : "all"} onValueChange={setMode} disabled={disabled}>
       <SelectTrigger className="w-full" aria-label="Customer enrollment scope"><SelectValue>{restricted ? "Selected customers only" : "All matching customers"}</SelectValue></SelectTrigger>
       <SelectContent><SelectItem value="all">All matching customers</SelectItem><SelectItem value="selected">Selected customers only</SelectItem></SelectContent>
@@ -95,7 +95,7 @@ export function FlowCustomerPicker({ config, onChange, disabled }: { config: Jso
           </div>;
         })}</div> : <p className="text-xs text-destructive">Choose at least one customer before saving.</p>}
         {selected.error ? <LoadError message={selected.error} retry={selected.retry} /> : null}
-        <p className="text-xs leading-5 text-muted-foreground">Only the selected customers’ email addresses can receive emails from this flow. You can add customers from more than one company.</p>
+        <p className="text-xs leading-5 text-muted-foreground">Only the selected customers’ email addresses can receive emails from this workflow. You can add customers from more than one company.</p>
       </div>
     </> : null}
   </section>;

@@ -7,7 +7,7 @@ import { listWorkspaceFlows } from "../data/flows";
 export async function loadAgentFlow(flowId: string) {
   await requireAiData("flows", "emails", "team");
   const flow = (await listWorkspaceFlows()).find((item) => item.id === flowId);
-  if (!flow) throw new Error("The selected flow is unavailable.");
+  if (!flow) throw new Error("The selected workflow is unavailable.");
   return flow;
 }
 

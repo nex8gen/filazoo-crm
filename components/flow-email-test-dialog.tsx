@@ -84,15 +84,15 @@ export function FlowEmailTestDialog({ flow, open, onOpenChange, messageStepPath,
       return;
     }
     const parsed = flowEmailTestSchema.safeParse({ flow, customerName, companyName, firstMessage, facts, messageStepPath, emails });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message || "Complete the flow settings and sample emails."); return; }
+    if (!parsed.success) { setError(parsed.error.issues[0]?.message || "Complete the workflow settings and sample emails."); return; }
     busy.current = true; setRunning(true); setError(""); setResult(null);
     try {
       const response = await fetch("/api/flows/test-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(parsed.data) });
       const data = await response.json();
-      if (!response.ok || !data.ok) throw new Error(data.error || "Unable to test the flow.");
+      if (!response.ok || !data.ok) throw new Error(data.error || "Unable to test the workflow.");
       setResult(data);
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "Unable to test the flow.");
+      setError(failure instanceof Error ? failure.message : "Unable to test the workflow.");
     } finally { busy.current = false; setRunning(false); }
   }
 
@@ -111,12 +111,12 @@ export function FlowEmailTestDialog({ flow, open, onOpenChange, messageStepPath,
   return <Dialog open={open} onOpenChange={(next) => { if (!running) onOpenChange(next); }}>
     <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-4xl" showCloseButton={!running}>
       <DialogHeader>
-        <DialogTitle className="flex items-center gap-2"><FlaskConical className="size-4 text-violet-600" />{messageStepPath ? "Preview & test message" : "Test flow with emails"}</DialogTitle>
-        <DialogDescription>Test the current flow before turning it on. Send a real reply to your test inbox, or generate a preview.</DialogDescription>
+        <DialogTitle className="flex items-center gap-2"><FlaskConical className="size-4 text-violet-600" />{messageStepPath ? "Preview & test message" : "Test workflow with emails"}</DialogTitle>
+        <DialogDescription>Test the current workflow before turning it on. Send a real reply to your test inbox, or generate a preview.</DialogDescription>
       </DialogHeader>
       <div className="space-y-5">
         <label className="flex items-center gap-2 text-sm"><Checkbox checked={sendReal} disabled={running || pending} onCheckedChange={(value) => { setSendReal(value === true); setResult(null); setDelivery(null); requestId.current = null; }} /><span>Send real test emails</span></label>
-        <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 text-xs leading-5 text-violet-900 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-200">{messageStepPath ? sendReal ? "This test sends only the selected message to your test recipient immediately. It does not run the surrounding journey." : "Preview only the selected message with your sample customer and email data." : sendReal ? "Real tests follow the configured waits and send only to your test recipient. Keep this dialog open until delivery finishes. CRM tasks, alerts and category changes are simulated; the flow stays unchanged." : "Preview simulates waits immediately using your scenario facts. Journey entry is assumed; use Preview flow to check saved customer eligibility. No email or CRM action is executed."}</div>
+        <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 text-xs leading-5 text-violet-900 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-200">{messageStepPath ? sendReal ? "This test sends only the selected message to your test recipient immediately. It does not run the surrounding journey." : "Preview only the selected message with your sample customer and email data." : sendReal ? "Real tests follow the configured waits and send only to your test recipient. Keep this dialog open until delivery finishes. CRM tasks, alerts and category changes are simulated; the workflow stays unchanged." : "Preview simulates waits immediately using your scenario facts. Journey entry is assumed; use Preview workflow to check saved customer eligibility. No email or CRM action is executed."}</div>
         <fieldset disabled={running || pending || Boolean(delivery)} className="space-y-4">
           {sendReal ? <label className="block space-y-1.5 text-xs font-medium"><span>Test recipient email</span><Input type="email" value={recipient} maxLength={300} placeholder="Your test inbox" onChange={(event) => setRecipient(event.target.value)} /><span className="block font-normal text-muted-foreground">Actual emails and catalog attachments will be sent to this address.</span></label> : null}
           <div className="grid gap-3 sm:grid-cols-2">
@@ -133,7 +133,7 @@ export function FlowEmailTestDialog({ flow, open, onOpenChange, messageStepPath,
           {!sendReal ? <Button variant="outline" size="sm" disabled={running || emails.length >= 3} onClick={() => { setEmails((current) => [...current, blankEmail()]); setResult(null); }}><Plus />Add sample email</Button> : null}
         </fieldset>
         {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
-        {running ? <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle className="size-4 animate-spin" />Testing flow and generating replies…</p> : null}
+        {running ? <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle className="size-4 animate-spin" />Testing workflow and generating replies…</p> : null}
         {delivery ? <div aria-live="polite" className="space-y-3 rounded-xl border p-4">
           <h3 className="text-sm font-semibold">Real delivery test</h3>
           <p className="text-sm" data-no-translate>{delivery.recipient} · {delivery.status}</p>

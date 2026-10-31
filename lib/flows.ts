@@ -227,7 +227,7 @@ const stepConfigSchemas: Record<FlowStepType, z.ZodType<JsonConfig>> = {
 };
 
 export const flowInputSchema = z.object({
-  name: z.string().trim().min(1, "Enter a flow name.").max(160),
+  name: z.string().trim().min(1, "Enter a workflow name.").max(160),
   triggerType: z.enum(triggerTypes),
   triggerConfig: configSchema,
   status: z.enum(flowStatuses),
@@ -247,13 +247,13 @@ export const flowInputSchema = z.object({
   function inspect(steps: Array<{ id?: string; type: string; config: JsonConfig }>, depth = 0) {
     for (const step of steps) {
       if (!step || typeof step !== "object" || !step.config || typeof step.config !== "object") continue;
-      if (++totalActions > 500) { treeError = "A flow can contain up to 500 actions across its paths."; return; }
+      if (++totalActions > 500) { treeError = "A workflow can contain up to 500 actions across its paths."; return; }
       if (step.id) {
         if (identities.has(step.id)) treeError = "Every action and path needs a unique ID. Duplicate the action to create an independent copy.";
         identities.add(step.id);
       }
       if (step.type !== "split") continue;
-      if (depth >= 5) { treeError = "A flow supports up to five levels of splits."; return; }
+      if (depth >= 5) { treeError = "A workflow supports up to five levels of splits."; return; }
       for (const path of Array.isArray(step.config.paths) ? step.config.paths : []) {
         if (!path || typeof path !== "object" || Array.isArray(path)) continue;
         if (typeof path.id === "string") {
@@ -272,13 +272,13 @@ export const flowInputSchema = z.object({
     context.addIssue({ code: "custom", path: ["triggerConfig"], message: "Segment membership enrolls each company once. Choose no re-entry." });
   }
   if (scope.flowScope && (!scope.scopeCompanyId || (scope.flowScope === "email" && !scope.scopeContactId))) {
-    context.addIssue({ code: "custom", path: ["triggerConfig"], message: "Choose the email or company for this flow." });
+    context.addIssue({ code: "custom", path: ["triggerConfig"], message: "Choose the email or company for this workflow." });
   }
   if (!scope.flowScope && (scope.scopeCompanyId || scope.scopeContactId || scope.scopeLabel)) {
-    context.addIssue({ code: "custom", path: ["triggerConfig"], message: "A scoped flow must retain its email or company scope." });
+    context.addIssue({ code: "custom", path: ["triggerConfig"], message: "A scoped workflow must retain its email or company scope." });
   }
   if (scope.flowScope === "company" && scope.scopeContactId) {
-    context.addIssue({ code: "custom", path: ["triggerConfig"], message: "Company flows cannot specify an individual email scope." });
+    context.addIssue({ code: "custom", path: ["triggerConfig"], message: "Company workflows cannot specify an individual email scope." });
   }
   if (scope.reentryMode === "after_period" && (!scope.reentryAfterAmount || !scope.reentryAfterUnit)) {
     context.addIssue({ code: "custom", path: ["triggerConfig"], message: "Choose the re-entry waiting period." });

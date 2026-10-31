@@ -72,7 +72,7 @@ export function CompanyCatalogsTable({ catalogs }: { catalogs: Catalog[] }) {
                   <div className="min-w-0">
                     <p className="truncate font-medium">{catalog.company}</p>
                     <p className="mt-1 text-xs text-muted-foreground">{quotationLabel(catalog)}</p>
-                    <Link href={`/catalogs/companies/${catalog.id}`} className="mt-2 inline-block text-sm text-primary underline">{language === "zh-CN" ? "打开报价" : "Open quotation"}</Link>
+                    <Link href={`/company-quotations/${catalog.id}`} className="mt-2 inline-block text-sm text-primary underline">{language === "zh-CN" ? "打开报价" : "Open quotation"}</Link>
                     <p className="mt-1 text-xs text-muted-foreground">{(() => { const status = catalog.quoteOrderId ? "converted" : catalog.quoteStatus === "shared" && catalog.quoteValidUntil && catalog.quoteValidUntil < quotationToday() ? "expired" : catalog.quoteStatus ?? "draft"; const zh = { draft: "草稿", shared: "已分享", accepted: "已接受", declined: "已拒绝", cancelled: "已取消", superseded: "已有新版本", expired: "已过期", converted: "已创建订单" }; return language === "zh-CN" ? zh[status] : quotationStatusLabels[status]; })()}</p>
                   </div>
                 </TableCell>

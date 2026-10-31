@@ -433,7 +433,7 @@ export function InvoiceConnections({
             <p className="text-xs text-muted-foreground">
               Created from an email conversation.{" "}
               <Link
-                href={`/emails?thread=${encodeURIComponent(doc.sourceThreadId)}`}
+                href={`/email?thread=${encodeURIComponent(doc.sourceThreadId)}`}
                 target="_blank"
                 rel="noreferrer"
                 className="text-primary underline"

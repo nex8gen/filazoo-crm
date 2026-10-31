@@ -31,6 +31,25 @@ export function getInitials(name: string) {
     .toUpperCase();
 }
 
+export function companySourcePresentation(source: string | null | undefined) {
+  const channels: { label: string; icon: "shopify" | "meta" | null }[] = [];
+  for (const token of (source ?? "").split("+")) {
+    const value = token.trim().toLowerCase();
+    if (!value) continue;
+    const channel = /^shopify(?:_|$)/.test(value) ? { label: "Shopify B2B", icon: "shopify" as const }
+      : /^(?:meta|facebook|messenger|instagram)(?:_|$)/.test(value) ? { label: "Meta", icon: "meta" as const }
+      : { label: value === "manual" ? "Manual" : value.replaceAll("_", " "), icon: null };
+    if (!channels.some(({ label }) => label === channel.label)) channels.push(channel);
+  }
+  // Ingress appends later channels. Keep the original acquisition source first,
+  // just as the saved lead segment does, while retaining every channel in labels.
+  return {
+    label: channels.map(({ label }) => label).join(" + ") || "Imported",
+    icon: channels[0]?.icon ?? null,
+    count: channels.length,
+  };
+}
+
 export function formatRelativeDate(value: string | null | undefined, now = new Date()) {
   if (!value) return "Not scheduled";
   const date = new Date(value);

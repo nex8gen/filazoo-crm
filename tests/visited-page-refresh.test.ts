@@ -54,7 +54,7 @@ function fixture() {
 
 test("first visits and recent sidebar round trips do not refetch pages", () => {
   const page = fixture();
-  for (const path of ["/companies", "/settings", "/catalogs", "/invoices", "/segments", "/companies"]) {
+  for (const path of ["/companies", "/settings", "/products", "/invoices", "/segments", "/companies"]) {
     page.visit(path); page.flush(); page.focus(); page.advance(1000);
   }
   assert.equal(page.calls(), 0);

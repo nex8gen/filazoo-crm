@@ -76,7 +76,7 @@ test("pause and resume only update active state and retain defaults, history, an
       assert.deepEqual(Object.keys(instance.updates[0]).sort(), ["is_active", "updated_at"]);
       assert.equal(instance.filters.id, id);
       assert.equal(instance.filters.type, scope);
-      assert.ok(instance.paths.includes("/emails"));
+      assert.ok(instance.paths.includes("/email"));
     }
   }
 });

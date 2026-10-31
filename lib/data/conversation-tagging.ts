@@ -6,18 +6,25 @@ import { normalizeMailboxRows } from "../mailbox-utils";
 import { groupEmailConversations } from "../email-threading";
 import { emailTagMessageKey } from "../customer-tags";
 import { conversationTagContext, conversationTagDecisionSchema, conversationTagInput, conversationTagInstruction, parseConversationTagDecision,
-  conversationTagSkipReason, conversationTagPrompt, conversationTagCooldownMs, conversationTagOutputTokens } from "../ai/conversation-tagging";
+  conversationTagSkipReason, conversationTagPrompt, conversationTagCooldownMs, conversationTagOutputTokens, customerConversationTagInput } from "../ai/conversation-tagging";
 import { generateGeminiText } from "../ai/gemini";
 import { generateGatewayText, isGeminiRegionError } from "../ai/gateway";
 import type { AiTokenUsage } from "../ai/usage";
 import { requireAiAutomation } from "./ai-settings";
 import { mailboxHistory } from "./email-auto-reply";
-import { loadMailboxMessageContent } from "./mailbox-sync";
+import { loadMailboxMessageContent, loadMailboxWorkspace } from "./mailbox-sync";
+import { mergeAutoReplyHistory } from "../email-auto-reply";
 import { withLeadInquiryOrigins } from "./lead-inquiries";
 
 type AnalysisRow = { conversation_key: string; input_hash: string; latest_message_at: string; message_count: number;
   status: string; retry_at: string | null; lease_until: string | null; checked_at: string };
-type Input = NonNullable<ReturnType<typeof conversationTagInput>>;
+type Input = NonNullable<ReturnType<typeof customerConversationTagInput>>;
+
+async function readConversationHistory(mailboxId: string, userId: string) {
+  const { mailbox, messages } = await mailboxHistory(mailboxId, userId, false, false);
+  const workspace = await loadMailboxWorkspace(mailbox, { sync: false });
+  return withLeadInquiryOrigins(mergeAutoReplyHistory(messages, workspace.messages));
+}
 
 /** Cron recovery + mailbox polls share durable leases. No drafts, SMTP or financial writes. */
 export async function processAutomaticConversationTags(options: { mailboxIds?: string[]; maxConversations?: number; budgetMs?: number } = {}) {
@@ -31,6 +38,15 @@ export async function processAutomaticConversationTags(options: { mailboxIds?: s
   if (!apiKey && !token) return { ...result, paused: true };
   const db = createSupabaseAdmin();
   const deadline = Date.now() + (options.budgetMs ?? 100_000);
+  const contacts = new Map<string, string | null>();
+  for (let offset = 0; ; offset += 500) {
+    const { data } = await db.from("contacts").select("email,company_id").order("id").range(offset, offset + 499).throwOnError();
+    for (const row of data ?? []) {
+      const email = row.email?.trim().toLowerCase();
+      if (email) contacts.set(email, contacts.has(email) && contacts.get(email) !== row.company_id ? null : row.company_id);
+    }
+    if ((data?.length ?? 0) < 500) break;
+  }
   const { data: mailboxRows } = await db.from("workspace_mailboxes").select("*").eq("is_active", true).throwOnError();
   const { data: members } = await db.from("workspace_members").select("user_id,role").not("activated_at", "is", null).neq("role", "viewer").throwOnError();
   const operators = members?.filter(member => ["admin", "operator"].includes(member.role)) ?? [];
@@ -49,10 +65,9 @@ export async function processAutomaticConversationTags(options: { mailboxIds?: s
     if (!userId) continue;
     try {
       // Read saved snapshots only. The independent sync worker imports new messages.
-      const { messages: savedMessages } = await mailboxHistory(mailbox.id, userId, false, false);
-      const messages = await withLeadInquiryOrigins(savedMessages);
+      const messages = await readConversationHistory(mailbox.id, userId);
       for (const group of groupEmailConversations(messages).values()) {
-        const input = conversationTagInput(group);
+        const input = customerConversationTagInput(group, contacts);
         if (!input || input.keys.length > 1000 || input.messages.length > 1000) continue;
         if (input.messages.every(message => message.automaticResponse || message.providerKind === "trash" || message.providerKind === "junk")) continue;
         const previous = cache.get(input.key);
@@ -79,21 +94,21 @@ export async function processAutomaticConversationTags(options: { mailboxIds?: s
     if (!owned) continue;
     claimed++;
     const messageKeys = input.messages.map(emailTagMessageKey);
-    const contact = input.messages.at(-1)!.contact.trim().toLowerCase();
+    const contact = input.contactEmail;
     let providerCalls = 0, promptCharacters = 0;
     let usage: AiTokenUsage | undefined;
     const finish = async (decision: z.infer<typeof conversationTagDecisionSchema>, error = false) => {
       const { data } = await db.rpc("finish_conversation_tag_analysis_with_metrics", { p_key: input.key, p_token: leaseToken,
         p_keys: input.keys, p_message_keys: messageKeys, p_contact: contact, p_tag: decision.tag,
         p_confidence: decision.confidence, p_reason: decision.reason, p_evidence: decision.evidence, p_error: error,
-        p_metrics: { source: providerCalls ? "ai" : "rule", providerCalls, promptCharacters, ...(usage ? { usage } : {}) } }).throwOnError();
+        p_metrics: { source: providerCalls ? "ai" : "rule", providerCalls, promptCharacters, companyId: input.companyId, ...(usage ? { usage } : {}) } }).throwOnError();
       return data;
     };
     try {
       policy = await requireAiAutomation(["tagging"], ["emails", "customers"]);
       const { data: saved } = await db.from("crm_email_tags").select("message_key,tag,source,updated_at").in("message_key", [...new Set([...input.keys, ...messageKeys])]).throwOnError();
       if (saved?.some(row => row.source !== "ai" && Date.parse(row.updated_at) >= Date.parse(input.latestAt))) {
-        await finish({ tag: null, confidence: 1, reason: "Preserving the manual or flow tag until this conversation has new activity.", evidence: [] });
+        await finish({ tag: null, confidence: 1, reason: "Preserving the manual or workflow tag until this conversation has new activity.", evidence: [] });
         result.ruleSkipped++;
         continue;
       }
@@ -151,9 +166,9 @@ export async function processAutomaticConversationTags(options: { mailboxIds?: s
       }
       const decision = parseConversationTagDecision(output, context);
       // A reply imported during model execution invalidates this result immediately.
-      const latest = await mailboxHistory(mailbox.id, userId, false, false);
-      const matching = [...groupEmailConversations(await withLeadInquiryOrigins(latest.messages)).values()].find(group => conversationTagInput(group)?.keys.some(key => input.keys.includes(key)));
-      if (!matching || conversationTagInput(matching)?.fingerprint !== input.fingerprint) throw new Error("Conversation changed during analysis; waiting for its latest context.");
+      const latest = await readConversationHistory(mailbox.id, userId);
+      const matching = [...groupEmailConversations(latest).values()].find(group => conversationTagInput(group)?.keys.some(key => input.keys.includes(key)));
+      if (!matching || customerConversationTagInput(matching, contacts)?.fingerprint !== input.fingerprint) throw new Error("Conversation changed during analysis; waiting for its latest context.");
       if (await finish(decision)) result.analyzed++;
     } catch (error) {
       result.failed++;

@@ -9,6 +9,8 @@ import { requireWorkspaceMember } from "@/lib/auth";
 import { listCatalogs, listCompanyOptions, listProducts } from "@/lib/data/crm";
 import { prepareCompanyCatalogPdfs } from "@/lib/data/catalog-pdfs";
 
+export const metadata = { title: "Company Quotations" };
+
 export default async function CompanyCatalogsPage() {
   const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   const [{ mode, catalogs }, { companies }, { products }] = await Promise.all([listCatalogs(), listCompanyOptions(), listProducts()]);

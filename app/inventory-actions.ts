@@ -9,7 +9,7 @@ export async function syncInventory() {
   await requireWorkspaceMember(["admin", "operator"]);
   try {
     const result = await syncErpInventory();
-    revalidatePath("/catalogs");
+    revalidatePath("/products");
     return { ok: true as const, ...result };
   } catch (error) {
     return { ok: false as const, error: error instanceof LingxingError ? error.message : "Unable to sync ERP stock. Check the inventory migration and server configuration." };

@@ -117,7 +117,7 @@ export const zhCNSettings: Record<string, string> = {
   "View channel connection status and manage customer conversations.": "查看渠道连接状态并管理客户会话。",
   "Open Messenger": "打开消息中心",
   "Automation and follow-ups": "自动化与跟进",
-  "Configure flow triggers, business days, stop-on-reply rules, and AI approval controls in the automation workspace.": "在自动化工作区配置流程触发器、工作日、收到回复时停止的规则与 AI 审批控制。",
+  "Configure workflow triggers, business days, stop-on-reply rules, and AI approval controls in the automation workspace.": "在自动化工作区配置工作流触发器、工作日、收到回复时停止的规则与 AI 审批控制。",
   "Manage automation": "管理自动化",
   "Products and customer catalogs": "产品与客户目录",
   "Manage product pricing, minimum quantities, variants, availability, and the selections shared with each customer.": "管理产品价格、最低起订量、规格、供货情况与各客户专属选品。",

@@ -10,9 +10,9 @@ import { z } from "zod";
 import Link from "next/link";
 import type { FlowInput } from "@/lib/flows";
 
-export const metadata: Metadata = { title: "AI Automation" };
+export const metadata: Metadata = { title: "Workflow" };
 
-export default async function AiAgentPage({ searchParams }: PageProps<"/lead-channel/ai-agent">) {
+export default async function AiAgentPage({ searchParams }: PageProps<"/workflow">) {
   const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   const params = await searchParams;
   const canEdit = viewer.role !== "viewer";
@@ -22,7 +22,7 @@ export default async function AiAgentPage({ searchParams }: PageProps<"/lead-cha
     const businessSegment = z.string().trim().min(1).max(120).safeParse(params.segment);
     const savedSegment = segmentId.success ? await getSavedSegment(segmentId.data) : null;
     if ((params.segmentId !== undefined && !savedSegment) || (params.segmentId === undefined && !businessSegment.success)) {
-      return <div className="space-y-3 p-8"><h1 className="text-xl font-semibold">Segment unavailable</h1><p role="alert" className="text-sm text-muted-foreground">This segment could not be found. Choose a segment to create its auto flow.</p><Link href="/segments" className="text-sm font-medium text-primary">Back to segments</Link></div>;
+      return <div className="space-y-3 p-8"><h1 className="text-xl font-semibold">Segment unavailable</h1><p role="alert" className="text-sm text-muted-foreground">This segment could not be found. Choose a segment to create its auto workflow.</p><Link href="/segments" className="text-sm font-medium text-primary">Back to segments</Link></div>;
     }
     initialDraft = createSegmentFlowDraft(savedSegment ? { ...savedSegment, kind: "saved" } : { id: "", name: businessSegment.data!, kind: "business" });
   }

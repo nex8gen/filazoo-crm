@@ -52,7 +52,7 @@ export function CompaniesSkeleton() {
 }
 
 export function FlowsSkeleton() {
-  return <LoadingRegion label="Loading automation flows" className="scroll-surface h-full min-h-0 overflow-y-auto bg-muted/20">
+  return <LoadingRegion label="Loading automation workflows" className="scroll-surface h-full min-h-0 overflow-y-auto bg-muted/20">
     <div className="w-full px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex min-w-0 items-start gap-3"><Skeleton className="size-10 shrink-0 rounded-xl" /><div className="min-w-0"><Skeleton className="h-7 w-24" /><Skeleton className="mt-1 h-5 w-96 max-w-full" /></div></div>
@@ -82,7 +82,7 @@ function FlowNodeSkeleton() {
 }
 
 export function FlowEditorSkeleton() {
-  return <LoadingRegion label="Loading flow editor" className="flex h-full min-h-0 flex-col overflow-hidden bg-muted/20">
+  return <LoadingRegion label="Loading workflow editor" className="flex h-full min-h-0 flex-col overflow-hidden bg-muted/20">
     <div className="flex min-h-14 shrink-0 flex-wrap items-center gap-3 border-b bg-background px-4 py-2">
       <Skeleton className="h-4 w-12" /><Skeleton className="h-8 w-56 max-w-full" /><Skeleton className="h-5 w-16 rounded-full" />
       <div className="ml-auto flex gap-2"><Skeleton className="h-8 w-20" /><Skeleton className="h-8 w-24" /></div>

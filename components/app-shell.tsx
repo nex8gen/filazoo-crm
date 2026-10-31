@@ -68,7 +68,7 @@ function SidebarNavigation({ pathname, onNavigate, userMenu }: { pathname: strin
                 onClick={() => { setRailExpanded(false); onNavigate?.(); }}
                 className={`relative flex h-12 w-12 shrink-0 items-center gap-3 overflow-hidden rounded-md px-[13px] outline-none transition-[width,background-color,color] focus-visible:ring-2 focus-visible:ring-ring group-data-[expanded=true]/rail:w-48 ${group.label === "Settings" ? "mt-auto" : ""} ${active ? "bg-primary/10 font-medium text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
               >
-                <group.icon className={`mx-0.5 shrink-0 ${group.label === "AI Automation" ? "size-5" : "size-[18px]"} ${active ? "text-primary" : ""}`} />
+                <group.icon className={`mx-0.5 shrink-0 ${group.label === "Workflow" ? "size-5" : "size-[18px]"} ${active ? "text-primary" : ""}`} />
                 <span className="whitespace-nowrap text-sm opacity-0 transition-opacity duration-150 group-data-[expanded=true]/rail:opacity-100">{group.label}</span>
               </Link>
             );
@@ -118,8 +118,8 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
   const pathname = usePathname();
   const router = useRouter();
   const isMessenger = pathname === "/messenger" || pathname.startsWith("/messenger/");
-  const isFlowBuilder = pathname === "/lead-channel/ai-agent" || pathname.startsWith("/lead-channel/ai-agent/");
-  const isEmails = pathname === "/emails" || pathname.startsWith("/emails/flows");
+  const isFlowBuilder = pathname === "/workflow" || pathname.startsWith("/workflow/");
+  const isEmails = pathname === "/email" || pathname.startsWith("/email/workflows");
   const isSettings = pathname === "/settings" || pathname.startsWith("/settings/");
   const usesViewportCanvas = isMessenger || isFlowBuilder || isEmails;
   const [commandOpen, setCommandOpen] = useState(false);
@@ -158,7 +158,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
         <Button ref={navigationTriggerRef} aria-label="Open navigation" aria-expanded={mobileOpen} variant="ghost" size="icon-sm" className="mr-2 lg:hidden" onClick={() => setMobileOpen(true)}>
           <Menu />
         </Button>
-        <Link href="/" aria-label="Filazoo home" className="hidden h-6 items-center justify-center text-primary md:flex">
+        <Link href="/analytics" aria-label="Filazoo home" className="hidden h-6 items-center justify-center text-primary md:flex">
           <BrandMark className="h-6 w-auto" />
         </Link>
         <span className="min-w-0 truncate text-sm font-semibold md:ml-3 lg:hidden">{activeItem.label}</span>
@@ -191,7 +191,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
             <SheetDescription>Accounts, conversations, and sales tools</SheetDescription>
           </SheetHeader>
           <nav aria-label="Workspace navigation" className="space-y-5 p-4">
-            {navigation.map((group) => group.direct ? <Link key={group.label} href={group.items[0].href} onClick={() => setMobileOpen(false)} aria-current={itemIsActive(pathname, group.items[0]) ? "page" : undefined} className={`flex min-h-11 items-center gap-3 rounded-lg px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring ${itemIsActive(pathname, group.items[0]) ? "bg-brand-soft font-semibold text-primary" : "hover:bg-muted"}`}><group.icon className={`${group.label === "AI Automation" ? "size-5" : "size-4"} shrink-0`} />{group.label}</Link> : <div key={group.label}>
+            {navigation.map((group) => group.direct ? <Link key={group.label} href={group.items[0].href} onClick={() => setMobileOpen(false)} aria-current={itemIsActive(pathname, group.items[0]) ? "page" : undefined} className={`flex min-h-11 items-center gap-3 rounded-lg px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring ${itemIsActive(pathname, group.items[0]) ? "bg-brand-soft font-semibold text-primary" : "hover:bg-muted"}`}><group.icon className={`${group.label === "Workflow" ? "size-5" : "size-4"} shrink-0`} />{group.label}</Link> : <div key={group.label}>
               <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{group.label}</p>
               <ul className="space-y-1">{group.items.map((item) => <li key={item.href}>
                 <Link href={item.href} onClick={() => setMobileOpen(false)} aria-current={itemIsActive(pathname, item) ? "page" : undefined} className={`flex min-h-11 items-center gap-3 rounded-lg px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring ${itemIsActive(pathname, item) ? "bg-brand-soft font-semibold text-primary" : "hover:bg-muted"}`}>

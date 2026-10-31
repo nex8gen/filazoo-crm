@@ -14,8 +14,8 @@ export async function validateEmailFlowScope(config: JsonConfig) {
   const viewer = await requireWorkspaceMember();
   const admin = createSupabaseAdmin();
   const { data: company, error } = await admin.from("companies").select("id,name").eq("id", config.scopeCompanyId).maybeSingle();
-  if (error) throw new Error(`Unable to load flow company: ${error.message}`);
-  if (!company) throw new Error("Flow company not found.");
+  if (error) throw new Error(`Unable to load workflow company: ${error.message}`);
+  if (!company) throw new Error("Workflow company not found.");
   if (viewer.role === "bd_manager") {
     const { data: assignment, error } = await admin.from("pipeline").select("owner_id").eq("company_id", company.id).maybeSingle();
     if (error) throw new Error(`Unable to verify company assignment: ${error.message}`);
@@ -23,7 +23,7 @@ export async function validateEmailFlowScope(config: JsonConfig) {
   }
   if (config.flowScope === "email") {
     const { data: contact, error } = await admin.from("contacts").select("id,email").eq("id", config.scopeContactId).eq("company_id", company.id).maybeSingle();
-    if (error) throw new Error(`Unable to load flow contact: ${error.message}`);
+    if (error) throw new Error(`Unable to load workflow contact: ${error.message}`);
     if (!contact) throw new Error("The email contact no longer belongs to this company.");
     return { ...config, scopeLabel: contact.email };
   }
@@ -39,7 +39,7 @@ export async function resolveEmailFlowScope(input: unknown) {
   if (parsed.companyId) query = query.eq("company_id", parsed.companyId);
   const { data: contacts, error } = await query.limit(2);
   if (error) throw new Error(`Unable to load email contact: ${error.message}`);
-  if (contacts?.length !== 1) throw new Error("Save this email as a contact on one company before creating its automation flow.");
+  if (contacts?.length !== 1) throw new Error("Save this email as a contact on one company before creating its automation workflow.");
   const contact = contacts[0];
   return validateEmailFlowScope({
     flowScope: parsed.scope,

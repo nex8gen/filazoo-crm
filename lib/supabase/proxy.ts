@@ -32,7 +32,7 @@ export async function updateSession(request: NextRequest) {
   // Meta reaches this webhook without a Filazoo session. POST requests are
   // authenticated separately with Meta's x-hub-signature-256 HMAC signature.
   const publicPaths = [
-    "/lead-channel/ai-agent/qa",
+    "/workflow/qa",
     "/login",
     "/forgot-password",
     "/accept-invitation",

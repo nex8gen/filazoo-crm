@@ -31,7 +31,7 @@ function mount(signalStatics: unknown = AbortSignal) {
   const requests: Array<{ url: string; signal: AbortSignal; resolve: (response: Response) => void }> = [];
   const history: string[] = [];
   const listeners = new Map<string, () => void>();
-  const location = { pathname: "/emails", search: "" };
+  const location = { pathname: "/email", search: "" };
   const window = {
     location,
     history: {
@@ -144,7 +144,7 @@ test("other inboxes preload once and switching reuses their in-flight request", 
   assert.equal(ui.render().switchingMailboxId, null);
   assert.equal(ui.render().initialThreadId, undefined);
   assert.equal(ui.render().initialAgentDraft, undefined);
-  assert.deepEqual(ui.history, ["/emails?mailbox=team"]);
+  assert.deepEqual(ui.history, ["/email?mailbox=team"]);
   ui.render().onMailboxChange("mine");
   assert.equal(ui.render().selectedMailboxId, "mine");
   assert.equal(ui.requests.length, 2);
@@ -161,7 +161,7 @@ test("rapid switches ignore a late response from the abandoned account", async (
   ui.requests[0].resolve(Response.json(snapshot("team")));
   await tick();
   assert.equal(ui.render().selectedMailboxId, "other");
-  assert.deepEqual(ui.history, ["/emails?mailbox=other"]);
+  assert.deepEqual(ui.history, ["/email?mailbox=other"]);
   ui.unmount();
 });
 

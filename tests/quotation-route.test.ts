@@ -32,7 +32,7 @@ test("quotation reads do not cache or reveal internal errors", async () => {
 });
 test("successful quotation mutations refresh connected list, company and work queue", async () => {
   const { api, calls } = load(); const result = await api.PATCH(request(), context()); assert.equal(result.status, 200);
-  assert.ok(calls.includes("/catalogs/companies")); assert.ok(calls.includes("/companies/company")); assert.ok(calls.includes("/my-day"));
+  assert.ok(calls.includes("/company-quotations")); assert.ok(calls.includes("/companies/company")); assert.ok(calls.includes("/my-day"));
 });
 test("PDF endpoint is private and uses a safe inline or download filename", async () => {
   assert.equal((await load({ pdf: true, denied: true }).api.GET(request(), context())).status, 401);

@@ -115,7 +115,7 @@ function domainFromWebsite(website: string | null) {
 }
 
 function refreshCrm() {
-  ["/", "/companies", "/segments", "/emails", "/catalogs", "/catalogs/companies"].forEach((path) => revalidatePath(path));
+  ["/analytics", "/companies", "/segments", "/email", "/products", "/company-quotations"].forEach((path) => revalidatePath(path));
 }
 
 function refreshCompany(companyId: string) {
@@ -418,8 +418,8 @@ export async function createProduct(_state: CrmActionState, formData: FormData):
     sheet_updated_at: new Date().toISOString(),
   });
   if (error) return { error: error.code === "23505" ? "A product with this SKU already exists." : "The product could not be added." };
-  revalidatePath("/catalogs");
-  revalidatePath("/catalogs/companies");
+  revalidatePath("/products");
+  revalidatePath("/company-quotations");
   return { success: `${parsed.data.name} was added.` };
 }
 
@@ -472,8 +472,8 @@ export async function updateProduct(_state: CrmActionState, formData: FormData):
     : admin.from("user_product_overrides").insert(values);
   const { data: saved, error } = await write.select("product_sku").maybeSingle();
   if (error || !saved) return { error: error?.code === "23505" || !error ? "Your saved product changed in another tab. Reload before saving." : "Your product details could not be saved. Please retry." };
-  revalidatePath("/catalogs");
-  revalidatePath(`/catalogs/products/${encodeURIComponent(originalSku.data)}`);
-  revalidatePath("/catalogs/companies");
+  revalidatePath("/products");
+  revalidatePath(`/products/${encodeURIComponent(originalSku.data)}`);
+  revalidatePath("/company-quotations");
   return { success: `${parsed.data.name} was saved to your private product catalog.` };
 }

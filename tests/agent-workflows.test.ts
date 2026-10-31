@@ -241,7 +241,7 @@ test("invoice email drafts need no SMTP, retain verified reply headers and never
   assert.equal(fixture.sent.length, 0);
   assert.equal("draft" in result && result.draft?.invoiceId, invoiceId);
   assert.equal("draft" in result && result.draft?.inReplyTo, "<order@example.com>");
-  assert.equal(result.href, `/emails?agentDraft=${actionId}`);
+  assert.equal(result.href, `/email?agentDraft=${actionId}`);
   await assert.rejects(() => fixture.prepareAgentActions([{ type: "send_invoice", invoiceId, email: { ...email, delivery: "send" } }], viewer, "auto"), /SMTP mailbox/);
 });
 
@@ -367,7 +367,7 @@ test("flow creation is saved for approval and execution uses the current user's 
   assert.equal(fixture.savedFlows[0].userId, viewer.id);
   assert.equal(fixture.savedFlows[0].input.status, "draft");
   assert.deepEqual(fixture.savedFlows[0].input.steps, flows.defaultFlowInput.steps);
-  assert.equal(result.href, `/lead-channel/ai-agent?flow=${invoiceId}`);
+  assert.equal(result.href, `/workflow?flow=${invoiceId}`);
   assert.equal(fixture.savedInvoices.length, 0);
   assert.equal(fixture.sent.length, 0);
   await assert.rejects(() => fixture.prepareAgentActions([{ type: "create_flow", flow: flows.defaultFlowInput }], { ...viewer, role: "viewer" }, "ask"), /read-only/);
@@ -495,7 +495,7 @@ test("open email scope overrides an old company and does not reuse another custo
     "../email-threading": threading,
     "./agent-records": { loadAgentEmails: async () => ({ current: { id: "mail-1", body: "Please invoice PLA Black" }, messages: [{ subject: "Order", body: "Please invoice PLA Black" }], companyId: matchedCompany }), loadAgentCompany: async (id: string) => ({ id }), presentAgentEmail: (value: unknown) => value },
   });
-  const input = { language: "en", mode: "work", approvalMode: "ask", completedActionIds: [actionId], pageContext: { companyId: oldCompany, emailId: "mail-1" }, pathname: "/emails", pageLabel: "Email", pageText: "", messages: [{ role: "user", content: "Create an invoice from this email" }] } as const;
+  const input = { language: "en", mode: "work", approvalMode: "ask", completedActionIds: [actionId], pageContext: { companyId: oldCompany, emailId: "mail-1" }, pathname: "/email", pageLabel: "Email", pageText: "", messages: [{ role: "user", content: "Create an invoice from this email" }] } as const;
   const result = await context.loadAgentContext({ ...input, completedActionIds: [...input.completedActionIds], messages: [...input.messages] }, viewer);
   assert.equal(result.currentCompanyId, companyId);
   assert.equal(result.currentInvoice, null);

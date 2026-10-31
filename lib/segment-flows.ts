@@ -13,12 +13,12 @@ export function segmentCompaniesHref(config: JsonConfig) {
 
 export function segmentFlowHref(segment: FlowSegment) {
   const query = new URLSearchParams(segment.kind === "saved" ? { segmentId: segment.id } : { segment: segment.name });
-  return `/lead-channel/ai-agent?${query}`;
+  return `/workflow?${query}`;
 }
 
 export function createSegmentFlowDraft(segment: FlowSegment): FlowInput {
   return {
-    name: `${segment.name} auto flow`.slice(0, 160),
+    name: `${segment.name} auto workflow`.slice(0, 160),
     triggerType: "company_segment_changed",
     triggerConfig: { segment: segment.name, segmentAudience: true, ...(segment.kind === "saved" ? { savedSegmentId: segment.id } : {}), reentryMode: "no_reentry" },
     status: "draft",

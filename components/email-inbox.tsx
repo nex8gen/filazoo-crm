@@ -1387,7 +1387,7 @@ export function EmailInboxWorkspace({
       {!companyScope ? <nav aria-label="Email accounts" className="flex shrink-0 flex-wrap items-center gap-3 border-b p-3 sm:flex-nowrap">
         <div className="flex min-w-0 flex-1 gap-5 overflow-x-auto">
         {(["personal", "workspace"] as const).map(type => mailboxes.some(mailbox => mailbox.type === type) ? <div key={type} className="flex shrink-0 items-center gap-2.5"><span className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">{type === "personal" ? <UserRound className="size-3.5" /> : <UsersRound className="size-3.5" />}{type === "personal" ? "My email" : "Team email"}</span><div className="flex gap-1">
-        {mailboxes.filter(mailbox => mailbox.type === type).map((mailbox) => <Link key={mailbox.id} href={`/emails?mailbox=${encodeURIComponent(mailbox.id)}`} prefetch={false} aria-label={`${type === "personal" ? "My email" : "Team email"}: ${mailbox.email}`} aria-current={selectedMailboxId === mailbox.id ? "page" : undefined} aria-busy={switchingMailboxId === mailbox.id} onNavigate={(event) => {
+        {mailboxes.filter(mailbox => mailbox.type === type).map((mailbox) => <Link key={mailbox.id} href={`/email?mailbox=${encodeURIComponent(mailbox.id)}`} prefetch={false} aria-label={`${type === "personal" ? "My email" : "Team email"}: ${mailbox.email}`} aria-current={selectedMailboxId === mailbox.id ? "page" : undefined} aria-busy={switchingMailboxId === mailbox.id} onNavigate={(event) => {
           if (sending || composeSending || attachmentBusy || aiReplyBusy || pendingStateWrites.current || savedDrafts.status === "Saving draft…") { event.preventDefault(); setNotice("Wait for the current operation or draft save before switching mailboxes."); return; }
           if (onMailboxChange) { event.preventDefault(); onMailboxChange(mailbox.id); return; }
           if (mailbox.id === selectedMailboxId) event.preventDefault();
@@ -1413,7 +1413,7 @@ export function EmailInboxWorkspace({
             {folderItems.map((item) => <button key={item.id} type="button" onClick={() => changeFolder(item.id)} aria-current={folder === item.id ? "page" : undefined} className={`flex h-10 w-full items-center gap-3 rounded-md px-3 text-xs font-medium ${folder === item.id ? "bg-primary/10 text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}><item.icon className={`size-4 ${folder === item.id ? "text-primary" : ""}`} /><span className="flex-1 text-left">{item.label}</span><span className="text-xs">{folderCounts[item.id]}</span></button>)}
           </nav>
           <div className="mx-4 my-4 h-px bg-border" />
-          <div className="px-5"><p className="text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">Automation</p><div className="mt-3 rounded-lg border bg-background p-3"><p className="flex items-center gap-2 text-xs font-semibold"><Workflow className="size-4 text-violet-600" />Follow-up flow</p><p className="mt-1.5 text-xs leading-5 text-muted-foreground">Automatically continue conversations that need attention.</p><Link href="/lead-channel/ai-agent?flow=default" className="mt-3 inline-flex text-xs font-semibold text-primary hover:underline">Open builder →</Link></div></div>
+          <div className="px-5"><p className="text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">Workflow</p><div className="mt-3 rounded-lg border bg-background p-3"><p className="flex items-center gap-2 text-xs font-semibold"><Workflow className="size-4 text-violet-600" />Follow-up workflow</p><p className="mt-1.5 text-xs leading-5 text-muted-foreground">Automatically continue conversations that need attention.</p><Link href="/workflow?flow=default" className="mt-3 inline-flex text-xs font-semibold text-primary hover:underline">Open builder →</Link></div></div>
         </aside> : null}
 
         <section className="mail-list" aria-label="Email list">
@@ -1585,9 +1585,9 @@ export function EmailInboxWorkspace({
               })}
             />
             <section className="mx-6 mb-6 rounded-xl border p-4" aria-labelledby="contact-flow">
-              <h3 id="contact-flow" className="flex items-center gap-2 text-sm font-semibold"><Workflow className="size-4 text-primary" />Automation flow</h3>
-              <p className="mt-2 text-xs leading-5 text-muted-foreground">Customize follow-ups and actions for this email address or its company. Manage these flows here from Email.</p>
-              <Link href={`/emails/flows?${new URLSearchParams({ recipient: selected.contact, ...(selected.companyId ? { companyId: selected.companyId } : {}), ...(selectedConversation?.id ? { thread: selectedConversation.id } : {}), ...(selectedMailboxId ? { mailbox: selectedMailboxId } : {}) })}`} className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-primary">Open flow builder<ChevronRight className="size-3.5" /></Link>
+              <h3 id="contact-flow" className="flex items-center gap-2 text-sm font-semibold"><Workflow className="size-4 text-primary" />Automation workflow</h3>
+              <p className="mt-2 text-xs leading-5 text-muted-foreground">Customize follow-ups and actions for this email address or its company. Manage these workflows here from Email.</p>
+              <Link href={`/email/workflows?${new URLSearchParams({ recipient: selected.contact, ...(selected.companyId ? { companyId: selected.companyId } : {}), ...(selectedConversation?.id ? { thread: selectedConversation.id } : {}), ...(selectedMailboxId ? { mailbox: selectedMailboxId } : {}) })}`} className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-primary">Open workflow builder<ChevronRight className="size-3.5" /></Link>
             </section>
             {notice ? <p className="mx-6 mb-6 rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground" role="status">{notice}</p> : null}
           </div>

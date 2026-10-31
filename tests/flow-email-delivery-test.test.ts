@@ -93,7 +93,7 @@ test("real delivery waits two minutes, uses the explicit recipient, attaches the
   assert.equal(completed.status, "completed");
   assert.equal(f.mails[0].to, input.recipient);
   assert.notEqual(f.mails[0].to, input.emails[0].from);
-  assert.equal(f.mails[0].subject, "[Flow test] Re: Catalog");
+  assert.equal(f.mails[0].subject, "[Workflow test] Re: Catalog");
   assert.equal((f.mails[0].attachments as Array<{ content: Buffer }>)[0].content.toString(), "%PDF");
   assert.equal(completed.result[0].messageId, "<accepted@example.com>");
   assert.equal(f.db.mailbox_sent_messages.length, 1);
@@ -157,7 +157,7 @@ test("real delivery plans preserve branch addresses and an individual message te
   const started = await f.service.startFlowEmailDeliveryTest(input, "owner", null) as Run;
   const completed = await f.service.processFlowEmailDeliveryTest(started.id, "owner") as Run;
   assert.equal(completed.status, "completed");
-  assert.equal(f.mails[0].subject, "[Flow test] Nested message");
+  assert.equal(f.mails[0].subject, "[Workflow test] Nested message");
   input.requestId = randomUUID(); input.flow.steps.unshift({ type: "wait", config: { amount: 7, unit: "days" } }); input.messageStepPath = [1, 0, 0];
   await f.service.startFlowEmailDeliveryTest(input, "owner", null);
   assert.equal((await f.service.processFlowEmailDeliveryTest(input.requestId, "owner") as Run).status, "completed");

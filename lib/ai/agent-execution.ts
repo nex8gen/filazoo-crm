@@ -131,8 +131,8 @@ export async function executeAgentAction(id: string, action: PreparedAgentAction
   if (action.type === "create_flow") {
     await reportProgress(activity);
     const flow = await createFlow(viewer.id, flowInputSchema.parse(action.flow));
-    revalidatePath("/lead-channel/ai-agent");
-    return { success: `${flow.name} created as ${flow.status === "live" ? "a live flow" : "a draft flow"}.`, flowId: flow.id, href: `/lead-channel/ai-agent?flow=${flow.id}` };
+    revalidatePath("/workflow");
+    return { success: `${flow.name} created as ${flow.status === "live" ? "a live workflow" : "a draft workflow"}.`, flowId: flow.id, href: `/workflow?flow=${flow.id}` };
   }
   if (action.type === "create_company") {
     await reportProgress(activity);
@@ -160,12 +160,12 @@ export async function executeAgentAction(id: string, action: PreparedAgentAction
     await reportProgress(activity);
     const email = await prepareAgentEmail(action.email, viewer);
     const attachments = await agentCatalogAttachments(action.email);
-    if (email.delivery === "draft") return { success: `Email draft prepared${attachments.length ? " with its catalog PDF" : ""} in the inbox composer.`, href: `/emails?agentDraft=${id}`, draft: { ...email, ...(action.email.catalogSnapshot ? { catalogSnapshot: action.email.catalogSnapshot } : {}) } };
+    if (email.delivery === "draft") return { success: `Email draft prepared${attachments.length ? " with its catalog PDF" : ""} in the inbox composer.`, href: `/email?agentDraft=${id}`, draft: { ...email, ...(action.email.catalogSnapshot ? { catalogSnapshot: action.email.catalogSnapshot } : {}) } };
     const response = await sendEmail(new Request(new URL("/api/email/send", request.url), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...email, attachments }) }));
     const result = await response.json();
     if (!response.ok || !result.ok) throw new Error(result.error || "Email was not confirmed sent. Check Sent before retrying.");
-    revalidatePath("/emails");
-    return { success: `Email sent to ${action.email.to}.${result.saved === false ? " The mailbox accepted it, but the Sent record could not be saved." : ""}`, href: "/emails" };
+    revalidatePath("/email");
+    return { success: `Email sent to ${action.email.to}.${result.saved === false ? " The mailbox accepted it, but the Sent record could not be saved." : ""}`, href: "/email" };
   }
   await reportProgress({ ...activity, label: "Checking invoice details…" });
   // Validate and render attachments before creating/updating an invoice.
@@ -195,7 +195,7 @@ export async function executeAgentAction(id: string, action: PreparedAgentAction
   // Recheck access to the source conversation at execution time.
   await prepareAgentEmail(action.email, viewer);
   if (action.email.delivery === "draft") return {
-    ...saved, success: `${saved.success} Email draft prepared with its invoice PDF${catalogAttachments.length ? " and catalog PDF" : ""}.`, href: `/emails?agentDraft=${id}`,
+    ...saved, success: `${saved.success} Email draft prepared with its invoice PDF${catalogAttachments.length ? " and catalog PDF" : ""}.`, href: `/email?agentDraft=${id}`,
     draft: { ...action.email, invoiceId: invoice.id, revision: invoice.revision },
   };
   await reportProgress({ area: "invoice", label: "Preparing invoice PDF…", detail: `${invoiceLabel(invoice)} · ${invoice.document.customerName}`, relatedAreas: ["email"] });
@@ -209,6 +209,6 @@ export async function executeAgentAction(id: string, action: PreparedAgentAction
   }));
   const result = await response.json();
   if (!response.ok || !result.ok) throw new Error(`${saved.success} Email was not confirmed sent: ${result.error || "Mailbox request failed."} Check Sent before preparing another send.`);
-  revalidatePath("/emails");
+  revalidatePath("/email");
   return { ...saved, success: `${invoiceLabel(invoice)} sent to ${action.email.to} with its PDF attached.${result.saved === false ? " The mailbox accepted it, but the Sent record could not be saved." : ""}` };
 }

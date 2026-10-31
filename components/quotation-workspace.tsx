@@ -51,7 +51,7 @@ export function QuotationWorkspace({ initialDetail }: { initialDetail: Quotation
       const response = await fetch(`/api/catalogs/${catalog.id}/quotation`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || c("Unable to save the quotation.", "无法保存报价。"));
-      if (body.newId) { router.push(`/catalogs/companies/${body.newId}`); router.refresh(); return; }
+      if (body.newId) { router.push(`/company-quotations/${body.newId}`); router.refresh(); return; }
       setDetail(body.detail); setInput(body.detail.initial); setAcceptance("");
       setSuccess(c("Quotation updated.", "报价已更新。")); router.refresh();
     } catch (err) { setError(err instanceof Error ? err.message : c("Connection failed. Reload before retrying.", "连接失败，请刷新后重试。")); }
@@ -72,12 +72,12 @@ export function QuotationWorkspace({ initialDetail }: { initialDetail: Quotation
     <label className="grid gap-2 text-sm" key={key}><span>{c(en, zh)}</span>{multiline ? <Textarea value={input[key]} disabled={!editable || pending} maxLength={key === "taxId" ? 100 : 2000} onChange={e => set(key, e.target.value)} /> : <Input type={key === "customerEmail" ? "email" : "text"} value={input[key]} disabled={!editable || pending} maxLength={key === "taxId" ? 100 : key === "shippingRecipient" ? 160 : key === "shippingPhone" ? 80 : 254} onChange={e => set(key, e.target.value)} />}</label>
   );
   return <div data-no-translate className="mx-auto max-w-6xl space-y-5 [&_input:disabled]:opacity-100 [&_textarea:disabled]:opacity-100 [&_select:disabled]:opacity-100">
-    <Link href="/catalogs/companies" className="text-sm text-muted-foreground hover:underline">← {c("Company quotations", "公司报价")}</Link>
+    <Link href="/company-quotations" className="text-sm text-muted-foreground hover:underline">← {c("Company quotations", "公司报价")}</Link>
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div><div className="flex flex-wrap items-center gap-3"><h1 className="text-2xl font-semibold">{quotationLabel(catalog)}</h1><Badge variant="secondary">{language === "zh-CN" ? statusZh[state] : quotationStatusLabels[state]}</Badge></div><p className="mt-2 text-muted-foreground">{catalog.company} · {catalog.currency}</p></div>
       <div className="flex flex-wrap gap-2"><Button type="button" variant="outline" disabled={pending || dirty} onClick={reload}>{c("Reload", "刷新")}</Button>{canWrite ? <Button type="button" variant="outline" disabled={pending || dirty} onClick={() => act("revise")}>{legacy ? c("Create current version", "创建当前版本") : c("New version", "新建版本")}</Button> : null}</div>
     </div>
-    {catalog.quote_previous_id ? <Link href={`/catalogs/companies/${catalog.quote_previous_id}`} className="block text-sm underline">{c("View previous version", "查看上一版本")}</Link> : null}
+    {catalog.quote_previous_id ? <Link href={`/company-quotations/${catalog.quote_previous_id}`} className="block text-sm underline">{c("View previous version", "查看上一版本")}</Link> : null}
     {error ? <div role="alert" className="rounded-lg border border-destructive p-3 text-sm text-destructive">{error}<Button type="button" variant="ghost" onClick={reload} disabled={pending} className="ml-2">{c("Reload saved version", "刷新已保存版本")}</Button></div> : null}
     {success ? <p role="status" className="text-sm text-green-700">{c("Quotation updated.", "报价已更新。")}</p> : null}
     {legacy ? <Card className="p-5"><h2 className="font-semibold">{c("Older product selection", "旧产品选单")}</h2><p className="text-sm text-muted-foreground">{c("This older Catalog has no saved product snapshot. Create a current version to freeze today's products and prices before preparing a quotation. The older document stays available.", "此旧目录没有保存产品快照。请创建当前版本以固定今天的产品及价格，再准备报价。旧文档仍可查看。")}</p></Card> : <>

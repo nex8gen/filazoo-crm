@@ -29,6 +29,6 @@ export function previewFlowScenario(flow: z.infer<typeof flowInputSchema>, scena
     { label: "Trigger event", passed: null, detail: "Assumes the selected trigger event occurs now." },
     { label: "Company filters", passed: enters, detail: "Checks the scenario against all configured company filters." },
     { label: "Customer selection", passed: null, detail: "Choose a saved customer to check recipient restrictions." },
-    { label: "Re-entry criteria", passed: null, detail: "Save the flow and choose a customer to check previous entries." },
+    { label: "Re-entry criteria", passed: null, detail: "Save the workflow and choose a customer to check previous entries." },
   ], warnings: ["Scenario facts are supplied by you. Future replies, opens and profile changes can change the actual journey."] };
 }

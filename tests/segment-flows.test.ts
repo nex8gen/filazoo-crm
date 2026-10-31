@@ -11,7 +11,7 @@ test("segment links encode names and distinguish saved IDs from business segment
   for (const kind of ["saved", "business"]) {
     const segment = { id, kind, name: "US / EU & B2B + 新客户" };
     const url = new URL(segmentFlowHref(segment), "http://localhost");
-    assert.equal(url.pathname, "/lead-channel/ai-agent");
+    assert.equal(url.pathname, "/workflow");
     assert.deepEqual([...url.searchParams], [[kind === "saved" ? "segmentId" : "segment", kind === "saved" ? id : segment.name]]);
   }
 });

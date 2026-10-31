@@ -29,7 +29,7 @@ export function planFlowEmailDeliveryTest(input: FlowEmailDeliveryTestInput, now
     if (entry.scheduledAt) sendAt = entry.scheduledAt;
     if (entry.status === "would_run" && (entry.type === "send_email" || entry.type === "ai_auto_reply")) actions.push({ step: entry.step, stepPath: entry.stepPath, sendAt });
   }
-  if (!actions.length) throw new Error("This test path does not send an email. Review the flow conditions.");
+  if (!actions.length) throw new Error("This test path does not send an email. Review the workflow conditions.");
   if (actions.length > 6) throw new Error("Test up to six email actions at a time.");
   if (actions.some((action) => Date.parse(action.sendAt) > now.getTime() + 3_600_000)) throw new Error("For a real test, shorten the total wait to one hour or less.");
   return actions;
@@ -124,7 +124,7 @@ export async function processFlowEmailDeliveryTest(id: string, userId: string) {
       productRows: await loadFlowReplyProducts(step.config, userId), previousAutomatedMessages: row.result.length + (input.firstMessage ? 0 : 1) })
       : { subject: render(String(step.config.subject || template?.subject || "")), body: render(String(step.config.body || template?.body || "")), attachments: step.config.templateId === "send_catalog" ? await prepareFlowTemplateCatalog(userId) : [] };
     if (!reply.subject || !reply.body) throw new Error("The email step did not produce a subject and body.");
-    const subject = `[Flow test] ${reply.subject}`;
+    const subject = `[Workflow test] ${reply.subject}`;
     const threadId = `flow-test:${id}`;
     const footer = await getUserEmailFooter(userId);
     const content = await prepareUserEmail(userId, { ...buildFlowEmail({ body: footer?.html ? removeStandardSignoff(reply.body) : reply.body, config: { ...step.config, trackOpens: false, trackClicks: false, utmTracking: false },

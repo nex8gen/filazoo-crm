@@ -10,7 +10,7 @@ export type ReplyRequestSummary = {
 };
 export function replyRequestThreadUrl(mailboxId: string | null, threadKey: string | null) {
   if (!mailboxId) return null;
-  return `/emails?mailbox=${encodeURIComponent(mailboxId)}${threadKey ? `&thread=${encodeURIComponent(threadKey)}` : ""}`;
+  return `/email?mailbox=${encodeURIComponent(mailboxId)}${threadKey ? `&thread=${encodeURIComponent(threadKey)}` : ""}`;
 }
 export function matchesCustomerReply(request: { recipient: string; message_id: string | null; waiting_since: string | null; expires_at: string }, email: InboxEmailItem) {
   const sent = normalizeMessageId(request.message_id);

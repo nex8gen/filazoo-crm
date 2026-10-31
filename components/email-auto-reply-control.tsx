@@ -124,7 +124,7 @@ export function EmailAutoReplyControl({ automationId, mailboxId, senderId, messa
     finally { actionPending.current = false; setBusy(false); }
   }
   const pendingDocument = automation?.pending_document as InvoiceDocument | null;
-  const conversationLink = automation ? `/emails?${new URLSearchParams({ mailbox: automation.mailbox_id, thread: automation.thread_key })}` : "";
+  const conversationLink = automation ? `/email?${new URLSearchParams({ mailbox: automation.mailbox_id, thread: automation.thread_key })}` : "";
   return <section aria-label="Conversation AI auto-reply" className="mb-2 shrink-0 border-b pb-2">
     <div className="flex min-h-8 items-center justify-between gap-3">
       <div className="flex min-w-0 items-center gap-2"><Bot className="size-3.5 shrink-0 text-violet-600" /><span className="text-xs font-medium">AI auto-reply</span></div>

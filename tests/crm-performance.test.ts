@@ -65,6 +65,23 @@ test("single-company reads filter in the database and retain the existing compan
   assert.equal(calls.filter(call => call.table === "companies" && call.method === "range").length, 1);
 });
 
+test("company and segment reads retain mixed source history without changing the original lead segment", async () => {
+  for (const [source, segment, label] of [
+    ["meta_lead_ads+shopify_b2b_form", "Meta B2B lead", "Meta + Shopify B2B"],
+    ["shopify_b2b_form+meta_lead_ads", "Shopify B2B lead", "Shopify B2B + Meta"],
+  ]) {
+    const { api } = load({ rows: [{ ...row, source, segment }] });
+    for (const result of [await api.listCompanies(), await api.listSegmentCompanies()]) {
+      assert.equal(result.companies[0].source, source);
+      assert.equal(result.companies[0].sourceLabel, label);
+      assert.equal(result.companies[0].segment, segment);
+    }
+    const { company } = await api.getCompany(row.id);
+    assert.equal(company?.sourceLabel, label);
+    assert.equal(company?.segment, segment);
+  }
+});
+
 test("company listings bound embedded email history without limiting companies or dropping outreach status", async () => {
   const latest = { status: "sent", direction: "outbound", created_at: "2026-10-31T01:00:00Z" };
   const older = { status: "draft", direction: "outbound", created_at: "2026-10-01T01:00:00Z" };

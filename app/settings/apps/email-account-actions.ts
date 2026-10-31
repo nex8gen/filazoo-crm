@@ -19,6 +19,6 @@ export async function setEmailConnectionActive(_state: SettingsActionState, form
   const { data, error } = await query.select("id").maybeSingle();
   if (error || !data) return { error: "The account could not be updated. Refresh and check your access." };
   revalidatePath("/settings", "layout");
-  revalidatePath("/emails");
+  revalidatePath("/email");
   return { success: operation === "pause" ? "Connection paused. Saved credentials and email history are kept." : "Connection resumed." };
 }

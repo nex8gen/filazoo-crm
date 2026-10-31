@@ -10,7 +10,7 @@ split.config.paths = [
 
 const flow: AutomationFlow = {
   id: "canvas-qa",
-  name: "B2B flow canvas verification",
+  name: "B2B workflow canvas verification",
   triggerType: defaultFlowInput.triggerType,
   triggerConfig: defaultFlowInput.triggerConfig,
   status: "draft",

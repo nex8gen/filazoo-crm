@@ -9,6 +9,8 @@ import { matchesSegment, toSegmentCompany } from "@/lib/segments";
 import { notFound } from "next/navigation";
 import { z } from "zod";
 
+export const metadata = { title: "Companies" };
+
 export default async function CompaniesPage({ searchParams }: { searchParams: Promise<{ segment?: string | string[]; segmentId?: string | string[] }> }) {
   const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   const { segment, segmentId } = await searchParams;
@@ -24,7 +26,7 @@ export default async function CompaniesPage({ searchParams }: { searchParams: Pr
         <PageHeader
           title="Companies"
           description={segmentName ? `Companies in the ${segmentName} segment.` : "A clear view of every account, source, market, and next follow-up."}
-          actions={<>{segmentName ? <><Link href="/segments" className="inline-flex min-h-9 items-center px-3 text-sm text-primary underline-offset-4 hover:underline">Segments</Link><Link href="/companies" className="inline-flex min-h-9 items-center px-3 text-sm text-primary underline-offset-4 hover:underline">All companies</Link></> : null}<ExportCompaniesButton companies={visibleCompanies} /><AddCompanyButton canWrite={viewer.role !== "viewer"} /></>}
+          actions={<>{segmentName ? <><Link href="/segments" className="inline-flex min-h-9 items-center px-3 text-sm text-primary underline-offset-4 hover:underline">Segments</Link><Link href="/companies" className="inline-flex min-h-9 items-center px-3 text-sm text-primary underline-offset-4 hover:underline">All companies</Link></> : null}<ExportCompaniesButton companies={visibleCompanies} /><AddCompanyButton canWrite={viewer.role !== "viewer"} existingSegments={[...new Set(companies.map((company) => company.segment).filter((segment) => segment && segment !== "Unclassified"))].sort()} /></>}
         />
       </div>
       <CompaniesTable key={savedSegment?.id ?? selectedSegment ?? "all"} viewKey={savedSegment?.id ?? selectedSegment ?? "all"} companies={visibleCompanies} mode={mode} canWrite={viewer.role !== "viewer"} canDelete={viewer.role === "admin"} />

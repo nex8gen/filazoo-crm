@@ -21,7 +21,7 @@ export const flowRecipeOptions = [
 
 /** New independent identities on every use. Recipes are always drafts. */
 export function createFlowRecipe(id: string): FlowInput {
-  const base: FlowInput = { name: flowRecipeOptions.find((item) => item.id === id)?.title || "Untitled flow", triggerType: "new_lead", triggerConfig: {}, status: "draft", steps: [] };
+  const base: FlowInput = { name: flowRecipeOptions.find((item) => item.id === id)?.title || "Untitled workflow", triggerType: "new_lead", triggerConfig: {}, status: "draft", steps: [] };
   const replyExit = () => split("Has the customer replied?", { field: "customer_replied" }, [action("stop", { reason: "Customer replied" })], [action("create_task")]);
   if (id === "inbound") return { ...base, triggerType: "email_received", steps: [action("ai_auto_reply"), wait(2), replyExit()] };
   if (id === "qualification") return { ...base, steps: [split("Lead qualification", { field: "fit_score_at_least", fitScore: 7 }, [updateCompany({ companyStatus: "qualified" }), split("Priority market", { field: "country_is", value: "US" }, [action("create_task", { priority: "high", title: "Contact priority buyer" }), action("internal_alert", { message: "A priority buyer is ready for follow-up." })], [action("create_task", { title: "Review qualified buyer" })])], [email("welcome_intro"), wait(2), replyExit()])] };

@@ -47,7 +47,7 @@ export async function saveErpConnection(input: unknown) {
       if (error.code === "40001") throw new LingxingError("ERP settings changed in another session. Refresh this page before saving.");
       throw new Error("ERP settings save failed.");
     }
-    revalidatePath("/settings/erp"); revalidatePath("/catalogs");
+    revalidatePath("/settings/erp"); revalidatePath("/products");
     return { ok: true as const, revision: Number(data) };
   } catch (error) { return { ok: false as const, error: errorText(error) }; }
 }

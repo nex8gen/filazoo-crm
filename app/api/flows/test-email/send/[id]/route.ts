@@ -10,7 +10,7 @@ async function handle(request: Request, context: Context, action: "read" | "proc
   if (origin && origin !== new URL(request.url).origin) return Response.json({ error: "Invalid request origin." }, { status: 403 });
   const viewer = await getWorkspaceViewer();
   if (!viewer) return Response.json({ error: "Authentication required." }, { status: 401 });
-  if (!["admin", "operator", "bd_manager"].includes(viewer.role)) return Response.json({ error: "You cannot send flow tests with this role." }, { status: 403 });
+  if (!["admin", "operator", "bd_manager"].includes(viewer.role)) return Response.json({ error: "You cannot send workflow tests with this role." }, { status: 403 });
   const { id } = await context.params;
   if (!z.uuid().safeParse(id).success) return Response.json({ error: "Invalid test run." }, { status: 400 });
   try {

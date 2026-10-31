@@ -185,7 +185,7 @@ const runId = "00000000-0000-4000-a000-000000000001";
 const stepId = "00000000-0000-4000-a000-000000000002";
 test("alert links resolve company events and encode email conversation IDs", () => {
   assert.equal(flowConversationPath(`company:${runId}:pipeline`), `/companies/${runId}`);
-  assert.equal(flowConversationPath("message:<customer@example.com>"), "/emails?thread=message%3A%3Ccustomer%40example.com%3E");
+  assert.equal(flowConversationPath("message:<customer@example.com>"), "/email?thread=message%3A%3Ccustomer%40example.com%3E");
 });
 test("tracking links are signed, expire, and reject tampering", () => {
   const payload = { runId, stepId, kind: "click" as const, target: "https://filazoo.com/catalog", expires: Date.now() + 60000 };

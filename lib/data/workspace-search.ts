@@ -73,7 +73,7 @@ export async function readWorkspaceSearch(client: ReturnType<typeof createSupaba
         .eq("user_id", viewer.id).in("product_sku", candidates.map(row => row.sku)).order("product_sku").limit(24).abortSignal(signal)) : [];
       return personalizeProductRows(candidates, overrides).filter(row => row.active && !row.sku.startsWith("SAMPLE-") && !row.name.toLowerCase().startsWith("[sample]")
         && `${row.sku} ${row.name}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
-        .map(row => ({ id: row.sku, kind: "product", title: row.name, detail: row.sku, href: `/catalogs/products/${encodeURIComponent(row.sku)}` }));
+        .map(row => ({ id: row.sku, kind: "product", title: row.name, detail: row.sku, href: `/products/${encodeURIComponent(row.sku)}` }));
     }),
     source("task", async () => (await rows<{ id: string; title: string; status: string; companies: Relation<Company> }>(client.from("crm_tasks")
       .select("id,title,status,companies(id,name)").eq("assigned_to", viewer.id).or(workspaceSearchFilter(["title"], query))

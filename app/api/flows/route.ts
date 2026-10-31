@@ -7,17 +7,17 @@ export async function GET() {
   try {
     return Response.json({ ok: true, flows: await listWorkspaceFlows() }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    return Response.json({ ok: false, error: error instanceof Error ? error.message : "Unable to load flows." }, { status: 500 });
+    return Response.json({ ok: false, error: error instanceof Error ? error.message : "Unable to load workflows." }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
   const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
   const parsed = flowInputSchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return Response.json({ ok: false, error: parsed.error.issues[0]?.message || "Invalid flow." }, { status: 400 });
+  if (!parsed.success) return Response.json({ ok: false, error: parsed.error.issues[0]?.message || "Invalid workflow." }, { status: 400 });
   try {
     return Response.json({ ok: true, flow: await createFlow(viewer.id, parsed.data) }, { status: 201 });
   } catch (error) {
-    return Response.json({ ok: false, error: error instanceof Error ? error.message : "Unable to create flow." }, { status: 500 });
+    return Response.json({ ok: false, error: error instanceof Error ? error.message : "Unable to create workflow." }, { status: 500 });
   }
 }

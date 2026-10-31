@@ -69,7 +69,7 @@ test("saving atomically configures credentials, SKU aliases and automatic cadenc
   assert.equal(call.p_updated_by, "admin-id");
   assert.equal(JSON.stringify(call.p_sku_map), '{"CRM-BLACK":"ERP-BLACK"}');
   assert.doesNotMatch(JSON.stringify(result), /secret/);
-  assert.deepEqual(action.paths, ["/settings/erp", "/catalogs"]);
+  assert.deepEqual(action.paths, ["/settings/erp", "/products"]);
 });
 
 test("forged worker origins, invalid fields and stale edits never save silently", async () => {

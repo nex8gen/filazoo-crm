@@ -31,7 +31,7 @@ test("only administrators and operators can request ERP synchronization", async 
     const result = await action.sync();
     assert.equal(result.ok, true);
     assert.equal(result.count, 3);
-    assert.deepEqual(action.paths, ["/catalogs"]);
+    assert.deepEqual(action.paths, ["/products"]);
   }
 });
 

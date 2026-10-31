@@ -68,7 +68,7 @@ export function dropFlowAction(steps: Action[], target: FlowDropTarget, input: {
   if (source && action.type === "split" && flowActionLocations([action]).some((item) => item.action.type === "split" && flowPaths(item.action.config).some((path) => path.id === target.branchId))) return { steps, error: "A split cannot be moved into its own paths." };
   const sameContainer = source && source.path.slice(0, -1).join(".") === destination.prefix.join(".");
   if (target.branchId !== null && destination.steps.length >= 25 && !sameContainer) return { steps, error: "A path can contain up to 25 actions." };
-  if (!source && flowActionLocations(steps).length + flowActionLocations([action]).length > 500) return { steps, error: "A flow can contain up to 500 actions across its paths." };
+  if (!source && flowActionLocations(steps).length + flowActionLocations([action]).length > 500) return { steps, error: "A workflow can contain up to 500 actions across its paths." };
   let index = target.index;
   if (sameContainer && source.path.at(-1)! < index) index--;
   if (sameContainer && source.path.at(-1) === index) return { steps, action };
@@ -76,6 +76,6 @@ export function dropFlowAction(steps: Action[], target: FlowDropTarget, input: {
   const currentDestination = dropContainer(removed, target.branchId);
   if (!currentDestination) return { steps, error: "Choose an action connector inside the destination path." };
   const result = editFlowSiblings(removed, [...currentDestination.prefix, index], (siblings, at) => { siblings.splice(at, 0, action); return siblings; });
-  if (flowActionLocations(result).some((item) => item.path.length > 11 || (item.action.type === "split" && item.path.length > 9))) return { steps, error: "A flow supports up to five levels of splits." };
+  if (flowActionLocations(result).some((item) => item.path.length > 11 || (item.action.type === "split" && item.path.length > 9))) return { steps, error: "A workflow supports up to five levels of splits." };
   return { steps: result, action };
 }

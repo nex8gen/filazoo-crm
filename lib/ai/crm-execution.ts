@@ -110,7 +110,7 @@ async function target(operation: CrmOperation, viewer: WorkspaceViewer): Promise
   if ("flowId" in operation) {
     const flow = (await listWorkspaceFlows()).find((flow) => flow.id === operation.flowId);
     const owner = await one("flows", "user_id", "id", operation.flowId);
-    if (!flow || !owner || (operation.op !== "duplicate_flow" && viewer.role !== "admin" && owner.user_id !== viewer.id)) throw new Error("Flow not found or you cannot manage it.");
+    if (!flow || !owner || (operation.op !== "duplicate_flow" && viewer.role !== "admin" && owner.user_id !== viewer.id)) throw new Error("Workflow not found or you cannot manage it.");
     const definition = flowInputSchema.parse(flow);
     const next = operation.op === "update_flow" ? { ...definition, ...operation.changes, ...(operation.changes.triggerConfig && (!operation.changes.triggerType || operation.changes.triggerType === definition.triggerType) ? { triggerConfig: { ...definition.triggerConfig, ...operation.changes.triggerConfig } } : {}) }
       : operation.op === "flow_status" ? { ...definition, status: operation.status }
@@ -247,7 +247,7 @@ export async function executeCrmAction(action: PreparedCrmAction, viewer: Worksp
   if (operation.op === "sync_inventory") {
     const saved = await syncInventory();
     if (!saved.ok) throw new Error(saved.error);
-    return { success: saved.skipped ? "An inventory sync is already running. No new sync was started." : `Inventory synced: ${saved.count} stock records refreshed.`, href: "/catalogs" };
+    return { success: saved.skipped ? "An inventory sync is already running. No new sync was started." : `Inventory synced: ${saved.count} stock records refreshed.`, href: "/products" };
   }
   const extra: Record<string, unknown> = {};
   switch (operation.op) {
@@ -257,13 +257,13 @@ export async function executeCrmAction(action: PreparedCrmAction, viewer: Worksp
     case "create_catalog": {
       const data = form({ companyId: operation.companyId, currency: operation.currency });
       operation.productSkus.forEach((sku) => data.append("productSkus", sku));
-      result = await crm.createCatalog(undefined, data); href = "/catalogs/companies"; break;
+      result = await crm.createCatalog(undefined, data); href = "/company-quotations"; break;
     }
-    case "create_product": result = await crm.createProduct(undefined, productForm(agentProductSchema.parse(current.preview.product))); href = "/catalogs"; break;
+    case "create_product": result = await crm.createProduct(undefined, productForm(agentProductSchema.parse(current.preview.product))); href = "/products"; break;
     case "update_product": {
       const data = productForm(agentProductSchema.parse(current.preview.product), operation.sku);
       data.set("overrideVersion", String(current.preview.overrideVersion ?? ""));
-      result = await crm.updateProduct(undefined, data); href = `/catalogs/products/${encodeURIComponent(operation.sku)}`; break;
+      result = await crm.updateProduct(undefined, data); href = `/products/${encodeURIComponent(operation.sku)}`; break;
     }
     case "save_order": {
       const saved = await savePurchaseOrder(operation.companyId, operation.orderId ?? null, Number(current.preview.version), current.preview.document);
@@ -294,13 +294,13 @@ export async function executeCrmAction(action: PreparedCrmAction, viewer: Worksp
     case "update_flow": case "flow_status": case "duplicate_flow": {
       const input = flowInputSchema.parse(current.preview.flow);
       const flow = operation.op === "duplicate_flow" ? await createFlow(viewer.id, input) : await updateFlow(viewer.id, operation.flowId, input);
-      extra.flowId = flow.id; href = `/lead-channel/ai-agent?flow=${flow.id}`; result = { success: `${flow.name} saved as ${flow.status}.` }; revalidatePath("/lead-channel/ai-agent"); break;
+      extra.flowId = flow.id; href = `/workflow?flow=${flow.id}`; result = { success: `${flow.name} saved as ${flow.status}.` }; revalidatePath("/workflow"); break;
     }
-    case "delete_flow": await deleteFlow(viewer.id, operation.flowId); result = { success: "Automation flow deleted." }; href = "/lead-channel/ai-agent"; revalidatePath(href); break;
+    case "delete_flow": await deleteFlow(viewer.id, operation.flowId); result = { success: "Automation workflow deleted." }; href = "/workflow"; revalidatePath(href); break;
     case "set_email_state": {
       const response = await saveEmailState(new Request(new URL("/api/email/state", request.url), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...current.preview.state as object, messageKey: current.preview.messageKey, tagMessageKey: current.preview.tagMessageKey, tagConversationKeys: current.preview.tagConversationKeys, tagMessageKeys: current.preview.tagMessageKeys, categoryWrite: current.preview.categoryWrite, contactEmail: current.preview.contactEmail, threadId: current.preview.threadId }) }));
       const saved = await response.json(); if (!response.ok || !saved.ok) throw new Error(saved.error || "Email state could not be saved.");
-      result = { success: "Email organization updated." }; href = "/emails"; break;
+      result = { success: "Email organization updated." }; href = "/email"; break;
     }
     case "draft_message": {
       return { success: "Message draft prepared in Messenger.", href: "/messenger", draftMessage: { conversationId: String(current.preview.conversationId), text: operation.text } };

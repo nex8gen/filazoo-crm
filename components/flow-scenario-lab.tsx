@@ -13,7 +13,7 @@ export function FlowScenarioLab({ flow, onOpenChange }: { flow: FlowInput; onOpe
   const [selected, setSelected] = useState(0);
   const result = useMemo(() => {
     try { return { report: testFlowScenarios(flow), error: null }; }
-    catch (error) { return { report: null, error: error instanceof Error ? error.message : "Complete the flow settings first." }; }
+    catch (error) { return { report: null, error: error instanceof Error ? error.message : "Complete the workflow settings first." }; }
   }, [flow]);
   const report = result.report;
   const current = report?.cases[selected];

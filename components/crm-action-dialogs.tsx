@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { type Company, type ContactOption, type Product } from "@/lib/types";
 import { companyExportCsv } from "@/lib/company-export";
+import { CompanyLocationFields, CompanySegmentField, ContactRoleField } from "@/components/company-form-fields";
 
 function ActionMessage({ state }: { state: CrmActionState }) {
   if (state?.error) return <p role="alert" className="text-xs text-destructive">{state.error}</p>;
@@ -39,7 +40,7 @@ function useActionDialog(actionHandler: (state: CrmActionState, formData: FormDa
   return { open, setOpen, state, action, pending };
 }
 
-export function AddCompanyButton({ canWrite, compact = false }: { canWrite: boolean; compact?: boolean }) {
+export function AddCompanyButton({ canWrite, compact = false, existingSegments }: { canWrite: boolean; compact?: boolean; existingSegments?: string[] }) {
   const dialog = useActionDialog(createCompany);
   return (
     <>
@@ -48,16 +49,14 @@ export function AddCompanyButton({ canWrite, compact = false }: { canWrite: bool
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader><DialogTitle>Add company</DialogTitle><DialogDescription>Create a company profile, optional contact, and audit event.</DialogDescription></DialogHeader>
           <form action={dialog.action} className="grid gap-4 sm:grid-cols-2">
-            <Field label="Company name" id="company-name"><Input id="company-name" name="name" required autoFocus /></Field>
-            <Field label="Website" id="company-website"><Input id="company-website" name="website" inputMode="url" placeholder="https://example.com" /></Field>
-            <Field label="Country" id="company-country"><Input id="company-country" name="country" required /></Field>
-            <Field label="City" id="company-city"><Input id="company-city" name="city" /></Field>
-            <Field label="Segment" id="company-segment"><Input id="company-segment" name="segment" placeholder="3D printing service bureau" required /></Field>
-            <div />
+            <Field label="Company name" id="company-name"><Input id="company-name" name="name" autoComplete="organization" required autoFocus /></Field>
+            <Field label="Website" id="company-website"><Input id="company-website" name="website" inputMode="url" autoComplete="url" placeholder="https://example.com" /></Field>
+            <CompanyLocationFields disabled={dialog.pending} />
+            <div className="sm:col-span-2"><CompanySegmentField disabled={dialog.pending} existingSegments={existingSegments} /></div>
             <div className="sm:col-span-2 border-t pt-4"><p className="text-sm font-medium">Primary contact <span className="font-normal text-muted-foreground">(optional)</span></p></div>
-            <Field label="Contact name" id="contact-name"><Input id="contact-name" name="contactName" /></Field>
-            <Field label="Role" id="contact-role"><Input id="contact-role" name="contactRole" /></Field>
-            <div className="sm:col-span-2"><Field label="Business email" id="contact-email"><Input id="contact-email" name="contactEmail" type="email" /></Field></div>
+            <Field label="Contact name" id="contact-name"><Input id="contact-name" name="contactName" autoComplete="name" /></Field>
+            <ContactRoleField disabled={dialog.pending} />
+            <div className="sm:col-span-2"><Field label="Business email" id="contact-email"><Input id="contact-email" name="contactEmail" type="email" autoComplete="email" /></Field></div>
             <div className="sm:col-span-2"><ActionMessage state={dialog.state} /></div>
             <DialogFooter className="sm:col-span-2">
               <Button type="button" variant="outline" onClick={() => dialog.setOpen(false)}>Cancel</Button>

@@ -34,12 +34,12 @@ export function FlowInsights({ flowId }: { flowId: string | null }) {
     return () => controller.abort();
   }, [flowId, revision]);
 
-  if (!flowId) return <p className="text-sm text-muted-foreground">Save this flow to see its run history.</p>;
+  if (!flowId) return <p className="text-sm text-muted-foreground">Save this workflow to see its run history.</p>;
   return <div className="space-y-4">
     <div className="flex items-center justify-between"><h3 className="text-sm font-semibold">Recent runs</h3><Button size="sm" variant="outline" disabled={loading} onClick={() => { setLoading(true); setRevision((value) => value + 1); }}>Refresh</Button></div>
     {loading ? <p role="status" className="text-xs text-muted-foreground">Loading run history…</p> : null}
     {error ? <p role="alert" className="text-xs text-destructive">{error}</p> : null}
-    {!loading && !error && !runs.length ? <EmptyState compact icon={Workflow} title="No contacts have entered this flow yet." /> : null}
+    {!loading && !error && !runs.length ? <EmptyState compact icon={Workflow} title="No contacts have entered this workflow yet." /> : null}
     {runs.map((run) => <details key={run.id} className="rounded-lg border p-3">
       <summary className="cursor-pointer text-xs"><strong className="capitalize">{run.status}</strong> · Step {run.current_step + 1}<span className="mt-1 block text-muted-foreground">{new Date(run.started_at).toLocaleString()}</span></summary>
       {run.next_run_at ? <p className="mt-3 text-xs">Scheduled: {new Date(run.next_run_at).toLocaleString()}</p> : null}

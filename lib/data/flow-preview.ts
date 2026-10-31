@@ -20,14 +20,14 @@ export async function previewFlow(input: FlowPreviewInput, userId: string, isAdm
   const checks: FlowPreviewResult["checks"] = [
     { label: "Trigger event", passed: null, detail: `Assumes “${triggerLabels[flow.triggerType]}” occurs now.` },
     { label: "Company filters", passed: matchesProfileFilters(flow.triggerConfig, facts), detail: "Checks the current status, stage, segment, country and fit score." },
-    { label: "Customer selection", passed: customer ? matchesFlowCustomer(flow.triggerConfig, customer.id) && matchesFlowScope(flow.triggerConfig, customer.company_id, customer.id) : null, detail: customer ? "Checks this customer's company and the flow's selected recipients." : "Choose a saved customer to check recipient restrictions." },
+    { label: "Customer selection", passed: customer ? matchesFlowCustomer(flow.triggerConfig, customer.id) && matchesFlowScope(flow.triggerConfig, customer.company_id, customer.id) : null, detail: customer ? "Checks this customer's company and the workflow's selected recipients." : "Choose a saved customer to check recipient restrictions." },
   ];
   const mode = String(flow.triggerConfig.reentryMode || "every_event");
   if (mode === "every_event") checks.push({ label: "Re-entry criteria", passed: true, detail: "Every matching event is allowed; an active conversation run is still deduplicated." });
-  else if (!input.flowId || !customer) checks.push({ label: "Re-entry criteria", passed: null, detail: "Save the flow and choose a customer to check previous entries." });
+  else if (!input.flowId || !customer) checks.push({ label: "Re-entry criteria", passed: null, detail: "Save the workflow and choose a customer to check previous entries." });
   else {
     const { data: saved } = await admin.from("flows").select("id,user_id").eq("id", input.flowId).maybeSingle().throwOnError();
-    if (!saved || (!isAdmin && saved.user_id !== userId)) throw new Error("You cannot inspect this flow's entry history.");
+    if (!saved || (!isAdmin && saved.user_id !== userId)) throw new Error("You cannot inspect this workflow's entry history.");
     let query = admin.from("flow_runs").select("id").eq("flow_id", input.flowId).eq("contact_id", customer.id);
     if (mode === "after_period") {
       const duration = Number(flow.triggerConfig.reentryAfterAmount || 1) * (flow.triggerConfig.reentryAfterUnit === "hours" ? 3_600_000 : 86_400_000);

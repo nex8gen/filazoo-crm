@@ -32,7 +32,7 @@ export async function manageMailbox(_state: SettingsActionState, formData: FormD
   if (!data) return { error: "Mailbox not found or you do not have permission to manage it." };
 
   revalidatePath("/settings", "layout");
-  revalidatePath("/emails");
+  revalidatePath("/email");
   revalidatePath("/flows");
   return { success: parsed.data.operation === "delete" ? "Mailbox connection deleted. Email history is preserved." : parsed.data.operation === "stop" ? "Mailbox stopped. Sending and syncing are disabled." : "Mailbox resumed." };
 }
@@ -292,7 +292,7 @@ export async function saveWorkspaceMailbox(_state: SettingsActionState, formData
     if (upsertError) throw new Error(upsertError.message);
 
     revalidatePath("/settings", "layout");
-    revalidatePath("/emails");
+    revalidatePath("/email");
     return { success: "Workspace mailbox connected and saved. SMTP and IMAP authentication succeeded." };
   } catch (error) {
     return { error: error instanceof Error ? `Mailbox connection failed: ${error.message}` : "The workspace email could not be saved." };
@@ -376,7 +376,7 @@ export async function savePersonalMailbox(_state: SettingsActionState, formData:
     if (upsertError) throw new Error(upsertError.message);
 
     revalidatePath("/settings", "layout");
-    revalidatePath("/emails");
+    revalidatePath("/email");
     return { success: "Personal mailbox connected and saved. SMTP and IMAP authentication succeeded." };
   } catch (error) {
     return { error: error instanceof Error ? `Mailbox connection failed: ${error.message}` : "The personal email could not be saved." };

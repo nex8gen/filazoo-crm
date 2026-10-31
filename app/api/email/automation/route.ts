@@ -50,6 +50,6 @@ export async function POST(request: Request) {
       status: 200,
     });
   } catch (error) {
-    return Response.json({ ok: false, error: error instanceof Error ? error.message : "Unable to save the automation flow." }, { status: 500 });
+    return Response.json({ ok: false, error: error instanceof Error ? error.message : "Unable to save the automation workflow." }, { status: 500 });
   }
 }

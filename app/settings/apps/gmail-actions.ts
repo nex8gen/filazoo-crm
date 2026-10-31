@@ -53,7 +53,7 @@ export async function saveGmailConnection(_state: SettingsActionState, formData:
     if (result.error?.code === "23505") return { error: "This address is already saved. Update its existing connection instead of adding it again." };
     if (result.error || !result.data) return { error: "Gmail could not be saved. Your other connections were kept." };
     revalidatePath("/settings", "layout");
-    revalidatePath("/emails");
+    revalidatePath("/email");
     return { success: existing.data?.is_active === false ? "Gmail credentials verified and updated. This account is still paused." : "Gmail connected. Sending and receiving authentication passed." };
   } catch {
     return { error: "Gmail could not authenticate. Check the email address, app password, and whether your Google account allows mail access. No connection was changed." };

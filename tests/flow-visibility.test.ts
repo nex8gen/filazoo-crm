@@ -55,7 +55,7 @@ function fixture(role: string | null = "operator") {
     async rpc(name: string, input: { p_user_id: string; p_flow_id: string; p_input: flowModel.FlowInput }) {
       calls.push({ table: "rpc", operation: name, args: [input] });
       const flow = rows.flows.find((row) => row.id === input.p_flow_id && row.user_id === input.p_user_id);
-      if (!flow) return { data: null, error: { message: "Flow not found." } };
+      if (!flow) return { data: null, error: { message: "Workflow not found." } };
       Object.assign(flow, { name: input.p_input.name, status: input.p_input.status });
       return { data: flow.id, error: null };
     },
@@ -114,8 +114,8 @@ test("owner-scoped reads remain isolated for legacy automation and save response
 test("non-admin editors cannot delete or update another creator's flow", async () => {
   for (const role of ["operator", "bd_manager"]) {
     const f = fixture(role);
-    await assert.rejects(f.flows.deleteFlow("alice", "flow-bob"), /Flow not found/);
-    await assert.rejects(f.flows.updateFlow("alice", "flow-bob", { status: "live" }), /Flow not found/);
+    await assert.rejects(f.flows.deleteFlow("alice", "flow-bob"), /Workflow not found/);
+    await assert.rejects(f.flows.updateFlow("alice", "flow-bob", { status: "live" }), /Workflow not found/);
     assert.ok(!f.calls.some((call) => call.table === "rpc"));
     assert.equal(f.validations.length, 0);
     assert.ok(f.calls.some((call) => call.operation === "eq" && call.args[0] === "user_id" && call.args[1] === "alice"));
@@ -247,7 +247,7 @@ test("bulk endpoint validates and bounds requests and returns explicit per-flow 
       assert.equal(userId, "alice");
       assert.equal(requested.length, 2);
       assert.equal(action, "paused");
-      return [{ id: requested[0], ok: true }, { id: requested[1], ok: false, error: "Flow not found." }];
+      return [{ id: requested[0], ok: true }, { id: requested[1], ok: false, error: "Workflow not found." }];
     } },
   }).POST;
   const request = (body: unknown) => new Request("http://localhost/api/flows/bulk", { method: "POST", body: JSON.stringify(body) });
@@ -272,9 +272,9 @@ test("shared flow insights are accessible and remain scoped to the selected flow
   assert.equal(runs.length, 1);
   assert.equal(runs[0].id, "run-bob");
   assert.ok(f.calls.some((call) => call.table === "flow_runs" && call.operation === "eq" && call.args[0] === "flow_id" && call.args[1] === "flow-bob"));
-  await assert.rejects(f.runtime.listFlowRunInsights("missing"), /Flow not found/);
+  await assert.rejects(f.runtime.listFlowRunInsights("missing"), /Workflow not found/);
   f.fail("database unavailable");
-  await assert.rejects(f.runtime.listFlowRunInsights("flow-bob"), /Unable to load flow: database unavailable/);
+  await assert.rejects(f.runtime.listFlowRunInsights("flow-bob"), /Unable to load workflow: database unavailable/);
 });
 
 test("shared listing handles empty workspaces and propagates database failures", async () => {
@@ -282,7 +282,7 @@ test("shared listing handles empty workspaces and propagates database failures",
   f.rows.flows = [];
   assert.equal((await f.flows.listWorkspaceFlows() as unknown[]).length, 0);
   f.fail("database unavailable");
-  await assert.rejects(f.flows.listWorkspaceFlows(), /Unable to load flows: database unavailable/);
+  await assert.rejects(f.flows.listWorkspaceFlows(), /Unable to load workflows: database unavailable/);
 });
 
 test("flow listing and insights routes return shared data without caching and enforce membership", async () => {
@@ -393,7 +393,7 @@ test("shared deep links open a read-only builder and the default shortcut select
   for (const [initialFlowId, canEdit, isAdmin, expectedDisabled] of [["flow-bob", true, false, true], ["flow-bob", true, true, false], ["default", true, false, false], ["flow-alice", false, false, true]] as const) {
     const tree = await render({ initialFlows, initialFlowId, viewerId: "alice", canEdit, isAdmin, mailboxOptions: [], memberOptions: [], filterOptions: {} });
     const nodes = elements(tree);
-    const nameInput = nodes.find((element) => element.type === "Input" && element.props["aria-label"] === "Flow name")!;
+    const nameInput = nodes.find((element) => element.type === "Input" && element.props["aria-label"] === "Workflow name")!;
     assert.equal(nameInput.props.disabled, expectedDisabled);
     const saveButton = nodes.find((element) => element.type === "Button" && elements(element.props.children).some((child) => child.type === "Save"))!;
     assert.equal(saveButton.props.disabled, expectedDisabled);
@@ -421,7 +421,7 @@ test("email builder prefills the scoped trigger and changing events retains its 
   const scope = { flowScope: "email", scopeCompanyId: "11111111-1111-4111-8111-111111111111", scopeContactId: "22222222-2222-4222-8222-222222222222", scopeLabel: "customer@example.com" };
   const hooks = { values: [] as unknown[], cursor: 0 };
   const render = builder(hooks);
-  const props = { initialFlows: [], viewerId: "alice", canEdit: true, mailboxOptions: [], memberOptions: [], filterOptions: { segments: [], countries: [] }, initialDraft: { ...flowModel.defaultFlowInput, triggerType: "email_received", triggerConfig: scope }, scopedContext: { config: scope, refreshUrl: "/api/email/flows?recipient=customer@example.com", returnHref: "/emails?thread=test" } };
+  const props = { initialFlows: [], viewerId: "alice", canEdit: true, mailboxOptions: [], memberOptions: [], filterOptions: { segments: [], countries: [] }, initialDraft: { ...flowModel.defaultFlowInput, triggerType: "email_received", triggerConfig: scope }, scopedContext: { config: scope, refreshUrl: "/api/email/flows?recipient=customer@example.com", returnHref: "/email?thread=test" } };
   const tree = await render(props);
   const inspector = elements(tree).find((node) => typeof node.type === "function" && node.type.name === "TriggerInspector")!;
   const output = (inspector.type as (props: Element["props"]) => Element)(inspector.props);

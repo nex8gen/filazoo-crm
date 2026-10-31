@@ -73,6 +73,6 @@ export function ErpConnectionForm({ initial, status, products }: { initial: ErpS
         <p className="text-xs text-muted-foreground">Turning off the connection pauses automatic and manual syncing. Existing catalog details are kept.</p>
       </form>
     </CardContent></Card>
-    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-4 text-sm"><p>{status.lastSyncedAt ? `Last successful sync: ${new Date(status.lastSyncedAt).toLocaleString("en", { timeZone: "Asia/Shanghai" })} (China time).` : "No successful sync yet."}</p><Button variant="outline" nativeButton={false} render={<Link href="/catalogs" />}>View product stock</Button></div>
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-4 text-sm"><p>{status.lastSyncedAt ? `Last successful sync: ${new Date(status.lastSyncedAt).toLocaleString("en", { timeZone: "Asia/Shanghai" })} (China time).` : "No successful sync yet."}</p><Button variant="outline" nativeButton={false} render={<Link href="/products" />}>View product stock</Button></div>
   </div>;
 }

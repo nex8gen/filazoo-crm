@@ -57,7 +57,7 @@ export async function saveNeteaseConnection(_state: SettingsActionState, formDat
     if (result.error?.code === "23505") return { error: "This address is already saved. Update its existing connection instead of adding it again." };
     if (result.error || !result.data) return { error: "Lingxi Mail could not be saved. Your other connections were kept." };
     revalidatePath("/settings", "layout");
-    revalidatePath("/emails");
+    revalidatePath("/email");
     return { success: existing.data?.is_active === false ? "Lingxi credentials verified and updated. This account is still paused." : "Lingxi Mail connected. Sending and receiving authentication passed." };
   } catch {
     return { error: "NetEase could not authenticate. Check your client authorization password, IMAP/SMTP access, and the server profile shown in NetEase settings. No connection was changed." };

@@ -43,7 +43,7 @@ async function insertFlow(userId: string, input: FlowInput) {
   if (isEmailScopedFlow(input.triggerConfig)) input = { ...input, triggerConfig: await validateEmailFlowScope(input.triggerConfig) };
   if (input.status === "live") await validateFlowResources(userId, input);
   const { data, error } = await createSupabaseAdmin().rpc("save_automation_flow", { p_user_id: userId, p_flow_id: null, p_input: input });
-  if (error) throw new Error(`Unable to create flow: ${error.message}`);
+  if (error) throw new Error(`Unable to create workflow: ${error.message}`);
   return data as string;
 }
 
@@ -74,7 +74,7 @@ async function loadFlowSteps(ids: string[]): Promise<StepRow[]> {
   for (let offset = 0; ; offset += 1000) {
     const { data, error } = await admin.from("flow_steps").select("id,flow_id,position,type,config")
       .in("flow_id", ids).order("flow_id").order("position").range(offset, offset + 999);
-    if (error) throw new Error(`Unable to load flow steps: ${error.message}`);
+    if (error) throw new Error(`Unable to load workflow steps: ${error.message}`);
     steps.push(...((data ?? []) as StepRow[]));
     if (!data || data.length < 1000) return steps;
   }
@@ -92,14 +92,14 @@ async function loadFlows(userId?: string, flowIds?: string[], scope?: JsonConfig
     if (scope.flowScope === "email") query = query.eq("trigger_config->>scopeContactId", scope.scopeContactId);
   }
   const { data: rows, error } = await query;
-  if (error) throw new Error(`Unable to load flows: ${error.message}`);
+  if (error) throw new Error(`Unable to load workflows: ${error.message}`);
   const ids = (rows ?? []).map((row) => row.id);
   if (!ids.length) return [];
   const [steps, { data: runs, error: runError }] = await Promise.all([
     loadFlowSteps(ids),
     admin.from("flow_runs").select("flow_id,status").in("flow_id", ids),
   ]);
-  if (runError) throw new Error(`Unable to load flow runs: ${runError.message}`);
+  if (runError) throw new Error(`Unable to load workflow runs: ${runError.message}`);
   return mapFlows((rows ?? []) as FlowRow[], steps, (runs ?? []) as RunRow[]);
 }
 
@@ -120,11 +120,11 @@ export async function updateFlow(userId: string, flowId: string, input: FlowInpu
   let query = admin.from("flows").select("user_id,trigger_config").eq("id", flowId);
   if (viewer.role !== "admin") query = query.eq("user_id", viewer.id);
   const { data: flow, error: lookupError } = await query.maybeSingle();
-  if (lookupError) throw new Error(`Unable to load flow: ${lookupError.message}`);
-  if (!flow) throw new Error("Flow not found.");
+  if (lookupError) throw new Error(`Unable to load workflow: ${lookupError.message}`);
+  if (!flow) throw new Error("Workflow not found.");
   const previous = (flow.trigger_config ?? {}) as JsonConfig;
   if (isEmailScopedFlow(previous) && ["flowScope", "scopeCompanyId", "scopeContactId"].some((key) => previous[key] !== input.triggerConfig[key])) {
-    throw new Error("An email flow must keep its original email or company scope.");
+    throw new Error("An email workflow must keep its original email or company scope.");
   }
   if (isEmailScopedFlow(input.triggerConfig)) input = { ...input, triggerConfig: await validateEmailFlowScope(input.triggerConfig) };
   // Authorize the actor above, then save using the existing owner identity so
@@ -141,8 +141,8 @@ export async function deleteFlow(userId: string, flowId: string) {
   let query = createSupabaseAdmin().from("flows").delete().eq("id", flowId);
   if (viewer.role !== "admin") query = query.eq("user_id", viewer.id);
   const { data, error } = await query.select("id").maybeSingle();
-  if (error) throw new Error(`Unable to delete flow: ${error.message}`);
-  if (!data) throw new Error("Flow not found.");
+  if (error) throw new Error(`Unable to delete workflow: ${error.message}`);
+  if (!data) throw new Error("Workflow not found.");
 }
 
 export async function bulkUpdateFlows(userId: string, ids: string[], action: FlowBulkAction): Promise<FlowBulkResult[]> {
@@ -162,12 +162,12 @@ export async function bulkUpdateFlows(userId: string, ids: string[], action: Flo
           return { id, ok: true };
         }
         const flow = byId.get(id);
-        if (!flow) throw new Error("Flow not found.");
+        if (!flow) throw new Error("Workflow not found.");
         const parsed = flowInputSchema.safeParse({ ...flow, status: action });
-        if (!parsed.success) throw new Error(parsed.error.issues[0]?.message || "Invalid flow.");
+        if (!parsed.success) throw new Error(parsed.error.issues[0]?.message || "Invalid workflow.");
         return { id, ok: true, flow: await updateFlow(userId, id, parsed.data) };
       } catch (error) {
-        return { id, ok: false, error: error instanceof Error ? error.message : "Unable to update flow." };
+        return { id, ok: false, error: error instanceof Error ? error.message : "Unable to update workflow." };
       }
     }));
     results.push(...batch);

@@ -25,7 +25,7 @@ export const navigation: NavigationGroup[] = [
     eyebrow: "CRM",
     icon: LayoutDashboard,
     items: [
-      { label: "Analytics", href: "/", icon: ChartNoAxesCombined, description: "Performance at a glance" },
+      { label: "Analytics", href: "/analytics", icon: ChartNoAxesCombined, description: "Performance at a glance" },
       { label: "My Day", href: "/my-day", icon: ListTodo, description: "Your daily priorities and next actions" },
       { label: "Tasks and notifications", href: "/tasks", icon: ListTodo, description: "Assigned work, reminders and alerts" },
     ],
@@ -35,8 +35,8 @@ export const navigation: NavigationGroup[] = [
     eyebrow: "Accounts",
     icon: Building2,
     items: [
-      { label: "Company", href: "/companies", icon: Building2, description: "Accounts and prospects" },
-      { label: "Segment", href: "/segments", icon: Tags, description: "Companies grouped by business segment" },
+      { label: "Companies", href: "/companies", icon: Building2, description: "Accounts and prospects" },
+      { label: "Segments", href: "/segments", icon: Tags, description: "Companies grouped by business segment" },
     ],
   },
   {
@@ -51,7 +51,7 @@ export const navigation: NavigationGroup[] = [
     eyebrow: "Mailbox",
     icon: Mail,
     direct: true,
-    items: [{ label: "Email", href: "/emails", icon: Mail, description: "Mailbox and email conversations" }],
+    items: [{ label: "Email", href: "/email", icon: Mail, description: "Mailbox and email conversations" }],
   },
   {
     label: "Messenger",
@@ -61,19 +61,19 @@ export const navigation: NavigationGroup[] = [
     items: [{ label: "Messenger", href: "/messenger", icon: MessageSquareText, description: "Facebook ad leads and Page Messenger replies" }],
   },
   {
-    label: "AI Automation",
-    eyebrow: "Automation",
+    label: "Workflow",
+    eyebrow: "Workflow",
     icon: AiIcon,
     direct: true,
-    items: [{ label: "AI Automation", href: "/lead-channel/ai-agent", icon: AiIcon, description: "Email follow-up flows and automation rules" }],
+    items: [{ label: "Workflow", href: "/workflow", icon: AiIcon, description: "Email follow-up workflows and automation rules" }],
   },
   {
     label: "Products",
     eyebrow: "Product management",
     icon: Package2,
     items: [
-      { label: "Products", href: "/catalogs", icon: Package2, description: "Products, pricing and availability", exact: true, activePrefix: "/catalogs/products/" },
-      { label: "Company Quotations", href: "/catalogs/companies", icon: BookOpen, description: "Customer offers, versions and draft orders" },
+      { label: "Products", href: "/products", icon: Package2, description: "Products, pricing and availability" },
+      { label: "Company Quotations", href: "/company-quotations", icon: BookOpen, description: "Customer offers, versions and draft orders" },
     ],
   },
   {

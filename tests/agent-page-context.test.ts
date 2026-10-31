@@ -36,7 +36,7 @@ test("an incomplete flow editor is marked unsaved without rejecting the assistan
   const context = readAssistantPageContext(page({ "data-ai-flow-draft": '{"name":""}', "data-ai-flow-unsaved": "true" }));
   assert.equal(context.flowDraft, undefined);
   assert.equal(context.flowUnsaved, true);
-  assert.equal(workspaceAssistantSchema.safeParse({ mode: "work", pageContext: context, pathname: "/lead-channel/ai-agent", pageLabel: "Flows", pageText: "", messages: [{ role: "user", content: "Add an email step here" }] }).success, true);
+  assert.equal(workspaceAssistantSchema.safeParse({ mode: "work", pageContext: context, pathname: "/workflow", pageLabel: "Flows", pageText: "", messages: [{ role: "user", content: "Add an email step here" }] }).success, true);
 });
 
 const require = createRequire(import.meta.url);

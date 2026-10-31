@@ -24,7 +24,7 @@ export async function PATCH(request: Request, context: Context) {
   try {
     const result = await mutateQuotation(id, input, viewer);
     const detail = await quotationDetail(id, viewer);
-    revalidatePath("/catalogs/companies"); revalidatePath(`/catalogs/companies/${id}`); revalidatePath(`/companies/${detail.catalog.company_id}`); revalidatePath("/my-day");
+    revalidatePath("/company-quotations"); revalidatePath(`/company-quotations/${id}`); revalidatePath(`/companies/${detail.catalog.company_id}`); revalidatePath("/my-day");
     return Response.json({ ...result, detail }, { headers });
   } catch (error) { return failure(error); }
 }

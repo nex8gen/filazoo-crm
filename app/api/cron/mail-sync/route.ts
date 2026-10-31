@@ -9,6 +9,10 @@ export async function GET(request: Request) {
   if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) return Response.json({ error: "Unauthorized" }, { status: 401 });
   const task = new URL(request.url).searchParams.get("task");
   if (task === "health") return Response.json({ ok: true, version: "mail-sync-fast-v4" }, { headers: { "Cache-Control": "no-store" } });
+  if (task === "tags") {
+    const tags = await processAutomaticConversationTags({ maxConversations: 10, budgetMs: 220_000 });
+    return Response.json({ ok: true, tags }, { headers: { "Cache-Control": "no-store" } });
+  }
   if (task === "once") {
     const result = await runMailSyncWorker({ budgetMs: 120_000 });
     const tags = await processAutomaticConversationTags({ maxConversations: 3 });

@@ -38,7 +38,7 @@ function AccountRow({ account, canManage }: { account: EmailConnectionAccount; c
       </div>
       <div className="flex flex-wrap items-center gap-2 xl:justify-end">
         <Badge variant="outline" className={account.status === "connected" ? "border-emerald-600/20 text-emerald-700 dark:text-emerald-400" : "text-muted-foreground"}>{account.status === "connected" ? <CheckCircle2 /> : null}{connectionStatusLabel(account.status)}</Badge>
-        <Button nativeButton={false} render={<Link href={`/emails?mailbox=${encodeURIComponent(account.id)}`} />} variant="outline" size="sm">Open inbox<ArrowRight /></Button>
+        <Button nativeButton={false} render={<Link href={`/email?mailbox=${encodeURIComponent(account.id)}`} />} variant="outline" size="sm">Open inbox<ArrowRight /></Button>
         {canManage && provider ? <Button nativeButton={false} render={<Link href={`${emailProviderHref(provider.id, account.scope)}#account-${account.id}`} />} variant="ghost" size="sm" aria-label={`Manage ${account.email}`}>Manage</Button> : null}
         {canManage ? <div className="flex items-center gap-2">{pending ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin text-muted-foreground" /> : null}<Switch checked={account.isActive} disabled={pending} aria-label={`Sending and syncing: ${account.email}`} onCheckedChange={enabled => { const data = new FormData(); data.set("id", account.id); data.set("scope", account.scope); data.set("operation", enabled ? "resume" : "pause"); startTransition(() => action(data)); }} /></div> : null}
       </div>

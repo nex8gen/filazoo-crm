@@ -146,7 +146,7 @@ export async function validateFlowResources(userId: string, input: FlowInput) {
   const admin = createSupabaseAdmin();
   if (input.triggerConfig.savedSegmentId) {
     const { data } = await admin.from("company_segments").select("rules").eq("id", input.triggerConfig.savedSegmentId).maybeSingle().throwOnError();
-    if (!data) throw new Error("The saved segment no longer exists. Choose another segment before enabling this flow.");
+    if (!data) throw new Error("The saved segment no longer exists. Choose another segment before enabling this workflow.");
     segmentRulesSchema.parse(data.rules);
   }
   for (const step of allFlowActions(input.steps)) {
@@ -185,7 +185,7 @@ async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: F
   const contact = await getContact(run.contact_id);
   if (!contact) throw new Error("Email step requires a CRM contact.");
   if (!matchesFlowCustomer(flow.trigger_config ?? {}, contact.id) || !matchesFlowScope(flow.trigger_config ?? {}, contact.company_id, contact.id)) {
-    await logRun(run.id, step.id, { action: "cancelled", reason: "Customer is no longer selected for this flow." });
+    await logRun(run.id, step.id, { action: "cancelled", reason: "Customer is no longer selected for this workflow." });
     await finishRun(run.id, "cancelled");
     return "terminal" as const;
   }
@@ -303,7 +303,7 @@ async function executeAction(run: RunRow, flow: FlowRow, step: FlowStep, facts: 
     if (previous?.category !== step.config.category) await enrollMatchingFlows({ type: "category_changed", conversationId: run.conversation_id, messageKey,
       contactId: run.contact_id, companyId: run.company_id, category: String(step.config.category), eventKey: `category:${run.id}:${step.id}` });
   } else if (step.type === "update_company") {
-    if (!run.company_id) throw new Error("Update company requires a company-backed flow run.");
+    if (!run.company_id) throw new Error("Update company requires a company-backed workflow run.");
     const writes = [];
     if (step.config.companyStatus || step.config.segment) writes.push(admin.from("companies").update({
       ...(step.config.companyStatus ? { status: step.config.companyStatus } : {}),
@@ -336,14 +336,14 @@ async function executeAction(run: RunRow, flow: FlowRow, step: FlowStep, facts: 
 export async function processFlowRun(runId: string) {
   const admin = createSupabaseAdmin();
   const { data: runData, error: runError } = await admin.from("flow_runs").select("id,flow_id,conversation_id,contact_id,company_id,current_step,status,next_run_at,started_at,context").eq("id", runId).maybeSingle();
-  if (runError || !runData) throw new Error(runError?.message || "Flow run not found.");
+  if (runError || !runData) throw new Error(runError?.message || "Workflow run not found.");
   const run = runData as RunRow;
   if (run.status !== "active" || (run.next_run_at && Date.parse(run.next_run_at) > Date.now())) return { status: run.status, processed: 0 };
   const [{ data: flowData, error: flowError }, { data: stepRows, error: stepError }] = await Promise.all([
     admin.from("flows").select("id,user_id,trigger_type,trigger_config,status").eq("id", run.flow_id).maybeSingle(),
     admin.from("flow_steps").select("id,flow_id,position,type,config").eq("flow_id", run.flow_id).order("position"),
   ]);
-  if (flowError || !flowData || stepError) throw new Error(flowError?.message || stepError?.message || "Flow definition is unavailable.");
+  if (flowError || !flowData || stepError) throw new Error(flowError?.message || stepError?.message || "Workflow definition is unavailable.");
   const flow = flowData as FlowRow;
   if (flow.status === "paused") return { status: "paused", processed: 0 };
   if (flow.status !== "live") { await finishRun(run.id, "cancelled"); return { status: "cancelled", processed: 0 }; }
@@ -356,7 +356,7 @@ export async function processFlowRun(runId: string) {
       const contact = run.contact_id ? await getContact(run.contact_id) : null;
       const currentCompanyId = run.contact_id ? contact?.company_id : run.company_id;
       if (!matchesFlowScope(flow.trigger_config, currentCompanyId, contact?.id)) {
-        await logRun(run.id, null, { action: "cancelled", reason: "Contact no longer matches this email or company flow." });
+        await logRun(run.id, null, { action: "cancelled", reason: "Contact no longer matches this email or company workflow." });
         await finishRun(run.id, "cancelled");
         return { status: "cancelled", processed: 0 };
       }
@@ -427,7 +427,7 @@ export async function processFlowRun(runId: string) {
     await finishRun(run.id, "done");
     return { status: "done", processed };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Flow execution failed.";
+    const message = error instanceof Error ? error.message : "Workflow execution failed.";
     await finishRun(run.id, "failed", message);
     return { status: "failed", processed, error: message };
   }
@@ -454,7 +454,7 @@ export async function enrollMatchingFlows(event: TriggerEvent) {
     flowQuery = flowQuery.lte("email_enrollment_started_at", event.occurredAt);
   }
   const { data: flowRows, error } = await flowQuery;
-  if (error) throw new Error(`Unable to load matching flows: ${error.message}`);
+  if (error) throw new Error(`Unable to load matching workflows: ${error.message}`);
   const companyId = await resolveCompanyId(event.contactId, event.companyId);
   event = { ...event, companyId };
   const eventKey = event.eventKey || `${event.type}:${event.conversationId}:${randomUUID()}`;
@@ -483,7 +483,7 @@ export async function enrollMatchingFlows(event: TriggerEvent) {
         previousQuery = previousQuery.gt("started_at", new Date(Date.now() - milliseconds).toISOString());
       }
       const { data: previous } = await previousQuery.limit(1).maybeSingle().throwOnError();
-      if (previous) { results.push({ flowId: row.id, enrolled: false, reason: reentryMode === "no_reentry" ? "Customer already entered this flow" : "Customer is still in the re-entry waiting period" }); continue; }
+      if (previous) { results.push({ flowId: row.id, enrolled: false, reason: reentryMode === "no_reentry" ? "Customer already entered this workflow" : "Customer is still in the re-entry waiting period" }); continue; }
     }
     const { data: definition } = await admin.from("flow_steps").select("id,position,type,config").eq("flow_id", row.id).order("position").throwOnError();
     flowInputSchema.parse({ name: "Enrollment validation", triggerType: row.trigger_type, triggerConfig: row.trigger_config, status: "live", steps: definition });
@@ -523,7 +523,7 @@ export async function scanTimeBasedFlowTriggers(flowId?: string) {
   let query = admin.from("flows").select("id,user_id,trigger_type,trigger_config,status,lead_enrollment_started_at,email_enrollment_started_at").eq("status", "live").in("trigger_type", ["new_lead", "lead_added_to_list", "email_received", "no_reply", "company_segment_changed"]);
   if (flowId) query = query.eq("id", flowId);
   const { data: flows, error } = await query;
-  if (error) throw new Error(`Unable to scan flow triggers: ${error.message}`);
+  if (error) throw new Error(`Unable to scan workflow triggers: ${error.message}`);
   let enrolled = 0;
   for (const flow of (flows ?? []) as (FlowRow & { lead_enrollment_started_at: string | null; email_enrollment_started_at: string | null })[]) {
     if (flow.trigger_type === "company_segment_changed") {
@@ -621,7 +621,7 @@ export async function processDueFlowRuns(limit = 50, options: { syncMailbox?: bo
   const { data: interrupted } = await admin.from("flow_runs").select("id").eq("status", "active").lt("locked_at", new Date(Date.now() - 15 * 60000).toISOString()).throwOnError();
   for (const run of interrupted ?? []) await finishRun(run.id, "failed", "Execution was interrupted. Review the last action before restarting to avoid duplicate delivery.");
   const { data, error } = await admin.from("flow_runs").select("id").eq("status", "active").is("locked_at", null).or(`next_run_at.is.null,next_run_at.lte.${new Date().toISOString()}`).order("next_run_at").limit(limit);
-  if (error) throw new Error(`Unable to load due flow runs: ${error.message}`);
+  if (error) throw new Error(`Unable to load due workflow runs: ${error.message}`);
   const results = [];
   for (const run of data ?? []) {
     try { results.push({ runId: run.id, ...(await processFlowRun(run.id)) }); }
@@ -637,9 +637,9 @@ export async function listFlowRunInsights(flowId: string) {
   await requireWorkspaceMember();
   const admin = createSupabaseAdmin();
   const { data: flow, error: flowError } = await admin.from("flows").select("id").eq("id", flowId).maybeSingle();
-  if (flowError) throw new Error(`Unable to load flow: ${flowError.message}`);
-  if (!flow) throw new Error("Flow not found.");
+  if (flowError) throw new Error(`Unable to load workflow: ${flowError.message}`);
+  if (!flow) throw new Error("Workflow not found.");
   const { data, error } = await admin.from("flow_runs").select("id,status,current_step,started_at,finished_at,next_run_at,conversation_id,flow_run_logs(id,result,error,created_at)").eq("flow_id", flowId).order("started_at", { ascending: false }).limit(25);
-  if (error) throw new Error(`Unable to load flow insights: ${error.message}`);
+  if (error) throw new Error(`Unable to load workflow insights: ${error.message}`);
   return data ?? [];
 }

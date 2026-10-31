@@ -9,7 +9,7 @@ const baseFacts: FlowFacts = { customerReplied: false, openedEmail: false, click
 /** Bounded, deterministic condition coverage. This is a simulation, never a delivery test. */
 export function testFlowScenarios(input: FlowInput, limit = 256, now = new Date()) {
   const parsed = flowInputSchema.safeParse(input);
-  if (!parsed.success) throw new Error(parsed.error.issues[0]?.message || "Complete the flow settings first.");
+  if (!parsed.success) throw new Error(parsed.error.issues[0]?.message || "Complete the workflow settings first.");
   const flow = parsed.data;
   const domains = new Map<ScenarioField, Set<string | number | boolean | null>>();
   const add = (field: ScenarioField, values: Array<string | number | boolean | null>) => {

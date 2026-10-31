@@ -95,7 +95,7 @@ async function main() {
     assert.ok(actualReply && actualReply.inReplyTo === request.message_id);
     const evidence = replyTaskEvidence(actualReply);
     const { data: accepted } = await db.rpc("finish_agent_reply_request", { p_id: request.id, p_user_id: viewer.id, p_revision: request.revision,
-      p_outcome: "received", p_evidence: evidence, p_notes: `[QA synthetic event boundary: self-mail was correctly classified outbound.]\n${replyTaskNotes(request, evidence)}`, p_thread_url: `/emails?mailbox=${mailbox.id}` }).throwOnError();
+      p_outcome: "received", p_evidence: evidence, p_notes: `[QA synthetic event boundary: self-mail was correctly classified outbound.]\n${replyTaskNotes(request, evidence)}`, p_thread_url: `/email?mailbox=${mailbox.id}` }).throwOnError();
     assert.equal(accepted, true); checkpoint.syntheticHandoff = true; save();
     ({ data: handedOff } = await db.from("agent_reply_requests").select("status,task_id").eq("id", checkpoint.requestId).single().throwOnError());
   }

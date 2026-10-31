@@ -2,7 +2,7 @@ import { isSampleEmailSubject } from "../email-samples.ts";
 export { isSampleEmailSubject } from "../email-samples.ts";
 import { requireWorkspaceMember } from "../auth.ts";
 import type { WorkspaceViewer } from "../auth.ts";
-import { formatRelativeDate, getInitials } from "../crm-model.ts";
+import { companySourcePresentation, formatRelativeDate, getInitials } from "../crm-model.ts";
 import { env, hasSupabaseConfig } from "../env.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 import type { Catalog, Company, CompanyActivity, CompanyDetails, ContactOption, DataMode, EmailDraft, Product, Reply } from "../types.ts";
@@ -123,13 +123,6 @@ function websiteDomain(website: string | null) {
   }
 }
 
-function sourceLabel(source: string | null) {
-  if (source?.includes("shopify")) return "Shopify B2B";
-  if (source?.includes("meta") || source?.includes("facebook") || source?.includes("messenger")) return "Meta";
-  if (source === "manual") return "Manual";
-  return source ? source.replaceAll("_", " ") : "Imported";
-}
-
 function getOutreachStatus(contacts: CompanyRow["contacts"], source: string | null) {
   const contactList = Array.isArray(contacts) ? contacts : contacts ? [contacts] : [];
   const emails = contactList.flatMap((contact) => Array.isArray(contact.emails) ? contact.emails : contact.emails ? [contact.emails] : []);
@@ -176,7 +169,7 @@ function mapCompany(row: CompanyRow, ownerNames = new Map<string, string>(), own
     city: row.city || "",
     segment: row.segment || "Unclassified",
     source: row.source || "imported",
-    sourceLabel: sourceLabel(row.source),
+    sourceLabel: companySourcePresentation(row.source).label,
     addedAt: row.discovered_at || row.created_at,
     paidOrderCount,
     fitScore: profile?.fit_score ?? 0,
@@ -221,7 +214,7 @@ export async function listSegmentCompanies(): Promise<{ mode: DataMode; companie
     if (error) throw new Error(`Unable to load segments: ${error.message}`);
     for (const row of (data ?? []) as unknown as CompanyRow[]) companies.push({
       id: row.id, name: row.name, segment: row.segment || "Unclassified", country: row.country || "Unknown",
-      source: row.source || "imported", sourceLabel: sourceLabel(row.source),
+      source: row.source || "imported", sourceLabel: companySourcePresentation(row.source).label,
       fitScore: first(row.company_profiles)?.fit_score ?? 0,
       hasEmail: Boolean(first(row.contacts)?.email?.trim()),
     });
@@ -388,7 +381,7 @@ export async function getCompanyDetails(id: string): Promise<{ mode: DataMode; d
         id: `catalog-${catalog.id}`,
         type: "catalog" as const,
         title: `Catalog v${catalog.version} created`,
-        href: `/catalogs/companies/${catalog.id}`,
+        href: `/company-quotations/${catalog.id}`,
         detail: `${catalog.product_skus?.length ?? 0} products included.`,
         actor: creatorId ? memberNames.get(creatorId) || "Workspace member" : "Creator not recorded",
         actorId: creatorId,

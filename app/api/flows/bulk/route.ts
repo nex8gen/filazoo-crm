@@ -10,6 +10,6 @@ export async function POST(request: Request) {
     const results = await bulkUpdateFlows(viewer.id, parsed.data.ids, parsed.data.action);
     return Response.json({ ok: true, results }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    return Response.json({ ok: false, error: error instanceof Error ? error.message : "Unable to update flows." }, { status: 500 });
+    return Response.json({ ok: false, error: error instanceof Error ? error.message : "Unable to update workflows." }, { status: 500 });
   }
 }

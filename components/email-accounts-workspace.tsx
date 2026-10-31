@@ -61,7 +61,7 @@ export function EmailAccountsWorkspace({ initialData, ...props }: Props) {
       snapshots.current.set(mailboxId, next);
       setData(next);
       setHasSwitched(true);
-      if (pushHistory) window.history.pushState(null, "", `/emails?mailbox=${encodeURIComponent(mailboxId)}`);
+      if (pushHistory) window.history.pushState(null, "", `/email?mailbox=${encodeURIComponent(mailboxId)}`);
     };
     const cached = snapshots.current.get(mailboxId);
     if (cached) {
@@ -78,7 +78,7 @@ export function EmailAccountsWorkspace({ initialData, ...props }: Props) {
       if (navigation.current !== sequence) return;
       setError(reason instanceof Error ? reason.message : "Unable to switch mailboxes. Please try again.");
       if (!pushHistory && current.current.selectedMailboxId) {
-        window.history.replaceState(null, "", `/emails?mailbox=${encodeURIComponent(current.current.selectedMailboxId)}`);
+        window.history.replaceState(null, "", `/email?mailbox=${encodeURIComponent(current.current.selectedMailboxId)}`);
       }
     } finally {
       if (navigation.current === sequence) setSwitchingMailboxId(null);
@@ -102,7 +102,7 @@ export function EmailAccountsWorkspace({ initialData, ...props }: Props) {
       if (!snapshots.current.has(mailbox.id)) void loadMailbox(mailbox.id).catch(() => undefined);
     }
     const onBack = () => {
-      if (window.location.pathname !== "/emails") return;
+      if (window.location.pathname !== "/email") return;
       const mailboxId = new URLSearchParams(window.location.search).get("mailbox") ?? initialData.defaultSenderId;
       if (mailboxId) void switchMailbox(mailboxId, false);
     };

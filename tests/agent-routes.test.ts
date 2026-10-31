@@ -187,7 +187,7 @@ test("the assistant never returns raw email JSON and only prepares actions from 
         "@/lib/ai/gateway": {}, "@/lib/ai/assistant-provider-error": providerError,
         "@/lib/ai/agent-execution": { prepareAgentActions: async (values: assistant.WorkspaceAction[]) => { prepared += values.length; return []; } },
       }, { GEMINI_API_KEY: "synthetic" });
-      const response = await post(request({ mode, pathname: "/emails", pageLabel: "Email", pageText: "", messages: [{ role: "user", content: "Write an email and attach the catalog PDF" }] }));
+      const response = await post(request({ mode, pathname: "/email", pageLabel: "Email", pageText: "", messages: [{ role: "user", content: "Write an email and attach the catalog PDF" }] }));
       assert.equal(response.status, 200);
       const body = await response.json();
       assert.doesNotMatch(body.output, /```|FILAZOO_|buyer@example|"to"|"text"/);
@@ -208,7 +208,7 @@ test("Chat and Agent reload the open email and bind reply proposals to its selec
       "@/lib/ai/gateway": {}, "@/lib/ai/assistant-provider-error": providerError,
       "@/lib/ai/agent-execution": { prepareAgentActions: async (values: assistant.WorkspaceAction[]) => { preparations++; assert.equal(values[0].type, "write_email"); if (values[0].type === "write_email") assert.equal(values[0].email.mailboxId, id); return []; } },
     }, { GEMINI_API_KEY: "synthetic" });
-    const response = await post(request({ mode, pathname: "/emails", pageLabel: "Email", pageText: "", pageContext: { emailId: "selected-email", mailboxId: id }, messages: [{ role: "user", content: "Write a reply to this" }] }));
+    const response = await post(request({ mode, pathname: "/email", pageLabel: "Email", pageText: "", pageContext: { emailId: "selected-email", mailboxId: id }, messages: [{ role: "user", content: "Write a reply to this" }] }));
     assert.equal(response.status, 200);
     assert.equal(loads, 1);
     assert.equal(preparations, mode === "work" ? 1 : 0);
@@ -323,7 +323,7 @@ test("email lookup failures, invalid requests and repeated reads never save part
       "@/lib/ai/agent-context": { loadAgentContext: async () => ({}), searchAgentEmails: async () => { reads++; if (scenario === "failure") throw new Error("Private mailbox detail"); return { messages: [] }; } },
       "@/lib/ai/agent-execution": { prepareAgentActions: async () => { prepares++; return []; } },
     }, { GEMINI_API_KEY: "test-key" });
-    const response = await post(request({ mode: scenario === "analyze" ? "analyze" : "work", pathname: "/emails", pageLabel: "Email", pageText: "", messages: [{ role: "user", content: "Check emails" }] }));
+    const response = await post(request({ mode: scenario === "analyze" ? "analyze" : "work", pathname: "/email", pageLabel: "Email", pageText: "", messages: [{ role: "user", content: "Check emails" }] }));
     assert.equal(response.status, 200);
     const body = await response.json();
     assert.deepEqual(body.actions, []);
@@ -460,7 +460,7 @@ test("CRM read failures and read budgets never create partial mutations or run i
       "@/lib/ai/crm-records": { readCrmRecords: async () => { reads++; if (scenario === "failure") throw new Error("Private connection error"); return { records: [] }; } },
       "@/lib/ai/agent-execution": { prepareAgentActions: async () => { preparations++; return []; } },
     }, { GEMINI_API_KEY: "synthetic" });
-    const response = await post(request({ mode: scenario === "analyze" ? "analyze" : "work", pathname: "/catalogs", pageLabel: "Products", pageText: "", messages: [{ role: "user", content: "Find PLA" }] }));
+    const response = await post(request({ mode: scenario === "analyze" ? "analyze" : "work", pathname: "/products", pageLabel: "Products", pageText: "", messages: [{ role: "user", content: "Find PLA" }] }));
     const body = await response.json();
     assert.deepEqual(body.actions, []); assert.equal(preparations, 0); assert.equal(reads, scenario === "budget" ? 4 : scenario === "failure" ? 1 : 0);
     assert.ok(!body.output.includes("Private connection error")); assert.ok(!body.output.includes("FILAZOO_"));
@@ -698,7 +698,7 @@ test("email context failures are reported separately from provider failures and 
     "@/lib/ai/agent-context": { loadAgentContext: async () => { throw new Error("Private database failure details"); } },
     "@/lib/ai/agent-execution": { prepareAgentActions: async () => { prepared++; return []; } },
   }, { GEMINI_API_KEY: "existing-gemini-key" });
-  const response = await post(request({ language: "zh-CN", mode: "work", pathname: "/emails", pageContext: { emailId: "mail-1" }, pageLabel: "Email", pageText: "", messages: [{ role: "user", content: "Create profile for this company" }] }));
+  const response = await post(request({ language: "zh-CN", mode: "work", pathname: "/email", pageContext: { emailId: "mail-1" }, pageLabel: "Email", pageText: "", messages: [{ role: "user", content: "Create profile for this company" }] }));
   assert.equal(response.status, 503);
   const body = await response.json();
   assert.equal(body.error, i18n.translateUiText("Unable to load the selected email or CRM records. Refresh the page and try again.", "zh-CN"));

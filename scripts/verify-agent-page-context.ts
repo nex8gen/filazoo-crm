@@ -37,7 +37,7 @@ async function plan(pathname: string, question: string, data: object) {
   return result.actions[0];
 }
 
-const email = await plan("/emails", "Can you write a reply to this email?", {
+const email = await plan("/email", "Can you write a reply to this email?", {
   currentCompany: null, currentCompanyId: null,
   currentEmail: { id: "synthetic-mail", contact: "buyer@example.com", subject: "Material inquiry", direction: "inbound", text: "I want PLA and TPU95. Monthly volume 500-999 kg.", contentAvailable: true },
   contextWarnings: ["Invoice defaults unavailable. Do not infer missing facts."], products: [], permissions: { canAct: true, role: "admin" },
@@ -48,7 +48,7 @@ assert.equal(email.email.delivery, "draft"); assert.equal(email.email.sourceEmai
 console.log("PASS: open unmatched email produces a threaded draft despite unavailable invoice defaults.");
 
 for (const delivery of ["draft", "send"] as const) {
-  const catalog = await plan("/emails", delivery === "draft"
+  const catalog = await plan("/email", delivery === "draft"
     ? "Can you write email for this customer and attach the catalog PDF also?"
     : "Send this customer a reply with our complete product catalog PDF attached.", {
     currentCompany: null, currentCompanyId: null,
@@ -75,7 +75,7 @@ assert.equal(message.operation.messageId, id);
 console.log("PASS: open Messenger conversation produces a draft using the real inbound message ID.");
 
 const edited = { ...defaultFlowInput, name: "My unsaved flow name", status: "paused" as const };
-const action = await plan("/lead-channel/ai-agent", "Add a one-day wait at the end of this flow. Keep my unsaved name and all existing steps. Keep it paused.", {
+const action = await plan("/workflow", "Add a one-day wait at the end of this flow. Keep my unsaved name and all existing steps. Keep it paused.", {
   currentFlow: { id, ...defaultFlowInput, status: "paused" }, flowEditor: { definition: edited, unsaved: true, selectedStepId: "trigger", evidenceOnly: true }, flowCapabilities: flowAgentCapabilities(), permissions: { canAct: true, role: "admin" },
 });
 assert.equal(action.type, "crm_action");

@@ -143,7 +143,7 @@ test("deleting the last flow leaves the list empty across repeated loads", async
 });
 test("flow deletion rejects missing flows and database failures", async () => {
   state.rows = [];
-  await assert.rejects(deleteFlow("actor", id), /Flow not found/);
+  await assert.rejects(deleteFlow("actor", id), /Workflow not found/);
   state.error = { message: "database unavailable" };
   await assert.rejects(deleteFlow("actor", id), /database unavailable/);
 });

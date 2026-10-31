@@ -8,6 +8,6 @@ export async function GET(request: Request) {
     const scope = await resolveEmailFlowScope(Object.fromEntries(new URL(request.url).searchParams));
     return Response.json({ ok: true, flows: await listEmailFlows(scope) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    return Response.json({ ok: false, error: error instanceof Error ? error.message : "Unable to load email flows." }, { status: 400 });
+    return Response.json({ ok: false, error: error instanceof Error ? error.message : "Unable to load email workflows." }, { status: 400 });
   }
 }

@@ -94,12 +94,12 @@ export async function executeProductivityOperation(operation: ProductivityOperat
     case "export_companies": return { success: `CSV export ready for ${preview.count} companies. Open the result to download.`, href: `/api/ai/assistant/download?id=${actionId}` };
     case "download_document": return { success: "Open the result to download the saved PDF.", href: operation.kind === "invoice" ? `/api/invoices/${operation.id}/pdf` : `/api/catalogs/${operation.id}/pdf?download=1` };
     case "conversation_auto_reply": {
-      if (operation.enabled && preview.alreadyEnabled) return { success: "AI auto-reply is already enabled. Its current review state was preserved.", href: "/emails" };
-      if (!operation.enabled && !preview.automationId) return { success: "AI auto-reply is already off for this conversation.", href: "/emails" };
+      if (operation.enabled && preview.alreadyEnabled) return { success: "AI auto-reply is already enabled. Its current review state was preserved.", href: "/email" };
+      if (!operation.enabled && !preview.automationId) return { success: "AI auto-reply is already off for this conversation.", href: "/email" };
       const result = await applyRoute(changeAutoReply, request, "/api/email/auto-reply", operation.enabled
         ? { action: "enable", mailboxId: preview.mailboxId, senderId: preview.mailboxId, messageId: preview.messageId, revision: preview.revision }
         : { action: "stop", id: preview.automationId });
-      return { success: operation.enabled ? "AI auto-reply is enabled for future replies in this conversation." : "AI auto-reply was paused for this conversation.", automationId: result.automation?.id, href: "/emails" };
+      return { success: operation.enabled ? "AI auto-reply is enabled for future replies in this conversation." : "AI auto-reply was paused for this conversation.", automationId: result.automation?.id, href: "/email" };
     }
     case "approve_auto_reply_shipping": {
       await applyRoute(changeAutoReply, request, "/api/email/auto-reply", { action: "shipping", id: operation.automationId, revision: preview.revision, shippingMinor: operation.shippingMinor });
@@ -107,11 +107,11 @@ export async function executeProductivityOperation(operation: ProductivityOperat
     }
     case "add_business_fact": {
       const result = await applyRoute(addBusinessFact, request, "/api/email/auto-reply/knowledge", { title: operation.title, content: operation.content });
-      return { success: "The approved business fact was saved for future AI replies.", factId: result.fact?.id, href: "/emails" };
+      return { success: "The approved business fact was saved for future AI replies.", factId: result.fact?.id, href: "/email" };
     }
     case "delete_business_fact": {
       await applyRoute(deleteBusinessFact, request, `/api/email/auto-reply/knowledge?id=${operation.factId}`);
-      return { success: "The approved business fact was deleted.", href: "/emails" };
+      return { success: "The approved business fact was deleted.", href: "/email" };
     }
   }
 }

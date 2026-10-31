@@ -72,7 +72,7 @@ export async function loadAgentContext(input: WorkspaceAssistantInput, viewer: W
   ]);
   if (products.error) contextWarnings.push("Catalog products unavailable. Look up required products before quoting or invoicing.");
   if (matchingCustomers?.error) contextWarnings.push("Matching customers unavailable. Look up the target before acting.");
-  if (flowMailboxes?.error || flowMembers?.error || flows?.error) contextWarnings.push("Some flow resources are unavailable. Look up required resources before acting.");
+  if (flowMailboxes?.error || flowMembers?.error || flows?.error) contextWarnings.push("Some workflow resources are unavailable. Look up required resources before acting.");
   // Avoid sending images, mailbox passwords or transport credentials to the model.
   const catalog = ((products.error ? [] : products.data ?? []) as InvoiceProductRow[]).map(invoiceProduct).map((product) => ({
     sku: product.sku, name: product.name, currency: product.currency, priceMinor: product.priceMinor,

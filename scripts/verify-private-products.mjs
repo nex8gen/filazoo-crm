@@ -114,12 +114,12 @@ async function verifyHttp(saved) {
   assert.equal((await fetch(origin + endpoint, { redirect: "manual" })).status, 401);
   assert.equal((await fetch(origin + product.data.image_url, { headers: { Cookie: aCookie }, redirect: "manual" })).status, 200);
   assert.equal((await fetch(origin + product.data.image_url, { headers: { Cookie: bCookie }, redirect: "manual" })).status, 404);
-  const page = await fetch(origin + "/catalogs/products/ABS", { headers: { Cookie: aCookie } });
+  const page = await fetch(origin + "/products/ABS", { headers: { Cookie: aCookie } });
   assert.equal(page.status, 200); assert.ok((await page.text()).includes("Private ABS A updated"));
   saved.catalogId = catalog.id;
-  saved.browserUrl = origin + "/catalogs/products/ABS";
+  saved.browserUrl = origin + "/products/ABS";
   const browserLink = ok(await db.auth.admin.generateLink({ type: "magiclink", email: saved.users[0].email }));
-  saved.loginUrl = `${origin}/auth/confirm?type=magiclink&token_hash=${browserLink.properties.hashed_token}&next=/catalogs/products/ABS`;
+  saved.loginUrl = `${origin}/auth/confirm?type=magiclink&token_hash=${browserLink.properties.hashed_token}&next=/products/ABS`;
 }
 try {
   for (const label of ["A", "B"]) {

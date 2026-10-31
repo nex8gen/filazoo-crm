@@ -170,7 +170,7 @@ test("catalog listing responds before PDF preparation and passes authorized prod
   const catalog = { id: "catalog", pdfUrl: null, productSkus: ["PLA"] };
   const products = [{ sku: "PLA" }];
   let preparations = 0;
-  const api = load("../app/catalogs/companies/page.tsx", {
+  const api = load("../app/company-quotations/page.tsx", {
     "react/jsx-runtime": require("react/jsx-runtime"),
     "next/server": { after: (callback: () => Promise<void>) => callbacks.push(callback) },
     "@/lib/auth": { requireWorkspaceMember: async () => ({ role: "admin" }) },

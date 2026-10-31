@@ -7,7 +7,9 @@ import { canCreateInvoices } from "@/lib/invoice-permissions";
 import { getViewerMailbox } from "@/lib/data/mailboxes";
 import { notFound } from "next/navigation";
 
-export default async function EmailsPage({ searchParams }: PageProps<"/emails">) {
+export const metadata = { title: "Email" };
+
+export default async function EmailsPage({ searchParams }: PageProps<"/email">) {
   const params = await searchParams;
   const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   const mailboxId = typeof params.mailbox === "string" ? params.mailbox : undefined;

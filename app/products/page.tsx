@@ -7,6 +7,8 @@ import { listProducts } from "@/lib/data/crm";
 import { getInventoryState } from "@/lib/data/inventory";
 import { InventoryConnection } from "@/components/inventory-connection";
 
+export const metadata = { title: "Products" };
+
 export default async function CatalogsPage() {
   const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   const { mode, products } = await listProducts();

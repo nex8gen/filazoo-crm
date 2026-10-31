@@ -21,7 +21,7 @@ export function FlowSenderField({ value, onChange, options, disabled }: {
       </SelectTrigger>
       <SelectContent>{options.map((option) => <SelectItem key={option.id} value={option.id} disabled={option.disabled}>{option.label}</SelectItem>)}</SelectContent>
     </Select>
-    <p id={`${id}-help`} className="text-xs leading-5 text-muted-foreground">Choose the flow owner&apos;s personal email or a shared team email for this action. <Link href="/settings/apps" className="underline underline-offset-2">Manage email accounts</Link></p>
+    <p id={`${id}-help`} className="text-xs leading-5 text-muted-foreground">Choose the workflow owner&apos;s personal email or a shared team email for this action. <Link href="/settings/apps" className="underline underline-offset-2">Manage email accounts</Link></p>
     {!selected || selected.disabled ? <p role="status" className="text-xs text-destructive">Connect this email account or choose another sender before going live.</p> : null}
   </div>;
 }

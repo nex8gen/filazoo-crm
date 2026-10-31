@@ -46,7 +46,7 @@ function normalized(value: unknown) {
 
 export function flowConversationPath(conversationId: string) {
   const company = /^company:([\da-f-]{36})(?::pipeline|:lead:[\da-f-]{36})?$/i.exec(conversationId);
-  return company ? `/companies/${company[1]}` : `/emails?thread=${encodeURIComponent(conversationId)}`;
+  return company ? `/companies/${company[1]}` : `/email?thread=${encodeURIComponent(conversationId)}`;
 }
 
 export function matchesProfileFilters(config: JsonConfig, facts: FlowFacts) {
@@ -236,7 +236,7 @@ export function simulateFlow(flow: FlowInput, facts: FlowFacts, from = new Date(
       const action = actionForCondition(step.config, matched);
       push({ step: index + 1, type: step.type, status: "would_run", detail: `Condition ${matched ? "matched" : "did not match"}; ${action.replaceAll("_", " ")}` });
       if (action === "stop_flow") {
-        push({ step: index + 1, type: step.type, status: "stopped", detail: "Flow would end here." });
+        push({ step: index + 1, type: step.type, status: "stopped", detail: "Workflow would end here." });
         break;
       }
       if (action === "skip_next" && steps[index + 1]) {
@@ -268,7 +268,7 @@ export function simulateFlow(flow: FlowInput, facts: FlowFacts, from = new Date(
       break;
     }
     if (step.type === "send_email" && step.config.sendWindow === "business_hours") cursor = nextBusinessWindow(cursor) ?? cursor;
-    const detail = step.type === "stop" ? String(step.config.reason || "Flow would end here.")
+    const detail = step.type === "stop" ? String(step.config.reason || "Workflow would end here.")
       : step.type === "create_task" ? `Would create “${String(step.config.title)}”; due in ${Number(step.config.dueInDays || 0)} days.`
       : step.type === "change_category" ? `Would set the email category to ${String(step.config.category)}.`
       : step.type === "update_company" ? `Would update ${[step.config.companyStatus && `status: ${step.config.companyStatus}`, step.config.segment && `segment: ${step.config.segment}`].filter(Boolean).join(", ")}.`

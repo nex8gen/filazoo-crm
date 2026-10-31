@@ -8,6 +8,7 @@ import { z } from "zod";
 import * as tagging from "../lib/ai/conversation-tagging.ts";
 import * as tags from "../lib/customer-tags.ts";
 import * as threading from "../lib/email-threading.ts";
+import { mergeAutoReplyHistory } from "../lib/email-auto-reply.ts";
 import { normalizeMailboxRows } from "../lib/mailbox-utils.ts";
 import { defaultAiPolicy } from "../lib/ai-policy.ts";
 import type { InboxEmailItem } from "../lib/email-inbox.ts";
@@ -37,6 +38,17 @@ test("another subject from the same buyer has an independent conversation identi
     tagging.conversationTagInput([message({ id: "other", messageId: "other@buyer.test", subject: "New PETG inquiry" })])!.key);
 });
 
+test("only unambiguous registered customer conversations are eligible for paid tagging", () => {
+  const contacts = new Map<string, string | null>([["buyer@example.test", "company-a"], ["other@example.test", "company-b"], ["ambiguous@example.test", null]]);
+  assert.equal(tagging.customerConversationTagInput([message({ contact: "notification@platform.test" })], contacts), null);
+  assert.equal(tagging.customerConversationTagInput([message({ contact: "ambiguous@example.test" })], contacts), null);
+  assert.equal(tagging.customerConversationTagInput([message(), message({ id: "other", messageId: "other@test", contact: "other@example.test" })], contacts), null);
+  const customer = tagging.customerConversationTagInput([message()], contacts)!;
+  assert.equal(customer.companyId, "company-a");
+  assert.notEqual(customer.fingerprint, tagging.conversationTagInput([message()])!.fingerprint);
+  assert.notEqual(customer.fingerprint, tagging.customerConversationTagInput([message()], new Map([["buyer@example.test", "reassigned-company"]]))!.fingerprint);
+});
+
 test("proposals require strong confidence and exact evidence from this conversation", () => {
   const context = tagging.conversationTagContext([message()], null);
   assert.equal(tagging.parseConversationTagDecision(JSON.stringify(decision()), context).tag, "New Inquiries");
@@ -63,13 +75,14 @@ test("truncated or missing history cannot replace a tag", () => {
   assert.match(tagging.conversationTagInstruction, /not keyword matching/);
 });
 
-function workerFixture(options: { denied?: boolean; current?: string; manual?: boolean; providerFails?: boolean; stale?: boolean; cached?: boolean; revoke?: boolean; cooldown?: boolean; messages?: InboxEmailItem[] } = {}) {
+function workerFixture(options: { denied?: boolean; current?: string; manual?: boolean; providerFails?: boolean; stale?: boolean; cached?: boolean; revoke?: boolean; cooldown?: boolean; messages?: InboxEmailItem[]; noCustomer?: boolean; folderMessages?: InboxEmailItem[] } = {}) {
   const calls = { provider: 0, policy: 0, finish: [] as Record<string, unknown>[], claim: 0, history: 0, prompt: "", bodyDownloads: 0, outputBudget: 0 };
   const original = options.messages?.[0] ?? message();
-  const input = tagging.conversationTagInput([original])!;
+  const input = tagging.customerConversationTagInput([original], new Map([[original.contact.trim().toLowerCase(), "company-a"]]))!;
   const tables: Record<string, Record<string, unknown>[]> = {
     workspace_mailboxes: [{ id: "mailbox", user_id: "owner", type: "personal", email: "sales@seller.test", is_active: true, imap_host: "imap.test", imap_username: "sales", imap_password: "never-expose-this-secret" }],
     workspace_members: [{ user_id: "owner", role: "bd_manager" }],
+    contacts: options.noCustomer ? [] : [{ email: "buyer@example.test", company_id: "company-a" }],
     crm_conversation_tag_analysis: options.cached || options.cooldown ? [{ conversation_key: input.key, input_hash: options.cooldown ? "older-input" : input.fingerprint, latest_message_at: original.timestamp, message_count: 1, status: "done", lease_until: null, retry_at: null, checked_at: new Date(options.cooldown ? Date.now() : Date.now() - 120_000).toISOString() }] : [],
     crm_email_tags: options.current ? [{ message_key: input.key, tag: options.current, source: options.manual ? "manual" : "ai", updated_at: "2026-10-31T03:00:00Z" }] : [],
   };
@@ -88,14 +101,15 @@ function workerFixture(options: { denied?: boolean; current?: string; manual?: b
     "node:crypto": crypto, zod: { z }, "../supabase/admin": { createSupabaseAdmin: () => db },
     "../mailbox-utils": { normalizeMailboxRows }, "../email-threading": threading, "../customer-tags": tags,
     "../ai/conversation-tagging": tagging,
+    "../email-auto-reply": { mergeAutoReplyHistory },
     "./lead-inquiries": { withLeadInquiryOrigins: async (messages: InboxEmailItem[]) => messages },
     "./ai-settings": { requireAiAutomation: async (actions: string[], data: string[]) => {
       calls.policy++; assert.equal(actions.join(), "tagging"); assert.equal(data.join(), "emails,customers");
       if (options.denied || (options.revoke && calls.policy >= 3)) throw new Error("Paused");
       return defaultAiPolicy();
     } },
-    "./email-auto-reply": { mailboxHistory: async () => { calls.history++; return { messages: options.stale && calls.history > 1 ? [original, message({ id: "reply", messageId: "reply@test", inReplyTo: original.messageId, references: [original.messageId!], timestamp: "2026-10-31T04:00:00Z" })] : options.messages ?? [original] }; } },
-    "./mailbox-sync": { loadMailboxMessageContent: async () => { calls.bodyDownloads++; throw new Error("No body download expected"); } },
+    "./email-auto-reply": { mailboxHistory: async () => { calls.history++; return { mailbox: { id: "mailbox" }, messages: options.stale && calls.history > 1 ? [original, message({ id: "reply", messageId: "reply@test", inReplyTo: original.messageId, references: [original.messageId!], timestamp: "2026-10-31T04:00:00Z" })] : options.messages ?? [original] }; } },
+    "./mailbox-sync": { loadMailboxWorkspace: async (_mailbox: unknown, loadOptions: { sync: boolean }) => { assert.equal(loadOptions.sync, false); return { messages: options.folderMessages ?? [] }; }, loadMailboxMessageContent: async () => { calls.bodyDownloads++; throw new Error("No body download expected"); } },
     "../ai/gemini": { generateGeminiText: async (input: { prompt: string; maxOutputTokens: number; onUsage: (value: unknown) => void }) => {
       calls.provider++; calls.prompt = input.prompt; calls.outputBudget = input.maxOutputTokens; input.onUsage({ inputTokens: 250, outputTokens: 80, cachedInputTokens: 100 });
       if (options.providerFails) throw new Error("Provider unavailable"); return JSON.stringify(decision());
@@ -165,6 +179,19 @@ test("lossless prompt compression preserves every message character, direction, 
 test("unchanged conversations and manual overrides do not call the provider", async () => {
   const cached = workerFixture({ cached: true }); await cached.run(); assert.equal(cached.calls.provider, 0); assert.equal(cached.calls.claim, 0);
   const manual = workerFixture({ current: "Payment Follow-up", manual: true }); await manual.run(); assert.equal(manual.calls.provider, 0); assert.equal(manual.calls.finish[0].p_tag, null);
+});
+
+test("unmatched mailbox notifications cannot consume the batch or invoke the model", async () => {
+  const worker = workerFixture({ noCustomer: true });
+  const result = await worker.run();
+  assert.equal(result.analyzed, 0); assert.equal(worker.calls.provider, 0); assert.equal(worker.calls.claim, 0); assert.equal(worker.calls.bodyDownloads, 0);
+});
+
+test("a referenced message in the provider Sent folder completes the customer conversation", async () => {
+  const sent = message({ direction: "outbound", providerKind: "sent", timestamp: "2026-10-31T00:00:00Z" });
+  const reply = message({ id: "reply", messageId: "reply@buyer.test", inReplyTo: sent.messageId, references: [sent.messageId!] });
+  const worker = workerFixture({ messages: [reply], folderMessages: [sent] });
+  assert.equal((await worker.run()).analyzed, 1); assert.equal(worker.calls.provider, 1);
 });
 
 test("permission denial and revocation before provider submission prevent AI access", async () => {

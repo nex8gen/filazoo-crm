@@ -38,6 +38,13 @@ test("the explicit diagnostic waits for sync and bounded context tagging", async
   assert.equal(worker.calls(), 1);
 });
 
+test("the authenticated tag diagnostic runs no mail sync or sending workflow", async () => {
+  const worker = setup();
+  const response = await worker.GET(new Request("https://crm.test/api/cron/mail-sync?task=tags", { headers: { authorization: "Bearer fixture-secret" } }));
+  assert.equal(response.status, 200); assert.equal(worker.calls(), 0);
+  assert.equal((await response.json()).tags.analyzed, 1);
+});
+
 test("the session gate delegates mail sync authentication to its bearer guard while keeping staff pages gated", async () => {
   const exports = {} as { updateSession: (request: unknown) => Promise<{ status: number }> };
   const response = (status: number) => ({ status, cookies: { getAll: () => [], set() {} } });
@@ -47,5 +54,5 @@ test("the session gate delegates mail sync authentication to its bearer guard wh
     { exports, process: { env: { AUTH_REQUIRED: "true", NEXT_PUBLIC_SUPABASE_URL: "https://db.test", NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "fixture" } }, require: (name: keyof typeof dependencies) => dependencies[name] });
   const request = (path: string) => ({ nextUrl: { pathname: path, search: "", clone: () => new URL(`https://crm.test${path}`) }, cookies: { getAll: () => [] } });
   assert.equal((await exports.updateSession(request("/api/cron/mail-sync"))).status, 200);
-  assert.equal((await exports.updateSession(request("/emails"))).status, 307);
+  assert.equal((await exports.updateSession(request("/email"))).status, 307);
 });

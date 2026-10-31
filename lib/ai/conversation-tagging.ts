@@ -54,6 +54,20 @@ export function conversationTagInput(messages: readonly InboxEmailItem[]) {
   return { key, keys, fingerprint, messages: unique, latestAt: unique.at(-1)!.timestamp, messageCount: unique.length };
 }
 
+/** A sender must resolve to one CRM company before any paid classification. */
+export function customerConversationTagInput(messages: readonly InboxEmailItem[], contacts: ReadonlyMap<string, string | null>) {
+  const input = conversationTagInput(messages);
+  if (!input) return null;
+  const contactEmail = input.messages.at(-1)!.contact.trim().toLowerCase();
+  const companyId = contacts.get(contactEmail);
+  if (!companyId || input.messages.some(message => {
+    const company = contacts.get(message.contact.trim().toLowerCase());
+    return company && company !== companyId;
+  })) return null;
+  // A previously unlinked sender becoming a customer must invalidate an old mailbox-only result.
+  return { ...input, companyId, contactEmail, fingerprint: `${companyId}:${input.fingerprint}` };
+}
+
 /** These rules preserve the current tag; none infers a sales stage from words. */
 export function conversationTagSkipReason(messages: readonly InboxEmailItem[]): string | null {
   if (messages.length > 64) return "Conversation exceeds the 64-message analysis limit; keeping the current tag.";

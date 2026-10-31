@@ -9,7 +9,7 @@ const testInput = z.object({ flow: flowInputSchema, contactId: z.uuid().optional
 export async function POST(request: Request) {
   const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
   const parsed = testInput.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return Response.json({ ok: false, error: parsed.error.issues[0]?.message || "Invalid flow settings." }, { status: 400 });
+  if (!parsed.success) return Response.json({ ok: false, error: parsed.error.issues[0]?.message || "Invalid workflow settings." }, { status: 400 });
   try {
     const { flow, contactId, companyId, conversationId } = parsed.data;
     await validateFlowResources(viewer.id, flow);
@@ -18,6 +18,6 @@ export async function POST(request: Request) {
     if (!contactId && !companyId) warnings.push("No sample contact selected; engagement and company facts are empty.");
     return Response.json({ ...simulateFlow(flow, facts), facts, mode: "simulation", profileMatches: matchesProfileFilters(flow.triggerConfig, facts), warnings }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    return Response.json({ ok: false, error: error instanceof Error ? error.message : "Flow test failed." }, { status: 400 });
+    return Response.json({ ok: false, error: error instanceof Error ? error.message : "Workflow test failed." }, { status: 400 });
   }
 }
