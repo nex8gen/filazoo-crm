@@ -1,4 +1,5 @@
 import "server-only";
+import { requireAiData } from "../data/ai-settings";
 import { createHash } from "node:crypto";
 import type { WorkspaceViewer } from "../auth";
 import { createSupabaseAdmin } from "../supabase/admin";
@@ -12,6 +13,7 @@ import type { z } from "zod";
 
 /** Read only the signed-in user's accessible inbox; never trust client email bodies or headers. */
 export async function loadAgentEmails(viewer: WorkspaceViewer, emailId?: string, companyId?: string, mailboxId?: string) {
+  await requireAiData("emails", "customers");
   let inbox = await getEmailInboxBackendData({ syncMailbox: false, history: true, ...(mailboxId ? { mailboxId } : {}) });
   // Approval and execution also reload source IDs after the user leaves the page.
   if (emailId && !mailboxId && !inbox.emails.some((email) => email.id === emailId && !email.demo)) {
@@ -62,6 +64,7 @@ export function presentAgentEmail(email: InboxEmailItem) {
 
 /** Uses the same access-filtered inbox as the email UI; never searches raw mailbox tables. */
 export async function searchAgentEmails(viewer: WorkspaceViewer, search: AgentEmailSearch) {
+  await requireAiData("emails", "customers");
   const mailboxes = await getViewerMailboxes(viewer.id);
   const searched = mailboxes.slice(0, 8);
   const sources = await Promise.all(searched.map(async (mailbox) => {
@@ -103,7 +106,7 @@ export async function searchAgentEmails(viewer: WorkspaceViewer, search: AgentEm
   const companyIds = [...new Set(messages.flatMap((message) => message.companyId ? [message.companyId] : []))];
   return {
     messages,
-    companies: await Promise.all(companyIds.map(loadAgentCompany)),
+    companies: await Promise.all(companyIds.map(id => loadAgentCompany(id, false))),
     coverage: {
       scope: "accessible synced inbound emails across up to 8 mailboxes; no live mailbox sync; query matches only loaded bodies and headers",
       mailboxesSearched: searched.length, mailboxesOmitted: Math.max(0, mailboxes.length - searched.length),
@@ -124,13 +127,14 @@ export async function prepareAgentEmail(email: z.infer<typeof agentEmailSchema>,
 }
 
 /** A complete editable snapshot, using raw values rather than display labels or defaults. */
-export async function loadAgentCompany(companyId: string) {
+export async function loadAgentCompany(companyId: string, includeBilling = true) {
+  await requireAiData("customers", ...(includeBilling ? ["billing"] as const : []));
   const db = createSupabaseAdmin();
   const [company, pipeline, profile, billing, contacts] = await Promise.all([
     db.from("companies").select("id,name,website,country,city,segment").eq("id", companyId).maybeSingle(),
     db.from("pipeline").select("next_followup_at").eq("company_id", companyId).maybeSingle(),
     db.from("company_profiles").select("summary,fit_score,interest_tags").eq("company_id", companyId).maybeSingle(),
-    db.from("customer_billing_profiles").select("profile").eq("company_id", companyId).maybeSingle(),
+    includeBilling ? db.from("customer_billing_profiles").select("profile").eq("company_id", companyId).maybeSingle() : { data: null, error: null },
     db.from("contacts").select("id,name,role,email").eq("company_id", companyId).order("created_at").order("id"),
   ]);
   if ([company, pipeline, profile, billing, contacts].some((result) => result.error)) throw new Error("Unable to load the current customer profile.");
@@ -141,7 +145,7 @@ export async function loadAgentCompany(companyId: string) {
     contactName: contact?.name || "", contactRole: contact?.role || "", contactEmail: contact?.email || "",
     nextFollowupAt: pipeline.data?.next_followup_at || "",
     summary: profile.data?.summary || "", fitScore: String(profile.data?.fit_score ?? ""), tags: (profile.data?.interest_tags ?? []).join(", "),
-    ...Object.fromEntries(Object.entries(commerceDefaults(billing.data?.profile)).map(([key, value]) => [`commerce.${key}`, String(value)])),
+    ...(includeBilling ? Object.fromEntries(Object.entries(commerceDefaults(billing.data?.profile)).map(([key, value]) => [`commerce.${key}`, String(value)])) : {}),
   };
   const fingerprint = createHash("sha256").update(JSON.stringify({ fields, contacts: contacts.data })).digest("hex");
   return { id: companyId, fields, contacts: contacts.data ?? [], fingerprint };

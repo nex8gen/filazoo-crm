@@ -1,8 +1,10 @@
 import type { ProviderImage } from "./image-input.ts";
+import { gatewayTokenUsage, type AiTokenUsage } from "./usage.ts";
 
 type GatewayResponse = {
   choices?: Array<{ message?: { content?: string | Array<{ type?: string; text?: string }> } }>;
   error?: { message?: string };
+  usage?: Record<string, unknown>;
 };
 
 export type GenerateGatewayTextOptions = {
@@ -14,6 +16,7 @@ export type GenerateGatewayTextOptions = {
   visionModel?: string;
   maxOutputTokens?: number;
   fetcher?: typeof fetch;
+  onUsage?: (usage: AiTokenUsage) => void;
 };
 
 export async function generateGatewayText({
@@ -25,6 +28,7 @@ export async function generateGatewayText({
   visionModel,
   maxOutputTokens = 1_200,
   fetcher = fetch,
+  onUsage,
 }: GenerateGatewayTextOptions) {
   let expiresAt: unknown;
   try { if (token.split(".").length === 3) expiresAt = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString()).exp; } catch { /* Opaque API keys need no JWT inspection. */ }
@@ -54,6 +58,7 @@ export async function generateGatewayText({
   });
 
   const result = await response.json().catch(() => ({})) as GatewayResponse;
+  if (result.usage) onUsage?.(gatewayTokenUsage(result.usage));
   if (!response.ok) {
     throw new Error(result.error?.message || "The fallback AI provider could not process this request.");
   }

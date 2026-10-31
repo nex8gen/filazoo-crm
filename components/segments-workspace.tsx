@@ -3,13 +3,14 @@ import { useWorkspaceState } from "@/components/workspace-memory";
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Building2, Globe2, Mail, Plus, Search, Tags, Users, Zap } from "lucide-react";
+import { ArrowRight, Building2, Globe2, Mail, Plus, Search, Tags, Users, Workflow, Zap } from "lucide-react";
 import { CreateSegmentDialog } from "@/components/create-segment-dialog";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/data-state";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { segmentRuleLabels, matchesSegment, summarizeSegment, type SavedSegment, type SegmentCompany } from "@/lib/segments";
+import { segmentFlowHref } from "@/lib/segment-flows";
 
 
 export function SegmentsWorkspace({ companies, savedSegments, canWrite }: { companies: SegmentCompany[]; savedSegments: SavedSegment[]; canWrite: boolean }) {
@@ -66,7 +67,7 @@ export function SegmentsWorkspace({ companies, savedSegments, canWrite }: { comp
           {segment.kind === "saved" ? <div className="mt-3 flex flex-wrap gap-1.5">{(segment.rules.length ? segment.rules : ["All companies"]).map((rule, index) => <span key={`${rule}:${index}`} className="max-w-full truncate rounded-md border bg-muted/40 px-2 py-1 text-[11px]">{rule}</span>)}</div> : null}
           <dl className="mt-auto grid grid-cols-3 gap-2 pt-5"><div><dt className="text-xs text-muted-foreground">Companies</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{summary.count.toLocaleString()}</dd></div><div><dt className="text-xs text-muted-foreground">With email</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{coverage}%</dd></div><div><dt className="text-xs text-muted-foreground">Avg. fit</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{summary.averageFit === null ? "—" : <>{summary.averageFit.toFixed(1)}<span className="text-xs font-normal text-muted-foreground"> / 10</span></>}</dd></div></dl>
           <div className="mt-4 flex items-center justify-between gap-2 text-xs"><span className="inline-flex items-center gap-1 text-muted-foreground"><Globe2 className="size-3" />{summary.countries} markets</span><span className="font-medium text-primary">View companies <span aria-hidden="true">→</span></span></div>
-        </Link>{segment.kind === "saved" && canWrite ? <div className="flex justify-end border-t px-3 py-2"><Button type="button" variant="ghost" size="sm" onClick={() => setEditingSegment(savedSegments.find((saved) => saved.id === segment.id))}>Edit segment</Button></div> : null}</li>;
+        </Link>{canWrite ? <div className="flex flex-wrap items-center justify-between gap-2 border-t px-3 py-2"><Link className={buttonVariants({ variant: "outline", size: "sm" })} href={segmentFlowHref(segment)} aria-label={`Create auto flow for ${segment.name}`}><Workflow className="size-4" />Auto Flow</Link>{segment.kind === "saved" ? <Button type="button" variant="ghost" size="sm" onClick={() => setEditingSegment(savedSegments.find((saved) => saved.id === segment.id))}>Edit segment</Button> : null}</div> : null}</li>;
       })}
     </ul> : <div className="rounded-xl border border-dashed p-6"><EmptyState title={segments.length ? "No matching segments" : "Create your first segment"} description={segments.length ? "Try a different search or segment type." : "Use company data to build audiences for your sales team."} icon={Users} /><div className="mt-4 flex justify-center">{segments.length ? <Button variant="outline" onClick={() => { setQuery(""); setKind("all"); }}>Clear filters</Button> : createButton}</div></div>}
     <p className="text-xs leading-5 text-muted-foreground">Manual segments contain the companies you select. Rule-based segments update as company profiles change. Companies can belong to multiple saved segments.</p>

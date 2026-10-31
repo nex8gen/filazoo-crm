@@ -48,6 +48,7 @@ export type Company = {
   nextFollowupAt: string | null;
   nextAction: string;
   tags: string[];
+  customerTags?: import("./customer-tags").CustomerTag[];
   contact: string;
   contactRole: string;
   email: string;

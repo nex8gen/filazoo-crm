@@ -1,11 +1,14 @@
 import { z } from "zod";
+import { customerTagValues } from "./customer-tags.ts";
 import { hasRetiredSalesConfig, retiredSalesMessage } from "./retired-sales.ts";
 export { hasRetiredSalesConfig, retiredSalesMessage } from "./retired-sales.ts";
 
 export const flowStatuses = ["draft", "live", "paused"] as const;
 export const triggerTypes = ["new_lead", "email_received", "category_changed", "no_reply", "lead_added_to_list", "company_segment_changed", "pipeline_stage_changed"] as const;
 export const stepTypes = ["wait", "split", "if_condition", "send_email", "ai_auto_reply", "create_task", "change_category", "update_company", "internal_alert", "stop"] as const;
-export const emailCategories = ["Needs follow-up", "Waiting on customer", "Interested", "Big order", "No action"] as const;
+export const emailCategories = customerTagValues;
+// Keep saved legacy flows readable while every new choice uses the shared vocabulary.
+const compatibleEmailCategories = [...customerTagValues, "Needs follow-up", "Waiting on customer", "Interested", "Big order", "No action"] as const;
 export const companyStatuses = ["new", "researching", "qualified", "contacted", "engaged", "customer", "disqualified"] as const;
 export const pipelineStages = ["new", "contacted", "replied", "interested", "big_order", "won", "lost"] as const;
 export const flowLeadLists = ["Shopify B2B leads", "Meta ad leads"] as const;
@@ -50,7 +53,7 @@ export type AutomationFlow = {
 export const triggerLabels: Record<TriggerType, string> = {
   new_lead: "New lead",
   email_received: "Email received",
-  category_changed: "Category changed to",
+  category_changed: "Customer tag changed to",
   no_reply: "No reply after",
   lead_added_to_list: "Lead added to list",
   company_segment_changed: "Company enters segment",
@@ -64,7 +67,7 @@ export const stepLabels: Record<FlowStepType, string> = {
   if_condition: "If condition",
   send_email: "Send email",
   create_task: "Create CRM task",
-  change_category: "Change category",
+  change_category: "Change customer tag",
   update_company: "Property update",
   internal_alert: "Internal alert",
   stop: "Stop",
@@ -80,6 +83,8 @@ const profileFilters = {
   scopeLabel: z.string().trim().min(1).max(320).optional(),
   contactIds: z.array(z.uuid().transform((id) => id.toLowerCase())).min(1, "Choose at least one customer or select all customers.").max(200).transform((ids) => [...new Set(ids)]).optional(),
   segment: z.string().trim().max(120).optional(),
+  savedSegmentId: z.uuid().optional(),
+  segmentAudience: z.boolean().optional(),
   country: z.string().trim().max(100).optional(),
   companyStatus: z.enum(companyStatuses).optional(),
   pipelineStage: z.enum(pipelineStages).optional(),
@@ -92,7 +97,7 @@ const profileFilters = {
 const triggerConfigSchemas: Record<TriggerType, z.ZodType<JsonConfig>> = {
   new_lead: z.object({ ...profileFilters }),
   email_received: z.object({ ...profileFilters }),
-  category_changed: z.object({ category: z.enum(emailCategories), ...profileFilters }),
+  category_changed: z.object({ category: z.enum(compatibleEmailCategories), ...profileFilters }),
   no_reply: z.object({ amount: z.number().int().min(1).max(365), unit: z.enum(["hours", "days"]), businessDays: z.boolean().optional(), ...profileFilters }),
   lead_added_to_list: z.object({ listId: z.enum(flowLeadLists), ...profileFilters }),
   company_segment_changed: z.object({ ...profileFilters, segment: z.string().trim().min(1).max(120) }),
@@ -102,7 +107,7 @@ const triggerConfigSchemas: Record<TriggerType, z.ZodType<JsonConfig>> = {
 export const conditionOperators = ["equals", "not_equals", "contains", "not_contains", "starts_with", "ends_with", "is_set", "is_not_set", "gte", "gt", "lte", "lt"] as const;
 export const flowConditionRuleSchema = z.object({
   field: z.enum(["customer_replied", "category_is", "opened_email", "clicked_link", "company_status_is", "pipeline_stage_is", "segment_is", "country_is", "fit_score_at_least"]),
-  category: z.enum(emailCategories).optional(),
+  category: z.enum(compatibleEmailCategories).optional(),
   companyStatus: z.enum(companyStatuses).optional(),
   pipelineStage: z.enum(pipelineStages).optional(),
   value: z.string().trim().max(120).optional(),
@@ -170,7 +175,7 @@ const stepConfigSchemas: Record<FlowStepType, z.ZodType<JsonConfig>> = {
   }).transform((value) => ({ ...value, paths: value.paths.map((path) => ({ ...path, steps: path.steps.map((step) => ({ ...step, config: stepConfigSchemas[step.type].parse(step.config) })) })) })),
   if_condition: z.object({
     field: z.enum(["customer_replied", "category_is", "opened_email", "clicked_link", "company_status_is", "pipeline_stage_is", "segment_is", "country_is", "fit_score_at_least"]),
-    category: z.enum(emailCategories).optional(),
+    category: z.enum(compatibleEmailCategories).optional(),
     companyStatus: z.enum(companyStatuses).optional(),
     pipelineStage: z.enum(pipelineStages).optional(),
     value: z.string().trim().max(120).optional(),
@@ -210,7 +215,7 @@ const stepConfigSchemas: Record<FlowStepType, z.ZodType<JsonConfig>> = {
   }).superRefine((value, context) => {
     if (value.assigneeType === "user" && !value.assigneeId) context.addIssue({ code: "custom", path: ["assigneeId"], message: "Choose a user." });
   }),
-  change_category: z.object({ category: z.enum(emailCategories), reason: z.string().trim().max(300).optional() }),
+  change_category: z.object({ category: z.enum(compatibleEmailCategories), reason: z.string().trim().max(300).optional() }),
   update_company: z.object({
     companyStatus: z.enum(companyStatuses).optional(),
     pipelineStage: z.enum(pipelineStages).optional(),
@@ -263,6 +268,9 @@ export const flowInputSchema = z.object({
   inspect(flow.steps);
   if (treeError) { context.addIssue({ code: "custom", path: ["steps"], message: treeError }); return; }
   const scope = flow.triggerConfig;
+  if ((scope.savedSegmentId || scope.segmentAudience) && flow.triggerType === "company_segment_changed" && scope.reentryMode !== "no_reentry") {
+    context.addIssue({ code: "custom", path: ["triggerConfig"], message: "Segment membership enrolls each company once. Choose no re-entry." });
+  }
   if (scope.flowScope && (!scope.scopeCompanyId || (scope.flowScope === "email" && !scope.scopeContactId))) {
     context.addIssue({ code: "custom", path: ["triggerConfig"], message: "Choose the email or company for this flow." });
   }
@@ -318,7 +326,7 @@ export function blankStep(type: FlowStepType = "wait"): FlowInput["steps"][numbe
     if_condition: { field: "customer_replied", action: "stop_flow", unmatchedAction: "continue", lookbackDays: 7 },
     send_email: { templateId: "", mailboxId: "default", replyInThread: true, subject: "", preheader: "", trackOpens: true, trackClicks: true, utmTracking: true, stopOnReply: true, sendWindow: "business_hours" },
     create_task: { assigneeType: "owner", assigneeId: null, dueInDays: 1, title: "Follow up with customer", priority: "normal", notes: "" },
-    change_category: { category: "Needs follow-up", reason: "" },
+    change_category: { category: "Quotation Follow-up", reason: "" },
     update_company: { companyStatus: "engaged", note: "Updated by automation" },
     internal_alert: { userId: "owner", message: "This conversation needs attention.", includeThreadLink: true, channel: "in_app" },
     stop: { reason: "Automation completed", outcome: "completed" },
@@ -358,7 +366,7 @@ export function formatTrigger(type: TriggerType, config: JsonConfig) {
   if (type === "category_changed") return `Category changed to ${config.category || "…"}`;
   if (type === "no_reply") return `No reply after ${config.amount || "…"} ${config.unit || "days"}`;
   if (type === "lead_added_to_list") return `Lead added to ${config.listId || "list"}`;
-  if (type === "company_segment_changed") return `Company enters ${config.segment || "a segment"}`;
+  if (type === "company_segment_changed") return config.savedSegmentId || config.segmentAudience ? `Companies in ${config.segment || "segment"}` : `Company enters ${config.segment || "a segment"}`;
   if (type === "pipeline_stage_changed") return "Retired sales trigger";
   return triggerLabels[type];
 }

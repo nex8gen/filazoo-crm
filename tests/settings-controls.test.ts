@@ -10,7 +10,9 @@ test("settings search finds actual controls across categories and languages with
   assert.deepEqual(visibleSettingsSections(false, "email signature").map(item => item.id), ["email"]);
   assert.deepEqual(visibleSettingsSections(false, "  DARK  theme ").map(item => item.id), ["appearance"]);
   assert.deepEqual(visibleSettingsSections(false, "签名").map(item => item.id), ["email"]);
-  for (const query of ["ERP", "team access", "lead assignment"]) assert.equal(visibleSettingsSections(false, query).length, 0);
+  for (const query of ["ERP", "lead assignment"]) assert.equal(visibleSettingsSections(false, query).length, 0);
+  assert.deepEqual(visibleSettingsSections(false, "team access").map(item => item.id), ["ai"]);
+  assert.equal(visibleSettingsSections(false).some(item => item.id === "team"), false);
   assert.deepEqual(visibleSettingsSections(true, "ERP").map(item => item.id), ["erp"]);
   assert.equal(visibleSettingsSections(true, "no matching setting").length, 0);
 });

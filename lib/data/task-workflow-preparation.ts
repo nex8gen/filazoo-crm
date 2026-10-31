@@ -1,4 +1,6 @@
 import "server-only";
+import { requireAiAutomation } from "./ai-settings";
+import { aiBehaviorInstruction } from "../ai-policy";
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { createSupabaseAdmin } from "../supabase/admin";
@@ -55,11 +57,12 @@ export async function latestWorkflowEvidence(viewer: WorkspaceViewer, request: R
 }
 
 async function planWork(prompt: string) {
+  const policy = await requireAiAutomation([], ["emails", "customers", "billing", "products", "tasks"]);
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   const token = process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
   const responseJsonSchema = z.toJSONSchema(replyWorkPlanSchema.extend({ changes: replyWorkPlanSchema.shape.changes.required() }), { unrepresentable: "any", target: "draft-7" });
   delete responseJsonSchema.$schema;
-  const options = { prompt, systemInstruction: `${replyWorkInstruction}\nExact JSON schema: ${JSON.stringify(responseJsonSchema)}`, responseJsonSchema, maxOutputTokens: 6000,
+  const options = { prompt, systemInstruction: `${replyWorkInstruction}${aiBehaviorInstruction(policy, true)}\nExact JSON schema: ${JSON.stringify(responseJsonSchema)}`, responseJsonSchema, maxOutputTokens: 6000,
     fetcher: ((url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(45_000) })) as typeof fetch };
   const gateway = () => {
     if (!token) throw new Error("AI preparation is unavailable. Add a provider or prepare this task manually.");
@@ -73,6 +76,7 @@ async function planWork(prompt: string) {
 }
 
 export async function prepareTaskWorkflow(work: TaskWorkflow) {
+  await requireAiAutomation(["tasks", ...(work.kind === "invoice_review" ? ["invoices"] as const : [])], ["emails", "customers", "billing", "products", "tasks"]);
   const db = createSupabaseAdmin();
   const viewer = await workflowOwner(work.owner_id);
   const { data: task } = await db.from("crm_tasks").select("id,company_id,assigned_to,status,title,notes").eq("id", work.task_id).single().throwOnError();

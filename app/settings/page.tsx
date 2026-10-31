@@ -30,6 +30,8 @@ import { getErpSettingsView } from "@/lib/data/erp-settings";
 import { getInventoryState } from "@/lib/data/inventory";
 import { listProducts } from "@/lib/data/crm";
 import { ErpConnectionForm } from "./erp-connection-form";
+import { AiSettingsForm } from "./ai-settings-form";
+import { getAiSettings } from "@/lib/data/ai-settings";
 
 type SettingsPageProps = { params?: Promise<{ section?: string }> };
 
@@ -44,6 +46,7 @@ async function SettingsWorkspace({ params }: SettingsPageProps) {
   const currentSection = settingsSections.find(item => item.id === section);
   if (!titles[section]) notFound();
   const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
+  const aiSettings = section === "ai" ? await getAiSettings() : null;
   if ((section === "team" || section === "advanced" || section === "erp") && viewer.role !== "admin") notFound();
   const [members, paymentMethods, invoiceDefaults, erp, defaultWorkspaceMailbox, personalMailbox, mailboxResult] = await Promise.all([
     viewer.role === "admin" && (section === "team" || section === "advanced") ? listWorkspaceMembers() : Promise.resolve([]),
@@ -57,6 +60,7 @@ async function SettingsWorkspace({ params }: SettingsPageProps) {
   const { mailboxes, error: mailboxError } = mailboxResult;
   const ownMailboxes = mailboxes.filter((mailbox) => mailbox.type === "personal" && mailbox.userId === viewer.id);
   const assignmentManagers = members.filter((member) => member.role === "bd_manager" && member.autoAssignLeads && member.activated);
+  if (aiSettings) return <div className="settings-content settings-section-enter !max-w-3xl space-y-5"><header className="mb-6 border-b pb-6"><p className="mb-3 text-xs font-medium text-primary">Workspace</p><h1 className="text-2xl font-semibold tracking-tight">AI access & behavior</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">Control what AI can read, what it can do, and how it writes for your team.</p></header><AiSettingsForm initial={aiSettings} canManage={viewer.role === "admin"} /></div>;
 
   return (
     <div key={section} className={`settings-content settings-section-enter space-y-5 ${section === "team" || section === "advanced" || section === "erp" ? "!max-w-5xl" : "!max-w-3xl"}`}>

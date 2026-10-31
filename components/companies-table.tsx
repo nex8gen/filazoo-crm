@@ -15,6 +15,8 @@ import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { EmptyState } from "@/components/data-state";
 import { CompanyAvatar } from "@/components/company-avatar";
 import { CompanyOrderBadge } from "@/components/company-order-badge";
+import { CustomerTagBadge } from "@/components/customer-tag-badges";
+import { CompanyListTags } from "@/components/company-list-tags";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -27,6 +29,7 @@ import type { Company, DataMode } from "@/lib/types";
 import { usePreferences } from "@/components/preferences-provider";
 import { useWorkspaceState } from "@/components/workspace-memory";
 import { countryFlagCode } from "@/lib/country-flags";
+import { customerTagValues } from "@/lib/customer-tags";
 
 const addedAtFormatter = new Intl.DateTimeFormat(undefined, {
   timeZone: "Asia/Shanghai",
@@ -37,13 +40,13 @@ const addedAtFormatter = new Intl.DateTimeFormat(undefined, {
 function CompanyIdentity({ company }: { company: Company }) {
   return (
     <div className="flex min-w-0 items-center gap-3.5 md:min-w-60">
-      <CompanyOrderBadge count={company.paidOrderCount} />
-      <CompanyAvatar company={company} />
+      <div className="isolate flex shrink-0 items-center">
+        {company.paidOrderCount > 0 && <CompanyOrderBadge count={company.paidOrderCount} className="z-10 -mr-1.5" />}
+        <CompanyAvatar company={company} />
+      </div>
       <div className="min-w-0">
         <p className="truncate text-sm font-semibold leading-5 text-primary">{company.name}</p>
-        <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
-          <p className="max-w-40 truncate text-xs text-muted-foreground">{company.domain}</p>
-        </div>
+        <CompanyListTags key={(company.customerTags ?? []).join("|")} tags={company.customerTags} className="mt-1" />
       </div>
     </div>
   );
@@ -64,7 +67,8 @@ export function CompaniesTable({ companies, mode, canDelete, viewKey = "all" }: 
   const router = useRouter();
   const [query, setQuery] = useWorkspaceState(`${memoryKey}.query`, "");
   const [country, setCountry] = useWorkspaceState(`${memoryKey}.country`, "all");
-  const [draft, setDraft] = useWorkspaceState(`${memoryKey}.filters`, { query: "", country: "all" });
+  const [tag, setTag] = useWorkspaceState(`${memoryKey}.tag`, "all");
+  const [draft, setDraft] = useWorkspaceState(`${memoryKey}.filters`, { country: "all" });
   const [sorting, setSorting] = useWorkspaceState<SortingState>(`${memoryKey}.sorting`, []);
   const [columnVisibility, setColumnVisibility] = useWorkspaceState<Record<string, boolean>>(`${memoryKey}.columns`, {});
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -72,9 +76,9 @@ export function CompaniesTable({ companies, mode, canDelete, viewKey = "all" }: 
 
   const countries = useMemo(() => [...new Set(companies.map((company) => company.country))].sort(), [companies]);
   const filtered = useMemo(() => companies.filter((company) => {
-    const matchesQuery = `${company.name} ${company.domain} ${company.email} ${company.segment} ${company.ownerName}`.toLowerCase().includes(query.toLowerCase());
-    return matchesQuery && (country === "all" || company.country === country);
-  }), [companies, country, query]);
+    const matchesQuery = `${company.name} ${company.domain} ${company.email} ${company.segment} ${company.ownerName} ${(company.customerTags ?? []).join(" ")}`.toLowerCase().includes(query.toLowerCase());
+    return matchesQuery && (country === "all" || company.country === country) && (tag === "all" || (company.customerTags ?? []).some(value => value === tag));
+  }), [companies, country, query, tag]);
   const shopifyCount = useMemo(() => companies.filter((company) => company.source.includes("shopify")).length, [companies]);
   const needsReviewCount = useMemo(() => companies.filter((company) => company.country === "Unknown" || !company.email).length, [companies]);
   const knownCountryCount = useMemo(() => new Set(companies.map((company) => company.country).filter((item) => item !== "Unknown")).size, [companies]);
@@ -104,8 +108,6 @@ export function CompaniesTable({ companies, mode, canDelete, viewKey = "all" }: 
     { accessorKey: "addedAt", header: "Added", cell: ({ getValue }) => { const value = getValue<string | undefined>(); return <span className="whitespace-nowrap" title={value || undefined}>{value ? addedAtFormatter.format(new Date(value)) : "Unknown"}</span>; } },
     { accessorKey: "country", header: "Country", cell: ({ getValue }) => <CountryFlag country={getValue<string>()} /> },
     { accessorKey: "segment", header: "Segment", cell: ({ getValue }) => <span className="block max-w-44 truncate">{getValue<string>()}</span> },
-    { accessorKey: "outreachStatus", header: "Outreach", cell: ({ getValue }) => <span className="whitespace-nowrap">{getValue<string>()}</span> },
-    { accessorKey: "nextAction", header: "Next action", cell: ({ getValue }) => <span className="block max-w-48 truncate">{getValue<string>()}</span> },
   ], [selectedIds]);
 
   const table = useReactTable({
@@ -133,7 +135,7 @@ export function CompaniesTable({ companies, mode, canDelete, viewKey = "all" }: 
     </div>
 
     
-    <TableFilters onApply={() => { setQuery(draft.query); setCountry(draft.country); table.setPageIndex(0); }} actions={
+    <TableFilters onApply={() => { setCountry(draft.country); table.setPageIndex(0); }} actions={
       <DropdownMenu>
         <DropdownMenuTrigger render={<Button variant="outline" />}><Columns3 />Columns</DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
@@ -146,7 +148,8 @@ export function CompaniesTable({ companies, mode, canDelete, viewKey = "all" }: 
         </DropdownMenuContent>
       </DropdownMenu>
     }>
-      <TableFilter label="Search company" search><Input value={draft.query} onChange={(event) => setDraft({ ...draft, query: event.target.value })} placeholder="Company, email, domain, or segment" /></TableFilter>
+      <TableFilter label="Search company" search><Input value={query} onChange={(event) => { setQuery(event.target.value); table.setPageIndex(0); }} placeholder="Company, email, domain, segment, or tag" /></TableFilter>
+      <TableFilter label="Customer tag"><Select value={tag} onValueChange={value => { setTag(value ?? "all"); table.setPageIndex(0); }}><SelectTrigger className="min-w-64"><SelectValue /></SelectTrigger><SelectContent className="min-w-72"><SelectItem value="all">All tags</SelectItem>{customerTagValues.map(value => <SelectItem key={value} value={value}><CustomerTagBadge tag={value} /></SelectItem>)}</SelectContent></Select></TableFilter>
       <TableFilter label="Country"><Select value={draft.country} onValueChange={(value) => setDraft({ ...draft, country: value ?? "all" })}><SelectTrigger><SelectValue>{draft.country === "all" ? "All countries" : draft.country}</SelectValue></SelectTrigger><SelectContent><SelectItem value="all">All countries</SelectItem>{countries.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></TableFilter>
     </TableFilters>
     <Card className="crm-table-frame gap-0 py-0">

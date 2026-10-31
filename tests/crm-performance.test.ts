@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import * as customerTags from "../lib/customer-tags.ts";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
@@ -18,7 +19,7 @@ function load(options: { demo?: boolean; denied?: boolean; failure?: boolean; ro
     const filters = new Map<string, unknown>();
     let start = 0, end = 499;
     const query: Record<string, unknown> = {};
-    for (const method of ["select", "or", "order", "range", "eq", "in"]) query[method] = (...args: unknown[]) => {
+    for (const method of ["select", "or", "order", "range", "eq", "in", "limit"]) query[method] = (...args: unknown[]) => {
       calls.push({ table, method, args });
       if (method === "eq") filters.set(String(args[0]), args[1]);
       if (method === "range") [start, end] = args as [number, number];
@@ -37,6 +38,7 @@ function load(options: { demo?: boolean; denied?: boolean; failure?: boolean; ro
     return query;
   } };
   const deps: Record<string, unknown> = {
+    "../customer-tags.ts": customerTags,
     "../auth.ts": { requireWorkspaceMember: async () => { if (options.denied) throw new Error("Unauthorized"); authorized = true; } },
     "../env.ts": { env: { authRequired: true }, hasSupabaseConfig: () => !options.demo },
     "../supabase/admin.ts": { createSupabaseAdmin: () => client },
@@ -61,6 +63,20 @@ test("single-company reads filter in the database and retain the existing compan
   assert.ok(calls.some(call => call.table === "companies" && call.method === "eq" && call.args[0] === "id" && call.args[1] === row.id));
   assert.ok(calls.some(call => call.method === "or" && call.args[0] === "source.is.null,source.neq.sample_seed"));
   assert.equal(calls.filter(call => call.table === "companies" && call.method === "range").length, 1);
+});
+
+test("company listings bound embedded email history without limiting companies or dropping outreach status", async () => {
+  const latest = { status: "sent", direction: "outbound", created_at: "2026-10-31T01:00:00Z" };
+  const older = { status: "draft", direction: "outbound", created_at: "2026-10-01T01:00:00Z" };
+  const { api, calls } = load({ rows: [{ ...row, contacts: [{ name: "Buyer", email: "buyer@example.com", emails: [older, latest] }] }] });
+  const result = await api.listCompanies();
+  assert.equal(result.companies[0].outreachStatus, "Email · sent");
+  const limits = calls.filter(call => call.table === "companies" && call.method === "limit");
+  assert.equal(limits.length, 1);
+  assert.equal(limits[0].args[0], 1);
+  assert.equal((limits[0].args[1] as { referencedTable: string }).referencedTable, "contacts.emails");
+  assert.ok(calls.some(call => call.method === "order" && call.args[0] === "created_at" && (call.args[1] as { referencedTable?: string })?.referencedTable === "contacts.emails"));
+  assert.ok(calls.filter(call => call.method === "select" && call.table === "companies").every(call => !String(call.args[0]).includes("meta_leads")));
 });
 
 test("missing companies return null and demo reads never touch the database", async () => {

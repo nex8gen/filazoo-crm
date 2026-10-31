@@ -1,4 +1,6 @@
 import "server-only";
+import { requireAiAutomation } from "./ai-settings";
+import { aiBehaviorInstruction } from "../ai-policy";
 import { randomUUID } from "node:crypto";
 import { prepareUserEmail } from "./email-footers";
 import { createSupabaseAdmin } from "../supabase/admin";
@@ -66,6 +68,7 @@ async function handoff(row: AutoReplyRow, reason: string, history: InboxEmailIte
 }
 
 async function planReply(row: AutoReplyRow, history: InboxEmailItem[]) {
+  const policy = await requireAiAutomation(["sending"], ["emails", "customers", "products", "billing", "knowledge", "team", "settings"]);
   const db = createSupabaseAdmin();
   const [profile, products, knowledge, bootstrap] = await Promise.all([
     customer(row), loadFlowReplyProducts({ useProducts: true }, row.user_id),
@@ -85,7 +88,7 @@ async function planReply(row: AutoReplyRow, history: InboxEmailItem[]) {
   if (prompt.length > 300_000) throw new Error("The conversation or business context is too large for automatic review. A person must review this reply.");
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   const token = process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
-  const options = { prompt, systemInstruction: autoReplyInstruction, maxOutputTokens: 8192 };
+  const options = { prompt, systemInstruction: autoReplyInstruction + aiBehaviorInstruction(policy, true), maxOutputTokens: 8192 };
   const gateway = () => {
     if (!token) throw new Error("AI auto-reply is not configured.");
     return generateGatewayText({ ...options, token, model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim() });
@@ -99,6 +102,7 @@ async function planReply(row: AutoReplyRow, history: InboxEmailItem[]) {
 }
 
 async function catalogAttachment(row: AutoReplyRow, plan: AutoReplyPlan, context: Awaited<ReturnType<typeof planReply>>) {
+  await requireAiAutomation(["sending", "catalogs"], ["products", "customers"]);
   const { products, profile } = context;
   const requested = new Set(plan.catalogSkus);
   if ([...requested].some((sku) => !products.some((product) => product.sku === sku))) throw new Error("A catalog product is unavailable.");
@@ -130,6 +134,7 @@ async function catalogAttachment(row: AutoReplyRow, plan: AutoReplyPlan, context
 }
 
 async function invoiceDocument(context: Awaited<ReturnType<typeof planReply>>) {
+  await requireAiAutomation(["invoices"], ["billing", "products", "customers"]);
   const { plan, products, bootstrap } = context;
   if (!plan.invoiceItems.length) throw new Error("Confirm exact products, variants and quantities before preparing an invoice.");
   const { lines, currency } = replyInvoiceLines(plan.invoiceItems, products.map((product) => invoiceProduct({ ...product, tags: product.tags ?? [] })));
@@ -150,6 +155,7 @@ async function invoiceDocument(context: Awaited<ReturnType<typeof planReply>>) {
 }
 
 async function checkCanSend(row: AutoReplyRow) {
+  await requireAiAutomation(["sending"], ["emails", "customers", "products", "billing", "knowledge", "team", "settings"]);
   await owner(row);
   const db = createSupabaseAdmin();
   const { data } = await db.from("email_auto_replies").select("enabled,status,revision").eq("id", row.id).single().throwOnError();
@@ -178,6 +184,7 @@ async function deliver(row: AutoReplyRow, history: InboxEmailItem[], latest: Inb
   if (error) throw new Error(error.code === "23505" ? "This reply already has a delivery attempt. Review sent mail before sending manually." : error.message);
   try {
     if (document) {
+      await requireAiAutomation(["invoices", "destructive"], ["billing", "customers", "products"]);
       const { data: assignee } = await db.from("workspace_members").select("role").eq("user_id", row.assigned_to).not("activated_at", "is", null).maybeSingle().throwOnError();
       if (!assignee || !["admin", "operator", "bd_manager"].includes(assignee.role)) throw new Error("The assigned user cannot issue invoices.");
       await checkCanSend(row);
@@ -186,6 +193,7 @@ async function deliver(row: AutoReplyRow, history: InboxEmailItem[], latest: Inb
       await db.from("email_auto_replies").update({ invoice_id: invoice.id }).eq("id", row.id).throwOnError();
       if (invoice.status !== "draft") throw new Error("This invoice was already issued. Review its delivery before sending again.");
       if (canManageBilling(assignee.role)) {
+        await requireAiAutomation(["invoices", "destructive"], ["billing", "customers", "products"]);
         invoice = await mutateInvoice(invoice.id, row.assigned_to, { action: "issue", revision: invoice.revision });
         if (!invoice) throw new Error("The invoice could not be issued.");
       }
@@ -235,6 +243,7 @@ async function deliver(row: AutoReplyRow, history: InboxEmailItem[], latest: Inb
 
 export async function processEmailAutoReply(id: string) {
   const db = createSupabaseAdmin();
+  await requireAiAutomation(["sending"], ["emails", "customers", "products", "billing", "knowledge", "team", "settings"]);
   const { data: before } = await db.from("email_auto_replies").select("*").eq("id", id).eq("enabled", true).in("status", ["active", "ready", "waiting_shipping"]).maybeSingle().throwOnError();
   if (!before) return;
   const row = before as AutoReplyRow;

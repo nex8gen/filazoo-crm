@@ -5,6 +5,8 @@ import { searchMailboxMessages } from "@/lib/mailbox-imap";
 import { canViewEmail } from "@/lib/email-access";
 import { getAssignedEmailContacts } from "@/lib/data/email-access";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { listEmailInboxStates } from "@/lib/data/email-state";
+import { emailTagMessageKey, applyConversationCustomerTags } from "@/lib/customer-tags";
 
 export const maxDuration = 240;
 export async function GET(request: Request) {
@@ -35,6 +37,7 @@ export async function GET(request: Request) {
       } catch (error) { errors.push(`${folder.path}: ${error instanceof Error ? error.message : "Search unavailable"}`); }
       if (request.signal.aborted) break;
     }
-    return Response.json({ emails: [...emails.values()], error: errors.join("; ") || (fallback ? "Provider body search is unavailable. Results include message headers and cached bodies." : null), limited: [...emails.values()].length >= 50 }, { headers: { "Cache-Control": "no-store" } });
+    const states = await listEmailInboxStates(viewer.id);
+    return Response.json({ emails: applyConversationCustomerTags([...emails.values()].map(email => ({ ...email, category: states.get(emailTagMessageKey(email))?.category ?? null })), states), error: errors.join("; ") || (fallback ? "Provider body search is unavailable. Results include message headers and cached bodies." : null), limited: [...emails.values()].length >= 50 }, { headers: { "Cache-Control": "no-store" } });
   } catch { return Response.json({ error: "Provider search unavailable. Showing loaded messages." }, { status: 502 }); }
 }

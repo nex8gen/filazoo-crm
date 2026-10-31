@@ -1,8 +1,10 @@
 import type { ProviderImage } from "./image-input.ts";
+import { geminiTokenUsage, type AiTokenUsage } from "./usage.ts";
 
 type GeminiResponse = {
   candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
   error?: { message?: string };
+  usageMetadata?: Record<string, unknown>;
 };
 
 // Large length/range combinations can exceed Gemini's constrained-decoder
@@ -22,6 +24,7 @@ export type GenerateGeminiTextOptions = {
   maxOutputTokens?: number;
   responseJsonSchema?: Record<string, unknown>;
   fetcher?: typeof fetch;
+  onUsage?: (usage: AiTokenUsage) => void;
 };
 
 export async function generateGeminiText({
@@ -33,6 +36,7 @@ export async function generateGeminiText({
   maxOutputTokens = 1_200,
   responseJsonSchema,
   fetcher = fetch,
+  onUsage,
 }: GenerateGeminiTextOptions) {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
   const response = await fetcher(endpoint, {
@@ -56,6 +60,7 @@ export async function generateGeminiText({
   });
 
   const result = await response.json().catch(() => ({})) as GeminiResponse;
+  if (result.usageMetadata) onUsage?.(geminiTokenUsage(result.usageMetadata));
   if (!response.ok) {
     throw new Error(result.error?.message || "The AI provider could not process this request.");
   }

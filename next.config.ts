@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
 
+const stableLocalRuntime = process.env.FILAZOO_STABLE_RUNTIME === "1";
+
 const nextConfig: NextConfig = {
+  // Normal local CRM use must not share build assets with next dev or CI builds.
+  distDir: stableLocalRuntime ? ".next-crm" : ".next",
+  ...(stableLocalRuntime ? { typescript: { tsconfigPath: "tsconfig.crm.json" } } : {}),
   cacheComponents: true,
   partialPrefetching: true,
   experimental: {

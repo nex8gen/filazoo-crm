@@ -9,7 +9,7 @@ function setup(secret: string | undefined = "fixture-secret") {
   const background: Array<() => Promise<void>> = [];
   const exports = {} as { GET: (request: Request) => Promise<Response> };
   vm.runInNewContext(ts.transpileModule(readFileSync(new URL("../app/api/cron/mail-sync/route.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText,
-    { exports, Request, Response, URL, console, process: { env: { CRON_SECRET: secret } }, require: (name: string) => name === "next/server" ? { after: (run: () => Promise<void>) => background.push(run) } : { withMailSyncWorkerLease: async (run: () => Promise<unknown>) => run(), runMailSyncWorker: async () => { calls++; return { processed: 2, failed: 0 }; } } });
+    { exports, Request, Response, URL, console, process: { env: { CRON_SECRET: secret } }, require: (name: string) => name === "next/server" ? { after: (run: () => Promise<void>) => background.push(run) } : name === "@/lib/data/conversation-tagging" ? { processAutomaticConversationTags: async () => ({ analyzed: 1, failed: 0, paused: false }) } : { withMailSyncWorkerLease: async (run: () => Promise<unknown>) => run(), runMailSyncWorker: async () => { calls++; return { processed: 2, failed: 0 }; } } });
   return { ...exports, calls: () => calls, flush: async () => { for (const run of background) await run(); } };
 }
 test("public or incorrectly authenticated cron requests cannot touch the mailbox queue", async () => {
@@ -29,11 +29,11 @@ test("the existing cron bearer token invokes the receive worker independently of
   assert.equal(worker.calls(), 1);
 });
 
-test("the explicit receive-only diagnostic waits for its bounded result", async () => {
+test("the explicit diagnostic waits for sync and bounded context tagging", async () => {
   const worker = setup();
   const response = await worker.GET(new Request("https://crm.test/api/cron/mail-sync?task=once", { headers: { authorization: "Bearer fixture-secret" } }));
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { ok: true, processed: 2, failed: 0 });
+  assert.deepEqual(await response.json(), { ok: true, processed: 2, failed: 0, tags: { analyzed: 1, failed: 0, paused: false } });
   await worker.flush();
   assert.equal(worker.calls(), 1);
 });

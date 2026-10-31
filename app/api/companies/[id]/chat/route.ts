@@ -1,3 +1,5 @@
+import { requireAiFeature } from "@/lib/data/ai-settings";
+import { aiBehaviorInstruction, restrictedAiContext, assertAiFeature, AiPolicyError } from "@/lib/ai-policy";
 import { z } from "zod";
 import { getWorkspaceViewer } from "@/lib/auth";
 import { getCompanyDetails } from "@/lib/data/crm";
@@ -29,6 +31,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const parsed = companyChatSchema.safeParse(body);
   if (!parsed.success) return Response.json({ error: parsed.error.issues[0]?.message || "Invalid chat request." }, { status: 400, headers });
 
+  let policy;
+  try {
+    policy = await requireAiFeature("chat", "customers");
+    if (parsed.data.webSearch) assertAiFeature(policy, "webSearch");
+    if (collectChatImages(parsed.data.messages).length) assertAiFeature(policy, "images");
+  } catch (error) { return Response.json({ error: error instanceof Error ? error.message : "Unable to verify AI access." }, { status: error instanceof AiPolicyError ? 403 : 503, headers }); }
+  const restricted = restrictedAiContext(policy);
+  if (restricted) parsed.data.messages = parsed.data.messages.slice(-1);
   let details;
   try {
     ({ details } = await getCompanyDetails(id));
@@ -42,15 +52,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!apiKey && !gatewayToken) return Response.json({ error: "AI assistance is not configured. Ask your administrator to connect an AI provider." }, { status: 503, headers });
   let session: Awaited<ReturnType<typeof startChatSession>>;
   try {
-    session = await startChatSession(parsed.data.history, { mode: "customer", pathname: `/companies/${id}`, pageContext: { companyId: id } }, viewer, parsed.data.messages.at(-1)!);
+    session = restricted ? undefined : await startChatSession(parsed.data.history, { mode: "customer", pathname: `/companies/${id}`, pageContext: { companyId: id } }, viewer, parsed.data.messages.at(-1)!);
     if (session?.replay) return Response.json(session.replay, { headers });
     if (session) parsed.data.messages = session.messages;
   } catch (error) { return Response.json({ error: error instanceof HistoryError ? error.message : "Unable to open saved conversation." }, { status: error instanceof HistoryError ? error.status : 503, headers }); }
-  const { context, sources } = buildCompanyChatContext(details, true);
+  const { context, sources } = buildCompanyChatContext(restricted ? { ...details, activity: [] } : details, policy.data.billing);
   const options = {
-    systemInstruction: companyChatInstruction(new Date().toISOString(), parsed.data.language, parsed.data.webSearch),
+    systemInstruction: companyChatInstruction(new Date().toISOString(), parsed.data.language, parsed.data.webSearch) + aiBehaviorInstruction(policy),
     prompt: buildCompanyChatPrompt(context, parsed.data.messages) + (session?.summaryPrompt ?? ""),
-    images: collectChatImages(parsed.data.messages),
+    images: policy.features.images ? collectChatImages(parsed.data.messages) : [],
     maxOutputTokens: parsed.data.webSearch ? 2_600 : 1_600,
     fetcher: ((input, init) => (session?.fetcher ?? fetch)(input, {
       ...init, signal: AbortSignal.any([request.signal, AbortSignal.timeout(45_000)]),

@@ -1,3 +1,4 @@
+import { policyTestDependency } from "./helpers/ai-policy.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
@@ -27,7 +28,7 @@ function route() {
   const exports: { GET?: (request: Request) => Promise<Response>; POST?: (request: Request) => Promise<Response> } = {};
   vm.runInNewContext(ts.transpileModule(readFileSync(new URL("../app/api/email/auto-reply/route.ts", import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-  }).outputText, { exports, require: (name: string) => dependencies[name], Response, URL });
+  }).outputText, { exports, require: (name: string) => policyTestDependency(name) ?? (dependencies[name]), Response, URL });
   const post = (body: unknown, origin = "http://localhost") => exports.POST!(new Request("http://localhost/api/email/auto-reply", {
     method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify(body),
   }));

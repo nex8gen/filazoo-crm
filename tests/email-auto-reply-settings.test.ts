@@ -1,3 +1,4 @@
+import { policyTestDependency } from "./helpers/ai-policy.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
@@ -56,7 +57,7 @@ function settings() {
   };
   vm.runInNewContext(ts.transpileModule(readFileSync(new URL("../lib/data/email-auto-reply.ts", import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-  }).outputText, { exports, require: (name: string) => { assert.ok(name in dependencies, name); return dependencies[name]; } });
+  }).outputText, { exports, require: (name: string) => { const aiDependency = policyTestDependency(name); if (aiDependency) return aiDependency;  assert.ok(name in dependencies, name); return dependencies[name]; } });
   const enable = () => exports.enableAutoReply(viewer, { mailboxId: "mailbox", senderId: "mailbox", messageId: message.messageId, revision: 0 });
   return { exports, viewer, message, rows, enable, headerReads: () => headerReads, conflict: () => { conflictOnce = true; } };
 }

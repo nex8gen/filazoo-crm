@@ -4,6 +4,7 @@ import { getUserMailbox, getViewerMailboxes, mailboxHasImap } from "@/lib/data/m
 import { enqueueMailboxSync, readMailboxSyncHealth } from "@/lib/data/mail-sync-worker";
 import { getCompanyDetails } from "@/lib/data/crm";
 import { getCompanyEmailBackendData } from "@/lib/data/company-emails";
+import { after } from "next/server";
 
 export const maxDuration = 240;
 
@@ -43,6 +44,12 @@ export async function GET(request: Request) {
         syncQueueError = refreshRequested ? "Mailbox refresh could not be queued. Saved messages are still available." : "Unable to check mailbox updates. Saved messages are still available.";
       }
     }));
+    if (refreshRequested && viewer.role !== "viewer" && refreshMailboxes.length) after(async () => {
+      try {
+        const { processAutomaticConversationTags } = await import("@/lib/data/conversation-tagging");
+        await processAutomaticConversationTags({ mailboxIds: refreshMailboxes.map(mailbox => mailbox.id), maxConversations: 2 });
+      } catch { console.error("Automatic conversation tagging will retry on the next mailbox refresh."); }
+    });
   }
 
   return Response.json({ ...data, syncHealth, syncQueueError }, {

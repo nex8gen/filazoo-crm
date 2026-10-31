@@ -1,4 +1,7 @@
+import { policyTestDependency } from "./helpers/ai-policy.ts";
 import assert from "node:assert/strict";
+import * as customerTags from "../lib/customer-tags.ts";
+import { customerTagDataFixture } from "./helpers/customer-tags.ts";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -7,6 +10,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import * as engine from "../lib/flow-engine.ts";
 import * as flows from "../lib/flows.ts";
+import * as segments from "../lib/segments.ts";
 import * as policy from "../lib/outreach-policy.ts";
 import * as templates from "../lib/flow-templates.ts";
 import * as tracking from "../lib/flow-tracking.ts";
@@ -83,10 +87,11 @@ function runtime(options: { businessWindow?: Date | null } = {}) {
           rows.push(...selected);
         } else if (operation === "update") selected.forEach((row) => Object.assign(row, payload));
         else if (operation === "upsert") {
-          const input = payload as Row;
-          const existing = rows.find(row => conflict.split(",").every(key => row[key] === input[key]));
-          if (existing) Object.assign(existing, input);
-          else rows.push({ id: randomUUID(), ...input });
+          for (const input of Array.isArray(payload) ? payload : [payload]) {
+            const existing = rows.find(row => conflict.split(",").every(key => row[key] === input[key]));
+            if (existing) Object.assign(existing, input);
+            else rows.push({ id: randomUUID(), ...input });
+          }
         }
         return Promise.resolve({ data: head ? null : single ? selected[0] ?? null : selected, count: selected.length, error: null }).then(resolve);
       },
@@ -94,6 +99,9 @@ function runtime(options: { businessWindow?: Date | null } = {}) {
     return query;
   }
   const dependencies: Record<string, unknown> = {
+    "../segments.ts": segments,
+    "../customer-tags.ts": customerTags,
+    "./customer-tags.ts": customerTagDataFixture(() => ({ from })),
     "../attachment-upload.ts": attachmentUpload,
     "../flow-smtp.ts": flowSmtp,
     "./email-footers.ts": { getUserEmailFooter: async () => null, prepareUserEmail: async (_userId: string, input: unknown) => input },
@@ -122,9 +130,67 @@ function runtime(options: { businessWindow?: Date | null } = {}) {
     processDueFlowRuns: (limit: number, options: { syncMailbox: boolean }) => Promise<unknown[]>;
     scanTimeBasedFlowTriggers: (id?: string) => Promise<number>;
   };
-  vm.runInNewContext(code, { exports, require: (name: string) => dependencies[name] ?? require(name), Date, console });
+  vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (dependencies[name] ?? require(name)), Date, console });
   return { db, env, contactId, companyId, flowId, exports, deliveries, aiCalls, delivered: () => delivered };
 }
+
+test("business segment launches enroll existing companies and new matches once without requiring a segment change", async () => {
+  const app = runtime();
+  Object.assign(app.db.companies[0], { segment: "Historical email lead", contacts: [{ id: app.contactId, email: "lead@example.com" }] });
+  Object.assign(app.db.flows[0], { trigger_type: "company_segment_changed", trigger_config: { segment: "Historical email lead", segmentAudience: true, reentryMode: "no_reentry" } });
+  app.db.flows[0].status = "draft";
+  assert.equal(await app.exports.scanTimeBasedFlowTriggers(), 0);
+  app.db.flows[0].status = "live";
+  assert.equal(await app.exports.scanTimeBasedFlowTriggers(), 1);
+  assert.equal(app.delivered(), 1);
+  assert.equal(await app.exports.scanTimeBasedFlowTriggers(), 0);
+  const otherCompanyId = randomUUID(), otherContactId = randomUUID();
+  app.db.companies.push({ id: otherCompanyId, segment: "Wholesale", country: "US", contacts: [{ id: otherContactId, email: "other@example.com" }] });
+  app.db.contacts.push({ ...app.db.contacts[0], id: otherContactId, company_id: otherCompanyId, email: "other@example.com" });
+  assert.equal(await app.exports.scanTimeBasedFlowTriggers(), 0);
+  app.db.companies[1].segment = "Historical email lead";
+  assert.equal(await app.exports.scanTimeBasedFlowTriggers(), 1);
+  assert.equal(app.delivered(), 2);
+  assert.equal((await app.exports.enrollMatchingFlows({ type: "company_segment_changed", companyId: otherCompanyId, contactId: otherContactId, segment: "Historical email lead", conversationId: `company:${otherCompanyId}` }))[0].enrolled, false);
+  assert.equal(app.delivered(), 2);
+});
+
+test("saved segment checks enroll current members once and follow later audience edits", async () => {
+  const app = runtime();
+  const segmentId = randomUUID();
+  app.db.company_segments = [{ id: segmentId, rules: { country: "GB" } }];
+  Object.assign(app.db.companies[0], { contacts: [{ id: app.contactId, email: "lead@example.com" }] });
+  Object.assign(app.db.flows[0], { trigger_type: "company_segment_changed", trigger_config: { segment: "Priority audience", savedSegmentId: segmentId, reentryMode: "no_reentry" } });
+  assert.equal(await app.exports.scanTimeBasedFlowTriggers(), 0);
+  assert.equal(app.delivered(), 0);
+  app.db.company_segments[0].rules = { country: "US" };
+  assert.equal(await app.exports.scanTimeBasedFlowTriggers(), 1);
+  assert.equal(app.delivered(), 1);
+  assert.equal(app.db.flow_runs[0].event_key, `saved-segment:${segmentId}:${app.companyId}`);
+  assert.equal(await app.exports.scanTimeBasedFlowTriggers(), 0);
+  const event = { type: "company_segment_changed", companyId: app.companyId, contactId: app.contactId, conversationId: `company:${app.companyId}`, segment: "Shopify B2B lead" } as const;
+  assert.equal((await app.exports.enrollMatchingFlows(event))[0].enrolled, false);
+  assert.equal(app.delivered(), 1);
+});
+
+test("manual saved segment membership and deletion never broaden enrollment", async () => {
+  const app = runtime();
+  const segmentId = randomUUID();
+  app.db.company_segments = [{ id: segmentId, rules: { companyIds: [randomUUID()] } }];
+  Object.assign(app.db.companies[0], { contacts: [{ id: app.contactId, email: "lead@example.com" }] });
+  Object.assign(app.db.flows[0], { trigger_type: "company_segment_changed", trigger_config: { segment: "Manual audience", savedSegmentId: segmentId, reentryMode: "no_reentry" } });
+  assert.equal(await app.exports.scanTimeBasedFlowTriggers(), 0);
+  app.db.company_segments[0].rules = { companyIds: [app.companyId] };
+  // Drafts and paused flows cannot enroll even when membership matches.
+  app.db.flows[0].status = "draft";
+  assert.equal(await app.exports.scanTimeBasedFlowTriggers(), 0);
+  app.db.flows[0].status = "live";
+  app.db.company_segments = [];
+  assert.equal(await app.exports.scanTimeBasedFlowTriggers(), 0);
+  app.db.company_segments = [{ id: segmentId, rules: { companyIds: [app.companyId] } }];
+  assert.equal(await app.exports.scanTimeBasedFlowTriggers(), 1);
+  assert.equal(app.delivered(), 1);
+});
 
 test("a saved new lead immediately executes email and scanner retries cannot send twice", async () => {
   const app = runtime();
@@ -191,7 +257,7 @@ test("nested live branches resume from waits, reread CRM changes and execute eve
     }
     assert.equal(app.db.pipeline[0].stage, "new", "account follow-ups must not mutate retired stages");
     assert.equal(app.db.companies[0].segment, "Qualified");
-    assert.equal(app.db.email_inbox_state[0].category, "Needs follow-up");
+    assert.equal(app.db.crm_email_tags[0].tag, "Quotation Follow-up");
     const logs = app.db.flow_run_logs.length;
     await app.exports.processFlowRun(String(app.db.flow_runs[0].id));
     assert.equal(app.db.flow_run_logs.length, logs);

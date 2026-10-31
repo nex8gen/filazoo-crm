@@ -49,12 +49,21 @@ To verify AI lead enrollment, conversation lookup, PDF generation, first-message
 ```bash
 npm install
 copy .env.example .env.local
-npm run dev
+npm run crm
 ```
 
-Open `http://localhost:3000`.
+For normal CRM use, run `npm run crm` and open `http://localhost:3001`.
+This builds and serves an optimized production app using your existing local
+configuration. Its `.next-crm` output is separate from the development build, so
+editing files or running other builds does not invalidate your open CRM pages.
+After the first build, `npm run crm:start` restarts it without rebuilding.
+Stop the normal-use server before running `npm run crm` to install newer code.
 
-`npm run dev` checks the Supabase keys and makes read-only authentication and database connection checks before starting. If startup reports blocked network permissions, run it from a terminal with network access. Fix missing keys in `.env.development.local`; do not replace secrets with redacted values downloaded from deployment settings. A connection failure stops startup instead of opening a CRM that cannot sign users in.
+Use `npm run dev` and `http://localhost:3000` while changing application code.
+Development mode compiles routes on demand, disables automatic route prefetching,
+and refreshes pages as code changes; its navigation does not represent production speed.
+
+`npm run dev` checks the Supabase keys and makes read-only authentication and database connection checks before starting. Temporary connection failures and upstream outages retry up to three times per check, with a 10-second timeout per attempt. Persistent failures stop startup with a diagnostic for timeouts, DNS problems, blocked permissions or HTTP errors. If startup reports blocked network permissions, run it from a terminal with network access. Fix missing keys in `.env.development.local`; do not replace secrets with redacted values downloaded from deployment settings. A connection failure stops startup instead of opening a CRM that cannot sign users in.
 
 ## Supabase setup
 

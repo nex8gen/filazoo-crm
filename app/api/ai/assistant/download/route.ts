@@ -5,6 +5,8 @@ import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { companyExportSnapshot } from "@/lib/ai/company-export-records";
 import { companyExportCsv } from "@/lib/company-export";
 import { preparedCrmActionSchema } from "@/lib/ai/crm-tools";
+import { getAiSettings } from "@/lib/data/ai-settings";
+import { aiActionApproval } from "@/lib/ai-policy";
 
 const headers = { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" };
 export async function GET(request: Request) {
@@ -20,6 +22,7 @@ export async function GET(request: Request) {
   if (data.status !== "completed" || !action.success || action.data.operation.op !== "export_companies") return Response.json({ error: "Approve this export before downloading it." }, { status: 409, headers });
   if (Date.parse(data.expires_at) <= Date.now()) return Response.json({ error: "This export expired. Prepare a new export." }, { status: 410, headers });
   try {
+    aiActionApproval((await getAiSettings()).policy, action.data, "ask");
     const snapshot = await companyExportSnapshot(action.data.operation.selection);
     const hash = createHash("sha256").update(JSON.stringify(snapshot.value)).digest("hex");
     if (hash !== action.data.fingerprint) return Response.json({ error: "The selected data changed. Prepare a new export to review the current selection." }, { status: 409, headers });

@@ -1,3 +1,4 @@
+import { policyTestDependency } from "./helpers/ai-policy.ts";
 import * as replyTools from "../lib/ai/crm-reply-tools.ts";
 import * as readiness from "../lib/ai/invoice-readiness.ts";
 import test from "node:test";
@@ -19,7 +20,7 @@ const viewer = { id: actorId, role: "admin" as const, displayName: "Audit", emai
 function load<T>(file: string, dependencies: Record<string, unknown>): T {
   const exports = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => name === "server-only" ? {} : dependencies[name] ?? (name === "./crm-reply-tools" ? replyTools : name === "./crm-reply-execution" ? { replyOperationTarget: () => { throw new Error("Reply workflows use their dedicated fixtures"); } } : name === "../data/customer-reply-requests" ? { listReplyRequests: async () => [] } : name === "@/lib/ai/invoice-readiness" ? readiness : undefined) ?? require(name), Error, console });
+  vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (name === "server-only" ? {} : dependencies[name] ?? (name === "./crm-reply-tools" ? replyTools : name === "./crm-reply-execution" ? { replyOperationTarget: () => { throw new Error("Reply workflows use their dedicated fixtures"); } } : name === "../data/customer-reply-requests" ? { listReplyRequests: async () => [] } : name === "@/lib/ai/invoice-readiness" ? readiness : undefined) ?? require(name)), Error, console });
   return exports as T;
 }
 type Row = Record<string, unknown>;

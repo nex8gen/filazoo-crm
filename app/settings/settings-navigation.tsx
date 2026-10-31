@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Bot } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { useWorkspaceState } from "@/components/workspace-memory";
@@ -9,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { settingsSectionForPath, visibleSettingsSections } from "@/lib/settings-sections";
 import "./settings.css";
 
-const icons = { settings: Settings2, sun: Sun, user: UserRound, shield: ShieldCheck, mailCheck: MailCheck, apps: LayoutGrid, mail: Mail, plug: Plug, creditCard: CreditCard, receipt: ReceiptText, users: UsersRound, workflow: Workflow };
+const icons = { bot: Bot, settings: Settings2, sun: Sun, user: UserRound, shield: ShieldCheck, mailCheck: MailCheck, apps: LayoutGrid, mail: Mail, plug: Plug, creditCard: CreditCard, receipt: ReceiptText, users: UsersRound, workflow: Workflow };
 
 export function SettingsNavigation({ isAdmin }: { isAdmin: boolean }) {
   const pathname = usePathname();

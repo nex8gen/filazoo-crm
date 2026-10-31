@@ -2,7 +2,8 @@ import { simulateFlow, matchesProfileFilters, type FlowFacts } from "./flow-engi
 import { flowActionLocations, flowPaths } from "./flow-tree.ts";
 import { flowInputSchema, type FlowInput, type JsonConfig } from "./flows.ts";
 
-const fields: Record<string, keyof FlowFacts> = { country_is: "country", segment_is: "segment", category_is: "category", company_status_is: "companyStatus", pipeline_stage_is: "pipelineStage", fit_score_at_least: "fitScore", customer_replied: "customerReplied", opened_email: "openedEmail", clicked_link: "clickedLink" };
+type ScenarioField = Exclude<keyof FlowFacts, "savedSegmentIds">;
+const fields: Record<string, ScenarioField> = { country_is: "country", segment_is: "segment", category_is: "category", company_status_is: "companyStatus", pipeline_stage_is: "pipelineStage", fit_score_at_least: "fitScore", customer_replied: "customerReplied", opened_email: "openedEmail", clicked_link: "clickedLink" };
 const baseFacts: FlowFacts = { customerReplied: false, openedEmail: false, clickedLink: false, category: null, segment: null, country: null, companyStatus: null, pipelineStage: null, fitScore: null };
 
 /** Bounded, deterministic condition coverage. This is a simulation, never a delivery test. */
@@ -10,8 +11,8 @@ export function testFlowScenarios(input: FlowInput, limit = 256, now = new Date(
   const parsed = flowInputSchema.safeParse(input);
   if (!parsed.success) throw new Error(parsed.error.issues[0]?.message || "Complete the flow settings first.");
   const flow = parsed.data;
-  const domains = new Map<keyof FlowFacts, Set<string | number | boolean | null>>();
-  const add = (field: keyof FlowFacts, values: Array<string | number | boolean | null>) => {
+  const domains = new Map<ScenarioField, Set<string | number | boolean | null>>();
+  const add = (field: ScenarioField, values: Array<string | number | boolean | null>) => {
     const domain = domains.get(field) ?? new Set([baseFacts[field] ?? null]);
     values.forEach((value) => domain.add(value)); domains.set(field, domain);
   };

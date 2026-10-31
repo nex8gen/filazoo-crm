@@ -1,15 +1,18 @@
 import "server-only";
+import { requireAiData } from "../data/ai-settings";
 import { createSupabaseAdmin } from "../supabase/admin";
 import { getMetaInboxData } from "../meta-messenger";
 import { listWorkspaceFlows } from "../data/flows";
 
 export async function loadAgentFlow(flowId: string) {
+  await requireAiData("flows", "emails", "team");
   const flow = (await listWorkspaceFlows()).find((item) => item.id === flowId);
   if (!flow) throw new Error("The selected flow is unavailable.");
   return flow;
 }
 
 export async function loadAgentConversation(conversationId: string) {
+  await requireAiData("emails");
   // Resolve composite UI identifiers through the same workspace inbox first.
   const thread = (await getMetaInboxData()).threads.find((item) => item.id === conversationId);
   if (!thread) throw new Error("The selected conversation is unavailable.");

@@ -1,3 +1,5 @@
+import { policyTestDependency } from "./helpers/ai-policy.ts";
+import * as customerTags from "../lib/customer-tags.ts";
 import * as replyTools from "../lib/ai/crm-reply-tools.ts";
 import * as readiness from "../lib/ai/invoice-readiness.ts";
 import test from "node:test";
@@ -32,9 +34,10 @@ const viewer = { id: actorId, role: "admin" as const, displayName: "Sales Manage
 const request = new Request("http://localhost:3000/api/ai/assistant/action");
 
 function moduleUnderTest<T>(file: string, dependencies: Record<string, unknown>): T {
+  dependencies["../customer-tags.ts"] = customerTags;
   const exports = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => name === "server-only" ? {} : dependencies[name] ?? (name === "./crm-reply-tools" ? replyTools : name === "./crm-reply-execution" ? { replyOperationTarget: () => { throw new Error("Reply workflows use their dedicated fixtures"); } } : name === "../data/customer-reply-requests" ? { listReplyRequests: async () => [] } : name === "@/lib/ai/invoice-readiness" ? readiness : undefined) ?? require(name), Request, Response, FormData, URL, Date, Intl, Error, crypto, console });
+  vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (name === "server-only" ? {} : dependencies[name] ?? (name === "./crm-reply-tools" ? replyTools : name === "./crm-reply-execution" ? { replyOperationTarget: () => { throw new Error("Reply workflows use their dedicated fixtures"); } } : name === "../data/customer-reply-requests" ? { listReplyRequests: async () => [] } : name === "@/lib/ai/invoice-readiness" ? readiness : undefined) ?? require(name)), Request, Response, FormData, URL, Date, Intl, Error, crypto, console });
   return exports as T;
 }
 function fixture() {
@@ -288,12 +291,25 @@ test("email organization preserves other flags and messaging resolves its recipi
   await f.executeCrmAction(email, viewer, actionId, request);
   const saved = f.calls.find((call) => call.name === "saveEmailState")!.args[0] as Record<string, unknown>;
   assert.equal(saved.starred, true); assert.equal(saved.read, true); assert.equal(saved.category, "Interested"); assert.equal(saved.folder, "archive");
+  assert.equal(saved.categoryWrite, false);
   const message = await f.prepareCrmAction({ op: "send_message", messageId: recordId, text: "Your quote is ready" }, viewer);
   await f.executeCrmAction(message, viewer, actionId, request);
   const send = f.calls.find((call) => call.name === "sendMetaTextMessage")!.args[0] as Record<string, unknown>;
   assert.equal(send.to, "customer-42"); assert.equal(send.channel, "instagram");
   f.tables.meta_messages[0].direction = "outbound";
   await assert.rejects(() => f.prepareCrmAction({ op: "send_message", messageId: recordId, text: "Hi" }, viewer), /actual inbound/);
+});
+
+test("AI email tagging uses the shared tag path and preserves unrelated state", async () => {
+  const f = fixture();
+  const email = await f.prepareCrmAction({ op: "set_email_state", emailId: "mail-1", changes: { category: "New Inquiries" } }, viewer);
+  await f.executeCrmAction(email, viewer, actionId, request);
+  const saved = f.calls.find(call => call.name === "saveEmailState")!.args[0] as Record<string, unknown>;
+  assert.equal(saved.category, "New Inquiries");
+  assert.equal(saved.categoryWrite, true);
+  assert.equal(saved.tagMessageKey, "conversation:thread-1");
+  assert.equal(saved.starred, true);
+  assert.equal(saved.read, true);
 });
 
 test("message drafts resolve the open conversation, recheck access and never send", async () => {

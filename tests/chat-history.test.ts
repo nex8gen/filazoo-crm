@@ -1,3 +1,4 @@
+import { policyTestDependency } from "./helpers/ai-policy.ts";
 import * as readiness from "../lib/ai/invoice-readiness.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -20,7 +21,7 @@ type Handler = (request: Request, context?: { params: Promise<{ id: string }> })
 function load(file: string, dependencies: Record<string, unknown>, env = {}) {
   const exports: Record<string, unknown> = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => dependencies[name] ?? (name === "@/lib/ai/invoice-readiness" ? readiness : undefined) ?? (name === "server-only" ? {} : require(name)), Request, Response, URL, AbortSignal, Date, Error, Object, JSON, console, process: { env }, fetch });
+  vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (dependencies[name] ?? (name === "@/lib/ai/invoice-readiness" ? readiness : undefined) ?? (name === "server-only" ? {} : require(name))), Request, Response, URL, AbortSignal, Date, Error, Object, JSON, console, process: { env }, fetch });
   return exports;
 }
 function req(method: string, body?: unknown, url = "http://localhost:3000/api/ai/history", origin = "http://localhost:3000") {

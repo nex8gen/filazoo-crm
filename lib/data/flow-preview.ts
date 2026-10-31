@@ -15,7 +15,7 @@ export async function previewFlow(input: FlowPreviewInput, userId: string, isAdm
     : { data: null };
   if (input.contactId && !customer) throw new Error("This customer is no longer available.");
   const facts = customer
-    ? await loadFlowFacts({ userId, contactId: customer.id, companyId: customer.company_id, since: new Date().toISOString() })
+    ? await loadFlowFacts({ userId, contactId: customer.id, companyId: customer.company_id, since: new Date().toISOString(), savedSegmentId: typeof flow.triggerConfig.savedSegmentId === "string" ? flow.triggerConfig.savedSegmentId : undefined })
     : flowScenarioSchema.parse(input.scenario ?? {});
   const checks: FlowPreviewResult["checks"] = [
     { label: "Trigger event", passed: null, detail: `Assumes “${triggerLabels[flow.triggerType]}” occurs now.` },

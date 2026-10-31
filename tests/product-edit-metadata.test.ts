@@ -1,3 +1,4 @@
+import { policyTestDependency } from "./helpers/ai-policy.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -48,7 +49,7 @@ function fixture(role = "admin") {
     "@/lib/company-profile-fields": fields, "@/lib/product-edit-metadata": metadata,
   };
   const code = ts.transpileModule(readFileSync(new URL("../app/crm-actions.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => dependencies[name] ?? require(name), Date, FormData, URL, Error, console });
+  vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (dependencies[name] ?? require(name)), Date, FormData, URL, Error, console });
   const form = new FormData();
   Object.entries({ originalSku: "PLA", sku: "PLA", name: "Renamed PLA", material: "PLA", diameter: "1.75mm", weight: "1kg", currency: "USD", minimum1: "1", price1: "2.50", stockStatus: "In stock", leadTime: "7 days", imageUrl: baseline.image_url, active: "true", variants: JSON.stringify(products.variantsFromTags(baseline.tags, [], "PLA", "$5.00", "In stock")) }).forEach(([key, value]) => form.set(key, value));
   return { update: (exports as typeof import("../app/crm-actions.ts")).updateProduct, form, baseline, tables, service,

@@ -1,3 +1,4 @@
+import { policyTestDependency } from "./helpers/ai-policy.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -70,7 +71,7 @@ test("draft invoice preparation cannot acquire an unrequested email send from th
 function load<T>(file: string, dependencies: Record<string, unknown>) {
   const exports = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => name === "server-only" ? {} : dependencies[name] ?? require(name), Date, Error, URL, Response, Request, console });
+  vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (name === "server-only" ? {} : dependencies[name] ?? require(name)), Date, Error, URL, Response, Request, console });
   return exports as T;
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- A bounded fake stores heterogeneous database service rows.
@@ -162,7 +163,7 @@ test("the cron bypasses staff session redirects but still requires its own beare
   const { NextRequest, NextResponse } = require("next/server");
   const exports: { updateSession?: (request: unknown) => Promise<Response> } = {};
   const proxy = ts.transpileModule(readFileSync(new URL("../lib/supabase/proxy.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(proxy, { exports, require: (name: string) => name === "@supabase/ssr" ? { createServerClient: () => ({ auth: { getClaims: async () => ({ data: null }) } }) } : { NextResponse }, process: { env: { NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co", NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "fixture", AUTH_REQUIRED: "true" } } });
+  vm.runInNewContext(proxy, { exports, require: (name: string) => policyTestDependency(name) ?? (name === "@supabase/ssr" ? { createServerClient: () => ({ auth: { getClaims: async () => ({ data: null }) } }) } : { NextResponse }), process: { env: { NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co", NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "fixture", AUTH_REQUIRED: "true" } } });
   const bypass = await exports.updateSession!(new NextRequest("https://crm.example/api/cron/customer-replies"));
   assert.equal(bypass.headers.get("location"), null);
   let calls = 0;

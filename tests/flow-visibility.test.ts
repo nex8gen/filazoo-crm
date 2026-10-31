@@ -1,3 +1,4 @@
+import { policyTestDependency } from "./helpers/ai-policy.ts";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -8,13 +9,14 @@ import ts from "typescript";
 import { flowInputSchema } from "../lib/flows.ts";
 import * as flowModel from "../lib/flows.ts";
 import * as flowAudit from "../lib/flow-audit.ts";
+import * as segmentFlowModel from "../lib/segment-flows.ts";
 
 function loadModule(file: string, dependencies: Record<string, unknown>) {
   const exports: Record<string, (...args: unknown[]) => Promise<unknown>> = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => dependencies[name] ?? {}, Response, Error, Date });
+  vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (dependencies[name] ?? {}), Response, Error, Date });
   return exports;
 }
 
@@ -336,6 +338,7 @@ function builder(hooks?: { values: unknown[]; cursor: number }) {
     },
     "@dnd-kit/core": { ...components, useSensors: () => [], useSensor: () => ({}) },
     "@/lib/flows": flowModel,
+    "@/lib/segment-flows": segmentFlowModel,
     "@/lib/flow-audit": flowAudit,
     "@/lib/flow-tree": flowTree,
     "@/lib/flow-mailboxes": flowMailboxes,
@@ -397,6 +400,20 @@ test("shared deep links open a read-only builder and the default shortcut select
     const canvas = nodes.find((element) => typeof element.type === "function" && element.type.name === "FlowCanvas")!;
     assert.equal(canvas.props.canEdit, !expectedDisabled);
     if (initialFlowId === "default") assert.equal((canvas.props.draft as { id: string }).id, "flow-alice");
+  }
+});
+
+test("launching from any segment shows its fixed audience without customer or trigger selectors", async () => {
+  for (const kind of ["saved", "business"]) {
+    const initialDraft = segmentFlowModel.createSegmentFlowDraft({ id: "11111111-1111-4111-8111-111111111111", name: "Historical email lead", kind });
+    const tree = await builder()({ initialFlows: [], initialDraft, viewerId: "alice", canEdit: true, mailboxOptions: [], memberOptions: [], filterOptions: { segments: ["Historical email lead"], countries: ["US"] } });
+    const inspector = elements(tree).find((node) => typeof node.type === "function" && node.type.name === "TriggerInspector")!;
+    const output = (inspector.type as (props: Element["props"]) => Element)(inspector.props);
+    assert.equal(elements(output).some((node) => node.type === "FlowCustomerPicker"), false);
+    assert.equal(elements(output).some((node) => typeof node.type === "function" && node.type.name === "FlowSelect"), false);
+    assert.ok(JSON.stringify(output).includes("Segment trigger is ready"));
+    assert.ok(JSON.stringify(output).includes("Historical email lead"));
+    assert.ok(elements(output).some((node) => node.props.href === segmentFlowModel.segmentCompaniesHref(initialDraft.triggerConfig)));
   }
 });
 

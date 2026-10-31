@@ -1,3 +1,5 @@
+import { requireAiFeature } from "@/lib/data/ai-settings";
+import { aiBehaviorInstruction, restrictedAiContext, assertAiFeature, AiPolicyError } from "@/lib/ai-policy";
 import { translateUiText } from "@/lib/i18n";
 import { getWorkspaceViewer } from "@/lib/auth";
 import { ambiguousInvoiceCustomerQuestion, buildWorkspaceAssistantPrompt, extractAgentEmailSearch, extractAgentQuestion, extractWorkspaceActions, isBareInvoiceRequest, isInvoiceDetailQuestion, workspaceAssistantInstruction, workspaceAssistantSchema } from "@/lib/ai/workspace-assistant";
@@ -35,6 +37,22 @@ export async function POST(request: Request) {
     return Response.json({ error: parsed.error.issues[0]?.message || "Invalid assistant request." }, { status: 400, headers: responseHeaders });
   }
 
+  let policy;
+  try {
+    policy = await requireAiFeature(parsed.data.mode === "work" ? "agent" : "chat");
+    if (parsed.data.webSearch) assertAiFeature(policy, "webSearch");
+    if (collectChatImages(parsed.data.messages).length) assertAiFeature(policy, "images");
+  } catch (error) { return Response.json({ error: error instanceof Error ? error.message : "Unable to verify AI access." }, { status: error instanceof AiPolicyError ? 403 : 503, headers: responseHeaders }); }
+  const restricted = restrictedAiContext(policy);
+  if (restricted) {
+    parsed.data.messages = parsed.data.messages.slice(-1);
+    parsed.data.completedActionIds = [];
+    parsed.data.pageLabel = "CRM workspace";
+  }
+  if (!policy.features.pageContext || restricted) {
+    parsed.data.pageText = "";
+    if (parsed.data.pageContext) { delete parsed.data.pageContext.flowDraft; delete parsed.data.pageContext.flowUnsaved; }
+  }
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   const gatewayToken = process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
   if (!apiKey && !gatewayToken) {
@@ -42,7 +60,7 @@ export async function POST(request: Request) {
   }
   let session: Awaited<ReturnType<typeof startChatSession>>;
   try {
-    session = await startChatSession(parsed.data.history, { mode: parsed.data.mode === "work" ? "agent" : "chat", pathname: parsed.data.pathname, pageContext: savedPageContext(parsed.data.pageContext) }, viewer, parsed.data.messages.at(-1)!);
+    session = restricted ? undefined : await startChatSession(parsed.data.history, { mode: parsed.data.mode === "work" ? "agent" : "chat", pathname: parsed.data.pathname, pageContext: savedPageContext(parsed.data.pageContext) }, viewer, parsed.data.messages.at(-1)!);
     if (session?.replay) return Response.json(session.replay, { headers: responseHeaders });
     if (session) {
       parsed.data.messages = session.messages;
@@ -54,9 +72,9 @@ export async function POST(request: Request) {
   }
   const deadline = AbortSignal.any([request.signal, AbortSignal.timeout(110_000)]);
   const options = {
-    systemInstruction: workspaceAssistantInstruction(parsed.data.mode, new Date().toISOString(), parsed.data.language, parsed.data.webSearch),
+    systemInstruction: workspaceAssistantInstruction(parsed.data.mode, new Date().toISOString(), parsed.data.language, parsed.data.webSearch) + aiBehaviorInstruction(policy, true),
     prompt: buildWorkspaceAssistantPrompt(parsed.data) + (session?.summaryPrompt ?? ""),
-    images: collectChatImages(parsed.data.messages),
+    images: policy.features.images ? collectChatImages(parsed.data.messages) : [],
     maxOutputTokens: parsed.data.mode === "work" ? 5_000 : parsed.data.webSearch ? 2_600 : 1_400,
     fetcher: ((input, init) => (session?.fetcher ?? fetch)(input, {
       ...init,

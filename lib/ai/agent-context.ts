@@ -1,4 +1,6 @@
 import "server-only";
+import { getAiSettings } from "../data/ai-settings";
+import { restrictedAiContext } from "../ai-policy";
 import { z } from "zod";
 import type { WorkspaceViewer } from "../auth";
 import { createSupabaseAdmin } from "../supabase/admin";
@@ -18,6 +20,8 @@ import { userProductRows } from "../data/product-personalization";
 export { searchAgentEmails } from "./agent-records";
 
 export async function loadAgentContext(input: WorkspaceAssistantInput, viewer: WorkspaceViewer) {
+  const { policy } = await getAiSettings();
+  const allowed = policy.data;
   const db = createSupabaseAdmin();
   const contextWarnings: string[] = [];
   async function optional<T>(label: string, read: () => PromiseLike<T>, fallback: T): Promise<T> {
@@ -27,40 +31,40 @@ export async function loadAgentContext(input: WorkspaceAssistantInput, viewer: W
   const companyMatch = /^\/companies\/([^/?]+)/.exec(input.pathname)?.[1];
   const pageInvoiceId = input.pageContext?.invoiceId || (z.uuid().safeParse(invoiceMatch).success ? invoiceMatch : undefined);
   let companyId = input.pageContext?.companyId || (z.uuid().safeParse(companyMatch).success ? companyMatch : undefined);
-  const emailContext = input.pageContext?.emailId ? await loadAgentEmails(viewer, input.pageContext.emailId, undefined, input.pageContext.mailboxId) : null;
-  const currentConversation = input.pageContext?.conversationId ? await loadAgentConversation(input.pageContext.conversationId) : null;
-  const currentFlow = input.pageContext?.flowId ? await loadAgentFlow(input.pageContext.flowId) : null;
+  const emailContext = allowed.emails && allowed.customers && input.pageContext?.emailId ? await loadAgentEmails(viewer, input.pageContext.emailId, undefined, input.pageContext.mailboxId) : null;
+  const currentConversation = allowed.emails && input.pageContext?.conversationId ? await loadAgentConversation(input.pageContext.conversationId) : null;
+  const currentFlow = allowed.flows && allowed.emails && allowed.team && input.pageContext?.flowId ? await loadAgentFlow(input.pageContext.flowId) : null;
   if (emailContext) companyId = emailContext.companyId || undefined;
-  const history = input.completedActionIds.length
+  const history = !restrictedAiContext(policy) && input.completedActionIds.length
     ? await db.from("workspace_agent_actions").select("id,status,result").eq("user_id", viewer.id).in("status", ["completed", "failed", "running"]).in("id", input.completedActionIds)
     : { data: [], error: null };
   if (history.error) throw new Error("Unable to read previous agent results.");
   const completed = input.completedActionIds.flatMap((id) => (history.data ?? []).filter((row) => row.id === id));
   const previousInvoiceId = completed.map((row) => row.result?.invoiceId as string | undefined).filter(Boolean).at(-1);
   const invoiceId = pageInvoiceId || (!currentConversation && !currentFlow && !input.pageContext?.flowDraft ? previousInvoiceId : undefined);
-  const candidateInvoice = invoiceId ? pageInvoiceId ? await getInvoice(invoiceId) : await optional("Previous invoice", () => getInvoice(invoiceId), null) : null;
+  const candidateInvoice = allowed.billing && allowed.customers && invoiceId ? pageInvoiceId ? await getInvoice(invoiceId) : await optional("Previous invoice", () => getInvoice(invoiceId), null) : null;
   const invoice = !pageInvoiceId && ((companyId && candidateInvoice?.document.companyId !== companyId) || (emailContext && !companyId)) ? null : candidateInvoice;
   // An open company always takes precedence over the previous task's company.
   companyId ||= invoice?.document.companyId;
-  const emailHistory = emailContext ?? (companyId ? await optional("Customer email history", () => loadAgentEmails(viewer, undefined, companyId), null) : null);
+  const emailHistory = emailContext ?? (allowed.emails && allowed.customers && companyId ? await optional("Customer email history", () => loadAgentEmails(viewer, undefined, companyId), null) : null);
   const terms = [...new Set([
     ...input.messages.filter((message) => message.role === "user").slice(-3).flatMap((message) => message.content.match(/[\p{L}\p{N}_-]{2,80}/gu) ?? []),
     ...(emailHistory?.messages.slice(-6).flatMap((email) => `${email.subject} ${email.body}`.match(/[\p{L}\p{N}_-]{2,80}/gu) ?? []) ?? []),
     ...(invoice?.document.items.flatMap((item) => [item.productSku || ""]) ?? []),
   ].filter(Boolean))].slice(0, 150);
-  const productsQuery = userProductRows(viewer.id).then((rows) => {
+  const productsQuery = (allowed.products ? userProductRows(viewer.id) : Promise.resolve([])).then((rows) => {
     const matching = rows.filter((row) => row.active && (!terms.length || terms.some((term) => `${row.name} ${row.sku} ${row.color}`.toLowerCase().includes(term.toLowerCase()))));
     return { data: matching.slice(0, 100), count: matching.length, error: null };
   });
-  const customerQuery = terms.length ? db.from("companies").select("id,name,city,country,contacts(id,name,email)", { count: "exact" }).or(terms.map((term) => `name.ilike.%${term}%`).join(",")).order("name").limit(25) : null;
-  const flowTask = Boolean(currentFlow || input.pageContext?.flowDraft) || /flow|automat|follow.?up/i.test(`${input.pathname} ${input.messages.at(-1)?.content ?? ""}`);
+  const customerQuery = allowed.customers && terms.length ? db.from("companies").select("id,name,city,country,contacts(id,name,email)", { count: "exact" }).or(terms.map((term) => `name.ilike.%${term}%`).join(",")).order("name").limit(25) : null;
+  const flowTask = allowed.flows && allowed.emails && allowed.team && (Boolean(currentFlow || input.pageContext?.flowDraft) || /flow|automat|follow.?up/i.test(`${input.pathname} ${input.messages.at(-1)?.content ?? ""}`));
   const [bootstrap, customers, products, banks, paymentMethods, mailbox, matchingCustomers, flowMailboxes, flowMembers, flows] = await Promise.all([
-    optional("Invoice defaults", () => invoiceBootstrap({ companyId, ...(emailContext?.current && companyId ? { email: emailContext.current.contact, threadId: threadKeyForEmail(emailContext.current) } : {}) }), null),
-    optional("Customer choices", () => invoiceCustomers(), null),
+    allowed.billing && allowed.customers && allowed.settings ? optional("Invoice defaults", () => invoiceBootstrap({ companyId, ...(emailContext?.current && companyId ? { email: emailContext.current.contact, threadId: threadKeyForEmail(emailContext.current) } : {}) }), null) : null,
+    allowed.customers ? optional("Customer choices", () => invoiceCustomers(), null) : null,
     productsQuery,
-    optional("Legacy banks", () => invoiceBankAccounts(), []),
-    optional("Payment methods", () => invoicePaymentMethods(), []),
-    optional("Default sender", () => getEffectiveMailbox(viewer.id), null),
+    allowed.billing ? optional("Legacy banks", () => invoiceBankAccounts(), []) : [],
+    allowed.billing ? optional("Payment methods", () => invoicePaymentMethods(), []) : [],
+    allowed.emails ? optional("Default sender", () => getEffectiveMailbox(viewer.id), null) : null,
     customerQuery,
     flowTask ? db.from("workspace_mailboxes").select("id,email,display_name,type,is_default").eq("is_active", true).or(`type.eq.workspace,user_id.eq.${viewer.id}`).limit(100) : null,
     flowTask ? db.from("workspace_members").select("user_id,display_name").not("activated_at", "is", null).limit(200) : null,
@@ -76,11 +80,11 @@ export async function loadAgentContext(input: WorkspaceAssistantInput, viewer: W
     variants: product.variants.map((variant) => ({ id: variant.id, name: variant.name, sku: variant.sku, priceMinor: variant.priceMinor, stockStatus: variant.stockStatus })),
   }));
   return {
-    currentCompanyId: companyId ?? null,
-    currentCompany: companyId ? await optional("Customer profile", () => loadAgentCompany(companyId), null) : null,
+    currentCompanyId: allowed.customers ? companyId ?? null : null,
+    currentCompany: allowed.customers && companyId ? await optional("Customer profile", () => loadAgentCompany(companyId, allowed.billing), null) : null,
     currentConversation,
     currentFlow,
-    flowEditor: input.pageContext?.flowDraft || input.pageContext?.flowUnsaved ? { definition: input.pageContext.flowDraft ?? null, unsaved: input.pageContext.flowUnsaved ?? false, selectedStepId: input.pageContext.flowStepId ?? null, evidenceOnly: true } : null,
+    flowEditor: allowed.flows && policy.features.pageContext && !restrictedAiContext(policy) && (input.pageContext?.flowDraft || input.pageContext?.flowUnsaved) ? { definition: input.pageContext.flowDraft ?? null, unsaved: input.pageContext.flowUnsaved ?? false, selectedStepId: input.pageContext.flowStepId ?? null, evidenceOnly: true } : null,
     currentEmail: emailContext?.current ? { ...presentAgentEmail(emailContext.current), mailboxId: emailContext.mailboxId ?? null } : null,
     emailHistory: emailHistory?.messages.map(presentAgentEmail) ?? [],
     emailCoverage: { included: emailHistory?.messages.length ?? 0, unavailableBodies: emailHistory?.messages.filter((email) => email.bodyLoaded === false).length ?? 0, scope: emailContext ? "selected conversation, up to 12 recent messages plus the selected email" : "up to 12 recent customer messages", maxCharactersPerMessage: 12000 },

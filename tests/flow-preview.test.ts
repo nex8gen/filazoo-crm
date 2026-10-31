@@ -1,3 +1,4 @@
+import { policyTestDependency } from "./helpers/ai-policy.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
@@ -15,7 +16,7 @@ const contactId = "00000000-0000-4000-a000-000000000001", companyId = "00000000-
 function load(file: string, dependencies: Record<string, unknown>) {
   const exports: Record<string, (...args: unknown[]) => Promise<unknown>> = {};
   const source = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(source, { exports, require: (name: string) => { if (name === "server-only") return {}; if (!(name in dependencies)) throw new Error(`Unexpected dependency ${name}`); return dependencies[name]; }, Response, Request, URL, Date, Error });
+  vm.runInNewContext(source, { exports, require: (name: string) => { const aiDependency = policyTestDependency(name); if (aiDependency) return aiDependency;  if (name === "server-only") return {}; if (!(name in dependencies)) throw new Error(`Unexpected dependency ${name}`); return dependencies[name]; }, Response, Request, URL, Date, Error });
   return exports;
 }
 

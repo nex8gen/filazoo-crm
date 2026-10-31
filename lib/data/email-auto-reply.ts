@@ -1,4 +1,5 @@
 import "server-only";
+import { requireAiAutomation } from "./ai-settings";
 import type { WorkspaceViewer } from "../auth";
 import { createSupabaseAdmin } from "../supabase/admin";
 import { getViewerMailbox, mailboxHasImap, mailboxHasSmtp } from "./mailboxes";
@@ -100,6 +101,7 @@ export async function findAutoReply(viewer: WorkspaceViewer, mailboxId: string, 
 }
 
 export async function enableAutoReply(viewer: WorkspaceViewer, input: { mailboxId: string; senderId: string; messageId: string; revision: number }) {
+  await requireAiAutomation(["sending"], ["emails", "customers", "products", "billing", "knowledge", "team", "settings"]);
   if (!hasFlowReplyProvider()) throw new Error("Configure an AI provider before enabling automatic replies.");
   const found = await findAutoReply(viewer, input.mailboxId, input.messageId);
   if (input.senderId !== input.mailboxId) throw new Error("Automatic replies must use this conversation's receiving mailbox so future replies stay connected.");
@@ -174,6 +176,7 @@ export async function stopAutoReplyForManualSend(viewer: WorkspaceViewer, messag
 }
 
 export async function approveAutoReplyShipping(viewer: WorkspaceViewer, id: string, revision: number, shippingMinor: number) {
+  await requireAiAutomation(["sending", "invoices", "destructive"], ["emails", "customers", "billing", "products"]);
   const row = await getAutoReply(viewer, id);
   if (viewer.id !== row.assigned_to && !["admin", "operator"].includes(viewer.role)) throw new Error("Only the assigned user can approve shipping.");
   if (!row.enabled || row.status !== "waiting_shipping" || row.revision !== revision || !row.pending_document)

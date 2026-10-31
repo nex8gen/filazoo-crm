@@ -1,4 +1,6 @@
 import "server-only";
+import { getAiSettings } from "../data/ai-settings";
+import { aiActionApproval } from "../ai-policy";
 import { revalidatePath } from "next/cache";
 import { createCompany, updateCompanyFields, addCompanyComment } from "@/app/crm-actions";
 import { POST as sendEmail } from "@/app/api/email/send/route";
@@ -33,15 +35,18 @@ async function validateCustomerEmailSource(action: { companyId: string; sourceEm
 
 export async function prepareAgentActions(actions: WorkspaceAction[], viewer: WorkspaceViewer, approvalMode: "ask" | "auto", context?: AgentPlanningContext) {
   if (viewer.role === "viewer" && (!actions.length || actions.some((action) => action.type !== "crm_action" || !["update_product", "create_catalog"].includes(action.operation.op)))) throw new Error("Your workspace role is read-only outside your private product catalog.");
+  const { policy } = await getAiSettings();
+  for (const action of actions) aiActionApproval(policy, action, approvalMode);
   const proposals: AgentProposal[] = [];
   for (const candidate of actions) {
     const action = groundInvoiceEmailIntent(candidate, context);
+    const policyApproval = aiActionApproval(policy, action, approvalMode);
     let prepared: PreparedAgentAction;
     if (action.type === "crm_action") prepared = await prepareCrmAction(action.operation, viewer);
     else if (action.type === "create_company" || action.type === "create_flow") prepared = action;
     else if (action.type === "update_company" || action.type === "add_company_note") {
       await validateCustomerEmailSource(action, viewer);
-      const company = await loadAgentCompany(action.companyId);
+      const company = await loadAgentCompany(action.companyId, policy.data.billing);
       prepared = action.type === "update_company" ? { ...action, changes: action.deriveAddressFields ? deriveCompanyAddressFields(action.changes, company.fields) : action.changes, companyName: company.fields.name, fingerprint: company.fingerprint } : { ...action, companyName: company.fields.name };
     } else if (action.type === "write_email" && !action.invoiceId) {
       const email = await prepareAgentCatalog(await prepareAgentEmail(action.email, viewer));
@@ -84,7 +89,7 @@ export async function prepareAgentActions(actions: WorkspaceAction[], viewer: Wo
           : { type: action.type, invoiceId: action.invoiceId, revision: existing!.revision, document, ...(action.email ? { email: await prepareAgentCatalog(await prepareAgentEmail(action.email, viewer)) } : {}) };
       } else throw new Error("Invalid invoice action.");
     }
-    proposals.push({ id: crypto.randomUUID(), action: prepared, approvalMode: action.type === "crm_action" && crmManualApproval(action.operation) ? "ask" : approvalMode, expiresAt: new Date(Date.now() + 30 * 60_000).toISOString() });
+    proposals.push({ id: crypto.randomUUID(), action: prepared, approvalMode: action.type === "crm_action" && crmManualApproval(action.operation) ? "ask" : policyApproval, expiresAt: new Date(Date.now() + 30 * 60_000).toISOString() });
   }
   if (proposals.length) {
     const { error } = await createSupabaseAdmin().from("workspace_agent_actions").insert(proposals.map((proposal) => ({
@@ -110,6 +115,8 @@ async function validateSavedBank(document: InvoiceDocument) {
 
 /** The caller has atomically claimed this stored proposal; never retry SMTP implicitly. */
 export async function executeAgentAction(id: string, action: PreparedAgentAction, viewer: WorkspaceViewer, request: Request) {
+  const { policy } = await getAiSettings();
+  aiActionApproval(policy, action, "ask");
   const db = createSupabaseAdmin();
   const activity = actionWorkProgress(action);
   let savedResult: Record<string, unknown> = {};
@@ -139,7 +146,7 @@ export async function executeAgentAction(id: string, action: PreparedAgentAction
   if (action.type === "update_company" || action.type === "add_company_note") {
     await reportProgress(activity);
     await validateCustomerEmailSource(action, viewer);
-    const company = await loadAgentCompany(action.companyId);
+    const company = await loadAgentCompany(action.companyId, policy.data.billing);
     const data = new FormData();
     if (action.type === "add_company_note") data.set("comment", action.note);
     else {

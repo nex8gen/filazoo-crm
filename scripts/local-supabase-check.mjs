@@ -13,25 +13,64 @@ export function localSupabaseConfig(environment) {
   return { url, publicKey, secretKey, errors };
 }
 
+const transientStatuses = new Set([408, 429, 500, 502, 503, 504]);
+const transientCodes = new Set(["ETIMEDOUT", "ECONNRESET", "ECONNREFUSED", "EAI_AGAIN", "ENETUNREACH", "EHOSTUNREACH", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_SOCKET"]);
+
+function connectionFailure(error) {
+  // Node can wrap connection failures in an AggregateError (e.g. IPv4/IPv6).
+  const causes = [error];
+  const codes = new Set();
+  for (let i = 0; i < causes.length && i < 20; i++) {
+    const cause = causes[i];
+    if (cause?.code) codes.add(cause.code);
+    if (cause?.cause) causes.push(cause.cause);
+    if (Array.isArray(cause?.errors)) causes.push(...cause.errors);
+  }
+  if (codes.has("EACCES") || codes.has("EPERM")) return {
+    retry: false,
+    message: "connection blocked by this process's network permissions. Run npm run dev from a terminal with network access.",
+  };
+  if (error?.name === "TimeoutError" || codes.has("ETIMEDOUT") || codes.has("UND_ERR_CONNECT_TIMEOUT") || codes.has("UND_ERR_HEADERS_TIMEOUT")) return {
+    retry: true,
+    message: "could not reach Supabase: the connection timed out. Check the network, VPN/proxy settings and Supabase availability, then try again.",
+  };
+  if (codes.has("ENOTFOUND") || codes.has("EAI_AGAIN")) return {
+    retry: codes.has("EAI_AGAIN"),
+    message: "could not resolve the Supabase hostname. Check NEXT_PUBLIC_SUPABASE_URL and your DNS/network connection.",
+  };
+  return {
+    retry: [...codes].some((code) => transientCodes.has(code)),
+    message: "could not reach Supabase. Check the network connection and Supabase availability, then try again.",
+  };
+}
+
 // Read-only probes: validate both keys without signing anyone in or reading records.
-export async function checkLocalSupabase(config, fetcher = fetch) {
+// Retry only temporary failures; successful probes are not repeated.
+export async function checkLocalSupabase(config, fetcher = fetch, wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))) {
   return (await Promise.all([
     ["Authentication", "/auth/v1/settings", config.publicKey],
     ["Database", "/rest/v1/workspace_members?select=user_id&limit=0", config.secretKey],
   ].map(async ([label, path, key]) => {
-    try {
-      const response = await fetcher(`${config.url.replace(/\/$/, "")}${path}`, {
-        headers: { apikey: key, Authorization: `Bearer ${key}` },
-        signal: AbortSignal.timeout(10_000),
-      });
-      // Do not print response bodies, URLs or keys in startup diagnostics.
-      await response.body?.cancel();
-      if (!response.ok) return `${label} check failed (HTTP ${response.status}). ${[401, 403].includes(response.status) ? "Check the Supabase project URL and API keys." : "Check Supabase availability and try again."}`;
-    } catch (error) {
-      const code = error?.cause?.code || error?.code;
-      if (code === "EACCES" || code === "EPERM") return `${label} connection blocked by this process's network permissions. Run npm run dev from a terminal with network access.`;
-      return `${label} could not reach Supabase. Check the network connection and Supabase availability, then try again.`;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      let failure;
+      try {
+        const response = await fetcher(`${config.url.replace(/\/$/, "")}${path}`, {
+          headers: { apikey: key, Authorization: `Bearer ${key}` },
+          signal: AbortSignal.timeout(10_000),
+        });
+        // Do not print response bodies, URLs or keys in startup diagnostics.
+        // Cleanup failures must not turn a completed HTTP check into a network failure.
+        await response.body?.cancel().catch(() => {});
+        if (response.ok) return null;
+        failure = {
+          retry: transientStatuses.has(response.status),
+          message: `check failed (HTTP ${response.status}). ${[401, 403].includes(response.status) ? "Check the Supabase project URL and API keys." : "Check Supabase availability and try again."}`,
+        };
+      } catch (error) {
+        failure = connectionFailure(error);
+      }
+      if (!failure.retry || attempt === 3) return `${label} ${failure.message}${attempt > 1 ? ` Failed after ${attempt} attempts.` : ""}`;
+      await wait(attempt * 1000);
     }
-    return null;
   }))).filter(Boolean);
 }

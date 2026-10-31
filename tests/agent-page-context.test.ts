@@ -1,3 +1,4 @@
+import { policyTestDependency } from "./helpers/ai-policy.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -42,7 +43,7 @@ const require = createRequire(import.meta.url);
 function loadRecords(dependencies: Record<string, unknown>) {
   const exports = {};
   const code = ts.transpileModule(readFileSync(new URL("../lib/ai/agent-page-records.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => name === "server-only" ? {} : dependencies[name] ?? require(name), Error });
+  vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (name === "server-only" ? {} : dependencies[name] ?? require(name)), Error });
   return exports as typeof import("../lib/ai/agent-page-records.ts");
 }
 

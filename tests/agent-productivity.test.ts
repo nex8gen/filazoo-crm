@@ -1,3 +1,5 @@
+import { policyTestDependency } from "./helpers/ai-policy.ts";
+import * as customerTags from "../lib/customer-tags.ts";
 import * as replyTools from "../lib/ai/crm-reply-tools.ts";
 import * as readiness from "../lib/ai/invoice-readiness.ts";
 import test from "node:test";
@@ -28,9 +30,10 @@ const viewer = { id: actorId, role: "admin" as const, displayName: "Audit", emai
 const request = new Request("https://crm.example.com/api/ai/assistant/action");
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 function load<T>(file: string, dependencies: Record<string, unknown>) {
+  dependencies["../customer-tags.ts"] = customerTags;
   const exports = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => name === "server-only" ? {} : dependencies[name] ?? (name === "./crm-reply-tools" ? replyTools : name === "./crm-reply-execution" ? { replyOperationTarget: () => { throw new Error("Reply workflows use their dedicated fixtures"); } } : name === "../data/customer-reply-requests" ? { listReplyRequests: async () => [] } : name === "@/lib/ai/invoice-readiness" ? readiness : undefined) ?? require(name), crypto, Date, Intl, URL, Request, Response, FormData, Error, console });
+  vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (name === "server-only" ? {} : dependencies[name] ?? (name === "./crm-reply-tools" ? replyTools : name === "./crm-reply-execution" ? { replyOperationTarget: () => { throw new Error("Reply workflows use their dedicated fixtures"); } } : name === "../data/customer-reply-requests" ? { listReplyRequests: async () => [] } : name === "@/lib/ai/invoice-readiness" ? readiness : undefined) ?? require(name)), crypto, Date, Intl, URL, Request, Response, FormData, Error, console });
   return exports as T;
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- This fake database stores heterogeneous service rows.

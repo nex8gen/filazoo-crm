@@ -7,6 +7,8 @@ import ts from "typescript";
 import * as model from "../lib/crm-model.ts";
 import * as inventory from "../lib/product-inventory.ts";
 import * as threading from "../lib/email-threading.ts";
+import * as customerTags from "../lib/customer-tags.ts";
+import * as leadInquiries from "../lib/lead-inquiries.ts";
 
 const require = createRequire(import.meta.url);
 function load(file: string, deps: Record<string, unknown>) {
@@ -92,6 +94,9 @@ test("multi-account inbox reads share CRM and state snapshots within one authori
   const viewer = { id: "staff", role: "admin" };
   const mailboxes = [{ id: "team-1", type: "workspace", email: "one@example.com" }, { id: "team-2", type: "workspace", email: "two@example.com" }, { id: "mine", type: "personal", email: "me@example.com" }];
   const api = load("../lib/email-inbox.ts", {
+    "./customer-tags.ts": customerTags,
+    "./lead-inquiries.ts": leadInquiries,
+    "./data/lead-inquiries.ts": { listMetaLeadInquiries: async () => [] },
     "./auth.ts": { requireWorkspaceMember: () => { throw new Error("Authorized context must be reused"); } },
     "./data/mailboxes.ts": { mailboxHasImap: () => false, mailboxHasSmtp: () => false },
     "./mailbox-utils.ts": { defaultViewerMailbox: () => mailboxes[0] },

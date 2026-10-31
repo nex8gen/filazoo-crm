@@ -1,4 +1,6 @@
 import "server-only";
+import { requireAiAutomation } from "./ai-settings.ts";
+import { aiBehaviorInstruction } from "../ai-policy.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 import { crmProduct, type CrmProductRow } from "../product-utils.ts";
 import { invoiceProduct } from "../invoice-links.ts";
@@ -34,6 +36,7 @@ export async function prepareFlowTemplateCatalog(userId?: string) {
 export async function prepareFlowAiReply({ userId, contactId, companyId, conversationId, config }: {
   userId: string; contactId: string; companyId: string; conversationId: string; config: JsonConfig;
 }) {
+  await requireAiAutomation(["sending", ...(config.attachCatalog === true ? ["catalogs"] as const : [])], ["emails", "customers", "team", ...(config.useProducts || config.attachCatalog ? ["products"] as const : [])]);
   if (!hasFlowReplyProvider()) throw new Error("AI auto-reply is not configured. Add an AI provider in the server settings.");
   const admin = createSupabaseAdmin();
   const leadConversation = /^(company:|shopify:|lead:)/.test(conversationId);
@@ -60,6 +63,7 @@ export async function generateFlowAiReply({ config, contact, company, managerNam
   managerName: string | null; messages: FlowReplyMessage[]; productRows: CrmProductRow[]; previousAutomatedMessages: number;
 }) {
   if (!hasFlowReplyProvider()) throw new Error("AI auto-reply is not configured. Add an AI provider in the server settings.");
+  const policy = await requireAiAutomation(["sending", ...(config.attachCatalog === true ? ["catalogs"] as const : [])], ["emails", "customers", "team", ...(config.useProducts || config.attachCatalog ? ["products"] as const : [])]);
   const priceProducts = productRows.map((row) => invoiceProduct({ ...row, tags: row.tags ?? [] }));
   const catalogProducts = productRows.map(crmProduct);
   const orderedMessages = [...messages].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
@@ -67,7 +71,7 @@ export async function generateFlowAiReply({ config, contact, company, managerNam
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   const token = process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
   const generate = async (systemInstruction: string, prompt: string) => {
-    const options = { systemInstruction, prompt, maxOutputTokens: 8192 };
+    const options = { systemInstruction: systemInstruction + aiBehaviorInstruction(policy, true), prompt, maxOutputTokens: 8192 };
     const gateway = () => generateGatewayText({ ...options, token: token!, model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim() });
     try {
       return apiKey ? await generateGeminiText({ ...options, apiKey, model: process.env.GEMINI_EMAIL_MODEL?.trim() }) : await gateway();

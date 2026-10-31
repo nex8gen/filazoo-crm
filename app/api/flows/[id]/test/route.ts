@@ -13,7 +13,7 @@ export async function POST(request: Request, context: RouteContext<"/api/flows/[
   try {
     const input = flowInputSchema.parse(flow);
     await validateFlowResources(viewer.id, input);
-    const facts = await loadFlowFacts({ userId: viewer.id, contactId: body.contactId, companyId: body.companyId, messageKey: body.conversationId, conversationId: body.conversationId });
+    const facts = await loadFlowFacts({ userId: viewer.id, contactId: body.contactId, companyId: body.companyId, messageKey: body.conversationId, conversationId: body.conversationId, savedSegmentId: typeof flow.triggerConfig.savedSegmentId === "string" ? flow.triggerConfig.savedSegmentId : undefined });
     return Response.json({ mode: "simulation", facts, ...simulateFlow(input, facts), warnings: ["Simulation only; no messages were sent or CRM actions executed."] }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return Response.json({ ok: false, error: error instanceof Error ? error.message : "Flow test failed." }, { status: 400 });

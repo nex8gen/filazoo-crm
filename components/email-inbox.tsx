@@ -1,4 +1,8 @@
 "use client";
+import { CustomerTagSelect } from "@/components/customer-tag-select";
+import { customerTagValues, emailTagMessageKey, conversationTagKeys, conversationCustomerTag, type CustomerTag } from "@/lib/customer-tags";
+import { CustomerTagBadge } from "@/components/customer-tag-badges";
+import { useRouter } from "next/navigation";
 import { attachmentMimeType } from "@/lib/email-files";
 import { DatePicker } from "@/components/ui/date-picker";
 import { EmailSyncStatus } from "@/components/email-sync-status";
@@ -119,7 +123,7 @@ export type EmailWorkspaceItem = {
 
 type Folder = "inbox" | "unread" | "followup" | "all" | "drafts" | "scheduled" | "sent" | "starred" | "archive" | "trash" | "spam" | `provider:${string}`;
 type SourceFilter = "all" | "shopify" | "replies" | "unread";
-type Category = "Needs follow-up" | "Waiting on customer" | "Interested" | "Big order" | "No action";
+type Category = CustomerTag;
 type Automation = { enabled: boolean; queueCount: number; steps: Array<{ id: string; title: string; delay: string; action: string; enabled: boolean }> };
 type ComposerAttachment = { id: string; filename: string; content: string; contentType: string; size: number };
 type MessageState = { category: Category | null; starred: boolean; read: boolean; folder: "inbox" | "archive" | "trash"; followUpAt: string | null };
@@ -128,15 +132,7 @@ function messageState(email: EmailWorkspaceItem): MessageState {
   return { category: email.category ?? null, starred: Boolean(email.starred), read: Boolean(email.read || email.direction === "outbound"), folder: email.folder ?? "inbox", followUpAt: email.followUpAt ?? null };
 }
 
-const categoryOptions: Category[] = ["Needs follow-up", "Waiting on customer", "Interested", "Big order", "No action"];
-
-const categoryStyles: Record<Category, string> = {
-  "Needs follow-up": "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300",
-  "Waiting on customer": "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300",
-  Interested: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300",
-  "Big order": "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300",
-  "No action": "border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-500/30 dark:bg-slate-500/10 dark:text-slate-300",
-};
+const categoryOptions = customerTagValues;
 
 type EmailConversation = { id: string; messages: EmailWorkspaceItem[]; latest: EmailWorkspaceItem };
 
@@ -203,14 +199,14 @@ function emailMatchesFolder(
   folderStates: Record<string, "inbox" | "archive" | "trash">,
   starred: Set<string>,
   readMessages: Set<string>,
-  categories: Record<string, Category>,
+  followUps: Record<string, string>,
 ) {
   const state = folderStates[email.id] ?? "inbox";
   if (folder.startsWith("provider:")) return email.providerFolder === folder.slice(9) || Boolean(email.providerLocations?.some((item) => item.folder === folder.slice(9)));
   if (folder === "spam") return email.providerKind === "spam" && state !== "trash";
   if (email.providerKind === "spam" && folder !== "trash") return false;
   if (folder === "unread") return state === "inbox" && email.direction === "inbound" && !readMessages.has(email.id);
-  if (folder === "followup") return state !== "trash" && categories[email.id] === "Needs follow-up";
+  if (folder === "followup") return state !== "trash" && Boolean(followUps[email.id]);
   if (folder === "all") return state !== "trash";
   if (folder === "inbox") return state === "inbox" && email.direction === "inbound" && (!email.providerKind || email.providerKind === "inbox");
   if (folder === "drafts") return state !== "trash" && email.status.toLowerCase().includes("draft");
@@ -283,6 +279,7 @@ export function EmailInboxWorkspace({
   providerFolders?: ProviderFolder[];
 }) {
   const sourceEmails = companyScope ? filterCompanyEmails(initialEmails, companyScope) : initialEmails;
+  const router = useRouter();
   const { preferences } = usePreferences();
   const { footer: personalFooter, loading: footerLoading, error: footerError } = useEmailFooter();
   const { language } = useLanguage();
@@ -458,7 +455,7 @@ export function EmailInboxWorkspace({
 
   const applyMailboxSnapshot = useCallback((nextEmails: EmailWorkspaceItem[]) => {
     if (companyScope) nextEmails = filterCompanyEmails(nextEmails, companyScope);
-    savedStates.current = new Map(nextEmails.map((email) => [email.id, messageState(email)]));
+    savedStates.current = new Map([...savedStates.current, ...nextEmails.map((email): [string, MessageState] => [email.id, messageState(email)])]);
     setEmails((current) => {
       const loaded = new Map(current.filter((email) => email.bodyLoaded).map((email) => [email.id, email]));
       return nextEmails.map((email) => {
@@ -535,13 +532,22 @@ export function EmailInboxWorkspace({
     return () => { clearTimeout(timer); controller.abort(); };
   }, [search, selectedMailboxId, companyScope, folder]);
   const conversations = useMemo(() => buildConversations([...new Map([...searchResults, ...emails].map((email) => [email.id, email])).values()]), [emails, searchResults]);
+  const visibleCategories = useMemo(() => {
+    const next = { ...categories };
+    for (const email of searchResults) {
+      if (Object.hasOwn(next, email.id)) continue;
+      const saved = savedStates.current.get(email.id);
+      const category = saved ? saved.category : email.category;
+      if (category) next[email.id] = category;
+    }
+    return next;
+  }, [categories, searchResults]);
   const visible = useMemo(() => {
     const query = search.trim().toLowerCase();
     return conversations.filter((conversation) => {
-      const matchesFolder = conversation.messages.some((email) => emailMatchesFolder(email, folder, folderStates, starred, readMessages, categories))
-        || (folder === "unread" && mobileReading && conversation.messages.some((email) => email.id === selectedId && emailMatchesFolder(email, "inbox", folderStates, starred, readMessages, categories)));
-      const category = [...conversation.messages].reverse().map((email) => categories[email.id]).find(Boolean);
-      const matchesCategory = !categoryFilter || category === categoryFilter;
+      const matchesFolder = conversation.messages.some((email) => emailMatchesFolder(email, folder, folderStates, starred, readMessages, followUps))
+        || (folder === "unread" && mobileReading && conversation.messages.some((email) => email.id === selectedId && emailMatchesFolder(email, "inbox", folderStates, starred, readMessages, followUps)));
+      const matchesCategory = !categoryFilter || conversationCustomerTag(conversation.messages, visibleCategories) === categoryFilter;
       const matchesSource = sourceFilter === "all"
         || (sourceFilter === "shopify" && conversation.messages.some((email) => email.source === "shopify"))
         || (sourceFilter === "replies" && conversation.messages.some((email) => email.direction === "inbound" && email.source !== "shopify"))
@@ -549,7 +555,7 @@ export function EmailInboxWorkspace({
       const searchable = conversation.messages.map((email) => `${email.subject} ${email.contactName || ""} ${email.contact} ${email.company} ${email.preview} ${email.body} ${(email.to || []).map((item) => item.address).join(" ")} ${(email.attachments || []).map((item) => item.filename).join(" ")}`).join(" ").toLowerCase();
       return matchesFolder && matchesCategory && matchesSource && (!query || searchable.includes(query) || searchResults.some((message) => conversation.messages.some((item) => item.id === message.id)));
     }).sort((a, b) => new Date(b.latest.timestamp).getTime() - new Date(a.latest.timestamp).getTime());
-  }, [categories, categoryFilter, conversations, folder, folderStates, mobileReading, readMessages, search, selectedId, sourceFilter, starred, searchResults]);
+  }, [visibleCategories, categoryFilter, conversations, folder, folderStates, mobileReading, readMessages, search, selectedId, sourceFilter, starred, searchResults, followUps]);
   const selectedConversation = visible.find((item) => item.messages.some((email) => email.id === selectedId));
   const selected = selectedConversation?.latest;
   const reading = mobileReading && Boolean(selected);
@@ -665,7 +671,7 @@ export function EmailInboxWorkspace({
   useEffect(() => {
     if (selected?.bodyLoaded === false && !bodyErrors[selected.id]) void loadMessage(selected);
   }, [selected, loadMessage, bodyErrors]);
-  const selectedCategory = [...conversation].reverse().map((email) => categories[email.id]).find(Boolean);
+  const selectedCategory = conversationCustomerTag(conversation, visibleCategories);
   const selectedFollowUp = [...conversation].reverse().map((email) => followUps[email.id]).find(Boolean);
   const conversationContext = useMemo(() => conversation.slice(-8).map((message) => ({
     direction: message.direction,
@@ -789,14 +795,14 @@ export function EmailInboxWorkspace({
     const folders = Object.keys(counts) as Folder[];
     for (const item of conversations) {
       for (const targetFolder of folders) {
-        if (item.messages.some((email) => emailMatchesFolder(email, targetFolder, folderStates, starred, readMessages, categories))) {
+        if (item.messages.some((email) => emailMatchesFolder(email, targetFolder, folderStates, starred, readMessages, followUps))) {
           counts[targetFolder] += 1;
         }
       }
     }
     counts.drafts += Object.values(savedDrafts.drafts).length;
     return counts;
-  }, [categories, conversations, folderStates, starred, readMessages, savedDrafts.drafts, providerFolders, scheduledEmails.length]);
+  }, [followUps, conversations, folderStates, starred, readMessages, savedDrafts.drafts, providerFolders, scheduledEmails.length]);
 
   async function persistState(id: string, override: Partial<MessageState>) {
     stateRevision.current += 1;
@@ -806,14 +812,19 @@ export function EmailInboxWorkspace({
     const write = (async () => {
       await previousWrite?.catch(() => undefined);
       const state = { ...(savedStates.current.get(id) ?? (email ? messageState(email) : { category: null, starred: false, read: false, folder: "inbox" as const, followUpAt: null })), ...override };
+      const tagConversation = Object.hasOwn(override, "category") ? conversations.find(item => item.messages.some(message => message.id === id)) : undefined;
+      const tagKeys = tagConversation ? conversationTagKeys(tagConversation.messages) : [];
       const response = await fetch("/api/email/state", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messageKey: id,
           ...state,
+          categoryWrite: Object.hasOwn(override, "category"),
+          tagMessageKey: tagKeys[0] ?? (email ? emailTagMessageKey(email) : id),
+          ...(tagKeys.length ? { tagConversationKeys: tagKeys, tagMessageKeys: tagConversation!.messages.map(emailTagMessageKey) } : {}),
           contactEmail: email?.contact.includes("@") ? email.contact : undefined,
-          threadId: email?.threadId ?? null,
+          threadId: tagConversation?.id ?? email?.threadId ?? null,
           ...(email?.uid && email.uidValidity && email.mailboxKey ? { provider: { mailboxKey: email.mailboxKey, uid: email.uid, validity: email.uidValidity, folder: email.providerFolder || "INBOX", read: override.read, starred: override.starred, destination: override.folder } } : {}),
         }),
       });
@@ -939,14 +950,17 @@ export function EmailInboxWorkspace({
     }
   }
 
-  async function setCategory(category: Category) {
-    if (!selected) return;
+  async function setCategory(category: Category | null) {
+    if (!selected || !selectedConversation) return;
+    const messages = selectedConversation.messages;
     try {
       await persistState(selected.id, { category });
-      setCategories((current) => ({ ...current, [selected.id]: category }));
-      setNotice(`Category changed to ${category}.`);
+      for (const message of messages) savedStates.current.set(message.id, { ...(savedStates.current.get(message.id) ?? messageState(message)), category });
+      setCategories((current) => { const next = { ...current }; for (const message of messages) { if (category) next[message.id] = category; else delete next[message.id]; } return next; });
+      setNotice(category ? `Tag changed to ${category}.` : "Tag removed.");
+      router.refresh();
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Unable to save category.");
+      setNotice(error instanceof Error ? error.message : "Unable to save tag.");
     }
   }
 
@@ -956,8 +970,7 @@ export function EmailInboxWorkspace({
     const { followUpAt } = summary;
     // Clear reminders on earlier messages so thread-level lookup cannot resurrect them.
     const previousReminders = conversation.filter((message) => message.id !== messageId && followUps[message.id]);
-    const category = followUpAt ? "Needs follow-up" : selectedCategory === "Needs follow-up" ? "No action" : undefined;
-    await persistState(messageId, { followUpAt, ...(category ? { category } : {}) });
+    await persistState(messageId, { followUpAt });
     for (const message of previousReminders) await persistState(message.id, { followUpAt: null });
     setFollowUps((current) => {
       const next = { ...current };
@@ -966,7 +979,6 @@ export function EmailInboxWorkspace({
       else delete next[messageId];
       return next;
     });
-    if (category) setCategories((current) => ({ ...current, [messageId]: category }));
   }
 
   async function moveSelected(folderState: "inbox" | "archive" | "trash") {
@@ -1411,7 +1423,7 @@ export function EmailInboxWorkspace({
   <div className="flex gap-1" aria-label="Customer email filter">{([{ id: "all", label: "All" }, { id: "unread", label: "Unread" }] as const).map((item) => <button key={item.id} type="button" aria-pressed={folder === item.id} onClick={() => changeFolder(item.id)} className={"rounded-md px-3 py-1 text-xs font-medium " + (folder === item.id ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/50")}>{item.label}</button>)}</div>
 </div> : <>
           <div className="border-b p-3"><label className="mail-folder-select mb-3 items-center gap-2 text-xs">Folder<Select value={folder} onValueChange={(value) => { if (value === null) return; return changeFolder(value as Folder); }}><SelectTrigger aria-label="Email folder" size="sm" className="min-w-0 flex-1"><SelectValue /></SelectTrigger><SelectContent>{folderItems.map((item) => <SelectItem key={item.id} value={item.id}>{item.label} ({folderCounts[item.id]})</SelectItem>)}</SelectContent></Select></label>
-            <div className="mb-2 flex items-center justify-between px-1"><div><h2 className="text-sm font-semibold">{folderItems.find((item) => item.id === folder)?.label}</h2>{categoryFilter ? <p className="text-xs text-muted-foreground">{categoryFilter}</p> : null}</div><DropdownMenu><DropdownMenuTrigger aria-label="Filter email by category" className={`rounded-md p-2 outline-none hover:bg-muted ${categoryFilter ? "text-primary" : "text-muted-foreground"}`}><Filter className="size-4" /></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-52"><DropdownMenuGroup><DropdownMenuLabel>Filter by category</DropdownMenuLabel></DropdownMenuGroup><DropdownMenuItem onClick={() => setCategoryFilter(null)}>{!categoryFilter ? <Check /> : <span className="size-4" />}All categories</DropdownMenuItem><DropdownMenuSeparator />{categoryOptions.map((category) => <DropdownMenuItem key={category} onClick={() => setCategoryFilter(category)}>{categoryFilter === category ? <Check /> : <span className="size-4" />}{category}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu></div>
+            <div className="mb-2 flex items-center justify-between px-1"><div><h2 className="text-sm font-semibold">{folderItems.find((item) => item.id === folder)?.label}</h2>{categoryFilter ? <p className="text-xs text-muted-foreground">{categoryFilter}</p> : null}</div><DropdownMenu><DropdownMenuTrigger aria-label="Filter email by tag" className={`rounded-md p-2 outline-none hover:bg-muted ${categoryFilter ? "text-primary" : "text-muted-foreground"}`}><Filter className="size-4" /></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-72"><DropdownMenuGroup><DropdownMenuLabel>Filter by tag</DropdownMenuLabel></DropdownMenuGroup><DropdownMenuItem onClick={() => setCategoryFilter(null)}>{!categoryFilter ? <Check /> : <span className="size-4" />}All tags</DropdownMenuItem><DropdownMenuSeparator />{categoryOptions.map((category) => <DropdownMenuItem key={category} onClick={() => setCategoryFilter(category)}>{categoryFilter === category ? <Check /> : <span className="size-4" />}<CustomerTagBadge tag={category} /></DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu></div>
             <div className="mail-search" role="search" aria-label="Search mailbox"><Search className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" /><input aria-label="Search email" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search customer mail" />{search ? <button type="button" onClick={() => setSearch("")} aria-label="Clear email search" className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"><X className="size-3.5" /></button> : null}</div>
             <div className="mt-2 flex gap-1 overflow-x-auto pb-0.5" aria-label="Filter inbox by message source">{sourceFilters.map((item) => <button key={item.id} type="button" aria-pressed={sourceFilter === item.id} onClick={() => { setSourceFilter(item.id); setSelectedId(""); }} className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors ${sourceFilter === item.id ? "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-500/40 dark:bg-blue-500/10 dark:text-blue-300" : "bg-background text-muted-foreground hover:bg-muted"}`}>{item.label}</button>)}</div>
           </div>
@@ -1427,8 +1439,8 @@ export function EmailInboxWorkspace({
           {!companyScope && !["drafts", "scheduled"].includes(folder) && !Object.values(syncHealth).some((item) => item.history !== "idle" || item.historyComplete) ? <button type="button" disabled={syncing || !inboxConfigured} onClick={() => void syncInbox(true)} className="border-b px-3 py-2 text-left text-xs text-muted-foreground hover:bg-muted disabled:opacity-40">Load older emails</button> : null}
           {notice ? <p role="status" className="border-b bg-muted/30 px-3 py-2 text-xs">{notice}</p> : null}
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
-{folder === "drafts" ? <div className="divide-y">{Object.values(savedDrafts.drafts).length ? Object.values(savedDrafts.drafts).map((value) => <div key={value.id} className="flex items-center gap-3 px-4 py-4"><button type="button" onClick={() => resumeDraft(value)} className="min-w-0 flex-1 text-left"><span className="block truncate text-sm font-medium">{value.subject || "(No subject)"}</span><span className="block truncate text-xs text-muted-foreground">{value.to || "No recipient"} · {value.bodyText.slice(0, 100)}</span></button><button type="button" onClick={() => { savedDrafts.remove(value); if (value.id === composeDraftId) { setComposeDraftId(""); setComposeTo(""); setComposeCc(""); setComposeBcc(""); setComposeBody(""); setComposeSubject(""); setComposeAttachments([]); setComposeProviderDraft(undefined); } }} aria-label={"Discard draft " + value.subject} className="rounded p-2 text-muted-foreground"><Trash2 className="size-4" /></button></div>) : <p className="p-5 text-sm text-muted-foreground">No saved drafts.</p>}<EmailMessageList emptyIcon={FileText} conversations={pageItems} compact={reading} activeId={selectedConversation?.id} checked={checkedIds} readMessages={readMessages} starred={starred} onCheck={() => undefined} onOpen={openConversation} onStar={toggleStar} /></div> : folder === "scheduled" ? <div className="divide-y">{scheduledError ? <p role="alert" className="p-4 text-xs text-red-600">{scheduledError}</p> : null}{scheduledEmails.map((value) => <div key={value.id} className="p-4"><p className="font-medium">{value.payload.subject || "(No subject)"}</p><p className="mt-1 text-xs text-muted-foreground">{value.payload.to?.join(", ")} · {new Date(value.scheduled_at).toLocaleString()} · {value.status}</p>{value.error ? <p className="mt-2 text-xs text-red-600">{value.error}</p> : null}{value.status === "scheduled" ? <button type="button" className="mt-2 text-xs underline" onClick={async () => { const response = await fetch("/api/email/scheduled", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: value.id }) }); const result = await response.json(); if (response.ok) setScheduledEmails((current) => current.filter((item) => item.id !== value.id)); else setScheduledError(result.error); }}>Cancel scheduled send</button> : null}{["scheduled", "failed"].includes(value.status) ? <button type="button" className="ml-4 mt-2 text-xs underline" onClick={() => void editScheduledEmail(value)}>Edit scheduled email</button> : null}</div>)}{!scheduledEmails.length && !scheduledError ? <p className="p-5 text-sm text-muted-foreground">No scheduled emails.</p> : null}</div> : <>
-            <EmailMessageList emptyIcon={folderItems.find((item) => item.id === folder)?.icon} conversations={pageItems} compact={Boolean(companyScope) || reading} simple={Boolean(companyScope)} activeId={reading ? selectedConversation?.id : undefined} checked={checkedIds} readMessages={readMessages} starred={starred} onCheck={(id) => setCheckedIds((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; })} onOpen={openConversation} onStar={toggleStar} /></>}
+{folder === "drafts" ? <div className="divide-y">{Object.values(savedDrafts.drafts).length ? Object.values(savedDrafts.drafts).map((value) => <div key={value.id} className="flex items-center gap-3 px-4 py-4"><button type="button" onClick={() => resumeDraft(value)} className="min-w-0 flex-1 text-left"><span className="block truncate text-sm font-medium">{value.subject || "(No subject)"}</span><span className="block truncate text-xs text-muted-foreground">{value.to || "No recipient"} · {value.bodyText.slice(0, 100)}</span></button><button type="button" onClick={() => { savedDrafts.remove(value); if (value.id === composeDraftId) { setComposeDraftId(""); setComposeTo(""); setComposeCc(""); setComposeBcc(""); setComposeBody(""); setComposeSubject(""); setComposeAttachments([]); setComposeProviderDraft(undefined); } }} aria-label={"Discard draft " + value.subject} className="rounded p-2 text-muted-foreground"><Trash2 className="size-4" /></button></div>) : <p className="p-5 text-sm text-muted-foreground">No saved drafts.</p>}<EmailMessageList emptyIcon={FileText} conversations={pageItems} categories={visibleCategories} compact={reading} activeId={selectedConversation?.id} checked={checkedIds} readMessages={readMessages} starred={starred} onCheck={() => undefined} onOpen={openConversation} onStar={toggleStar} /></div> : folder === "scheduled" ? <div className="divide-y">{scheduledError ? <p role="alert" className="p-4 text-xs text-red-600">{scheduledError}</p> : null}{scheduledEmails.map((value) => <div key={value.id} className="p-4"><p className="font-medium">{value.payload.subject || "(No subject)"}</p><p className="mt-1 text-xs text-muted-foreground">{value.payload.to?.join(", ")} · {new Date(value.scheduled_at).toLocaleString()} · {value.status}</p>{value.error ? <p className="mt-2 text-xs text-red-600">{value.error}</p> : null}{value.status === "scheduled" ? <button type="button" className="mt-2 text-xs underline" onClick={async () => { const response = await fetch("/api/email/scheduled", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: value.id }) }); const result = await response.json(); if (response.ok) setScheduledEmails((current) => current.filter((item) => item.id !== value.id)); else setScheduledError(result.error); }}>Cancel scheduled send</button> : null}{["scheduled", "failed"].includes(value.status) ? <button type="button" className="ml-4 mt-2 text-xs underline" onClick={() => void editScheduledEmail(value)}>Edit scheduled email</button> : null}</div>)}{!scheduledEmails.length && !scheduledError ? <p className="p-5 text-sm text-muted-foreground">No scheduled emails.</p> : null}</div> : <>
+            <EmailMessageList emptyIcon={folderItems.find((item) => item.id === folder)?.icon} conversations={pageItems} categories={visibleCategories} compact={Boolean(companyScope) || reading} simple={Boolean(companyScope)} activeId={reading ? selectedConversation?.id : undefined} checked={checkedIds} readMessages={readMessages} starred={starred} onCheck={(id) => setCheckedIds((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; })} onOpen={openConversation} onStar={toggleStar} /></>}
 
           </div>
           <div className="flex min-h-12 items-center justify-end gap-3 border-t px-3 text-xs text-muted-foreground">
@@ -1448,8 +1460,8 @@ export function EmailInboxWorkspace({
 
           </div>
           {selected ? <>
-{companyScope ? <div className="border-b px-6 py-5"><h2 className="text-lg font-semibold leading-7">{selected.subject}</h2><p className="mt-1 text-xs text-muted-foreground">{selectedConversation?.messages.length} {selectedConversation?.messages.length === 1 ? "message" : "messages"} in this conversation</p></div> : <>
-            <div className="flex min-h-20 shrink-0 items-center justify-between gap-3 border-b bg-background px-5"><div className="min-w-0"><h2 className="text-base font-semibold">{selected.subject}</h2><p className="mt-1 text-xs text-muted-foreground">{selected.direction === "inbound" ? "From" : "To"} {selected.contact} · {selected.company}</p></div><div className="flex items-center gap-3"><AssignedOwner imageUrl={selected.ownerAvatarUrl} name={selected.ownerName || "Unassigned"} initials={selected.ownerInitials || "—"} assigned={Boolean(selected.ownerId)} compact className="hidden lg:inline-flex" /><div className="flex items-center gap-1"><button type="button" title={starred.has(selected.id) ? "Remove star" : "Star email"} onClick={() => toggleStar(selected.id)} className={`rounded-md p-2 hover:bg-muted ${starred.has(selected.id) ? "text-amber-500" : "text-muted-foreground"}`}><Star className="size-4" fill={starred.has(selected.id) ? "currentColor" : "none"} /></button><button type="button" title="Archive" onClick={() => void moveSelected("archive")} className="rounded-md p-2 text-muted-foreground hover:bg-muted"><Archive className="size-4" /></button><DropdownMenu><DropdownMenuTrigger aria-label="More email actions" className="rounded-md p-2 text-muted-foreground outline-none hover:bg-muted"><MoreHorizontal className="size-4" /></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-48"><DropdownMenuGroup><DropdownMenuLabel>Email actions</DropdownMenuLabel></DropdownMenuGroup><DropdownMenuItem onClick={() => replyParent && replyToMessage(replyParent)}><Reply />Reply</DropdownMenuItem><DropdownMenuItem onClick={() => replyParent && replyToMessage(replyParent, true)}><ReplyAll />Reply all</DropdownMenuItem><DropdownMenuItem onClick={() => void forwardSelected()}><Forward />Forward</DropdownMenuItem><DropdownMenuSeparator />{conversation.some((message) => folderStates[message.id] && folderStates[message.id] !== "inbox") ? <DropdownMenuItem onClick={() => void moveSelected("inbox")}><Inbox />Move to inbox</DropdownMenuItem> : null}<DropdownMenuItem variant="destructive" onClick={() => void moveSelected("trash")}><Trash2 />Move to trash</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div></div></div>
+{companyScope ? <div className="border-b px-6 py-5"><div className="flex flex-wrap items-center gap-x-3 gap-y-2"><h2 className="min-w-0 text-lg font-semibold leading-7">{selected.subject}</h2><CustomerTagSelect value={selectedCategory} disabled={invoiceViewer?.role === "viewer"} onChange={setCategory} /></div><p className="mt-1 text-xs text-muted-foreground">{selectedConversation?.messages.length} {selectedConversation?.messages.length === 1 ? "message" : "messages"} in this conversation</p></div> : <>
+            <div className="flex min-h-20 shrink-0 items-center justify-between gap-3 border-b bg-background px-5"><div className="min-w-0"><div className="flex flex-wrap items-center gap-x-3 gap-y-2"><h2 className="min-w-0 text-base font-semibold">{selected.subject}</h2><CustomerTagSelect value={selectedCategory} disabled={invoiceViewer?.role === "viewer"} onChange={setCategory} /></div><p className="mt-1 text-xs text-muted-foreground">{selected.direction === "inbound" ? "From" : "To"} {selected.contact} · {selected.company}</p></div><div className="flex items-center gap-3"><AssignedOwner imageUrl={selected.ownerAvatarUrl} name={selected.ownerName || "Unassigned"} initials={selected.ownerInitials || "—"} assigned={Boolean(selected.ownerId)} compact className="hidden lg:inline-flex" /><div className="flex items-center gap-1"><button type="button" title={starred.has(selected.id) ? "Remove star" : "Star email"} onClick={() => toggleStar(selected.id)} className={`rounded-md p-2 hover:bg-muted ${starred.has(selected.id) ? "text-amber-500" : "text-muted-foreground"}`}><Star className="size-4" fill={starred.has(selected.id) ? "currentColor" : "none"} /></button><button type="button" title="Archive" onClick={() => void moveSelected("archive")} className="rounded-md p-2 text-muted-foreground hover:bg-muted"><Archive className="size-4" /></button><DropdownMenu><DropdownMenuTrigger aria-label="More email actions" className="rounded-md p-2 text-muted-foreground outline-none hover:bg-muted"><MoreHorizontal className="size-4" /></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-48"><DropdownMenuGroup><DropdownMenuLabel>Email actions</DropdownMenuLabel></DropdownMenuGroup><DropdownMenuItem onClick={() => replyParent && replyToMessage(replyParent)}><Reply />Reply</DropdownMenuItem><DropdownMenuItem onClick={() => replyParent && replyToMessage(replyParent, true)}><ReplyAll />Reply all</DropdownMenuItem><DropdownMenuItem onClick={() => void forwardSelected()}><Forward />Forward</DropdownMenuItem><DropdownMenuSeparator />{conversation.some((message) => folderStates[message.id] && folderStates[message.id] !== "inbox") ? <DropdownMenuItem onClick={() => void moveSelected("inbox")}><Inbox />Move to inbox</DropdownMenuItem> : null}<DropdownMenuItem variant="destructive" onClick={() => void moveSelected("trash")}><Trash2 />Move to trash</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div></div></div>
             <div className="flex shrink-0 items-center gap-2 border-b bg-muted/20 px-5 py-2 text-xs text-muted-foreground"><Languages className="size-3.5" /><span>Auto-translate to Chinese</span><Toggle checked={translationOn} onChange={() => setTranslationOn((value) => !value)} label="Toggle email translation" /></div>
 
 </>}
@@ -1572,10 +1584,6 @@ export function EmailInboxWorkspace({
                 conversationHistory: conversationContext,
               })}
             />
-            <section className="px-6 pb-6" aria-labelledby="contact-category">
-              <h3 id="contact-category" className="text-xs font-medium text-muted-foreground">Category</h3>
-              <Select value={selectedCategory || ""} onValueChange={(value) => { if (value === null) return; return void setCategory(value as Category); }}><SelectTrigger aria-labelledby="contact-category" className={`mt-2.5 w-full font-medium ${selectedCategory ? categoryStyles[selectedCategory] : "bg-background"}`}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="" disabled>Choose category</SelectItem>{categoryOptions.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}</SelectContent></Select>
-            </section>
             <section className="mx-6 mb-6 rounded-xl border p-4" aria-labelledby="contact-flow">
               <h3 id="contact-flow" className="flex items-center gap-2 text-sm font-semibold"><Workflow className="size-4 text-primary" />Automation flow</h3>
               <p className="mt-2 text-xs leading-5 text-muted-foreground">Customize follow-ups and actions for this email address or its company. Manage these flows here from Email.</p>

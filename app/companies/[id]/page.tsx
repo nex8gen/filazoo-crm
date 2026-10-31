@@ -17,6 +17,7 @@ import { CompanyTimeline } from "@/components/company-timeline";
 import { AssignedOwner } from "@/components/assigned-owner";
 import { CompanyAvatar } from "@/components/company-avatar";
 import { CompanyOrderBadge } from "@/components/company-order-badge";
+import { CustomerTagBadges } from "@/components/customer-tag-badges";
 import { buttonVariants } from "@/components/ui/button";
 import { requireWorkspaceMember } from "@/lib/auth";
 import { getCompanyDetails, getCompanyProfile } from "@/lib/data/crm";
@@ -45,9 +46,11 @@ async function CompanyPageContent({ params, searchParams }: CompanyPageProps) {
     <CompanyWorkspace key={id} companyId={id} initialTab={activeTab}
       toolbar={<div className="order-1 flex min-w-0 items-center gap-4 pb-2 sm:order-2 sm:shrink-0 sm:pb-0">
           <div className="flex min-w-0 items-center gap-2.5">
-            <CompanyOrderBadge count={details.company.paidOrderCount} />
-            <CompanyAvatar company={details.company} size="lg" />
-            <h1 data-no-translate title={details.company.name} className="max-w-32 truncate text-sm font-semibold tracking-tight xl:max-w-48">{details.company.name}</h1>
+            <div className="isolate flex shrink-0 items-center">
+              <CompanyOrderBadge count={details.company.paidOrderCount} className="z-10 -mr-1.5" />
+              <CompanyAvatar company={details.company} size="lg" />
+            </div>
+            <div className="min-w-0"><h1 data-no-translate title={details.company.name} className="max-w-32 truncate text-sm font-semibold tracking-tight xl:max-w-48">{details.company.name}</h1><CustomerTagBadges tags={details.company.customerTags} compactWhenMultiple className="mt-1 max-w-72" /></div>
           </div>
           <div className="flex shrink-0 items-center gap-1 border-l pl-4">
             <AssignedOwner compact name={details.company.ownerName} initials={details.company.ownerInitials} imageUrl={details.company.ownerAvatarUrl} assigned={Boolean(details.company.ownerId)} label="Assigned to" />

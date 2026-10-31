@@ -23,6 +23,7 @@
 .mail-row[data-unread="true"] .mail-sender, .mail-row[data-unread="true"] .mail-subject { font-weight: 600; }
 .mail-row[data-unread="true"] .mail-subject { color: #1670ff; }
 .mail-summary { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.mail-summary > [aria-label="Customer tags"], .mail-rows-compact .mail-summary > [aria-label="Customer tags"] { display: flex; overflow: visible; white-space: normal; }
 .mail-preview, .mail-row time { color: var(--muted-foreground); font-weight: 400; }
 .mail-row time { font-size: 12px; text-align: right; }
 .mail-indicators { display: flex; gap: 4px; color: var(--muted-foreground); }

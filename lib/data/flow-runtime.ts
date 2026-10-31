@@ -1,4 +1,5 @@
 import "server-only";
+import { requireAiAutomation } from "./ai-settings.ts";
 import { requireWorkspaceMember } from "../auth.ts";
 import { randomUUID } from "node:crypto";
 import { uploadFlowAttachment } from "../attachment-upload.ts";
@@ -15,9 +16,12 @@ import { removeStandardSignoff } from "../email-footer.ts";
 import { normalizeMailboxRow } from "../mailbox-utils.ts";
 import { evaluateSend } from "../outreach-policy.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
+import { isCustomerTag, emailTagMessageKey } from "../customer-tags.ts";
+import { saveSharedEmailTag } from "./customer-tags.ts";
 import { syncFlowMailboxMessages } from "./flow-mail-sync.ts";
 import { isAutoReplySchemaMissing } from "../email-auto-reply.ts";
 import { hasFlowReplyProvider, prepareFlowAiReply, prepareFlowTemplateCatalog } from "./flow-ai-reply.ts";
+import { matchesSegment, segmentRulesSchema } from "../segments.ts";
 
 type RunRow = {
   id: string;
@@ -44,28 +48,66 @@ async function resolveCompanyId(contactId?: string | null, companyId?: string | 
   return data?.company_id ?? null;
 }
 
-export async function loadFlowFacts({ userId, contactId, companyId, messageKey, lookbackDays = 365, conversationId, since: sinceDate, runId, fallbackCategory }: { userId: string; contactId?: string | null; companyId?: string | null; messageKey?: string | null; lookbackDays?: number; conversationId?: string; since?: string; runId?: string; fallbackCategory?: string | null }): Promise<FlowFacts> {
+export async function loadFlowFacts({ userId, contactId, companyId, messageKey, lookbackDays = 365, conversationId, since: sinceDate, runId, fallbackCategory, savedSegmentId }: { userId: string; contactId?: string | null; companyId?: string | null; messageKey?: string | null; lookbackDays?: number; conversationId?: string; since?: string; runId?: string; fallbackCategory?: string | null; savedSegmentId?: string }): Promise<FlowFacts> {
   const admin = createSupabaseAdmin();
   const resolvedCompanyId = await resolveCompanyId(contactId, companyId);
   const since = new Date(Math.max(Date.now() - lookbackDays * 86_400_000, sinceDate ? Date.parse(sinceDate) : 0)).toISOString();
   let replyQuery = admin.from("emails").select("id", { count: "exact", head: true }).eq("contact_id", contactId || "00000000-0000-0000-0000-000000000000").eq("direction", "received").or(`owner_id.is.null,owner_id.eq.${userId}`).gt("created_at", since);
   if (conversationId && !/^(company:|shopify:)/.test(conversationId)) replyQuery = replyQuery.eq("thread_id", conversationId);
   const engagement = runId ? await admin.from("flow_run_logs").select("result").eq("run_id", runId).gte("created_at", since).in("result->>action", ["email_opened", "link_clicked"]).throwOnError() : { data: [] };
-  const [companyResult, profileResult, replyResult, categoryResult] = await Promise.all([
+  const [companyResult, profileResult, replyResult, categoryResult, tagResult, conversationTagResult] = await Promise.all([
     resolvedCompanyId ? admin.from("companies").select("segment,country,status").eq("id", resolvedCompanyId).maybeSingle().throwOnError() : Promise.resolve({ data: null }),
     resolvedCompanyId ? admin.from("company_profiles").select("fit_score").eq("company_id", resolvedCompanyId).maybeSingle().throwOnError() : Promise.resolve({ data: null }),
     contactId ? replyQuery.throwOnError() : Promise.resolve({ count: 0 }),
     messageKey ? admin.from("email_inbox_state").select("category").eq("user_id", userId).eq("message_key", messageKey).maybeSingle().throwOnError() : Promise.resolve({ data: null }),
+    messageKey ? admin.from("crm_email_tags").select("tag").eq("message_key", emailTagMessageKey({ id: messageKey })).maybeSingle().throwOnError() : Promise.resolve({ data: null }),
+    conversationId ? admin.from("crm_email_tags").select("tag").eq("message_key", `conversation:${conversationId}`).maybeSingle().throwOnError() : Promise.resolve({ data: null }),
   ]);
+  const savedSegmentIds: string[] = [];
+  if (savedSegmentId && resolvedCompanyId) {
+    for await (const member of flowSegmentMembers({ savedSegmentId }, resolvedCompanyId)) {
+      if (member.companyId === resolvedCompanyId) savedSegmentIds.push(savedSegmentId);
+    }
+  }
   return {
+    ...(savedSegmentId ? { savedSegmentIds } : {}),
     customerReplied: Boolean(replyResult.count), openedEmail: Boolean(engagement.data?.some((log) => log.result?.action === "email_opened")), clickedLink: Boolean(engagement.data?.some((log) => log.result?.action === "link_clicked")),
-    category: categoryResult.data ? categoryResult.data.category : fallbackCategory ?? null,
+    category: conversationTagResult.data ? conversationTagResult.data.tag : tagResult.data ? tagResult.data.tag : categoryResult.data ? categoryResult.data.category : fallbackCategory ?? null,
     segment: companyResult.data?.segment ?? null,
     country: companyResult.data?.country ?? null,
     companyStatus: companyResult.data?.status ?? null,
     pipelineStage: null,
     fitScore: profileResult.data?.fit_score == null ? null : Number(profileResult.data.fit_score),
   };
+}
+
+// Resolve current segment membership for both saved audiences and business
+// segments. Deleted saved segments fail closed and rule edits take effect.
+async function* flowSegmentMembers(config: JsonConfig, companyId?: string) {
+  const admin = createSupabaseAdmin();
+  let rules;
+  if (typeof config.savedSegmentId === "string") {
+    const { data: segment } = await admin.from("company_segments").select("rules").eq("id", config.savedSegmentId).maybeSingle().throwOnError();
+    if (!segment) return;
+    rules = segmentRulesSchema.parse(segment.rules);
+  } else {
+    if (config.segmentAudience !== true) return;
+    rules = segmentRulesSchema.parse({ businessSegment: config.segment });
+  }
+  for (let offset = 0; ; offset += 500) {
+    let query = admin.from("companies").select("id,name,segment,country,source,company_profiles(fit_score),contacts(id,email)")
+      .or("source.is.null,source.neq.sample_seed").order("id").range(offset, offset + 499);
+    if (companyId) query = query.eq("id", companyId);
+    const { data } = await query.throwOnError();
+    for (const row of data ?? []) {
+      const profile = Array.isArray(row.company_profiles) ? row.company_profiles[0] : row.company_profiles;
+      const contact = row.contacts?.[0];
+      if (matchesSegment({ id: row.id, name: row.name, segment: row.segment || "Unclassified", country: row.country || "Unknown", source: row.source || "imported", sourceLabel: "", fitScore: profile?.fit_score ?? 0, hasEmail: Boolean(contact?.email?.trim()) }, rules)) {
+        yield { companyId: row.id as string, contactId: contact?.id as string | undefined };
+      }
+    }
+    if (!data || data.length < 500) break;
+  }
 }
 
 async function logRun(runId: string, stepId: string | null, result?: Record<string, unknown>, error?: string) {
@@ -102,6 +144,11 @@ export async function getFlowTestMailbox(userId: string, mailboxId: unknown) {
 
 export async function validateFlowResources(userId: string, input: FlowInput) {
   const admin = createSupabaseAdmin();
+  if (input.triggerConfig.savedSegmentId) {
+    const { data } = await admin.from("company_segments").select("rules").eq("id", input.triggerConfig.savedSegmentId).maybeSingle().throwOnError();
+    if (!data) throw new Error("The saved segment no longer exists. Choose another segment before enabling this flow.");
+    segmentRulesSchema.parse(data.rules);
+  }
   for (const step of allFlowActions(input.steps)) {
     if (step.type === "internal_alert" && step.config.channel === "email") {
       const mailbox = await getMailbox({ id: "", user_id: userId, trigger_type: input.triggerType, trigger_config: input.triggerConfig, status: input.status }, step.config.mailboxId);
@@ -216,6 +263,7 @@ async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: F
       await uploadFlowAttachment((options) => admin.storage.from("mailbox-attachments").upload(path, attachment.content, { contentType: attachment.contentType, ...options }));
       storedAttachments.push({ filename: attachment.filename, contentType: attachment.contentType, size: attachment.content.length, path, ...( "cid" in attachment ? { cid: attachment.cid as string } : {}) });
     }
+    if (aiReply) await requireAiAutomation(["sending", ...(step.config.attachCatalog ? ["catalogs"] as const : [])], ["emails", "customers", "team", ...(step.config.useProducts || step.config.attachCatalog ? ["products"] as const : [])]);
     sent = await submitFlowEmail(() => sendMailboxEmail({ host: mailbox.smtpHost, port: mailbox.smtpPort, user: mailbox.smtpUsername, pass: mailbox.smtpPassword, from: mailbox.email }, { to: contact.email, subject, ...content, ...replyHeaders, attachments }));
   } catch (error) {
     if (uploadPaths.length) await admin.storage.from("mailbox-attachments").remove(uploadPaths);
@@ -240,6 +288,15 @@ async function executeAction(run: RunRow, flow: FlowRow, step: FlowStep, facts: 
     await logRun(run.id, step.id, { action: "task_created", title: step.config.title });
   } else if (step.type === "change_category") {
     const messageKey = String(run.context?.messageKey || run.conversation_id);
+    if (isCustomerTag(step.config.category)) {
+      const { data: contact } = run.contact_id ? await admin.from("contacts").select("email").eq("id", run.contact_id).maybeSingle().throwOnError() : { data: null };
+      const saved = await saveSharedEmailTag({ messageKey, tag: step.config.category, companyId: run.company_id, contactEmail: contact?.email, source: "flow",
+        ...(!/^(company:|shopify:)/.test(run.conversation_id) ? { conversationKeys: [`conversation:${run.conversation_id}`] } : {}) });
+      await logRun(run.id, step.id, { action: "category_changed", category: step.config.category, reason: step.config.reason || null });
+      if (saved.categoryChanged) await enrollMatchingFlows({ type: "category_changed", conversationId: run.conversation_id, messageKey,
+        contactId: run.contact_id, companyId: run.company_id, category: step.config.category, eventKey: `category:${run.id}:${step.id}` });
+      return;
+    }
     const { data: previous } = await admin.from("email_inbox_state").select("category").eq("user_id", flow.user_id).eq("message_key", messageKey).maybeSingle().throwOnError();
     await admin.from("email_inbox_state").upsert({ user_id: flow.user_id, message_key: messageKey, category: step.config.category, updated_at: new Date().toISOString() }, { onConflict: "user_id,message_key", ignoreDuplicates: false }).throwOnError();
     await logRun(run.id, step.id, { action: "category_changed", category: step.config.category, reason: step.config.reason || null });
@@ -315,7 +372,7 @@ export async function processFlowRun(runId: string) {
     const steps = savedSteps.map((step, index) => ({ ...step, config: validated.steps[index].config }));
     while (index < steps.length) {
       const step = steps[index]!;
-      const facts = await loadFlowFacts({ userId: flow.user_id, contactId: run.contact_id, companyId: run.company_id, messageKey: String(run.context?.messageKey || "") || run.conversation_id, lookbackDays: Number(step.config.lookbackDays || 365), conversationId: String(run.context?.emailThreadId || run.conversation_id), since: String(run.context?.replySince || run.started_at), runId: run.id, fallbackCategory: typeof run.context?.category === "string" ? run.context.category : null });
+      const facts = await loadFlowFacts({ userId: flow.user_id, contactId: run.contact_id, companyId: run.company_id, messageKey: String(run.context?.messageKey || "") || run.conversation_id, lookbackDays: Number(step.config.lookbackDays || 365), conversationId: String(run.context?.emailThreadId || run.conversation_id), since: String(run.context?.replySince || run.started_at), runId: run.id, fallbackCategory: typeof run.context?.category === "string" ? run.context.category : null, savedSegmentId: typeof flow.trigger_config.savedSegmentId === "string" ? flow.trigger_config.savedSegmentId : undefined });
       if (step.type === "split") {
         const paths = Array.isArray(step.config.paths) ? step.config.paths : [];
         const selected = paths.find((path) => path && typeof path === "object" && !Array.isArray(path) && path.condition && typeof path.condition === "object" && !Array.isArray(path.condition) && conditionMatches(path.condition as JsonConfig, facts))
@@ -411,12 +468,13 @@ export async function enrollMatchingFlows(event: TriggerEvent) {
       contactId = contact && contact.company_id === companyId ? contact.id : null;
     }
     const scopedEvent = { ...event, contactId };
-    const facts = await loadFlowFacts({ userId: row.user_id, contactId, companyId, messageKey: event.messageKey });
+    const facts = await loadFlowFacts({ userId: row.user_id, contactId, companyId, messageKey: event.messageKey, savedSegmentId: typeof row.trigger_config.savedSegmentId === "string" ? row.trigger_config.savedSegmentId : undefined });
     if (!triggerMatches(row.trigger_type, row.trigger_config ?? {}, scopedEvent, facts)) { results.push({ flowId: row.id, enrolled: false, reason: "Trigger filters did not match" }); continue; }
     const reentryMode = String(row.trigger_config?.reentryMode || "every_event");
     if (reentryMode !== "every_event") {
       let previousQuery = admin.from("flow_runs").select("id").eq("flow_id", row.id);
-      if (contactId) previousQuery = previousQuery.eq("contact_id", contactId);
+      if ((row.trigger_config.savedSegmentId || row.trigger_config.segmentAudience) && event.type === "company_segment_changed" && companyId) previousQuery = previousQuery.eq("company_id", companyId);
+      else if (contactId) previousQuery = previousQuery.eq("contact_id", contactId);
       else if (companyId) previousQuery = previousQuery.eq("company_id", companyId);
       else previousQuery = previousQuery.eq("conversation_id", event.conversationId);
       if (reentryMode === "after_period") {
@@ -429,7 +487,10 @@ export async function enrollMatchingFlows(event: TriggerEvent) {
     }
     const { data: definition } = await admin.from("flow_steps").select("id,position,type,config").eq("flow_id", row.id).order("position").throwOnError();
     flowInputSchema.parse({ name: "Enrollment validation", triggerType: row.trigger_type, triggerConfig: row.trigger_config, status: "live", steps: definition });
-    const { data: run, error: insertError } = await admin.from("flow_runs").insert({ flow_id: row.id, conversation_id: event.conversationId, event_key: eventKey, contact_id: contactId ?? null, company_id: companyId, current_step: 0, status: "active", next_run_at: new Date().toISOString(), context: { messageKey: event.messageKey ?? null, category: event.category ?? null, listId: event.listId ?? null, segment: event.segment ?? null, stage: event.stage ?? null, replySince: event.occurredAt ?? new Date().toISOString(), definition: JSON.stringify(definition) } }).select("id").single();
+    const enrollmentEventKey = event.type !== "company_segment_changed" ? eventKey
+      : row.trigger_config.savedSegmentId ? `saved-segment:${row.trigger_config.savedSegmentId}:${companyId}`
+      : row.trigger_config.segmentAudience ? `segment-audience:${row.trigger_config.segment}:${companyId}` : eventKey;
+    const { data: run, error: insertError } = await admin.from("flow_runs").insert({ flow_id: row.id, conversation_id: event.conversationId, event_key: enrollmentEventKey, contact_id: contactId ?? null, company_id: companyId, current_step: 0, status: "active", next_run_at: new Date().toISOString(), context: { messageKey: event.messageKey ?? null, category: event.category ?? null, listId: event.listId ?? null, segment: event.segment ?? null, stage: event.stage ?? null, replySince: event.occurredAt ?? new Date().toISOString(), definition: JSON.stringify(definition) } }).select("id").single();
     if (insertError) {
       if (insertError.code === "23505") results.push({ flowId: row.id, enrolled: false, reason: "Conversation already has an active run" });
       else results.push({ flowId: row.id, enrolled: false, reason: insertError.message });
@@ -459,13 +520,27 @@ export async function enrollNewLeadFlows(contactId: string) {
 
 export async function scanTimeBasedFlowTriggers(flowId?: string) {
   const admin = createSupabaseAdmin();
-  let query = admin.from("flows").select("id,user_id,trigger_type,trigger_config,status,lead_enrollment_started_at,email_enrollment_started_at").eq("status", "live").in("trigger_type", ["new_lead", "lead_added_to_list", "email_received", "no_reply"]);
+  let query = admin.from("flows").select("id,user_id,trigger_type,trigger_config,status,lead_enrollment_started_at,email_enrollment_started_at").eq("status", "live").in("trigger_type", ["new_lead", "lead_added_to_list", "email_received", "no_reply", "company_segment_changed"]);
   if (flowId) query = query.eq("id", flowId);
   const { data: flows, error } = await query;
   if (error) throw new Error(`Unable to scan flow triggers: ${error.message}`);
   let enrolled = 0;
   for (const flow of (flows ?? []) as (FlowRow & { lead_enrollment_started_at: string | null; email_enrollment_started_at: string | null })[]) {
-    if (flow.trigger_type === "new_lead" || flow.trigger_type === "lead_added_to_list") {
+    if (flow.trigger_type === "company_segment_changed") {
+      if (typeof flow.trigger_config.savedSegmentId !== "string" && flow.trigger_config.segmentAudience !== true) continue;
+      const enteredCompanies = new Set<string>();
+      for (let offset = 0; ; offset += 1000) {
+        const { data: runs } = await admin.from("flow_runs").select("company_id").eq("flow_id", flow.id).order("id").range(offset, offset + 999).throwOnError();
+        for (const run of runs ?? []) if (run.company_id) enteredCompanies.add(run.company_id);
+        if (!runs || runs.length < 1000) break;
+      }
+      for await (const member of flowSegmentMembers(flow.trigger_config)) {
+        if (enteredCompanies.has(member.companyId)) continue;
+        const result = await enrollMatchingFlows({ type: "company_segment_changed", flowId: flow.id, ...member,
+          conversationId: `company:${member.companyId}` });
+        enrolled += result.filter((item) => item.enrolled).length;
+      }
+    } else if (flow.trigger_type === "new_lead" || flow.trigger_type === "lead_added_to_list") {
       // The activation timestamp excludes existing leads and leads added while paused.
       if (!flow.lead_enrollment_started_at) continue;
       for (let offset = 0; ; offset += 500) {

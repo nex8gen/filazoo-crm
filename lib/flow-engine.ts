@@ -10,6 +10,7 @@ export type FlowFacts = {
   companyStatus: string | null;
   pipelineStage: string | null;
   fitScore: number | null;
+  savedSegmentIds?: string[];
 };
 
 export type TriggerEvent = {
@@ -49,7 +50,8 @@ export function flowConversationPath(conversationId: string) {
 }
 
 export function matchesProfileFilters(config: JsonConfig, facts: FlowFacts) {
-  if (config.segment && normalized(config.segment) !== normalized(facts.segment)) return false;
+  if (config.savedSegmentId && !facts.savedSegmentIds?.includes(String(config.savedSegmentId))) return false;
+  if (!config.savedSegmentId && config.segment && normalized(config.segment) !== normalized(facts.segment)) return false;
   if (config.country && normalized(config.country) !== normalized(facts.country)) return false;
   if (config.companyStatus && config.companyStatus !== facts.companyStatus) return false;
   if (config.pipelineStage) return false;
@@ -77,7 +79,7 @@ export function triggerMatches(type: TriggerType, config: JsonConfig, event: Tri
   if (event.type !== type || !matchesFlowScope(config, event.companyId, event.contactId) || !matchesFlowCustomer(config, event.contactId) || !matchesProfileFilters(config, facts)) return false;
   if (type === "category_changed") return normalized(config.category) === normalized(event.category);
   if (type === "lead_added_to_list") return normalized(config.listId) === normalized(event.listId);
-  if (type === "company_segment_changed") return normalized(config.segment) === normalized(event.segment ?? facts.segment);
+  if (type === "company_segment_changed") return Boolean(config.savedSegmentId) || normalized(config.segment) === normalized(event.segment ?? facts.segment);
   if (type === "pipeline_stage_changed") return false;
   return true;
 }

@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { emailTagMessageKey, conversationTagKeys } from "../customer-tags.ts";
 import { createHash } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import * as crm from "@/app/crm-actions";
@@ -125,10 +126,12 @@ async function target(operation: CrmOperation, viewer: WorkspaceViewer): Promise
     return { name: `INV-${String(invoice.number).padStart(6, "0")}`, value: invoice, preview: { action: operation.action, customer: invoice.document.customerName, currency: invoice.document.currency, totalMinor: invoice.total_minor, paidMinor: invoice.paid_minor, ...(operation.payment ? { payment: operation.payment } : {}) } };
   }
   if (operation.op === "set_email_state") {
-    const { current } = await loadAgentEmails(viewer, operation.emailId);
+    const { current, messages } = await loadAgentEmails(viewer, operation.emailId);
     if (!current) throw new Error("Email not found.");
     const state = { category: current.category ?? null, starred: current.starred ?? false, read: current.read ?? false, folder: current.folder ?? "inbox", followUpAt: current.followUpAt ?? null };
-    return { name: current.subject || current.contact, value: state, preview: { state: { ...state, ...operation.changes }, messageKey: current.id, contactEmail: current.contact, threadId: current.threadId ?? null } };
+    const conversation = messages?.length ? messages : [current];
+    const keys = conversationTagKeys(conversation);
+    return { name: current.subject || current.contact, value: state, preview: { state: { ...state, ...operation.changes }, messageKey: current.id, tagMessageKey: keys[0], tagConversationKeys: keys, tagMessageKeys: conversation.map(emailTagMessageKey), categoryWrite: Object.hasOwn(operation.changes, "category"), contactEmail: current.contact, threadId: current.threadId ?? null } };
   }
   if (operation.op === "send_message" || operation.op === "draft_message") {
     const message = await one("meta_messages", "id,sender_id,recipient_id,direction,source,customer_name,thread_id,page_id", "id", operation.messageId);
@@ -295,7 +298,7 @@ export async function executeCrmAction(action: PreparedCrmAction, viewer: Worksp
     }
     case "delete_flow": await deleteFlow(viewer.id, operation.flowId); result = { success: "Automation flow deleted." }; href = "/lead-channel/ai-agent"; revalidatePath(href); break;
     case "set_email_state": {
-      const response = await saveEmailState(new Request(new URL("/api/email/state", request.url), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...current.preview.state as object, messageKey: current.preview.messageKey, contactEmail: current.preview.contactEmail, threadId: current.preview.threadId }) }));
+      const response = await saveEmailState(new Request(new URL("/api/email/state", request.url), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...current.preview.state as object, messageKey: current.preview.messageKey, tagMessageKey: current.preview.tagMessageKey, tagConversationKeys: current.preview.tagConversationKeys, tagMessageKeys: current.preview.tagMessageKeys, categoryWrite: current.preview.categoryWrite, contactEmail: current.preview.contactEmail, threadId: current.preview.threadId }) }));
       const saved = await response.json(); if (!response.ok || !saved.ok) throw new Error(saved.error || "Email state could not be saved.");
       result = { success: "Email organization updated." }; href = "/emails"; break;
     }

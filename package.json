@@ -5,6 +5,8 @@
   "scripts": {
     "predev": "node scripts/check-local-env.mjs",
     "dev": "next dev",
+    "crm": "node scripts/start-crm.mjs",
+    "crm:start": "node scripts/start-crm.mjs --skip-build",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",

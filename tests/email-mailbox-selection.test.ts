@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import * as customerTags from "../lib/customer-tags.ts";
+import * as leadInquiries from "../lib/lead-inquiries.ts";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -20,6 +22,9 @@ import type { WorkspaceViewer } from "../lib/auth.ts";
 const require = createRequire(import.meta.url);
 function loadModule<T>(path: string, dependencies: Record<string, unknown>): T {
   dependencies["../email-workbench"] = workbench;
+  dependencies["./customer-tags.ts"] = customerTags;
+  dependencies["./lead-inquiries.ts"] = leadInquiries;
+  dependencies["./data/lead-inquiries.ts"] = { listMetaLeadInquiries: async () => [] };
   dependencies["@/lib/email-provider"] = provider;
   dependencies["@/lib/email-files"] = emailFiles;
   dependencies["../email-mime.ts"] = emailMime;

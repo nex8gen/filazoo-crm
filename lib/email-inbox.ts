@@ -1,4 +1,7 @@
 import type { DataMode, EmailDraft, Reply } from "./types.ts";
+import { emailTagMessageKey, applyConversationCustomerTags } from "./customer-tags.ts";
+import { buildShopifyFormInboxItems, type ShopifyInquiryRow as ShopifyInboxRow } from "./lead-inquiries.ts";
+export { buildShopifyFormInboxItems } from "./lead-inquiries.ts";
 import { getViewerMailboxes, mailboxHasImap, mailboxHasSmtp } from "./data/mailboxes.ts";
 import { defaultViewerMailbox, type MailboxOption } from "./mailbox-utils.ts";
 import { getEmailAutomationSettings, listEmailInboxStates, listSentMailboxMessages, type EmailCategory, type EmailFolderState } from "./data/email-state.ts";
@@ -138,56 +141,6 @@ export async function fetchMailboxInboxMessages(mailbox: import("./mailbox-imap.
   if (!mailbox?.imapHost || !mailbox.imapUsername || !mailbox.imapPassword) return [];
   const { receiveMailboxMessages } = await import("./mailbox-imap.ts");
   return receiveMailboxMessages(mailbox, options);
-}
-
-type ShopifyInboxRow = {
-  webhook_id: string;
-  customer_id: string;
-  email: string;
-  full_name: string | null;
-  company_name: string;
-  phone: string | null;
-  tags: string[] | null;
-  raw_payload: Record<string, unknown> | null;
-  created_at: string;
-};
-
-function textField(payload: Record<string, unknown> | null, key: string) {
-  const value = payload?.[key];
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-export function buildShopifyFormInboxItems(rows: ShopifyInboxRow[]): InboxEmailItem[] {
-  return rows.map((row) => {
-    const isFormLead = row.customer_id.startsWith("form:");
-    const message = textField(row.raw_payload, "contact[body]");
-    const details = [
-      textField(row.raw_payload, "contact[Business type]") && `Business type: ${textField(row.raw_payload, "contact[Business type]")}`,
-      textField(row.raw_payload, "contact[Estimated monthly volume]") && `Estimated monthly volume: ${textField(row.raw_payload, "contact[Estimated monthly volume]")}`,
-      (textField(row.raw_payload, "contact[Phone]") || row.phone) && `Phone: ${textField(row.raw_payload, "contact[Phone]") || row.phone}`,
-      textField(row.raw_payload, "contact[Website]") && `Website: ${textField(row.raw_payload, "contact[Website]")}`,
-      row.tags?.length ? `Shopify tags: ${row.tags.join(", ")}` : null,
-    ].filter((value): value is string => Boolean(value));
-    const body = [message || (isFormLead
-      ? "A customer submitted the Shopify B2B enquiry form."
-      : "A new Shopify B2B lead was added."), details.length ? details.join("\n") : null]
-      .filter(Boolean)
-      .join("\n\n");
-    return {
-      id: `shopify-${row.webhook_id}`,
-      direction: "inbound" as const,
-      status: isFormLead ? "Shopify enquiry" : "Shopify lead",
-      subject: `${isFormLead ? "Shopify enquiry" : "Shopify lead"} from ${row.company_name}`,
-      contact: row.email,
-      contactName: row.full_name || undefined,
-      company: row.company_name,
-      preview: toPreview(body),
-      body,
-      threadId: `shopify:${row.webhook_id}`,
-      timestamp: row.created_at,
-      source: "shopify" as const,
-    };
-  });
 }
 
 async function listShopifyFormInboxMessages() {
@@ -350,11 +303,12 @@ export function buildInboxEmailItems({
 
 async function readWorkspaceInboxSources(viewer: WorkspaceViewer) {
   const { listEmailDrafts, listReplies } = await import("./data/crm.ts");
-  const [drafts, replies, shopify, assigned] = await Promise.all([
+  const { listMetaLeadInquiries } = await import("./data/lead-inquiries.ts");
+  const [drafts, replies, shopify, assigned, meta] = await Promise.all([
     listEmailDrafts(viewer), listReplies(viewer),
-    listShopifyFormInboxMessages().catch(() => []), getAssignedEmailContacts(viewer),
+    listShopifyFormInboxMessages().catch(() => []), getAssignedEmailContacts(viewer), listMetaLeadInquiries().catch(() => []),
   ]);
-  return { drafts, replies, shopify, assigned };
+  return { drafts, replies, shopify, assigned, meta };
 }
 
 type EmailInboxReadContext = {
@@ -400,7 +354,7 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
   ]);
   const { emails, mode } = workspace?.drafts ?? { emails: [], mode: "live" as const };
   const { replies } = workspace?.replies ?? { replies: [] };
-  const shopifyMessages = workspace?.shopify ?? [];
+  const shopifyMessages = [...workspace?.shopify ?? [], ...workspace?.meta ?? []];
   const assignedContacts = workspace?.assigned ?? null;
   const { messages: liveInbound, error: inboxError, syncedAt: lastMailboxSync } = mailboxResult;
   const sentIds = new Set(sentMessages.flatMap((item) => item.messageId ? [normalizeMessageId(item.messageId)] : []));
@@ -427,6 +381,7 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
       return {
         ...item,
         ...(states.get(item.id) ?? {}),
+        category: states.get(emailTagMessageKey(item))?.category ?? null,
         ...(item.providerFolder ? { read: item.read, starred: item.starred, folder: item.folder } : {}),
         company: company?.name || item.company,
         companyId: assignedCompanyId ?? company?.id ?? null,
@@ -472,7 +427,7 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
     selectedMailboxId: defaultMailbox?.id ?? null,
     defaultSenderId: defaultSender?.id ?? null,
     assignedCustomersOnly: !personal && viewer.role === "bd_manager",
-    emails: inbox,
+    emails: applyConversationCustomerTags(inbox, states),
     providerFolders: "folders" in mailboxResult ? mailboxResult.folders : [],
     automation,
   };

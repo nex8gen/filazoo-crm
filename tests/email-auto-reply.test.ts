@@ -1,3 +1,4 @@
+import { policyTestDependency } from "./helpers/ai-policy.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
@@ -131,7 +132,7 @@ function workerFixture() {
   const exports: { processEmailAutoReply?: (id: string) => Promise<void> } = {};
   vm.runInNewContext(ts.transpileModule(readFileSync(new URL("../lib/data/email-auto-reply-worker.ts", import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-  }).outputText, { exports, require: (name: string) => { assert.ok(name in dependencies, name); return dependencies[name]; },
+  }).outputText, { exports, require: (name: string) => { const aiDependency = policyTestDependency(name); if (aiDependency) return aiDependency;  assert.ok(name in dependencies, name); return dependencies[name]; },
     Buffer, process: { env: { GEMINI_API_KEY: "synthetic" } }, console });
   return { row, calls, tables, document, savedInvoices, renderedCatalogs, first, next, run: () => exports.processEmailAutoReply!("automation"),
     setPlan: (value: Partial<autoReply.AutoReplyPlan>) => { plan = { ...plan, ...value }; },

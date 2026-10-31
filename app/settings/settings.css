@@ -10,7 +10,3 @@
 .settings-content p[role="alert"] { border: 1px solid color-mix(in srgb, var(--destructive) 25%, transparent); border-radius: .75rem; background: color-mix(in srgb, var(--destructive) 5%, var(--background)); padding: .75rem 1rem; }
 .settings-content p[role="status"]:not(:empty) { line-height: 1.5rem; }
 .settings-preview-line { height: .3rem; border-radius: 1rem; background: currentColor; opacity: .15; }
-@media (prefers-reduced-motion: no-preference) {
-  .settings-section-enter { animation: settings-enter 180ms ease-out both; }
-  @keyframes settings-enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-}

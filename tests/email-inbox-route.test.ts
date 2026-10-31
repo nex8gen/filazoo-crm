@@ -1,3 +1,4 @@
+import { policyTestDependency } from "./helpers/ai-policy.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
@@ -31,11 +32,12 @@ function setup(queueFailure = false) {
       return { selectedMailboxId: null, emails: [{ id: "workspace-message", contact: "buyer@example.test" }] };
     } },
     "@/lib/data/email-auto-reply-worker": { processEmailAutoReplies: async () => undefined },
+    "@/lib/data/conversation-tagging": { processAutomaticConversationTags: async () => ({ analyzed: 0 }) },
     "next/server": { after: (fn: () => Promise<void>) => background.push(fn) },
   };
   const exports = {} as { GET: (request: Request) => Promise<Response> };
   vm.runInNewContext(ts.transpileModule(readFileSync(new URL("../app/api/email/inbox/route.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, {
-    exports, require: (name: string) => dependencies[name], Response, Request, URL, performance, console,
+    exports, require: (name: string) => policyTestDependency(name) ?? (dependencies[name]), Response, Request, URL, performance, console,
   });
   return { ...exports, counts, background, companyReads, deny: () => { denied = true; } };
 }
@@ -52,7 +54,8 @@ test("preloading authorizes once, reads mailbox settings once and starts no prov
 test("active inbox refresh durably enqueues authorized work before returning", async () => {
   const { GET, counts, background } = setup();
   assert.equal((await GET(new Request("http://localhost/api/email/inbox?mailboxId=team"))).status, 200);
-  assert.equal(background.length, 0, "No IMAP work may depend on Next after() lifetime");
+  assert.equal(background.length, 1, "Only context tagging runs after the response; IMAP sync is durably queued");
+  await background[0]();
   assert.deepEqual(counts, { auth: 1, mailboxes: 1, inbox: 1, sync: 1 });
 });
 

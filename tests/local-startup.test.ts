@@ -44,12 +44,66 @@ test("blocked network access gives actionable startup diagnostics instead of sta
 
 test("invalid API keys, upstream outages and timeouts fail startup without response body leakage", async () => {
   for (const status of [401, 403, 503]) {
-    const errors = await checkLocalSupabase(localSupabaseConfig(environment), async () => new Response(environment.SUPABASE_SECRET_KEY, { status }));
+    const errors = await checkLocalSupabase(localSupabaseConfig(environment), async () => new Response(environment.SUPABASE_SECRET_KEY, { status }), async () => {});
     assert.equal(errors.length, 2);
     assert.ok(errors.every((error: string) => error.includes(`HTTP ${status}`)));
     assert.ok(!errors.join().includes(environment.SUPABASE_SECRET_KEY));
   }
-  const errors = await checkLocalSupabase(localSupabaseConfig(environment), async () => { throw new DOMException("timed out", "TimeoutError"); });
+  const errors = await checkLocalSupabase(localSupabaseConfig(environment), async () => { throw new DOMException("timed out", "TimeoutError"); }, async () => {});
   assert.equal(errors.length, 2);
   assert.ok(errors.every((error: string) => error.includes("could not reach Supabase")));
+});
+
+test("a transient database failure retries without repeating the successful auth check", async () => {
+  let authCalls = 0;
+  let databaseCalls = 0;
+  const delays: number[] = [];
+  const signals = new Set<AbortSignal>();
+  const errors = await checkLocalSupabase(localSupabaseConfig(environment), async (url: string, init: RequestInit) => {
+    signals.add(init.signal!);
+    if (url.includes("/auth/")) {
+      authCalls++;
+      return new Response("{}", { status: 200 });
+    }
+    databaseCalls++;
+    if (databaseCalls === 1) throw new TypeError("fetch failed", { cause: { code: "ECONNRESET" } });
+    return new Response("{}", { status: databaseCalls === 2 ? 503 : 200 });
+  }, async (ms: number) => { delays.push(ms); });
+  assert.deepEqual(errors, []);
+  assert.equal(authCalls, 1);
+  assert.equal(databaseCalls, 3);
+  assert.equal(signals.size, 4, "Each attempt needs a fresh timeout");
+  assert.deepEqual(delays, [1000, 2000]);
+});
+
+test("persistent timeouts stop after three attempts with a useful diagnosis", async () => {
+  let calls = 0;
+  const errors = await checkLocalSupabase(localSupabaseConfig(environment), async () => {
+    calls++;
+    throw new TypeError("fetch failed", { cause: { code: "UND_ERR_CONNECT_TIMEOUT" } });
+  }, async () => {});
+  assert.equal(calls, 6);
+  assert.equal(errors.length, 2);
+  assert.ok(errors.every((error: string) => error.includes("timed out") && error.includes("3 attempts")));
+});
+
+test("credential errors, DNS mistakes and nested permission errors fail without retrying or leaking secrets", async () => {
+  for (const code of ["ENOTFOUND", "EACCES", "EPERM"]) {
+    let calls = 0;
+    const errors = await checkLocalSupabase(localSupabaseConfig(environment), async () => {
+      calls++;
+      throw new TypeError(environment.SUPABASE_SECRET_KEY, { cause: new AggregateError([{ code }]) });
+    }, async () => { assert.fail("Permanent failures must not retry"); });
+    assert.equal(calls, 2);
+    assert.ok(errors.every((error: string) => error.includes(code === "ENOTFOUND" ? "DNS" : "network permissions")));
+    assert.ok(!errors.join().includes(environment.SUPABASE_SECRET_KEY));
+  }
+  for (const status of [401, 403, 404]) {
+    let calls = 0;
+    await checkLocalSupabase(localSupabaseConfig(environment), async () => {
+      calls++;
+      return new Response(null, { status });
+    }, async () => { assert.fail("Configuration failures must not retry"); });
+    assert.equal(calls, 2);
+  }
 });

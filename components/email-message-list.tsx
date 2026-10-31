@@ -2,6 +2,8 @@
 
 import { useLanguage } from "@/components/language-provider";
 import type { AppLanguage } from "@/lib/i18n";
+import { CustomerTagBadges } from "@/components/customer-tag-badges";
+import { conversationCustomerTag, type CustomerTag } from "@/lib/customer-tags";
 import { Fragment } from "react";
 import { Inbox, Paperclip, Reply, Star, type LucideIcon } from "lucide-react";
 import { EmptyState } from "@/components/data-state";
@@ -20,8 +22,9 @@ function dateGroup(value: string, language: AppLanguage) {
   return date.toLocaleDateString(language, { month: "long", day: "numeric", year: "numeric" });
 }
 
-export function EmailMessageList({ conversations, compact, simple = false, emptyIcon = Inbox, activeId, checked, readMessages, starred, onCheck, onOpen, onStar }: {
+export function EmailMessageList({ conversations, categories = {}, compact, simple = false, emptyIcon = Inbox, activeId, checked, readMessages, starred, onCheck, onOpen, onStar }: {
   conversations: Conversation[];
+  categories?: Record<string, CustomerTag>;
   compact: boolean;
   simple?: boolean;
   emptyIcon?: LucideIcon;
@@ -38,6 +41,7 @@ export function EmailMessageList({ conversations, compact, simple = false, empty
   return <div className={compact ? "mail-rows mail-rows-compact" : "mail-rows"}>
     {conversations.map((item, index) => {
       const email = item.latest;
+      const tag = conversationCustomerTag(item.messages, categories);
       const unread = item.messages.some((message) => message.direction === "inbound" && !readMessages.has(message.id));
       const group = dateGroup(email.timestamp, language);
       const date = new Date(email.timestamp);
@@ -49,7 +53,7 @@ export function EmailMessageList({ conversations, compact, simple = false, empty
           <button type="button" className="mail-row-open" onClick={() => onOpen(item)} aria-label={`Open ${email.subject}`}>
             <span className="mail-unread-dot" aria-label={unread ? "Unread" : undefined} />
             <span data-no-translate className="mail-sender truncate">{email.contactName || email.contact}{item.messages.length > 1 ? <span className="ml-1 text-muted-foreground">({item.messages.length})</span> : null}{email.contactName && email.contactName !== email.contact ? <span className="mail-sender-address ml-2 border-l pl-2 font-normal text-muted-foreground">{email.contact}</span> : null}</span>
-            <span className="mail-summary"><span data-no-translate className="mail-subject">{email.subject || "(No subject)"}</span><span data-no-translate className="mail-preview">{email.preview ? ` — ${email.preview}` : ""}</span></span>
+            <span className="mail-summary"><span data-no-translate className="mail-subject">{email.subject || "(No subject)"}</span><span data-no-translate className="mail-preview">{email.preview ? ` — ${email.preview}` : ""}</span><CustomerTagBadges tags={tag ? [tag] : []} className="mt-1" /></span>
             <span className="mail-indicators">{email.attachments?.length ? <Paperclip className="size-3.5" /> : null}{item.messages.some((message) => message.direction === "outbound") ? <Reply className="size-3.5 text-emerald-600" /> : null}</span>
             <time dateTime={email.timestamp} title={date.toLocaleString()}>{time}</time>
           </button>

@@ -1,4 +1,6 @@
 import "server-only";
+import { requireAiData } from "../data/ai-settings";
+import { aiReadResources } from "../ai-policy";
 import { listReplyRequests } from "../data/customer-reply-requests";
 import { z } from "zod";
 import type { WorkspaceViewer } from "../auth";
@@ -45,6 +47,7 @@ const resources = {
 
 export async function readCrmRecords(viewer: WorkspaceViewer, request: CrmRead) {
   const input = crmReadSchema.parse(request);
+  const policy = await requireAiData(...aiReadResources[input.resource]);
   const db = createSupabaseAdmin();
   if (input.resource === "reply_requests") {
     const all = await listReplyRequests(viewer, { id: input.id, query: input.query, companyId: input.companyId });
@@ -78,7 +81,7 @@ export async function readCrmRecords(viewer: WorkspaceViewer, request: CrmRead) 
   }
   if (input.resource === "companies" && input.id) {
     if (!z.uuid().safeParse(input.id).success) throw new Error("Choose a valid company ID.");
-    return { records: [await loadAgentCompany(input.id)], coverage: { matching: 1, included: 1, nextOffset: null } };
+    return { records: [await loadAgentCompany(input.id, policy.data.billing)], coverage: { matching: 1, included: 1, nextOffset: null } };
   }
   const config: { table: string; fields: string; search: string; order: string } = resources[input.resource];
   let query = db.from(config.table).select(config.fields, { count: "exact" });

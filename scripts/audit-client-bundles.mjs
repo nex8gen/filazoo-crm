@@ -5,17 +5,18 @@ import { gzipSync } from "node:zlib";
 // A deterministic production-shell budget. It measures scripts referenced by
 // prerendered HTML; route-specific streamed/interactive code is measured in the browser.
 const root = process.cwd();
+const buildRoot = path.join(root, process.env.FILAZOO_STABLE_RUNTIME === "1" ? ".next-crm" : ".next");
 const limits = JSON.parse(await readFile(path.join(root, "docs/performance-budgets.json"), "utf8"));
 const files = new Map();
 const results = [];
 for (const route of limits.routes) {
-  const html = await readFile(path.join(root, ".next/server/app", route + ".html"), "utf8");
+  const html = await readFile(path.join(buildRoot, "server/app", route + ".html"), "utf8");
   const urls = [...new Set([...html.matchAll(/<script[^>]+src="([^"]+)"/g)].map(match => match[1]).filter(url => url.startsWith("/_next/static/") && url.endsWith(".js")))];
   let bytes = 0, gzipBytes = 0;
   for (const url of urls) {
     if (!files.has(url)) {
-      const file = path.resolve(root, ".next", url.slice("/_next/".length));
-      if (!file.startsWith(path.resolve(root, ".next") + path.sep)) throw new Error("Invalid build asset path");
+      const file = path.resolve(buildRoot, url.slice("/_next/".length));
+      if (!file.startsWith(buildRoot + path.sep)) throw new Error("Invalid build asset path");
       const data = await readFile(file);
       files.set(url, { bytes: data.length, gzipBytes: gzipSync(data).length });
     }

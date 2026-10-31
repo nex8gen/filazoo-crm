@@ -85,6 +85,33 @@ test("database reader batches company IDs, skips empty inputs, and never reports
   await assert.rejects(readCompanyPaidOrderCounts(database([], { error: true }).db, ["company-a"]), /Unable to load paid order counts: offline/);
 });
 
+test("independent count batches overlap, with at most four requests at once", { timeout: 3000 }, async () => {
+  let active = 0, maximum = 0, started = 0;
+  let release: () => void = () => {};
+  const firstGroup = new Promise<void>(resolve => { release = resolve; });
+  const db = { from() {
+    let ids: string[] = [];
+    const query = {
+      select: () => query, eq: () => query, gt: () => query, order: () => query, range: () => query,
+      in(_field: string, values: string[]) { ids = values; return query; },
+      async then(resolve: (value: unknown) => void) {
+        started++; active++; maximum = Math.max(maximum, active);
+        if (started === 4) release();
+        await firstGroup;
+        active--;
+        return resolve({ data: [invoice(ids[0], { company_id: ids[0] })], count: 1, error: null });
+      },
+    };
+    return query;
+  } } as unknown as SupabaseClient;
+  const ids = Array.from({ length: 501 }, (_, index) => `company-${index}`);
+  const counts = await readCompanyPaidOrderCounts(db, ids);
+  assert.equal(started, 6);
+  assert.equal(maximum, 4);
+  assert.equal(counts.size, 6);
+  assert.equal(counts.get("company-500"), 1);
+});
+
 test("badge artwork renders all tiers and an accessible uncapped count", () => {
   const require = createRequire(import.meta.url);
   const exports: Record<string, (props: { count: number }) => unknown> = {};

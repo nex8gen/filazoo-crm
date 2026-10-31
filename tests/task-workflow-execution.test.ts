@@ -1,3 +1,4 @@
+import { policyTestDependency } from "./helpers/ai-policy.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
@@ -54,7 +55,7 @@ function fixture() {
   };
   const exports = {} as { executeTaskWorkflow: typeof import("../lib/data/task-workflow-execution.ts").executeTaskWorkflow };
   const code = ts.transpileModule(readFileSync(new URL("../lib/data/task-workflow-execution.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => deps[name] ?? require(name), Date, Error, JSON, Buffer, Response, structuredClone, console });
+  vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (deps[name] ?? require(name)), Date, Error, JSON, Buffer, Response, structuredClone, console });
   return { ...exports, task, work, invoice, tables, sends, mode: (next: string) => { mode = next; }, newerReply: () => { newerReply = true; } };
 }
 

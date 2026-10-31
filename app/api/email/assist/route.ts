@@ -1,3 +1,5 @@
+import { requireAiFeature } from "@/lib/data/ai-settings";
+import { aiBehaviorInstruction, restrictedAiContext, AiPolicyError } from "@/lib/ai-policy";
 import { requireWorkspaceMember } from "@/lib/auth";
 import { generateGeminiText } from "@/lib/ai/gemini";
 import { generateGatewayText, isGeminiRegionError } from "@/lib/ai/gateway";
@@ -53,6 +55,15 @@ export async function POST(request: Request) {
     return Response.json({ ok: false, error: "Invalid AI request. Check the message and conversation details." }, { status: 400 });
   }
 
+  let policy;
+  try { policy = await requireAiFeature("email", "emails"); }
+  catch (error) { return Response.json({ ok: false, error: error instanceof Error ? error.message : "Unable to verify AI access." }, { status: error instanceof AiPolicyError ? 403 : 503 }); }
+  if (parsed.data.mode === "rewrite" && policy.actions.emailDrafts === "deny") return Response.json({ ok: false, error: "AI email drafting is blocked in Settings → AI access & behavior." }, { status: 403 });
+  if (!policy.data.customers) parsed.data.customerProfile = undefined;
+  if (!policy.data.billing && parsed.data.customerProfile) parsed.data.customerProfile.currency = undefined;
+  if (!policy.data.team) parsed.data.assignedManagerName = undefined;
+  if (!policy.data.tasks) parsed.data.currentFollowUpAt = undefined;
+  if (restrictedAiContext(policy)) parsed.data.context = undefined;
   const { language, mode, text, context, recipient, assignedManagerName, customerProfile, conversationHistory } = parsed.data;
   if (mode === "translate") {
     if (parsed.data.segments) {
@@ -83,6 +94,7 @@ export async function POST(request: Request) {
     company: DEFAULT_EMAIL_COMPANY,
   };
   const system = mode === "summary" ? `${buildEmailSummaryInstruction(language)}\nCURRENT TIME: ${new Date().toISOString()}\nWORKSPACE TIMEZONE: Asia/Shanghai` : buildEmailRewriteInstruction(signature);
+  const governedSystem = system + aiBehaviorInstruction(policy, true);
   const userContent = mode === "summary" ? JSON.stringify({
     contact: recipient,
     customerProfile,
@@ -103,7 +115,7 @@ export async function POST(request: Request) {
   const generateWithGateway = (correction: string) => generateGatewayText({
     token: gatewayToken!,
     model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim(),
-    systemInstruction: system,
+    systemInstruction: governedSystem,
     prompt: correction ? `${userContent}\n\nVALIDATION CORRECTION:\n${correction}` : userContent,
   });
 
@@ -124,7 +136,7 @@ export async function POST(request: Request) {
     const output = await finalizeOutput((correction) => generateGeminiText({
       apiKey: apiKey!,
       model: process.env.GEMINI_EMAIL_MODEL?.trim(),
-      systemInstruction: system,
+      systemInstruction: governedSystem,
       prompt: correction ? `${userContent}\n\nVALIDATION CORRECTION:\n${correction}` : userContent,
     }));
     return Response.json({ ok: true, output, provider: "gemini" }, { headers: { "Cache-Control": "no-store" } });

@@ -1,3 +1,4 @@
+import { policyTestDependency } from "./helpers/ai-policy.ts";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -18,7 +19,7 @@ const require = createRequire(import.meta.url);
 function load(file: string, dependencies: Record<string, unknown>, clock: typeof Date = Date) {
   const exports: Record<string, (...args: unknown[]) => Promise<unknown>> = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => name === "server-only" ? {} : dependencies[name] ?? require(name), Date: clock, Response, Request, URL, Error, console });
+  vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (name === "server-only" ? {} : dependencies[name] ?? require(name)), Date: clock, Response, Request, URL, Error, console });
   return exports;
 }
 const payload = () => schema.flowEmailDeliveryTestSchema.parse({ requestId: randomUUID(), recipient: "test-inbox@example.com", customerName: "Alex", companyName: "Test company",

@@ -1,3 +1,4 @@
+import { policyTestDependency } from "./helpers/ai-policy.ts";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -34,7 +35,7 @@ for (const provider of ["gemini", "gateway", "regional-fallback"] as const) {
         const exports = {} as { POST: (request: Request) => Promise<Response> };
         vm.runInNewContext(code, {
           exports,
-          require: (name: string) => {
+          require: (name: string) => { const aiDependency = policyTestDependency(name); if (aiDependency) return aiDependency;
             assert.ok(name in dependencies, `Unexpected dependency: ${name}`);
             return dependencies[name];
           },

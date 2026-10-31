@@ -1,4 +1,5 @@
 import { zhCNApps } from "./i18n-apps.ts";
+import { zhCNCustomerTags } from "./i18n-customer-tags.ts";
 import { zhCNCustomerPortal } from "./i18n-customer-portal.ts";
 import { zhCNAnalytics } from "./i18n-analytics.ts";
 import { zhCNMyDay } from "./i18n-my-day.ts";
@@ -8,6 +9,7 @@ import { zhCNFlowScenarios } from "./i18n-flow-scenarios.ts";
 import { zhCNEmailWorkbench } from "./i18n-email-workbench.ts";
 import { zhCNAdditional } from "./i18n-zh-cn.ts";
 import { zhCNSettings } from "./i18n-settings.ts";
+import { zhCNAiSettings } from "./i18n-ai-settings.ts";
 import { zhCNSegments } from "./i18n-segments.ts";
 import { zhCNInventory } from "./i18n-inventory.ts";
 import { zhCNEmailAutoReply } from "./i18n-email-auto-reply.ts";
@@ -22,6 +24,7 @@ export { LANGUAGE_STORAGE_KEY } from "./app-language.ts";
 // Product terminology is centralized so sales, catalog, mailbox, and
 // automation screens use consistent professional Chinese wording.
 const zhCN: Record<string, string> = {
+  ...zhCNCustomerTags,
   ...zhCNCustomerPortal,
   ...zhCNAnalytics,
   ...zhCNMyDay,
@@ -297,6 +300,7 @@ const zhCN: Record<string, string> = {
   "Copied": "已复制", "Copy": "复制", "Page": "页", "of": "共",
   ...zhCNAdditional,
   ...zhCNSettings,
+  ...zhCNAiSettings,
   ...zhCNSegments,
   "Analyse": "采购分析",
 };
@@ -349,6 +353,7 @@ const patterns: Array<[RegExp, (...parts: string[]) => string]> = [
     [/^Compared with (.+) in the comparison period$/, (amount) => `对比期间为 ${translated(amount)}`],
     [/^Lead added to (.+)$/, (list) => `线索加入${translated(list)}`],
     [/^Company enters (.+)$/, (segment) => `企业进入${translated(segment)}`],
+    [/^Companies in (.+)$/, (segment) => `细分中的企业：${segment}`],
     [/^Ask about (.+)…$/, (page) => `咨询${translated(page)}…`],
     [/^(.+): drag to resize, double-click to reset$/, (label) => `${translated(label)}：拖动调整大小，双击重置`],
   [/^compared with the preceding (\d+) days$/, (count) => `与前 ${count} 天对比`],

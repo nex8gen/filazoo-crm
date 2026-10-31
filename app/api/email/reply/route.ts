@@ -1,3 +1,5 @@
+import { requireAiFeature } from "@/lib/data/ai-settings";
+import { aiBehaviorInstruction, restrictedAiContext, AiPolicyError } from "@/lib/ai-policy";
 import { z } from "zod";
 import { aiLanguageSchema } from "@/lib/ai/language";
 import { requireWorkspaceMember } from "@/lib/auth";
@@ -28,16 +30,25 @@ export async function POST(request: Request) {
   const input = schema.safeParse(await request.json().catch(() => null));
   if (!input.success) return Response.json({ error: "Invalid conversation details." }, { status: 400 });
   if (JSON.stringify(input.data).length > 200_000) return Response.json({ error: "Conversation context is too large." }, { status: 400 });
+  let policy;
+  try { policy = await requireAiFeature("email", "emails"); }
+  catch (error) { return Response.json({ error: error instanceof Error ? error.message : "Unable to verify AI access." }, { status: error instanceof AiPolicyError ? 403 : 503 }); }
+  if (policy.actions.emailDrafts === "deny") return Response.json({ error: "AI email drafting is blocked in Settings → AI access & behavior." }, { status: 403 });
+  if (!policy.data.customers) { input.data.customerProfile = undefined; input.data.companyName = ""; }
+  if (restrictedAiContext(policy)) input.data.customerProfile = undefined;
+  if (!policy.data.products) input.data.products = [];
+  if (!policy.data.team) input.data.assignedManagerName = undefined;
+  const instruction = buildEmailReplyInstruction(input.data.language) + aiBehaviorInstruction(policy, true);
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   const token = process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
   if (!apiKey && !token) return Response.json({ error: "AI reply is not configured. Add an AI provider in the server settings." }, { status: 503 });
-  const canCreateInvoice = canCreateInvoices(viewer.role);
+  const canCreateInvoice = canCreateInvoices(viewer.role) && policy.data.billing && policy.data.products && policy.data.customers && policy.actions.invoices !== "deny";
   const prompt = JSON.stringify({ ...input.data, canCreateInvoice, seller: DEFAULT_EMAIL_COMPANY });
-  const gateway = () => generateGatewayText({ token: token!, model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim(), systemInstruction: buildEmailReplyInstruction(input.data.language), prompt, maxOutputTokens: 8192 });
+  const gateway = () => generateGatewayText({ token: token!, model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim(), systemInstruction: instruction, prompt, maxOutputTokens: 8192 });
   try {
     let output: string;
     try {
-      output = apiKey ? await generateGeminiText({ apiKey, model: process.env.GEMINI_EMAIL_MODEL?.trim(), systemInstruction: buildEmailReplyInstruction(input.data.language), prompt, maxOutputTokens: 8192 }) : await gateway();
+      output = apiKey ? await generateGeminiText({ apiKey, model: process.env.GEMINI_EMAIL_MODEL?.trim(), systemInstruction: instruction, prompt, maxOutputTokens: 8192 }) : await gateway();
     } catch (error) {
       if (!apiKey || !token || !isGeminiRegionError(error)) throw error;
       output = await gateway();

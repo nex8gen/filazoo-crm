@@ -53,7 +53,7 @@ export function CompanyDetails({ details, canWrite }: { details: CompanyDetailsT
             <CardHeader><CardTitle>Account notes</CardTitle><CardDescription>Keep useful customer preferences and profile notes together.</CardDescription></CardHeader>
             <CardContent className="grid gap-4 sm:grid-cols-2">
               <details className="sm:col-span-2 rounded-lg border p-3"><summary className="cursor-pointer text-sm font-medium">Optional qualification</summary><div className="mt-4 grid gap-4 sm:grid-cols-2">              <Field label="Fit score (1–10)" id="company-fit"><Input id="company-fit" name="fitScore" type="number" min="1" max="10" defaultValue={company.fitScore || ""} /></Field>
-              <div className="sm:col-span-2"><Field label="Interest tags (comma separated)" id="company-tags"><Input id="company-tags" name="tags" defaultValue={company.tags.join(", ")} /></Field></div>
+              <div className="sm:col-span-2"><Field label="Product interests (comma separated)" id="company-tags"><Input id="company-tags" name="tags" defaultValue={company.tags.join(", ")} /></Field></div>
 </div></details>
               <div className="sm:col-span-2"><Field label="Profile notes" id="company-summary"><Textarea id="company-summary" name="summary" className="min-h-28" defaultValue={company.summary === "This company has not been profiled yet." ? "" : company.summary} placeholder="Add a durable summary of customer needs, preferences, objections, and buying intent." /></Field></div>
             </CardContent>

@@ -5,6 +5,8 @@ import { preparedAgentEmailSchema } from "@/lib/ai/agent-actions";
 import { prepareAgentEmail } from "@/lib/ai/agent-records";
 import { getInvoice } from "@/lib/data/invoices";
 import { agentCatalogAttachments } from "@/lib/ai/agent-catalog";
+import { getAiSettings } from "@/lib/data/ai-settings";
+import { aiActionApproval } from "@/lib/ai-policy";
 
 const headers = { "Cache-Control": "private, no-store" };
 const draftSchema = preparedAgentEmailSchema.extend({ invoiceId: z.uuid().optional(), revision: z.number().int().positive().optional() });
@@ -19,6 +21,7 @@ export async function GET(request: Request) {
   const draft = draftSchema.safeParse(data?.result?.draft);
   if (data?.status !== "completed" || !draft.success) return Response.json({ error: "Draft not found." }, { status: 404, headers });
   try {
+    aiActionApproval((await getAiSettings()).policy, { type: "write_email", email: draft.data }, "ask");
     await prepareAgentEmail(draft.data, viewer);
     if (draft.data.invoiceId) {
       const invoice = await getInvoice(draft.data.invoiceId);

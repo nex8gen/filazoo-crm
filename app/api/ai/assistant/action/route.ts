@@ -1,3 +1,5 @@
+import { getAiSettings } from "@/lib/data/ai-settings";
+import { aiActionApproval, AiPolicyError } from "@/lib/ai-policy";
 import { z } from "zod";
 import { getWorkspaceViewer } from "@/lib/auth";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
@@ -39,6 +41,12 @@ export async function POST(request: Request) {
   const action = preparedAgentActionSchema.safeParse(row.action);
   if (!action.success) return Response.json({ error: "The saved proposal is invalid." }, { status: 400, headers });
   if (viewer.role === "viewer" && (action.data.type !== "crm_action" || !["update_product", "create_catalog"].includes(action.data.operation.op))) return Response.json({ error: "Your workspace role is read-only outside your private product catalog." }, { status: 403, headers });
+  if (decision !== "decline") {
+    try {
+      const required = aiActionApproval((await getAiSettings()).policy, action.data, "auto");
+      if (approval === "auto" && required === "ask") return Response.json({ error: "Workspace AI settings require manual approval for this action." }, { status: 403, headers });
+    } catch (error) { return Response.json({ error: error instanceof Error ? error.message : "Unable to verify AI permissions." }, { status: error instanceof AiPolicyError ? 403 : 503, headers }); }
+  }
   // Compare-and-set is the execution lock across clicks, retries and server instances.
   const { data: claimed, error: claimError } = await db.from("workspace_agent_actions").update({ status: decision === "decline" ? "declined" : "running", approval }).eq("id", id).eq("user_id", viewer.id).eq("status", "pending").select("id").maybeSingle();
   if (claimError || !claimed) return Response.json({ error: "Another request already handled this action. Check its result.", status: "running" }, { status: 409, headers });

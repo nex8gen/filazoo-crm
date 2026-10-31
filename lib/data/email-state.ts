@@ -1,8 +1,10 @@
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 import type { AutomationFlowStep, InboxEmailItem } from "../email-inbox.ts";
 import { resolveEmailContentIds } from "../email-content.ts";
+import { listSharedEmailTags, saveSharedEmailTag } from "./customer-tags.ts";
+import { isCustomerTag, type CustomerTag } from "../customer-tags.ts";
 
-export type EmailCategory = "Needs follow-up" | "Waiting on customer" | "Interested" | "Big order" | "No action";
+export type EmailCategory = CustomerTag;
 export type EmailFolderState = "inbox" | "archive" | "trash";
 
 export type EmailInboxState = {
@@ -21,28 +23,31 @@ const defaultSteps: AutomationFlowStep[] = [
 ];
 
 export async function listEmailInboxStates(userId: string): Promise<Map<string, EmailInboxState>> {
-  const { data, error } = await createSupabaseAdmin()
+  const [{ data, error }, sharedTags] = await Promise.all([createSupabaseAdmin()
     .from("email_inbox_state")
     .select("message_key,category,starred,is_read,folder,follow_up_at")
-    .eq("user_id", userId);
+    .eq("user_id", userId), listSharedEmailTags()]);
   if (error) throw new Error(`Unable to load email state: ${error.message}`);
-  return new Map((data ?? []).map((row) => [row.message_key, {
+  const states = new Map<string, EmailInboxState>((data ?? []).map((row) => [row.message_key, {
     messageKey: row.message_key,
-    category: row.category as EmailCategory | null,
+    category: sharedTags.get(row.message_key) ?? null,
     starred: Boolean(row.starred),
     read: Boolean(row.is_read),
     folder: row.folder as EmailFolderState,
     followUpAt: row.follow_up_at,
   }]));
+  for (const [key, category] of sharedTags) {
+    if (!states.has(key)) states.set(key, { messageKey: key, category, starred: false, read: false, folder: "inbox", followUpAt: null });
+  }
+  return states;
 }
 
-export async function saveEmailInboxState(userId: string, state: EmailInboxState) {
+export async function saveEmailInboxState(userId: string, state: Omit<EmailInboxState, "category"> & { category: string | null; categoryWrite?: boolean; tagMessageKey?: string; tagConversationKeys?: string[]; tagMessageKeys?: string[]; contactEmail?: string }) {
   const admin = createSupabaseAdmin();
-  const { data: previous } = await admin.from("email_inbox_state").select("category").eq("user_id", userId).eq("message_key", state.messageKey).maybeSingle();
+  if (state.categoryWrite && state.category !== null && !isCustomerTag(state.category)) throw new Error("Choose one of the ten customer tags.");
   const { error } = await admin.from("email_inbox_state").upsert({
     user_id: userId,
     message_key: state.messageKey,
-    category: state.category,
     starred: state.starred,
     is_read: state.read,
     folder: state.folder,
@@ -50,7 +55,8 @@ export async function saveEmailInboxState(userId: string, state: EmailInboxState
     updated_at: new Date().toISOString(),
   }, { onConflict: "user_id,message_key" });
   if (error) throw new Error(`Unable to save email state: ${error.message}`);
-  return { categoryChanged: previous?.category !== state.category, previousCategory: previous?.category ?? null };
+  return state.categoryWrite ? saveSharedEmailTag({ messageKey: state.tagMessageKey ?? state.messageKey, tag: state.category as CustomerTag | null, contactEmail: state.contactEmail, conversationKeys: state.tagConversationKeys, messageKeys: state.tagMessageKeys })
+    : { categoryChanged: false, previousCategory: null };
 }
 
 export async function getEmailAutomationSettings(userId: string, queueCount: number) {
