@@ -1,0 +1,24 @@
+{
+  "date": "2026-11-05",
+  "feature": "Multi-workspace CRM and authentication",
+  "application": {
+    "productionBuild": "passed",
+    "typescript": "passed as part of production build",
+    "targetedLint": "passed",
+    "nodeTests": { "passed": 1213, "failed": 0, "skipped": 0 }
+  },
+  "database": {
+    "project": "hukbmbicpdmhoxpkvljz",
+    "migration": "20261105021644_multi_workspace_tenancy.sql",
+    "installed": false,
+    "coreIsolationAssertions": "passed inside a rolled-back transaction before final database-cron wrapper additions",
+    "existingSessionReaderAvailable": true,
+    "retainedTestUsers": 0,
+    "rollout": "Automatic approval review blocked live schema, role and cron changes. Explicit user approval is required."
+  },
+  "limitations": [
+    "Final database-cron wrappers require approved staging/rollout verification.",
+    "Live signup-to-new-workspace flow requires migration installation and verified Supabase Auth email settings.",
+    "Current database remains in legacy single-workspace compatibility mode."
+  ]
+}

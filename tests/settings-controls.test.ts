@@ -43,6 +43,7 @@ function fixture(role = "admin") {
     },
   };
   const dependencies: Record<string, unknown> = {
+    "./team-actions": { createTeamInvitation: async () => ({ success: "Invitation created." }) },
     "next/cache": { revalidatePath: () => {}, updateTag: () => {} }, zod: { z },
     "@/lib/auth": { requireWorkspaceMember: async (allowed: string[]) => { if (!allowed.includes(role)) throw new Error("Access denied"); return { id: "a0000000-1111-4111-8111-111111111111", role }; } },
     "@/lib/supabase/admin": { createSupabaseAdmin: () => admin },

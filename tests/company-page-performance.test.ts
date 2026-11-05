@@ -18,7 +18,7 @@ function load(file: string, deps: Record<string, unknown>) {
   vm.runInNewContext(code, { exports, require: (name: string) => name === "../customer-tags.ts" ? customerTags : name in deps ? deps[name] : name.startsWith("react") ? require(name) : {}, process: { env: { NODE_ENV: "test" } }, Date, Intl, console });
   return exports;
 }
-function profileFixture(options: { denied?: boolean; demo?: boolean; missing?: boolean; failure?: string; owner?: boolean } = {}) {
+function profileFixture(options: { denied?: boolean; demo?: boolean; missing?: boolean; failure?: string; owner?: boolean; role?: string; userId?: string } = {}) {
   let authorized = false;
   const reads: string[] = [];
   const calls: Array<[string, string, ...unknown[]]> = [];
@@ -29,19 +29,24 @@ function profileFixture(options: { denied?: boolean; demo?: boolean; missing?: b
     assert.ok(authorized, "authentication precedes all data access");
     reads.push(table);
     const query: Record<string, unknown> = {};
-    for (const method of ["select", "eq", "order", "maybeSingle"]) query[method] = (...args: unknown[]) => { calls.push([table, method, ...args]); return query; };
+    let allowed = true;
+    for (const method of ["select", "eq", "order", "maybeSingle"]) query[method] = (...args: unknown[]) => {
+      calls.push([table, method, ...args]);
+      if (method === "eq" && args[0] === "pipeline.owner_id" && (options.owner === false || args[1] !== "owner-1")) allowed = false;
+      return query;
+    };
     query.then = async (resolve: (value: unknown) => void) => {
       if (table === "workspace_members") await avatarsStarted;
       const data = table === "companies" ? options.missing ? null : { ...baseRow, pipeline: options.owner === false ? [] : baseRow.pipeline, contacts: [contact, { ...contact, id: "contact-2", email: "second@acme.test" }], customer_billing_profiles: [{ profile: { currency: "EUR", address: "Billing address" } }] }
         : table === "contacts" ? [contact, { ...contact, id: "contact-2", email: "second@acme.test" }]
         : table === "customer_billing_profiles" ? { profile: { currency: "EUR", address: "Billing address" } }
         : table === "workspace_members" ? { display_name: "Alice" } : null;
-      resolve({ data: options.failure === table ? null : data, error: options.failure === table ? { message: "offline" } : null });
+      resolve({ data: options.failure === table || !allowed ? null : data, error: options.failure === table ? { message: "offline" } : null });
     };
     return query;
   } };
   const api = load("../lib/data/crm.ts", {
-    "../auth.ts": { requireWorkspaceMember: async () => { if (options.denied) throw new Error("Unauthorized"); authorized = true; } },
+    "../auth.ts": { requireWorkspaceMember: async () => { if (options.denied) throw new Error("Unauthorized"); authorized = true; return { id: options.userId ?? "owner-1", role: options.role ?? "admin" }; } },
     "../env.ts": { env: { authRequired: true }, hasSupabaseConfig: () => !options.demo },
     "../supabase/admin.ts": { createSupabaseAdmin: () => client },
     "../crm-model.ts": model,
@@ -90,6 +95,25 @@ test("missing profiles stay missing, unassigned profiles need no owner query, an
   assert.equal(result.details.company.ownerName, "Unassigned");
   assert.ok(!unassigned.reads.includes("workspace_members"));
   for (const failure of ["companies"]) await assert.rejects(profileFixture({ failure }).api.getCompanyProfile(id), /offline/);
+});
+
+test("BD direct profile URLs require current ownership before related data is loaded", async () => {
+  const own = profileFixture({ role: "bd_manager" });
+  assert.ok((await own.api.getCompanyProfile(id) as { details: unknown }).details);
+  assert.ok(own.calls.some(call => call[1] === "select" && String(call[2]).includes("pipeline!inner(")));
+  for (const options of [{ userId: "other-user" }, { owner: false }]) {
+    const denied = profileFixture({ role: "bd_manager", ...options });
+    assert.equal((await denied.api.getCompanyProfile(id) as { details: unknown }).details, null);
+    assert.deepEqual(denied.reads, ["companies"]);
+  }
+});
+
+test("BD company history checks assignment before reading contacts, events, or billing", async () => {
+  const denied = profileFixture({ role: "bd_manager" });
+  assert.equal((await denied.api.getCompanyDetails(id) as { details: unknown }).details, null);
+  assert.deepEqual(denied.reads, ["pipeline"]);
+  assert.ok(denied.calls.some(call => call[1] === "eq" && call[2] === "owner_id" && call[3] === "owner-1"));
+  await assert.rejects(profileFixture({ role: "bd_manager", failure: "pipeline" }).api.getCompanyDetails(id), /Unable to verify company assignment/);
 });
 
 const sectionNames = { analyse: "CompanyAnalysis", invoices: "CompanyInvoices", "customer-portal": "CompanyCustomerPortal", email: "CompanyEmails", "purchase-orders": "CompanyPurchaseOrders", history: "CompanyTimeline" };

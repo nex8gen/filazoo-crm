@@ -30,7 +30,7 @@ import { variantsFromTags } from "../product-utils";
 import { listWorkspaceMembers } from "../data/members";
 import { updateFlowActivity } from "../data/flow-activity";
 import { loadAgentCompany, loadAgentEmails } from "./agent-records";
-import { agentProductSchema, crmOperationSchema, crmOperationLabels, type CrmOperation, type PreparedCrmAction } from "./crm-tools";
+import { agentProductSchema, crmOperationSchema, crmOperationLabels, crmViewerOperationAllowed, type CrmOperation, type PreparedCrmAction } from "./crm-tools";
 import { isReplyOperation } from "./crm-reply-tools";
 import { replyOperationTarget, executeReplyOperation } from "./crm-reply-execution";
 import { isProductivityOperation } from "./crm-productivity";
@@ -39,7 +39,8 @@ import { withPersonalProducts, userProductRows } from "../data/product-personali
 
 const adminOperations = new Set(["assign_owner", "delete_company", "invite_member", "update_member", "delete_member"]);
 export function authorizeCrmOperation(viewer: WorkspaceViewer, operation: CrmOperation) {
-  if (viewer.role === "viewer" && !["update_product", "create_catalog"].includes(operation.op)) throw new Error("Your workspace role is read-only.");
+  if (viewer.role === "viewer" && !crmViewerOperationAllowed(operation)) throw new Error("Your workspace role is read-only.");
+  if (operation.op === "update_ai_settings" && viewer.role !== "admin") throw new Error("AI settings require an administrator.");
   if (adminOperations.has(operation.op) && viewer.role !== "admin") throw new Error("This action requires a workspace administrator.");
   if (["invoice_lifecycle", "invoice_defaults", "payment_methods", "sync_inventory"].includes(operation.op) && !["admin", "operator"].includes(viewer.role)) throw new Error("This action requires an admin or operator.");
 }
@@ -65,6 +66,8 @@ async function one(table: string, fields: string, key: string, value: string) {
 
 /** Reload only the relevant record, with ownership checked before preparing and executing. */
 async function target(operation: CrmOperation, viewer: WorkspaceViewer): Promise<{ name: string; value: unknown; preview: Record<string, unknown> }> {
+  if (operation.op === "create_quotation" || operation.op === "update_quotation" || operation.op === "quotation_lifecycle") return (await import("./quotation-execution")).quotationTarget(operation, viewer);
+  if (operation.op === "update_ai_settings" || operation.op === "update_email_footer" || operation.op === "cancel_scheduled_email" || operation.op === "discard_email_draft" || operation.op === "task_workflow_action" || operation.op === "portal_reply" || operation.op === "update_shipment") return (await import("./crm-feature-execution")).featureTarget(operation, viewer);
   if (isReplyOperation(operation)) return replyOperationTarget(operation, viewer);
   if (isProductivityOperation(operation)) return productivityTarget(operation, viewer);
   if (operation.op === "create_segment" || operation.op === "update_segment") {
@@ -234,6 +237,8 @@ export async function executeCrmAction(action: PreparedCrmAction, viewer: Worksp
   authorizeCrmOperation(viewer, operation);
   const current = await target(operation, viewer);
   if (hash(current.value) !== action.fingerprint) throw new Error("This record changed after the proposal. Ask the agent to prepare it again.");
+  if (operation.op === "create_quotation" || operation.op === "update_quotation" || operation.op === "quotation_lifecycle") return (await import("./quotation-execution")).executeQuotationOperation(operation, viewer, actionId, current);
+  if (operation.op === "update_ai_settings" || operation.op === "update_email_footer" || operation.op === "cancel_scheduled_email" || operation.op === "discard_email_draft" || operation.op === "task_workflow_action" || operation.op === "portal_reply" || operation.op === "update_shipment") return (await import("./crm-feature-execution")).executeFeatureOperation(operation, viewer, actionId, current.preview, request);
   if (isReplyOperation(operation)) return executeReplyOperation(operation, viewer, actionId, current.preview);
   if (isProductivityOperation(operation)) return executeProductivityOperation(operation, viewer, actionId, current.preview, request);
   let result: { error?: string; success?: string } | undefined;

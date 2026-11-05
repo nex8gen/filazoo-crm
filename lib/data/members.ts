@@ -19,16 +19,20 @@ export type WorkspaceMemberRecord = {
 export type BdSalesManager = { id: string; name: string; avatarUrl?: string };
 
 export async function listAllAuthUsers(): Promise<User[]> {
+  await requireWorkspaceMember();
   const admin = createSupabaseAdmin();
+  const { data: members, error } = await admin.from("workspace_members").select("user_id");
+  if (error) throw new Error("Unable to load workspace members.");
   const users: User[] = [];
-  const perPage = 200;
-
-  for (let page = 1; ; page += 1) {
-    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
-    if (error) throw new Error(`Unable to load authentication users: ${error.message}`);
-    users.push(...data.users);
-    if (data.users.length < perPage) return users;
+  for (let offset = 0; offset < (members?.length ?? 0); offset += 8) {
+    const batch = await Promise.all(members!.slice(offset, offset + 8).map(async member => {
+      const { data, error } = await admin.auth.admin.getUserById(member.user_id);
+      if (error) throw new Error("Unable to load a workspace member's account.");
+      return data.user;
+    }));
+    users.push(...batch.filter((user): user is User => Boolean(user)));
   }
+  return users;
 }
 
 export async function listBdSalesManagers({ withAvatars = true }: { withAvatars?: boolean } = {}): Promise<BdSalesManager[]> {

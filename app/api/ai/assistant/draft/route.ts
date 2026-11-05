@@ -27,7 +27,7 @@ export async function GET(request: Request) {
       const invoice = await getInvoice(draft.data.invoiceId);
       if (!invoice || invoice.status === "void" || invoice.revision !== draft.data.revision) throw new Error("The invoice changed. Ask the agent to prepare a fresh email draft.");
     }
-    const attachments = await agentCatalogAttachments(draft.data);
+    const attachments = await agentCatalogAttachments(draft.data, viewer);
     return Response.json({ draft: { ...draft.data, attachments } }, { headers });
   } catch (reason) {
     return Response.json({ error: reason instanceof Error ? reason.message : "This draft is no longer available." }, { status: 409, headers });

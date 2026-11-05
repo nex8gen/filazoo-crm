@@ -22,7 +22,7 @@ function fixture() {
   let replyBodies = ["Hello from a synthetic test"];
   let geminiError: string | null = null;
   let gatewayError: string | null = null;
-  const exports = {} as { generateFlowAiReply: (input: Row) => Promise<{ subject: string; body: string; inReplyTo: string | null; attachments: Array<{ content: Buffer }> }>; prepareFlowTemplateCatalog: () => Promise<Array<{ content: Buffer }>> };
+  const exports = {} as { hasFlowReplyProvider: () => boolean; generateFlowAiReply: (input: Row) => Promise<{ subject: string; body: string; inReplyTo: string | null; attachments: Array<{ content: Buffer }> }>; prepareFlowTemplateCatalog: () => Promise<Array<{ content: Buffer }>> };
   const query = { select: () => query, eq: () => query, order: () => query, range: () => query, throwOnError: async () => ({ data: productRows }) };
   const dependencies: Record<string, unknown> = {
     "server-only": {}, "../supabase/admin.ts": { createSupabaseAdmin: () => ({ from: () => query }) },
@@ -52,6 +52,19 @@ const productRows = ["PLA", "PETG", "ABS"].map((material) => ({ sku: material, n
 const baseInput = () => ({ config: blankStep("ai_auto_reply").config, contact: { name: "Synthetic customer", email: "synthetic@example.com" },
   company: { name: "Synthetic company" }, managerName: "Synthetic manager", productRows,
   messages: [{ subject: "Material inquiry", body: "Synthetic message", direction: "received", created_at: "2026-10-27T00:00:00Z", message_id: "<synthetic@example.com>", thread_id: "synthetic-thread" }], previousAutomatedMessages: 1 });
+
+test("AI flow readiness checks the selected provider instead of an unused Gemini credential", () => {
+  const app = fixture();
+  assert.equal(app.exports.hasFlowReplyProvider(), true);
+  app.env.AI_PROVIDER = "gateway";
+  assert.equal(app.exports.hasFlowReplyProvider(), false);
+  app.env.AI_GATEWAY_API_KEY = "synthetic-gateway-key";
+  assert.equal(app.exports.hasFlowReplyProvider(), true);
+  delete app.env.AI_GATEWAY_API_KEY;
+  delete app.env.AI_PROVIDER;
+  app.env.AI_BUDGET_ENFORCEMENT = "true";
+  assert.equal(app.exports.hasFlowReplyProvider(), false);
+});
 
 test("a failed local fallback preserves the actual Google location blocker in the user-facing error", async () => {
   const app = fixture();

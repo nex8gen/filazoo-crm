@@ -6,6 +6,7 @@ import type { AppConnectionSummary } from "../app-connection-status.ts";
 import { getViewerMailboxes } from "./mailboxes.ts";
 import { emailConnectionAccounts, emailProviderSummary, type EmailConnectionsOverview } from "../email-connections.ts";
 import { getErpSettingsView } from "./erp-settings.ts";
+import { hasLegacyIntegrations } from "./workspace-runtime.ts";
 
 const getEmailAppMailboxes = cache(async () => {
   const viewer = await requireWorkspaceMember();
@@ -42,14 +43,15 @@ export const getAppConnectionSummaries = cache(async (): Promise<Record<string, 
   summaries.lingxing = erp.status === "rejected" ? { status: "unavailable" }
     : erp.value?.hasSecret && erp.value.appId ? { status: erp.value.enabled ? "connected" : "paused", message: "Credentials are saved. Use Test connection to verify current ERP access." }
     : { status: viewer.role === "admin" ? "not_connected" : "unavailable" };
-  const twilio = Boolean(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN && env.TWILIO_WEBHOOK_URL);
-  const meta = Boolean(env.META_FACEBOOK_PAGE_ACCESS_TOKEN && env.META_FACEBOOK_PAGE_ID && env.META_WEBHOOK_SECRET && env.META_VERIFY_TOKEN);
+  const legacy = await hasLegacyIntegrations();
+  const twilio = legacy && Boolean(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN && env.TWILIO_WEBHOOK_URL);
+  const meta = legacy && Boolean(env.META_FACEBOOK_PAGE_ACCESS_TOKEN && env.META_FACEBOOK_PAGE_ID && env.META_WEBHOOK_SECRET && env.META_VERIFY_TOKEN);
   // Server credentials mean setup exists; they do not prove a working channel.
   summaries.whatsapp = { status: twilio && env.TWILIO_WHATSAPP_FROM ? "configured" : "not_connected" };
   summaries.facebook = { status: meta || (twilio && env.TWILIO_FACEBOOK_FROM) ? "configured" : "not_connected" };
   summaries.instagram = { status: meta ? "configured" : "not_connected" };
-  summaries.shopify = { status: env.SHOPIFY_WEBHOOK_SECRET && env.SHOPIFY_STORE_DOMAIN ? "configured" : "not_connected" };
-  for (const id of ["meta-leads", "make"]) summaries[id] = { status: hasSupabaseConfig() ? "configured" : "not_connected" };
+  summaries.shopify = { status: legacy && env.SHOPIFY_WEBHOOK_SECRET && env.SHOPIFY_STORE_DOMAIN ? "configured" : "not_connected" };
+  for (const id of ["meta-leads", "make"]) summaries[id] = { status: legacy && hasSupabaseConfig() ? "configured" : "not_connected" };
   for (const id of ["google-calendar", "outlook-calendar", "google-drive", "onedrive", "zapier"]) summaries[id] = { status: "planned" };
   return summaries;
 });

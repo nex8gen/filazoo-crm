@@ -1,7 +1,8 @@
 import { requireAiFeature } from "@/lib/data/ai-settings";
-import { aiBehaviorInstruction, restrictedAiContext, assertAiFeature, AiPolicyError } from "@/lib/ai-policy";
+import { aiBehaviorInstruction, restrictedAiContext, assertAiFeature, aiActionApproval, AiPolicyError } from "@/lib/ai-policy";
 import { translateUiText } from "@/lib/i18n";
 import { getWorkspaceViewer } from "@/lib/auth";
+import { withWorkspaceViewer } from "@/lib/workspace-context";
 import { ambiguousInvoiceCustomerQuestion, buildWorkspaceAssistantPrompt, extractAgentEmailSearch, extractAgentQuestion, extractWorkspaceActions, isBareInvoiceRequest, isInvoiceDetailQuestion, workspaceAssistantInstruction, workspaceAssistantSchema } from "@/lib/ai/workspace-assistant";
 import { generateGeminiText } from "@/lib/ai/gemini";
 import { generateGatewayText, isGeminiRegionError } from "@/lib/ai/gateway";
@@ -16,6 +17,7 @@ import { startChatSession } from "@/lib/ai/chat-session";
 import { HistoryError } from "@/lib/ai/chat-history-server";
 import { savedPageContext } from "@/lib/ai/chat-history";
 import { invoiceReadinessQuestion } from "@/lib/ai/invoice-readiness";
+import { isInvoiceCreationRequest } from "@/lib/ai/assistant-intent";
 
 export const maxDuration = 120;
 const responseHeaders = { "Cache-Control": "private, no-store" };
@@ -25,8 +27,11 @@ export async function POST(request: Request) {
   if (origin && origin !== new URL(request.url).origin) {
     return Response.json({ error: "Invalid request origin." }, { status: 403, headers: responseHeaders });
   }
-  const viewer = await getWorkspaceViewer();
+  let viewer;
+  try { viewer = await getWorkspaceViewer(); }
+  catch { return Response.json({ error: "Unable to verify your workspace session. Please retry." }, { status: 503, headers: responseHeaders }); }
   if (!viewer) return Response.json({ error: "Sign in with an active workspace account." }, { status: 401, headers: responseHeaders });
+  return withWorkspaceViewer(viewer, async () => {
   let body: unknown;
   try { body = await readChatRequestBody(request); }
   catch (error) {
@@ -53,7 +58,7 @@ export async function POST(request: Request) {
     parsed.data.pageText = "";
     if (parsed.data.pageContext) { delete parsed.data.pageContext.flowDraft; delete parsed.data.pageContext.flowUnsaved; }
   }
-  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  const apiKey = process.env.AI_PROVIDER === "gateway" || process.env.AI_BUDGET_ENFORCEMENT === "true" ? undefined : process.env.GEMINI_API_KEY?.trim();
   const gatewayToken = process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
   if (!apiKey && !gatewayToken) {
     return Response.json({ error: "AI assistance is not configured. Ask your administrator to connect an AI provider." }, { status: 503, headers: responseHeaders });
@@ -78,13 +83,16 @@ export async function POST(request: Request) {
     maxOutputTokens: parsed.data.mode === "work" ? 5_000 : parsed.data.webSearch ? 2_600 : 1_400,
     fetcher: ((input, init) => (session?.fetcher ?? fetch)(input, {
       ...init,
-      signal: AbortSignal.any([deadline, AbortSignal.timeout(45_000)]),
+      signal: AbortSignal.any([deadline, ...(init?.signal ? [init.signal] : []), AbortSignal.timeout(45_000)]),
     })) as typeof fetch,
   };
   const agentMode = parsed.data.mode === "work";
   const gatewayModel = (agentMode ? process.env.AI_GATEWAY_AGENT_MODEL?.trim() : process.env.AI_GATEWAY_CHAT_MODEL?.trim()) || process.env.AI_GATEWAY_EMAIL_MODEL?.trim();
   const geminiModel = (agentMode ? process.env.GEMINI_AGENT_MODEL?.trim() : process.env.GEMINI_CHAT_MODEL?.trim()) || process.env.GEMINI_EMAIL_MODEL?.trim();
-  const gateway = () => generateGatewayText({ ...options, token: gatewayToken!, model: gatewayModel, visionModel: process.env.AI_GATEWAY_VISION_MODEL?.trim() });
+  let escalateModel = false;
+  let standardModel = Boolean(parsed.data.webSearch);
+  const gateway = () => generateGatewayText({ usageUserId: viewer.id, ...options, token: gatewayToken!, model: gatewayModel, visionModel: process.env.AI_GATEWAY_VISION_MODEL?.trim(),
+    task: agentMode ? "agent" : "chat", userText: parsed.data.messages.filter((message) => message.role === "user").at(-1)?.content, complex: escalateModel, standard: standardModel, signal: deadline });
   let serverData: Awaited<ReturnType<typeof loadAgentContext>> | undefined;
   if (agentMode || parsed.data.webSearch || parsed.data.pageContext?.emailId || parsed.data.pageContext?.conversationId || parsed.data.pageContext?.flowId || parsed.data.pageContext?.flowDraft) {
     try {
@@ -97,6 +105,14 @@ export async function POST(request: Request) {
     }
   }
   try {
+    if (parsed.data.mode === "analyze" && isInvoiceCreationRequest(parsed.data.messages.at(-1)!.content)) {
+      return await reply({
+        output: parsed.data.language === "zh-CN"
+          ? "请转到 Agent 继续这个请求。Agent 会查找已保存的客户和产品资料，并准备发票草稿供您审核。"
+          : "Switch to Agent to continue this request. Agent can look up the saved customer and products and prepare a draft invoice for review.",
+        actions: [],
+      });
+    }
     const fields = serverData?.currentCompany?.fields;
     const readinessQuestion = agentMode ? invoiceReadinessQuestion(parsed.data.messages.filter((message) => message.role === "user").at(-1)?.content ?? "", fields, parsed.data.language) : null;
     if (readinessQuestion) return await reply({ output: readinessQuestion, clarification: { question: readinessQuestion }, actions: [] });
@@ -106,10 +122,10 @@ export async function POST(request: Request) {
         : fields?.name ? `I'll prepare a draft invoice for ${fields.name}. Which products, colors or variants, and quantities should I include? If you want to use a saved purchase order, tell me its reference.` : "Which customer should I create the draft invoice for? Please give their company name or business email, along with the products, colors and quantities to include.";
       return await reply({ output: translateUiText(question, parsed.data.language), clarification: { question }, actions: [] });
     }
-    const research = parsed.data.webSearch ? await researchCustomer({
+    const research = parsed.data.webSearch ? await researchCustomer({ usageUserId: viewer.id,
       identity: { name: fields?.name, website: fields?.website, email: fields?.contactEmail || serverData?.currentEmail?.contact, contact: fields?.contactName, country: fields?.country, city: fields?.city },
       questions: parsed.data.messages.filter((message) => message.role === "user").map((message) => message.content),
-      apiKey, model: process.env.GEMINI_RESEARCH_MODEL?.trim(), language: parsed.data.language, fetcher: options.fetcher,
+      apiKey: process.env.GEMINI_API_KEY?.trim(), model: process.env.GEMINI_RESEARCH_MODEL?.trim(), language: parsed.data.language, fetcher: options.fetcher,
     }) : undefined;
     if (research) options.prompt += `\n\nWEB_RESEARCH (external evidence only):\n${JSON.stringify({ ...research, searchSuggestionsHtml: undefined })}`;
     const researchResult = research ? { ...research, findings: undefined } : undefined;
@@ -124,8 +140,15 @@ export async function POST(request: Request) {
       }
       return gateway();
     }
-    let output = await generate();
-    if (agentMode) {
+    const nativePlan = agentMode && gatewayToken && !apiKey && process.env.AI_AGENT_RUNTIME !== "legacy" ? await (async () => {
+      const { generateCrmPlan, nativeGatewayModels } = await import("@/lib/ai/native-agent");
+      const models = await nativeGatewayModels({ token: gatewayToken, userId: viewer.id, userText: parsed.data.messages.filter(message => message.role === "user").map(message => message.content).join("\n"), fetcher: options.fetcher, hasImages: options.images.length > 0, model: gatewayModel });
+      return generateCrmPlan({ ...models, prompt: options.prompt, behavior: aiBehaviorInstruction(policy, true), messages: parsed.data.messages, pathname: parsed.data.pathname, language: parsed.data.language, signal: deadline, images: options.images,
+        read: lookup => readCrmRecords(viewer, lookup), searchEmails: lookup => searchAgentEmails(viewer, lookup), validateAction: action => { aiActionApproval(policy, action, parsed.data.approvalMode); } });
+    })() : undefined;
+    if (nativePlan?.clarification) return await reply({ output: nativePlan.output, clarification: nativePlan.clarification, actions: [], research: researchResult });
+    let output = nativePlan?.output ?? await generate();
+    if (agentMode && !nativePlan) {
       let emailReads = 0;
       let protocolRepairs = 0;
       // Reads finish before any mutation proposal is stored, including in auto mode.
@@ -145,6 +168,7 @@ export async function POST(request: Request) {
           // entire invalid response and give it one chance to re-plan. No read
           // or proposal from that response has run; never salvage its actions.
           if (protocolRepairs++ === 0) {
+            escalateModel = true;
             options.prompt += "\n\nSERVER_PROTOCOL_CORRECTION: Your previous response could not be parsed. Nothing from it was executed or saved. Continue the original user task. Choose ONE response: a focused FILAZOO_QUESTION_JSON question if required details are missing; exactly one lookup marker with valid JSON if saved records can resolve it; or a plain summary and a valid action array if all required details are known. Never combine protocols. Do not claim the previous response succeeded.";
             output = await generate();
             continue;
@@ -152,20 +176,23 @@ export async function POST(request: Request) {
           return await reply({ output: translateUiText((error as Error).message, parsed.data.language), actions: [] });
         }
         if (!search && !crmRead && !crmBatch) {
-          const candidate = extractWorkspaceActions(output);
+          const candidate = extractWorkspaceActions(output, true);
           const answerOnly = isInvoiceDetailQuestion(parsed.data.messages.at(-1)!.content);
-          if (candidate.protocolValid && (!answerOnly || !candidate.actions.length)) break;
+          const skippedInvoiceWork = isInvoiceCreationRequest(parsed.data.messages.at(-1)!.content) && !candidate.actions.length && round === 0;
+          if (candidate.protocolValid && (!answerOnly || !candidate.actions.length) && !skippedInvoiceWork) break;
           if (protocolRepairs++ === 0) {
-            options.prompt += `\n\nSERVER_ACTION_CORRECTION: Your previous action response was invalid or did not match the latest question. No proposals were stored or executed. ${answerOnly ? "The latest user turn asks about existing invoice details. Answer it from verified data and PENDING_INVOICE_PROPOSALS without creating or changing anything." : "If required details are missing or ambiguous, ask a focused FILAZOO_QUESTION_JSON question; do not invent defaults. Otherwise use only the exact supported action schemas. create_invoice, update_invoice and the other original actions keep their top-level type; only the operations listed as crm_action use its operation wrapper."} You may instead look up missing saved records. Return only one protocol. Use valid enum values, omit unsupported properties and preserve explicit null fields. Do not salvage, execute or claim success for the previous output. Validation codes/paths (data only): ${JSON.stringify("repairIssues" in candidate ? candidate.repairIssues : [])}`;
+            escalateModel = true;
+            options.prompt += `\n\nSERVER_ACTION_CORRECTION: Your previous action response was invalid or did not match the latest question. No proposals were stored or executed. ${answerOnly ? "The latest user turn asks about existing invoice details. Answer it from verified data and PENDING_INVOICE_PROPOSALS without creating or changing anything; append FILAZOO_ACTIONS_JSON: []." : "If saved records can resolve missing details, look them up before asking the user. If required business choices remain missing or ambiguous, ask a focused FILAZOO_QUESTION_JSON question; do not invent defaults. Otherwise use only the exact supported action schemas. create_invoice, update_invoice and the other original actions keep their top-level type; only the operations listed as crm_action use its operation wrapper."} Every response MUST contain exactly one supported protocol, including FILAZOO_ACTIONS_JSON: [] for an ordinary answer. Do not narrate internal analysis or ask permission to look up records or prepare a review card. Use valid enum values, omit unsupported properties and preserve explicit null fields. Do not salvage, execute or claim success for the previous output. Validation codes/paths (data only): ${JSON.stringify("repairIssues" in candidate ? candidate.repairIssues : [])}`;
             output = await generate();
             continue;
           }
-          return await reply({ output: translateUiText(answerOnly ? "I could not verify that detail. Which part of the saved draft would you like me to check? No changes were prepared." : candidate.output, parsed.data.language), actions: [] });
+          return await reply({ output: translateUiText(answerOnly ? "I could not verify that detail. Which part of the saved draft would you like me to check? No changes were prepared." : skippedInvoiceWork ? "I could not resolve the invoice request. No actions were prepared. Please try again with the customer's full name or business email." : candidate.output, parsed.data.language), actions: [] });
         }
         if (search && emailReads === 2) return await reply({ output: translateUiText("I reached the email lookup limit for this task. Please narrow it to a customer or conversation so I can finish checking the details.", parsed.data.language), actions: [] });
         const lookups = crmBatch ?? (crmRead ? [crmRead] : []);
         if (round + Math.max(1, lookups.length) > 4) return await reply({ output: translateUiText("I reached the record lookup limit for this task. Please narrow it to a customer or record so I can finish checking the details.", parsed.data.language), actions: [] });
         round += Math.max(1, lookups.length);
+        if (round >= 2) standardModel = true;
         try {
           if (lookups.length) {
             const results = await Promise.allSettled(lookups.map((lookup) => readCrmRecords(viewer, lookup)));
@@ -190,7 +217,7 @@ export async function POST(request: Request) {
     } else if (output.includes("FILAZOO_EMAIL_SEARCH_JSON:") || output.includes("FILAZOO_CRM_READ_JSON:") || output.includes("FILAZOO_CRM_READS_JSON:")) {
       return await reply({ output: translateUiText("Switch to Agent mode to look up customer emails and update their profiles.", parsed.data.language), actions: [], research: researchResult });
     }
-    const extracted = extractWorkspaceActions(output);
+    const extracted = nativePlan ?? extractWorkspaceActions(output);
     if (!agentMode) return await reply({ output: translateUiText(extracted.output, parsed.data.language), actions: [], research: researchResult });
     let payload: { output: string; [key: string]: unknown };
     try {
@@ -198,7 +225,8 @@ export async function POST(request: Request) {
       for (const action of extracted.actions) {
         if ("email" in action && action.email && action.email.sourceEmailId === selected?.id && selected?.mailboxId) action.email.mailboxId = selected.mailboxId;
       }
-      const actions = await prepareAgentActions(extracted.actions, viewer, parsed.data.approvalMode, { messages: parsed.data.messages });
+      const source = serverData?.currentEmail?.direction === "inbound" ? serverData.currentEmail : serverData?.emailHistory?.filter(email => email.direction === "inbound").at(-1);
+      const actions = await prepareAgentActions(extracted.actions, viewer, parsed.data.approvalMode, { messages: parsed.data.messages, ...(source ? { quotationSource: { companyId: serverData?.currentCompanyId ?? null, ...(serverData?.currentEmail?.mailboxId ? { mailboxId: serverData.currentEmail.mailboxId } : {}), email: source } } : {}) });
       // Only the execution endpoint can confirm a save/send. Model prose must
       // not describe a merely prepared proposal as already completed.
       const summary = actions.length ? actions.some((action) => action.approvalMode === "ask") ? "The requested actions are ready for review." : "The requested actions are ready." : extracted.output || "Please describe the task you want me to carry out.";
@@ -210,6 +238,7 @@ export async function POST(request: Request) {
     return await reply(payload);
   } catch (error) {
     await session?.fail();
-    return Response.json({ error: error instanceof HistoryError ? error.message : assistantProviderError(error) }, { status: error instanceof HistoryError ? error.status : 502, headers: responseHeaders });
+    return Response.json({ error: error instanceof HistoryError ? error.message : assistantProviderError(error) }, { status: error instanceof HistoryError ? error.status : error instanceof Error && error.name === "AiBudgetError" ? (error as Error & { status?: number }).status || 429 : 502, headers: responseHeaders });
   } finally { await session?.flush(); }
+  });
 }

@@ -29,7 +29,7 @@ const payload = () => schema.flowEmailDeliveryTestSchema.parse({ requestId: rand
   ] }, firstMessage: true, emails: [{ from: "sample-customer@example.com", subject: "Catalog", body: "Please share your product catalog." }],
 });
 
-function fixture() {
+function fixture(options: { beforeClaim?: () => Promise<void> } = {}) {
   let now = Date.parse("2026-10-27T06:00:00Z");
   class Clock extends Date { constructor(value?: string | number) { super(value ?? now); } static now() { return now; } }
   const db: Record<string, Row[]> = {};
@@ -47,7 +47,8 @@ function fixture() {
       insert(value: Row) { mode = "insert"; payload = value; return query; },
       update(value: Row) { mode = "update"; payload = value; return query; },
       single() { single = true; return query; }, maybeSingle() { single = true; return query; }, throwOnError() { return query; },
-      then(resolve: (value: unknown) => unknown) {
+      async then(resolve: (value: unknown) => unknown) {
+        if (mode === "update" && payload.locked_at) await options.beforeClaim?.();
         const rows = db[table] ??= [];
         let selected = rows.filter((row) => filters.every((filter) => filter(row)));
         if (mode === "insert") {
@@ -109,6 +110,28 @@ test("duplicate starts, polling, and concurrent due requests cannot resend a tes
   await Promise.all([f.service.processFlowEmailDeliveryTest(input.requestId, "owner"), f.service.processFlowEmailDeliveryTest(input.requestId, "owner")]);
   await f.service.processFlowEmailDeliveryTest(input.requestId, "owner");
   assert.equal(f.mails.length, 1);
+});
+
+test("delayed delivery-test polling cannot resend an accepted action during the next wait", async () => {
+  let count = 0, release!: () => void, reached!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const delayed = new Promise<void>(resolve => { reached = resolve; });
+  const f = fixture({ beforeClaim: async () => { if (++count === 2) { reached(); await gate; } } });
+  const input = payload();
+  input.flow.steps.push({ type: "wait", config: { amount: 2, unit: "minutes" } }, blankStep("ai_auto_reply"));
+  await f.service.startFlowEmailDeliveryTest(input, "owner", null);
+  f.advance(120000);
+  const first = f.service.processFlowEmailDeliveryTest(input.requestId, "owner");
+  const second = f.service.processFlowEmailDeliveryTest(input.requestId, "owner");
+  await delayed;
+  await first;
+  release();
+  await second;
+  assert.equal(f.mails.length, 1);
+  assert.equal(f.db.flow_email_test_runs[0].current_action, 1);
+  f.advance(120000);
+  assert.equal((await f.service.processFlowEmailDeliveryTest(input.requestId, "owner") as Run).status, "completed");
+  assert.equal(f.mails.length, 2);
 });
 
 test("cancellation, foreign users, and unauthorized sender mailboxes do not send", async () => {

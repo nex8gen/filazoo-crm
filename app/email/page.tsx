@@ -2,7 +2,6 @@ import { EmailAccountsWorkspace } from "@/components/email-accounts-workspace";
 import { requireWorkspaceMember } from "@/lib/auth";
 import { getEmailInboxBackendData } from "@/lib/email-inbox";
 import { listCatalogs, listProducts } from "@/lib/data/crm";
-import { b2bProducts } from "@/lib/data/b2b-products";
 import { canCreateInvoices } from "@/lib/invoice-permissions";
 import { getViewerMailbox } from "@/lib/data/mailboxes";
 import { notFound } from "next/navigation";
@@ -27,7 +26,7 @@ export default async function EmailsPage({ searchParams }: PageProps<"/email">) 
       invoiceViewer={{ id: viewer.id, role: viewer.role }}
       initialThreadId={typeof params.thread === "string" ? params.thread : undefined}
       initialAgentDraft={typeof params.agentDraft === "string" ? params.agentDraft : undefined}
-      products={productResult.products.length ? productResult.products : b2bProducts}
+      products={productResult.products}
       catalogs={catalogResult.catalogs}
     />
   );

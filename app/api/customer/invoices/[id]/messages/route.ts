@@ -1,7 +1,11 @@
 import { z } from "zod";
 import { checkPortalOrigin, portalError, portalHeaders, portalLimit, portalSession, PortalError } from "@/lib/data/customer-portal";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { withCustomerWorkspace } from "@/lib/data/customer-workspace";
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
+  return withCustomerWorkspace(request, () => sendMessage(request,context));
+}
+async function sendMessage(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     checkPortalOrigin(request);
     const { id } = await context.params;

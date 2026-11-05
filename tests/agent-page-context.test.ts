@@ -11,10 +11,13 @@ import * as flows from "../lib/flows.ts";
 
 const id = "ad9cb9f8-e098-44f0-a078-20eed16ef1bd";
 const otherId = "15693adc-0bdf-4617-b214-71b1861764a9";
-function page(attributes: Record<string, string>) {
-  return { querySelector(selector: string) {
+function page(attributes: Record<string, string>, hidden: Record<string, string> = {}) {
+  return { querySelectorAll(selector: string) {
     const attribute = selector.slice(1, -1);
-    return attribute in attributes ? { getAttribute: () => attributes[attribute] } : null;
+    return [
+      ...(attribute in hidden ? [{ checkVisibility: () => false, getAttribute: () => hidden[attribute] }] : []),
+      ...(attribute in attributes ? [{ checkVisibility: () => true, getAttribute: () => attributes[attribute] }] : []),
+    ];
   } } as unknown as ParentNode;
 }
 
@@ -30,6 +33,19 @@ test("page context follows mailbox, conversation and flow selection with separat
   assert.equal(flow.flowUnsaved, true);
   assert.equal(flow.flowStepId, "trigger");
   assert.notEqual(assistantRecordScope(flow), assistantRecordScope({ flowId: otherId }));
+});
+
+test("hidden cached pages and customer tabs cannot change visible AI history or request context", () => {
+  const hidden = { "data-ai-email-id": "previous-mail", "data-ai-mailbox-id": otherId, "data-ai-company-id": otherId, "data-ai-flow-id": otherId };
+  const visible = { "data-ai-company-id": id };
+  const context = readAssistantPageContext(page(visible, hidden));
+  assert.equal(context.companyId, id);
+  assert.equal(context.emailId, undefined);
+  assert.equal(context.mailboxId, undefined);
+  assert.equal(context.flowId, undefined);
+  assert.equal(assistantRecordScope(context), assistantRecordScope(readAssistantPageContext(page(visible))));
+  const list = readAssistantPageContext(page({}, hidden));
+  assert.equal(assistantRecordScope(list), "");
 });
 
 test("an incomplete flow editor is marked unsaved without rejecting the assistant request", () => {

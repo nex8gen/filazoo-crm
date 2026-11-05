@@ -16,10 +16,11 @@ export async function requestPasswordReset(_state: ForgotPasswordState, formData
   try {
     const supabase = await createClient();
     const redirectTo = new URL("/auth/callback?next=/update-password", env.NEXT_PUBLIC_APP_URL).toString();
-    await supabase.auth.resetPasswordForEmail(parsed.data.email, { redirectTo });
+    const { error } = await supabase.auth.resetPasswordForEmail(parsed.data.email, { redirectTo });
+    if (error && error.code !== "user_not_found") return { error: error.status === 429 ? "Please wait a minute before requesting another recovery email." : "Password recovery is temporarily unavailable. Try again shortly.", email };
   } catch {
     return { error: "Password recovery is temporarily unavailable. Try again shortly.", email };
   }
 
-  return { success: "If this email belongs to a workspace user, a recovery link is on its way.", email };
+  return { success: "If this email belongs to an account, a recovery link is on its way. Check your spam folder too.", email };
 }

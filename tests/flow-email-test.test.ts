@@ -53,7 +53,7 @@ test("test-email endpoint rejects anonymous users, viewers, invalid input and fo
 });
 
 function service(failFirst = false) {
-  const calls: Array<{ previousAutomatedMessages: number; messages: Array<{ direction: string; body: string }>; contact: { email: string } }> = [];
+  const calls: Array<{ usageUserId?: string; previousAutomatedMessages: number; messages: Array<{ direction: string; body: string }>; contact: { email: string } }> = [];
   let reads = 0;
   const exports = moduleUnderTest("../lib/data/flow-email-test.ts", {
     "../flow-email-test.ts": testSchema,
@@ -94,6 +94,13 @@ test("later-message tests and consecutive AI steps use the correct history and a
   assert.equal(mock.calls[1].previousAutomatedMessages, 2);
   assert.equal(mock.calls[1].messages[0].direction, "sent");
   assert.equal(result.cases[0].replies[0].attachments.length, 0);
+});
+
+test("AI previews attribute every generation to the authenticated member for budget enforcement", async () => {
+  const mock = service();
+  const input = flowEmailTestSchema.parse(payload());
+  await mock.run(input, "Manager", "signed-in-member");
+  assert.equal(mock.calls[0].usageUserId, "signed-in-member");
 });
 
 test("stopped and skipped AI steps never invoke the provider", async () => {

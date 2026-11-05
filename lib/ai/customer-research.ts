@@ -60,11 +60,15 @@ type ResearchResponse = {
   }>;
 };
 
-export async function researchCustomer({ identity, questions, apiKey, model = "gemini-3.5-flash-lite", language = "en", fetcher = fetch }: {
-  identity: ResearchIdentity; questions: string[]; apiKey?: string; model?: string; language?: AppLanguage; fetcher?: typeof fetch;
+export async function researchCustomer({ identity, questions, apiKey, model = "gemini-3.5-flash-lite", language = "en", fetcher = fetch, usageUserId }: {
+  usageUserId?: string; identity: ResearchIdentity; questions: string[]; apiKey?: string; model?: string; language?: AppLanguage; fetcher?: typeof fetch;
 }): Promise<CustomerResearch> {
   const checkedAt = new Date().toISOString();
   const empty = { checkedAt, findings: "", sources: [], queries: [] };
+  if (process.env.AI_PROVIDER === "gateway" || process.env.AI_BUDGET_ENFORCEMENT === "true") {
+    const { researchWithGateway } = await import("./gateway-research.ts");
+    return researchWithGateway({ identity: researchIdentity(identity), language, checkedAt, usageUserId, fetcher });
+  }
   if (!apiKey) return { ...empty, status: "unavailable", warning: "Google web search is not configured. Ask your administrator to connect Gemini. CRM-only assistance remains available." };
   try {
     const response = await fetcher(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {

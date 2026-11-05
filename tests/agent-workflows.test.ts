@@ -1,4 +1,5 @@
 import { policyTestDependency } from "./helpers/ai-policy.ts";
+import * as documentIntent from "../lib/ai/document-intent.ts";
 import * as replyTools from "../lib/ai/crm-reply-tools.ts";
 import * as readiness from "../lib/ai/invoice-readiness.ts";
 import test from "node:test";
@@ -23,6 +24,7 @@ import { buildInboxEmailItems } from "../lib/email-inbox.ts";
 
 const require = createRequire(import.meta.url);
 function moduleUnderTest<T>(file: string, dependencies: Record<string, unknown>): T {
+  dependencies["./document-intent"] = documentIntent;
   const exports = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (name === "server-only" ? {} : dependencies[name] ?? (name === "./crm-reply-tools" ? replyTools : name === "./crm-reply-execution" ? { replyOperationTarget: () => { throw new Error("Reply workflows use their dedicated fixtures"); } } : name === "../data/customer-reply-requests" ? { listReplyRequests: async () => [] } : name === "@/lib/ai/invoice-readiness" ? readiness : undefined) ?? require(name)), Response, Request, URL, FormData, Date, Error, crypto, console, Buffer, Intl });
@@ -151,7 +153,8 @@ test("additional customer information appends a note without replacing the summa
   await fixture.executeAgentAction(actionId, proposal.action, viewer, request);
   assert.equal(fixture.savedForms[0].get("comment"), "Preferred delivery: mornings");
   assert.equal(fixture.savedForms[0].get("summary"), null);
-  await assert.rejects(() => fixture.prepareAgentActions([], { ...viewer, role: "viewer" }, "auto"), /read-only/);
+  assert.equal((await fixture.prepareAgentActions([], { ...viewer, role: "viewer" }, "auto")).length, 0);
+  await assert.rejects(() => fixture.prepareAgentActions([{ type: "add_company_note", companyId, note: "Not permitted" }], { ...viewer, role: "viewer" }, "auto"), /read-only/);
   assert.equal(workspaceActionSchema.safeParse({ type: "update_company", companyId, changes: { owner_id: "forged" } }).success, false);
   assert.equal(workspaceActionSchema.safeParse({ type: "update_company", companyId, changes: {} }).success, false);
 });

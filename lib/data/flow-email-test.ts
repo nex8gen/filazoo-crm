@@ -37,7 +37,7 @@ export async function testFlowWithEmails(input: FlowEmailTestInput, managerName:
       }
       if (step.type !== "ai_auto_reply") continue;
       try {
-        const reply = await generateFlowAiReply({ config: step.config, contact: { name: input.customerName, email: email.from },
+        const reply = await generateFlowAiReply({ usageUserId: userId, config: step.config, contact: { name: input.customerName, email: email.from },
           company: { name: input.companyName, country: facts.country, segment: facts.segment }, managerName, messages, productRows,
           previousAutomatedMessages: previousMessages });
         testCase.replies.push({ step: entry.step, subject: reply.subject, body: reply.body,

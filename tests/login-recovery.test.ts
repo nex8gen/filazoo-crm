@@ -26,21 +26,21 @@ function fixture(membershipError: unknown, membership: unknown = null, signInErr
   return { run: () => exports.login!(undefined, form), signOuts: () => signOuts, logs };
 }
 
-test("a temporary membership failure does not revoke the new session or falsely claim the user lacks an invitation", async () => {
+test("workspace membership is resolved after login and does not revoke a valid session", async () => {
   const f = fixture({ code: "PGRST000", message: "private provider response" });
-  assert.match((await f.run()).error, /temporarily unavailable/);
+  await assert.rejects(f.run(), /redirect:\//);
   assert.equal(f.signOuts(), 0);
-  assert.ok(JSON.stringify(f.logs).includes("PGRST000"));
+  assert.equal(f.logs.length, 0);
   assert.ok(!JSON.stringify(f.logs).includes("private provider response"));
 });
 
-test("missing membership still signs out the unauthorized user", async () => {
+test("a signed-in user without membership keeps their session for workspace onboarding", async () => {
   const f = fixture(null);
-  assert.match((await f.run()).error, /not been invited/);
-  assert.equal(f.signOuts(), 1);
+  await assert.rejects(f.run(), /redirect:\//);
+  assert.equal(f.signOuts(), 0);
 });
 
-test("successful sign-in redirects only after active membership is verified", async () => {
+test("successful sign-in redirects and leaves workspace authorization to the destination", async () => {
   const f = fixture(null, { role: "admin", activated_at: "2026-01-01" });
   await assert.rejects(f.run(), /redirect:\//);
   assert.equal(f.signOuts(), 0);

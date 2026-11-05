@@ -1,0 +1,59 @@
+{
+  "date": "2026-11-05",
+  "timezone": "Asia/Shanghai",
+  "deploymentPerformed": true,
+  "productionRelease": {
+    "id": "dpl_D943jt8CRoCqhfdBNTXyBAi3oyJL",
+    "state": "READY",
+    "url": "https://crm.filazoosupply.com",
+    "deploymentUrl": "https://filazoo-8vaceha4f-nex8gens-projects.vercel.app",
+    "workerVersion": "flow-background-v3",
+    "sourceFileCount": 974,
+    "sourceArchiveSha256": "c86d82033d48b95222b9d1941c44fdf14aeba06ddb52bfdcdbc14aada0d64612",
+    "environmentFilesIncluded": false,
+    "liveHealthHttpStatus": 200,
+    "liveDatabase": "connected",
+    "liveSendingEnabled": true,
+    "qaHttpStatus": 200,
+    "qaCanvasAndBranchContentPresent": true,
+    "workflowSchedulerAcknowledgements": 202,
+    "postReleaseSchedulerTimeoutsObserved": false,
+    "completedBackgroundPhasesObserved": ["workflows", "scheduled-email", "automatic-replies"],
+    "conversationTaggingPausedByExistingSetting": true,
+    "postReleaseErrorOrFatalLogsFound": false,
+    "verifiedAtChinaTime": "2026-11-05T10:11:29+08:00"
+  },
+  "customerMessagesSent": false,
+  "liveWorkflowMutationsPerformed": false,
+  "validation": {
+    "repositoryTests": { "passed": 1199, "failed": 0, "skipped": 0 },
+    "runnerActionTypes": 10,
+    "runnerOrderedActionPairs": 100,
+    "runnerPairScenarios": 200,
+    "existingSimulatedPairScenarios": 2400,
+    "maximumNestedSplitDepthTested": 5,
+    "screenshotJourneyReplyTimings": ["never", "first-wait", "branch-wait"],
+    "smtpAndAiInterceptedInRunnerTests": true,
+    "changedFileLint": "passed",
+    "typescript": "passed",
+    "optimizedBuild": "passed",
+    "nextVersion": "16.4.0",
+    "staticPagesGenerated": 102,
+    "visualBrowserCheck": "incomplete: browser-control session/tab setup failed",
+    "currentGatewayCredentialCheck": "passed: HTTP 200 and positive credit balance after explicit user approval; no generation or email"
+  },
+  "readOnlyDatabaseSnapshot": {
+    "flows": { "live": 13, "draft": 8, "paused": 2 },
+    "runs": { "done": 5, "failed": 105, "active": 0 },
+    "historicalRunFailures": { "gatewayAuthentication": 99, "geminiQuota": 4, "missingContact": 2 },
+    "latestObservedGatewayFailureChinaTime": "2026-11-04T17:06:23+08:00",
+    "minuteResumeAndInboxJobsEnabled": true,
+    "recentHttpRecords": "Included successful 200/202 responses and a DNS timeout; records include other background jobs."
+  },
+  "limitations": [
+    "Runner tests use an in-memory database fixture, not the deployed database.",
+    "Historical provider errors do not establish current credential validity.",
+    "No failed customer run was automatically replayed.",
+    "No guarantee of external mailbox placement, provider availability, or exhaustive coverage of every possible workflow."
+  ]
+}

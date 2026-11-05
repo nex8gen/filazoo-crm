@@ -14,7 +14,9 @@ import { userProductRows } from "./product-personalization.ts";
 import { requireWorkspaceMember } from "../auth.ts";
 
 export function hasFlowReplyProvider() {
-  return Boolean(process.env.GEMINI_API_KEY?.trim() || process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim());
+  const gateway = process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
+  if (process.env.AI_PROVIDER === "gateway" || process.env.AI_BUDGET_ENFORCEMENT === "true") return Boolean(gateway);
+  return Boolean(process.env.GEMINI_API_KEY?.trim() || gateway);
 }
 
 export type FlowReplyMessage = { subject: string | null; body: string | null; direction: string; message_id?: string | null; thread_id?: string | null; created_at: string };
@@ -54,12 +56,12 @@ export async function prepareFlowAiReply({ userId, contactId, companyId, convers
   const runIds = (previousRuns.data ?? []).map((run) => run.id);
   const { count: sentBefore } = runIds.length ? await admin.from("flow_run_logs").select("id", { count: "exact", head: true })
     .in("run_id", runIds).eq("result->>action", "email_sent").throwOnError() : { count: 0 };
-  return generateFlowAiReply({ config, contact: contact.data, company: company.data, managerName: manager.data?.display_name || null,
+  return generateFlowAiReply({ usageUserId: userId, config, contact: contact.data, company: company.data, managerName: manager.data?.display_name || null,
     messages: messages.data ?? [], productRows: products, previousAutomatedMessages: sentBefore ?? 0 });
 }
 
-export async function generateFlowAiReply({ config, contact, company, managerName, messages, productRows, previousAutomatedMessages }: {
-  config: JsonConfig; contact: { name: string | null; email: string }; company: { name: string; country?: string | null; segment?: string | null };
+export async function generateFlowAiReply({ usageUserId, config, contact, company, managerName, messages, productRows, previousAutomatedMessages }: {
+  usageUserId?: string; config: JsonConfig; contact: { name: string | null; email: string }; company: { name: string; country?: string | null; segment?: string | null };
   managerName: string | null; messages: FlowReplyMessage[]; productRows: CrmProductRow[]; previousAutomatedMessages: number;
 }) {
   if (!hasFlowReplyProvider()) throw new Error("AI auto-reply is not configured. Add an AI provider in the server settings.");
@@ -68,11 +70,11 @@ export async function generateFlowAiReply({ config, contact, company, managerNam
   const catalogProducts = productRows.map(crmProduct);
   const orderedMessages = [...messages].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
   const history = [...orderedMessages].reverse().map((message) => ({ ...message, body: (message.body || "").slice(0, 6000) }));
-  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  const apiKey = process.env.AI_PROVIDER === "gateway" || process.env.AI_BUDGET_ENFORCEMENT === "true" ? undefined : process.env.GEMINI_API_KEY?.trim();
   const token = process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
   const generate = async (systemInstruction: string, prompt: string) => {
     const options = { systemInstruction: systemInstruction + aiBehaviorInstruction(policy, true), prompt, maxOutputTokens: 8192 };
-    const gateway = () => generateGatewayText({ ...options, token: token!, model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim() });
+    const gateway = () => generateGatewayText({ usageUserId, ...options, token: token!, model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim(), task: "email", complex: config.usePrices === true, userText: config.instructions as string | undefined });
     try {
       return apiKey ? await generateGeminiText({ ...options, apiKey, model: process.env.GEMINI_EMAIL_MODEL?.trim() }) : await gateway();
     } catch (error) {

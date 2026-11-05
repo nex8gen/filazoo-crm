@@ -91,7 +91,7 @@ export async function processFlowEmailDeliveryTest(id: string, userId: string) {
   }
   if (row.locked_at || (row.next_run_at && Date.parse(row.next_run_at) > Date.now())) return publicRun(row);
   const { data: claimed } = await admin.from(table).update({ locked_at: new Date().toISOString() })
-    .eq("id", id).eq("user_id", userId).eq("status", "waiting").is("locked_at", null).select("id").maybeSingle().throwOnError();
+    .eq("id", id).eq("user_id", userId).eq("status", "waiting").eq("current_action", row.current_action).is("locked_at", null).select("id").maybeSingle().throwOnError();
   if (!claimed) return loadFlowEmailDeliveryTest(id, userId);
   const uploadedPaths: string[] = [];
   let smtpAccepted = false;
@@ -119,7 +119,7 @@ export async function processFlowEmailDeliveryTest(id: string, userId: string) {
     const template = emailTemplates[String(step.config.templateId)];
     const firstName = input.customerName.trim().split(/\s+/)[0] || sample.from.split("@")[0];
     const render = (value: string) => value.replaceAll("{{first_name}}", firstName);
-    const reply = step.type === "ai_auto_reply" ? await generateFlowAiReply({ config: step.config, contact: { name: input.customerName, email: sample.from },
+    const reply = step.type === "ai_auto_reply" ? await generateFlowAiReply({ usageUserId: userId, config: step.config, contact: { name: input.customerName, email: sample.from },
       company: { name: input.companyName }, managerName: row.manager_name, messages: history,
       productRows: await loadFlowReplyProducts(step.config, userId), previousAutomatedMessages: row.result.length + (input.firstMessage ? 0 : 1) })
       : { subject: render(String(step.config.subject || template?.subject || "")), body: render(String(step.config.body || template?.body || "")), attachments: step.config.templateId === "send_catalog" ? await prepareFlowTemplateCatalog(userId) : [] };

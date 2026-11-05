@@ -23,6 +23,7 @@ export function LegalPage({
             <span>Filazoo</span>
           </a>
           <nav className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground" aria-label="Legal pages">
+            <Link className="transition-colors hover:text-foreground" href="/terms">Terms</Link>
             <Link className="transition-colors hover:text-foreground" href="/privacy">Privacy</Link>
             <Link className="transition-colors hover:text-foreground" href="/data-deletion">Data deletion</Link>
           </nav>

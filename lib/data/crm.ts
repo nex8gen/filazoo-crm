@@ -3,7 +3,7 @@ export { isSampleEmailSubject } from "../email-samples.ts";
 import { requireWorkspaceMember } from "../auth.ts";
 import type { WorkspaceViewer } from "../auth.ts";
 import { companySourcePresentation, formatRelativeDate, getInitials } from "../crm-model.ts";
-import { env, hasSupabaseConfig } from "../env.ts";
+import { hasSupabaseConfig } from "../env.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 import type { Catalog, Company, CompanyActivity, CompanyDetails, ContactOption, DataMode, EmailDraft, Product, Reply } from "../types.ts";
 import { crmProduct } from "../product-utils.ts";
@@ -138,12 +138,11 @@ function getOutreachStatus(contacts: CompanyRow["contacts"], source: string | nu
 
 export function getCrmDataMode(): DataMode {
   const serverIsConfigured = hasSupabaseConfig();
-  const productionIsProtected = process.env.NODE_ENV !== "production" || env.authRequired;
-  return serverIsConfigured && productionIsProtected ? "live" : "demo";
+  return serverIsConfigured ? "live" : "demo";
 }
 
 async function authorizeLiveRead() {
-  if (getCrmDataMode() === "live" && env.authRequired) {
+  if (getCrmDataMode() === "live") {
     return await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   }
 }
@@ -190,13 +189,15 @@ function mapCompany(row: CompanyRow, ownerNames = new Map<string, string>(), own
 export async function listCompanyOptions(): Promise<{ mode: DataMode; companies: Pick<Company, "id" | "name">[] }> {
   const mode = getCrmDataMode();
   if (mode === "demo") return { mode, companies: [] };
-  await authorizeLiveRead();
+  const viewer = await requireWorkspaceMember();
   const companies: Pick<Company, "id" | "name">[] = [];
   for (let offset = 0; ; offset += 500) {
-    const { data, error } = await createSupabaseAdmin().from("companies").select("id,name")
+    const query = createSupabaseAdmin().from("companies").select(viewer?.role === "bd_manager" ? "id,name,pipeline!inner(owner_id)" : "id,name")
       .or("source.is.null,source.neq.sample_seed").order("created_at", { ascending: false }).order("id").range(offset, offset + 499);
+    if (viewer?.role === "bd_manager") query.eq("pipeline.owner_id", viewer.id);
+    const { data, error } = await query;
     if (error) throw new Error(`Unable to load companies: ${error.message}`);
-    companies.push(...(data ?? []));
+    companies.push(...((data ?? []) as unknown as Pick<Company, "id" | "name">[]).map(({ id, name }) => ({ id, name })));
     if ((data?.length ?? 0) < 500) break;
   }
   return { mode, companies };
@@ -205,12 +206,14 @@ export async function listCompanyOptions(): Promise<{ mode: DataMode; companies:
 export async function listSegmentCompanies(): Promise<{ mode: DataMode; companies: import("../segments.ts").SegmentCompany[] }> {
   const mode = getCrmDataMode();
   if (mode === "demo") return { mode, companies: [] };
-  await authorizeLiveRead();
+  const viewer = await requireWorkspaceMember();
   const companies: import("../segments.ts").SegmentCompany[] = [];
   for (let offset = 0; ; offset += 500) {
-    const { data, error } = await createSupabaseAdmin().from("companies")
-      .select("id,name,segment,country,source,status,company_profiles(fit_score),contacts(email)")
+    const query = createSupabaseAdmin().from("companies")
+      .select(`id,name,segment,country,source,status,company_profiles(fit_score),contacts(email)${viewer?.role === "bd_manager" ? ",pipeline!inner(owner_id)" : ""}`)
       .or("source.is.null,source.neq.sample_seed").order("created_at", { ascending: false }).order("id").range(offset, offset + 499);
+    if (viewer?.role === "bd_manager") query.eq("pipeline.owner_id", viewer.id);
+    const { data, error } = await query;
     if (error) throw new Error(`Unable to load segments: ${error.message}`);
     for (const row of (data ?? []) as unknown as CompanyRow[]) companies.push({
       id: row.id, name: row.name, segment: row.segment || "Unclassified", country: row.country || "Unknown",
@@ -226,17 +229,17 @@ export async function listSegmentCompanies(): Promise<{ mode: DataMode; companie
 export async function listCompanies(options: { ids?: string[]; maxCompanies?: number } = {}): Promise<{ mode: DataMode; companies: Company[] }> {
   const mode = getCrmDataMode();
   if (mode === "demo") return { mode, companies: [] };
-  await authorizeLiveRead();
+  const viewer = await requireWorkspaceMember();
 
-  return { mode, companies: await queryCompanies(undefined, options) };
+  return { mode, companies: await queryCompanies(undefined, options, viewer) };
 }
 
-async function queryCompanies(id?: string, options: { ids?: string[]; maxCompanies?: number } = {}): Promise<Company[]> {
+async function queryCompanies(id?: string, options: { ids?: string[]; maxCompanies?: number } = {}, viewer?: WorkspaceViewer): Promise<Company[]> {
   const rows: CompanyRow[] = [];
   for (let offset = 0; ; offset += 500) {
     const query = createSupabaseAdmin()
       .from("companies")
-      .select("id,name,website,domain,country,city,segment,source,status,discovered_at,created_at,crm_email_tags(tag),company_profiles(summary,fit_score,interest_tags),contacts(id,name,role,email,verification_status,emails(status,direction,created_at)),pipeline(next_followup_at,currency,owner_id)")
+      .select(`id,name,website,domain,country,city,segment,source,status,discovered_at,created_at,crm_email_tags(tag),company_profiles(summary,fit_score,interest_tags),contacts(id,name,role,email,verification_status,emails(status,direction,created_at)),${viewer?.role === "bd_manager" ? "pipeline!inner" : "pipeline"}(next_followup_at,currency,owner_id)`)
       // Outreach displays one latest status, not every contact's email history.
       .order("created_at", { referencedTable: "contacts.emails", ascending: false })
       .order("id", { referencedTable: "contacts.emails", ascending: false })
@@ -245,6 +248,7 @@ async function queryCompanies(id?: string, options: { ids?: string[]; maxCompani
       .order("created_at", { ascending: false })
       .order("id")
       .range(offset, offset + 499);
+    if (viewer?.role === "bd_manager") query.eq("pipeline.owner_id", viewer.id);
     const selected = options.ids ? query.in("id", options.ids) : query;
     const { data, error } = await (id === undefined ? selected : selected.eq("id", id));
     if (error) throw new Error(`Unable to load companies: ${error.message}`);
@@ -270,11 +274,13 @@ type CompanyCatalogRow = { id: string; version: number; product_skus: string[] |
 export async function getCompanyProfile(id: string): Promise<{ mode: DataMode; details: CompanyDetails | null }> {
   const mode = getCrmDataMode();
   if (mode === "demo") return { mode, details: null };
-  await authorizeLiveRead();
+  const viewer = await requireWorkspaceMember();
   if (!/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(id)) return { mode, details: null };
   const admin = createSupabaseAdmin();
-  const companyResult = await admin.from("companies")
-    .select("id,name,website,domain,country,city,segment,source,status,discovered_at,created_at,crm_email_tags(tag),meta_leads(created_at,field_data),company_profiles(summary,fit_score,interest_tags),pipeline(next_followup_at,currency,owner_id),contacts(id,name,role,email,verification_status),customer_billing_profiles(profile)")
+  const query = admin.from("companies")
+    .select(`id,name,website,domain,country,city,segment,source,status,discovered_at,created_at,crm_email_tags(tag),meta_leads(created_at,field_data),company_profiles(summary,fit_score,interest_tags),${viewer?.role === "bd_manager" ? "pipeline!inner" : "pipeline"}(next_followup_at,currency,owner_id),contacts(id,name,role,email,verification_status),customer_billing_profiles(profile)`);
+  if (viewer?.role === "bd_manager") query.eq("pipeline.owner_id", viewer.id);
+  const companyResult = await query
     .eq("id", id).order("created_at", { referencedTable: "contacts" }).order("id", { referencedTable: "contacts" }).maybeSingle();
   if (companyResult.error) throw new Error(`Unable to load company profile: ${companyResult.error.message}`);
   if (!companyResult.data) return { mode, details: null };
@@ -305,6 +311,11 @@ export async function getCompanyDetails(id: string): Promise<{ mode: DataMode; d
   if (mode === "demo") return { mode, details: null };
   const viewer = await requireWorkspaceMember();
   const admin = createSupabaseAdmin();
+  if (viewer.role === "bd_manager") {
+    const { data, error } = await admin.from("pipeline").select("company_id").eq("company_id", id).eq("owner_id", viewer.id).maybeSingle();
+    if (error) throw new Error(`Unable to verify company assignment: ${error.message}`);
+    if (!data) return { mode, details: null };
+  }
   const [companyResult, contactsResult, eventsResult, emailsResult, catalogsResult, commerceResult] = await Promise.all([
     admin.from("companies").select("id,name,website,domain,country,city,segment,source,status,discovered_at,created_at,crm_email_tags(tag),meta_leads(created_at,field_data),company_profiles(summary,fit_score,interest_tags),contacts(id,name,role,email,verification_status,emails(status,direction,created_at)),pipeline(next_followup_at,currency,owner_id)").eq("id", id).maybeSingle(),
     admin.from("contacts").select("id,name,role,email,verification_status").eq("company_id", id).order("created_at").order("id"),
@@ -415,10 +426,10 @@ export async function getCompanyDetails(id: string): Promise<{ mode: DataMode; d
 export async function getCompany(id: string) {
   const mode = getCrmDataMode();
   if (mode === "demo") return { mode, company: null };
-  await authorizeLiveRead();
+  const viewer = await requireWorkspaceMember();
   // Preserve missing-record behavior without sending malformed UUIDs to Postgres.
   if (!/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(id)) return { mode, company: null };
-  const companies = await queryCompanies(id);
+  const companies = await queryCompanies(id, {}, viewer);
   return { mode, company: companies[0] ?? null };
 }
 

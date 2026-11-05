@@ -9,6 +9,8 @@ import ts from "typescript";
 import * as history from "../lib/ai/chat-history.ts";
 import { parseAiUsage, trackAiUsage } from "../lib/ai/chat-usage.ts";
 import * as assistant from "../lib/ai/workspace-assistant.ts";
+import * as assistantIntent from "../lib/ai/assistant-intent.ts";
+import * as historyHttp from "../lib/ai/history-http.ts";
 import * as companyChat from "../lib/ai/company-chat.ts";
 
 const require = createRequire(import.meta.url);
@@ -19,9 +21,10 @@ const reference = { conversationId, requestId, version: 0 };
 const scopeInput = { mode: "chat", pathname: "/companies", pageContext: {} } as const;
 type Handler = (request: Request, context?: { params: Promise<{ id: string }> }) => Promise<Response>;
 function load(file: string, dependencies: Record<string, unknown>, env = {}) {
+  dependencies = { "@/lib/ai/assistant-intent": assistantIntent, "@/lib/ai/history-http": historyHttp, ...dependencies };
   const exports: Record<string, unknown> = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (dependencies[name] ?? (name === "@/lib/ai/invoice-readiness" ? readiness : undefined) ?? (name === "server-only" ? {} : require(name))), Request, Response, URL, AbortSignal, Date, Error, Object, JSON, console, process: { env }, fetch });
+  vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (dependencies[name] ?? (name === "@/lib/ai/invoice-readiness" ? readiness : undefined) ?? (name === "server-only" ? {} : require(name))), Request, Response, URL, AbortSignal, Date, Error, Object, JSON, console, process: { env }, fetch: dependencies.fetch ?? fetch });
   return exports;
 }
 function req(method: string, body?: unknown, url = "http://localhost:3000/api/ai/history", origin = "http://localhost:3000") {
@@ -93,6 +96,19 @@ test("history routes deny anonymous access and cross-origin writes before touchi
   assert.equal(storage, 0);
 });
 
+test("temporary workspace lookup failures return JSON 503 rather than an HTML error page", async () => {
+  const dependencies = { "@/lib/auth": { getWorkspaceViewer: async () => { throw new TypeError("fetch failed"); } }, "@/lib/supabase/admin": { createSupabaseAdmin: () => { throw new Error("No storage access before authentication"); } }, "@/lib/ai/chat-history": history, "@/lib/ai/chat-history-server": {} };
+  const routes = load("../app/api/ai/history/route.ts", dependencies);
+  for (const method of ["GET", "POST"]) {
+    const response = await (routes[method] as Handler)(req(method, method === "POST" ? scopeInput : undefined));
+    assert.equal(response.status, 503); assert.match(response.headers.get("content-type")!, /json/);
+    assert.match((await response.json()).error, /workspace session/);
+  }
+  const detail = load("../app/api/ai/history/[id]/route.ts", dependencies);
+  const response = await (detail.GET as Handler)(req("GET"), { params: Promise.resolve({ id: conversationId }) });
+  assert.equal(response.status, 503); assert.match((await response.json()).error, /workspace session/);
+});
+
 test("search uses the authenticated owner and role, binds search text and paginates", async () => {
   let args: Record<string, unknown> = {};
   const routes = load("../app/api/ai/history/route.ts", {
@@ -103,6 +119,72 @@ test("search uses the authenticated owner and role, binds search text and pagina
   const response = await (routes.GET as Handler)(req("GET", undefined, `http://localhost:3000/api/ai/history?${new URLSearchParams({ scope: history.conversationScope(scopeInput), search: "' OR true --", offset: "30" })}`));
   assert.equal(response.status, 200);
   assert.equal(args.p_user_id, viewer.id); assert.equal(args.p_role, viewer.role); assert.equal(args.p_search, "' OR true --"); assert.equal(args.p_offset, 30);
+});
+
+test("all workspace history finds other pages and modes, rechecks each record and skips unavailable records", async () => {
+  const rows = [
+    { id: "email-history", mode: "agent", pathname: "/email", scope: "email-scope", page_context: { emailId: "old-email" } },
+    { id: "company-history", mode: "chat", pathname: "/companies", scope: "company-scope", page_context: {} },
+    { id: "deleted-record", mode: "agent", pathname: "/email", scope: "deleted-scope", page_context: { emailId: "deleted-email" } },
+  ];
+  const checks: string[] = [];
+  let rpc = "", args: Record<string, unknown> = {};
+  const routes = load("../app/api/ai/history/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer },
+    "@/lib/supabase/admin": { createSupabaseAdmin: () => ({ rpc: async (name: string, input: Record<string, unknown>) => { rpc = name; args = input; return { data: rows, error: null }; } }) },
+    "@/lib/ai/chat-history": history,
+    "@/lib/ai/chat-history-server": {
+      conversationAccessKey: async () => "current-access", presentConversation: (row: unknown) => row,
+      assertConversationAccess: async (input: { pathname: string; pageContext: { emailId?: string } }) => {
+        checks.push(input.pageContext.emailId ?? input.pathname);
+        if (input.pageContext.emailId === "deleted-email") throw new Error("record deleted");
+      },
+    },
+  });
+  const response = await (routes.GET as Handler)(req("GET", undefined, `http://localhost:3000/api/ai/history?${new URLSearchParams({ scope: history.conversationScope(scopeInput), view: "all", search: "filament", offset: "30" })}`));
+  assert.equal(response.status, 200);
+  assert.equal(rpc, "search_workspace_ai_conversations");
+  assert.equal(args.p_user_id, viewer.id); assert.equal(args.p_role, viewer.role); assert.equal(args.p_access_key, "current-access");
+  assert.equal(args.p_search, "filament"); assert.equal(args.p_offset, 30); assert.ok(!("p_scope" in args));
+  const result = await response.json();
+  assert.deepEqual(result.conversations.map((row: { id: string }) => row.id), ["email-history", "company-history"]);
+  assert.equal(result.unavailable, 1); assert.equal(result.offset, 60);
+  assert.deepEqual(checks.sort(), ["/companies", "deleted-email", "old-email"].sort());
+});
+
+test("an inbox can restore and continue a saved agent conversation from another record", async () => {
+  const slots: unknown[] = [];
+  let cursor = 0;
+  const detail = {
+    conversation: { ...scopeInput, id: conversationId, mode: "agent", pageContext: { emailId: "original-email" }, pathname: "/email", version: 3, title: "Saved agent chat", archived: false, pending: false },
+    messages: [{ id: requestId, role: "assistant", content: "Remembered answer" }], hasMore: false, actionResults: {},
+  };
+  let restored: unknown;
+  const hook = load("../components/use-ai-conversation.ts", {
+    fetch: async (url: string) => { assert.equal(url, `/api/ai/history/${conversationId}`); return Response.json(detail); },
+    react: {
+      useRef: (initial: unknown) => { const index = cursor++; return slots[index] ??= { current: initial }; },
+      useState: (initial: unknown) => {
+        const index = cursor++;
+        slots[index] ??= initial;
+        return [slots[index], (value: unknown) => { slots[index] = typeof value === "function" ? value(slots[index]) : value; }];
+      },
+      useEffect: () => {}, useEffectEvent: (callback: unknown) => callback,
+    },
+    "@/lib/ai/chat-history": history,
+  });
+  type Controller = { open: (id: string) => Promise<boolean>; ensure: (id: string) => Promise<unknown>; conversation: typeof detail.conversation | null; newConversation: () => void };
+  const render = (all: boolean) => { cursor = 0; return (hook.useAiConversation as (...args: unknown[]) => Controller)(scopeInput, (value: unknown) => { restored = value; }, false, all); };
+  assert.equal(await render(false).open(conversationId), false);
+  assert.equal(restored, undefined);
+  assert.equal(await render(true).open(conversationId), true);
+  assert.deepEqual(restored, detail);
+  const controller = render(true);
+  assert.equal(controller.conversation?.pageContext.emailId, "original-email");
+  assert.equal(controller.conversation?.mode, "agent");
+  assert.deepEqual(JSON.parse(JSON.stringify(await controller.ensure(requestId))), { conversationId, requestId, version: 3 });
+  controller.newConversation();
+  assert.equal(render(true).conversation, null);
 });
 
 test("ownership and current role are checked before transcripts are returned", async () => {

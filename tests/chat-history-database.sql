@@ -4,6 +4,7 @@ do $$
 declare
   actor uuid; stranger uuid := gen_random_uuid();
   chat uuid := gen_random_uuid(); test_action uuid := gen_random_uuid();
+  other_chat uuid := gen_random_uuid(); other_request uuid := gen_random_uuid();
   test_request uuid := gen_random_uuid(); failed_request uuid := gen_random_uuid();
   replay jsonb; totals jsonb; response jsonb; table_name text;
 begin
@@ -57,6 +58,22 @@ begin
   if exists(select 1 from public.search_ai_conversations(actor,'admin','test-access','test-scope',false,'',0)) then raise exception 'Archive filter failed'; end if;
   if (select count(*) from public.search_ai_conversations(actor,'admin','test-access','test-scope',true,'renamed',0)) <> 1 then raise exception 'Archived title search failed'; end if;
 
+  -- Inbox-wide browsing finds saved chats from other pages and AI modes while
+  -- excluding empty attempts and retaining all account/access restrictions.
+  insert into public.ai_conversations(id,user_id,owner_role,access_key,mode,pathname,scope)
+    values(other_chat,actor,'admin','test-access','chat','/email','another-record-scope');
+  if exists(select 1 from public.search_workspace_ai_conversations(actor,'admin','test-access',false,'',0)) then raise exception 'Empty attempts clutter workspace history'; end if;
+  perform public.begin_ai_chat_turn(actor,other_chat,other_request,0);
+  perform public.finish_ai_chat_turn(actor,other_chat,other_request,'{"content":"Question from another email"}','{"output":"Remembered across pages"}','');
+  if (select count(*) from public.search_workspace_ai_conversations(actor,'admin','test-access',false,'',0)) <> 1 then raise exception 'Inbox-wide history missed another record'; end if;
+  if (select count(*) from public.search_workspace_ai_conversations(actor,'admin','test-access',false,'remembered',0)) <> 1 then raise exception 'Inbox-wide message search failed'; end if;
+  if (select count(*) from public.search_workspace_ai_conversations(actor,'admin','test-access',true,'renamed',0)) <> 1 then raise exception 'Inbox-wide archive history failed'; end if;
+  update public.ai_conversations set archived=false where id=chat;
+  if (select count(*) from public.search_workspace_ai_conversations(actor,'admin','test-access',false,'',0)) <> 2 then raise exception 'History did not span Chat and Agent modes'; end if;
+  if exists(select 1 from public.search_workspace_ai_conversations(stranger,'admin','test-access',false,'',0)) then raise exception 'Inbox-wide history leaked another owner'; end if;
+  if exists(select 1 from public.search_workspace_ai_conversations(actor,'viewer','test-access',false,'',0)) then raise exception 'Inbox-wide history leaked another role'; end if;
+  if exists(select 1 from public.search_workspace_ai_conversations(actor,'admin','revoked',false,'',0)) then raise exception 'Inbox-wide history ignored revoked access'; end if;
+
   insert into public.ai_usage_events(user_id,conversation_id,request_id,call_index,provider,model,input_tokens,output_tokens,total_tokens,estimated_cost_usd,success)
     values(actor,chat,test_request,0,'test','synthetic',20,5,25,0.001,true);
   insert into public.ai_usage_events(user_id,conversation_id,request_id,call_index,provider,model,success)
@@ -70,6 +87,7 @@ begin
     if has_table_privilege('authenticated','public.'||table_name,'SELECT') or has_table_privilege('authenticated','public.'||table_name,'INSERT') or has_table_privilege('anon','public.'||table_name,'SELECT') then raise exception 'Browser can forge or read private history table %',table_name; end if;
   end loop;
   if has_function_privilege('authenticated','public.begin_ai_chat_turn(uuid,uuid,uuid,integer)','EXECUTE') or has_function_privilege('anon','public.ai_chat_usage_totals(uuid,timestamptz)','EXECUTE') then raise exception 'Private RPC exposed to browsers'; end if;
+  if has_function_privilege('authenticated','public.search_workspace_ai_conversations(uuid,text,text,boolean,text,integer)','EXECUTE') or has_function_privilege('anon','public.search_workspace_ai_conversations(uuid,text,text,boolean,text,integer)','EXECUTE') then raise exception 'Inbox-wide RPC exposed to browsers'; end if;
 
   delete from public.ai_conversations where id=chat;
   if exists(select 1 from public.ai_chat_messages where conversation_id=chat) or exists(select 1 from public.ai_chat_turns where conversation_id=chat) then raise exception 'Deletion did not remove transcript'; end if;

@@ -23,9 +23,10 @@ import { CustomerResearchSources, WebSearchOption, type ResearchResult } from "@
 import { AiImageFeedback, AiImagePicker, AiImagePreviews, useAiImageAttachments } from "@/components/ui/ai-image-attachments";
 import { chatImageLimitError, type ChatImage } from "@/lib/ai/image-input";
 import { assistantRecordScope, readAssistantPageContext } from "@/lib/ai/page-context";
-import { savedPageContext } from "@/lib/ai/chat-history";
+import { conversationScope, savedPageContext } from "@/lib/ai/chat-history";
 import { useAiConversation } from "@/components/use-ai-conversation";
 import { AiHistoryMenu } from "@/components/ai-history-menu";
+import { isInvoiceCreationRequest } from "@/lib/ai/assistant-intent";
 
 type Mode = "chat" | "agent";
 type Message = { id: string; role: "user" | "assistant"; content: string; images?: ChatImage[]; attachmentNames?: string[]; actions?: AgentProposal[]; durationMs?: number; work?: AgentWorkProgress; research?: ResearchResult };
@@ -104,7 +105,9 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
     setChats((current) => ({ ...current, [chatKey]: prepend ? [...detail.messages as Message[], ...(current[chatKey] ?? [])] : detail.messages as Message[] }));
     setActionResults((current) => ({ ...current, ...detail.actionResults }));
     if (!prepend) { setAnimation(null); setError(null); setQuestion(""); attachments.clear(); }
-  }, open && historyContext.pathname === pathname);
+  }, open && historyContext.pathname === pathname, true);
+  const activeMode = history.conversation?.mode === "agent" ? "agent" : history.conversation?.mode === "chat" ? "chat" : mode;
+  const restoredElsewhere = Boolean(history.conversation && conversationScope(history.conversation) !== history.scope);
   const busy = pending || Boolean(animation) || Boolean(applying) || history.loading || (open && historyContext.pathname !== pathname);
 
   useEffect(() => { visibleChatKey.current = chatKey; setAnimation(null); }, [chatKey]);
@@ -119,7 +122,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
     };
     readScope();
     const observer = new MutationObserver(readScope);
-    observer.observe(main, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-ai-email-id", "data-ai-mailbox-id", "data-ai-invoice-id", "data-ai-company-id", "data-ai-conversation-id", "data-ai-flow-id", "data-ai-flow-draft"] });
+    observer.observe(main, { subtree: true, childList: true, attributes: true, attributeFilter: ["style", "hidden", "data-ai-email-id", "data-ai-mailbox-id", "data-ai-invoice-id", "data-ai-company-id", "data-ai-conversation-id", "data-ai-flow-id", "data-ai-flow-draft", "data-ai-flow-unsaved", "data-ai-flow-step-id"] });
     return () => observer.disconnect();
   }, [pathname]);
 
@@ -154,8 +157,10 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
   async function send(value = question) {
     const content = value.trim();
     if ((!content && !attachments.images.length) || attachments.processing || busy || abort.current || actionLock.current) return;
-    const pageContext = readAssistantPageContext(document.querySelector("#workspace-content"));
-    const requestChatKey = `${pathname}:${assistantRecordScope(savedPageContext(pageContext))}:${mode}`;
+    const pageContext = restoredElsewhere ? history.conversation!.pageContext ?? {} : readAssistantPageContext(document.querySelector("#workspace-content"));
+    const requestPathname = restoredElsewhere ? history.conversation!.pathname : pathname;
+    const requestPageLabel = pageNames.find(([pattern]) => pattern.test(requestPathname))?.[1] ?? "Workspace";
+    const requestChatKey = chatKey;
     const sentImages = attachments.images;
     const next: Message[] = [...(chats[requestChatKey] ?? []), { id: crypto.randomUUID(), role: "user", content, ...(sentImages.length ? { images: sentImages } : {}) }];
     const imageError = chatImageLimitError([next.at(-1)!]);
@@ -164,9 +169,9 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
     setQuestion("");
     attachments.clear();
     setError(null);
-    const work = mode === "agent" ? requestedWorkProgress(content, pageLabel) : undefined;
+    const work = activeMode === "agent" ? requestedWorkProgress(content, requestPageLabel) : undefined;
     setActiveWork(work ?? null);
-    setWorkPage(pageLabel);
+    setWorkPage(requestPageLabel);
     setPending(true);
     const controller = new AbortController();
     abort.current = controller;
@@ -181,13 +186,13 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
           language,
           history: reference,
           webSearch,
-          mode: mode === "agent" ? "work" : "analyze",
+          mode: activeMode === "agent" ? "work" : "analyze",
           approvalMode,
           completedActionIds: Object.values(chats).flat().flatMap((message) => message.actions ?? []).filter((proposal) => ["completed", "failed", "unknown"].includes(actionResults[proposal.id]?.status ?? "")).map((proposal) => proposal.id).slice(-20),
           pageContext,
-          pathname,
-          pageLabel,
-          pageText: visiblePageText(),
+          pathname: requestPathname,
+          pageLabel: requestPageLabel,
+          pageText: restoredElsewhere ? "" : visiblePageText(),
           messages: [{ role: "user", content, images: sentImages }],
         }),
         signal: controller.signal,
@@ -204,7 +209,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
       if (visibleChatKey.current === requestChatKey) setAnimation({ id, run: 1 });
       // Auto approval applies only to proposals created by this request. Changing
       // the selector never executes older proposals waiting for review.
-      if (mode === "agent" && approvalMode === "auto") {
+      if (activeMode === "agent" && approvalMode === "auto") {
         for (const proposal of (result.actions ?? []) as AgentProposal[]) {
           if (controller.signal.aborted) break;
           if (proposal.approvalMode !== "auto") break;
@@ -235,6 +240,20 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
     attachments.clear();
     setError(null);
     input.current?.focus();
+  }
+
+  function openInAgent(messageId: string) {
+    const index = messages.findIndex((message) => message.id === messageId);
+    const request = messages[index - 1];
+    if (busy || restoredElsewhere || request?.role !== "user") return;
+    // Keep the user's exact request and images; sending in Agent remains explicit.
+    history.newConversation({ mode: "agent", pathname, pageContext: historyContext.context });
+    setChats((current) => ({ ...current, [`${pathname}:${recordScope}:agent`]: [] }));
+    setAnimation(null);
+    setError(null);
+    setMode("agent");
+    setQuestion(request.content);
+    attachments.setImages(request.images ?? []);
   }
 
   async function copy(message: Message) {
@@ -288,16 +307,17 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
         <ColumnResizeHandle label="AI sidebar width" variable="--workspace-ai-preferred-width" container="[data-workspace-shell]" panel="[data-ai-workspace]" min={320} max={720} reverse className="ai-sidebar-resize" />
         <div className="flex items-center gap-2 border-b bg-background/95 p-3">
           <div className="grid min-w-0 flex-1 grid-cols-2 rounded-2xl bg-muted/70 p-1" role="tablist" aria-label="AI mode">
-            {(["chat", "agent"] as const).map((value) => <button key={value} type="button" role="tab" aria-selected={mode === value} disabled={busy} onClick={() => { setMode(value); setAnimation(null); setError(null); setQuestion(""); attachments.clear(); }} className={`flex min-h-12 min-w-0 items-center gap-2.5 rounded-xl px-3 text-left transition-all disabled:opacity-50 ${mode === value ? "bg-background text-foreground shadow-[0_1px_5px_rgba(15,23,42,.08)] ring-1 ring-border/60" : "text-muted-foreground hover:text-foreground"}`}>
-              <span className={`grid size-8 shrink-0 place-items-center rounded-lg ${mode === value ? "bg-muted" : ""}`}>{value === "chat" ? <AiIcon className="size-5" /> : <AgentIcon className="size-7" />}</span><span className="min-w-0"><span className="block text-xs font-semibold">{value === "chat" ? "Chat" : "Agent"}</span><span className="block truncate text-[10px] font-normal text-muted-foreground">{value === "chat" ? "Ask & analyze" : "Plan & act"}</span></span>
+            {(["chat", "agent"] as const).map((value) => <button key={value} type="button" role="tab" aria-selected={activeMode === value} disabled={busy} onClick={() => { if (value === activeMode) return; if (restoredElsewhere) newChat(); setMode(value); setAnimation(null); setError(null); setQuestion(""); attachments.clear(); }} className={`flex min-h-12 min-w-0 items-center gap-2.5 rounded-xl px-3 text-left transition-all disabled:opacity-50 ${activeMode === value ? "bg-background text-foreground shadow-[0_1px_5px_rgba(15,23,42,.08)] ring-1 ring-border/60" : "text-muted-foreground hover:text-foreground"}`}>
+              <span className={`grid size-8 shrink-0 place-items-center rounded-lg ${activeMode === value ? "bg-muted" : ""}`}>{value === "chat" ? <AiIcon className="size-5" /> : <AgentIcon className="size-7" />}</span><span className="min-w-0"><span className="block text-xs font-semibold">{value === "chat" ? "Chat" : "Agent"}</span><span className="block truncate text-[10px] font-normal text-muted-foreground">{value === "chat" ? "Ask & analyze" : "Plan & act"}</span></span>
             </button>)}
           </div>
           <Button type="button" variant="ghost" size="icon-sm" className="shrink-0" onClick={() => onOpenChange(false)} aria-label="Close AI workspace"><PanelRightClose /></Button>
         </div>
 
-        <AiHistoryMenu key={history.scope} history={history} disabled={pending || Boolean(applying) || Boolean(animation)} onNew={newChat} />
+        <AiHistoryMenu key={history.scope} history={history} disabled={pending || Boolean(applying) || Boolean(animation)} onNew={newChat} onRetry={() => setError(null)} />
+        {restoredElsewhere ? <div role="status" className="shrink-0 border-b bg-muted/40 px-3 py-2 text-xs leading-5 text-muted-foreground">Continuing a saved conversation. Replies use its original page and selected record. <button type="button" className="underline" disabled={busy} onClick={newChat}>Start with the current page</button></div> : null}
         <div ref={log} role="log" aria-live="polite" aria-busy={busy} className="relative min-h-0 flex-1 overflow-y-auto px-5 py-6">
-          {!messages.length ? mode === "agent" ? <div className="flex min-h-full flex-col items-center justify-center py-4 text-center">
+          {!messages.length ? activeMode === "agent" ? <div className="flex min-h-full flex-col items-center justify-center py-4 text-center">
             <div className="w-full max-w-sm"><OrbitingCirclesGlobe active={open} /></div>
             <h2 className="mt-5 text-lg font-semibold tracking-tight text-balance">What should I take care of?</h2>
             <p className="mt-2 max-w-xs text-sm leading-6 text-pretty text-muted-foreground">Create invoices, draft emails, and update customers.</p>
@@ -316,25 +336,26 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
-            {mode === "chat" ? <motion.button type="button" aria-label="Focus the AI message box" onClick={() => input.current?.focus()} animate={{ y: [0, 5, 0], opacity: [0.45, 1, 0.45] }} transition={{ duration: 1.8, ease: "easeInOut", repeat: Infinity }} className="mt-7 grid size-8 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"><ChevronDown className="size-5" /></motion.button> : null}
-          </div> : <div className="space-y-5">{messages.map((message) => <div key={message.id} className={message.role === "user" ? "ml-auto max-w-[88%] rounded-2xl rounded-br-md bg-muted px-4 py-3" : "group max-w-full"}>
+            {activeMode === "chat" ? <motion.button type="button" aria-label="Focus the AI message box" onClick={() => input.current?.focus()} animate={{ y: [0, 5, 0], opacity: [0.45, 1, 0.45] }} transition={{ duration: 1.8, ease: "easeInOut", repeat: Infinity }} className="mt-7 grid size-8 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"><ChevronDown className="size-5" /></motion.button> : null}
+          </div> : <div className="space-y-5">{messages.map((message, index) => <div key={message.id} className={message.role === "user" ? "ml-auto max-w-[88%] rounded-2xl rounded-br-md bg-muted px-4 py-3" : "group max-w-full"}>
             {message.role === "user" ? <><AiImagePreviews images={message.images} />{message.attachmentNames?.length ? <p className="mb-2 text-xs text-muted-foreground">Attached: {message.attachmentNames.join(", ")}. Images are not retained; reattach to inspect them again.</p> : null}<p data-no-translate className="whitespace-pre-wrap text-sm leading-6">{message.content}</p></> : <>
               <ThinkingState working={false} writing={animation?.id === message.id} durationMs={message.durationMs} scope={t(pageLabel)} activity={message.work} className="mb-2" />
               <StreamingText key={`${message.id}-${animation?.id === message.id ? animation.run : 0}`} text={message.content} animate={animation?.id === message.id} onProgress={() => { const viewport = log.current; if (viewport && viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 120) viewport.scrollTop = viewport.scrollHeight; }} onComplete={() => setAnimation((current) => current?.id === message.id ? null : current)} />
               <CustomerResearchSources research={message.research} />
+              {activeMode === "chat" && !restoredElsewhere && messages[index - 1]?.role === "user" && isInvoiceCreationRequest(messages[index - 1].content) ? <Button type="button" variant="outline" size="sm" className="mt-3" disabled={busy} onClick={() => openInAgent(message.id)}><AgentIcon className="size-5" />{language === "zh-CN" ? "转到 Agent" : "Open in Agent"}</Button> : null}
               {animation?.id === message.id ? <Button type="button" variant="ghost" size="xs" className="mt-2" onClick={() => setAnimation(null)}>Show full reply</Button> : <>
               <div className="mt-2 flex gap-1"><Button type="button" variant="ghost" size="xs" className="text-muted-foreground" disabled={busy} onClick={() => setAnimation({ id: message.id, run: performance.now() })}><RotateCcw />Replay</Button><Button type="button" variant="ghost" size="xs" className="text-muted-foreground" onClick={() => void copy(message)}><Copy />{copiedId === message.id ? "Copied" : "Copy"}</Button></div>
               </>}
               {message.actions?.length ? <div className="mt-4 space-y-3">{message.actions.map((proposal) => <AgentActionCard key={proposal.id} proposal={proposal} result={actionResults[proposal.id]} executing={applying === proposal.id} progress={applying === proposal.id ? activeWork ?? undefined : undefined} disabled={pending || Boolean(applying)} onApprove={() => void applyAction(proposal)} onDecline={() => void applyAction(proposal, "decline")} />)}</div> : null}
             </>}
           </div>)}</div>}
-          {pending && mode === "chat" ? <div className="mt-5"><ThinkingState working scope={t(pageLabel)} /></div> : null}
+          {pending && activeMode === "chat" ? <div className="mt-5"><ThinkingState working scope={t(pageLabel)} /></div> : null}
           {pending && webSearch ? <p role="status" className="mt-2 text-xs text-muted-foreground">Searching Google and checking company websites…</p> : null}
-          {error ? <div role="alert" className="mt-4 rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-sm leading-6 text-destructive">{error}</div> : null}
+          {error && error !== history.error ? <div role="alert" className="mt-4 rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-sm leading-6 text-destructive">{error}</div> : null}
         </div>
 
         <div className="shrink-0 bg-background px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
-          {mode === "agent" && (pending || applying) && activeWork ? <div role="status" aria-live="polite" className="mb-3 rounded-xl border border-violet-500/15 bg-violet-500/[0.04] px-3 py-2"><ThinkingState key={applying || "preparing"} working scope={t(workPage)} activity={activeWork} /></div> : null}
+          {activeMode === "agent" && (pending || applying) && activeWork ? <div role="status" aria-live="polite" className="mb-3 rounded-xl border border-violet-500/15 bg-violet-500/[0.04] px-3 py-2"><ThinkingState key={applying || "preparing"} working scope={t(workPage)} activity={activeWork} /></div> : null}
           <div className="mb-2.5 flex min-h-7 min-w-0 items-center justify-between gap-3 px-1">
             <div id={`${composerId}-context`} className="flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
               <AgentWorkIcon area={pageWorkArea(pageLabel)} className="size-3.5 shrink-0" />
@@ -342,7 +363,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange }: { open: boolean; on
             </div>
             {messages.length ? <Button type="button" variant="ghost" size="xs" className="shrink-0 text-muted-foreground" disabled={busy} onClick={newChat}><Plus />New chat</Button> : null}
           </div>
-          {mode === "agent" ? <AiMascotInput key={`${chatKey}:${open}`} id={composerId} value={question} onChange={setQuestion} onSend={() => void send()} onCancel={() => { abort.current?.abort(); setAnimation(null); }} inputRef={input} attachments={attachments} webSearch={webSearch} onWebSearchChange={setWebSearch} busy={busy} canStop={!applying && (pending || Boolean(animation))} active={open} language={language} label="Instructions for Filazoo agent" placeholder="Tell the agent what to do…">
+          {activeMode === "agent" ? <AiMascotInput key={`${chatKey}:${open}`} id={composerId} value={question} onChange={setQuestion} onSend={() => void send()} onCancel={() => { abort.current?.abort(); setAnimation(null); }} inputRef={input} attachments={attachments} webSearch={webSearch} onWebSearchChange={setWebSearch} busy={busy} canStop={!applying && (pending || Boolean(animation))} active={open} language={language} label="Instructions for Filazoo agent" placeholder="Tell the agent what to do…">
             <AgentApprovalMenu value={approvalMode} onChange={setApprovalMode} disabled={busy} iconOnly />
           </AiMascotInput> : <form onSubmit={(event) => { event.preventDefault(); void send(); }} className="min-w-0 rounded-2xl border border-border/80 bg-card p-3 shadow-[0_2px_8px_rgba(15,23,42,.03)] transition-[border-color,box-shadow] focus-within:border-ring/60 focus-within:ring-2 focus-within:ring-ring/10 motion-reduce:transition-none">
             <label htmlFor={composerId} className="sr-only">Message Filazoo AI</label>

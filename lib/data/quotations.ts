@@ -20,14 +20,14 @@ export async function readQuotation(id: string, viewer: WorkspaceViewer): Promis
   return { ...data, company: company?.name || "Customer", currency: data.currency.trim(), product_skus: data.product_skus ?? [], product_snapshot: Array.isArray(data.product_snapshot) ? data.product_snapshot : null,
     quote_document: data.quote_document ? quotationDocumentSchema.parse(data.quote_document) : null } as QuotationRecord;
 }
-async function canChange(catalog: QuotationRecord, viewer: WorkspaceViewer) {
+async function canChange(catalog: Pick<QuotationRecord, "company_id">, viewer: WorkspaceViewer) {
   if (!["admin", "operator", "bd_manager"].includes(viewer.role)) return false;
   if (viewer.role !== "bd_manager") return true;
   const { data, error } = await createSupabaseAdmin().from("pipeline").select("company_id").eq("company_id", catalog.company_id).eq("owner_id", viewer.id).maybeSingle();
   if (error) throw new QuotationError("Customer ownership could not be checked.", 503);
   return Boolean(data);
 }
-function draftInput(catalog: QuotationRecord, seed: Awaited<ReturnType<typeof invoiceBootstrap>> | null): QuotationInput {
+function draftInput(catalog: Pick<QuotationRecord, "quote_document" | "product_snapshot">, seed: Awaited<ReturnType<typeof invoiceBootstrap>> | null): QuotationInput {
   const doc = catalog.quote_document;
   const today = quotationToday();
   const validUntil = new Date(Date.parse(`${today}T00:00:00Z`) + 14 * 86_400_000).toISOString().slice(0, 10);
@@ -48,6 +48,33 @@ export async function quotationDetail(id: string, viewer: WorkspaceViewer): Prom
 }
 export async function getQuotationDetail(id: string) {
   return quotationDetail(id, await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]));
+}
+export type NewQuotationInput = { companyId: string; currency?: string; allProducts?: boolean; productSkus?: string[]; items?: QuotationInput["items"]; details?: Partial<Omit<QuotationInput, "items">> };
+/** Validate and price everything before the single write. Both agent and UI use the same quotation builder. */
+export async function prepareNewQuotation(input: NewQuotationInput, viewer: WorkspaceViewer) {
+  if (!z.uuid().safeParse(input.companyId).success || (input.items && !await canChange({ company_id: input.companyId }, viewer))) throw new QuotationError("You cannot create a quotation for this customer.", 403);
+  const skus = [...new Set(input.items?.map(item => item.productSku) ?? input.productSkus ?? [])];
+  if (!skus.length && !input.allProducts) throw new QuotationError("Choose the products requested by this customer. All products requires an explicit request.", 400);
+  const [seed, found] = await Promise.all([invoiceBootstrap({ userId: viewer.id, companyId: input.companyId }), userProductRows(viewer.id, skus.length ? skus : undefined)]);
+  const rows = found.filter(row => row.active);
+  if (!rows.length || (skus.length && rows.length !== skus.length) || rows.length > 100) throw new QuotationError("Choose up to 100 existing active products before creating a quotation.", 400);
+  const products = rows.map(crmProduct);
+  const currency = quotationDocumentSchema.shape.currency.parse(input.currency ?? seed.document.currency);
+  if (products.some(product => product.currency !== currency)) throw new QuotationError("Choose products in the quotation currency.", 400);
+  const initial = draftInput({ quote_document: null, product_snapshot: products }, seed);
+  const document = input.items ? buildQuotation({ ...initial, ...input.details, items: input.items }, products, { sellerName: seed.document.sellerName, sellerAddress: seed.document.sellerAddress, customerName: seed.document.customerName, issueDate: quotationToday(), currency }) : null;
+  return { companyId: input.companyId, customerName: seed.document.customerName, currency, products, document };
+}
+export async function createQuotationDraft(input: NewQuotationInput, viewer: WorkspaceViewer, id: string, expected?: Awaited<ReturnType<typeof prepareNewQuotation>>) {
+  z.uuid().parse(id);
+  const prepared = await prepareNewQuotation(input, viewer);
+  if (expected && JSON.stringify(prepared) !== JSON.stringify(expected)) throw new QuotationError("Quotation prices or customer details changed. Prepare a fresh proposal.");
+  const revision = prepared.document ? 1 : 0;
+  const { error } = await createSupabaseAdmin().from("catalogs").insert({ id, user_id: viewer.id, company_id: prepared.companyId, currency: prepared.currency, version: 1, product_skus: prepared.products.map(product => product.sku), product_snapshot: prepared.products, quote_document: prepared.document, quote_status: "draft", quote_revision: revision });
+  if (error) throw new QuotationError("The quotation could not be confirmed. Check the quotation list before retrying.", 503);
+  const audit = await createSupabaseAdmin().from("events").insert({ company_id: prepared.companyId, actor_id: viewer.id, type: "catalog_created", data: { catalogId: id, summary: prepared.document ? "Draft quotation created with priced line items." : "Quotation product selection created." } });
+  if (audit.error) console.error("Quotation saved; activity log could not be recorded.");
+  return { id, status: "draft", revision };
 }
 export async function mutateQuotation(id: string, input: unknown, viewer: WorkspaceViewer) {
   const parsed = quotationActionSchema.safeParse(input);

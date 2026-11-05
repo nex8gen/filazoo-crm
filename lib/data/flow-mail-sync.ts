@@ -10,7 +10,9 @@ function emailId(key: string) {
 }
 
 // Persist mailbox messages even when nobody has the inbox page open.
-export async function syncFlowMailboxMessages() {
+export async function syncFlowMailboxMessages(options: { deadline?: number } = {}) {
+  const expired = (reserveMs = 0) => Boolean(options.deadline && Date.now() >= options.deadline - reserveMs);
+  if (expired(95_000)) return;
   const admin = createSupabaseAdmin();
   // A mailbox can hold thousands of headers, mostly from non-CRM senders.
   // Resolve contacts in bounded batches, caching misses across mailboxes too.
@@ -18,6 +20,7 @@ export async function syncFlowMailboxMessages() {
   async function loadContacts(addresses: string[]) {
     const missing = [...new Set(addresses.map((address) => address.toLowerCase()))].filter((address) => !contactsByEmail.has(address));
     for (let index = 0; index < missing.length; index += 100) {
+      if (expired()) return;
       const batch = missing.slice(index, index + 100);
       const { data } = await admin.from("contacts").select("id,email").in("email", batch).throwOnError();
       for (const address of batch) contactsByEmail.set(address, null);
@@ -33,6 +36,7 @@ export async function syncFlowMailboxMessages() {
   async function loadExistingMessages(messageIds: string[]) {
     const missing = [...new Set(messageIds)].filter((id) => !checkedMessages.has(id));
     for (let index = 0; index < missing.length; index += 50) {
+      if (expired()) return;
       const batch = missing.slice(index, index + 50);
       const { data } = await admin.from("emails").select("message_id").in("message_id", batch).throwOnError();
       for (const id of batch) checkedMessages.add(id);
@@ -46,6 +50,7 @@ export async function syncFlowMailboxMessages() {
   await loadContacts(sent.map((message) => message.to_email));
   await loadExistingMessages(sent.filter((message) => contactsByEmail.get(message.to_email.toLowerCase())).map((message) => message.message_id));
   for (const message of sent) {
+    if (expired()) return;
     const contactId = contactsByEmail.get(message.to_email.toLowerCase());
     if (!contactId || existingMessages.has(message.message_id)) continue;
     await admin.from("emails").upsert({ id: emailId(message.message_id), contact_id: contactId, direction: "sent", subject: message.subject, body: message.body, message_id: message.message_id, thread_id: message.thread_key || `message:${normalizeMessageId(message.message_id)}`, status: "sent", sent_at: message.sent_at, created_at: message.sent_at, owner_id: message.user_id }, { onConflict: "id", ignoreDuplicates: true }).throwOnError();
@@ -55,6 +60,7 @@ export async function syncFlowMailboxMessages() {
   const ownAddresses = new Set((mailboxes ?? []).map((row) => String(row.email).trim().toLowerCase()));
   const { loadSyncedMailbox, loadMailboxMessageContent } = await import("./mailbox-sync.ts");
   for (const row of mailboxes ?? []) {
+    if (expired(95_000)) return;
     const mailbox = normalizeMailboxRow(row);
     if (!mailbox?.imapHost || !mailbox.imapUsername || !mailbox.imapPassword) continue;
     let inbound;
@@ -74,6 +80,7 @@ export async function syncFlowMailboxMessages() {
     await loadContacts(candidates.map((message) => message.contact));
     await loadExistingMessages(candidates.filter((message) => contactsByEmail.get(message.contact.toLowerCase())).map((message) => message.messageId!));
     for (let message of candidates) {
+      if (expired(95_000)) return;
       const contactId = contactsByEmail.get(message.contact.toLowerCase());
       if (!contactId || existingMessages.has(message.messageId!)) continue;
       if (message.bodyLoaded === false && message.uid && message.uidValidity) {

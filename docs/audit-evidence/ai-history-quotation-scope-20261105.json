@@ -1,0 +1,30 @@
+{
+  "date": "2026-11-05",
+  "contractVersion": "2026-11-05.2",
+  "fullTests": { "passed": 1247, "failed": 0 },
+  "lint": "passed",
+  "typescript": "passed",
+  "history": {
+    "rootBoundary": "Temporary workspace session lookup failures escaped as non-JSON server errors.",
+    "sessionReads": "One bounded retry for the two read-only session RPCs; authenticated workspace bound to the request.",
+    "ui": "Read-only history retry and an explicit recovery button preserve the typed message.",
+    "liveObserved": ["History resume HTTP 200", "User-initiated saved conversation creation HTTP 201", "Quotation review card rendered"],
+    "mutationsAutomaticallyRetried": false
+  },
+  "quotationScope": {
+    "default": "Only products requested in the customer's actual current email or explicit user selection.",
+    "allProducts": "Requires explicit user authorization.",
+    "enforcedBeforeProposalStorage": true,
+    "modelIndependent": true,
+    "unrelatedProductsExcluded": true,
+    "missingNamesAndAmbiguousGrades": "Ask for clarification; never silently substitute.",
+    "clarificationPreservesOtherRequestedProducts": true,
+    "quotedOldEmailAndOutdatedSubjectCannotAddProducts": true,
+    "newEmailAttachments": "Restricted to the grounded customer selection.",
+    "existingSavedAttachments": "Use the exact owner-scoped saved quotation with revision and fingerprint checks."
+  },
+  "databaseSchemaChanged": false,
+  "proposalsAutomaticallyApprovedDuringVerification": false,
+  "customerMessagesSentDuringVerification": false,
+  "productionDeployed": false
+}

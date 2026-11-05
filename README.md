@@ -151,6 +151,8 @@ The callback verifies Shopify's `X-Shopify-Hmac-Sha256` signature and store doma
 
 The live `/pages/b2b` page uses Shopify's native contact form rather than Shopify Forms/customer creation. Its theme section mirrors each valid submission to `/api/shopify/form-lead` with `navigator.sendBeacon` while preserving Shopify's normal `/contact` submission and confirmation experience. The mirror accepts only `https://filazoo.com`, validates the form identifier and honeypot, deduplicates by browser-generated submission ID, and stores every optional wholesale field in the lead audit event.
 
+Theme replacements must retain the CRM hidden fields and submission mirror. Use the public custom-domain endpoint `https://crm.filazoosupply.com/api/shopify/form-lead`. See [the November 2026 theme repair and publication status](docs/shopify-crm-form-connection-20261105.md) before assuming the currently published theme is connected.
+
 ## Verification
 
 ```bash

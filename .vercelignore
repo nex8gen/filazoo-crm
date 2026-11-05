@@ -6,10 +6,11 @@
 .agents/
 .codex/
 .aws/
+.mcp.json
 node_modules/
 tmp/
 output/
 .env*
 *.tsbuildinfo
-dev-server.*.log
+*.log
 company-email-verification.jpg

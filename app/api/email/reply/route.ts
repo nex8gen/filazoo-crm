@@ -39,12 +39,12 @@ export async function POST(request: Request) {
   if (!policy.data.products) input.data.products = [];
   if (!policy.data.team) input.data.assignedManagerName = undefined;
   const instruction = buildEmailReplyInstruction(input.data.language) + aiBehaviorInstruction(policy, true);
-  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  const apiKey = process.env.AI_PROVIDER === "gateway" || process.env.AI_BUDGET_ENFORCEMENT === "true" ? undefined : process.env.GEMINI_API_KEY?.trim();
   const token = process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
   if (!apiKey && !token) return Response.json({ error: "AI reply is not configured. Add an AI provider in the server settings." }, { status: 503 });
   const canCreateInvoice = canCreateInvoices(viewer.role) && policy.data.billing && policy.data.products && policy.data.customers && policy.actions.invoices !== "deny";
   const prompt = JSON.stringify({ ...input.data, canCreateInvoice, seller: DEFAULT_EMAIL_COMPANY });
-  const gateway = () => generateGatewayText({ token: token!, model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim(), systemInstruction: instruction, prompt, maxOutputTokens: 8192 });
+  const gateway = () => generateGatewayText({ usageUserId: viewer.id, token: token!, model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim(), systemInstruction: instruction, prompt, maxOutputTokens: 8192, task: "reply", signal: request.signal });
   try {
     let output: string;
     try {
@@ -69,6 +69,6 @@ export async function POST(request: Request) {
     console.error("AI reply generation failed", error);
     return Response.json({ error: error instanceof z.ZodError || error instanceof SyntaxError
       ? "AI returned an incomplete reply. Please try again."
-      : error instanceof Error ? error.message : "Unable to prepare an AI reply." }, { status: 502 });
+      : error instanceof Error ? error.message : "Unable to prepare an AI reply." }, { status: error instanceof Error && error.name === "AiBudgetError" ? (error as Error & { status?: number }).status || 429 : 502 });
   }
 }

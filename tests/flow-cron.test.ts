@@ -1,0 +1,70 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { readFileSync } from "node:fs";
+import vm from "node:vm";
+import ts from "typescript";
+
+function fixture(failedPhase?: string) {
+  const callbacks: Array<() => Promise<void>> = [];
+  const calls: string[] = [];
+  const failures: Array<{ phase: string }> = [];
+  let flowOptions: { syncMailbox: boolean; budgetMs: number } | undefined;
+  const run = async (phase: string) => { calls.push(phase); if (phase === failedPhase) throw new Error(`Synthetic ${phase} failure`); return 1; };
+  const dependencies: Record<string, unknown> = {
+    "@/lib/data/workspace-runtime": { forEachWorkspace: async (run: (id: string, count: number) => Promise<unknown>) => [await run("test-workspace", 1)] },
+    "next/server": { after: (callback: () => Promise<void>) => callbacks.push(callback) },
+    "@/lib/env": { env: { dryRun: true } },
+    "@/lib/data/flow-runtime": { processDueFlowRuns: async (_limit: number, options: typeof flowOptions) => { flowOptions = options; return run("workflows"); } },
+    "@/lib/data/email-delivery": { processScheduledEmails: async (_deliver: unknown, options: { deadline: number }) => { assert.ok(options.deadline > Date.now()); return run("scheduled-email"); } },
+    "@/lib/data/manual-email-send": { deliverEmail: async () => { throw new Error("No direct delivery is permitted in this fixture"); } },
+    "@/lib/data/email-auto-reply-worker": { processEmailAutoReplies: async (_mailbox: unknown, options: { deadline: number }) => { assert.ok(options.deadline > Date.now()); return run("automatic-replies"); } },
+    "@/lib/data/conversation-tagging": { processAutomaticConversationTags: () => run("conversation-tags") },
+  };
+  const exports = {} as { GET: (request: Request) => Promise<Response> };
+  vm.runInNewContext(ts.transpileModule(readFileSync(new URL("../app/api/cron/flows/route.ts", import.meta.url), "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText, { exports, require: (name: string) => { if (!(name in dependencies)) throw new Error(`Unexpected dependency ${name}`); return dependencies[name]; },
+    Request, Response, URL, Date, process: { env: { CRON_SECRET: "test-secret" } }, console: { info() {}, error(_message: string, data: { phase: string }) { failures.push(data); } } });
+  const request = (task = "", token = "test-secret") => new Request(`https://crm.test/api/cron/flows${task ? `?task=${task}` : ""}`, { headers: { authorization: `Bearer ${token}` } });
+  return { ...exports, calls, failures, request, flowOptions: () => flowOptions, flush: async () => { for (const callback of callbacks) await callback(); } };
+}
+
+test("workflow cron rejects invalid credentials and health checks execute no work", async () => {
+  const app = fixture();
+  assert.equal((await app.GET(app.request("", "wrong"))).status, 401);
+  const health = await app.GET(app.request("health"));
+  assert.equal(health.status, 200);
+  assert.equal((await health.json()).version, "flow-background-v3");
+  await app.flush();
+  assert.deepEqual(app.calls, []);
+});
+
+test("cron acknowledges without waiting for providers and runs all independent phases without a viewer session", async () => {
+  const app = fixture();
+  const response = await app.GET(app.request());
+  assert.equal(response.status, 202);
+  assert.deepEqual(await response.json(), { ok: true, queued: true });
+  assert.deepEqual(app.calls, []);
+  await app.flush();
+  assert.deepEqual([...app.calls].sort(), ["automatic-replies", "conversation-tags", "scheduled-email", "workflows"]);
+  assert.equal(app.flowOptions()?.syncMailbox, true);
+  assert.equal(app.flowOptions()?.budgetMs, 180000);
+});
+
+test("failure in any background phase leaves the other phases running", async () => {
+  for (const phase of ["workflows", "scheduled-email", "automatic-replies", "conversation-tags"]) {
+    const app = fixture(phase);
+    assert.equal((await app.GET(app.request())).status, 202);
+    await app.flush();
+    assert.equal(app.calls.length, 4);
+    assert.equal(app.failures.length, 1);
+    assert.equal(app.failures[0].phase, phase);
+  }
+});
+
+test("the minute resume tick skips mailbox sync while still processing saved work", async () => {
+  const app = fixture();
+  await app.GET(app.request("resume"));
+  await app.flush();
+  assert.equal(app.flowOptions()?.syncMailbox, false);
+});

@@ -5,11 +5,12 @@ import vm from "node:vm";
 import ts from "typescript";
 import { isAvatarPreset } from "../lib/profile-avatar.ts";
 import { readUserPreferences } from "../lib/user-preferences.ts";
+import { workspaceIdSchema, workspaceCookie } from "../lib/workspaces.ts";
 
 const id = "aaaaaaaa-1111-2222-3333-444444444444";
 const sessionId = "bbbbbbbb-1111-2222-3333-444444444444";
 const claims = { sub: id, session_id: sessionId, aud: "authenticated", role: "authenticated", iss: "https://test.supabase.co/auth/v1", user_metadata: { avatar_preset: "male", role: "admin" } };
-const member = { id, email: "staff@example.com", user_metadata: { avatar_preset: "female" }, role: "operator", display_name: "Staff", activated_at: "2026-01-01" };
+const member = { id, email: "staff@example.com", user_metadata: { avatar_preset: "female" }, role: "operator", display_name: "Staff", activated_at: "2026-01-01", workspace_id: "cccccccc-1111-4222-8333-444444444444", workspace_name: "Test workspace", owner_id: id };
 const source = ts.transpileModule(readFileSync(new URL("../lib/auth.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 type Options = { claims?: unknown; claimError?: unknown; row?: unknown; rpcError?: { code: string; message: string }; cache?: boolean; legacySignedIn?: boolean };
 function load(options: Options = {}) {
@@ -21,12 +22,19 @@ function load(options: Options = {}) {
     "./env.ts": { env: { NEXT_PUBLIC_SUPABASE_URL: "https://test.supabase.co" }, hasSupabaseAuthConfig: () => true, hasSupabaseConfig: () => true },
     "./profile-avatar.ts": { isAvatarPreset }, "./user-preferences.ts": { readUserPreferences },
     "next/server": { connection: async () => {} }, "next/navigation": { redirect: (path: string) => { throw new Error(path); } },
+    "next/headers": { cookies: async () => ({ get: () => undefined }) },
+    "./workspaces.ts": { workspaceIdSchema, workspaceCookie },
     "./supabase/server.ts": { createClient: async () => ({ auth: {
       getClaims: async () => { calls.claims++; return { data: state.claims ? { claims: state.claims } : null, error: options.claimError ?? null }; },
       getUser: async () => { calls.getUser++; return { data: { user: options.legacySignedIn === false ? null : member }, error: null }; },
     } }) },
-    "./supabase/admin.ts": { createSupabaseAdmin: () => ({
-      rpc: (name: string, params: unknown) => { calls.rpc++; assert.equal(name, "read_crm_session"); assert.deepEqual(JSON.parse(JSON.stringify(params)), { p_user_id: id, p_session_id: sessionId }); return { maybeSingle: async () => ({ data: state.row, error: options.rpcError ?? null }) }; },
+    "./supabase/control.ts": { createSupabaseControl: () => ({
+      rpc: (name: string, params: unknown) => {
+        calls.rpc++;
+        assert.ok(name === "read_workspace_session" || name === "read_crm_session");
+        assert.deepEqual(JSON.parse(JSON.stringify(params)), { p_user_id: id, p_session_id: sessionId, ...(name === "read_workspace_session" ? { p_workspace_id: null } : {}) });
+        return { maybeSingle: async () => ({ data: name === "read_crm_session" && options.legacySignedIn === false ? null : state.row, error: name === "read_crm_session" ? null : options.rpcError ?? null }) };
+      },
       from: (table: string) => { calls.membership++; assert.equal(table, "workspace_members"); const query = { select: () => query, eq: () => query, maybeSingle: async () => ({ data: state.row, error: null }) }; return query; },
     }) },
   };
@@ -64,7 +72,7 @@ test("revoked sessions, banned/deleted users, and identity mismatches fail close
 test("inactive, missing or unknown roles and denied operations cannot inherit JWT metadata roles", async () => {
   for (const row of [{ ...member, activated_at: null }, { ...member, role: null }, { ...member, role: "superuser" }, member]) {
     const { api } = load({ row });
-    await assert.rejects(api.requireWorkspaceMember(["admin"]), /\/access-denied/);
+    await assert.rejects(api.requireWorkspaceMember(["admin"]), /\/access-denied|\/workspaces/);
   }
   const { api } = load({ row: { ...member, role: null, activated_at: null } });
   assert.equal((await api.requireViewer() as { id: string }).id, id); // Invitation/account activation flow.
@@ -87,11 +95,12 @@ test("render-scoped memoization shares a snapshot between shell, page and data h
   assert.deepEqual(calls, { claims: 1, rpc: 1, getUser: 0, membership: 0 });
 });
 
-test("only an uninstalled migration uses the original live Auth and membership checks", async () => {
+test("rolling upgrades use only the existing live-session-validated legacy reader", async () => {
   for (const code of ["PGRST202", "42883"]) {
     const { api, calls } = load({ rpcError: { code, message: "Function missing" } });
-    await api.requireWorkspaceMember(["operator"]);
-    assert.deepEqual(calls, { claims: 1, rpc: 1, getUser: 1, membership: 1 });
+    const viewer = await api.requireWorkspaceMember(["operator"]) as { workspaceId: string };
+    assert.equal(viewer.workspaceId, "legacy");
+    assert.deepEqual(calls, { claims: 1, rpc: 2, getUser: 0, membership: 0 });
   }
   const { api, calls } = load({ rpcError: { code: "PGRST202", message: "Function missing" }, legacySignedIn: false });
   await assert.rejects(api.requireWorkspaceMember(), /\/login/);

@@ -8,6 +8,7 @@ import { AppShell } from "@/components/app-shell";
 import { LanguageProvider } from "@/components/language-provider";
 import { UserMenu } from "@/components/user-menu";
 import { AccountPreferences } from "@/components/account-preferences";
+import { SiteMonitoring } from "@/components/site-monitoring";
 import "./globals.css";
 import "./responsive.css";
 import "./tables.css";
@@ -27,6 +28,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             <Toaster position="bottom-right" />
           </ThemeProvider>
         </LanguageProvider>
+        <Suspense fallback={null}><SiteMonitoring /></Suspense>
       </body>
     </html>
   );

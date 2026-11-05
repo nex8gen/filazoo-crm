@@ -1,0 +1,193 @@
+{
+  "syntheticOnly": true,
+  "maximumQuotedUsd": 0.1,
+  "quotedUsd": 0.178056,
+  "chargedUsd": 0.021415,
+  "results": [
+    {
+      "model": "anthropic/claude-haiku-5.5",
+      "case": "quotation-selection",
+      "passed": true,
+      "elapsedMs": 3196,
+      "actions": [
+        {
+          "type": "crm_action",
+          "operation": {
+            "op": "create_quotation",
+            "companyId": "15693adc-0bdf-4617-b214-71b1861764a9",
+            "currency": "USD",
+            "productSkus": [],
+            "items": [
+              {
+                "productSku": "PLA-BASIC",
+                "variantId": "black",
+                "quantity": 500,
+                "pricingMode": "saved"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "model": "anthropic/claude-haiku-5.5",
+      "case": "legacy-catalog-name",
+      "passed": true,
+      "elapsedMs": 4730,
+      "actions": [
+        {
+          "type": "crm_action",
+          "operation": {
+            "op": "create_quotation",
+            "companyId": "15693adc-0bdf-4617-b214-71b1861764a9",
+            "currency": "USD",
+            "productSkus": [],
+            "items": [
+              {
+                "productSku": "PLA-BASIC",
+                "variantId": "black",
+                "quantity": 500,
+                "pricingMode": "saved"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "model": "anthropic/claude-haiku-5.5",
+      "case": "quotation-email-followup",
+      "passed": true,
+      "elapsedMs": 4517,
+      "actions": [
+        {
+          "type": "write_email",
+          "email": {
+            "to": "abe@example.com",
+            "subject": "Your FILAZOO quotation - PLA Basic",
+            "text": "Hello Abe,\n\nThank you for your interest in PLA Basic. I have attached our current quotation, which includes our active products and pricing in USD.\n\nPlease let me know if you would like any changes to the selection or quantities, and I will be happy to update it for you.",
+            "delivery": "draft",
+            "sourceEmailId": "synthetic-email",
+            "attachCatalog": true
+          }
+        }
+      ]
+    },
+    {
+      "model": "anthropic/claude-haiku-5.5",
+      "case": "invoice-from-history",
+      "passed": true,
+      "elapsedMs": 3786,
+      "actions": [
+        {
+          "type": "create_invoice",
+          "companyId": "15693adc-0bdf-4617-b214-71b1861764a9",
+          "sourceEmailId": "synthetic-email",
+          "details": {
+            "customerEmail": "abe@example.com",
+            "customerAddress": "123 Example Street",
+            "shippingRecipient": "Abe M",
+            "shippingAddress": "123 Example Street",
+            "currency": "USD"
+          },
+          "items": [
+            {
+              "productSku": "PLA-BASIC",
+              "variantId": "black",
+              "quantity": 500
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "model": "google/gemini-3.5-flash-lite",
+      "case": "quotation-selection",
+      "passed": true,
+      "elapsedMs": 3639,
+      "actions": [
+        {
+          "type": "crm_action",
+          "operation": {
+            "op": "create_quotation",
+            "companyId": "15693adc-0bdf-4617-b214-71b1861764a9",
+            "currency": "USD",
+            "productSkus": [],
+            "items": [
+              {
+                "productSku": "PLA-BASIC",
+                "variantId": "black",
+                "quantity": 500,
+                "pricingMode": "saved"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "model": "google/gemini-3.5-flash-lite",
+      "case": "legacy-catalog-name",
+      "passed": true,
+      "elapsedMs": 3245,
+      "actions": [
+        {
+          "type": "crm_action",
+          "operation": {
+            "op": "create_quotation",
+            "companyId": "15693adc-0bdf-4617-b214-71b1861764a9",
+            "currency": "USD",
+            "productSkus": [],
+            "items": [
+              {
+                "productSku": "PLA-BASIC",
+                "variantId": "black",
+                "quantity": 500,
+                "pricingMode": "saved"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "model": "google/gemini-3.5-flash-lite",
+      "case": "quotation-email-followup",
+      "passed": true,
+      "elapsedMs": 11031,
+      "actions": [
+        {
+          "type": "write_email",
+          "email": {
+            "to": "abe@example.com",
+            "subject": "Quotation for PLA Basic",
+            "text": "Hello Abe,\n\nThank you for your interest in our products. Please find attached the quotation for 500 spools of Black PLA Basic as requested.\n\nBest regards,\nFILAZOO",
+            "delivery": "draft",
+            "sourceEmailId": "synthetic-email",
+            "attachCatalog": true
+          }
+        }
+      ]
+    },
+    {
+      "model": "google/gemini-3.5-flash-lite",
+      "case": "invoice-from-history",
+      "passed": true,
+      "elapsedMs": 3832,
+      "actions": [
+        {
+          "type": "create_invoice",
+          "companyId": "15693adc-0bdf-4617-b214-71b1861764a9",
+          "sourceEmailId": "synthetic-email",
+          "items": [
+            {
+              "productSku": "PLA-BASIC",
+              "variantId": "black",
+              "quantity": 500
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -6,8 +6,12 @@ import { customerPortalSecret } from "@/lib/customer-portal-links";
 import { hashPortalPassword, portalEmail, portalHash, validPortalKey, verifyPortalPassword } from "@/lib/customer-portal-crypto";
 import { passwordSchema } from "@/lib/password";
 import { cookies } from "next/headers";
+import { withCustomerWorkspace } from "@/lib/data/customer-workspace";
 
 export async function POST(request: Request) {
+  return withCustomerWorkspace(request, () => openSession(request), true);
+}
+async function openSession(request: Request) {
   try {
     checkPortalOrigin(request);
     const input = z.object({ invoiceId: z.uuid(), key: z.string().max(100) }).parse(await request.json());
@@ -26,6 +30,9 @@ export async function POST(request: Request) {
   } catch (error) { return portalError(error instanceof z.ZodError ? new PortalError("Invalid customer link.") : error); }
 }
 export async function PATCH(request: Request) {
+  return withCustomerWorkspace(request, () => updateSession(request));
+}
+async function updateSession(request: Request) {
   try {
     checkPortalOrigin(request);
     const input = z.object({ action: z.enum(["set-password", "login"]), password: z.string().min(1).max(128) }).parse(await request.json());
@@ -49,6 +56,9 @@ export async function PATCH(request: Request) {
   } catch (error) { return portalError(error instanceof z.ZodError ? new PortalError("Enter a valid password.") : error); }
 }
 export async function DELETE(request: Request) {
+  return withCustomerWorkspace(request, () => deleteSession(request));
+}
+async function deleteSession(request: Request) {
   try {
     checkPortalOrigin(request);
     const jar = await cookies();

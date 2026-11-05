@@ -29,20 +29,23 @@ export async function updateEmailSend(userId: string, id: string, status: string
 }
 
 /** Scheduled sends use the exact same validated delivery path as manual sends. */
-export async function processScheduledEmails(deliver: (viewer: WorkspaceViewer, input: EmailSendInput, reserved: boolean) => Promise<Response>) {
+export async function processScheduledEmails(deliver: (viewer: WorkspaceViewer, input: EmailSendInput, reserved: boolean) => Promise<Response>, options: { deadline?: number } = {}) {
   const db = createSupabaseAdmin();
   await db.from("email_send_operations").update({ status: "uncertain", error: "Delivery was interrupted. Check Sent before sending again." }).eq("status", "submitting").lt("updated_at", new Date(Date.now() - 5 * 60_000).toISOString()).throwOnError();
   await db.from("email_send_operations").update({ status: "failed", error: "Preparation was interrupted before SMTP. Reopen this email as a draft to retry." }).eq("status", "preparing").lt("updated_at", new Date(Date.now() - 5 * 60_000).toISOString()).throwOnError();
   const { data } = await db.from("email_send_operations").select("*").eq("status", "scheduled").lte("scheduled_at", new Date().toISOString()).order("scheduled_at").limit(10).throwOnError();
   let processed = 0;
   for (const operation of (data || []) as SendOperation[]) {
+    // Unclaimed operations stay scheduled for the next tick.
+    if (options.deadline && Date.now() > options.deadline - 120_000) break;
     const { data: claimed } = await db.from("email_send_operations").update({ status: "preparing", updated_at: new Date().toISOString() }).eq("user_id", operation.user_id).eq("id", operation.id).eq("status", "scheduled").select("id").maybeSingle().throwOnError();
     if (!claimed) continue;
     try {
       const { data: member } = await db.from("workspace_members").select("role,display_name,activated_at").eq("user_id", operation.user_id).maybeSingle().throwOnError();
       if (!member?.activated_at || !["admin", "operator", "bd_manager"].includes(member.role)) throw new Error("The sender no longer has permission to send email.");
       const input = emailSendSchema.parse(operation.payload);
-      await deliver({ id: operation.user_id, email: null, displayName: member.display_name, role: member.role }, { ...input, scheduleAt: undefined }, true);
+      const scope = (await import("../workspace-context.ts")).currentWorkspaceContext();
+      await deliver({ id: operation.user_id, email: null, displayName: member.display_name, role: member.role, workspaceId: scope?.workspaceId || "legacy", workspaceName: "Workspace", ownerId: "" }, { ...input, scheduleAt: undefined }, true);
       processed++;
     } catch (error) { await updateEmailSend(operation.user_id, operation.id, "failed", undefined, error instanceof Error ? error.message : "Scheduled delivery failed."); }
   }

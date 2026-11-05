@@ -31,6 +31,7 @@ import { getInventoryState } from "@/lib/data/inventory";
 import { listProducts } from "@/lib/data/crm";
 import { ErpConnectionForm } from "./erp-connection-form";
 import { AiSettingsForm } from "./ai-settings-form";
+import { PendingInvitations } from "./pending-invitations";
 import { getAiSettings } from "@/lib/data/ai-settings";
 
 type SettingsPageProps = { params?: Promise<{ section?: string }> };
@@ -89,6 +90,7 @@ async function SettingsWorkspace({ params }: SettingsPageProps) {
 
         {viewer.role === "admin" && section === "team" ? (
           <div className="space-y-4">
+            <PendingInvitations />
             <Card className="shadow-none"><CardHeader><div className="mb-2 grid size-9 place-items-center rounded-lg border bg-muted"><UsersRound className="size-4 text-muted-foreground" /></div><div className="flex flex-wrap items-center justify-between gap-3"><div><CardTitle className="text-sm">Shared customer inbox</CardTitle><CardDescription className="mt-1 text-xs">Connect once to collect Shopify form enquiries and customer email replies in one team inbox.</CardDescription></div>{defaultWorkspaceMailbox ? <Button nativeButton={false} variant="outline" size="sm" render={<Link href="/email" />}>Open customer inbox</Button> : null}</div></CardHeader><CardContent><WorkspaceMailboxForm mailboxId={defaultWorkspaceMailbox?.id || ""} defaultEmail={defaultWorkspaceMailbox?.email || ""} defaultDisplayName={defaultWorkspaceMailbox?.displayName || "Workspace mailbox"} defaultSmtpHost={defaultWorkspaceMailbox?.smtpHost || ""} defaultSmtpPort={defaultWorkspaceMailbox?.smtpPort ?? 587} defaultSmtpUsername={defaultWorkspaceMailbox?.smtpUsername || ""} defaultImapHost={defaultWorkspaceMailbox?.imapHost || ""} defaultImapPort={defaultWorkspaceMailbox?.imapPort ?? 993} defaultImapUsername={defaultWorkspaceMailbox?.imapUsername || ""} /></CardContent></Card>
             <Card className="shadow-none"><CardHeader><div className="mb-2 grid size-9 place-items-center rounded-lg border bg-muted"><UsersRound className="size-4 text-muted-foreground" /></div><CardTitle className="text-sm">Invite a team member</CardTitle><CardDescription className="text-xs">Choose BD Sales Manager to include the person in automatic round-robin lead assignment. New users receive a secure email invitation.</CardDescription></CardHeader><CardContent><InviteMemberForm /></CardContent></Card>
             <div className="space-y-2"><div><h3 className="text-sm font-semibold">Workspace members</h3><p className="text-xs text-muted-foreground">Track account status and activity, edit access, or safely remove a member.</p></div><MembersTable members={members} viewerId={viewer.id} /></div>

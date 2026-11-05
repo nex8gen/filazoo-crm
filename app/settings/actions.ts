@@ -2,16 +2,12 @@
 
 import { revalidatePath, updateTag } from "next/cache";
 import { z } from "zod";
-import { buildInvitationConfirmationUrl, buildInvitationEmail } from "@/lib/auth-invitation";
+import { createTeamInvitation } from "./team-actions";
 import { requireWorkspaceMember } from "@/lib/auth";
-import { getDefaultWorkspaceMailbox, mailboxHasSmtp } from "@/lib/data/mailboxes";
-import { listAllAuthUsers } from "@/lib/data/members";
-import { env } from "@/lib/env";
-import { sendMailboxEmail } from "@/lib/mailer";
 import { verifyMailboxConnections } from "@/lib/mailbox-connection";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 
-export type SettingsActionState = { error?: string; success?: string } | undefined;
+export type SettingsActionState = { error?: string; success?: string; invitationUrl?: string } | undefined;
 
 export async function manageMailbox(_state: SettingsActionState, formData: FormData): Promise<SettingsActionState> {
   const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
@@ -38,11 +34,6 @@ export async function manageMailbox(_state: SettingsActionState, formData: FormD
 }
 
 const profileSchema = z.object({ displayName: z.string().trim().min(2).max(80) });
-const inviteSchema = z.object({
-  email: z.string().trim().toLowerCase().email(),
-  displayName: z.string().trim().min(2).max(80),
-  role: z.enum(["admin", "operator", "bd_manager", "viewer"]),
-});
 const roleSchema = z.object({
   userId: z.string().uuid(),
   role: z.enum(["admin", "operator", "bd_manager", "viewer"]),
@@ -87,82 +78,21 @@ export async function updateProfile(_state: SettingsActionState, formData: FormD
   return { success: "Profile updated." };
 }
 
-export async function inviteMember(_state: SettingsActionState, formData: FormData): Promise<SettingsActionState> {
-  await requireWorkspaceMember(["admin"]);
-  const parsed = inviteSchema.safeParse({ email: formData.get("email"), displayName: formData.get("displayName"), role: formData.get("role") });
-  if (!parsed.success) return { error: "Enter a valid name, email, and workspace role." };
-
-  const mailbox = await getDefaultWorkspaceMailbox();
-  if (!mailbox || !mailboxHasSmtp(mailbox)) return { error: "Connect a default workspace mailbox before sending team invitations." };
-
-  const admin = createSupabaseAdmin();
-  let authUsers;
-  try {
-    authUsers = await listAllAuthUsers();
-  } catch {
-    return { error: "The existing team accounts could not be checked. Try again shortly." };
-  }
-
-  const existingUser = authUsers.find((user) => user.email?.toLowerCase() === parsed.data.email);
-  let existingMembership: { user_id: string; activated_at: string | null } | null = null;
-  if (existingUser) {
-    const { data, error: membershipLookupError } = await admin.from("workspace_members").select("user_id,activated_at").eq("user_id", existingUser.id).maybeSingle();
-    if (membershipLookupError) return { error: "The existing workspace access could not be checked." };
-    existingMembership = data;
-    if (existingMembership?.activated_at) return { error: "This email already belongs to an active workspace member." };
-  }
-
-  const { data, error } = existingUser
-    ? await admin.auth.admin.generateLink({ type: "recovery", email: parsed.data.email })
-    : await admin.auth.admin.generateLink({
-        type: "invite",
-        email: parsed.data.email,
-        options: { data: { display_name: parsed.data.displayName } },
-      });
-  if (error || !data.user || !data.properties?.hashed_token) return { error: error?.message || "The invitation could not be created." };
-
-  const [{ error: metadataError }, { error: memberError }] = await Promise.all([
-    admin.auth.admin.updateUserById(data.user.id, { app_metadata: { role: parsed.data.role } }),
-    admin.from("workspace_members").upsert({ user_id: data.user.id, display_name: parsed.data.displayName, role: parsed.data.role, auto_assign_leads: parsed.data.role === "bd_manager", activated_at: null, updated_at: new Date().toISOString() }, { onConflict: "user_id" }),
-  ]);
-  if (metadataError || memberError) return { error: "The user was invited, but workspace access could not be assigned. Review the user in Supabase." };
-
-  let confirmationUrl: string;
-  try {
-    confirmationUrl = buildInvitationConfirmationUrl(env.NEXT_PUBLIC_APP_URL, data.properties.hashed_token, data.properties.verification_type);
-  } catch (linkError) {
-    return { error: linkError instanceof Error ? linkError.message : "The invitation link could not be created." };
-  }
-  const invitation = buildInvitationEmail(parsed.data.displayName, confirmationUrl);
-  try {
-    await sendMailboxEmail(
-      { host: mailbox.smtpHost, port: mailbox.smtpPort, user: mailbox.smtpUsername, pass: mailbox.smtpPassword, from: mailbox.email },
-      { to: parsed.data.email, ...invitation },
-    );
-  } catch {
-    return { error: "The account was created, but the invitation email could not be sent. Check the workspace SMTP connection before trying again." };
-  }
-
-  revalidatePath("/settings", "layout");
-  return { success: `Invitation sent to ${parsed.data.email}.` };
+export async function inviteMember(state: SettingsActionState, formData: FormData): Promise<SettingsActionState> {
+  const viewer = await requireWorkspaceMember(["admin"]);
+  if (viewer.workspaceId === "legacy") return { error: "The workspace upgrade is awaiting database rollout. Existing team access is preserved; new invitations will be available after the migration." };
+  return createTeamInvitation(state, formData);
 }
 
 export async function updateMemberRole(_state: SettingsActionState, formData: FormData): Promise<SettingsActionState> {
   const viewer = await requireWorkspaceMember(["admin"]);
   const parsed = roleSchema.safeParse({ userId: formData.get("userId"), role: formData.get("role") });
   if (!parsed.success) return { error: "Choose a valid workspace role." };
-  if (parsed.data.userId === viewer.id) return { error: "You cannot change your own administrator role." };
-
-  const admin = createSupabaseAdmin();
-  const { data: target, error: targetError } = await admin.auth.admin.getUserById(parsed.data.userId);
-  if (targetError || !target.user) return { error: "The team member could not be found." };
-
-  const [{ error: memberError }, { error: metadataError }] = await Promise.all([
-    admin.from("workspace_members").update({ role: parsed.data.role, auto_assign_leads: parsed.data.role === "bd_manager", updated_at: new Date().toISOString() }).eq("user_id", parsed.data.userId),
-    admin.auth.admin.updateUserById(parsed.data.userId, { app_metadata: { ...target.user.app_metadata, role: parsed.data.role } }),
-  ]);
-  if (memberError || metadataError) return { error: "The workspace role could not be updated." };
-
+  if (parsed.data.userId === viewer.id || parsed.data.userId === viewer.ownerId) return { error: "Your own role and the workspace owner's role are protected." };
+  const { data, error } = await createSupabaseAdmin().from("workspace_members")
+    .update({ role: parsed.data.role, auto_assign_leads: parsed.data.role === "bd_manager", updated_at: new Date().toISOString() })
+    .eq("user_id", parsed.data.userId).select("user_id").maybeSingle();
+  if (error || !data) return { error: "The workspace member could not be updated." };
   revalidatePath("/settings", "layout");
   return { success: "Role updated." };
 }
@@ -171,30 +101,15 @@ export async function updateMember(_state: SettingsActionState, formData: FormDa
   const viewer = await requireWorkspaceMember(["admin"]);
   const parsed = memberSchema.safeParse({ userId: formData.get("userId"), displayName: formData.get("displayName"), email: formData.get("email"), role: formData.get("role"), autoAssignLeads: formData.get("autoAssignLeads") ?? undefined });
   if (!parsed.success) return { error: "Enter a valid name, email, and workspace role." };
-  if (parsed.data.userId === viewer.id) return { error: "Edit your own name from the Account tab. Your administrator role is protected." };
-
+  if (parsed.data.userId === viewer.id || parsed.data.userId === viewer.ownerId) return { error: "Edit your own profile from the Profile tab. The workspace owner's access is protected." };
   const admin = createSupabaseAdmin();
-  const [{ data: target, error: targetError }, { data: membership, error: membershipError }] = await Promise.all([
-    admin.auth.admin.getUserById(parsed.data.userId),
-    admin.from("workspace_members").select("role,display_name,auto_assign_leads").eq("user_id", parsed.data.userId).maybeSingle(),
-  ]);
-  if (targetError || !target.user || membershipError || !membership) return { error: "The team member could not be found." };
-
-  const autoAssignLeads = parsed.data.role === "bd_manager" && Boolean(parsed.data.autoAssignLeads);
-  const { error: authError } = await admin.auth.admin.updateUserById(parsed.data.userId, {
-    email: parsed.data.email,
-    user_metadata: { ...target.user.user_metadata, display_name: parsed.data.displayName },
-    app_metadata: { ...target.user.app_metadata, role: parsed.data.role },
-  });
-  if (authError) return { error: authError.message || "The authentication account could not be updated." };
-
-  const { error: updateError } = await admin.from("workspace_members").update({ display_name: parsed.data.displayName, role: parsed.data.role, auto_assign_leads: autoAssignLeads, updated_at: new Date().toISOString() }).eq("user_id", parsed.data.userId);
-  if (updateError) {
-    await admin.auth.admin.updateUserById(parsed.data.userId, { email: target.user.email, user_metadata: target.user.user_metadata, app_metadata: target.user.app_metadata });
-    return { error: "The workspace member could not be updated." };
-  }
-
-  await admin.from("events").insert({ actor_id: viewer.id, type: "workspace_member_updated", data: { target_user_id: parsed.data.userId, summary: `${parsed.data.displayName}'s member details were updated.` } });
+  // Names and roles belong to this workspace. A tenant administrator cannot change a global login identity.
+  const { data, error } = await admin.from("workspace_members").update({
+    display_name: parsed.data.displayName, role: parsed.data.role,
+    auto_assign_leads: parsed.data.role === "bd_manager" && Boolean(parsed.data.autoAssignLeads), updated_at: new Date().toISOString(),
+  }).eq("user_id", parsed.data.userId).select("user_id").maybeSingle();
+  if (error || !data) return { error: "The workspace member could not be updated." };
+  await admin.from("events").insert({ actor_id: viewer.id, type: "workspace_member_updated", data: { target_user_id: parsed.data.userId, summary: parsed.data.displayName + "'s member details were updated." } });
   revalidatePath("/settings", "layout");
   return { success: "Member details updated." };
 }
@@ -204,6 +119,7 @@ export async function deleteMember(_state: SettingsActionState, formData: FormDa
   const parsed = memberIdSchema.safeParse({ userId: formData.get("userId") });
   if (!parsed.success) return { error: "Choose a valid team member." };
   if (parsed.data.userId === viewer.id) return { error: "You cannot delete your own administrator account." };
+  if (parsed.data.userId === viewer.ownerId) return { error: "Transfer ownership before removing the workspace owner." };
 
   const admin = createSupabaseAdmin();
   const { data, error } = await admin.rpc("remove_workspace_member", { p_user_id: parsed.data.userId, p_actor_id: viewer.id });

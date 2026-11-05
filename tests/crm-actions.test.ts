@@ -44,7 +44,7 @@ const hooks = registerHooks({
     if (specifier === "@/lib/supabase/admin" || specifier === "../supabase/admin.ts") source = `${runtime} export function createSupabaseAdmin() { return admin; }`;
     if (specifier === "next/cache") source = `${runtime} export function revalidatePath(path) { state.paths.push(path); }`;
     if (specifier === "@/lib/data/flow-runtime" || specifier === "./flow-runtime.ts") source = `${runtime} export async function enrollMatchingFlows(event) { state.calls.push(['enroll', event]); } export async function enrollNewLeadFlows(id) { state.calls.push(['new_lead', id]); } export async function validateFlowResources() {}`;
-    if (specifier === "@/lib/lead-assignment") source = "export async function claimNextBdSalesManager() {}";
+    if (specifier === "@/lib/lead-assignment") source = "export async function claimNextBdSalesManager() { throw new Error('Manual companies must not use automatic assignment'); }";
     if (source) return { url: `data:text/javascript,${encodeURIComponent(source)}`, shortCircuit: true };
     if (specifier.startsWith("@/lib/")) return { url: new URL(`../lib/${specifier.slice(6)}.ts`, import.meta.url).href, shortCircuit: true };
     return nextResolve(specifier, context);
@@ -66,6 +66,19 @@ test("manual lead creation starts new-lead flows after saving the contact and pi
   state.calls = [];
   assert.ok((await createCompany(undefined, data))?.error);
   assert.ok(!state.calls.some((call) => call[0] === "new_lead"));
+});
+
+test("manually created companies belong to their creator for every writable role", async () => {
+  for (const role of ["admin", "operator", "bd_manager"]) {
+    state.role = role;
+    state.calls = [];
+    const data = new FormData();
+    Object.entries({ name: "My Company", website: "", country: "US", city: "", segment: "B2B", contactName: "", contactRole: "", contactEmail: "", ownerId: otherId }).forEach(([key, value]) => data.set(key, value));
+    assert.ok((await createCompany(undefined, data))?.success);
+    const pipelineWrite = state.calls.findIndex(call => call[0] === "from" && call[1] === "pipeline");
+    assert.deepEqual(state.calls[pipelineWrite + 1], ["insert", { company_id: id, owner_id: "actor" }]);
+    assert.ok(!state.calls.some(call => call[0] === "rpc"));
+  }
 });
 
 test("partial profile saves validate only requested fields and retain strict creation requirements", async () => {

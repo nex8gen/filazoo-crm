@@ -8,7 +8,7 @@ import * as model from "../lib/crm-model.ts";
 
 type Row = Record<string, unknown>;
 const row = { id: "4913b683-bcec-4079-b424-6fd559ed0c2a", name: "Acme", domain: "acme.test", website: "https://acme.test", source: "manual", status: "new", contacts: [], meta_leads: [], company_profiles: [], pipeline: [] };
-function load(options: { demo?: boolean; denied?: boolean; failure?: boolean; rows?: Row[]; ownerGate?: boolean } = {}) {
+function load(options: { demo?: boolean; denied?: boolean; failure?: boolean; rows?: Row[]; ownerGate?: boolean; role?: string } = {}) {
   const calls: Array<{ table: string; method: string; args: unknown[] }> = [];
   let authorized = false;
   let avatarStarted = false;
@@ -18,10 +18,13 @@ function load(options: { demo?: boolean; denied?: boolean; failure?: boolean; ro
     assert.ok(authorized, "authorization must precede database access");
     const filters = new Map<string, unknown>();
     let start = 0, end = 499;
+    let innerPipeline = false;
     const query: Record<string, unknown> = {};
     for (const method of ["select", "or", "order", "range", "eq", "in", "limit"]) query[method] = (...args: unknown[]) => {
       calls.push({ table, method, args });
       if (method === "eq") filters.set(String(args[0]), args[1]);
+      if (method === "select") innerPipeline = String(args[0]).includes("pipeline!inner(");
+      if (method === "in") filters.set(`in:${args[0]}`, args[1]);
       if (method === "range") [start, end] = args as [number, number];
       return query;
     };
@@ -32,14 +35,22 @@ function load(options: { demo?: boolean; denied?: boolean; failure?: boolean; ro
       }
       if (options.failure) return resolve({ data: null, error: { message: "database offline" } });
       const rows = options.rows ?? [row];
-      const data = rows.filter(item => !filters.has("id") || item.id === filters.get("id")).slice(start, end + 1);
+      const data = rows.filter(item => {
+        if (filters.has("id") && item.id !== filters.get("id")) return false;
+        if (filters.has("in:id") && !(filters.get("in:id") as unknown[]).includes(item.id)) return false;
+        if (innerPipeline) {
+          const pipeline = item.pipeline as Array<{ owner_id: string | null }>;
+          if (!pipeline?.some(p => !filters.has("pipeline.owner_id") || p.owner_id === filters.get("pipeline.owner_id"))) return false;
+        }
+        return true;
+      }).slice(start, end + 1);
       return resolve({ data, error: null });
     };
     return query;
   } };
   const deps: Record<string, unknown> = {
     "../customer-tags.ts": customerTags,
-    "../auth.ts": { requireWorkspaceMember: async () => { if (options.denied) throw new Error("Unauthorized"); authorized = true; } },
+    "../auth.ts": { requireWorkspaceMember: async () => { if (options.denied) throw new Error("Unauthorized"); authorized = true; return { id: "owner-1", role: options.role ?? "admin" }; } },
     "../env.ts": { env: { authRequired: true }, hasSupabaseConfig: () => !options.demo },
     "../supabase/admin.ts": { createSupabaseAdmin: () => client },
     "../crm-model.ts": model,
@@ -128,4 +139,43 @@ test("owner names and avatars start independently and both reach the company rec
   assert.ok(loaded.avatarStarted());
   assert.equal(company?.ownerName, "Alice");
   assert.equal(company?.ownerAvatarUrl, "/avatar.png");
+});
+
+const ownershipRows = [
+  { ...row, pipeline: [{ owner_id: "owner-1" }] },
+  { ...row, id: "b02b78ed-3f6e-459a-a461-802f6d231af8", pipeline: [{ owner_id: "owner-2" }] },
+  { ...row, id: "unassigned", pipeline: [{ owner_id: null }] },
+  { ...row, id: "no-pipeline", pipeline: [] },
+];
+
+test("BD company lists, selectors, segments and selected exports include only current assignments", async () => {
+  for (const method of ["listCompanies", "listCompanyOptions", "listSegmentCompanies"]) {
+    const { api, calls } = load({ role: "bd_manager", rows: ownershipRows });
+    const result = await api[method]();
+    assert.deepEqual(Array.from(result.companies, company => company.id), [row.id]);
+    assert.ok(calls.some(call => call.table === "companies" && call.method === "select" && String(call.args[0]).includes("pipeline!inner(")));
+    assert.ok(calls.some(call => call.table === "companies" && call.method === "eq" && call.args[0] === "pipeline.owner_id" && call.args[1] === "owner-1"));
+  }
+  const { api } = load({ role: "bd_manager", rows: ownershipRows });
+  assert.equal((await api.listCompanies({ ids: [ownershipRows[1].id] })).companies.length, 0);
+  assert.equal((await api.getCompany(ownershipRows[1].id)).company, null);
+  assert.equal((await api.getCompany(row.id)).company?.id, row.id);
+});
+
+test("other workspace roles retain company visibility, including unassigned companies", async () => {
+  for (const role of ["admin", "operator", "viewer"]) {
+    const { api, calls } = load({ role, rows: ownershipRows });
+    for (const method of ["listCompanies", "listCompanyOptions", "listSegmentCompanies"]) {
+      assert.equal((await api[method]()).companies.length, ownershipRows.length);
+    }
+    assert.ok(!calls.some(call => call.method === "eq" && call.args[0] === "pipeline.owner_id"));
+  }
+});
+
+test("assignment filters apply before pagination and export limits", async () => {
+  const ownRows = Array.from({ length: 501 }, (_, index) => ({ ...ownershipRows[0], id: String(index) }));
+  const { api } = load({ role: "bd_manager", rows: [...Array(600).fill(ownershipRows[1]), ...ownRows] });
+  assert.equal((await api.listCompanies({ maxCompanies: 501 })).companies.length, 501);
+  await assert.rejects(api.listCompanies({ maxCompanies: 500 }), /exceeds 5,000/);
+  assert.equal((await load({ role: "bd_manager", rows: ownershipRows.slice(1) }).api.listCompanies()).companies.length, 0);
 });

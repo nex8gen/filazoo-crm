@@ -1,39 +1,63 @@
 import { z } from "zod";
 import { getWorkspaceViewer } from "@/lib/auth";
+import { withWorkspaceViewer } from "@/lib/workspace-context";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { conversationInputSchema, conversationScope } from "@/lib/ai/chat-history";
 import { assertConversationAccess, conversationAccessKey, HistoryError, presentConversation, type ConversationRow } from "@/lib/ai/chat-history-server";
 
 const headers = { "Cache-Control": "private, no-store" };
 export async function GET(request: Request) {
-  const viewer = await getWorkspaceViewer();
+  let viewer;
+  try { viewer = await getWorkspaceViewer(); }
+  catch { return Response.json({ error: "Unable to verify your workspace session. Please retry." }, { status: 503, headers }); }
   if (!viewer) return Response.json({ error: "Sign in to view saved conversations." }, { status: 401, headers });
+  return withWorkspaceViewer(viewer, async () => {
   const params = new URL(request.url).searchParams;
-  const parsed = z.object({ scope: z.string().min(1).max(3000), search: z.string().max(160), archived: z.enum(["true", "false"]), offset: z.coerce.number().int().min(0).max(10000) }).safeParse({ scope: params.get("scope"), search: params.get("search") || "", archived: params.get("archived") || "false", offset: params.get("offset") || 0 });
+  const parsed = z.object({ scope: z.string().min(1).max(3000), view: z.enum(["all", "record"]), search: z.string().max(160), archived: z.enum(["true", "false"]), offset: z.coerce.number().int().min(0).max(10000) }).safeParse({ scope: params.get("scope"), view: params.get("view") || "record", search: params.get("search") || "", archived: params.get("archived") || "false", offset: params.get("offset") || 0 });
   if (!parsed.success) return Response.json({ error: "Invalid history search." }, { status: 400, headers });
-  const { scope, search, archived, offset } = parsed.data;
+  const { scope, view, search, archived, offset } = parsed.data;
+  const all = view === "all" && params.get("resume") !== "true";
   let accessKey: string;
   try { accessKey = await conversationAccessKey(viewer); } catch { return Response.json({ error: "Unable to verify access to saved conversations." }, { status: 503, headers }); }
   const db = createSupabaseAdmin();
   const { data, error } = params.get("resume") === "true"
     ? await db.from("ai_conversations").select("*").eq("user_id", viewer.id).eq("owner_role", viewer.role).eq("access_key", accessKey).eq("scope", scope).eq("archived", false).gt("version", 0).order("updated_at", { ascending: false }).limit(1)
-    : await db.rpc("search_ai_conversations", { p_user_id: viewer.id, p_role: viewer.role, p_access_key: accessKey, p_scope: scope, p_archived: archived === "true", p_search: search, p_offset: offset });
+    : all
+      ? await db.rpc("search_workspace_ai_conversations", { p_user_id: viewer.id, p_role: viewer.role, p_access_key: accessKey, p_archived: archived === "true", p_search: search, p_offset: offset })
+      : await db.rpc("search_ai_conversations", { p_user_id: viewer.id, p_role: viewer.role, p_access_key: accessKey, p_scope: scope, p_archived: archived === "true", p_search: search, p_offset: offset });
   if (error) return Response.json({ error: "Unable to load history. Check the AI history database migration." }, { status: 503, headers });
   const rows = (data ?? []) as ConversationRow[];
-  // Rows share one canonical record scope and access fingerprint. Revalidate
-  // that record once instead of reloading the same inbox for every list item.
+  if (all) {
+    // Recheck each distinct record before exposing even its saved title. A
+    // deleted record must not hide unrelated, accessible conversations.
+    const scopes = new Map(rows.slice(0, 30).map((row) => [row.scope, row]));
+    const allowed = new Set<string>();
+    await Promise.all([...scopes.values()].map(async (row) => {
+      try {
+        await assertConversationAccess({ mode: row.mode, pathname: row.pathname, pageContext: row.page_context }, viewer);
+        allowed.add(row.scope);
+      } catch { /* Ownership and current access remain mandatory for old history. */ }
+    }));
+    const visible = rows.slice(0, 30).filter((row) => allowed.has(row.scope));
+    return Response.json({ conversations: visible.map(presentConversation), hasMore: rows.length > 30, offset: offset + 30, unavailable: Math.min(rows.length, 30) - visible.length }, { headers });
+  }
+  // Exact-scope resume and customer history only need one record check.
   if (rows[0]) {
     try { await assertConversationAccess({ mode: rows[0].mode, pathname: rows[0].pathname, pageContext: rows[0].page_context }, viewer); }
     catch { return Response.json({ error: "This record is no longer available for saved conversations." }, { status: 403, headers }); }
   }
   return Response.json({ conversations: rows.slice(0, 30).map(presentConversation), hasMore: rows.length > 30, offset: offset + 30 }, { headers });
+  });
 }
 
 export async function POST(request: Request) {
   const origin = request.headers.get("origin");
   if (origin && origin !== new URL(request.url).origin) return Response.json({ error: "Invalid request origin." }, { status: 403, headers });
-  const viewer = await getWorkspaceViewer();
+  let viewer;
+  try { viewer = await getWorkspaceViewer(); }
+  catch { return Response.json({ error: "Unable to verify your workspace session. Please retry." }, { status: 503, headers }); }
   if (!viewer) return Response.json({ error: "Sign in to save conversations." }, { status: 401, headers });
+  return withWorkspaceViewer(viewer, async () => {
   const text = await request.text();
   if (text.length > 8000) return Response.json({ error: "Conversation context is too large." }, { status: 413, headers });
   let body: unknown; try { body = JSON.parse(text); } catch { /* Validated below. */ }
@@ -47,4 +71,5 @@ export async function POST(request: Request) {
     if (error) throw new HistoryError("Unable to save a conversation. Check the AI history database migration.", 503);
     return Response.json({ conversation: presentConversation(data as ConversationRow) }, { status: 201, headers });
   } catch (error) { return Response.json({ error: error instanceof HistoryError ? error.message : "This record is unavailable for saved conversations." }, { status: error instanceof HistoryError ? error.status : 403, headers }); }
+  });
 }

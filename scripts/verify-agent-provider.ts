@@ -27,8 +27,8 @@ const options = {
 };
 const gatewayToken = process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN;
 async function generate(prompt = options.prompt) {
-const configured = { ...options, prompt };
-if (process.env.GEMINI_API_KEY) {
+const configured = { ...options, prompt, task: "agent" as const, complex: true };
+if (process.env.GEMINI_API_KEY && process.env.AI_PROVIDER !== "gateway") {
   try { return await generateGeminiText({ ...configured, apiKey: process.env.GEMINI_API_KEY, model: process.env.GEMINI_AGENT_MODEL || process.env.GEMINI_EMAIL_MODEL }); }
   catch (error) {
     if (!gatewayToken || !isGeminiRegionError(error)) throw error;

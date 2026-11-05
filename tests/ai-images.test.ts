@@ -64,7 +64,7 @@ test("Gemini receives real inline image parts alongside the action prompt", asyn
 });
 
 test("regional fallback keeps image content and selects a vision-capable gateway model", async () => {
-  let body: { model: string; messages: Array<{ content: Array<{ type: string; image_url?: { url: string } }> }> } | undefined;
+  let body: { model: string; input: Array<{ content: Array<{ type: string; image_url?: string }> }> } | undefined;
   const images = collectChatImages(messages);
   try {
     await generateGeminiText({ apiKey: "test", systemInstruction: "Read image", prompt: "Read", images, fetcher: async () => Response.json({ error: { message: "User location is not supported" } }, { status: 400 }) });
@@ -72,13 +72,13 @@ test("regional fallback keeps image content and selects a vision-capable gateway
   } catch (error) { assert.equal(isGeminiRegionError(error), true); }
   await generateGatewayText({ token: "test", model: "text-only-model", systemInstruction: "Read image", prompt: "Read", images, fetcher: async (_input, init) => {
     body = JSON.parse(String(init?.body));
-    return Response.json({ choices: [{ message: { content: "Address extracted" } }] });
+    return Response.json({ output: [{ type: "message", content: [{ type: "output_text", text: "Address extracted" }] }] });
   } });
-  assert.equal(body?.model, "alibaba/qwen3.5-flash");
-  assert.equal(body?.messages[1].content[2].image_url?.url, image.dataUrl);
+  assert.equal(body?.model, "anthropic/claude-haiku-5.5");
+  assert.equal(body?.input[0].content[2].image_url, image.dataUrl);
   await generateGatewayText({ token: "test", model: "text-only-model", visionModel: "configured-vision-model", systemInstruction: "Read", prompt: "Read", images, fetcher: async (_input, init) => {
-    assert.equal(JSON.parse(String(init?.body)).model, "configured-vision-model");
-    return Response.json({ choices: [{ message: { content: "Done" } }] });
+    assert.equal(JSON.parse(String(init?.body)).model, "anthropic/claude-haiku-5.5");
+    return Response.json({ output: [{ type: "message", content: [{ type: "output_text", text: "Done" }] }] });
   } });
 });
 

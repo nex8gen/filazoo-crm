@@ -56,9 +56,9 @@ export async function latestWorkflowEvidence(viewer: WorkspaceViewer, request: R
   return { evidence, mailbox };
 }
 
-async function planWork(prompt: string) {
+async function planWork(prompt: string, usageUserId: string) {
   const policy = await requireAiAutomation([], ["emails", "customers", "billing", "products", "tasks"]);
-  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  const apiKey = process.env.AI_PROVIDER === "gateway" || process.env.AI_BUDGET_ENFORCEMENT === "true" ? undefined : process.env.GEMINI_API_KEY?.trim();
   const token = process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
   const responseJsonSchema = z.toJSONSchema(replyWorkPlanSchema.extend({ changes: replyWorkPlanSchema.shape.changes.required() }), { unrepresentable: "any", target: "draft-7" });
   delete responseJsonSchema.$schema;
@@ -66,7 +66,7 @@ async function planWork(prompt: string) {
     fetcher: ((url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(45_000) })) as typeof fetch };
   const gateway = () => {
     if (!token) throw new Error("AI preparation is unavailable. Add a provider or prepare this task manually.");
-    return generateGatewayText({ ...options, token, model: process.env.AI_GATEWAY_AGENT_MODEL?.trim() || process.env.AI_GATEWAY_EMAIL_MODEL?.trim() });
+    return generateGatewayText({ usageUserId, ...options, token, model: process.env.AI_GATEWAY_AGENT_MODEL?.trim(), task: "workflow" });
   };
   let output: string;
   try { output = apiKey ? await generateGeminiText({ ...options, apiKey, model: process.env.GEMINI_AGENT_MODEL?.trim() || process.env.GEMINI_EMAIL_MODEL?.trim() }) : await gateway(); }
@@ -111,7 +111,7 @@ export async function prepareTaskWorkflow(work: TaskWorkflow) {
       currentInvoice: invoice ? { status: invoice.status, number: invoice.number, totalMinor: invoice.total_minor, paidMinor: invoice.paid_minor, currency: invoice.document.currency } : null,
       liveProducts: products.filter(p => p.active).map(p => { const item = invoiceProduct({ ...p, tags: p.tags ?? [] }); return { sku: item.sku, name: item.name, variants: item.variants.map(v => ({ id: v.id, name: v.name })) }; }) });
     if (prompt.length > 180_000) throw new Error("Narrow the task's product selection before preparing it.");
-    plan = await planWork(prompt);
+    plan = await planWork(prompt, viewer.id);
     plan.changes = groundedReplyChanges(plan.changes, newestReply);
     if (plan.missing.includes("shipping_address")) delete plan.changes.shippingAddress;
     if (plan.missing.includes("billing_address")) delete plan.changes.address;

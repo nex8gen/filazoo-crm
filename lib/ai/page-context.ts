@@ -15,7 +15,10 @@ export const assistantPageContextSchema = z.object({
 
 /** Keep request context and conversation identity tied to the same visible record. */
 export function readAssistantPageContext(main: ParentNode | null) {
-  const value = (attribute: string) => main?.querySelector(`[${attribute}]`)?.getAttribute(attribute) || undefined;
+  // Next.js Activity and kept-mounted tabs retain hidden records in the DOM.
+  // Only the visible record may determine a request's context and saved history.
+  const value = (attribute: string) => Array.from(main?.querySelectorAll<HTMLElement>(`[${attribute}]`) ?? [])
+    .find((element) => element.checkVisibility({ checkVisibilityCSS: true }))?.getAttribute(attribute) || undefined;
   let flowDraft: unknown;
   const encoded = value("data-ai-flow-draft");
   if (encoded && encoded.length <= 60_000) {

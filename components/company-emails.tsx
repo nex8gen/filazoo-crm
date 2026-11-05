@@ -2,7 +2,6 @@ import { EmailInboxWorkspace } from "@/components/email-inbox";
 import { getCompanyEmailBackendData } from "@/lib/data/company-emails";
 import { filterCompanyEmails, type CompanyEmailScope } from "@/lib/company-email";
 import { listCatalogs, listProducts } from "@/lib/data/crm";
-import { b2bProducts } from "@/lib/data/b2b-products";
 import { canCreateInvoices } from "@/lib/invoice-permissions";
 
 export async function CompanyEmails({ company, viewer, composeTo }: { company: CompanyEmailScope; viewer: { id: string; role: string }; composeTo?: string }) {
@@ -33,7 +32,7 @@ export async function CompanyEmails({ company, viewer, composeTo }: { company: C
       companyScope={company}
       canCreateInvoices={canCreateInvoices(viewer.role)}
       invoiceViewer={viewer}
-      products={productResult.products.length ? productResult.products : b2bProducts}
+      products={productResult.products}
       catalogs={catalogResult.catalogs}
     />
   </div>;

@@ -2,8 +2,12 @@ import { z } from "zod";
 import { portalError, portalHeaders, portalSession, PortalError } from "@/lib/data/customer-portal";
 import { renderInvoicePdf } from "@/lib/invoice-pdf";
 import { invoicePdfFilename } from "@/lib/invoice-pdf-meta";
+import { withCustomerWorkspace } from "@/lib/data/customer-workspace";
 export const maxDuration = 60;
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
+  return withCustomerWorkspace(_request, () => downloadInvoice(context));
+}
+async function downloadInvoice(context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
     if (!z.uuid().safeParse(id).success) throw new PortalError("Invalid invoice.");

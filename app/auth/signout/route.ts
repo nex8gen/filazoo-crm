@@ -1,8 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { workspaceCookie } from "@/lib/workspaces";
 
 export async function POST(request: NextRequest) {
+  if (request.headers.get("origin") !== new URL(request.url).origin) return NextResponse.json({ error: "Invalid request origin." }, { status: 403 });
   try {
     const supabase = await createClient();
     const { data } = await supabase.auth.getClaims();
@@ -11,5 +13,7 @@ export async function POST(request: NextRequest) {
     // Redirect even if the integration was removed after the session began.
   }
   revalidatePath("/", "layout");
-  return NextResponse.redirect(new URL("/login", request.url), 303);
+  const response = NextResponse.redirect(new URL("/login", request.url), 303);
+  response.cookies.delete(workspaceCookie);
+  return response;
 }

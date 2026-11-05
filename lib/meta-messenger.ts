@@ -4,6 +4,7 @@ import { env, hasSupabaseConfig } from "./env.ts";
 import { createSupabaseAdmin } from "./supabase/admin.ts";
 import { claimNextBdSalesManager } from "./lead-assignment.ts";
 import { twilioClient } from "./twilio-messaging.ts";
+import { hasLegacyIntegrations } from "./data/workspace-runtime.ts";
 
 const graphApiVersion = env.META_GRAPH_API_VERSION;
 type UnknownRecord = Record<string, unknown>;
@@ -354,6 +355,7 @@ export async function saveMetaLead(event: FacebookLeadEvent) {
 }
 
 export async function sendMetaTextMessage({ to, text, channel = "facebook" }: { to: string; text: string; channel?: MetaChannel }) {
+  if (!await hasLegacyIntegrations()) return { ok: false as const, error: "Connect this workspace's messaging channel before sending messages." };
   const from = channel === "whatsapp" ? env.TWILIO_WHATSAPP_FROM : channel === "facebook" ? env.TWILIO_FACEBOOK_FROM : undefined;
   if (channel === "whatsapp" || from) {
     if (!from || !env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN) return { ok: false as const, error: "Twilio sender is not configured." };
@@ -417,6 +419,7 @@ export async function sendMetaTextMessage({ to, text, channel = "facebook" }: { 
 }
 
 async function getMetaConnectionStatus(): Promise<MetaConnectionStatus> {
+  if (!await hasLegacyIntegrations()) return { configured: false, pageId: null, pageName: null, graphApiVersion, callbackUrl: "", missing: [], error: "Messaging is not connected for this workspace.", facebookConfigured: false, whatsappConfigured: false, whatsappSender: null, whatsappSandbox: false, instagramConfigured: false, instagramAccountId: null, instagramName: null };
   const required = {
     META_WEBHOOK_SECRET: env.META_WEBHOOK_SECRET,
     META_VERIFY_TOKEN: env.META_VERIFY_TOKEN,

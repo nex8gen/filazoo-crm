@@ -34,10 +34,13 @@ export async function updateSession(request: NextRequest) {
   const publicPaths = [
     "/workflow/qa",
     "/login",
+    "/signup",
+    "/signup/verify",
     "/forgot-password",
     "/accept-invitation",
     "/update-password",
     "/privacy",
+    "/terms",
     "/data-deletion",
     "/api/health",
     // These handlers validate their own signed token / cron bearer secret.
@@ -53,9 +56,9 @@ export async function updateSession(request: NextRequest) {
     "/api/shopify/webhook",
     "/api/shopify/form-lead",
   ];
-  const isPublic = publicPaths.includes(request.nextUrl.pathname) || request.nextUrl.pathname.startsWith("/auth/");
-  if (process.env.AUTH_REQUIRED === "true" && !data?.claims && !isPublic) {
-    if (request.nextUrl.pathname.startsWith("/api/catalogs/")) {
+  const isPublic = publicPaths.includes(request.nextUrl.pathname) || request.nextUrl.pathname.startsWith("/auth/") || request.nextUrl.pathname.startsWith("/join/");
+  if (!data?.claims && !isPublic) {
+    if (request.nextUrl.pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "Sign in with an active workspace account." }, { status: 401, headers: { "Cache-Control": "private, no-store" } });
     }
     const invoiceQr = /^\/invoices\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/?$/i.exec(request.nextUrl.pathname);
@@ -73,5 +76,7 @@ export async function updateSession(request: NextRequest) {
     response.cookies.getAll().forEach(cookie => redirect.cookies.set(cookie));
     return redirect;
   }
+  response.headers?.set("Cache-Control", "private, no-store");
+  if (request.nextUrl.pathname.startsWith("/join/")) response.headers?.set("Referrer-Policy", "no-referrer");
   return response;
 }

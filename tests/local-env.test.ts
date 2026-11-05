@@ -26,6 +26,6 @@ test("workspace authorization reports server lookup failures instead of denying 
   const auth = readFileSync(new URL("../lib/auth.ts", import.meta.url), "utf8");
 
   assert.match(auth, /Supabase server authentication is not configured/);
-  assert.match(auth, /Workspace membership lookup failed/);
+  assert.match(auth, /Workspace session lookup failed/);
   assert.doesNotMatch(auth, /if \(error \|\| !data\?\.activated_at\) return null/);
 });

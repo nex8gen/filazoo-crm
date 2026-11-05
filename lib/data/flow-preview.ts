@@ -28,7 +28,9 @@ export async function previewFlow(input: FlowPreviewInput, userId: string, isAdm
   else {
     const { data: saved } = await admin.from("flows").select("id,user_id").eq("id", input.flowId).maybeSingle().throwOnError();
     if (!saved || (!isAdmin && saved.user_id !== userId)) throw new Error("You cannot inspect this workflow's entry history.");
-    let query = admin.from("flow_runs").select("id").eq("flow_id", input.flowId).eq("contact_id", customer.id);
+    let query = admin.from("flow_runs").select("id").eq("flow_id", input.flowId);
+    query = flow.triggerType === "company_segment_changed" && (flow.triggerConfig.savedSegmentId || flow.triggerConfig.segmentAudience)
+      ? query.eq("company_id", customer.company_id) : query.eq("contact_id", customer.id);
     if (mode === "after_period") {
       const duration = Number(flow.triggerConfig.reentryAfterAmount || 1) * (flow.triggerConfig.reentryAfterUnit === "hours" ? 3_600_000 : 86_400_000);
       query = query.gt("started_at", new Date(Date.now() - duration).toISOString());

@@ -49,7 +49,10 @@ test("cron worker rejects missing or wrong bearer secrets before touching invent
   const source = ts.transpileModule(readFileSync(new URL("../app/api/cron/inventory/route.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   for (const [secret, authorization] of [[undefined, "Bearer undefined"], ["correct", "Bearer wrong"]]) {
     const exports: Record<string, unknown> = {};
-    vm.runInNewContext(source, { exports, Buffer, Response, process: { env: { CRON_SECRET: secret } }, require: (name: string) => {
+    vm.runInNewContext(source, { exports, Buffer, Response, URL, process: { env: { CRON_SECRET: secret } }, require: (name: string) => {
+      if (name === "@/lib/workspace-context") return { withWorkspaceContext: (_id: string, run: () => Promise<unknown>) => run() };
+      if (name === "@/lib/workspaces") return { workspaceIdSchema: { safeParse: () => ({ success: false }) } };
+      if (name === "@/lib/data/workspace-runtime") return { forEachWorkspace: () => { throw new Error("Must not load workspaces before authorization"); } };
       if (name === "node:crypto") return { timingSafeEqual: () => false };
       if (name === "@/lib/data/inventory") return { syncErpInventory: () => { throw new Error("Must not run"); } };
       if (name === "@/lib/data/erp-settings") return { erpWorkerAuthorized: async () => false, configuredErp: () => { throw new Error("Must not read config"); } };

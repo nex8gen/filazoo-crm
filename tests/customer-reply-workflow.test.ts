@@ -169,7 +169,7 @@ test("the cron bypasses staff session redirects but still requires its own beare
   let calls = 0;
   const routeExports: { GET?: (request: Request) => Promise<Response> } = {};
   const route = ts.transpileModule(readFileSync(new URL("../app/api/cron/customer-replies/route.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(route, { exports: routeExports, require: () => ({ withMailboxSyncSessions: async (run: () => Promise<unknown>) => run(), processCustomerReplies: async () => { calls++; return { checked: 1 }; }, processTaskWorkflows: async () => ({ prepared: 1, failed: 0 }) }), process: { env: { CRON_SECRET: "fixture-secret" } }, Response, Request, URL });
+  vm.runInNewContext(route, { exports: routeExports, require: () => ({ forEachWorkspace: async (run: (id: string, count: number) => Promise<unknown>) => [await run("test-workspace", 1)], withMailboxSyncSessions: async (run: () => Promise<unknown>) => run(), processCustomerReplies: async () => { calls++; return { checked: 1 }; }, processTaskWorkflows: async () => ({ prepared: 1, failed: 0 }) }), process: { env: { CRON_SECRET: "fixture-secret" } }, Response, Request, URL });
   for (const authorization of [undefined, "Bearer wrong"]) assert.equal((await routeExports.GET!(new Request("https://crm.example/api/cron/customer-replies", { headers: authorization ? { authorization } : {} }))).status, 401);
   const health = await routeExports.GET!(new Request("https://crm.example/api/cron/customer-replies?task=health", { headers: { authorization: "Bearer fixture-secret" } }));
   assert.equal((await health.json()).version, "customer-replies-v1"); assert.equal(calls, 0);

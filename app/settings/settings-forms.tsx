@@ -42,8 +42,8 @@ export function InviteMemberForm() {
       <div className="space-y-2"><Label htmlFor="inviteName">Name</Label><Input id="inviteName" name="displayName" autoComplete="off" required /></div>
       <div className="space-y-2"><Label htmlFor="inviteEmail">Email</Label><Input id="inviteEmail" name="email" type="email" autoComplete="off" required /></div>
       <div className="space-y-2"><Label htmlFor="inviteRole">Role</Label><Select name="role" defaultValue="bd_manager"><SelectTrigger id="inviteRole"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="admin">Admin</SelectItem><SelectItem value="operator">Operator</SelectItem><SelectItem value="bd_manager">BD Sales Manager</SelectItem><SelectItem value="viewer">Viewer</SelectItem></SelectContent></Select><p className="text-xs text-muted-foreground">BD Sales Managers join the automatic round-robin lead pool.</p></div>
-      <div className="flex items-end"><Button type="submit" disabled={pending}><Send />{pending ? "Sending..." : "Send invitation"}</Button></div>
-      <div className="md:col-span-2"><FormMessage error={state?.error} success={state?.success} /></div>
+      <div className="flex items-end"><Button type="submit" disabled={pending}><Send />{pending ? "Creating…" : "Invite member"}</Button></div>
+      <div className="space-y-3 md:col-span-2"><FormMessage error={state?.error} success={state?.success} />{state?.invitationUrl ? <div className="space-y-2"><Label htmlFor="invitation-link">Secure invitation link</Label><Input id="invitation-link" readOnly value={state.invitationUrl} onFocus={event => event.target.select()} /><Button type="button" variant="outline" size="sm" onClick={() => navigator.clipboard.writeText(state.invitationUrl!)}>Copy link</Button></div> : null}</div>
     </form>
   );
 }

@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { env, hasSupabaseAuthConfig, hasSupabaseConfig } from "./env.ts";
-import { createSupabaseAdmin } from "./supabase/admin.ts";
+import { createSupabaseControl } from "./supabase/control.ts";
+import { workspaceCookie, workspaceIdSchema } from "./workspaces.ts";
 import { createClient } from "./supabase/server.ts";
 import { isAvatarPreset, type AvatarPreset } from "./profile-avatar.ts";
 import { readUserPreferences, type UserPreferences } from "./user-preferences.ts";
@@ -17,9 +18,9 @@ async function getConnection() {
 
 export type AuthViewer = { id: string; email: string | null; avatarPath?: string; avatarPreset?: AvatarPreset; preferences?: UserPreferences };
 export type WorkspaceRole = "admin" | "operator" | "bd_manager" | "viewer";
-export type WorkspaceViewer = AuthViewer & { role: WorkspaceRole; displayName: string | null };
+export type WorkspaceViewer = AuthViewer & { role: WorkspaceRole; displayName: string | null; workspaceId: string; workspaceName: string; ownerId: string };
 
-type MemberRow = { role: string | null; display_name: string | null; activated_at: string | null };
+type MemberRow = { role: string | null; display_name: string | null; activated_at: string | null; workspace_id: string | null; workspace_name: string | null; owner_id: string | null };
 type SessionRow = MemberRow & { id: string; email: string | null; user_metadata: Record<string, unknown> | null };
 type AuthSnapshot = { viewer: AuthViewer; member: WorkspaceViewer | null };
 const workspaceRoles = new Set<string>(["admin", "operator", "bd_manager", "viewer"]);
@@ -37,21 +38,8 @@ function toViewer(user: { id: string; email?: string | null; user_metadata?: Rec
 }
 
 function toMember(viewer: AuthViewer, row: MemberRow | null): WorkspaceViewer | null {
-  if (!row?.activated_at || !row.role || !workspaceRoles.has(row.role)) return null;
-  return { ...viewer, role: row.role as WorkspaceRole, displayName: row.display_name };
-}
-
-// Only for environments where the additive database migration is not installed.
-// Authentication errors or a revoked/blocked session never take this fallback.
-async function legacySnapshot(supabase: Awaited<ReturnType<typeof createClient>>): Promise<AuthSnapshot | null> {
-  const { data, error } = await supabase.auth.getUser();
-  if (error || !data.user) return null;
-  const viewer = toViewer(data.user);
-  if (!hasSupabaseConfig()) return { viewer, member: null };
-  const member = await createSupabaseAdmin().from("workspace_members")
-    .select("role,display_name,activated_at").eq("user_id", viewer.id).maybeSingle();
-  if (member.error) throw new Error(`Workspace membership lookup failed: ${member.error.message}`);
-  return { viewer, member: toMember(viewer, member.data) };
+  if (!row?.activated_at || !row.role || !workspaceRoles.has(row.role) || !row.workspace_id || !row.owner_id) return null;
+  return { ...viewer, role: row.role as WorkspaceRole, displayName: row.display_name, workspaceId: row.workspace_id, workspaceName: row.workspace_name || "Workspace", ownerId: row.owner_id };
 }
 
 const getAuthSnapshot = cache(async (): Promise<AuthSnapshot | null> => {
@@ -61,7 +49,7 @@ const getAuthSnapshot = cache(async (): Promise<AuthSnapshot | null> => {
   const connection = await getConnection();
   if (connection) await connection();
   const supabase = await createClient();
-  if (!hasSupabaseConfig()) return legacySnapshot(supabase);
+  assertWorkspaceConfig();
   // The SDK verifies signature and expiry using cached public signing keys.
   // Never trust decoded cookies, JWT user_metadata, or client-provided roles.
   const { data, error } = await supabase.auth.getClaims();
@@ -72,14 +60,25 @@ const getAuthSnapshot = cache(async (): Promise<AuthSnapshot | null> => {
   // One fresh database snapshot checks session ownership/revocation, banned or
   // deleted users, profile metadata, and current membership. It is never put in
   // a shared cache; React.cache only deduplicates a single Server Component render.
-  const result = await createSupabaseAdmin().rpc("read_crm_session", {
-    p_user_id: claims.sub, p_session_id: claims.session_id,
+  const { cookies } = await import("next/headers");
+  const selected = workspaceIdSchema.safeParse((await cookies()).get(workspaceCookie)?.value);
+  const result = await createSupabaseControl().rpc("read_workspace_session", {
+    p_user_id: claims.sub, p_session_id: claims.session_id, p_workspace_id: selected.success ? selected.data : null,
   }).maybeSingle();
-  if (result.error) {
-    if (result.error.code === "PGRST202" || result.error.code === "42883") return legacySnapshot(supabase);
-    throw new Error(`Workspace session lookup failed: ${result.error.message}`);
+  let sessionData: unknown = result.data;
+  let sessionError = result.error;
+  if (result.error?.code === "PGRST202" || result.error?.code === "42883") {
+    // Rolling upgrades keep the existing, live-session-validated single workspace usable.
+    // This reader never authorizes a new tenant or trusts JWT metadata for membership.
+    const legacy = await createSupabaseControl().rpc("read_crm_session", { p_user_id: claims.sub, p_session_id: claims.session_id }).maybeSingle();
+    const legacyRow = legacy.data as Omit<SessionRow,"workspace_id"|"workspace_name"|"owner_id"> | null;
+    sessionData = legacyRow ? { ...legacyRow, workspace_id: "legacy", workspace_name: "Filazoo", owner_id: legacyRow.role === "admin" ? legacyRow.id : "legacy" } : null;
+    sessionError = legacy.error;
   }
-  const row = result.data as SessionRow | null;
+  if (sessionError) {
+    throw new Error(`Workspace session lookup failed: ${sessionError.message}`);
+  }
+  const row = sessionData as SessionRow | null;
   if (!row || row.id !== claims.sub) return null;
   const viewer = toViewer(row);
   return { viewer, member: toMember(viewer, row) };
@@ -121,7 +120,7 @@ export async function requireWorkspaceMember(allowedRoles?: readonly WorkspaceRo
   const member = snapshot.member;
   if (!member) {
     const redirect = await getRedirect();
-    redirect("/access-denied");
+    redirect("/workspaces");
     throw new Error("Access denied.");
   }
   if (allowedRoles && !allowedRoles.includes(member.role)) {

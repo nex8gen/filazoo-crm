@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { getWorkspaceViewer } from "@/lib/auth";
+import { withWorkspaceViewer } from "@/lib/workspace-context";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { conversationPatchSchema } from "@/lib/ai/chat-history";
 import { ownedConversation, conversationMessages, conversationActions, presentConversation, HistoryError } from "@/lib/ai/chat-history-server";
@@ -9,8 +10,11 @@ type Context = { params: Promise<{ id: string }> };
 async function handle(request: Request, context: Context, method: "GET" | "PATCH" | "DELETE") {
   const origin = request.headers.get("origin");
   if (method !== "GET" && origin && origin !== new URL(request.url).origin) return Response.json({ error: "Invalid request origin." }, { status: 403, headers });
-  const viewer = await getWorkspaceViewer();
+  let viewer;
+  try { viewer = await getWorkspaceViewer(); }
+  catch { return Response.json({ error: "Unable to verify your workspace session. Please retry." }, { status: 503, headers }); }
   if (!viewer) return Response.json({ error: "Sign in to view saved conversations." }, { status: 401, headers });
+  return withWorkspaceViewer(viewer, async () => {
   const { id } = await context.params;
   if (!z.uuid().safeParse(id).success) return Response.json({ error: "Invalid conversation." }, { status: 400, headers });
   try {
@@ -40,6 +44,7 @@ async function handle(request: Request, context: Context, method: "GET" | "PATCH
     if (!data) throw new HistoryError("Wait for the current request to finish before deleting history.");
     return Response.json({ success: true }, { headers });
   } catch (error) { return Response.json({ error: error instanceof HistoryError ? error.message : "Saved conversation is unavailable." }, { status: error instanceof HistoryError ? error.status : 403, headers }); }
+  });
 }
 export const GET = (request: Request, context: Context) => handle(request, context, "GET");
 export const PATCH = (request: Request, context: Context) => handle(request, context, "PATCH");

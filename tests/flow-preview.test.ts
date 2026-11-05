@@ -69,6 +69,11 @@ test("saved-customer preview resolves company from the database, checks re-entry
   assert.equal(result.checks.find((item) => item.label === "Re-entry criteria")?.passed, false);
   assert.match(result.warnings.join(" "), /unsubscribed/);
   await assert.rejects(service.previewFlow(input, "another-user"), /cannot inspect/);
+  tables.flow_runs = [{ id: "company-entry", flow_id: flowId, company_id: companyId, contact_id: "another-company-contact" }];
+  const segmentInput = preview.flowPreviewSchema.parse({ ...input, flow: { ...input.flow, triggerType: "company_segment_changed",
+    triggerConfig: { segment: "Wholesale", segmentAudience: true, reentryMode: "no_reentry" } } });
+  const segmentResult = await service.previewFlow(segmentInput, "owner") as preview.FlowPreviewResult;
+  assert.equal(segmentResult.checks.find(item => item.label === "Re-entry criteria")?.passed, false, "Segment entry is deduplicated per company, including another representative contact");
   assert.ok(reads.every((name) => ["contacts", "flows", "flow_runs"].includes(name)));
 });
 

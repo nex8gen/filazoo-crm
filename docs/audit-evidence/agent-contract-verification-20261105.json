@@ -1,0 +1,15 @@
+{
+  "date": "2026-11-05",
+  "contractVersion": "2026-11-05.1",
+  "capabilities": 58,
+  "auditedSurfaces": 105,
+  "fullTests": { "passed": 1213, "failed": 0 },
+  "focusedAgentQuotationTests": { "passed": 190, "failed": 0 },
+  "lint": "passed",
+  "typescript": "passed",
+  "productionBuild": "passed; isolated output in tmp/agent-next",
+  "liveSyntheticModelChecks": { "passed": 8, "failed": 0, "evidence": "native-agent-models-20261105.json" },
+  "realCrmMutationsDuringVerification": false,
+  "messagesSentDuringVerification": false,
+  "productionDeployed": false
+}

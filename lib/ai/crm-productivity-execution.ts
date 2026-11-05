@@ -34,6 +34,11 @@ export async function productivityTarget(operation: ProductivityOperation, viewe
     return { name: task.title, value: task, preview: { revision: task.updated_at, task: { title: task.title, notes: task.notes, priority: task.priority, dueAt: task.due_at, status: task.status, ...operation.changes } } };
   }
   if (operation.op === "download_document") {
+    if (operation.kind === "quotation") {
+      const { readQuotation } = await import("../data/quotations");
+      const quotation = await readQuotation(operation.id, viewer);
+      return { name: `Quotation v${quotation.version}`, value: quotation, preview: { documentType: "Quotation PDF", currency: quotation.currency, version: quotation.version, prepared: Boolean(quotation.quote_document) } };
+    }
     if (operation.kind === "invoice") {
       if (!canReadInvoices(viewer.role)) throw new Error("Your role does not have access to billing.");
       const invoice = await getInvoice(operation.id);
@@ -92,7 +97,7 @@ export async function executeProductivityOperation(operation: ProductivityOperat
       return { success: "Your task was updated.", taskId: saved.id, href: "/tasks" };
     }
     case "export_companies": return { success: `CSV export ready for ${preview.count} companies. Open the result to download.`, href: `/api/ai/assistant/download?id=${actionId}` };
-    case "download_document": return { success: "Open the result to download the saved PDF.", href: operation.kind === "invoice" ? `/api/invoices/${operation.id}/pdf` : `/api/catalogs/${operation.id}/pdf?download=1` };
+    case "download_document": return { success: "Open the result to download the saved PDF.", href: operation.kind === "invoice" ? `/api/invoices/${operation.id}/pdf` : operation.kind === "quotation" && preview.prepared ? `/api/catalogs/${operation.id}/quotation/pdf` : `/api/catalogs/${operation.id}/pdf?download=1` };
     case "conversation_auto_reply": {
       if (operation.enabled && preview.alreadyEnabled) return { success: "AI auto-reply is already enabled. Its current review state was preserved.", href: "/email" };
       if (!operation.enabled && !preview.automationId) return { success: "AI auto-reply is already off for this conversation.", href: "/email" };

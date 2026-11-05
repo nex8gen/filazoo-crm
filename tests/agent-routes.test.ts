@@ -15,12 +15,16 @@ import * as research from "../lib/ai/customer-research.ts";
 import * as companyChat from "../lib/ai/company-chat.ts";
 import * as imageInput from "../lib/ai/image-input.ts";
 import * as crmTools from "../lib/ai/crm-tools.ts";
+import * as assistantIntent from "../lib/ai/assistant-intent.ts";
+import * as documentIntent from "../lib/ai/document-intent.ts";
 
 const require = createRequire(import.meta.url);
 class TestHistoryError extends Error { status = 503; }
 // Run the actual route handlers with isolated auth/provider/database boundaries.
 // No test signs in to the real workspace, saves an invoice, or sends an email.
 function route(file: string, dependencies: Record<string, unknown>, env: Record<string, string> = {}, method: "POST" | "GET" = "POST") {
+  env = { AI_AGENT_RUNTIME: "legacy", ...env };
+  dependencies = { "@/lib/ai/assistant-intent": assistantIntent, "./document-intent": documentIntent, ...dependencies };
   const exports: { POST?: (request: Request, context?: { params: Promise<{ id: string }> }) => Promise<Response>; GET?: (request: Request) => Promise<Response> } = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (dependencies[name] ?? (name === "./crm-reply-tools" ? replyTools : name === "./crm-reply-execution" ? { replyOperationTarget: () => { throw new Error("Reply workflows use their dedicated fixtures"); } } : name === "../data/customer-reply-requests" ? { listReplyRequests: async () => [] } : name === "@/lib/ai/invoice-readiness" ? readiness : undefined) ?? (name === "@/lib/ai/chat-session" ? { startChatSession: async () => undefined } : name === "@/lib/ai/chat-history-server" ? { HistoryError: TestHistoryError } : name === "@/lib/ai/chat-history" ? { savedPageContext: (value: unknown) => value ?? {} } : name === "@/lib/ai/crm-tools" ? crmTools : name === "@/lib/ai/crm-records" ? {} : name === "@/lib/i18n" ? i18n : name === "@/lib/ai/customer-research" ? research : name === "@/lib/ai/image-input" ? imageInput : require(name))), Response, Request, URL, AbortSignal, Date, Error, crypto, console, process: { env } });
@@ -32,6 +36,130 @@ const id = "15693adc-0bdf-4617-b214-71b1861764a9";
 const company = { type: "create_company", company: { name: "Acme", country: "US", segment: "Retail" } };
 const request = (body: unknown, origin = "http://localhost:3000") => new Request("http://localhost:3000/api/ai/assistant/action", { method: "POST", headers: { "Content-Type": "application/json", origin }, body: JSON.stringify(body) });
 const decision = { id, decision: "approve", approval: "manual" };
+
+test("Chat hands off the reported Abe invoice request without model analysis or record mutations", async () => {
+  const post = dialogueRoute(async () => { throw new Error("Chat must not analyze an action request"); }, {}, async () => { throw new Error("Chat must not prepare mutations"); });
+  const response = await post(request({ mode: "analyze", pathname: "/email", pageLabel: "Email", pageText: "Abe M", messages: [{ role: "user", content: "can create a invoice for abe m for pla basic 500 qty" }] }));
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.match(body.output, /Switch to Agent/);
+  assert.deepEqual(body.actions, []);
+  assert.doesNotMatch(body.output, /SERVER_DATA|APPROVAL_MODE|Analysis of current state/);
+});
+
+test("Agent repairs unmarked analysis into verified customer/product reads before preparing the Abe invoice", async () => {
+  for (const approvalMode of ["ask", "auto"]) {
+    for (const trailer of ["", "\nFILAZOO_ACTIONS_JSON: []"]) {
+    let generated = 0, prepared = 0;
+    const readResources: string[] = [];
+    const invoice = { type: "create_invoice", companyId: id, items: [{ productSku: "PLA-BASIC", variantId: "black", quantity: 500 }] };
+    const post = route("../app/api/ai/assistant/route.ts", {
+      "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
+      "@/lib/ai/assistant-provider-error": providerError, "@/lib/ai/gemini": {},
+      "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
+      "@/lib/ai/gateway": { generateGatewayText: async ({ prompt }: { prompt: string }) => {
+        assert.equal(prepared, 0);
+        if (++generated === 1) return "Analysis of current state: SERVER_DATA is empty. Please confirm customer, price and currency." + trailer;
+        assert.match(prompt, /SERVER_ACTION_CORRECTION/);
+        if (generated === 2) return 'FILAZOO_CRM_READS_JSON: [{"resource":"companies","query":"Abe M"},{"resource":"products","query":"PLA Basic"}]';
+        assert.match(prompt, /CRM_READ_RESULTS/);
+        assert.match(prompt, /PLA-BASIC/);
+        return `Ready.\nFILAZOO_ACTIONS_JSON: ${JSON.stringify([invoice])}`;
+      } },
+      "@/lib/ai/crm-records": { readCrmRecords: async (_viewer: unknown, lookup: { resource: string }) => {
+        readResources.push(lookup.resource);
+        return { records: lookup.resource === "companies" ? [{ id, name: "Abe M" }] : [{ sku: "PLA-BASIC", name: "PLA Basic", priceMinor: 500, currency: "USD", variants: [{ id: "black", name: "Black" }] }] };
+      } },
+      "@/lib/ai/agent-execution": { prepareAgentActions: async (values: unknown, _viewer: unknown, mode: string) => {
+        prepared++; assert.deepEqual(JSON.parse(JSON.stringify(values)), [invoice]); assert.equal(mode, approvalMode);
+        return [{ id, action: invoice, approvalMode }];
+      } },
+    }, { AI_PROVIDER: "gateway", AI_GATEWAY_API_KEY: "synthetic" });
+    const body = await (await post(request({ mode: "work", approvalMode, pathname: "/email", pageLabel: "Email", pageText: "", messages: [{ role: "user", content: "can create a invoice for abe m for pla basic 500 qty" }] }))).json();
+    assert.equal(generated, 3); assert.equal(prepared, 1);
+    assert.deepEqual(readResources.sort(), ["companies", "products"]);
+    assert.equal(body.actions[0].action.items[0].quantity, 500);
+    assert.doesNotMatch(body.output, /SERVER_DATA|Analysis of current state|Please confirm/);
+    }
+  }
+});
+
+test("repeated unmarked Agent analysis stops safely after one repair without leaking internal text", async () => {
+  let generated = 0;
+  const post = dialogueRoute(async () => { generated++; return "Analysis of current state: SERVER_DATA={} and APPROVAL_MODE=ask"; }, {}, async () => { throw new Error("Must never prepare"); });
+  const body = await (await post(request({ mode: "work", pathname: "/email", pageLabel: "Email", pageText: "", messages: [{ role: "user", content: "Create invoice for Abe M, 500 PLA Basic" }] }))).json();
+  assert.equal(generated, 2);
+  assert.deepEqual(body.actions, []);
+  assert.match(body.output, /No actions were prepared/);
+  assert.doesNotMatch(body.output, /SERVER_DATA|APPROVAL_MODE|Analysis of current state/);
+});
+
+test("Gateway primary overrides Gemini and escalates an invalid agent response before preparing any write", async () => {
+  const calls: Array<{ task: string; complex: boolean; userText: string }> = [];
+  let prepared = 0;
+  const post = route("../app/api/ai/assistant/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
+    "@/lib/ai/gemini": { generateGeminiText: async () => { throw new Error("Gemini must not be used when Gateway is primary"); } },
+    "@/lib/ai/gateway": { generateGatewayText: async (options: { task: string; complex: boolean; userText: string }) => {
+      assert.equal(prepared, 0);
+      calls.push({ task: options.task, complex: options.complex, userText: options.userText });
+      return calls.length === 1 ? "FILAZOO_ACTIONS_JSON: invalid" : `Review.\nFILAZOO_ACTIONS_JSON: ${JSON.stringify([company])}`;
+    } },
+    "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
+    "@/lib/ai/agent-execution": { prepareAgentActions: async () => { prepared++; return []; } },
+  }, { AI_PROVIDER: "gateway", GEMINI_API_KEY: "synthetic", AI_GATEWAY_API_KEY: "synthetic" });
+  const response = await post(request({ mode: "work", pathname: "/companies", pageLabel: "Companies", pageText: "", messages: [{ role: "user", content: "Create company Acme in the US retail segment" }] }));
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].task, "agent");
+  assert.equal(Boolean(calls[0].complex), false);
+  assert.equal(calls[1].complex, true);
+  assert.equal(prepared, 1);
+});
+
+test("routing receives only the latest request while retaining earlier conversation in the model prompt", async () => {
+  const post = route("../app/api/ai/assistant/route.ts", {
+    "@/lib/ai/gemini": {}, "@/lib/ai/assistant-provider-error": providerError,
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
+    "@/lib/ai/gateway": { generateGatewayText: async (options: { userText: string; prompt: string; complex: boolean; standard: boolean }) => {
+      assert.equal(options.userText, "Find customer Acme");
+      assert.match(options.prompt, /Create an invoice/);
+      assert.match(options.prompt, /Find customer Acme/);
+      assert.equal(options.complex, false);
+      assert.equal(options.standard, false);
+      return "Found Acme.\nFILAZOO_ACTIONS_JSON: []";
+    } },
+    "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
+    "@/lib/ai/agent-execution": { prepareAgentActions: async () => [] },
+  }, { AI_PROVIDER: "gateway", AI_GATEWAY_API_KEY: "synthetic" });
+  const response = await post(request({ mode: "work", pathname: "/companies", pageLabel: "Companies", pageText: "", messages: [
+    { role: "user", content: "Create an invoice for a previous customer" },
+    { role: "assistant", content: "Which products?" },
+    { role: "user", content: "Find customer Acme" },
+  ] }));
+  assert.equal(response.status, 200);
+});
+
+test("a second valid lookup raises the minimum tier to Terra without triggering Sol or partial writes", async () => {
+  const calls: Array<{ standard: boolean; complex: boolean }> = [];
+  let prepared = 0;
+  const post = route("../app/api/ai/assistant/route.ts", {
+    "@/lib/ai/gemini": {}, "@/lib/ai/assistant-provider-error": providerError,
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
+    "@/lib/ai/gateway": { generateGatewayText: async (options: { standard: boolean; complex: boolean }) => {
+      assert.equal(prepared, 0);
+      calls.push({ standard: options.standard, complex: options.complex });
+      return calls.length < 3 ? 'FILAZOO_CRM_READ_JSON: {"resource":"products","query":"PLA"}' : "Found products.\nFILAZOO_ACTIONS_JSON: []";
+    } },
+    "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
+    "@/lib/ai/crm-records": { readCrmRecords: async () => ({ records: [], coverage: { included: 0 } }) },
+    "@/lib/ai/agent-execution": { prepareAgentActions: async () => { prepared++; return []; } },
+  }, { AI_PROVIDER: "gateway", AI_GATEWAY_API_KEY: "synthetic" });
+  const response = await post(request({ mode: "work", pathname: "/products", pageLabel: "Products", pageText: "", messages: [{ role: "user", content: "Find PLA products" }] }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [{ standard: false, complex: false }, { standard: false, complex: false }, { standard: true, complex: false }]);
+  assert.equal(prepared, 1);
+});
 
 function dialogueRoute(generate: (options: { prompt: string }) => Promise<string>, context: object = {}, prepare: (values: unknown, viewer: unknown, mode: string, context?: unknown) => Promise<unknown[]> = async () => []) {
   return route("../app/api/ai/assistant/route.ts", {

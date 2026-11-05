@@ -24,6 +24,7 @@ import * as profileFields from "../lib/company-profile-fields.ts";
 import * as segments from "../lib/segments.ts";
 import * as productivity from "../lib/ai/crm-productivity.ts";
 import { personalProductService } from "./helpers/personal-products.ts";
+import * as documentIntent from "../lib/ai/document-intent.ts";
 
 const require = createRequire(import.meta.url);
 const companyId = "a1111111-1111-4111-8111-111111111111";
@@ -34,6 +35,7 @@ const viewer = { id: actorId, role: "admin" as const, displayName: "Sales Manage
 const request = new Request("http://localhost:3000/api/ai/assistant/action");
 
 function moduleUnderTest<T>(file: string, dependencies: Record<string, unknown>): T {
+  dependencies["./document-intent"] = documentIntent;
   dependencies["../customer-tags.ts"] = customerTags;
   const exports = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;

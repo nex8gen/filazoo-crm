@@ -411,7 +411,8 @@ export async function saveShopifyLead(lead: ShopifyLead, webhookId: string, shop
     }
     return { ok: true as const, duplicate: false, companyId: company.id, contactId };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Shopify lead could not be saved.";
+    // PostgREST returns plain error objects, not always Error instances.
+    const message = error instanceof Error ? error.message : asString(asRecord(error)?.message) ?? "Shopify lead could not be saved.";
     await admin.from("shopify_leads").update({ status: "failed", error_message: message }).eq("webhook_id", webhookId);
     return { ok: false as const, error: message };
   }

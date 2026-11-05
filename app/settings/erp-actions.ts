@@ -6,6 +6,7 @@ import { isIP } from "node:net";
 import { requireWorkspaceMember } from "@/lib/auth";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { readErpConnection } from "@/lib/data/erp-settings";
+import { hasLegacyIntegrations } from "@/lib/data/workspace-runtime";
 import { erpSettingsSchema, publicCrmOrigin, settingsConfig } from "@/lib/erp-settings";
 import { lingxingConfig, LingxingError, listLingxingWarehouses, testLingxingConnection } from "@/lib/lingxing";
 
@@ -14,7 +15,7 @@ async function validatedConnection(input: unknown, testing = false) {
   if (!parsed.success) throw new LingxingError(parsed.error.issues[0]?.message || "Check the ERP connection fields.");
   const saved = await readErpConnection();
   let previous = saved ? { appId: saved.app_id, appSecret: saved.app_secret } : null;
-  if (!saved) {
+  if (!saved && await hasLegacyIntegrations()) {
     try { previous = lingxingConfig(); } catch { /* A new secret replaces invalid legacy config. */ }
   }
   try { return { input: parsed.data, config: settingsConfig(parsed.data, previous) }; }

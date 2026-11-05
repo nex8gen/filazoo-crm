@@ -1,7 +1,7 @@
 import "server-only";
 import { cacheLife, cacheTag } from "next/cache.js";
 import { env } from "../env.ts";
-import { createSupabaseAdmin } from "../supabase/admin.ts";
+import { createSupabaseControl } from "../supabase/control.ts";
 import { resolveMemberAvatars as readMemberAvatars } from "./member-avatars.ts";
 
 async function cachedAvatar(projectUrl: string, id: string): Promise<string | undefined> {
@@ -11,7 +11,7 @@ async function cachedAvatar(projectUrl: string, id: string): Promise<string | un
   cacheLife({ stale: 60, revalidate: 300, expire: 3300 });
   cacheTag(`member-avatar:${id}`);
   if (!projectUrl) return undefined;
-  const avatars = await readMemberAvatars(createSupabaseAdmin(), [id]);
+  const avatars = await readMemberAvatars(createSupabaseControl(), [id]);
   const avatar = avatars.get(id);
   if (!avatar) throw new Error("Member avatar unavailable.");
   return avatar;

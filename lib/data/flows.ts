@@ -181,7 +181,7 @@ export async function listFlowMemberOptions(): Promise<FlowMemberOption[]> {
   const admin = createSupabaseAdmin();
   const [{ data: members, error }, { data: users }] = await Promise.all([
     admin.from("workspace_members").select("user_id,display_name").not("activated_at", "is", null).order("display_name"),
-    admin.auth.admin.listUsers({ page: 1, perPage: 200 }),
+    import("./members.ts").then(async ({ listAllAuthUsers }) => ({ data: { users: await listAllAuthUsers() } })),
   ]);
   if (error) throw new Error(`Unable to load workspace members: ${error.message}`);
   const emails = new Map((users?.users ?? []).map((user) => [user.id, user.email ?? ""]));

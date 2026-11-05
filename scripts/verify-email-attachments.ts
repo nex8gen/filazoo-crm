@@ -20,13 +20,15 @@ try {
   assert.ok(email.html);
   assert.doesNotMatch(email.html, /cid:_Foxmail\.1@e92cbb9c/);
   assert.ok(email.attachments?.every((file) => !/=\?utf-8\?/i.test(file.filename)));
-  const { data: member } = await createSupabaseAdmin().from("workspace_members").select("user_id,role,display_name").eq("role", "admin").not("activated_at", "is", null).limit(1).single().throwOnError();
-  const crm = await readCrmReceivedEmail({ id: member.user_id, role: member.role, displayName: member.display_name, email: null }, "bf847df6-a983-4999-a113-b56d947aa87a");
+  const { data: member } = await createSupabaseAdmin().from("workspace_members").select("user_id,role,display_name,workspace_id,workspaces!inner(name,owner_id)").eq("role", "admin").not("activated_at", "is", null).limit(1).single().throwOnError();
+  const workspace = Array.isArray(member.workspaces) ? member.workspaces[0] : member.workspaces;
+  const viewer = { id: member.user_id, role: member.role, displayName: member.display_name, email: null, workspaceId: member.workspace_id, workspaceName: workspace.name, ownerId: workspace.owner_id };
+  const crm = await readCrmReceivedEmail(viewer, "bf847df6-a983-4999-a113-b56d947aa87a");
   assert.ok(crm?.source);
   assert.equal(crm.email.attachments?.length, 16);
   assert.doesNotMatch(crm.email.html!, /received-attachment|mailbox=/);
   assert.ok(crm.email.attachments?.every((file) => file.url?.startsWith("/api/email/crm-attachment?")));
-  const metadata = await readCrmReceivedEmail({ id: member.user_id, role: member.role, displayName: member.display_name, email: null }, "bf847df6-a983-4999-a113-b56d947aa87a", { includeContent: false });
+  const metadata = await readCrmReceivedEmail(viewer, "bf847df6-a983-4999-a113-b56d947aa87a", { includeContent: false });
   assert.ok(metadata?.source);
   assert.equal(metadata.email.attachments.length, 16);
   console.log(JSON.stringify({ htmlAvailable: Boolean(email.html), attachments: email.attachments?.length, genericInlineFiles: email.attachments?.filter((file) => file.cid && file.contentType === "application/octet-stream").length,

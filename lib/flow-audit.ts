@@ -43,7 +43,11 @@ export function auditFlowDefinition(flow: FlowInput): FlowAuditFinding[] {
   const anytime = messages.filter((step) => step.config.sendWindow === "anytime").length;
   findings.push({ id: "send-window", severity: anytime ? "warning" : "pass", label: anytime ? `${anytime} message action${anytime === 1 ? " can" : "s can"} send outside business hours` : "All message actions respect business hours" });
 
-  const replyDecision = actions.some((step) => step.type === "if_condition" && step.config.field === "customer_replied");
+  const hasReplyRule = (value: unknown): boolean => Boolean(value && typeof value === "object" && (Array.isArray(value)
+    ? value.some(hasReplyRule)
+    : Object.entries(value).some(([key, item]) => key === "field" && item === "customer_replied" || key === "rules" && hasReplyRule(item))));
+  const replyDecision = actions.some((step) => step.type === "if_condition" && hasReplyRule(step.config)
+    || step.type === "split" && Array.isArray(step.config.paths) && step.config.paths.some(path => path && typeof path === "object" && !Array.isArray(path) && hasReplyRule(path.condition)));
   findings.push({ id: "journey-exit", severity: messages.length > 1 && !replyDecision ? "warning" : "pass", label: messages.length > 1 && !replyDecision ? "Multi-message journey has no explicit customer-reply decision" : "Journey has an appropriate reply exit" });
 
   const companyUpdate = actions.some((step) => step.type === "update_company");

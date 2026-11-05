@@ -12,6 +12,7 @@ export const flowScenarioSchema = z.object({
   companyStatus: z.string().max(120).nullable().default(null),
   pipelineStage: z.string().max(120).nullable().default(null),
   fitScore: z.number().int().min(0).max(10).nullable().default(null),
+  savedSegmentIds: z.array(z.uuid()).max(200).optional(),
 });
 
 export const flowEmailTestSchema = z.object({
@@ -33,6 +34,7 @@ export type FlowEmailTestInput = z.infer<typeof flowEmailTestSchema>;
 export function flowEmailTestFacts(input: FlowEmailTestInput): FlowFacts {
   const config = input.flow.triggerConfig;
   return input.facts ?? {
+    ...(typeof config.savedSegmentId === "string" ? { savedSegmentIds: [config.savedSegmentId] } : {}),
     customerReplied: false, openedEmail: false, clickedLink: false,
     category: typeof config.category === "string" ? config.category : null,
     segment: typeof config.segment === "string" ? config.segment : null,

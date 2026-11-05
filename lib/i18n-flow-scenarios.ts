@@ -1,4 +1,6 @@
 export const zhCNFlowScenarios: Record<string, string> = {
+  "Look back (days)": "回溯天数",
+  "Checks engagement within this window after workflow entry or the latest workflow email.": "检查进入流程或最近一封流程邮件发出后，在此时间范围内的客户互动。",
   "Choose the workflow owner's personal email or a shared team email for this action.": "为此操作选择工作流所有者的个人邮箱或团队共享邮箱。",
   "Connect this email account or choose another sender before going live.": "启用前请连接此邮箱账户，或选择其他发件人。",
   "Manage email accounts": "管理邮箱账户",

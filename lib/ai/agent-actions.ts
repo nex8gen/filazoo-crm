@@ -7,6 +7,7 @@ import type { InvoicePaymentMethod } from "../invoice-payment-methods.ts";
 import { preparedCrmActionSchema } from "./crm-tools.ts";
 
 export const preparedAgentEmailSchema = agentEmailSchema.extend({
+  quotationSnapshot: z.object({ id: z.uuid(), revision: z.number().int().min(0), fingerprint: z.string().regex(/^[a-f0-9]{64}$/) }).strict().optional(),
   catalogSnapshot: z.object({
     productSkus: z.array(z.string().min(1).max(200)).min(1).max(499),
     fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
@@ -34,11 +35,11 @@ export type AgentActionResult = { success?: string; error?: string; href?: strin
 type AgentInvoiceSelection = Pick<Extract<WorkspaceAction, { type: "update_invoice" }>, "items" | "bankAccountId" | "paymentMethodIds" | "details">;
 
 export class AgentClarificationError extends Error { name = "AgentClarificationError"; }
-export type AgentPlanningContext = { messages: readonly { role: string; content: string }[] };
+export type AgentPlanningContext = { messages: readonly { role: string; content: string }[]; quotationSource?: { companyId: string | null; mailboxId?: string; email: { id: string; direction: string; subject: string; text: string; contentAvailable: boolean; truncated?: boolean } } };
 
 /** An invoice request cannot authorize an extra email invented by the provider. */
 export function groundInvoiceEmailIntent(action: WorkspaceAction, context?: AgentPlanningContext): WorkspaceAction {
-  if (!context || (action.type !== "create_invoice" && action.type !== "update_invoice" && action.type !== "send_invoice") || !action.email) return action;
+  if (!context || (action.type !== "create_invoice" && action.type !== "update_invoice" && action.type !== "send_invoice" && action.type !== "write_email") || !action.email) return action;
   let intent: "draft" | "send" | null = null;
   for (const message of [...context.messages].reverse()) {
     if (message.role !== "user") continue;
@@ -50,6 +51,7 @@ export function groundInvoiceEmailIntent(action: WorkspaceAction, context?: Agen
     if (/\b(?:create|make|prepare|draft|update|change|edit)\b.{0,40}\b(?:invoice|invioce|inovice)\b|(?:创建|准备|更新|修改).*发票/i.test(text)) break;
   }
   if (!intent) {
+    if (action.type === "write_email") return { ...action, email: { ...action.email, delivery: "draft" } };
     if (action.type === "send_invoice") throw new AgentClarificationError("Should I prepare an email draft or send this invoice? Please specify the email action.");
     const { email: _email, ...invoice } = action;
     void _email;

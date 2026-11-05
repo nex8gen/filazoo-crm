@@ -49,6 +49,31 @@ export async function readCrmRecords(viewer: WorkspaceViewer, request: CrmRead) 
   const input = crmReadSchema.parse(request);
   const policy = await requireAiData(...aiReadResources[input.resource]);
   const db = createSupabaseAdmin();
+  if (input.resource === "ai_settings" || input.resource === "email_footer" || input.resource === "scheduled_emails" || input.resource === "email_drafts" || input.resource === "task_workflows" || input.resource === "invoice_portal") {
+    const { featureRecords } = await import("./crm-feature-execution");
+    const records = await featureRecords(viewer, input);
+    if (JSON.stringify(records).length > 60_000) throw new Error("Look up one smaller record at a time.");
+    return { records, coverage: { included: records.length, offset: input.offset, nextOffset: records.length === 10 ? input.offset + 10 : null } };
+  }
+  if (input.resource === "quotations") {
+    if (input.id) {
+      const { quotationDetail } = await import("../data/quotations");
+      const detail = await quotationDetail(input.id, viewer);
+      if (input.companyId && detail.catalog.company_id !== input.companyId) throw new Error("This quotation belongs to a different customer.");
+      return { records: [detail], coverage: { included: 1, offset: 0, nextOffset: null } };
+    }
+    let query = db.from("catalogs").select("id,company_id,currency,version,quote_status,quote_revision,quote_order_id,quote_previous_id,quote_document,created_at", { count: "exact" }).eq("user_id", viewer.id);
+    if (input.companyId) query = query.eq("company_id", input.companyId);
+    if (input.query) {
+      if (!z.uuid().safeParse(input.query).success) throw new Error("Look up quotations by exact ID or companyId.");
+      query = query.eq("id", input.query);
+    }
+    const { data, error, count } = await query.order("created_at", { ascending: false }).range(input.offset, input.offset + 9);
+    if (error) throw new Error("Unable to read your quotations.");
+    const records = data ?? [];
+    if (JSON.stringify(records).length > 60_000) throw new Error("Look up one exact quotation at a time.");
+    return { records, coverage: { matching: count, included: records.length, offset: input.offset, nextOffset: count !== null && count > input.offset + records.length ? input.offset + records.length : null } };
+  }
   if (input.resource === "reply_requests") {
     const all = await listReplyRequests(viewer, { id: input.id, query: input.query, companyId: input.companyId });
     const records = all.slice(input.offset, input.offset + 10);
@@ -106,7 +131,18 @@ export async function readCrmRecords(viewer: WorkspaceViewer, request: CrmRead) 
   }
   if (input.query && !contactSearch) {
     const literal = input.query.replace(/[\\%_]/g, "\\$&");
-    if (input.resource === "invoices") {
+    if (input.resource === "companies") {
+      // A customer may be named by a person (e.g. Abe M), not its company name.
+      // Keep every matching company so the agent can ask about ambiguous names.
+      const contacts = await db.from("contacts").select("company_id", { count: "exact" })
+        .ilike("name", `%${literal}%`).order("company_id").range(0, 500);
+      if (contacts.error || (contacts.count ?? contacts.data?.length ?? 0) > 500) throw new Error("Unable to resolve this contact name. Use a full name, business email or exact company ID.");
+      const ids = [...new Set((contacts.data ?? []).map((contact) => contact.company_id as string))];
+      if (ids.some((id) => !z.uuid().safeParse(id).success)) throw new Error("Unable to resolve this contact's company.");
+      // Raw .or() uses PostgREST syntax: quote the literal search value so
+      // punctuation in a contact name cannot become a separate filter.
+      query = ids.length ? query.or(`name.ilike.${JSON.stringify(`%${literal}%`)},id.in.(${ids.join(",")})`) : query.ilike("name", `%${literal}%`);
+    } else if (input.resource === "invoices") {
       const number = /^(?:INV-)?0*(\d+)$/i.exec(input.query)?.[1];
       if (!number) throw new Error("Look up invoices by invoice number, exact ID, or companyId.");
       query = query.eq("number", Number(number));

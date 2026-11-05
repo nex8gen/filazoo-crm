@@ -106,8 +106,7 @@ export function StreamingText({ text, animate = true, onComplete, onProgress, cl
     return () => window.cancelAnimationFrame(frame);
   }, [text, animate, reducedMotion]);
 
-  return <div data-no-translate className={cn("agent-streaming-text whitespace-pre-wrap break-words text-sm leading-7 text-foreground/90 [overflow-wrap:anywhere]", className)}>
-    <span className="sr-only">{text}</span>
-    <span aria-hidden="true">{finished ? text : characters.slice(0, visibleCount).join("")}{!finished ? <span className="agent-writing-cursor" /> : null}</span>
+  return <div data-no-translate aria-busy={!finished} className={cn("agent-streaming-text whitespace-pre-wrap break-words text-sm leading-7 text-foreground/90 [overflow-wrap:anywhere]", className)}>
+    <span>{finished ? text : characters.slice(0, visibleCount).join("")}{!finished ? <span aria-hidden="true" className="agent-writing-cursor" /> : null}</span>
   </div>;
 }

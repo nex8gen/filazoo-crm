@@ -1,0 +1,255 @@
+{
+  "checkedDate": "2026-11-05",
+  "timezone": "Asia/Shanghai",
+  "syntheticOnly": true,
+  "source": "https://ai-gateway.vercel.sh/v1/models",
+  "costNote": "Base token-rate estimates, not an invoice. Each invocation has a conservative $0.10 quote cap. No CRM records or mail actions executed.",
+  "initialComparison": [
+    {
+      "model": "google/gemini-2.5-flash-lite",
+      "case": "catalog-followup",
+      "status": 200,
+      "elapsedMs": 2249,
+      "passed": false,
+      "estimatedUsd": 0.0009983,
+      "inputTokens": 9331,
+      "outputTokens": 163
+    },
+    {
+      "model": "google/gemini-2.5-flash-lite",
+      "case": "invoice-from-history",
+      "status": 200,
+      "elapsedMs": 2206,
+      "passed": false,
+      "estimatedUsd": 0.0010002,
+      "inputTokens": 9314,
+      "outputTokens": 172
+    },
+    {
+      "model": "google/gemini-2.5-flash-lite",
+      "case": "concise-email",
+      "status": 200,
+      "elapsedMs": 1831,
+      "passed": true,
+      "estimatedUsd": 0.0000793,
+      "inputTokens": 513,
+      "outputTokens": 70
+    },
+    {
+      "model": "google/gemini-3.5-flash-lite",
+      "case": "catalog-followup",
+      "status": 200,
+      "elapsedMs": 5093,
+      "passed": true,
+      "estimatedUsd": 0.0044743,
+      "inputTokens": 9331,
+      "outputTokens": 670
+    },
+    {
+      "model": "google/gemini-3.5-flash-lite",
+      "case": "invoice-from-history",
+      "status": 200,
+      "elapsedMs": 7954,
+      "passed": true,
+      "estimatedUsd": 0.0044842,
+      "inputTokens": 9314,
+      "outputTokens": 676
+    },
+    {
+      "model": "google/gemini-3.5-flash-lite",
+      "case": "concise-email",
+      "status": 200,
+      "elapsedMs": 1206,
+      "passed": true,
+      "estimatedUsd": 0.0003264,
+      "inputTokens": 513,
+      "outputTokens": 69
+    },
+    {
+      "model": "anthropic/claude-haiku-5.5",
+      "case": "catalog-followup",
+      "status": 200,
+      "elapsedMs": 2585,
+      "passed": true,
+      "estimatedUsd": 0.0016369,
+      "inputTokens": 14784,
+      "outputTokens": 317
+    },
+    {
+      "model": "anthropic/claude-haiku-5.5",
+      "case": "invoice-from-history",
+      "status": 200,
+      "elapsedMs": 2312,
+      "passed": false,
+      "estimatedUsd": 0.0015896999999999999,
+      "inputTokens": 14757,
+      "outputTokens": 228
+    },
+    {
+      "model": "anthropic/claude-haiku-5.5",
+      "case": "concise-email",
+      "status": 200,
+      "elapsedMs": 1894,
+      "passed": true,
+      "estimatedUsd": 0.00014439999999999999,
+      "inputTokens": 859,
+      "outputTokens": 117
+    },
+    {
+      "model": "openai/gpt-4.1-mini",
+      "case": "catalog-followup",
+      "status": 200,
+      "elapsedMs": 2871,
+      "passed": true,
+      "estimatedUsd": 0.0038256,
+      "inputTokens": 8876,
+      "outputTokens": 172
+    },
+    {
+      "model": "openai/gpt-4.1-mini",
+      "case": "invoice-from-history",
+      "skipped": "comparison cost cap"
+    },
+    {
+      "model": "openai/gpt-4.1-mini",
+      "case": "concise-email",
+      "status": 200,
+      "elapsedMs": 1821,
+      "passed": true,
+      "estimatedUsd": 0.0002996,
+      "inputTokens": 505,
+      "outputTokens": 61
+    },
+    {
+      "model": "openai/gpt-5-nano",
+      "case": "catalog-followup",
+      "status": 200,
+      "elapsedMs": 3634,
+      "passed": false,
+      "estimatedUsd": 0.00062815,
+      "inputTokens": 8875,
+      "outputTokens": 461
+    },
+    {
+      "model": "openai/gpt-5-nano",
+      "case": "invoice-from-history",
+      "status": 200,
+      "elapsedMs": 3385,
+      "passed": false,
+      "estimatedUsd": 0.0006230999999999999,
+      "inputTokens": 8854,
+      "outputTokens": 451
+    },
+    {
+      "model": "openai/gpt-5-nano",
+      "case": "concise-email",
+      "status": 200,
+      "elapsedMs": 2062,
+      "passed": true,
+      "estimatedUsd": 0.000052,
+      "inputTokens": 504,
+      "outputTokens": 67
+    }
+  ],
+  "selectedRoutes": [
+    {
+      "model": "anthropic/claude-haiku-5.5",
+      "case": "catalog-followup",
+      "status": 200,
+      "elapsedMs": 2351,
+      "passed": true,
+      "estimatedUsd": 0.0016171,
+      "inputTokens": 15151,
+      "outputTokens": 204
+    },
+    {
+      "model": "anthropic/claude-haiku-5.5",
+      "case": "catalog-create",
+      "status": 200,
+      "elapsedMs": 2532,
+      "passed": true,
+      "estimatedUsd": 0.0015765,
+      "inputTokens": 15095,
+      "outputTokens": 134
+    },
+    {
+      "model": "google/gemini-3.5-flash-lite",
+      "case": "invoice-from-history",
+      "status": 200,
+      "elapsedMs": 6025,
+      "passed": true,
+      "estimatedUsd": 0.0049475000000000005,
+      "inputTokens": 9550,
+      "outputTokens": 833
+    },
+    {
+      "model": "google/gemini-3.5-flash-lite",
+      "case": "invoice-protocol-repair",
+      "status": 200,
+      "elapsedMs": 6072,
+      "passed": true,
+      "estimatedUsd": 0.0049361000000000006,
+      "inputTokens": 9612,
+      "outputTokens": 821
+    },
+    {
+      "model": "google/gemini-2.5-flash-lite",
+      "case": "concise-email",
+      "status": 200,
+      "elapsedMs": 908,
+      "passed": true,
+      "estimatedUsd": 0.0000793,
+      "inputTokens": 553,
+      "outputTokens": 60
+    }
+  ],
+  "selectedOutputs": [
+    {
+      "model": "anthropic/claude-haiku-5.5",
+      "case": "catalog-followup",
+      "output": "I'll prepare an email draft to Abe M with the complete current active-product catalog attached.\n\nFILAZOO_ACTIONS_JSON: [{\"type\":\"write_email\",\"email\":{\"to\":\"abe@example.com\",\"subject\":\"Your Filament Catalog\",\"text\":\"Hi Abe,\\n\\nThank you for your inquiry. Please find our latest filament catalog attached.\\n\\nLet us know if you have any questions about the PLA Basic range, including the black option you mentioned.\\n\\nBest regards\",\"delivery\":\"draft\",\"sourceEmailId\":\"synthetic-email\",\"attachCatalog\":true}}]"
+    },
+    {
+      "model": "anthropic/claude-haiku-5.5",
+      "case": "catalog-create",
+      "output": "I'll prepare a private downloadable catalog for Example Print Studio using the saved USD currency and all current active products.\n\nFILAZOO_ACTIONS_JSON: [{\"type\":\"crm_action\",\"operation\":{\"op\":\"create_catalog\",\"companyId\":\"ad9cb9f8-e098-44f0-a078-20eed16ef1bd\",\"currency\":\"USD\",\"productSkus\":[]}}]"
+    },
+    {
+      "model": "google/gemini-3.5-flash-lite",
+      "case": "invoice-from-history",
+      "output": "I have prepared a draft invoice for 500 units of Black PLA Basic for Example Print Studio based on their inquiry.\n\nFILAZOO_ACTIONS_JSON: [{\"type\":\"create_invoice\",\"companyId\":\"ad9cb9f8-e098-44f0-a078-20eed16ef1bd\",\"sourceEmailId\":\"synthetic-email\",\"items\":[{\"productSku\":\"PLA-BASIC\",\"variantId\":\"black\",\"quantity\":500}]}]"
+    },
+    {
+      "model": "google/gemini-3.5-flash-lite",
+      "case": "invoice-protocol-repair",
+      "output": "I have prepared a draft invoice for 500 units of black PLA Basic for Example Print Studio, using their saved details and linking the original email inquiry.\n\nFILAZOO_ACTIONS_JSON:\n[{\"type\":\"create_invoice\",\"companyId\":\"ad9cb9f8-e098-44f0-a078-20eed16ef1bd\",\"items\":[{\"productSku\":\"PLA-BASIC\",\"variantId\":\"black\",\"quantity\":500}],\"sourceEmailId\":\"synthetic-email\"}]"
+    },
+    {
+      "model": "google/gemini-2.5-flash-lite",
+      "case": "concise-email",
+      "output": "Dear Abe,\n\nThank you for your interest in Filazoo. Please find our current filament catalog attached.\n\nWe've noted your interest in 500 pieces of black PLA Basic. Would you like a quote for this quantity?\n\nBest regards,\n\nAlex\nSales Manager\nFilazoo"
+    }
+  ],
+  "databaseChecks": "Reservation/settlement, model allowlist, limits and privileges verified in a rolled-back transaction.",
+  "publicResearchCheck": {
+    "model": "openai/gpt-4.1-mini",
+    "status": 200,
+    "elapsedMs": 3276,
+    "passed": true,
+    "usage": {
+      "input_tokens": 8544,
+      "output_tokens": 43,
+      "total_tokens": 8587,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "output_tokens_details": {
+        "reasoning_tokens": 0
+      }
+    },
+    "output": "Bambu Lab's official website is [bambulab.com](https://bambulab.com/). ([en.wikipedia.org](https://en.wikipedia.org/wiki/Bambu_Lab?utm_source=openai)) ",
+    "syntheticPublicQuery": true
+  },
+  "publicResearchNote": "Providers may omit native citation annotations. Markdown citations are accepted only when their exact URL appears in native search-tool sources. Generated links without retrieved evidence are rejected."
+}

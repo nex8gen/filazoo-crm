@@ -28,9 +28,13 @@ export async function loadAgentContext(input: WorkspaceAssistantInput, viewer: W
     try { return await read(); } catch { contextWarnings.push(`${label} unavailable. Do not infer missing facts; look up required records before acting.`); return fallback; }
   }
   const invoiceMatch = /^\/invoices\/([^/?]+)/.exec(input.pathname)?.[1];
+  const quotationMatch = /^\/company-quotations\/([^/?]+)/.exec(input.pathname)?.[1];
+  let currentQuotation = allowed.billing && allowed.customers && allowed.products && z.uuid().safeParse(quotationMatch).success
+    ? await optional("Selected quotation", async () => (await import("../data/quotations")).quotationDetail(quotationMatch!, viewer), null) : null;
   const companyMatch = /^\/companies\/([^/?]+)/.exec(input.pathname)?.[1];
   const pageInvoiceId = input.pageContext?.invoiceId || (z.uuid().safeParse(invoiceMatch).success ? invoiceMatch : undefined);
   let companyId = input.pageContext?.companyId || (z.uuid().safeParse(companyMatch).success ? companyMatch : undefined);
+  companyId ||= currentQuotation?.catalog.company_id;
   const emailContext = allowed.emails && allowed.customers && input.pageContext?.emailId ? await loadAgentEmails(viewer, input.pageContext.emailId, undefined, input.pageContext.mailboxId) : null;
   const currentConversation = allowed.emails && input.pageContext?.conversationId ? await loadAgentConversation(input.pageContext.conversationId) : null;
   const currentFlow = allowed.flows && allowed.emails && allowed.team && input.pageContext?.flowId ? await loadAgentFlow(input.pageContext.flowId) : null;
@@ -40,6 +44,11 @@ export async function loadAgentContext(input: WorkspaceAssistantInput, viewer: W
     : { data: [], error: null };
   if (history.error) throw new Error("Unable to read previous agent results.");
   const completed = input.completedActionIds.flatMap((id) => (history.data ?? []).filter((row) => row.id === id));
+  const previousQuotationId = completed.filter(row => row.status === "completed").map(row => row.result?.quotationId as string | undefined).filter(Boolean).at(-1);
+  if (!currentQuotation && previousQuotationId && allowed.billing && allowed.customers && allowed.products && !currentConversation && !currentFlow && !input.pageContext?.flowDraft) {
+    const saved = await optional("Previous quotation", async () => (await import("../data/quotations")).quotationDetail(previousQuotationId, viewer), null);
+    if ((!companyId || saved?.catalog.company_id === companyId) && !(emailContext && !companyId)) currentQuotation = saved;
+  }
   const previousInvoiceId = completed.map((row) => row.result?.invoiceId as string | undefined).filter(Boolean).at(-1);
   const invoiceId = pageInvoiceId || (!currentConversation && !currentFlow && !input.pageContext?.flowDraft ? previousInvoiceId : undefined);
   const candidateInvoice = allowed.billing && allowed.customers && invoiceId ? pageInvoiceId ? await getInvoice(invoiceId) : await optional("Previous invoice", () => getInvoice(invoiceId), null) : null;
@@ -89,6 +98,7 @@ export async function loadAgentContext(input: WorkspaceAssistantInput, viewer: W
     emailHistory: emailHistory?.messages.map(presentAgentEmail) ?? [],
     emailCoverage: { included: emailHistory?.messages.length ?? 0, unavailableBodies: emailHistory?.messages.filter((email) => email.bodyLoaded === false).length ?? 0, scope: emailContext ? "selected conversation, up to 12 recent messages plus the selected email" : "up to 12 recent customer messages", maxCharactersPerMessage: 12000 },
     currentInvoice: invoice,
+    currentQuotation,
     invoiceDefaults: bootstrap?.document ?? null,
     billing: bootstrap?.billing ?? null,
     customerChoices: [...new Map([...(customers?.customers ?? []), ...(matchingCustomers?.error ? [] : matchingCustomers?.data ?? [])].map((customer) => [customer.id, customer])).values()],

@@ -32,6 +32,9 @@ export function testFlowScenarios(input: FlowInput, limit = 256, now = new Date(
     if (action.type === "send_email") add("customerReplied", [false, true]);
   }
   const baseline = { ...baseFacts };
+  // Generated scenarios assume the configured segment-entry event. Actual
+  // saved-customer membership is checked by the backend preview instead.
+  if (typeof flow.triggerConfig.savedSegmentId === "string") baseline.savedSegmentIds = [flow.triggerConfig.savedSegmentId];
   for (const key of ["country", "segment", "category", "companyStatus", "pipelineStage"] as const) if (typeof flow.triggerConfig[key] === "string") baseline[key] = flow.triggerConfig[key] as string;
   if (typeof flow.triggerConfig.minFitScore === "number") baseline.fitScore = flow.triggerConfig.minFitScore;
   let combinations: FlowFacts[] = [baseline];

@@ -16,6 +16,7 @@ import { zhCNEmailAutoReply } from "./i18n-email-auto-reply.ts";
 import { zhCNAiHistory } from "./i18n-ai-history.ts";
 import { zhCNTaskActivity } from "./i18n-task-activity.ts";
 import { zhCNPurchaseOrders } from "./i18n-purchase-orders.ts";
+import { zhCNWorkspaces } from "./i18n-workspaces.ts";
 
 import type { AppLanguage } from "./app-language.ts";
 export type { AppLanguage } from "./app-language.ts";
@@ -24,6 +25,15 @@ export { LANGUAGE_STORAGE_KEY } from "./app-language.ts";
 // Product terminology is centralized so sales, catalog, mailbox, and
 // automation screens use consistent professional Chinese wording.
 const zhCN: Record<string, string> = {
+  "Custom": "自定义",
+  "Type to narrow the list.": "输入内容以缩小列表范围。",
+  "Unable to load cities. Enter a city manually or": "无法加载城市。请手动输入城市，或",
+  "Unable to load countries.": "无法加载国家列表。",
+  "AI took too long to respond. Check History for the request status before retrying an action.": "AI 响应超时。重试操作前，请先在历史记录中查看请求状态。",
+  "AI Gateway credits or spending budget are exhausted. An administrator can add credits or review the budget in Vercel.": "AI Gateway 余额或预算已用尽。管理员可在 Vercel 中充值或查看预算。",
+  "AI Gateway needs payment verification or permission to use this model. Check the AI Gateway settings in Vercel.": "AI Gateway 需要完成付款验证或获得模型使用权限。请在 Vercel 中检查 AI Gateway 设置。",
+  "AI is temporarily busy. Please try again shortly.": "AI 暂时繁忙，请稍后重试。",
+  "AI returned an incomplete response. No actions from it were prepared. Please retry with a smaller task.": "AI 返回的内容不完整，未据此准备任何操作。请缩小任务范围后重试。",
   ...zhCNCustomerTags,
   ...zhCNCustomerPortal,
   ...zhCNAnalytics,
@@ -41,7 +51,11 @@ const zhCN: Record<string, string> = {
   "← All products": "← 所有产品",
   "Download saved product PDF": "下载已保存的产品 PDF",
   ...zhCNPurchaseOrders,
+  ...zhCNWorkspaces,
   "Attachment: Filazoo product catalog PDF ·": "附件：Filazoo 产品目录 PDF ·",
+  "Attachment: Filazoo quotation PDF ·": "附件：Filazoo 报价单 PDF ·",
+  "Attachment: saved quotation PDF ·": "附件：已保存的报价单 PDF ·",
+  "· Revision": "· 版本",
   "active products · Current saved prices and photos": "款在售产品 · 包含当前保存的价格和图片",
   "I could not prepare this request correctly. No actions were prepared. Please try again.": "未能正确处理此请求，未创建任何操作。请重试。",
   "The requested actions are ready for review.": "所需操作已准备好，请审核。",

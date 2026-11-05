@@ -1,0 +1,37 @@
+{
+  "date": "2026-11-04",
+  "scope": "Local CRM on port 3000 and shared Supabase budget RPC; no hosted deployment",
+  "routing": {
+    "simple": "openai/gpt-6-luna",
+    "standard": "openai/gpt-6.1-terra",
+    "complex": "openai/gpt-6.1-sol",
+    "requestClassification": "Latest user message; full conversation retained as evidence in the prompt",
+    "secondLookup": "Terra minimum; financial and destructive mutations retain Sol",
+    "invalidAgentProtocol": "One bounded repair on Sol before any proposal is stored"
+  },
+  "validation": {
+    "automatedTests": { "passed": 1153, "failed": 0 },
+    "eslint": "passed",
+    "typescript": "passed",
+    "stableProductionBuild": "passed",
+    "clientBundleBudgets": "passed on all 12 routes",
+    "budgetDatabaseSmokeTest": "passed under service_role; all reservations rolled back",
+    "securityAdvisors": "Only existing informational RLS-without-policy findings; private server-only budget tables retain their browser-role revocations"
+  },
+  "liveSyntheticCheck": {
+    "model": "openai/gpt-6.1-terra",
+    "workload": "Existing email reply planner; exact SKU, black variant and quantity 12; validated draft plan",
+    "maximumReservationUsd": 0.018347,
+    "inputTokens": 625,
+    "outputTokens": 255,
+    "ledgerChargeUsd": 0.002057,
+    "crmActionsExecuted": 0,
+    "emailsSent": 0
+  },
+  "limitations": [
+    "Browser navigation failed in the automation tool; UI-level verification was unavailable",
+    "One synthetic provider case does not establish equal quality on all CRM workflows",
+    "Next.js 16.4.0 reported an existing security advisory during the build; no dependency upgrade was performed",
+    "Allowance amounts and historical usage were preserved"
+  ]
+}

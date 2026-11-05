@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { generateGatewayText, isGeminiRegionError } from "../lib/ai/gateway.ts";
 
-test("uses the Vercel AI Gateway chat completions endpoint", async () => {
+test("uses the cheap writing model through Responses when an unsupported legacy pin requests another model", async () => {
   let requestUrl = "";
   let requestInit: RequestInit | undefined;
   const output = await generateGatewayText({
@@ -13,13 +13,13 @@ test("uses the Vercel AI Gateway chat completions endpoint", async () => {
     fetcher: async (input, init) => {
       requestUrl = String(input);
       requestInit = init;
-      return new Response(JSON.stringify({ choices: [{ message: { content: "Professional reply" } }] }), { status: 200 });
+      return Response.json({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: "Professional reply" }] }] });
     },
   });
 
-  assert.equal(requestUrl, "https://ai-gateway.vercel.sh/v1/chat/completions");
+  assert.equal(requestUrl, "https://ai-gateway.vercel.sh/v1/responses");
   assert.equal(new Headers(requestInit?.headers).get("Authorization"), "Bearer test-oidc-token");
-  assert.equal(JSON.parse(String(requestInit?.body)).model, "alibaba/qwen-3-14b");
+  assert.equal(JSON.parse(String(requestInit?.body)).model, "google/gemini-2.5-flash-lite");
   assert.equal(output, "Professional reply");
 });
 

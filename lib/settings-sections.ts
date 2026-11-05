@@ -1,4 +1,5 @@
 export const settingsSections = [
+  { id: "workspace", title: "Workspace", group: "Workspace", href: "/settings/workspace", icon: "users", description: "Manage workspace details, ownership, and membership.", keywords: "organization company workspace switch owner leave" },
   { id: "general", title: "General", group: "Personal", href: "/settings", icon: "settings", description: "Make your everyday workspace feel right for you.", keywords: "language english chinese rows page list preferences 语言 中文 常规 列表" },
   { id: "appearance", title: "Appearance", group: "Personal", href: "/settings/appearance", icon: "sun", description: "Choose your theme, table spacing, and motion preferences.", keywords: "theme light dark system density compact motion animation accessibility 外观 主题 深色 动画" },
   { id: "profile", title: "Profile", group: "Personal", href: "/settings/profile", icon: "user", description: "Choose how you appear to people in your workspace.", keywords: "avatar photo name account 头像 姓名 个人资料" },

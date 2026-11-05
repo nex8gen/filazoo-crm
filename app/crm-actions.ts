@@ -6,7 +6,6 @@ import { requireWorkspaceMember } from "@/lib/auth";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { variantTag } from "@/lib/product-utils";
 import { enrollMatchingFlows, enrollNewLeadFlows } from "@/lib/data/flow-runtime";
-import { claimNextBdSalesManager } from "@/lib/lead-assignment";
 import { commerceSchema } from "@/lib/company-commerce";
 import { ensureCompanyCatalogPdf } from "@/lib/data/catalog-pdfs";
 import { companyProfileChangesSchema } from "@/lib/company-profile-fields";
@@ -163,9 +162,8 @@ export async function createCompany(_state: CrmActionState, formData: FormData):
     return { error: companyError?.code === "23505" ? "A company with this domain already exists." : "The company could not be created." };
   }
 
-  const assignedOwnerId = await claimNextBdSalesManager(admin);
   const relatedWrites = [
-    admin.from("pipeline").insert({ company_id: company.id, owner_id: assignedOwnerId }),
+    admin.from("pipeline").insert({ company_id: company.id, owner_id: viewer.id }),
     admin.from("events").insert({ company_id: company.id, actor_id: viewer.id, type: "company_created", data: { summary: `${parsed.data.name} was added manually.` } }),
   ];
   if (parsed.data.contactEmail) {

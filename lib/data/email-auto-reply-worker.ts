@@ -86,12 +86,12 @@ async function planReply(row: AutoReplyRow, history: InboxEmailItem[]) {
   });
   // Never silently discard early commitments or product/policy records.
   if (prompt.length > 300_000) throw new Error("The conversation or business context is too large for automatic review. A person must review this reply.");
-  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  const apiKey = process.env.AI_PROVIDER === "gateway" || process.env.AI_BUDGET_ENFORCEMENT === "true" ? undefined : process.env.GEMINI_API_KEY?.trim();
   const token = process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
   const options = { prompt, systemInstruction: autoReplyInstruction + aiBehaviorInstruction(policy, true), maxOutputTokens: 8192 };
   const gateway = () => {
     if (!token) throw new Error("AI auto-reply is not configured.");
-    return generateGatewayText({ ...options, token, model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim() });
+    return generateGatewayText({ usageUserId: row.user_id, ...options, token, model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim(), task: "reply" });
   };
   let output: string;
   try { output = apiKey ? await generateGeminiText({ ...options, apiKey, model: process.env.GEMINI_EMAIL_MODEL?.trim() }) : await gateway(); }
@@ -311,7 +311,7 @@ export async function processEmailAutoReply(id: string) {
   }
 }
 
-export async function processEmailAutoReplies(mailboxId?: string) {
+export async function processEmailAutoReplies(mailboxId?: string, options: { deadline?: number } = {}) {
   const db = createSupabaseAdmin();
   const { error: schemaError } = await db.from("email_auto_replies").select("id").limit(1);
   if (isAutoReplySchemaMissing(schemaError)) return 0;
@@ -329,6 +329,7 @@ export async function processEmailAutoReplies(mailboxId?: string) {
   const startedAt = Date.now();
   let checked = 0;
   for (const row of data ?? []) {
+    if (options.deadline && Date.now() > options.deadline - 120_000) break;
     if (Date.now() - startedAt > 120_000) break;
     try { await processEmailAutoReply(row.id); }
     catch (error) { console.warn("Conversation AI auto-reply check failed:", error instanceof Error ? error.message : "Unknown error"); }

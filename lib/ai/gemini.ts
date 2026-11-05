@@ -38,6 +38,7 @@ export async function generateGeminiText({
   fetcher = fetch,
   onUsage,
 }: GenerateGeminiTextOptions) {
+  if (process.env.AI_BUDGET_ENFORCEMENT === "true") throw Object.assign(new Error("Direct Gemini is disabled while workspace AI spending limits are enabled. Use the configured AI Gateway models."), { name: "AiBudgetError", status: 503 });
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
   const response = await fetcher(endpoint, {
     method: "POST",

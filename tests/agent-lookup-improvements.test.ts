@@ -36,7 +36,8 @@ function fixture() {
     const filters: Array<(row: Row) => boolean> = [];
     const q = { select(value: string) { calls.push({ table, method: "select", value }); return q; }, eq(key: string, value: unknown) { filters.push((row) => row[key] === value); calls.push({ table, method: "eq", key, value }); return q; },
       in(key: string, values: unknown[]) { filters.push((row) => values.includes(row[key])); return q; }, order() { return q; },
-      ilike(key: string, pattern: string) { calls.push({ table, method: "ilike", key, value: pattern }); const wanted = pattern.replace(/\\([\\%_])/g, "$1").toLowerCase(); filters.push((row) => String(row[key]).toLowerCase() === wanted); return q; },
+      ilike(key: string, pattern: string) { calls.push({ table, method: "ilike", key, value: pattern }); const partial = pattern.startsWith("%") && pattern.endsWith("%"); const wanted = (partial ? pattern.slice(1, -1) : pattern).replace(/\\([\\%_])/g, "$1").toLowerCase(); filters.push((row) => partial ? String(row[key] ?? "").toLowerCase().includes(wanted) : String(row[key] ?? "").toLowerCase() === wanted); return q; },
+      or(value: string) { calls.push({ table, method: "or", value }); const match = /^name\.ilike\.("(?:\\.|[^"])*"),id\.in\.\(([^)]*)\)$/.exec(value); if (!match) throw new Error("Invalid lookup filter"); const wanted = (JSON.parse(match[1]) as string).slice(1, -1).replace(/\\([\\%_])/g, "$1").toLowerCase(); const ids = match[2].split(","); filters.push((row) => String(row.name).toLowerCase().includes(wanted) || ids.includes(String(row.id))); return q; },
       range(from: number, to: number) { start = from; end = to; calls.push({ table, method: "range", value: [from, to] }); return q; },
       then(resolve: (value: unknown) => unknown) { const matching = (rows[table] ?? []).filter((row) => filters.every((filter) => filter(row))); return Promise.resolve({ data: matching.slice(start, end + 1), count: matching.length, error: null }).then(resolve); } };
     return q;
@@ -62,6 +63,32 @@ test("email filter wildcard characters stay literal", async () => {
   const result = await f.readCrmRecords(viewer, tools.crmReadSchema.parse({ resource: "companies", query: "buyer%_@example.com" }));
   assert.equal(result.records.length, 1);
   assert.equal(f.calls.find((call) => call.table === "contacts" && call.method === "ilike")?.value, "buyer\\%\\_@example.com");
+});
+
+test("a contact name resolves its saved company and preserves duplicate and company-name matches", async () => {
+  const f = fixture();
+  f.rows.contacts = [{ company_id: companyId, name: "Abe M.", email: "buyer@example.com" }];
+  const lookup = tools.crmReadSchema.parse({ resource: "companies", query: "abe m" });
+  const result = await f.readCrmRecords(viewer, lookup);
+  assert.equal(result.records.length, 1);
+  assert.equal((result.records[0] as { id: string }).id, companyId);
+  f.rows.contacts.push({ company_id: otherId, name: "Abe Miller" });
+  assert.equal((await f.readCrmRecords(viewer, lookup)).records.length, 2);
+  f.rows.contacts.pop();
+  f.rows.companies[1].name = "Abe M Supplies";
+  assert.equal((await f.readCrmRecords(viewer, lookup)).records.length, 2);
+  assert.equal((await f.readCrmRecords(viewer, tools.crmReadSchema.parse({ resource: "companies", query: "missing person" }))).records.length, 0);
+});
+
+test("contact-name lookups keep filter punctuation literal and refuse truncated ambiguous results", async () => {
+  const f = fixture();
+  const name = 'Abe %_,(M)"';
+  f.rows.contacts = [{ company_id: companyId, name }];
+  const lookup = tools.crmReadSchema.parse({ resource: "companies", query: name });
+  assert.equal((await f.readCrmRecords(viewer, lookup)).records.length, 1);
+  assert.equal(f.calls.find((call) => call.table === "contacts" && call.method === "ilike")?.value, '%Abe \\%\\_,(M)"%');
+  f.rows.contacts = Array.from({ length: 501 }, () => ({ company_id: companyId, name }));
+  await assert.rejects(() => f.readCrmRecords(viewer, lookup), /Unable to resolve this contact name/);
 });
 
 test("exact inactive variant SKUs resolve to their real parent and variant ID", async () => {

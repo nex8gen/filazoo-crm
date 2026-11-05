@@ -44,6 +44,7 @@ function setup() {
   let entered: (() => void) | undefined;
   let block = false;
   const dependencies: Record<string, unknown> = {
+    "../workspace-context.ts": { currentWorkspaceContext: () => undefined },
     "node:crypto": { createHash }, "../email-workbench": { emailSendSchema },
     "../supabase/admin": { createSupabaseAdmin: () => db },
     "@/lib/auth": { requireWorkspaceMember: async () => ({ id: "actor", role: "operator" }) },

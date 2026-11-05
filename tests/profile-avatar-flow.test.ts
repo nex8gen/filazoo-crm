@@ -55,6 +55,7 @@ const mocks: Record<string, string> = {
   "@/lib/supabase/admin": `${runtime} export function createSupabaseAdmin() { return admin; }`,
   "next/cache": `${runtime} export function revalidatePath(...args) { state.revalidated.push(args); } export function updateTag(tag) { state.tags.push(tag); }`,
   "next/server": "export async function connection() {}",
+  "next/headers": "export async function cookies() { return {get() { return undefined; }}; }",
 };
 const hooks = registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -62,6 +63,7 @@ const hooks = registerHooks({
     if (context.parentURL?.endsWith("/lib/auth.ts")) {
       if (specifier === "./supabase/server.ts") source = mocks["@/lib/supabase/server"];
       if (specifier === "./supabase/admin.ts") source = mocks["@/lib/supabase/admin"];
+      if (specifier === "./supabase/control.ts") source = `${runtime} export function createSupabaseControl() { return admin; }`;
       if (specifier === "./env.ts") source = "export const env = { NEXT_PUBLIC_SUPABASE_URL: 'https://test.supabase.co' }; export const hasSupabaseAuthConfig = () => true; export const hasSupabaseConfig = () => true;";
     }
     if (source) return { url: `data:text/javascript,${encodeURIComponent(source)}`, shortCircuit: true };

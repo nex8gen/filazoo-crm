@@ -131,7 +131,7 @@ export function CompanyAi({ company }: { company: Company }) {
   return <section aria-label="Customer AI workspace" className="min-w-0">
     <Card className="h-[min(48rem,calc(100dvh-5rem))] min-h-[32rem] min-w-0 gap-0 overflow-clip py-0">
       <CardContent className="flex min-h-0 flex-1 flex-col px-0">
-        <AiHistoryMenu key={history.scope} history={history} disabled={pending || Boolean(animation)} onNew={newChat} />
+        <AiHistoryMenu key={history.scope} history={history} disabled={pending || Boolean(animation)} onNew={newChat} onRetry={() => setError(null)} />
         <div ref={thread} role="log" aria-label="Customer AI conversation" aria-live="polite" aria-relevant="additions" aria-busy={busy} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-6 sm:px-6">
           {!messages.length ? <div className="flex min-h-full flex-col items-center justify-center text-center">
             <span className="mb-5 grid size-14 place-items-center rounded-2xl border border-violet-200/60 bg-violet-50 dark:border-violet-500/20 dark:bg-violet-500/10"><AiIcon className="size-7" /></span>

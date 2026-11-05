@@ -19,7 +19,7 @@ export const productivityOperationSchemas = [
   z.object({ op: z.literal("create_task"), title: text(200), notes: z.string().trim().max(4000).default(""), companyId: z.uuid().optional(), workflow: taskWorkflowInputSchema.optional(), priority: z.enum(["low", "normal", "high"]).default("normal"), dueAt: z.iso.datetime({ offset: true }).nullable().default(null) }).strict().refine(v => !v.workflow || Boolean(v.companyId), "An actionable task needs a company."),
   z.object({ op: z.literal("update_task"), taskId: z.uuid(), changes: taskChangesSchema }).strict(),
   z.object({ op: z.literal("export_companies"), selection: exportSelectionSchema }).strict(),
-  z.object({ op: z.literal("download_document"), kind: z.enum(["invoice", "catalog"]), id: z.uuid() }).strict(),
+  z.object({ op: z.literal("download_document"), kind: z.enum(["invoice", "catalog", "quotation"]), id: z.uuid() }).strict(),
   z.object({ op: z.literal("conversation_auto_reply"), emailId: text(512), mailboxId: z.uuid().optional(), enabled: z.boolean() }).strict(),
   z.object({ op: z.literal("approve_auto_reply_shipping"), automationId: z.uuid(), shippingMinor: z.number().int().min(0).max(100_000_000) }).strict(),
   z.object({ op: z.literal("add_business_fact"), title: text(200), content: text(10000) }).strict(),

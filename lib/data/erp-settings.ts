@@ -2,6 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 import { requireWorkspaceMember } from "../auth.ts";
+import { hasLegacyIntegrations } from "./workspace-runtime.ts";
 import { hasSupabaseConfig } from "../env.ts";
 import { lingxingConfig, type LingxingConfig } from "../lingxing.ts";
 import type { ErpSettingsView } from "../erp-settings.ts";
@@ -20,7 +21,7 @@ export const readErpConnection = cache(async (): Promise<SavedConnection | null>
 
 export async function configuredErp(): Promise<LingxingConfig | null> {
   const saved = await readErpConnection();
-  if (!saved) return lingxingConfig();
+  if (!saved) return await hasLegacyIntegrations() ? lingxingConfig() : null;
   if (!saved.enabled) return null; // A paused saved connection overrides legacy env credentials.
   return lingxingConfig({ LINGXING_APP_ID: saved.app_id, LINGXING_APP_SECRET: saved.app_secret, LINGXING_WAREHOUSE_IDS: saved.warehouse_ids.join(","), LINGXING_SKU_MAP: JSON.stringify(saved.sku_map) });
 }
@@ -34,7 +35,7 @@ export async function getErpSettingsView(): Promise<ErpSettingsView> {
     syncInterval: saved.sync_interval, revision: saved.revision, source: "settings", schedulerError: saved.last_dispatch_error,
   };
   let legacy: LingxingConfig | null = null;
-  try { legacy = lingxingConfig(); } catch { /* Invalid legacy values can be replaced in Settings. */ }
+  try { if (await hasLegacyIntegrations()) legacy = lingxingConfig(); } catch { /* Invalid legacy values can be replaced in Settings. */ }
   return { name: "Lingxing ERP", appId: legacy?.appId ?? "", hasSecret: Boolean(legacy?.appSecret), warehouseIds: legacy?.warehouseIds ?? "",
     mappings: Object.entries(legacy?.skuMap ?? {}).map(([crmSku, erpSku]) => ({ crmSku, erpSku })), enabled: true, syncInterval: 0,
     revision: 0, source: legacy ? "environment" : "none", schedulerError: null };

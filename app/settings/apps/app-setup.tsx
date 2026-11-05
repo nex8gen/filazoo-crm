@@ -4,6 +4,7 @@ import { mailboxAppId } from "@/lib/app-connection-status";
 import { getPersonalAppMailboxes, getTeamAppMailboxes } from "@/lib/data/app-connections";
 import type { EmailConnectionScope } from "@/lib/email-connections";
 import { getErpSettingsView } from "@/lib/data/erp-settings";
+import { hasLegacyIntegrations } from "@/lib/data/workspace-runtime";
 import { getInventoryState } from "@/lib/data/inventory";
 import { listProducts } from "@/lib/data/crm";
 import { env } from "@/lib/env";
@@ -89,9 +90,10 @@ function ManagedChannelSetup({ app }: { app: ConnectionApp }) {
   </CardContent></Card>;
 }
 
-export function AppSetup({ app, scope = "personal" }: { app: ConnectionApp; scope?: EmailConnectionScope }) {
+export async function AppSetup({ app, scope = "personal" }: { app: ConnectionApp; scope?: EmailConnectionScope }) {
   if (app.id === "gmail" || app.id === "outlook" || app.id === "netease-mail") return <EmailAccounts appId={app.id} scope={scope} />;
   if (app.id === "lingxing") return <LingxingSetup />;
+  if (!await hasLegacyIntegrations()) return <UnavailableConnection appName={app.name} description="This channel needs a dedicated connection for your workspace. Your team can connect email and ERP from their settings." />;
   if (app.id === "make" || app.id === "meta-leads") return <MakeSetup />;
   if (["whatsapp", "facebook", "instagram", "shopify"].includes(app.id)) return <ManagedChannelSetup app={app} />;
   return <UnavailableConnection appName={app.name} description={app.details} />;

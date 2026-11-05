@@ -1,0 +1,1087 @@
+{
+  "contractVersion": "2026-11-05.2",
+  "generatedOn": "2026-11-05",
+  "capabilities": [
+    {
+      "name": "create_company",
+      "domain": "customers",
+      "description": "Create a customer company and its contact. Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "create_invoice",
+      "domain": "invoices",
+      "description": "Prepare a draft invoice from actual product/variant quantities and saved prices. This is NOT a quotation. Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "update_invoice",
+      "domain": "invoices",
+      "description": "Patch a saved draft invoice; preserve unrelated details and agreed prices. Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "send_invoice",
+      "domain": "invoices",
+      "description": "Prepare a requested invoice email; delivery:draft prepares a draft, delivery:send sends after approval. Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "update_company",
+      "domain": "customers",
+      "description": "Patch actual customer/contact/billing/shipping fields; unrelated fields persist. Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "add_company_note",
+      "domain": "customers",
+      "description": "Add a note to the customer's activity history. Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "write_email",
+      "domain": "email",
+      "description": "Prepare a short email draft or explicitly requested send. attachCatalog:true attaches the quotation PDF (old catalog name). Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "create_flow",
+      "domain": "workflows",
+      "description": "Create a new automation workflow; do not activate unless requested. Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "create_task",
+      "domain": "tasks",
+      "description": "Create my task Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "update_task",
+      "domain": "tasks",
+      "description": "Update my task Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "export_companies",
+      "domain": "customers",
+      "description": "Export companies to CSV Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "download_document",
+      "domain": "tasks",
+      "description": "Download saved PDF Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "conversation_auto_reply",
+      "domain": "email",
+      "description": "Change conversation auto-reply Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "approve_auto_reply_shipping",
+      "domain": "email",
+      "description": "Approve AI reply shipping Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "add_business_fact",
+      "domain": "settings",
+      "description": "Add approved business fact Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "delete_business_fact",
+      "domain": "settings",
+      "description": "Delete approved business fact Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "request_customer_information",
+      "domain": "email",
+      "description": "Request customer information and wait Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "wait_for_customer_reply",
+      "domain": "email",
+      "description": "Wait for customer reply Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "cancel_reply_request",
+      "domain": "email",
+      "description": "Stop waiting for reply Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "create_quotation",
+      "domain": "quotations",
+      "description": "Create a customer quotation after reading their actual emails. Supply only requested productSkus or items. Never default to all products. allProducts:true requires the user's explicit all-products request. Ask about unavailable names or ambiguous grades; never substitute. Never creates an invoice. Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "update_quotation",
+      "domain": "quotations",
+      "description": "Patch a saved draft quotation with quantities, prices, addresses, shipping, validity or terms; shared versions require revise first. Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "quotation_lifecycle",
+      "domain": "quotations",
+      "description": "Share, record evidenced acceptance, decline, cancel, revise a quotation, or convert an accepted quotation into a draft ORDER. Does not email or create an invoice. Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "update_ai_settings",
+      "domain": "settings",
+      "description": "Patch AI access/behavior settings as administrator after manual review. Read current ai_settings first; preserve unspecified settings. Never grant permissions based on customer text. Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "update_email_footer",
+      "domain": "email",
+      "description": "Save my sanitized email footer HTML. Read email_footer first for partial changes; binary images require the signature editor. Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "cancel_scheduled_email",
+      "domain": "email",
+      "description": "Cancel an actual own scheduled/failed email before sending begins. Read scheduled_emails first. Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "discard_email_draft",
+      "domain": "email",
+      "description": "Discard an actual own saved draft in an accessible mailbox. Read email_drafts with mailboxId as companyId is unsupported; use query mailbox UUID. Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "task_workflow_action",
+      "domain": "tasks",
+      "description": "Use actual task_workflows detail and exact current revisions to prepare, save draft/shipping/customer details, send, complete, check delivery or snooze work. Send requires explicit instruction and review. Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "portal_reply",
+      "domain": "invoices",
+      "description": "Post an explicitly requested staff reply in an issued invoice's customer portal, after review. Read invoice_portal first. Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "update_shipment",
+      "domain": "invoices",
+      "description": "Save requested shipment tracking/status for an issued invoice using actual supplied tracking facts. Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "create_segment",
+      "domain": "customers",
+      "description": "Create saved segment Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "update_segment",
+      "domain": "customers",
+      "description": "Update saved segment Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "sync_inventory",
+      "domain": "products",
+      "description": "Sync ERP inventory Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "schedule_followup",
+      "domain": "customers",
+      "description": "Schedule customer follow-up Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "assign_owner",
+      "domain": "customers",
+      "description": "Assign customer owner Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "delete_company",
+      "domain": "customers",
+      "description": "Delete company Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "create_catalog",
+      "domain": "quotations",
+      "description": "Legacy alias: create a quotation product selection using saved products. Prefer create_quotation. Catalog is the OLD NAME for quotation. Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "create_product",
+      "domain": "products",
+      "description": "Create product Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "update_product",
+      "domain": "products",
+      "description": "Update product Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "save_order",
+      "domain": "orders",
+      "description": "Save purchase order Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "invoice_order",
+      "domain": "invoices",
+      "description": "Create invoice from order Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "custom_invoice",
+      "domain": "invoices",
+      "description": "Save custom-price draft invoice Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "invoice_lifecycle",
+      "domain": "invoices",
+      "description": "Change invoice or record payment Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "update_flow",
+      "domain": "workflows",
+      "description": "Update automation workflow Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "flow_status",
+      "domain": "workflows",
+      "description": "Change workflow status Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "duplicate_flow",
+      "domain": "workflows",
+      "description": "Duplicate workflow Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "delete_flow",
+      "domain": "workflows",
+      "description": "Delete workflow Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "set_email_state",
+      "domain": "email",
+      "description": "Organize email Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "send_message",
+      "domain": "email",
+      "description": "Send customer message Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "draft_message",
+      "domain": "email",
+      "description": "Prepare message draft Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "complete_activity",
+      "domain": "tasks",
+      "description": "Complete task or read notification Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "update_profile",
+      "domain": "settings",
+      "description": "Update my profile Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "invite_member",
+      "domain": "settings",
+      "description": "Invite team member Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "update_member",
+      "domain": "settings",
+      "description": "Update team member Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "delete_member",
+      "domain": "settings",
+      "description": "Remove team member Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "manage_mailbox",
+      "domain": "settings",
+      "description": "Manage mailbox connection Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "save_preferences",
+      "domain": "settings",
+      "description": "Update my preferences Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "invoice_defaults",
+      "domain": "settings",
+      "description": "Update invoice defaults Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "payment_methods",
+      "domain": "settings",
+      "description": "Update payment methods Stages a proposal only; execution is separate."
+    }
+  ],
+  "guidedFeatures": [
+    {
+      "domain": "settings",
+      "name": "Connect mailboxes, OAuth or ERP",
+      "href": "/settings/apps",
+      "reason": "Credentials and account authorization stay in the connection form."
+    },
+    {
+      "domain": "settings",
+      "name": "Password, sessions, avatar, workspace membership and ownership",
+      "href": "/settings",
+      "reason": "Use the account/team security controls for identity or ownership changes and binary uploads."
+    },
+    {
+      "domain": "products",
+      "name": "Upload product images",
+      "href": "/products",
+      "reason": "Select the actual image file in the product editor."
+    },
+    {
+      "domain": "email",
+      "name": "Upload attachments or schedule a new email",
+      "href": "/email",
+      "reason": "Use the composer for file selection and scheduling. Agent can draft the message and cancel an existing scheduled send."
+    },
+    {
+      "domain": "workflows",
+      "name": "Preview/test workflow and send test email",
+      "href": "/flows",
+      "reason": "Use the workflow's test controls to inspect the preview or explicitly send a test."
+    }
+  ],
+  "surfaces": [
+    {
+      "surface": "app/accept-invitation/actions.ts#acceptInvitation",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Identity, workspace or ownership flow uses the authenticated account controls."
+    },
+    {
+      "surface": "app/api/agent/demo/route.ts#POST",
+      "mode": "internal",
+      "tools": [],
+      "explanation": "Agent/history infrastructure, inbound integration, customer-only identity or background worker; not an employee feature to invoke arbitrarily."
+    },
+    {
+      "surface": "app/api/ai/assistant/action/route.ts#POST",
+      "mode": "internal",
+      "tools": [],
+      "explanation": "Agent/history infrastructure, inbound integration, customer-only identity or background worker; not an employee feature to invoke arbitrarily."
+    },
+    {
+      "surface": "app/api/ai/assistant/route.ts#POST",
+      "mode": "internal",
+      "tools": [],
+      "explanation": "Agent/history infrastructure, inbound integration, customer-only identity or background worker; not an employee feature to invoke arbitrarily."
+    },
+    {
+      "surface": "app/api/ai/history/route.ts#POST",
+      "mode": "internal",
+      "tools": [],
+      "explanation": "Agent/history infrastructure, inbound integration, customer-only identity or background worker; not an employee feature to invoke arbitrarily."
+    },
+    {
+      "surface": "app/api/ai/reply-requests/route.ts#PATCH",
+      "mode": "direct",
+      "tools": [
+        "cancel_reply_request"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/api/automation/diagnose/route.ts#POST",
+      "mode": "internal",
+      "tools": [],
+      "explanation": "Agent/history infrastructure, inbound integration, customer-only identity or background worker; not an employee feature to invoke arbitrarily."
+    },
+    {
+      "surface": "app/api/catalogs/[id]/quotation/route.ts#PATCH",
+      "mode": "direct",
+      "tools": [
+        "update_quotation",
+        "quotation_lifecycle"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/api/companies/[id]/chat/route.ts#POST",
+      "mode": "internal",
+      "tools": [],
+      "explanation": "Agent/history infrastructure, inbound integration, customer-only identity or background worker; not an employee feature to invoke arbitrarily."
+    },
+    {
+      "surface": "app/api/customer/invoices/[id]/messages/route.ts#POST",
+      "mode": "internal",
+      "tools": [],
+      "explanation": "Agent/history infrastructure, inbound integration, customer-only identity or background worker; not an employee feature to invoke arbitrarily."
+    },
+    {
+      "surface": "app/api/customer/session/route.ts#DELETE",
+      "mode": "internal",
+      "tools": [],
+      "explanation": "Agent/history infrastructure, inbound integration, customer-only identity or background worker; not an employee feature to invoke arbitrarily."
+    },
+    {
+      "surface": "app/api/customer/session/route.ts#PATCH",
+      "mode": "internal",
+      "tools": [],
+      "explanation": "Agent/history infrastructure, inbound integration, customer-only identity or background worker; not an employee feature to invoke arbitrarily."
+    },
+    {
+      "surface": "app/api/customer/session/route.ts#POST",
+      "mode": "internal",
+      "tools": [],
+      "explanation": "Agent/history infrastructure, inbound integration, customer-only identity or background worker; not an employee feature to invoke arbitrarily."
+    },
+    {
+      "surface": "app/api/email/assist/route.ts#POST",
+      "mode": "internal",
+      "tools": [],
+      "explanation": "Agent/history infrastructure, inbound integration, customer-only identity or background worker; not an employee feature to invoke arbitrarily."
+    },
+    {
+      "surface": "app/api/email/auto-reply/knowledge/route.ts#DELETE",
+      "mode": "direct",
+      "tools": [
+        "add_business_fact",
+        "delete_business_fact"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/api/email/auto-reply/knowledge/route.ts#POST",
+      "mode": "direct",
+      "tools": [
+        "add_business_fact",
+        "delete_business_fact"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/api/email/auto-reply/route.ts#POST",
+      "mode": "direct",
+      "tools": [
+        "conversation_auto_reply",
+        "approve_auto_reply_shipping"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/api/email/automation/route.ts#POST",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Specialized UI test, composition or analysis flow; use its page controls. The agent must provide a handoff and must not claim it executed this feature."
+    },
+    {
+      "surface": "app/api/email/drafts/route.ts#DELETE",
+      "mode": "direct",
+      "tools": [
+        "discard_email_draft"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/api/email/drafts/route.ts#PUT",
+      "mode": "direct",
+      "tools": [
+        "write_email"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/api/email/footer/import-image/route.ts#POST",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Connection credentials, uploads or connection testing use the relevant settings/file form."
+    },
+    {
+      "surface": "app/api/email/footer/route.ts#PUT",
+      "mode": "direct",
+      "tools": [
+        "update_email_footer"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/api/email/reply/route.ts#POST",
+      "mode": "internal",
+      "tools": [],
+      "explanation": "Agent/history infrastructure, inbound integration, customer-only identity or background worker; not an employee feature to invoke arbitrarily."
+    },
+    {
+      "surface": "app/api/email/scheduled/route.ts#DELETE",
+      "mode": "direct",
+      "tools": [
+        "cancel_scheduled_email"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/api/email/state/route.ts#POST",
+      "mode": "direct",
+      "tools": [
+        "set_email_state"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/api/flows/[id]/route.ts#DELETE",
+      "mode": "direct",
+      "tools": [
+        "update_flow",
+        "delete_flow"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/api/flows/[id]/route.ts#PUT",
+      "mode": "direct",
+      "tools": [
+        "update_flow",
+        "delete_flow"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/api/flows/[id]/test/route.ts#POST",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Specialized UI test, composition or analysis flow; use its page controls. The agent must provide a handoff and must not claim it executed this feature."
+    },
+    {
+      "surface": "app/api/flows/activity/route.ts#PATCH",
+      "mode": "direct",
+      "tools": [
+        "complete_activity"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/api/flows/activity/route.ts#POST",
+      "mode": "direct",
+      "tools": [
+        "complete_activity"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/api/flows/bulk/route.ts#POST",
+      "mode": "direct",
+      "tools": [
+        "flow_status",
+        "duplicate_flow",
+        "delete_flow"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/api/flows/preview/route.ts#POST",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Specialized UI test, composition or analysis flow; use its page controls. The agent must provide a handoff and must not claim it executed this feature."
+    },
+    {
+      "surface": "app/api/flows/process/route.ts#POST",
+      "mode": "internal",
+      "tools": [],
+      "explanation": "Agent/history infrastructure, inbound integration, customer-only identity or background worker; not an employee feature to invoke arbitrarily."
+    },
+    {
+      "surface": "app/api/flows/route.ts#POST",
+      "mode": "direct",
+      "tools": [
+        "create_flow"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/api/flows/test-email/route.ts#POST",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Specialized UI test, composition or analysis flow; use its page controls. The agent must provide a handoff and must not claim it executed this feature."
+    },
+    {
+      "surface": "app/api/flows/test-email/send/route.ts#POST",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Specialized UI test, composition or analysis flow; use its page controls. The agent must provide a handoff and must not claim it executed this feature."
+    },
+    {
+      "surface": "app/api/flows/test/route.ts#POST",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Specialized UI test, composition or analysis flow; use its page controls. The agent must provide a handoff and must not claim it executed this feature."
+    },
+    {
+      "surface": "app/api/invoices/[id]/customer/route.ts#POST",
+      "mode": "internal",
+      "tools": [],
+      "explanation": "Agent/history infrastructure, inbound integration, customer-only identity or background worker; not an employee feature to invoke arbitrarily."
+    },
+    {
+      "surface": "app/api/invoices/[id]/portal/route.ts#POST",
+      "mode": "direct",
+      "tools": [
+        "portal_reply",
+        "update_shipment"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/api/invoices/[id]/route.ts#PATCH",
+      "mode": "direct",
+      "tools": [
+        "update_invoice",
+        "invoice_lifecycle"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/api/invoices/billing/route.ts#PUT",
+      "mode": "direct",
+      "tools": [
+        "invoice_defaults",
+        "payment_methods"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/api/invoices/route.ts#POST",
+      "mode": "direct",
+      "tools": [
+        "create_invoice"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/api/meta/lead-bridge/route.ts#POST",
+      "mode": "internal",
+      "tools": [],
+      "explanation": "Agent/history infrastructure, inbound integration, customer-only identity or background worker; not an employee feature to invoke arbitrarily."
+    },
+    {
+      "surface": "app/api/meta/send/route.ts#POST",
+      "mode": "direct",
+      "tools": [
+        "send_message"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/api/meta/webhook/route.ts#POST",
+      "mode": "internal",
+      "tools": [],
+      "explanation": "Agent/history infrastructure, inbound integration, customer-only identity or background worker; not an employee feature to invoke arbitrarily."
+    },
+    {
+      "surface": "app/api/shopify/form-lead/route.ts#POST",
+      "mode": "internal",
+      "tools": [],
+      "explanation": "Agent/history infrastructure, inbound integration, customer-only identity or background worker; not an employee feature to invoke arbitrarily."
+    },
+    {
+      "surface": "app/api/shopify/webhook/route.ts#POST",
+      "mode": "internal",
+      "tools": [],
+      "explanation": "Agent/history infrastructure, inbound integration, customer-only identity or background worker; not an employee feature to invoke arbitrarily."
+    },
+    {
+      "surface": "app/api/tasks/[id]/work/route.ts#POST",
+      "mode": "direct",
+      "tools": [
+        "task_workflow_action"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/api/twilio/webhook/route.ts#POST",
+      "mode": "internal",
+      "tools": [],
+      "explanation": "Agent/history infrastructure, inbound integration, customer-only identity or background worker; not an employee feature to invoke arbitrarily."
+    },
+    {
+      "surface": "app/auth/signout/route.ts#POST",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Identity, workspace or ownership flow uses the authenticated account controls."
+    },
+    {
+      "surface": "app/auth/social-actions.ts#socialSignIn",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Identity, workspace or ownership flow uses the authenticated account controls."
+    },
+    {
+      "surface": "app/company-analysis-actions.ts#createAnalysisFollowup",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Specialized UI test, composition or analysis flow; use its page controls. The agent must provide a handoff and must not claim it executed this feature."
+    },
+    {
+      "surface": "app/company-analysis-actions.ts#loadCompanyAnalysis",
+      "mode": "read",
+      "tools": [],
+      "explanation": "Read-only UI helper; agent uses permission-scoped read_records/search_customer_emails instead."
+    },
+    {
+      "surface": "app/crm-actions.ts#addCompanyComment",
+      "mode": "direct",
+      "tools": [
+        "add_company_note"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/crm-actions.ts#assignPipelineOwner",
+      "mode": "direct",
+      "tools": [
+        "assign_owner"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/crm-actions.ts#bulkUpdateCompanies",
+      "mode": "direct",
+      "tools": [
+        "delete_company"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/crm-actions.ts#createCatalog",
+      "mode": "direct",
+      "tools": [
+        "create_quotation"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/crm-actions.ts#createCompany",
+      "mode": "direct",
+      "tools": [
+        "create_company"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/crm-actions.ts#createEmailDraft",
+      "mode": "direct",
+      "tools": [
+        "write_email"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/crm-actions.ts#createProduct",
+      "mode": "direct",
+      "tools": [
+        "create_product"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/crm-actions.ts#scheduleCompanyFollowup",
+      "mode": "direct",
+      "tools": [
+        "schedule_followup"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/crm-actions.ts#updateCompany",
+      "mode": "direct",
+      "tools": [
+        "update_company"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/crm-actions.ts#updateCompanyFields",
+      "mode": "direct",
+      "tools": [
+        "update_company"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/crm-actions.ts#updateProduct",
+      "mode": "direct",
+      "tools": [
+        "update_product"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/forgot-password/actions.ts#requestPasswordReset",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Identity, workspace or ownership flow uses the authenticated account controls."
+    },
+    {
+      "surface": "app/inventory-actions.ts#syncInventory",
+      "mode": "direct",
+      "tools": [
+        "sync_inventory"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/join/[token]/actions.ts#joinWorkspace",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Identity, workspace or ownership flow uses the authenticated account controls."
+    },
+    {
+      "surface": "app/login/actions.ts#login",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Identity, workspace or ownership flow uses the authenticated account controls."
+    },
+    {
+      "surface": "app/product-image-actions.ts#prepareProductImageUpload",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Connection credentials, uploads or connection testing use the relevant settings/file form."
+    },
+    {
+      "surface": "app/purchase-order-actions.ts#createOrderInvoice",
+      "mode": "direct",
+      "tools": [
+        "invoice_order"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/purchase-order-actions.ts#getPurchaseOrderCatalogAvailability",
+      "mode": "read",
+      "tools": [],
+      "explanation": "Read-only UI helper; agent uses permission-scoped read_records/search_customer_emails instead."
+    },
+    {
+      "surface": "app/purchase-order-actions.ts#getPurchaseOrderProfile",
+      "mode": "read",
+      "tools": [],
+      "explanation": "Read-only UI helper; agent uses permission-scoped read_records/search_customer_emails instead."
+    },
+    {
+      "surface": "app/purchase-order-actions.ts#listCompanyPurchaseOrders",
+      "mode": "read",
+      "tools": [],
+      "explanation": "Read-only UI helper; agent uses permission-scoped read_records/search_customer_emails instead."
+    },
+    {
+      "surface": "app/purchase-order-actions.ts#loadPurchaseOrderProducts",
+      "mode": "read",
+      "tools": [],
+      "explanation": "Read-only UI helper; agent uses permission-scoped read_records/search_customer_emails instead."
+    },
+    {
+      "surface": "app/purchase-order-actions.ts#savePurchaseOrder",
+      "mode": "direct",
+      "tools": [
+        "save_order"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/purchase-order-actions.ts#searchPurchaseOrderProducts",
+      "mode": "read",
+      "tools": [],
+      "explanation": "Read-only UI helper; agent uses permission-scoped read_records/search_customer_emails instead."
+    },
+    {
+      "surface": "app/segment-actions.ts#createSegment",
+      "mode": "direct",
+      "tools": [
+        "create_segment"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/segment-actions.ts#updateSegment",
+      "mode": "direct",
+      "tools": [
+        "update_segment"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/settings/actions.ts#deleteMember",
+      "mode": "direct",
+      "tools": [
+        "delete_member"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/settings/actions.ts#inviteMember",
+      "mode": "direct",
+      "tools": [
+        "invite_member"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/settings/actions.ts#manageMailbox",
+      "mode": "direct",
+      "tools": [
+        "manage_mailbox"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/settings/actions.ts#savePersonalMailbox",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Connection credentials, uploads or connection testing use the relevant settings/file form."
+    },
+    {
+      "surface": "app/settings/actions.ts#saveWorkspaceMailbox",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Connection credentials, uploads or connection testing use the relevant settings/file form."
+    },
+    {
+      "surface": "app/settings/actions.ts#updateMember",
+      "mode": "direct",
+      "tools": [
+        "update_member"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/settings/actions.ts#updateMemberRole",
+      "mode": "direct",
+      "tools": [
+        "update_member"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/settings/actions.ts#updateProfile",
+      "mode": "direct",
+      "tools": [
+        "update_profile"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/settings/ai-settings-actions.ts#updateAiSettings",
+      "mode": "direct",
+      "tools": [
+        "update_ai_settings"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/settings/apps/email-account-actions.ts#setEmailConnectionActive",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Connection credentials, uploads or connection testing use the relevant settings/file form."
+    },
+    {
+      "surface": "app/settings/apps/gmail-actions.ts#saveGmailConnection",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Connection credentials, uploads or connection testing use the relevant settings/file form."
+    },
+    {
+      "surface": "app/settings/apps/netease-actions.ts#saveNeteaseConnection",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Connection credentials, uploads or connection testing use the relevant settings/file form."
+    },
+    {
+      "surface": "app/settings/erp-actions.ts#detectErpServerIp",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Connection credentials, uploads or connection testing use the relevant settings/file form."
+    },
+    {
+      "surface": "app/settings/erp-actions.ts#loadErpWarehouses",
+      "mode": "read",
+      "tools": [],
+      "explanation": "Read-only UI helper; agent uses permission-scoped read_records/search_customer_emails instead."
+    },
+    {
+      "surface": "app/settings/erp-actions.ts#saveErpConnection",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Connection credentials, uploads or connection testing use the relevant settings/file form."
+    },
+    {
+      "surface": "app/settings/erp-actions.ts#testErpConnection",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Connection credentials, uploads or connection testing use the relevant settings/file form."
+    },
+    {
+      "surface": "app/settings/preference-actions.ts#saveUserPreferences",
+      "mode": "direct",
+      "tools": [
+        "save_preferences"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/settings/preference-actions.ts#signOutOtherSessions",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Identity, workspace or ownership flow uses the authenticated account controls."
+    },
+    {
+      "surface": "app/settings/profile-actions.ts#saveProfileAvatar",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Connection credentials, uploads or connection testing use the relevant settings/file form."
+    },
+    {
+      "surface": "app/settings/team-actions.ts#createTeamInvitation",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Identity, workspace or ownership flow uses the authenticated account controls."
+    },
+    {
+      "surface": "app/settings/team-actions.ts#leaveWorkspace",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Identity, workspace or ownership flow uses the authenticated account controls."
+    },
+    {
+      "surface": "app/settings/team-actions.ts#revokeTeamInvitation",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Identity, workspace or ownership flow uses the authenticated account controls."
+    },
+    {
+      "surface": "app/settings/team-actions.ts#transferWorkspaceOwnership",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Identity, workspace or ownership flow uses the authenticated account controls."
+    },
+    {
+      "surface": "app/signup/actions.ts#resendVerification",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Identity, workspace or ownership flow uses the authenticated account controls."
+    },
+    {
+      "surface": "app/signup/actions.ts#signup",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Identity, workspace or ownership flow uses the authenticated account controls."
+    },
+    {
+      "surface": "app/signup/verify/actions.ts#requestVerification",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Identity, workspace or ownership flow uses the authenticated account controls."
+    },
+    {
+      "surface": "app/signup/verify/actions.ts#verifySignupCode",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Identity, workspace or ownership flow uses the authenticated account controls."
+    },
+    {
+      "surface": "app/update-password/actions.ts#updatePassword",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Identity, workspace or ownership flow uses the authenticated account controls."
+    },
+    {
+      "surface": "app/workspaces/actions.ts#createWorkspace",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Identity, workspace or ownership flow uses the authenticated account controls."
+    },
+    {
+      "surface": "app/workspaces/actions.ts#renameWorkspace",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Identity, workspace or ownership flow uses the authenticated account controls."
+    },
+    {
+      "surface": "app/workspaces/actions.ts#switchWorkspace",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Identity, workspace or ownership flow uses the authenticated account controls."
+    }
+  ]
+}

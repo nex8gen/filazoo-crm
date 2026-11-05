@@ -35,6 +35,7 @@ function actions(role: string | null, origin = input.appUrl, databaseError: { co
   const paths: string[] = [];
   const exports: Record<string, unknown> = {};
   const dependencies: Record<string, unknown> = {
+    "@/lib/data/workspace-runtime": { hasLegacyIntegrations: async () => true },
     "next/headers": { headers: async () => new Headers({ origin }) },
     "next/cache": { revalidatePath: (path: string) => paths.push(path) },
     "node:net": { isIP: () => 0 },
@@ -116,6 +117,7 @@ test("the Settings projection never returns a saved secret and pausing overrides
   const exports: Record<string, unknown> = {};
   const source = ts.transpileModule(readFileSync(new URL("../lib/data/erp-settings.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const deps: Record<string, unknown> = {
+    "./workspace-runtime.ts": { hasLegacyIntegrations: async () => true },
     "server-only": {}, "react": { cache: (fn: unknown) => fn },
     "../supabase/admin.ts": { createSupabaseAdmin: () => ({ rpc: async () => ({ error: null, data: { name: "Saved ERP", app_id: input.appId, app_secret: "never-serialize-this-secret", warehouse_ids: ["1"], sku_map: { CRM: "ERP" }, enabled, sync_interval: 15, revision: 2, last_dispatch_error: null } }) }) },
     "../auth.ts": { requireWorkspaceMember: async () => ({ role: "admin" }) },

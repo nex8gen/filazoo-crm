@@ -79,3 +79,11 @@ test("handles fenced valid action protocols and leaves ordinary prose intact", (
   assert.equal(extractWorkspaceActions("Here is a draft:\nHi Webster,\nThanks for reaching out.").output, "Here is a draft:\nHi Webster,\nThanks for reaching out.");
   assert.equal(extractWorkspaceActions("No changes requested.").protocolValid, true);
 });
+
+test("Agent requires a protocol while Chat can still return an ordinary answer", () => {
+  const output = "Analysis of current state: the customer records are missing.";
+  assert.equal(extractWorkspaceActions(output).protocolValid, true);
+  assert.equal(extractWorkspaceActions(output, true).protocolValid, false);
+  assert.doesNotMatch(extractWorkspaceActions(output, true).output, /Analysis of current state/);
+  assert.equal(extractWorkspaceActions("No changes requested.\nFILAZOO_ACTIONS_JSON: []", true).protocolValid, true);
+});

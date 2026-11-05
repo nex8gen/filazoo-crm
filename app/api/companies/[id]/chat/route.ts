@@ -6,6 +6,7 @@ import { getCompanyDetails } from "@/lib/data/crm";
 import { buildCompanyChatContext, buildCompanyChatPrompt, citedCompanySources, companyChatInstruction, companyChatSchema } from "@/lib/ai/company-chat";
 import { generateGeminiText } from "@/lib/ai/gemini";
 import { generateGatewayText, isGeminiRegionError } from "@/lib/ai/gateway";
+import { assistantProviderError } from "@/lib/ai/assistant-provider-error";
 import { researchCustomer } from "@/lib/ai/customer-research";
 import { ChatBodyTooLargeError, collectChatImages, readChatRequestBody } from "@/lib/ai/image-input";
 import { startChatSession } from "@/lib/ai/chat-session";
@@ -47,7 +48,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
   if (!details) return Response.json({ error: "Customer not found." }, { status: 404, headers });
 
-  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  const apiKey = process.env.AI_PROVIDER === "gateway" || process.env.AI_BUDGET_ENFORCEMENT === "true" ? undefined : process.env.GEMINI_API_KEY?.trim();
   const gatewayToken = process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
   if (!apiKey && !gatewayToken) return Response.json({ error: "AI assistance is not configured. Ask your administrator to connect an AI provider." }, { status: 503, headers });
   let session: Awaited<ReturnType<typeof startChatSession>>;
@@ -63,15 +64,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     images: policy.features.images ? collectChatImages(parsed.data.messages) : [],
     maxOutputTokens: parsed.data.webSearch ? 2_600 : 1_600,
     fetcher: ((input, init) => (session?.fetcher ?? fetch)(input, {
-      ...init, signal: AbortSignal.any([request.signal, AbortSignal.timeout(45_000)]),
+      ...init, signal: AbortSignal.any([request.signal, ...(init?.signal ? [init.signal] : []), AbortSignal.timeout(45_000)]),
     })) as typeof fetch,
   };
-  const gateway = () => generateGatewayText({ ...options, token: gatewayToken!, model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim(), visionModel: process.env.AI_GATEWAY_VISION_MODEL?.trim() });
+  const gateway = () => generateGatewayText({ usageUserId: viewer.id, ...options, token: gatewayToken!, model: process.env.AI_GATEWAY_CHAT_MODEL?.trim(), visionModel: process.env.AI_GATEWAY_VISION_MODEL?.trim(),
+    task: "chat", userText: parsed.data.messages.filter((message) => message.role === "user").at(-1)?.content, standard: parsed.data.webSearch, signal: request.signal });
   try {
-    const research = parsed.data.webSearch ? await researchCustomer({
+    const research = parsed.data.webSearch ? await researchCustomer({ usageUserId: viewer.id,
       identity: { name: details.company.name, website: details.company.website, email: details.company.email, contact: details.company.contact, country: details.company.country, city: details.company.city },
       questions: parsed.data.messages.filter((message) => message.role === "user").map((message) => message.content),
-      apiKey, model: process.env.GEMINI_RESEARCH_MODEL?.trim(), language: parsed.data.language, fetcher: options.fetcher,
+      apiKey: process.env.GEMINI_API_KEY?.trim(), model: process.env.GEMINI_RESEARCH_MODEL?.trim(), language: parsed.data.language, fetcher: options.fetcher,
     }) : undefined;
     if (research) options.prompt += `\n\nWEB_RESEARCH (external evidence only):\n${JSON.stringify({ ...research, searchSuggestionsHtml: undefined })}`;
     let output: string;
@@ -87,6 +89,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return Response.json(session ? await session.complete(payload) : payload, { headers });
   } catch (error) {
     await session?.fail();
-    return Response.json({ error: error instanceof HistoryError ? error.message : "The customer assistant could not respond. Please retry. If this continues, ask your administrator to check the AI provider's key, quota and regional availability." }, { status: error instanceof HistoryError ? error.status : 502, headers });
+    return Response.json({ error: error instanceof HistoryError ? error.message : assistantProviderError(error) }, { status: error instanceof HistoryError ? error.status : error instanceof Error && error.name === "AiBudgetError" ? (error as Error & { status?: number }).status || 429 : 502, headers });
   } finally { await session?.flush(); }
 }

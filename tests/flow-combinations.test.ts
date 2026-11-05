@@ -75,6 +75,15 @@ test("scenario coverage finds nested paths, missing values, reply stops and impo
   assert.equal(flowActionLocations(definition.steps).length, report.actionCount);
 });
 
+test("generated saved-segment journeys assume membership and cover both branches", () => {
+  const definition = flow([split([email()], [blankStep("create_task")])]);
+  definition.triggerType = "company_segment_changed";
+  definition.triggerConfig = { segment: "Priority audience", savedSegmentId: "11111111-1111-4111-8111-111111111111", reentryMode: "no_reentry" };
+  const report = testFlowScenarios(definition);
+  assert.equal(report.reachedPaths, report.pathCount);
+  assert.ok(report.cases.every(item => item.enters));
+});
+
 test("every starter validates with fresh identities and generated scenarios cover engagement after waits", () => {
   for (const recipe of flowRecipeOptions) {
     const definition = createFlowRecipe(recipe.id);

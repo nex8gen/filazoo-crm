@@ -16,6 +16,7 @@ const runtime = `const state = globalThis.${key};`;
 const hooks = registerHooks({
   resolve(specifier, context, nextResolve) {
     let source: string | undefined;
+    if (specifier === "./team-actions" && context.parentURL?.endsWith("/app/settings/actions.ts")) source = "export async function createTeamInvitation() {}";
     if (specifier === "@/lib/auth") source = `${runtime} export async function requireWorkspaceMember(roles) { if (!roles.includes(state.role)) throw new Error('Access denied'); return {id: '${actor}', role: state.role}; }`;
     if (specifier === "@/lib/supabase/admin") source = `${runtime} export function createSupabaseAdmin() { return { async rpc(name, args) { state.calls.push({name, args}); return { data: state.result, error: state.error }; } }; }`;
     if (specifier === "next/cache") source = `${runtime} export function revalidatePath(path) { state.paths.push(path); } export function updateTag(tag) { state.tags.push(tag); }`;

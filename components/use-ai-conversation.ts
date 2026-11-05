@@ -2,26 +2,24 @@
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { conversationScope, type Conversation, type ConversationInput, type HistoryDetail, type HistoryReference } from "@/lib/ai/chat-history";
+import { requestHistoryJson } from "@/lib/ai/history-http";
 
-async function jsonRequest(url: string, init?: RequestInit) {
-  const response = await fetch(url, { cache: "no-store", ...init });
-  const result = await response.json().catch(() => null);
-  if (!response.ok || !result) throw new Error(result?.error || "Unable to load saved conversations.");
-  return result;
-}
+const jsonRequest = (url: string, init?: RequestInit) => requestHistoryJson(url, init, fetch);
 
-export function useAiConversation(input: ConversationInput, onRestore: (detail: HistoryDetail, prepend?: boolean) => void, enabled = true) {
+export function useAiConversation(input: ConversationInput, onRestore: (detail: HistoryDetail, prepend?: boolean) => void, enabled = true, browseAll = false) {
   const encoded = JSON.stringify(input);
   const scope = conversationScope(input);
   const choices = useRef(new Map<string, Conversation | null>());
-  const [state, setState] = useState<{ scope: string; conversation: Conversation | null; loading: boolean; error: string | null; hasMore?: boolean; before?: number }>({ scope, conversation: null, loading: false, error: null });
+  const [state, setState] = useState<{ scope: string; conversation: Conversation | null; loading: boolean; error: string | null; hasMore?: boolean; before?: number }>({ scope, conversation: null, loading: enabled, error: null });
   const restore = useEffectEvent(onRestore);
   const selection = useRef(0);
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     if (!enabled) return;
     const controller = new AbortController();
     const generation = ++selection.current;
+    const invalidate = () => { selection.current++; };
     async function load() {
       setState({ scope, conversation: choices.current.get(scope) ?? null, loading: true, error: null });
       try {
@@ -41,8 +39,8 @@ export function useAiConversation(input: ConversationInput, onRestore: (detail: 
       }
     }
     void load();
-    return () => controller.abort();
-  }, [scope, enabled]);
+    return () => { controller.abort(); invalidate(); };
+  }, [scope, enabled, reload]);
 
   const current = state.scope === scope ? state : { scope, conversation: null, loading: enabled, error: null };
   async function open(id: string) {
@@ -50,12 +48,16 @@ export function useAiConversation(input: ConversationInput, onRestore: (detail: 
     setState((s) => ({ ...s, scope, loading: true, error: null }));
     try {
       const detail: HistoryDetail = await jsonRequest(`/api/ai/history/${id}`);
-      if (generation !== selection.current) return;
-      if (conversationScope(detail.conversation) !== scope) throw new Error("Open the original page and AI mode to continue this conversation.");
+      if (generation !== selection.current) return false;
+      if ((!browseAll || detail.conversation.mode === "customer") && conversationScope(detail.conversation) !== scope) throw new Error("Open the original page and AI mode to continue this conversation.");
       choices.current.set(scope, detail.conversation);
       onRestore(detail);
       setState({ scope, conversation: detail.conversation, loading: false, error: null, hasMore: detail.hasMore, before: detail.before });
-    } catch (error) { if (generation === selection.current) setState((s) => ({ ...s, loading: false, error: error instanceof Error ? error.message : "Unable to open history." })); }
+      return true;
+    } catch (error) {
+      if (generation === selection.current) setState((s) => ({ ...s, loading: false, error: error instanceof Error ? error.message : "Unable to open history." }));
+      return false;
+    }
   }
   async function ensure(requestId: string): Promise<HistoryReference> {
     if (current.loading) throw new Error("Wait for saved history to load.");
@@ -78,10 +80,11 @@ export function useAiConversation(input: ConversationInput, onRestore: (detail: 
     choices.current.set(scope, conversation);
     setState((s) => s.scope === scope ? { ...s, conversation } : s);
   }
-  function newConversation() {
+  function newConversation(target?: ConversationInput) {
+    const nextScope = target ? conversationScope(target) : scope;
     selection.current++;
-    choices.current.set(scope, null);
-    setState({ scope, conversation: null, loading: false, error: null });
+    choices.current.set(nextScope, null);
+    setState({ scope: nextScope, conversation: null, loading: false, error: null });
   }
   function update(patch: { title?: string; pinned?: boolean; archived?: boolean }) {
     const prior = choices.current.get(scope);
@@ -101,6 +104,7 @@ export function useAiConversation(input: ConversationInput, onRestore: (detail: 
       setState((s) => ({ ...s, loading: false, before: detail.before, hasMore: detail.hasMore }));
     } catch (error) { if (generation === selection.current) setState((s) => ({ ...s, loading: false, error: error instanceof Error ? error.message : "Unable to load older messages." })); }
   }
-  return { ...current, scope, open, ensure, accept, update, newConversation, loadOlder };
+  const retry = () => setReload(value => value + 1);
+  return { ...current, scope, browseAll, open, ensure, accept, update, newConversation, loadOlder, retry };
 }
 export type AiConversationController = ReturnType<typeof useAiConversation>;

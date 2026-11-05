@@ -20,21 +20,22 @@ function escapeHtml(value: string) {
     .replaceAll("'", "&#39;");
 }
 
-export function buildInvitationEmail(displayName: string, confirmationUrl: string) {
+export function buildInvitationEmail(displayName: string, confirmationUrl: string, workspaceName = "Filazoo CRM") {
   const safeName = escapeHtml(displayName);
   const safeUrl = escapeHtml(confirmationUrl);
+  const safeWorkspace = escapeHtml(workspaceName);
 
   return {
-    subject: "You have been invited to Filazoo CRM",
+    subject: `You have been invited to ${workspaceName}`,
     text: [
       `Hello ${displayName},`,
       "",
-      "You have been invited to join the Filazoo CRM workspace.",
-      "Open the secure link below to complete your profile, choose a password, and activate your account:",
+      `You have been invited to join the ${workspaceName} workspace.`,
+      "Open the secure link below, sign in or create an account with this email address, and join your team:",
       confirmationUrl,
       "",
       "This link is personal and expires. If you were not expecting this invitation, you can ignore this email.",
     ].join("\n"),
-    html: `<p>Hello ${safeName},</p><p>You have been invited to join the Filazoo CRM workspace.</p><p><a href="${safeUrl}">Complete your profile and activate your account</a></p><p>This link is personal and expires. If you were not expecting this invitation, you can ignore this email.</p>`,
+    html: `<p>Hello ${safeName},</p><p>You have been invited to join the ${safeWorkspace} workspace.</p><p><a href="${safeUrl}">Sign in or create an account and join your team</a></p><p>This link is personal and expires. If you were not expecting this invitation, you can ignore this email.</p>`,
   };
 }

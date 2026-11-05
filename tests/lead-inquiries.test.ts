@@ -58,7 +58,7 @@ test("optional usage callbacks record actual provider counters without changing 
   assert.equal(await generateGeminiText({ apiKey: "synthetic", systemInstruction: "test", prompt: "test", onUsage: usage => { geminiUsage = usage; },
     fetcher: async () => Response.json({ candidates: [{ content: { parts: [{ text: "done" }] } }], usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 20, thoughtsTokenCount: 10, cachedContentTokenCount: 30 } }) }), "done");
   assert.deepEqual(geminiUsage, { inputTokens: 100, outputTokens: 30, cachedInputTokens: 30 });
-  assert.equal(await generateGatewayText({ token: "synthetic", systemInstruction: "test", prompt: "test", onUsage: usage => { gatewayUsage = usage; },
-    fetcher: async () => Response.json({ choices: [{ message: { content: "done" } }], usage: { prompt_tokens: 80, completion_tokens: 25, prompt_tokens_details: { cached_tokens: 40 }, completion_tokens_details: { reasoning_tokens: 10 } } }) }), "done");
+  assert.equal(await generateGatewayText({ token: "synthetic", model: "alibaba/qwen-3-14b", systemInstruction: "test", prompt: "test", onUsage: usage => { gatewayUsage = usage; },
+    fetcher: async () => Response.json({ output: [{ type: "message", content: [{ type: "output_text", text: "done" }] }], usage: { prompt_tokens: 80, completion_tokens: 25, prompt_tokens_details: { cached_tokens: 40 }, completion_tokens_details: { reasoning_tokens: 10 } } }) }), "done");
   assert.deepEqual(gatewayUsage, { inputTokens: 80, outputTokens: 25, cachedInputTokens: 40 });
 });

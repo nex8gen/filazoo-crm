@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { auditFlowDefinition, flowAuditCanLaunch } from "../lib/flow-audit.ts";
-import { defaultFlowInput, type FlowInput } from "../lib/flows.ts";
+import { blankStep, defaultFlowInput, type FlowInput } from "../lib/flows.ts";
 
 test("audit passes the safe default B2B follow-up", () => {
   const findings = auditFlowDefinition(defaultFlowInput);
@@ -22,4 +22,12 @@ test("audit warns about consecutive messages and anytime sending", () => {
   const findings = auditFlowDefinition(flow);
   assert.equal(findings.find((item) => item.id === "message-pacing")?.severity, "warning");
   assert.equal(findings.find((item) => item.id === "send-window")?.severity, "warning");
+});
+
+test("audit recognizes customer-reply decisions in split paths", () => {
+  const email = defaultFlowInput.steps[1];
+  const split = blankStep("split");
+  split.config.paths = [{ id: "replied", name: "Replied", condition: { match: "any", rules: [{ field: "customer_replied" }] }, steps: [blankStep("stop")] },
+    { id: "other", name: "Everyone else", condition: null, steps: [{ ...email, id: "followup" }] }];
+  assert.equal(auditFlowDefinition({ ...defaultFlowInput, steps: [email, split] }).find(item => item.id === "journey-exit")?.severity, "pass");
 });

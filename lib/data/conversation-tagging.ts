@@ -33,7 +33,7 @@ export async function processAutomaticConversationTags(options: { mailboxIds?: s
   let policy;
   try { policy = await requireAiAutomation(["tagging"], ["emails", "customers"]); }
   catch { return { ...result, paused: true }; }
-  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  const apiKey = process.env.AI_PROVIDER === "gateway" || process.env.AI_BUDGET_ENFORCEMENT === "true" ? undefined : process.env.GEMINI_API_KEY?.trim();
   const token = process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
   if (!apiKey && !token) return { ...result, paused: true };
   const db = createSupabaseAdmin();
@@ -158,11 +158,11 @@ export async function processAutomaticConversationTags(options: { mailboxIds?: s
       try {
         trackRequest();
         output = apiKey ? await generateGeminiText({ ...common, apiKey, model: process.env.GEMINI_EMAIL_MODEL?.trim() || "gemini-3.5-flash-lite", responseJsonSchema: z.toJSONSchema(conversationTagDecisionSchema) })
-          : await generateGatewayText({ ...common, token: token! });
+          : await generateGatewayText({ usageUserId: userId, ...common, token: token!, task: "tagging", responseJsonSchema: z.toJSONSchema(conversationTagDecisionSchema) });
       } catch (error) {
         if (!apiKey || !token || !isGeminiRegionError(error)) throw error;
         trackRequest();
-        output = await generateGatewayText({ ...common, token });
+        output = await generateGatewayText({ usageUserId: userId, ...common, token, task: "tagging", responseJsonSchema: z.toJSONSchema(conversationTagDecisionSchema) });
       }
       const decision = parseConversationTagDecision(output, context);
       // A reply imported during model execution invalidates this result immediately.

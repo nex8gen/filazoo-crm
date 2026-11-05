@@ -71,7 +71,7 @@ export async function POST(request: Request) {
         const segments = await translateEmailSegments(parsed.data.segments);
         return Response.json({ ok: true, segments, provider: getEmailTranslationProvider() }, { headers: { "Cache-Control": "no-store" } });
       } catch (error) {
-        return Response.json({ ok: false, error: error instanceof Error ? error.message : "Translation is temporarily unavailable." }, { status: 502 });
+        return Response.json({ ok: false, error: error instanceof Error ? error.message : "Translation is temporarily unavailable." }, { status: error instanceof Error && error.name === "AiBudgetError" ? (error as Error & { status?: number }).status || 429 : 502 });
       }
     }
     if (!looksLikeEnglish(text)) {
@@ -81,11 +81,11 @@ export async function POST(request: Request) {
       const output = await translateEnglishEmail(text);
       return Response.json({ ok: true, output, provider: getEmailTranslationProvider() }, { headers: { "Cache-Control": "no-store" } });
     } catch (error) {
-      return Response.json({ ok: false, error: error instanceof Error ? error.message : "Translation is temporarily unavailable." }, { status: 502 });
+      return Response.json({ ok: false, error: error instanceof Error ? error.message : "Translation is temporarily unavailable." }, { status: error instanceof Error && error.name === "AiBudgetError" ? (error as Error & { status?: number }).status || 429 : 502 });
     }
   }
 
-  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  const apiKey = process.env.AI_PROVIDER === "gateway" || process.env.AI_BUDGET_ENFORCEMENT === "true" ? undefined : process.env.GEMINI_API_KEY?.trim();
   const gatewayToken = process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
 
   const signature = {
@@ -112,7 +112,8 @@ export async function POST(request: Request) {
     ? generateEmailSummary(generate, undefined, language)
     : applyEmailSignature(await generate(""), signature);
 
-  const generateWithGateway = (correction: string) => generateGatewayText({
+  const generateWithGateway = (correction: string) => generateGatewayText({ usageUserId: viewer.id,
+    task: "email", userText: text, complex: Boolean(correction), signal: request.signal,
     token: gatewayToken!,
     model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim(),
     systemInstruction: governedSystem,
@@ -128,7 +129,7 @@ export async function POST(request: Request) {
       const output = await finalizeOutput(generateWithGateway);
       return Response.json({ ok: true, output, provider: "vercel-ai-gateway" }, { headers: { "Cache-Control": "no-store" } });
     } catch (error) {
-      return Response.json({ ok: false, error: error instanceof Error ? error.message : "AI assistance is temporarily unavailable." }, { status: 502 });
+      return Response.json({ ok: false, error: error instanceof Error ? error.message : "AI assistance is temporarily unavailable." }, { status: error instanceof Error && error.name === "AiBudgetError" ? (error as Error & { status?: number }).status || 429 : 502 });
     }
   }
 
@@ -147,9 +148,9 @@ export async function POST(request: Request) {
         return Response.json({ ok: true, output, provider: "vercel-ai-gateway" }, { headers: { "Cache-Control": "no-store" } });
       } catch (fallbackError) {
         const detail = fallbackError instanceof Error ? fallbackError.message : "AI assistance is temporarily unavailable.";
-        return Response.json({ ok: false, error: `Gemini is unavailable in this server's region. The AI Gateway fallback also failed: ${detail}` }, { status: 502 });
+        return Response.json({ ok: false, error: `Gemini is unavailable in this server's region. The AI Gateway fallback also failed: ${detail}` }, { status: error instanceof Error && error.name === "AiBudgetError" ? (error as Error & { status?: number }).status || 429 : 502 });
       }
     }
-    return Response.json({ ok: false, error: error instanceof Error ? error.message : "AI assistance is temporarily unavailable." }, { status: 502 });
+    return Response.json({ ok: false, error: error instanceof Error ? error.message : "AI assistance is temporarily unavailable." }, { status: error instanceof Error && error.name === "AiBudgetError" ? (error as Error & { status?: number }).status || 429 : 502 });
   }
 }

@@ -16,7 +16,7 @@ export function verifyTracking(token: string, secret: string): TrackingPayload |
     const expected = createHmac("sha256", secret).update(data).digest();
     if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return null;
     const payload = JSON.parse(Buffer.from(data, "base64url").toString()) as TrackingPayload;
-    if (!/^[\da-f-]{36}$/i.test(payload.runId) || !/^[\da-f-]{36}$/i.test(payload.stepId)) return null;
+    if (!/^[\da-f-]{36}$/i.test(payload.runId) || typeof payload.stepId !== "string" || !payload.stepId.trim() || payload.stepId.length > 100) return null;
     if (!["open", "click"].includes(payload.kind) || !Number.isFinite(payload.expires) || payload.expires <= Date.now()) return null;
     if (payload.kind === "click" && (!payload.target || !/^https?:\/\//i.test(payload.target))) return null;
     return payload;
@@ -37,7 +37,16 @@ export function buildFlowEmail({ body, config, runId, stepId, flowId, appUrl, se
     const prefix = body.slice(offset, match.index);
     text += prefix;
     html += escapeHtml(prefix);
-    const url = new URL(match[0]);
+    let url: URL;
+    try { url = new URL(match[0]); }
+    catch {
+      // Customer-authored text can contain incomplete links. Preserve it
+      // without failing the entire message before submission.
+      text += match[0];
+      html += escapeHtml(match[0]);
+      offset = match.index + match[0].length;
+      continue;
+    }
     if (config.utmTracking !== false) {
       url.searchParams.set("utm_source", "filazoo");
       url.searchParams.set("utm_medium", "email");

@@ -26,7 +26,7 @@ const code = ts.transpileModule(readFileSync(new URL("../lib/data/flow-runtime.t
 
 // Execute the real enrollment and email runtime against an in-memory database.
 // SMTP is intercepted even when testing live-send mode.
-function runtime(options: { businessWindow?: Date | null } = {}) {
+function runtime(options: { businessWindow?: Date | null; beforeQuery?: (table: string, operation: string) => Promise<void> } = {}) {
   const contactId = randomUUID(), companyId = randomUUID(), flowId = randomUUID();
   const createdAt = new Date().toISOString();
   const db: Record<string, Row[]> = {
@@ -72,7 +72,8 @@ function runtime(options: { businessWindow?: Date | null } = {}) {
       upsert(value: Row, options: { onConflict: string }) { operation = "upsert"; payload = value; conflict = options.onConflict; return query; },
       update(value: Row) { operation = "update"; payload = value; return query; },
       single() { single = true; return query; }, maybeSingle() { single = true; return query; }, throwOnError() { return query; },
-      then(resolve: (result: unknown) => unknown) {
+      async then(resolve: (result: unknown) => unknown) {
+        await options.beforeQuery?.(table, operation);
         const rows = db[table] ??= [];
         let selected = rows.filter((row) => filters.every((filter) => filter(row)));
         selected.sort((a, b) => { for (const { key, ascending } of order) { const result = String(a[key] ?? "").localeCompare(String(b[key] ?? "")); if (result) return ascending ? result : -result; } return 0; });
@@ -80,7 +81,7 @@ function runtime(options: { businessWindow?: Date | null } = {}) {
         selected = selected.slice(0, maximum);
         if (operation === "insert") {
           const inputs = Array.isArray(payload) ? payload : [payload];
-          if (table === "flow_runs" && inputs.some((input) => rows.some((row) => row.flow_id === input.flow_id && row.event_key === input.event_key))) {
+          if (table === "flow_runs" && inputs.some((input) => rows.some((row) => row.flow_id === input.flow_id && (row.event_key === input.event_key || (row.status === "active" && input.status === "active" && row.conversation_id === input.conversation_id))))) {
             return Promise.resolve({ data: null, error: { code: "23505" } }).then(resolve);
           }
           selected = inputs.map((input) => ({ id: randomUUID(), created_at: new Date().toISOString(), started_at: new Date().toISOString(), locked_at: null, ...input }));
@@ -93,7 +94,7 @@ function runtime(options: { businessWindow?: Date | null } = {}) {
             else rows.push({ id: randomUUID(), ...input });
           }
         }
-        return Promise.resolve({ data: head ? null : single ? selected[0] ?? null : selected, count: selected.length, error: null }).then(resolve);
+        return Promise.resolve({ data: structuredClone(head ? null : single ? selected[0] ?? null : selected), count: selected.length, error: null }).then(resolve);
       },
     };
     return query;
@@ -126,13 +127,45 @@ function runtime(options: { businessWindow?: Date | null } = {}) {
   const exports = {} as {
     enrollNewLeadFlows: (id: string) => Promise<Array<{ enrolled: boolean; reason: string }>>;
     enrollMatchingFlows: (event: engine.TriggerEvent) => Promise<Array<{ enrolled: boolean; reason: string }>>;
-    processFlowRun: (id: string) => Promise<{ status: string }>;
-    processDueFlowRuns: (limit: number, options: { syncMailbox: boolean }) => Promise<unknown[]>;
-    scanTimeBasedFlowTriggers: (id?: string) => Promise<number>;
+    processFlowRun: (id: string, options?: { deadline?: number }) => Promise<{ status: string }>;
+    processDueFlowRuns: (limit: number, options: { syncMailbox: boolean; budgetMs?: number }) => Promise<unknown[]>;
+    scanTimeBasedFlowTriggers: (id?: string, onError?: unknown, options?: { deadline?: number; deferExecution?: boolean }) => Promise<number>;
   };
   vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (dependencies[name] ?? require(name)), Date, console });
   return { db, env, contactId, companyId, flowId, exports, deliveries, aiCalls, delivered: () => delivered };
 }
+
+test("budgeted recovery queues enrollment without sending and resumes it once on the next tick", async () => {
+  const app = runtime();
+  await app.exports.processDueFlowRuns(50, { syncMailbox: false, budgetMs: 180_000 });
+  assert.equal(app.db.flow_runs.length, 1);
+  assert.equal(app.db.flow_runs[0].status, "active");
+  assert.equal(app.delivered(), 0);
+  await app.exports.processDueFlowRuns(50, { syncMailbox: false, budgetMs: 180_000 });
+  await app.exports.processDueFlowRuns(50, { syncMailbox: false, budgetMs: 180_000 });
+  assert.equal(app.delivered(), 1);
+});
+
+test("an expired run budget releases its lock without failing or delivering the saved action", async () => {
+  const app = runtime();
+  await app.exports.scanTimeBasedFlowTriggers(undefined, undefined, { deferExecution: true });
+  const id = String(app.db.flow_runs[0].id);
+  assert.equal((await app.exports.processFlowRun(id, { deadline: Date.now() })).status, "deferred");
+  assert.equal(app.db.flow_runs[0].status, "active");
+  assert.equal(app.db.flow_runs[0].locked_at, null);
+  assert.equal(app.db.flow_runs[0].current_step, 0);
+  assert.equal(app.delivered(), 0);
+  assert.equal((await app.exports.processFlowRun(id)).status, "done");
+  assert.equal(app.delivered(), 1);
+});
+
+test("an expired trigger scan creates no work and can recover it on a later tick", async () => {
+  const app = runtime();
+  assert.equal(await app.exports.scanTimeBasedFlowTriggers(undefined, undefined, { deadline: Date.now() - 1, deferExecution: true }), 0);
+  assert.equal(app.db.flow_runs?.length ?? 0, 0);
+  assert.equal(await app.exports.scanTimeBasedFlowTriggers(undefined, undefined, { deferExecution: true }), 1);
+  assert.equal(app.delivered(), 0);
+});
 
 test("business segment launches enroll existing companies and new matches once without requiring a segment change", async () => {
   const app = runtime();
@@ -419,6 +452,222 @@ test("removing a selected customer cancels their waiting email for both email ac
 function steps(app: ReturnType<typeof runtime>, definitions: Array<{ type: flows.FlowStepType; config: flows.JsonConfig }>) {
   app.db.flow_steps = definitions.map((step, position) => ({ id: randomUUID(), flow_id: app.flowId, position, ...step }));
 }
+
+function route(condition: flows.JsonConfig, yes: flows.FlowInput["steps"], no: flows.FlowInput["steps"] = []) {
+  const step = flows.blankStep("split");
+  step.config.paths = [{ id: `${step.id}-yes`, name: "Match", condition, steps: yes }, { id: `${step.id}-no`, name: "Everyone else", condition: null, steps: no }] as unknown as flows.JsonConfig["paths"];
+  return step;
+}
+
+test("screenshot journey stops replies, resumes the other path and rechecks replies before the follow-up", async () => {
+  for (const replyAt of ["never", "first-wait", "branch-wait"]) {
+    const app = runtime();
+    const mail = app.db.flow_steps[0];
+    steps(app, [mail as unknown as flows.FlowInput["steps"][number], { ...flows.blankStep("wait"), config: { amount: 5, unit: "minutes" } },
+      route({ field: "customer_replied", lookbackDays: 7 }, [flows.blankStep("stop")], [
+        { ...flows.blankStep("wait"), config: { amount: 2, unit: "minutes" } }, { ...flows.blankStep("send_email"), config: mail.config as flows.JsonConfig },
+      ]), flows.blankStep("create_task")]);
+    assert.equal((await app.exports.enrollNewLeadFlows(app.contactId))[0].reason, "waiting");
+    const run = app.db.flow_runs[0];
+    const reply = () => app.db.emails.push({ contact_id: app.contactId, direction: "received", thread_id: (run.context as Row).emailThreadId, created_at: new Date(Date.now() + 10).toISOString() });
+    if (replyAt === "first-wait") reply();
+    run.next_run_at = null;
+    const first = await app.exports.processFlowRun(String(run.id));
+    assert.equal(first.status, replyAt === "first-wait" ? "done" : "waiting");
+    if (replyAt !== "first-wait") {
+      if (replyAt === "branch-wait") reply();
+      run.next_run_at = null;
+      assert.equal((await app.exports.processFlowRun(String(run.id))).status, replyAt === "never" ? "done" : "cancelled");
+    }
+    assert.equal(app.delivered(), replyAt === "never" ? 2 : 1);
+    assert.equal(app.db.crm_tasks?.length ?? 0, replyAt === "never" ? 1 : 0);
+  }
+});
+
+test("compound split and message criteria use each rule's own engagement lookback", async () => {
+  for (const kind of ["split", "send_email"] as const) {
+    const app = runtime();
+    const rules = { match: "all", rules: [{ field: "opened_email", lookbackDays: 1, negate: true }, { field: "clicked_link", lookbackDays: 7 }] };
+    const action = kind === "split" ? route(rules, [flows.blankStep("create_task")])
+      : { ...flows.blankStep("send_email"), config: { ...app.db.flow_steps[0].config as flows.JsonConfig, filters: rules } };
+    steps(app, [{ type: "wait", config: { amount: 1, unit: "minutes" } }, action]);
+    await app.exports.enrollNewLeadFlows(app.contactId);
+    const run = app.db.flow_runs[0];
+    (run.context as Row).replySince = new Date(Date.now() - 10 * 86400000).toISOString();
+    for (const action of ["email_opened", "link_clicked"]) app.db.flow_run_logs.push({ run_id: run.id, created_at: new Date(Date.now() - 3 * 86400000).toISOString(), result: { action } });
+    run.next_run_at = null;
+    assert.equal((await app.exports.processFlowRun(String(run.id))).status, "done");
+    assert.equal(kind === "split" ? app.db.crm_tasks?.length ?? 0 : app.delivered(), 1, kind);
+  }
+});
+
+test("a delayed worker cannot replay an earlier action or bypass a newly scheduled wait", async () => {
+  let reads = 0;
+  let release!: () => void;
+  let delayed!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const reached = new Promise<void>(resolve => { delayed = resolve; });
+  let racing = false;
+  const app = runtime({ beforeQuery: async (table, operation) => {
+    if (racing && table === "flows" && operation === "select" && ++reads === 2) { delayed(); await gate; }
+  } });
+  steps(app, [{ type: "wait", config: { amount: 1, unit: "minutes" } }, flows.blankStep("create_task"),
+    { type: "wait", config: { amount: 5, unit: "minutes" } }, flows.blankStep("internal_alert")]);
+  await app.exports.enrollNewLeadFlows(app.contactId);
+  const run = app.db.flow_runs[0]; run.next_run_at = null;
+  racing = true;
+  const first = app.exports.processFlowRun(String(run.id));
+  const second = app.exports.processFlowRun(String(run.id));
+  await reached;
+  assert.equal((await first).status, "waiting");
+  release();
+  await second;
+  assert.equal(app.db.crm_tasks.length, 1);
+  assert.equal(app.db.internal_notifications?.length ?? 0, 0);
+  assert.equal(run.current_step, 3);
+});
+
+test("property updates emit segment events once and start downstream segment workflows", async () => {
+  const app = runtime();
+  const downstream = randomUUID();
+  app.db.flows.push({ ...app.db.flows[0], id: downstream, trigger_type: "company_segment_changed", trigger_config: { segment: "Wholesale" } });
+  steps(app, [{ type: "update_company", config: { segment: "Wholesale" } }, { type: "update_company", config: { segment: "Wholesale" } }]);
+  app.db.flow_steps.push({ ...flows.blankStep("create_task"), flow_id: downstream, position: 0 });
+  assert.equal((await app.exports.enrollNewLeadFlows(app.contactId))[0].reason, "done");
+  assert.equal(app.db.crm_tasks?.length ?? 0, 1);
+});
+
+test("one invalid matching definition does not prevent other workflows from enrolling", async () => {
+  const app = runtime();
+  const valid = randomUUID();
+  app.db.flows.push({ ...app.db.flows[0], id: valid });
+  app.db.flow_steps[0].config = { templateId: "missing" };
+  app.db.flow_steps.push({ ...flows.blankStep("create_task"), flow_id: valid, position: 0 });
+  const result = await app.exports.enrollNewLeadFlows(app.contactId);
+  assert.equal(result.find(row => row.enrolled)?.reason, "done");
+  assert.equal(app.db.crm_tasks?.length ?? 0, 1);
+});
+
+test("mail synchronization failures do not prevent intake recovery or due workflow execution", async () => {
+  const app = runtime();
+  const result = await app.exports.processDueFlowRuns(50, { syncMailbox: true }) as Array<{ phase?: string; status: string }>;
+  assert.equal(app.delivered(), 1);
+  assert.ok(result.some(row => row.phase === "mailbox_sync" && row.status === "error"));
+});
+
+test("a malformed saved audience cannot block recovery of an unrelated new-lead workflow", async () => {
+  const app = runtime();
+  const segmentId = randomUUID();
+  app.db.company_segments = [{ id: segmentId, rules: { country: ["invalid"] } }];
+  app.db.flows.unshift({ ...app.db.flows[0], id: randomUUID(), trigger_type: "company_segment_changed", trigger_config: { segment: "Broken audience", savedSegmentId: segmentId, reentryMode: "no_reentry" } });
+  await app.exports.processDueFlowRuns(50, { syncMailbox: false });
+  assert.equal(app.delivered(), 1);
+});
+
+test("a no-reply trigger's first wait starts at enrollment, after the trigger delay", async () => {
+  const app = runtime();
+  app.db.flows[0].trigger_type = "no_reply";
+  app.db.flows[0].trigger_config = { amount: 2, unit: "hours" };
+  steps(app, [{ type: "wait", config: { amount: 5, unit: "minutes" } }, flows.blankStep("create_task")]);
+  const before = Date.now();
+  const result = await app.exports.enrollMatchingFlows({ type: "no_reply", contactId: app.contactId, companyId: app.companyId,
+    conversationId: "old-unanswered-message", occurredAt: new Date(before - 3 * 3600000).toISOString() });
+  assert.equal(result[0].reason, "waiting");
+  assert.ok(Date.parse(String(app.db.flow_runs[0].next_run_at)) >= before + 300000, "The configured five-minute wait must not already be overdue");
+});
+
+test("near-deadline runs checkpoint and unlock without losing work, then resume on a later tick", async () => {
+  const app = runtime();
+  steps(app, [{ type: "wait", config: { amount: 1, unit: "minutes" } }, flows.blankStep("create_task"), flows.blankStep("internal_alert")]);
+  await app.exports.enrollNewLeadFlows(app.contactId);
+  const run = app.db.flow_runs[0]; run.next_run_at = null;
+  assert.equal((await app.exports.processFlowRun(String(run.id), { deadline: Date.now() + 100000 })).status, "deferred");
+  assert.equal(run.status, "active");
+  assert.equal(run.locked_at, null);
+  assert.equal(run.current_step, 1);
+  assert.equal(app.db.crm_tasks?.length ?? 0, 0);
+  run.next_run_at = null;
+  await app.exports.processDueFlowRuns(50, { syncMailbox: false, budgetMs: 180000 });
+  assert.equal(run.status, "done");
+  assert.equal(app.db.crm_tasks.length, 1);
+  assert.equal(app.db.internal_notifications.length, 1);
+});
+
+test("scanner saves enrollment without provider work and a later budgeted worker delivers exactly once", async () => {
+  const app = runtime();
+  assert.equal(await app.exports.scanTimeBasedFlowTriggers(undefined, undefined, { deferExecution: true }), 1);
+  assert.equal(app.delivered(), 0);
+  assert.equal(app.db.flow_runs[0].status, "active");
+  await app.exports.processDueFlowRuns(50, { syncMailbox: false, budgetMs: 180000 });
+  assert.equal(app.delivered(), 1);
+  assert.equal(app.db.flow_runs[0].status, "done");
+  await app.exports.processDueFlowRuns(50, { syncMailbox: false, budgetMs: 180000 });
+  assert.equal(app.delivered(), 1);
+});
+
+test("all 100 ordered action pairs execute like the preview through nested routes and durable waits", async () => {
+  let checked = 0;
+  for (const first of flows.stepTypes) for (const second of flows.stepTypes) for (const country of ["US", "GB"]) {
+    const app = runtime();
+    app.db.companies[0].country = country;
+    const make = (type: flows.FlowStepType): flows.FlowInput["steps"][number] => {
+      if (type === "split") return route({ field: "company_status_is", companyStatus: "qualified" }, [flows.blankStep("create_task")], [flows.blankStep("internal_alert")]);
+      const step = flows.blankStep(type);
+      if (type === "send_email") step.config = { ...step.config, templateId: "welcome_intro", sendWindow: "anytime" };
+      if (type === "wait") step.config = { amount: 1, unit: "minutes" };
+      if (type === "update_company") step.config = { companyStatus: "qualified" };
+      if (type === "if_condition") step.config = { field: "country_is", value: "US", action: "skip_next", unmatchedAction: "continue" };
+      return step;
+    };
+    const definition = flows.flowInputSchema.parse({ name: "Production combinations", triggerType: "new_lead", triggerConfig: {}, status: "live", steps: [
+      route({ field: "country_is", value: "US" }, [route({ field: "company_status_is", companyStatus: "new" }, [make(first), make(second)])], [make(second), make(first)]), flows.blankStep("create_task"),
+    ] });
+    steps(app, definition.steps);
+    const expected = engine.simulateFlow(definition, { customerReplied: false, openedEmail: false, clickedLink: false, category: null, country, segment: "Shopify B2B lead", companyStatus: "new", pipelineStage: null, fitScore: null }).trace
+      .filter(entry => entry.status !== "skipped" && !(entry.type === "if_condition" && entry.status === "stopped"))
+      .map(entry => engine.flowStepAtPath(definition, entry.stepPath!)!.id);
+    const enrollment = await app.exports.enrollNewLeadFlows(app.contactId);
+    const run = app.db.flow_runs[0];
+    assert.ok(run, `${first} -> ${second}: ${JSON.stringify(enrollment)}`);
+    let attempts = 0;
+    while (run.status === "active" && attempts++ < 10) {
+      run.next_run_at = null;
+      await app.exports.processFlowRun(String(run.id));
+    }
+    assert.ok(["done", "cancelled"].includes(String(run.status)), `${first} -> ${second}: ${JSON.stringify(app.db.flow_run_logs)}`);
+    const actual = app.db.flow_run_logs.filter(log => log.run_id === run.id && (log.result as Row)?.stepId).map(log => (log.result as Row).stepId);
+    assert.deepEqual(actual, expected, `${country}: ${first} -> ${second}`);
+    assert.equal(new Set(actual).size, actual.length, "No action may execute twice");
+    const delivered = app.delivered();
+    await app.exports.processFlowRun(String(run.id));
+    assert.equal(app.delivered(), delivered, "Terminal runs cannot send again");
+    checked++;
+  }
+  assert.equal(checked, 200);
+});
+
+test("five nested splits retain the selected route across waits and produce working tracking links", async () => {
+  const app = runtime();
+  const email = { ...flows.blankStep("send_email"), id: "nested-email", config: { ...app.db.flow_steps[0].config as flows.JsonConfig, body: "Review https://example.com/catalog", trackClicks: true, trackOpens: true } };
+  let nested = route({ field: "country_is", value: "US" }, [email, flows.blankStep("create_task")], [flows.blankStep("stop")]);
+  for (let depth = 1; depth < 5; depth++) nested = route({ field: "country_is", value: "US" }, [{ type: "wait", id: randomUUID(), config: { amount: 1, unit: "minutes" } }, nested], [flows.blankStep("stop")]);
+  steps(app, [nested, flows.blankStep("internal_alert")]);
+  await app.exports.enrollNewLeadFlows(app.contactId);
+  const run = app.db.flow_runs[0];
+  for (let resume = 0; run.status === "active" && resume < 5; resume++) {
+    run.next_run_at = null;
+    await app.exports.processFlowRun(String(run.id));
+  }
+  assert.equal(run.status, "done");
+  assert.equal(app.db.crm_tasks.length, 1);
+  assert.equal(app.db.internal_notifications.length, 1);
+  assert.equal(app.delivered(), 1);
+  const html = String(app.deliveries[0].mail.html);
+  const token = /href="https:\/\/crm.example.com\/api\/flows\/track\?token=([^"]+)"/.exec(html)?.[1];
+  assert.ok(token, html);
+  assert.equal(tracking.verifyTracking(token, "test")?.stepId, "nested-email");
+  assert.equal(app.db.flow_run_logs.filter(log => (log.result as Row)?.action === "split_evaluated").length, 5);
+});
 
 test("all email templates render real content; catalog template uploads and attaches a PDF", async () => {
   for (const templateId of Object.keys(templates.emailTemplates)) {

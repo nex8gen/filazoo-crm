@@ -9,6 +9,18 @@ const facts: FlowFacts = { customerReplied: false, openedEmail: false, clickedLi
 const customerA = "11111111-1111-4111-8111-111111111111";
 const customerB = "22222222-2222-4222-8222-222222222222";
 
+test("tracking supports saved nested action identities and rejects invalid identities", () => {
+  const payload = { runId: customerA, stepId: "nested-ai-follow-up", kind: "click" as const, target: "https://example.com/catalog", expires: Date.now() + 60000 };
+  assert.deepEqual(verifyTracking(signTracking(payload, "test"), "test"), payload);
+  for (const stepId of ["", " ", "x".repeat(101)]) assert.equal(verifyTracking(signTracking({ ...payload, stepId }, "test"), "test"), null);
+});
+
+test("incomplete URLs in authored email text do not fail message preparation", () => {
+  const mail = buildFlowEmail({ body: "Try https://? or https://example.com/catalog", config: { trackClicks: false, trackOpens: false, utmTracking: false }, runId: customerA, stepId: customerB, flowId: customerB, appUrl: "https://crm.example.com", secret: "test" });
+  assert.match(mail.text, /Try https:\/\/\?/);
+  assert.match(mail.html, /href="https:\/\/example.com\/catalog"/);
+});
+
 test("duplicating a split gives every path and nested action an independent identity", () => {
   const split = blankStep("split");
   const paths = split.config.paths as Array<{ id: string; name: string; condition: null; steps: Array<ReturnType<typeof blankStep>> }>;
