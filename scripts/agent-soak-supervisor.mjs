@@ -1,0 +1,14 @@
+import { spawn } from "node:child_process";
+import { openSync, closeSync, readFileSync, appendFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const directory = resolve(root, "tmp/agent-soak-20261105");
+const budget = JSON.parse(readFileSync(resolve(directory, "budget.json"), "utf8"));
+if (Date.now() >= budget.endsAt) process.exit(0);
+const output = openSync(resolve(root, "tmp/agent-soak-worker.stdout.log"), "a");
+const error = openSync(resolve(root, "tmp/agent-soak-worker.stderr.log"), "a");
+appendFileSync(resolve(directory, "supervisor.log"), `${new Date().toISOString()} resuming original ledger and deadline\n`);
+const child = spawn(process.execPath, ["--env-file=.env.local", "--experimental-strip-types", "scripts/run-agent-soak.ts", "--live"], { cwd: root, windowsHide: true, stdio: ["ignore", output, error] });
+child.on("exit", code => { closeSync(output); closeSync(error); process.exitCode = code ?? 1; });
+child.on("error", failure => { appendFileSync(resolve(directory, "supervisor.log"), `${new Date().toISOString()} ${failure.name}\n`); process.exitCode = 1; });

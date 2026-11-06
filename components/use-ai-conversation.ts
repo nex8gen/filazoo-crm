@@ -2,52 +2,60 @@
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { conversationScope, type Conversation, type ConversationInput, type HistoryDetail, type HistoryReference } from "@/lib/ai/chat-history";
-import { requestHistoryJson } from "@/lib/ai/history-http";
+import { HistoryHttpError, requestHistoryJson } from "@/lib/ai/history-http";
 
 const jsonRequest = (url: string, init?: RequestInit) => requestHistoryJson(url, init, fetch);
 
-export function useAiConversation(input: ConversationInput, onRestore: (detail: HistoryDetail, prepend?: boolean) => void, enabled = true, browseAll = false) {
+export function useAiConversation(input: ConversationInput, onRestore: (detail: HistoryDetail, prepend?: boolean, preserveDraft?: boolean) => void, enabled = true, browseAll = false, autoResume = true) {
   const encoded = JSON.stringify(input);
   const scope = conversationScope(input);
   const choices = useRef(new Map<string, Conversation | null>());
-  const [state, setState] = useState<{ scope: string; conversation: Conversation | null; loading: boolean; error: string | null; hasMore?: boolean; before?: number }>({ scope, conversation: null, loading: enabled, error: null });
+  const [state, setState] = useState<{ scope: string; conversation: Conversation | null; loading: boolean; error: string | null; errorStatus?: number; openingId?: string; hasMore?: boolean; before?: number }>({ scope, conversation: null, loading: enabled && autoResume, error: null });
   const restore = useEffectEvent(onRestore);
   const selection = useRef(0);
   const [reload, setReload] = useState(0);
+  const lastOpened = useRef<{ scope: string; id: string } | null>(null);
+  const openingRequest = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    if (!enabled) return;
+    const invalidate = () => { selection.current++; openingRequest.current?.abort(); };
+    if (!enabled || !autoResume) return invalidate;
     const controller = new AbortController();
     const generation = ++selection.current;
-    const invalidate = () => { selection.current++; };
     async function load() {
       setState({ scope, conversation: choices.current.get(scope) ?? null, loading: true, error: null });
       try {
         let conversation = choices.current.get(scope);
+        let detail: HistoryDetail | null = null;
         if (conversation === undefined) {
-          const list = await jsonRequest(`/api/ai/history?${new URLSearchParams({ scope, resume: "true" })}`, { signal: controller.signal });
+          const list = await jsonRequest(`/api/ai/history?${new URLSearchParams({ scope, resume: "true", detail: "true" })}`, { signal: controller.signal });
           conversation = (list.conversations as Conversation[]).filter((c) => c.version > 0).sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0] ?? null;
+          detail = list.detail ?? null;
         }
-        const detail: HistoryDetail | null = conversation ? await jsonRequest(`/api/ai/history/${conversation.id}`, { signal: controller.signal }) : null;
+        if (conversation && !detail) detail = await jsonRequest(`/api/ai/history/${conversation.id}`, { signal: controller.signal });
         if (controller.signal.aborted || selection.current !== generation) return;
         const active = detail?.conversation ?? null;
         choices.current.set(scope, active);
-        if (detail) restore(detail);
+        if (detail) restore(detail, false, true);
         setState({ scope, conversation: active, loading: false, error: null, hasMore: detail?.hasMore, before: detail?.before });
       } catch (error) {
-        if (!controller.signal.aborted && selection.current === generation) setState({ scope, conversation: null, loading: false, error: error instanceof Error ? error.message : "Unable to restore history." });
+        if (!controller.signal.aborted && selection.current === generation) setState({ scope, conversation: null, loading: false, error: error instanceof Error ? error.message : "Unable to restore history.", errorStatus: error instanceof HistoryHttpError ? error.status : undefined });
       }
     }
     void load();
-    return () => { controller.abort(); invalidate(); };
-  }, [scope, enabled, reload]);
+    return () => { controller.abort(); openingRequest.current?.abort(); invalidate(); };
+  }, [scope, enabled, reload, autoResume]);
 
-  const current = state.scope === scope ? state : { scope, conversation: null, loading: enabled, error: null };
+  const current = state.scope === scope ? state : { scope, conversation: null, loading: enabled && autoResume, error: null };
   async function open(id: string) {
     const generation = ++selection.current;
-    setState((s) => ({ ...s, scope, loading: true, error: null }));
+    openingRequest.current?.abort();
+    const controller = new AbortController();
+    openingRequest.current = controller;
+    lastOpened.current = { scope, id };
+    setState((s) => ({ ...s, scope, loading: true, openingId: id, error: null }));
     try {
-      const detail: HistoryDetail = await jsonRequest(`/api/ai/history/${id}`);
+      const detail: HistoryDetail = await jsonRequest(`/api/ai/history/${id}`, { signal: controller.signal });
       if (generation !== selection.current) return false;
       if ((!browseAll || detail.conversation.mode === "customer") && conversationScope(detail.conversation) !== scope) throw new Error("Open the original page and AI mode to continue this conversation.");
       choices.current.set(scope, detail.conversation);
@@ -55,7 +63,7 @@ export function useAiConversation(input: ConversationInput, onRestore: (detail: 
       setState({ scope, conversation: detail.conversation, loading: false, error: null, hasMore: detail.hasMore, before: detail.before });
       return true;
     } catch (error) {
-      if (generation === selection.current) setState((s) => ({ ...s, loading: false, error: error instanceof Error ? error.message : "Unable to open history." }));
+      if (generation === selection.current) setState((s) => ({ ...s, loading: false, openingId: undefined, error: error instanceof Error ? error.message : "Unable to open history.", errorStatus: error instanceof HistoryHttpError ? error.status : undefined }));
       return false;
     }
   }
@@ -83,6 +91,8 @@ export function useAiConversation(input: ConversationInput, onRestore: (detail: 
   function newConversation(target?: ConversationInput) {
     const nextScope = target ? conversationScope(target) : scope;
     selection.current++;
+    openingRequest.current?.abort();
+    lastOpened.current = null;
     choices.current.set(nextScope, null);
     setState({ scope: nextScope, conversation: null, loading: false, error: null });
   }
@@ -93,6 +103,10 @@ export function useAiConversation(input: ConversationInput, onRestore: (detail: 
     choices.current.set(scope, conversation);
     setState((s) => s.scope === scope ? { ...s, conversation } : s);
   }
+  function forget(id: string) {
+    for (const [key, choice] of choices.current) if (choice?.id === id) choices.current.delete(key);
+    if (current.conversation?.id === id) newConversation();
+  }
   async function loadOlder() {
     if (!current.conversation || !current.hasMore || current.loading) return;
     const generation = ++selection.current;
@@ -102,9 +116,9 @@ export function useAiConversation(input: ConversationInput, onRestore: (detail: 
       if (generation !== selection.current) return;
       onRestore(detail, true);
       setState((s) => ({ ...s, loading: false, before: detail.before, hasMore: detail.hasMore }));
-    } catch (error) { if (generation === selection.current) setState((s) => ({ ...s, loading: false, error: error instanceof Error ? error.message : "Unable to load older messages." })); }
+    } catch (error) { if (generation === selection.current) setState((s) => ({ ...s, loading: false, error: error instanceof Error ? error.message : "Unable to load older messages.", errorStatus: error instanceof HistoryHttpError ? error.status : undefined })); }
   }
-  const retry = () => setReload(value => value + 1);
-  return { ...current, scope, browseAll, open, ensure, accept, update, newConversation, loadOlder, retry };
+  const retry = () => { if (!autoResume && lastOpened.current?.scope === scope) void open(lastOpened.current.id); else setReload(value => value + 1); };
+  return { ...current, scope, browseAll, open, ensure, accept, update, forget, newConversation, loadOlder, retry };
 }
 export type AiConversationController = ReturnType<typeof useAiConversation>;

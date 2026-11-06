@@ -49,7 +49,7 @@ export function AiImagePicker({ attachments, disabled = false }: { attachments: 
   const input = useRef<HTMLInputElement>(null);
   return <>
     <input ref={input} id={id} type="file" accept={CHAT_IMAGE_ACCEPT} multiple disabled={disabled || attachments.processing} className="hidden" tabIndex={-1} onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ""; void attachments.add(files); }} />
-    <button type="button" disabled={disabled || attachments.processing || attachments.images.length >= MAX_CHAT_IMAGES} onClick={() => input.current?.click()} aria-label="Attach images" title="Attach images (JPG, PNG or WebP, up to 10 MB each)" className="inline-flex min-h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs text-muted-foreground hover:bg-muted disabled:opacity-50"><ImagePlus aria-hidden="true" className="size-3.5" /><span>{attachments.processing ? "Reading image…" : "Add image"}</span></button>
+    <button type="button" disabled={disabled || attachments.processing || attachments.images.length >= MAX_CHAT_IMAGES} onClick={() => input.current?.click()} aria-label="Attach images" title="Attach images (JPG, PNG or WebP, up to 10 MB each)" className="ai-composer-action inline-flex min-h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs text-muted-foreground hover:bg-muted disabled:opacity-50"><ImagePlus aria-hidden="true" className="size-3.5 shrink-0" /><span className="ai-composer-action-label">{attachments.processing ? "Reading image…" : "Add image"}</span></button>
   </>;
 }
 

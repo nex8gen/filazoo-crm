@@ -15,10 +15,17 @@ function Meter({ label, value }: { label: string; value: BudgetMeter }) {
 
 export function AiUsagePanel({ limits }: { limits: AiBudgetSummary }) {
   return <section aria-label="AI allowance" className="space-y-3 rounded-lg border p-3">
+    {limits.enabled === false ? <p role="status" className="text-xs text-destructive">AI is paused for your account. Contact an administrator to enable it.</p> : null}
     <Meter label="Your daily AI usage" value={limits.daily} />
+    <Meter label="Workspace daily AI usage" value={limits.workspaceDaily} />
     <Meter label="Workspace monthly AI usage" value={limits.monthly} />
     <p className="text-[10px] leading-4 text-muted-foreground">Daily allowance resets at midnight China time. Monthly allowance resets on the first day of the month. Chats, agents and background AI share these limits.</p>
     <p className="text-[10px] leading-4 text-muted-foreground">Usage includes reserved credit for running requests. Large tasks may need more remaining credit.</p>
-    {limits.daily.remainingMicros === 0 || limits.workspaceDaily.remainingMicros === 0 || limits.monthly.remainingMicros === 0 ? <p role="status" className="text-xs text-destructive">AI allowance reached. Please wait for the reset.</p> : null}
+    {limits.enabled !== false ? <>
+      {limits.daily.limitMicros === 0 || limits.workspaceDaily.limitMicros === 0 || limits.monthly.limitMicros === 0 ? <p role="status" className="text-xs text-destructive">AI spending is paused by a zero allowance. Ask an administrator to review the usage limits.</p>
+        : limits.monthly.remainingMicros === 0 ? <p role="status" className="text-xs text-destructive">Workspace monthly AI allowance reached. It resets on the first day of next month.</p>
+        : limits.daily.remainingMicros === 0 ? <p role="status" className="text-xs text-destructive">Your daily AI allowance reached. It resets at midnight China time.</p>
+        : limits.workspaceDaily.remainingMicros === 0 ? <p role="status" className="text-xs text-destructive">Workspace daily AI allowance reached. It resets at midnight China time.</p> : null}
+    </> : null}
   </section>;
 }

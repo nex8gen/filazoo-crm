@@ -41,6 +41,7 @@ export function EmailReaderMessage({ email, expanded, starred, loading, error, o
   const name = email.direction === "outbound" ? email.from || "You" : email.contactName || email.contact;
   const date = new Date(email.timestamp);
   const originalParams = email.uid && email.mailboxKey ? new URLSearchParams({ mailbox: email.mailboxKey, uid: String(email.uid), validity: String(email.uidValidity), folder: email.providerFolder || "INBOX" }) : null;
+  if (email.companyScopeId) originalParams?.set("companyId", email.companyScopeId);
   async function downloadAll() {
     setDownloadError("");
     try {

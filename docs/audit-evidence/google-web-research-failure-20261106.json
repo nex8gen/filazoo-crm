@@ -1,0 +1,27 @@
+{
+  "model": "google/gemini-2.5-flash-lite",
+  "maximumPublishedCallUsd": 0.22575968,
+  "calls": 1,
+  "budget": {
+    "version": 1,
+    "startedAt": 1793924361855,
+    "endsAt": 1794010761855,
+    "limitMicros": 4750000,
+    "chargedMicros": 3849722,
+    "pending": {},
+    "calls": 298,
+    "halted": false,
+    "usedMicros": 3849722,
+    "remainingMicros": 900278
+  },
+  "result": {
+    "checkedAt": "2026-11-06T05:44:28.755Z",
+    "findings": "",
+    "sources": [],
+    "queries": [],
+    "visitedUrls": [],
+    "status": "no_results",
+    "warning": "Google Search did not return a complete, source-grounded result. No public company facts were verified."
+  },
+  "scope": "Public business identity only. No CRM writes or customer messages."
+}

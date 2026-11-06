@@ -1,0 +1,30 @@
+{
+  "date": "2026-11-05",
+  "productionUrl": "https://crm.filazoosupply.com",
+  "baseCommit": "29278a93d5c5defde1fb52690b7ef2d8742e5a8b",
+  "deploymentId": "dpl_4wHuLEreaaRPfEiVcDXTkKBMUZ9S",
+  "rootCause": "AI entry points checked static environment variables only and missed Vercel's request-scoped OIDC identity.",
+  "fix": "Shared official @vercel/oidc runtime credential resolver, direct pinned dependency, OIDC enabled on the existing project, no cross-request token cache, unchanged budget enforcement.",
+  "releaseScope": "Published base commit plus AI connection changes only; concurrent signup changes excluded.",
+  "verification": {
+    "testsPassed": 1249,
+    "testsFailed": 0,
+    "typescript": "passed",
+    "lint": "passed",
+    "vercelProductionBuild": "READY",
+    "stagedHealth": "HTTP 200; database connected",
+    "customDomainDeploymentVerified": true,
+    "liveAgent": "Observed the signed-in user's hi request complete with a CRM-context-aware response in 5.4 seconds; no provider-configuration error.",
+    "automaticallyApprovedBusinessActions": false,
+    "customerEmailsSentByVerification": false
+  },
+  "regressionCoverage": [
+    "Production request token without any static API key or OIDC environment variable",
+    "Concurrent requests retain separate identities",
+    "Runtime token takes precedence over a stale local token",
+    "Explicit Gateway API key takes precedence",
+    "Standalone local OIDC token fallback",
+    "Missing credentials fail closed",
+    "Gateway budget enforcement cannot fall back to direct Gemini"
+  ]
+}

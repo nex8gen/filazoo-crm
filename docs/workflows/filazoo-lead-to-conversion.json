@@ -1,0 +1,445 @@
+{
+  "name": "Filazoo lead-to-conversion draft workflow pack",
+  "preparedOn": "2026-11-05",
+  "conversionDefinition": "Accepted quotation OR confirmed customer purchase order; deduplicate linked quote and order.",
+  "deliveryState": "Local draft request bodies only. Not saved or activated in the CRM. Full automation requires the work in the companion design.",
+  "format": "Each flows item is one authenticated POST /api/flows request body. This wrapper is not a bulk-import API format.",
+  "flows": [
+    {
+      "name": "Filazoo - website inquiry to quotation readiness",
+      "triggerType": "lead_added_to_list",
+      "triggerConfig": {
+        "listId": "Shopify B2B leads",
+        "reentryMode": "no_reentry"
+      },
+      "status": "draft",
+      "steps": [
+        {
+          "id": "filazoo-web-entry",
+          "type": "split",
+          "config": {
+            "name": "Is this an initial inquiry conversation?",
+            "paths": [
+              {
+                "id": "filazoo-web-eligible",
+                "name": "Initial inquiry",
+                "condition": {
+                  "match": "any",
+                  "rules": [
+                    {
+                      "field": "category_is",
+                      "operator": "is_not_set"
+                    },
+                    {
+                      "field": "category_is",
+                      "category": "Prospect Nurturing"
+                    },
+                    {
+                      "field": "category_is",
+                      "category": "New Inquiries"
+                    }
+                  ]
+                },
+                "steps": [
+                  {
+                    "id": "filazoo-web-qualify",
+                    "type": "create_task",
+                    "config": {
+                      "assigneeType": "owner",
+                      "assigneeId": null,
+                      "dueInDays": 0,
+                      "title": "Review wholesale requirements and prepare the next offer",
+                      "priority": "high",
+                      "notes": "Read the original inquiry answers before contacting the customer. Verify business type, first-order quantity versus monthly use, materials/variants, destination and date. Route samples, custom/private label, net terms and uncertain shipping to the owner. Check any accepted quotation or confirmed PO before follow-up. Review within one business day."
+                    }
+                  },
+                  {
+                    "id": "filazoo-web-notify",
+                    "type": "internal_alert",
+                    "config": {
+                      "userId": "owner",
+                      "message": "A website inquiry inquiry needs requirements review. Read saved source answers, preserve ownership and prepare a supported next step.",
+                      "includeThreadLink": true,
+                      "channel": "in_app"
+                    }
+                  },
+                  {
+                    "id": "filazoo-web-wait-intro",
+                    "type": "wait",
+                    "config": {
+                      "amount": 5,
+                      "unit": "minutes",
+                      "businessDays": false
+                    }
+                  },
+                  {
+                    "id": "filazoo-web-intro",
+                    "type": "ai_auto_reply",
+                    "config": {
+                      "mailboxId": "default",
+                      "replyInThread": true,
+                      "useProducts": true,
+                      "usePrices": false,
+                      "attachCatalog": false,
+                      "catalogFirstMessageOnly": true,
+                      "language": "en",
+                      "sendWindow": "anytime",
+                      "trackOpens": false,
+                      "trackClicks": false,
+                      "smartSendingHours": 24,
+                      "filters": {
+                        "match": "any",
+                        "rules": [
+                          {
+                            "field": "category_is",
+                            "operator": "is_not_set"
+                          },
+                          {
+                            "field": "category_is",
+                            "category": "Prospect Nurturing"
+                          },
+                          {
+                            "field": "category_is",
+                            "category": "New Inquiries"
+                          }
+                        ]
+                      },
+                      "instructions": "Acknowledge the wholesale inquiry briefly. Read the latest authorized conversation and use only facts actually present. Do not claim to have read form answers absent from context. Ask no more than three missing questions about materials, first-order quantity and destination; do not repeat an answered question. If a customer reply already answers these, address that reply instead. Do not quote prices or promise wholesale approval, stock reservation, free freight, sample dispatch, delivery dates, credit terms or a custom run. Do not imply a quotation, order or payment exists. Explain that the account manager will review requirements and confirm the commercial offer. Do not claim an attachment."
+                    }
+                  },
+                  {
+                    "id": "filazoo-web-wait-review",
+                    "type": "wait",
+                    "config": {
+                      "amount": 2,
+                      "unit": "days",
+                      "businessDays": true
+                    }
+                  },
+                  {
+                    "id": "filazoo-web-reply-exit",
+                    "type": "if_condition",
+                    "config": {
+                      "field": "customer_replied",
+                      "action": "stop_flow",
+                      "unmatchedAction": "continue",
+                      "lookbackDays": 30
+                    }
+                  },
+                  {
+                    "id": "filazoo-web-review-no-reply",
+                    "type": "create_task",
+                    "config": {
+                      "assigneeType": "owner",
+                      "assigneeId": null,
+                      "dueInDays": 0,
+                      "title": "Review unanswered wholesale inquiry",
+                      "priority": "high",
+                      "notes": "Review conversations, source answers, suppression, accepted quotations and confirmed POs before deciding whether to contact the buyer. Send no duplicate acknowledgment. Confirm the next useful question or offer; this task does not authorize an exception or automatically send a reminder."
+                    }
+                  },
+                  {
+                    "id": "filazoo-web-done",
+                    "type": "stop",
+                    "config": {
+                      "reason": "Acquisition review handed to the account owner",
+                      "outcome": "completed"
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "filazoo-web-advanced",
+                "name": "Existing commercial conversation",
+                "condition": null,
+                "steps": [
+                  {
+                    "id": "filazoo-web-preserve",
+                    "type": "stop",
+                    "config": {
+                      "reason": "Preserve the existing commercial conversation",
+                      "outcome": "completed"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Filazoo - Meta inquiry to quotation readiness",
+      "triggerType": "lead_added_to_list",
+      "triggerConfig": {
+        "listId": "Meta ad leads",
+        "reentryMode": "no_reentry"
+      },
+      "status": "draft",
+      "steps": [
+        {
+          "id": "filazoo-meta-entry",
+          "type": "split",
+          "config": {
+            "name": "Is this an initial inquiry conversation?",
+            "paths": [
+              {
+                "id": "filazoo-meta-eligible",
+                "name": "Initial inquiry",
+                "condition": {
+                  "match": "any",
+                  "rules": [
+                    {
+                      "field": "category_is",
+                      "operator": "is_not_set"
+                    },
+                    {
+                      "field": "category_is",
+                      "category": "Prospect Nurturing"
+                    },
+                    {
+                      "field": "category_is",
+                      "category": "New Inquiries"
+                    }
+                  ]
+                },
+                "steps": [
+                  {
+                    "id": "filazoo-meta-qualify",
+                    "type": "create_task",
+                    "config": {
+                      "assigneeType": "owner",
+                      "assigneeId": null,
+                      "dueInDays": 0,
+                      "title": "Review wholesale requirements and prepare the next offer",
+                      "priority": "high",
+                      "notes": "Read the original inquiry answers before contacting the customer. Verify business type, first-order quantity versus monthly use, materials/variants, destination and date. Route samples, custom/private label, net terms and uncertain shipping to the owner. Check any accepted quotation or confirmed PO before follow-up. Review within one business day."
+                    }
+                  },
+                  {
+                    "id": "filazoo-meta-notify",
+                    "type": "internal_alert",
+                    "config": {
+                      "userId": "owner",
+                      "message": "A Meta inquiry inquiry needs requirements review. Read saved source answers, preserve ownership and prepare a supported next step.",
+                      "includeThreadLink": true,
+                      "channel": "in_app"
+                    }
+                  },
+                  {
+                    "id": "filazoo-meta-wait-intro",
+                    "type": "wait",
+                    "config": {
+                      "amount": 5,
+                      "unit": "minutes",
+                      "businessDays": false
+                    }
+                  },
+                  {
+                    "id": "filazoo-meta-intro",
+                    "type": "ai_auto_reply",
+                    "config": {
+                      "mailboxId": "default",
+                      "replyInThread": true,
+                      "useProducts": true,
+                      "usePrices": false,
+                      "attachCatalog": false,
+                      "catalogFirstMessageOnly": true,
+                      "language": "en",
+                      "sendWindow": "anytime",
+                      "trackOpens": false,
+                      "trackClicks": false,
+                      "smartSendingHours": 24,
+                      "filters": {
+                        "match": "any",
+                        "rules": [
+                          {
+                            "field": "category_is",
+                            "operator": "is_not_set"
+                          },
+                          {
+                            "field": "category_is",
+                            "category": "Prospect Nurturing"
+                          },
+                          {
+                            "field": "category_is",
+                            "category": "New Inquiries"
+                          }
+                        ]
+                      },
+                      "instructions": "Acknowledge the wholesale inquiry briefly. Read the latest authorized conversation and use only facts actually present. Do not claim to have read form answers absent from context. Ask no more than three missing questions about materials, first-order quantity and destination; do not repeat an answered question. If a customer reply already answers these, address that reply instead. Do not quote prices or promise wholesale approval, stock reservation, free freight, sample dispatch, delivery dates, credit terms or a custom run. Do not imply a quotation, order or payment exists. Explain that the account manager will review requirements and confirm the commercial offer. Do not claim an attachment."
+                    }
+                  },
+                  {
+                    "id": "filazoo-meta-wait-review",
+                    "type": "wait",
+                    "config": {
+                      "amount": 2,
+                      "unit": "days",
+                      "businessDays": true
+                    }
+                  },
+                  {
+                    "id": "filazoo-meta-reply-exit",
+                    "type": "if_condition",
+                    "config": {
+                      "field": "customer_replied",
+                      "action": "stop_flow",
+                      "unmatchedAction": "continue",
+                      "lookbackDays": 30
+                    }
+                  },
+                  {
+                    "id": "filazoo-meta-review-no-reply",
+                    "type": "create_task",
+                    "config": {
+                      "assigneeType": "owner",
+                      "assigneeId": null,
+                      "dueInDays": 0,
+                      "title": "Review unanswered wholesale inquiry",
+                      "priority": "high",
+                      "notes": "Review conversations, source answers, suppression, accepted quotations and confirmed POs before deciding whether to contact the buyer. Send no duplicate acknowledgment. Confirm the next useful question or offer; this task does not authorize an exception or automatically send a reminder."
+                    }
+                  },
+                  {
+                    "id": "filazoo-meta-done",
+                    "type": "stop",
+                    "config": {
+                      "reason": "Acquisition review handed to the account owner",
+                      "outcome": "completed"
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "filazoo-meta-advanced",
+                "name": "Existing commercial conversation",
+                "condition": null,
+                "steps": [
+                  {
+                    "id": "filazoo-meta-preserve",
+                    "type": "stop",
+                    "config": {
+                      "reason": "Preserve the existing commercial conversation",
+                      "outcome": "completed"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Filazoo - review customer requirements and buying replies",
+      "triggerType": "email_received",
+      "triggerConfig": {
+        "reentryMode": "every_event"
+      },
+      "status": "draft",
+      "steps": [
+        {
+          "id": "filazoo-reply-review",
+          "type": "create_task",
+          "config": {
+            "assigneeType": "owner",
+            "assigneeId": null,
+            "dueInDays": 0,
+            "title": "Review customer reply and choose the commercial next step",
+            "priority": "high",
+            "notes": "Read the latest message and attachments. Identify requirements, sample feedback, changes, objections, postponement, explicit quote acceptance or a customer PO. Verify exact quotation ID/version, quantities, currency and terms before recording acceptance or confirming a PO. Do not infer acceptance from interest, opens or clicks. A draft PO is not confirmed. Update records through authorized actions."
+          }
+        },
+        {
+          "id": "filazoo-reply-alert",
+          "type": "internal_alert",
+          "config": {
+            "userId": "owner",
+            "message": "A customer replied. Review requirements, negotiations, explicit quote acceptance or a customer PO. No commercial decision was made automatically.",
+            "includeThreadLink": true,
+            "channel": "in_app"
+          }
+        },
+        {
+          "id": "filazoo-reply-done",
+          "type": "stop",
+          "config": {
+            "reason": "Customer reply assigned for evidence-based review",
+            "outcome": "completed"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Filazoo - review a quotation awaiting feedback",
+      "triggerType": "category_changed",
+      "triggerConfig": {
+        "category": "Quotation Follow-up",
+        "reentryMode": "every_event"
+      },
+      "status": "draft",
+      "steps": [
+        {
+          "id": "filazoo-quote-wait",
+          "type": "wait",
+          "config": {
+            "amount": 2,
+            "unit": "days",
+            "businessDays": true
+          }
+        },
+        {
+          "id": "filazoo-quote-tag-check",
+          "type": "if_condition",
+          "config": {
+            "field": "category_is",
+            "category": "Quotation Follow-up",
+            "action": "continue",
+            "unmatchedAction": "stop_flow"
+          }
+        },
+        {
+          "id": "filazoo-quote-reply-check",
+          "type": "if_condition",
+          "config": {
+            "field": "customer_replied",
+            "action": "stop_flow",
+            "unmatchedAction": "continue",
+            "lookbackDays": 30
+          }
+        },
+        {
+          "id": "filazoo-quote-review",
+          "type": "create_task",
+          "config": {
+            "assigneeType": "owner",
+            "assigneeId": null,
+            "dueInDays": 0,
+            "title": "Check saved quotation and decide whether follow-up is needed",
+            "priority": "high",
+            "notes": "Open the current saved quotation and linked PO before contacting the buyer. Stop acquisition follow-up if the quote is accepted or a linked PO confirmed. If expired, declined, superseded, cancelled or postponed, use the matching review action. Otherwise offer a helpful next step. A conversation tag is not proof of quotation status. This workflow sends no customer reminder."
+          }
+        },
+        {
+          "id": "filazoo-quote-alert",
+          "type": "internal_alert",
+          "config": {
+            "userId": "owner",
+            "message": "A quotation conversation had no new reply during the review wait. Check the saved quotation and PO before following up.",
+            "includeThreadLink": true,
+            "channel": "in_app"
+          }
+        },
+        {
+          "id": "filazoo-quote-done",
+          "type": "stop",
+          "config": {
+            "reason": "Quotation review assigned; no external reminder sent",
+            "outcome": "completed"
+          }
+        }
+      ]
+    }
+  ]
+}

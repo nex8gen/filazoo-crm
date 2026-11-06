@@ -1,3 +1,4 @@
+import { resolveGatewayToken } from "../ai/provider-credentials.ts";
 import "server-only";
 import { requireAiAutomation } from "./ai-settings";
 import { aiBehaviorInstruction } from "../ai-policy";
@@ -59,7 +60,7 @@ export async function latestWorkflowEvidence(viewer: WorkspaceViewer, request: R
 async function planWork(prompt: string, usageUserId: string) {
   const policy = await requireAiAutomation([], ["emails", "customers", "billing", "products", "tasks"]);
   const apiKey = process.env.AI_PROVIDER === "gateway" || process.env.AI_BUDGET_ENFORCEMENT === "true" ? undefined : process.env.GEMINI_API_KEY?.trim();
-  const token = process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
+  const token = resolveGatewayToken(process.env);
   const responseJsonSchema = z.toJSONSchema(replyWorkPlanSchema.extend({ changes: replyWorkPlanSchema.shape.changes.required() }), { unrepresentable: "any", target: "draft-7" });
   delete responseJsonSchema.$schema;
   const options = { prompt, systemInstruction: `${replyWorkInstruction}${aiBehaviorInstruction(policy, true)}\nExact JSON schema: ${JSON.stringify(responseJsonSchema)}`, responseJsonSchema, maxOutputTokens: 6000,

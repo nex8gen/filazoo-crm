@@ -33,7 +33,7 @@ function fixture({ pending = { email: "alex@example.test", next: "/join/team-tok
   const source = readFileSync(new URL("../app/signup/verify/actions.ts", import.meta.url), "utf8");
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   vm.runInNewContext(code, { exports, require: (name: keyof typeof dependencies) => dependencies[name], URL, Object });
-  const form = new FormData(); form.set("code", "012345");
+  const form = new FormData(); form.set("code", "01234567");
   return { calls, writes, form, verify: () => exports.verifySignupCode(undefined, form), request: () => exports.requestVerification(undefined, form) };
 }
 
@@ -41,7 +41,7 @@ test("verification checks the exact code and pending email, clears the pending c
   const f = fixture(); f.form.set("email", "forged@example.test");
   await assert.rejects(f.verify(), /redirect:\/join\/team-token/);
   assert.equal(f.calls[0].email, "alex@example.test");
-  assert.equal(f.calls[0].token, "012345");
+  assert.equal(f.calls[0].token, "01234567");
   assert.equal(f.calls[0].type, "email");
   assert.equal(f.writes[0].name, pendingSignupCookie);
   assert.equal(f.writes[0].value, "");
@@ -50,11 +50,19 @@ test("verification checks the exact code and pending email, clears the pending c
 });
 
 test("malformed or missing codes never reach the authentication provider", async () => {
-  for (const code of ["", "12345", "1234567", "ABCDEF", "12 345", "１２３４５６"]) {
+  for (const code of ["", "12345", "12345678901", "ABCDEF", "12 345", "１２３４５６"]) {
     const f = fixture(); f.form.set("code", code);
-    assert.match((await f.verify()).error!, /6-digit/);
+    assert.match((await f.verify()).error!, /verification code/);
     assert.equal(f.calls.length, 0);
     assert.equal(f.writes.length, 0);
+  }
+});
+
+test("the verifier preserves provider-supported code lengths including this project's eight digits", async () => {
+  for (const code of ["012345", "01234567", "0123456789"]) {
+    const f = fixture(); f.form.set("code", code);
+    await assert.rejects(f.verify(), /redirect:\/join\/team-token/);
+    assert.equal(f.calls[0].token, code);
   }
 });
 

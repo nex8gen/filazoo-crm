@@ -15,6 +15,7 @@ function setup(queueFailure = false) {
   const dependencies: Record<string, unknown> = {
     "@/lib/auth": { requireWorkspaceMember: async () => { counts.auth++; if (denied) throw new Error("Unauthorized"); return viewer; } },
     "@/lib/data/mailboxes": { getViewerMailboxes: async () => { counts.mailboxes++; return mailboxes; }, mailboxHasImap: () => true },
+    "@/lib/data/company-email-access": { listCompanyEmailMailboxes: async () => [...mailboxes, { id: "other-staff", type: "personal" }] },
     "@/lib/email-inbox": { getEmailInboxBackendData: async (options: { mailboxId?: string; syncMailbox: boolean; context: unknown }) => {
       counts.inbox++;
       assert.equal(options.syncMailbox, false);
@@ -76,7 +77,16 @@ test("company refresh reads combined history and refreshes every authorized acco
   assert.equal((await response.json()).emails[0].id, "workspace-message");
   assert.deepEqual(backend.companyReads, ["customer"]);
   assert.equal(backend.counts.inbox, 0, "Company history must not fall back to the default personal inbox");
-  assert.equal(backend.counts.sync, 2);
+  assert.equal(backend.counts.sync, 3);
+});
+
+test("automatic company polling recovers old conversation tags without a manual mailbox refresh", async () => {
+  const backend = setup();
+  const response = await backend.GET(new Request("http://localhost/api/email/inbox?companyId=customer&refresh=false"));
+  assert.equal(response.status, 200);
+  assert.equal(backend.counts.sync, 0, "Saved history polling does not force an IMAP import");
+  assert.equal(backend.background.length, 1, "Tag recovery runs automatically for the visible customer");
+  await backend.background[0]();
 });
 
 test("missing company cannot read or sync any mailbox", async () => {

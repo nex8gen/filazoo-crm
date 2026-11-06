@@ -45,13 +45,7 @@ export async function generateGatewayText({
   standard,
   responseJsonSchema,
   signal,
-  usageUserId,
 }: GenerateGatewayTextOptions) {
-  if (process.env.AI_BUDGET_ENFORCEMENT === "true") {
-    if (!usageUserId) throw Object.assign(new Error("AI usage could not be linked to an active workspace member."), { name: "AiBudgetError", status: 503 });
-    const { budgetedAiFetch } = await import("./budget-server.ts");
-    fetcher = budgetedAiFetch(usageUserId, fetcher);
-  }
   let expiresAt: unknown;
   try { if (token.split(".").length === 3) expiresAt = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString()).exp; } catch { /* Opaque API keys need no JWT inspection. */ }
   if (typeof expiresAt === "number" && expiresAt * 1000 <= Date.now()) throw new Error("AI Gateway authentication has expired. Refresh the linked project's local development token with vercel env pull, then reload the server environment.");

@@ -1,0 +1,51 @@
+{
+  "date": "2026-11-06",
+  "feature": "Customer correspondence participant matching",
+  "baseDeployment": "dpl_HD5bKH5x7EWyku8RRX9xRPsnzKVq",
+  "preservedPublishedWorkspaceFixes": "dpl_nPADbWrohpcmL2cfN9L78MFh5hgE",
+  "candidateDeployment": "dpl_9HAh54kAGBVekVSxyUo8qV4S2hdB",
+  "taggingVersion": "workspace-history-v5",
+  "promoted": true,
+  "customDomainDeploymentVerified": true,
+  "productionHealthRequest": 36182,
+  "productionHealthStatus": 200,
+  "productionHealthTaggingVersion": "workspace-history-v5",
+  "allFourMailboxAccountsRecentlySyncedWithoutJobErrors": true,
+  "cause": "Company filtering and personal-company authorization checked only the primary contact, omitting actual customer participants in secondary recipients or staff copies",
+  "repair": [
+    "Match exact saved customer From, To, CC and BCC headers; never names, domains or quoted body text",
+    "Retain the matched customer contact and staff sender direction during body hydration",
+    "Exclude connected staff addresses from company-contact authorization and tag ownership",
+    "Reject automatic tag proposals when actual participants resolve to multiple customer companies or a conflicting contact",
+    "Preserve colleague mailbox sender restrictions and exact UID, UIDVALIDITY, assignment and attachment storage checks"
+  ],
+  "reportedCustomers": {
+    "Dr. Clark": { "messages": 4, "sentReplies": 2, "sender": "enphany@filazoo.com", "alreadyLinkedCorrectly": true, "companyScopedOriginalBodyOpened": true },
+    "DS 3D PRINT": { "messages": 3, "sentReplies": 1, "sender": "enphany@filazoo.com", "alreadyLinkedCorrectly": true, "companyScopedOriginalBodyOpened": true },
+    "sixOtherCustomersInScreenshot": "Only the original inquiry was found for each; no sent message was found in the four connected mailbox snapshots or CRM sent records"
+  },
+  "beforeAfterSavedDataChecks": [
+    { "company": "3D-FixIt", "beforeMessages": 58, "afterMessages": 59 },
+    { "company": "3dxfilamentos", "beforeMessages": 5, "afterMessages": 6 },
+    { "company": "Crie personalizados", "beforeMessages": 2, "afterMessages": 3 },
+    { "company": "Onx3d", "beforeMessages": 33, "afterMessages": 33 }
+  ],
+  "validation": {
+    "isolatedReleaseTestsPassed": 1276,
+    "isolatedReleaseTestsFailed": 0,
+    "isolatedTypeScript": "passed",
+    "hostedProductionBuild": "READY",
+    "targetedLint": "passed",
+    "localProductionCompileTypesAndStaticGeneration": "passed; PowerShell reported a native stderr warning for multiple workspace lockfiles",
+    "browser": "Observed the authenticated Sourav Mallick admin company list; further navigation was interrupted by concurrent user input. Company mailbox results were verified with the actual backend reader, not claimed as a rendered UI check."
+  },
+  "tagBackfill": {
+    "complete": false,
+    "sharedMailboxOperatorRemainingUsd": 0.001141,
+    "enphanyRemainingUsd": 0.001195,
+    "dailyLimitPerUserUsd": 0.20,
+    "dailyResetChinaTime": "2026-11-07T00:00:00+08:00",
+    "limitsChanged": false,
+    "testEmailsSent": false
+  }
+}

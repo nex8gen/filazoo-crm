@@ -96,7 +96,9 @@ test("preserves the saved tax rate when updating an existing catalog line", () =
 });
 
 test("provider errors explain missing billing, expired credentials, and regional availability", () => {
-  assert.match(assistantProviderError(new Error("AI Gateway requires a valid credit card on file")), /billing is not enabled/);
+  const billing = assistantProviderError(new Error("AI Gateway requires a valid credit card on file"));
+  assert.match(billing, /billing needs attention/);
+  assert.doesNotMatch(billing, /keep using|existing Gemini/);
   assert.match(assistantProviderError(new Error("Authentication failed")), /refresh the Vercel/);
   assert.match(assistantProviderError(new Error("User location is not supported")), /supported region/);
   assert.ok(!assistantProviderError(new Error("unknown request private-token-value")).includes("private-token-value"));

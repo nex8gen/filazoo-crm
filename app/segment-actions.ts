@@ -16,6 +16,36 @@ export async function updateSegment(_state: SegmentActionState, formData: FormDa
   return saveSegment(formData, true);
 }
 
+export async function deleteSegment(_state: SegmentActionState, formData: FormData): Promise<SegmentActionState> {
+  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
+  const target = z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("saved"), value: z.uuid() }),
+    z.object({ kind: z.literal("business"), value: z.string().min(1).max(120) }),
+  ]).safeParse({ kind: formData.get("kind"), value: formData.get("segmentId") });
+  if (!target.success) return { error: "Choose a valid segment to delete." };
+  if (target.data.kind === "business") {
+    if (viewer.role === "bd_manager") return { error: "Only admins and operators can delete business segments." };
+    if (target.data.value === "Unclassified") return { error: "Unclassified is the default group for companies without a business segment." };
+  }
+  const admin = createSupabaseAdmin();
+  if (target.data.kind === "saved") {
+    const { data, error } = await admin.from("company_segments").delete().eq("id", target.data.value).select("id").maybeSingle();
+    if (error) return { error: "Unable to delete the segment. Please try again." };
+    if (!data) return { error: "This segment could not be found. Refresh the page and try again." };
+  } else {
+    // Business segments are labels on companies, not separate records.
+    const { count, error } = await admin.from("companies").update({ segment: null }, { count: "exact" })
+      .eq("segment", target.data.value).or("source.is.null,source.neq.sample_seed");
+    if (error) return { error: "Unable to delete the segment. Please try again." };
+    if (!count) return { error: "This segment could not be found. Refresh the page and try again." };
+    revalidatePath("/companies/[id]", "page");
+  }
+  revalidatePath("/segments");
+  revalidatePath("/companies");
+  revalidatePath("/email/workflows");
+  return { success: "Segment deleted." };
+}
+
 async function saveSegment(formData: FormData, updating: boolean): Promise<SegmentActionState> {
   const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
   const segmentId = updating ? z.uuid().safeParse(formData.get("segmentId")) : null;

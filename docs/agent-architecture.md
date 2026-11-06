@@ -27,9 +27,11 @@ The existing application already uses Next.js route handlers and CRM services. V
 5. Stage proposals in memory. The model loop performs no business mutations. Failed or mixed read/action batches are discarded.
 6. Existing preparation, review, stored action claims, stale-record fingerprints and business services validate and execute the actions. Mandatory financial/destructive/admin reviews remain in force. A completion claim requires a saved execution result.
 
-Local function calls are covered by the existing Gateway budget reservations. Schemas and arguments count as input/output tokens. Each model step has bounded output, no hidden SDK retries, no provider conversation storage and no provider-side computer/code tool. Existing chat history and usage tracking continue to wrap the transport.
+Local function schemas and arguments count as input/output tokens. Application usage limits and Gateway budget reservations have been removed. Each model step has bounded output, no hidden SDK retries, no provider conversation storage and no provider-side computer/code tool. Existing chat history and usage tracking continue to wrap the transport.
 
 ## Changing models or adding features
+
+Gateway credentials are resolved inside each request by `lib/ai/provider-credentials.ts`. An explicit `AI_GATEWAY_API_KEY` takes precedence; otherwise the official `@vercel/oidc` helper reads Vercel's trusted runtime request context, with `VERCEL_OIDC_TOKEN` supporting local development and standalone workers. Enable OIDC in the linked Vercel project. Production does not require copying a local expiring token into environment settings. Agent, chat, email, research, workflows, tagging and inbox availability use the same resolver. Credentials are never cached across requests. Existing provider selection remains compatible with the legacy budget flag, which no longer enables allowance checks.
 
 Model selection remains in `lib/ai/model-routing.ts` and environment settings. New model IDs must also have current pricing and reservation-policy support. Run the same synthetic qualification suite before enabling a new model. This is regression testing, not model training; arbitrary models are not assumed to have reliable tool support.
 
@@ -38,6 +40,8 @@ For a new CRM feature, add its typed action schema, business-service adapter, po
 `AI_AGENT_RUNTIME=sdk` is the default for Gateway Agent requests. `legacy` is an explicit rollback to the previous text-command loop; direct Gemini compatibility still uses that older path. Normal Chat remains read-only. No production deployment is implied by this code change.
 
 ## Verification
+
+Production authentication was repaired and released on 2026-11-05. The isolated release passed 1,249 tests, TypeScript, lint and Vercel's production build. The custom domain was verified against the new deployment, and a signed-in live Agent request completed in 5.4 seconds. See [production-ai-auth-20261105.json](./audit-evidence/production-ai-auth-20261105.json).
 
 `tests/native-agent.test.ts` checks the actual SDK loop, native transport, permission denial, clarification, failed-batch isolation, document aliases and budgeted function tools. Existing agent preparation/execution tests cover the shared services. `tests/agent-capability-audit.test.ts` checks inventory drift.
 

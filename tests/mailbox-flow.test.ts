@@ -9,6 +9,9 @@ import ts from "typescript";
 import * as legacy from "../lib/mailbox-imap.ts";
 import * as sync from "../lib/mailbox-sync.ts";
 import * as folders from "../lib/email-provider.ts";
+import * as threading from "../lib/email-threading.ts";
+import * as mime from "../lib/email-mime.ts";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 function setup(stall = false, omitRootMime = false) {
   const clients: FakeFlow[] = [];
@@ -79,4 +82,23 @@ test("modern flag reconciliation tombstones missing UIDs and preserves exact UID
     const result = await api.reconcileMailboxFlow(mailbox, messages, "INBOX", scope);
     assert.equal(result[0].read, true); assert.equal(result[0].starred, true); assert.equal(result[1].providerRemoved, true);
   } finally { api.closeMailboxFlowScope(scope.prefix); }
+});
+
+test("missing message bodies use the bounded modern client and fetch complete text without the preview limit", async () => {
+  const { api, mailbox, queries, clients } = setup();
+  const dependencies: Record<string, unknown> = {
+    imap: class { constructor() { throw new Error("The legacy body connection must not be opened"); } },
+    mailparser: { simpleParser }, "./email-threading.ts": threading, "./mailbox-sync.ts": sync,
+    "node:async_hooks": { AsyncLocalStorage }, "node:crypto": { createHash }, "./email-provider.ts": folders,
+    "./email-mime.ts": mime, "./mailbox-flow.ts": api,
+  };
+  const exports = {} as typeof import("../lib/mailbox-imap.ts");
+  vm.runInNewContext(ts.transpileModule(readFileSync(new URL("../lib/mailbox-imap.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText,
+    { exports, require: (name: string) => dependencies[name], Buffer, Map, Set, Date, setTimeout, clearTimeout });
+  const messages = await exports.receiveMailboxMessages(mailbox, { preferModernTransport: true, headersOnly: false, uids: [1], uidValidity: 42 });
+  assert.equal(messages[0].bodyLoaded, true);
+  assert.equal(messages[0].body, "Hello preview");
+  assert.ok(queries.some(query => Array.isArray(query.bodyParts) && query.bodyParts.includes("1")));
+  assert.equal(JSON.stringify(queries).includes("maxLength"), false);
+  assert.equal(clients[0].usable, false, "The bounded reader closes its own connection");
 });

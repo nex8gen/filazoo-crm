@@ -46,7 +46,7 @@ export function CompanyWorkspace({ companyId, initialTab, toolbar, profile, sect
   }
 
   return <Tabs value={activeTab} onValueChange={select} className="gap-6">
-    <div className="sticky top-12 z-30 flex min-w-0 flex-col gap-3 border-b bg-background py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-5">
+    <div className="sticky top-0 z-30 flex min-w-0 flex-col gap-3 border-b bg-background py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-5">
       <div className="order-2 min-w-0 overflow-x-auto pb-1 sm:order-1">
         <TabsList variant="line" aria-label="Customer profile sections" className="min-w-max justify-start gap-2 lg:gap-4">
           {sections.map(({ value, label, icon: Icon }) => <TabsTrigger key={value} id={value === "profile" || value === "history" ? `company-${value}-tab` : undefined} value={value} className="gap-2 px-3"><Icon />{label}</TabsTrigger>)}

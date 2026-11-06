@@ -98,47 +98,19 @@ Sources: [Vercel model catalog](https://ai-gateway.vercel.sh/v1/models),
 [Responses API](https://vercel.com/docs/ai-gateway/sdks-and-apis/responses),
 [reasoning controls](https://vercel.com/docs/ai-gateway/models-and-providers/reasoning).
 
-## Workspace allowance
+## AI usage limits
 
-`AI_BUDGET_ENFORCEMENT=true` enables the private Supabase reservation ledger.
-Apply `20261104084056_workspace_ai_budget.sql` before enabling it. The server
-attributes every generation and background job to its authenticated caller or
-automation owner. Unpriced models and direct Gemini calls fail closed.
+As of November 5, 2026, application usage limits are removed. Chat, SDK agents,
+research, email assistance and background AI call the configured provider without
+workspace budget reservations or personal/daily/monthly allowance checks. The
+chat usage button, allowance meters and Settings spending controls are removed.
+Token usage and conversation history are still recorded.
 
-Apply `20261104093655_workspace_ai_nano_daily_reset.sql` for private daily-reset
-audit events, followed by `20261105004226_workspace_ai_task_routing.sql` to allow
-the tested task models. Nano remains accepted for rolling restarts and existing
-reservations; new routed requests do not select it. A daily reset excludes the member's earlier requests from today's
-allowance; original usage records and the monthly billed total remain intact.
-New usage counts normally, and the reset expires at China-time midnight.
-The daily and monthly allowance amounts remain unchanged. Browser roles cannot
-record resets. Authorized resets take the existing budget-policy lock.
-`tests/ai-budget-database.sql` verifies model restrictions, reset behavior,
-monthly preservation, new usage and privileges in a rolled-back transaction.
+Existing budget migrations, helpers and ledger rows are retained for compatibility
+and historical accounting; active provider paths do not call them. The legacy
+`AI_BUDGET_ENFORCEMENT` environment value no longer enables enforcement. Where
+already set, it still selects Gateway for backward-compatible provider routing;
+new environments should select it explicitly with `AI_PROVIDER=gateway`.
 
-The shared calendar-month allowance is $30 in Asia/Shanghai. The daily workspace
-allowance is $30 divided by days in that month; each active member gets an equal
-share with a minimum of five shares. November therefore allows $0.20 per member
-per day; a 31-day month allows $0.193548. Unused daily allowance does not roll over.
-The database lock serializes reservations across local CRM and hosted workers.
-
-Before sending, requests reserve a conservative input/output/tool cost from the
-current public Gateway catalog. Cached-input discounts are not assumed and cache
-write/long-context rates are included. Successful requests settle against reported
-tokens. Uncertain failures retain their full reservation; reservations never
-automatically expire and release potentially billed spend. Administrators may
-reconcile these against provider logs. This allowance is deliberately conservative
-and is not an invoice. Historical unpriced Gemini events remain unpriced; known
-historical costs and the observed pre-rollout Gateway balance are included.
-
-Requests can be declined before the meter reaches 100% when their maximum cost
-exceeds the remaining allowance. Image requests use the full model-context bound
-and may exceed this small daily allowance. Web research uses one bounded search
-via Gateway; direct unmetered Google research is disabled with enforcement enabled.
-The AI usage button shows personal daily and workspace monthly percentages;
-running-request reservations are included and the open panel refreshes every 30s.
-
-Vercel's team and local API-key budgets are also $30/month as a backup. Vercel
-resets at UTC and is a soft cap for in-flight calls; the application reservations
-enforce the China-time calendar independently. Do not run paid verification scripts
-without an explicit trusted workspace user and a bounded approved test allowance.
+Workspace AI feature switches, data access and action permissions still apply.
+Provider billing, credits and provider-side rate limits are managed separately.

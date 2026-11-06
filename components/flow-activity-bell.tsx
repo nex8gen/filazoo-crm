@@ -7,7 +7,7 @@ import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigg
 import { ActivityEmptyState, NotificationItem, TaskItem } from "./activity-items";
 import type { ActivitySummary, FlowActivityData } from "@/lib/task-activity";
 
-export function FlowActivityBell() {
+export function FlowActivityBell({ sidebar = false, expanded = false }: { sidebar?: boolean; expanded?: boolean }) {
   const [summary, setSummary] = useState<ActivitySummary>({ openTasks: 0, unreadAlerts: 0, overdueTasks: 0, dueToday: 0 });
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<"notifications" | "tasks">("notifications");
@@ -93,11 +93,12 @@ export function FlowActivityBell() {
 
   const count = summary.unreadAlerts;
   return <Popover open={open} onOpenChange={setOpen}>
-    <PopoverTrigger aria-label={`Tasks and notifications${count ? ` (${count} unread)` : ""}`} title="Tasks and notifications" className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-border/70 bg-muted/20 px-2 text-muted-foreground outline-none transition-colors hover:border-border hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-popup-open:border-primary/15 data-popup-open:bg-primary/7 data-popup-open:text-primary">
+    <PopoverTrigger aria-label={`Tasks and notifications${count ? ` (${count} unread)` : ""}`} title="Tasks and notifications" className={sidebar ? "workspace-sidebar-row relative" : "inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-border/70 bg-muted/20 px-2 text-muted-foreground outline-none transition-colors hover:border-border hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-popup-open:border-primary/15 data-popup-open:bg-primary/7 data-popup-open:text-primary"}>
       <Bell className="size-4" strokeWidth={1.7} />
-      {count > 0 ? <span className="ml-0.5 inline-flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-md bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground tabular-nums">{count > 99 ? "99+" : count}</span> : null}
+      {sidebar && expanded ? <span className="truncate">Notifications</span> : null}
+      {count > 0 ? <span className={sidebar ? `inline-flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-[#d82142] px-1 text-[10px] font-semibold leading-none text-white tabular-nums ${expanded ? "ml-auto" : "absolute -right-0.5 -top-0.5"}` : "ml-0.5 inline-flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-md bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground tabular-nums"}>{count > 99 ? "99+" : count}</span> : null}
     </PopoverTrigger>
-    <PopoverContent align="end" sideOffset={12} className="w-[520px] max-w-[calc(100vw-24px)] max-h-[var(--available-height)] gap-0 overflow-hidden rounded-2xl p-0 shadow-[0_12px_48px_-12px_rgb(0_0_0/0.25)] ring-border" onClick={event => { if (event.target instanceof Element && event.target.closest("a")) setOpen(false); }}>
+    <PopoverContent side={sidebar ? "right" : "bottom"} align="end" sideOffset={12} className="w-[520px] max-w-[calc(100vw-24px)] max-h-[var(--available-height)] gap-0 overflow-hidden rounded-2xl p-0 shadow-[0_12px_48px_-12px_rgb(0_0_0/0.25)] ring-border" onClick={event => { if (event.target instanceof Element && event.target.closest("a")) setOpen(false); }}>
       <div className="flex items-center justify-between gap-3 px-5 pb-5 pt-6 sm:px-6"><div><PopoverTitle className="text-base font-semibold tracking-[-0.006em]">{view === "notifications" ? "Your notifications" : "Your tasks"}</PopoverTitle><PopoverDescription className="sr-only">A quick look at what needs you.</PopoverDescription></div><Link href={view === "tasks" ? "/tasks" : "/tasks?view=notifications"} aria-label={view === "tasks" ? "View all tasks" : "View all notifications"} className="grid size-8 place-items-center rounded-lg text-muted-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"><ArrowUpRight className="size-4" /></Link></div>
       <div className="px-5 pb-4 sm:px-6"><div className="inline-flex max-w-full items-center gap-1 rounded-lg bg-muted/65 p-1" aria-label="Activity views">
         <button type="button" aria-pressed={view === "notifications"} onClick={() => setView("notifications")} className={`inline-flex min-h-8 items-center gap-2 rounded-md px-2.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring ${view === "notifications" ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>Notifications<span className="grid h-5 min-w-5 place-items-center rounded-full bg-muted-foreground/15 px-1 text-[10px] tabular-nums">{activity?.alertCount ?? summary.unreadAlerts}</span></button>

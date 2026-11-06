@@ -1,3 +1,4 @@
+import { resolveGatewayToken } from "@/lib/ai/provider-credentials";
 import { requireAiFeature } from "@/lib/data/ai-settings";
 import { aiBehaviorInstruction, restrictedAiContext, AiPolicyError } from "@/lib/ai-policy";
 import { z } from "zod";
@@ -38,12 +39,12 @@ export async function POST(request: Request) {
   if (restrictedAiContext(policy)) input.data.customerProfile = undefined;
   if (!policy.data.products) input.data.products = [];
   if (!policy.data.team) input.data.assignedManagerName = undefined;
-  const instruction = buildEmailReplyInstruction(input.data.language) + aiBehaviorInstruction(policy, true);
+  const instruction = buildEmailReplyInstruction() + aiBehaviorInstruction(policy, true);
   const apiKey = process.env.AI_PROVIDER === "gateway" || process.env.AI_BUDGET_ENFORCEMENT === "true" ? undefined : process.env.GEMINI_API_KEY?.trim();
-  const token = process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
+  const token = resolveGatewayToken(process.env);
   if (!apiKey && !token) return Response.json({ error: "AI reply is not configured. Add an AI provider in the server settings." }, { status: 503 });
   const canCreateInvoice = canCreateInvoices(viewer.role) && policy.data.billing && policy.data.products && policy.data.customers && policy.actions.invoices !== "deny";
-  const prompt = JSON.stringify({ ...input.data, canCreateInvoice, seller: DEFAULT_EMAIL_COMPANY });
+  const prompt = JSON.stringify({ ...input.data, language: "en", canCreateInvoice, seller: DEFAULT_EMAIL_COMPANY });
   const gateway = () => generateGatewayText({ usageUserId: viewer.id, token: token!, model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim(), systemInstruction: instruction, prompt, maxOutputTokens: 8192, task: "reply", signal: request.signal });
   try {
     let output: string;
@@ -61,9 +62,9 @@ export async function POST(request: Request) {
         throw new Error("AI could not match the requested product. Review the product and variant before retrying.");
     }
     plan.body = applyEmailSignature(plan.body, {
-      name: normalizeSignatureName(input.data.assignedManagerName, normalizeSignatureName(viewer.displayName, input.data.language === "zh-CN" ? "Filazoo 销售团队" : "Filazoo Sales Team")),
-      title: input.data.language === "zh-CN" ? "商务拓展经理" : DEFAULT_EMAIL_TITLE, company: DEFAULT_EMAIL_COMPANY,
-    }, input.data.language);
+      name: normalizeSignatureName(input.data.assignedManagerName, normalizeSignatureName(viewer.displayName)),
+      title: DEFAULT_EMAIL_TITLE, company: DEFAULT_EMAIL_COMPANY,
+    });
     return Response.json({ ok: true, plan }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("AI reply generation failed", error);

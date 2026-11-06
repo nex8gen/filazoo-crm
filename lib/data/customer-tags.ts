@@ -2,12 +2,16 @@ import { createSupabaseAdmin } from "../supabase/admin.ts";
 import { emailTagMessageKey, isCustomerTag, type CustomerTag } from "../customer-tags.ts";
 
 export async function listSharedEmailTags() {
-  const tags = new Map<string, CustomerTag | null>();
+  return new Map([...(await listSharedEmailTagAssignments())].map(([key, value]) => [key, value.category]));
+}
+
+export async function listSharedEmailTagAssignments() {
+  const tags = new Map<string, { category: CustomerTag | null; updatedAt?: string }>();
   for (let offset = 0; ; offset += 500) {
     const { data, error } = await createSupabaseAdmin().from("crm_email_tags")
-      .select("message_key,tag").order("message_key").range(offset, offset + 499);
+      .select("message_key,tag,updated_at").order("message_key").range(offset, offset + 499);
     if (error) throw new Error(`Unable to load customer tags: ${error.message}`);
-    for (const row of data ?? []) tags.set(row.message_key, isCustomerTag(row.tag) ? row.tag : null);
+    for (const row of data ?? []) tags.set(row.message_key, { category: isCustomerTag(row.tag) ? row.tag : null, updatedAt: row.updated_at });
     if ((data?.length ?? 0) < 500) break;
   }
   return tags;
@@ -25,10 +29,12 @@ export async function saveSharedEmailTag(input: {
     .eq("message_key", messageKey).maybeSingle();
   if (readError) throw new Error(`Unable to load customer tag: ${readError.message}`);
   const contactEmail = input.contactEmail?.trim().toLowerCase() || previous?.contact_email || null;
-  const { data: contact, error: contactError } = contactEmail
-    ? await admin.from("contacts").select("company_id").eq("email", contactEmail).limit(1).maybeSingle()
+  const { data: contacts, error: contactError } = contactEmail
+    ? await admin.from("contacts").select("company_id").eq("email", contactEmail).limit(2)
     : { data: null, error: null };
   if (contactError) throw new Error(`Unable to match customer tag: ${contactError.message}`);
+  if (contacts && contacts.length > 1) throw new Error("This email matches multiple customer contacts. Resolve the duplicate contacts before assigning a tag.");
+  const contact = contacts?.[0];
   const shared = {
     source: input.source ?? "manual",
     company_id: contact?.company_id ?? input.companyId ?? previous?.company_id ?? null,

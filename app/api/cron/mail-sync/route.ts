@@ -9,9 +9,11 @@ export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
   if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) return Response.json({ error: "Unauthorized" }, { status: 401 });
   const task = new URL(request.url).searchParams.get("task");
-  if (task === "health") return Response.json({ ok: true, version: "mail-sync-fast-v4" }, { headers: { "Cache-Control": "no-store" } });
+  const companyId = new URL(request.url).searchParams.get("companyId");
+  if (companyId && !/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(companyId)) return Response.json({ error: "Invalid company." }, { status: 400 });
+  if (task === "health") return Response.json({ ok: true, version: "mail-sync-fast-v4", taggingVersion: "workspace-history-v5" }, { headers: { "Cache-Control": "no-store" } });
   if (task === "tags") {
-    const tags = await forEachWorkspace((_id, count) => processAutomaticConversationTags({ maxConversations: 10, budgetMs: Math.max(5_000, Math.floor(220_000 / count)) }));
+    const tags = await forEachWorkspace((_id, count) => processAutomaticConversationTags({ ...(companyId ? { companyIds: [companyId] } : {}), maxConversations: 10, budgetMs: Math.max(5_000, Math.floor(220_000 / count)) }));
     return Response.json({ ok: true, tags }, { headers: { "Cache-Control": "no-store" } });
   }
   if (task === "once") {

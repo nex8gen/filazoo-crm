@@ -88,6 +88,7 @@ export type EmailWorkspaceItem = {
   uid?: number;
   uidValidity?: number;
   mailboxKey?: string;
+  companyScopeId?: string;
   mailboxId?: string | null;
   bodyLoaded?: boolean;
   contactName?: string;
@@ -656,6 +657,7 @@ export function EmailInboxWorkspace({
     setBodyErrors((current) => { const next = { ...current }; delete next[email.id]; return next; });
     try {
       const params = new URLSearchParams({ uid: String(email.uid), validity: String(email.uidValidity), mailbox: email.mailboxKey || "", folder: email.providerFolder || "INBOX" });
+      if (email.companyScopeId) params.set("companyId", email.companyScopeId);
       const response = await fetch(email.crmEmailId ? `/api/email/crm-message?id=${encodeURIComponent(email.crmEmailId)}` : `/api/email/message?${params}`, { cache: "no-store" });
       const result = await response.json();
       if (!response.ok || !result.email) throw new Error(result.error || "Unable to load this message.");
@@ -825,7 +827,7 @@ export function EmailInboxWorkspace({
           ...(tagKeys.length ? { tagConversationKeys: tagKeys, tagMessageKeys: tagConversation!.messages.map(emailTagMessageKey) } : {}),
           contactEmail: email?.contact.includes("@") ? email.contact : undefined,
           threadId: tagConversation?.id ?? email?.threadId ?? null,
-          ...(email?.uid && email.uidValidity && email.mailboxKey ? { provider: { mailboxKey: email.mailboxKey, uid: email.uid, validity: email.uidValidity, folder: email.providerFolder || "INBOX", read: override.read, starred: override.starred, destination: override.folder } } : {}),
+          ...(email?.uid && email.uidValidity && email.mailboxKey && mailboxes.some(mailbox => mailbox.id === email.mailboxId) ? { provider: { mailboxKey: email.mailboxKey, uid: email.uid, validity: email.uidValidity, folder: email.providerFolder || "INBOX", read: override.read, starred: override.starred, destination: override.folder } } : {}),
         }),
       });
       const result = await response.json().catch(() => ({ ok: false, error: "Unable to save this change." }));
@@ -1093,6 +1095,7 @@ export function EmailInboxWorkspace({
         if (message.bodyLoaded !== false) return message;
         if (!message.crmEmailId && (!message.uid || !message.uidValidity || !message.mailboxKey)) throw new Error("Load the conversation messages before generating a reply.");
         const params = new URLSearchParams({ uid: String(message.uid), validity: String(message.uidValidity), mailbox: message.mailboxKey || "", folder: message.providerFolder || "INBOX" });
+        if (message.companyScopeId) params.set("companyId", message.companyScopeId);
         const response = await fetch(message.crmEmailId ? `/api/email/crm-message?id=${encodeURIComponent(message.crmEmailId)}` : `/api/email/message?${params}`, { cache: "no-store" });
         const result = await response.json();
         if (!response.ok || !result.email) throw new Error(result.error || "Unable to read the conversation.");
@@ -1261,6 +1264,7 @@ export function EmailInboxWorkspace({
       let original = message;
       if (original.bodyLoaded === false && (original.crmEmailId || original.uid && original.uidValidity && original.mailboxKey)) {
         const params = new URLSearchParams({ mailbox: original.mailboxKey || "", uid: String(original.uid), validity: String(original.uidValidity), folder: original.providerFolder || "INBOX" });
+        if (original.companyScopeId) params.set("companyId", original.companyScopeId);
         const response = await fetch(original.crmEmailId ? `/api/email/crm-message?id=${encodeURIComponent(original.crmEmailId)}` : `/api/email/message?${params}`); const result = await response.json();
         if (!response.ok) throw new Error(result.error || "Unable to load the forwarded message.");
         original = { ...original, ...result.email };
@@ -1382,7 +1386,7 @@ export function EmailInboxWorkspace({
 
   for (const item of providerFolders.filter((item) => item.kind === "custom")) folderItems.push({ id: `provider:${item.path}`, label: item.name, icon: Inbox });
   return (
-    <div data-ai-mailbox-id={selectedMailboxId || undefined} data-ai-email-id={reading ? selected?.id : undefined} data-ai-company-id={reading ? selected?.companyId || undefined : companyScope?.id} className={`email-workspace flex min-w-0 flex-col overflow-hidden bg-background ${companyScope ? "company-email-workspace h-[clamp(520px,calc(100dvh-14rem),900px)] rounded-xl border" : "h-[calc(100dvh-3rem)]"}`}>
+    <div data-ai-mailbox-id={selectedMailboxId || undefined} data-ai-email-id={reading ? selected?.id : undefined} data-ai-company-id={reading ? selected?.companyId || undefined : companyScope?.id} className={`email-workspace flex min-w-0 flex-col overflow-hidden bg-background ${companyScope ? "company-email-workspace h-[clamp(520px,calc(100dvh-14rem),900px)] rounded-xl border" : "h-dvh"}`}>
       {companyScope ? <h3 className="sr-only">Customer mailbox</h3> : <h1 className="sr-only">Email</h1>}
       {!companyScope ? <nav aria-label="Email accounts" className="flex shrink-0 flex-wrap items-center gap-3 border-b p-3 sm:flex-nowrap">
         <div className="flex min-w-0 flex-1 gap-5 overflow-x-auto">
@@ -1578,6 +1582,8 @@ export function EmailInboxWorkspace({
               onAnalyzed={applyAiFollowUp}
               context={JSON.stringify({
                 mode: "summary",
+                subject: selected.subject.slice(0, 500),
+                messageSource: selected.source,
                 text: selected.body.slice(0, 20_000),
                 recipient: selected.contact.slice(0, 200),
                 customerProfile: selected.customerProfile || { companyName: selected.company.slice(0, 300), contactName: selected.contactName?.slice(0, 300) },

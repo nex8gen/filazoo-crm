@@ -1,8 +1,9 @@
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 import type { AutomationFlowStep, InboxEmailItem } from "../email-inbox.ts";
 import { resolveEmailContentIds } from "../email-content.ts";
-import { listSharedEmailTags, saveSharedEmailTag } from "./customer-tags.ts";
+import { listSharedEmailTagAssignments, saveSharedEmailTag } from "./customer-tags.ts";
 import { isCustomerTag, type CustomerTag } from "../customer-tags.ts";
+import { companyEmailContact } from "../company-email.ts";
 
 export type EmailCategory = CustomerTag;
 export type EmailFolderState = "inbox" | "archive" | "trash";
@@ -10,6 +11,7 @@ export type EmailFolderState = "inbox" | "archive" | "trash";
 export type EmailInboxState = {
   messageKey: string;
   category: EmailCategory | null;
+  updatedAt?: string;
   starred: boolean;
   read: boolean;
   folder: EmailFolderState;
@@ -26,18 +28,19 @@ export async function listEmailInboxStates(userId: string): Promise<Map<string, 
   const [{ data, error }, sharedTags] = await Promise.all([createSupabaseAdmin()
     .from("email_inbox_state")
     .select("message_key,category,starred,is_read,folder,follow_up_at")
-    .eq("user_id", userId), listSharedEmailTags()]);
+    .eq("user_id", userId), listSharedEmailTagAssignments()]);
   if (error) throw new Error(`Unable to load email state: ${error.message}`);
   const states = new Map<string, EmailInboxState>((data ?? []).map((row) => [row.message_key, {
     messageKey: row.message_key,
-    category: sharedTags.get(row.message_key) ?? null,
+    category: sharedTags.get(row.message_key)?.category ?? null,
+    updatedAt: sharedTags.get(row.message_key)?.updatedAt,
     starred: Boolean(row.starred),
     read: Boolean(row.is_read),
     folder: row.folder as EmailFolderState,
     followUpAt: row.follow_up_at,
   }]));
-  for (const [key, category] of sharedTags) {
-    if (!states.has(key)) states.set(key, { messageKey: key, category, starred: false, read: false, folder: "inbox", followUpAt: null });
+  for (const [key, assignment] of sharedTags) {
+    if (!states.has(key)) states.set(key, { messageKey: key, ...assignment, starred: false, read: false, folder: "inbox", followUpAt: null });
   }
   return states;
 }
@@ -84,16 +87,25 @@ export async function saveEmailAutomationSettings(userId: string, enabled: boole
   return { enabled, steps };
 }
 
-export async function listSentMailboxMessages(userId: string, mailboxId?: string): Promise<InboxEmailItem[]> {
+export async function listSentMailboxMessages(userId: string, mailboxId?: string, companyContacts?: ReadonlySet<string>): Promise<InboxEmailItem[]> {
+  if (companyContacts && !companyContacts.size) return [];
   let query = createSupabaseAdmin()
     .from("mailbox_sent_messages")
-    .select("id,mailbox_id,from_email,to_email,to_recipients,cc_recipients,bcc_recipients,subject,body,body_html,status,sent_at,message_id,thread_key,in_reply_to,reference_ids,attachments")
-    .eq("user_id", userId);
+    .select("id,mailbox_id,from_email,to_email,to_recipients,cc_recipients,bcc_recipients,subject,body,body_html,status,sent_at,message_id,thread_key,in_reply_to,reference_ids,attachments");
+  query = companyContacts ? query.eq("status", "sent") : query.eq("user_id", userId);
   if (mailboxId !== undefined) query = query.eq("mailbox_id", mailboxId);
-  const { data, error } = await query.order("sent_at", { ascending: false })
-    .limit(1000);
-  if (error) throw new Error(`Unable to load sent mailbox messages: ${error.message}`);
-  return (data ?? []).map((row) => {
+  const ordered = query.order("sent_at", { ascending: false }).order("id");
+  const rows = [];
+  for (let offset = 0; ; offset += 500) {
+    const { data, error } = await (companyContacts ? ordered.range(offset, offset + 499) : ordered.limit(1000));
+    if (error) throw new Error(`Unable to load sent mailbox messages: ${error.message}`);
+    rows.push(...data ?? []);
+    if (!companyContacts || (data?.length ?? 0) < 500) break;
+  }
+  return rows.flatMap((row) => {
+    const contact = companyContacts ? companyEmailContact({ contact: row.to_email, from: row.from_email,
+      to: row.to_recipients, cc: row.cc_recipients, bcc: row.bcc_recipients }, companyContacts) : row.to_email;
+    if (!contact) return [];
     const item: InboxEmailItem = {
       id: `sent-${row.id}`,
       from: row.from_email,
@@ -104,7 +116,7 @@ export async function listSentMailboxMessages(userId: string, mailboxId?: string
       direction: "outbound" as const,
       status: row.status === "sent" ? "Sent" : "Failed",
       subject: row.subject,
-      contact: row.to_email,
+      contact,
       company: "Direct email",
       preview: row.body.replace(/\s+/g, " ").slice(0, 160),
       body: row.body,
@@ -119,6 +131,6 @@ export async function listSentMailboxMessages(userId: string, mailboxId?: string
         return [{ filename: value.filename, contentType: value.contentType, size: value.size, cid: typeof value.cid === "string" ? value.cid : undefined, url: `/api/email/attachments/${row.id}/${index}` }];
       }) : [],
     };
-    return item;
+    return [item];
   });
 }

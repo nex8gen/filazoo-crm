@@ -1,0 +1,18 @@
+.workspace-ai-mode-tabs {
+  isolation: isolate;
+}
+
+/* Soften messages behind the switcher without masking the whole chat row. */
+.workspace-ai-mode-tabs::before {
+  content: "";
+  position: absolute;
+  inset: -24px -46px;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--background) 68%, transparent);
+  -webkit-backdrop-filter: blur(28px);
+  backdrop-filter: blur(28px);
+  -webkit-mask-image: radial-gradient(ellipse closest-side, #000 54%, #0009 82%, transparent 100%);
+  mask-image: radial-gradient(ellipse closest-side, #000 54%, #0009 82%, transparent 100%);
+}

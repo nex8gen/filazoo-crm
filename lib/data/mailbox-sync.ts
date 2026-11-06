@@ -29,7 +29,7 @@ export async function loadMailboxMessageContent(mailbox: WorkspaceMailboxRecord,
   const { receiveMailboxMessages } = await import("../mailbox-imap.ts");
   const folders = folder === "INBOX" ? [] : await savedProviderFolders(mailbox);
   let email: InboxEmailItem | undefined;
-  try { [email] = await receiveMailboxMessages(mailbox, { uids: [uid], uidValidity, headersOnly: false, folder, kind: folders.find((item) => item.path === folder)?.kind }); }
+  try { [email] = await receiveMailboxMessages(mailbox, { uids: [uid], uidValidity, headersOnly: false, folder, kind: folders.find((item) => item.path === folder)?.kind, preferModernTransport: true }); }
   catch (error) { if (cached) return presentMailboxMessage(cached, key); throw error; }
   if (!email) { if (cached) return presentMailboxMessage(cached, key); throw new Error("This message is no longer available in the mailbox."); }
   await admin.from("mailbox_sync_state").upsert({ mailbox_key: key }, { onConflict: "mailbox_key", ignoreDuplicates: true }).throwOnError();

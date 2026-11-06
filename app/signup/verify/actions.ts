@@ -13,7 +13,7 @@ export async function verifySignupCode(_state: VerificationState, formData: Form
   const cookieStore = await cookies();
   const pending = readPendingSignup(cookieStore.get(pendingSignupCookie)?.value);
   const parsed = z.object({ email: z.string().trim().toLowerCase().email("Enter your account email."),
-    code: z.string().trim().regex(/^\d{6}$/, "Enter the 6-digit code from your email.") }).safeParse({
+    code: z.string().trim().regex(/^\d{6,10}$/, "Enter the verification code from your email.") }).safeParse({
     email: pending?.email || formData.get("email"), code: formData.get("code"),
   });
   if (!parsed.success) return { error: parsed.error.issues[0].message };

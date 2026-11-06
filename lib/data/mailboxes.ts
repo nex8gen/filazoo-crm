@@ -1,5 +1,5 @@
 import { requireWorkspaceMember } from "../auth.ts";
-import { defaultViewerMailbox, normalizeMailboxRows, viewerMailboxes, type NormalizedMailboxRecord } from "../mailbox-utils.ts";
+import { defaultMailboxForType, defaultViewerMailbox, normalizeMailboxRows, viewerMailboxes, type MailboxRecordInput, type NormalizedMailboxRecord } from "../mailbox-utils.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 
 export type MailboxType = "workspace" | "personal";
@@ -67,36 +67,30 @@ export async function getUserMailbox(viewerId: string): Promise<WorkspaceMailbox
       .select("*")
       .eq("user_id", viewerId)
       .eq("type", "personal")
-      .eq("is_default", true)
-      .maybeSingle();
+      .order("created_at", { ascending: false });
 
     if (error) {
       console.warn("Unable to load the personal mailbox:", error.message);
-      return null;
+      throw new Error("Unable to load your personal mailbox. Please refresh and try again.");
     }
 
-    return data ? normalizeMailboxRows([data])[0] ?? null : null;
+    return defaultMailboxForType(normalizeMailboxRows(data), "personal");
   } catch (error) {
     console.warn("Personal mailbox unavailable:", error);
-    return null;
+    throw error;
   }
 }
 
 export async function getEffectiveMailbox(viewerId?: string | null): Promise<WorkspaceMailboxRecord | null> {
-  const [personalMailbox, workspaceMailbox] = await Promise.all([
-    viewerId ? getUserMailbox(viewerId) : Promise.resolve(null),
-    getDefaultWorkspaceMailbox(),
-  ]);
-
   // Keep a stopped default selected so it cannot silently fall back to another sender.
   // Connections removed in Settings must not reappear from environment credentials.
-  return personalMailbox ?? workspaceMailbox;
+  return viewerId ? getViewerMailbox(viewerId) : getDefaultWorkspaceMailbox();
 }
 
 /** Used for interactive email access, never the settings admin inventory. */
-export async function getViewerMailboxes(viewerId: string): Promise<WorkspaceMailboxRecord[]> {
+export async function getViewerMailboxes(viewerId: string, accessOnly = false): Promise<WorkspaceMailboxRecord[]> {
   const { data, error } = await createSupabaseAdmin().from("workspace_mailboxes")
-    .select("*")
+    .select<string, MailboxRecordInput>(accessOnly ? "id,user_id,type,email,is_active" : "*")
     .or(`user_id.eq.${viewerId},type.eq.workspace`)
     .order("created_at", { ascending: false });
   if (error) throw new Error("Unable to load your mailboxes. Please refresh and try again.");

@@ -1,0 +1,43 @@
+import fs from "node:fs";
+import path from "node:path";
+import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
+
+const root = process.cwd();
+const directory = path.resolve(root, "tmp/web-research-release");
+const source = path.join(directory, "source");
+if (fs.existsSync(source)) throw new Error("The isolated source directory already exists; inspect it before reusing it.");
+fs.mkdirSync(directory, { recursive: true });
+const responseBytes = fs.readFileSync(path.join(root, "tmp/web-research-production-source.json"));
+const response = JSON.parse((responseBytes[0] === 255 && responseBytes[1] === 254 ? responseBytes.toString("utf16le") : responseBytes.toString("utf8")).replace(/^\uFEFF/, ""));
+if (typeof response.data !== "string") throw new Error("Production source download has no archive data.");
+const archive = Buffer.from(response.data, "base64");
+const sha1 = createHash("sha1").update(archive).digest("hex");
+if (sha1 !== "3cc551aaad67063591d50816e9bee2cddbb58d74") throw new Error("The archive does not match the inspected production deployment.");
+const archivePath = path.join(directory, "production-source.tgz"); fs.writeFileSync(archivePath, archive);
+const entries = execFileSync("tar", ["-tzf", archivePath], { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 }).trim().split(/\r?\n/);
+if (entries.some(name => /^[A-Za-z]:|^[/\\]/.test(name) || name.replaceAll("\\", "/").split("/").includes(".."))) throw new Error("Unsafe production archive paths.");
+fs.mkdirSync(source, { recursive: true });
+execFileSync("tar", ["-xzf", archivePath, "-C", source], { maxBuffer: 8 * 1024 * 1024 });
+if (!fs.existsSync(path.join(source, "package.json")) || !fs.existsSync(path.join(source, "lib/ai/provider-credentials.ts"))) throw new Error("The production baseline is incomplete.");
+const changed = [];
+const copy = file => { const target = path.join(source, file); fs.mkdirSync(path.dirname(target), { recursive: true }); fs.copyFileSync(path.join(root, file), target); changed.push(file); };
+for (const file of ["lib/ai/gateway-research.ts", "lib/ai/google-web-research.ts", "lib/ai/customer-research.ts", "lib/ai/chat-usage.ts", "components/ui/customer-research.tsx", "tests/ai-web-research.test.ts", "tests/gateway-research.test.ts", "tests/research-evidence-ui.test.ts"]) copy(file);
+for (const file of ["app/api/ai/assistant/route.ts", "app/api/companies/[id]/chat/route.ts"]) {
+  const target = path.join(source, file); const original = fs.readFileSync(target, "utf8");
+  const start = original.indexOf("const research = parsed.data.webSearch ? await researchCustomer");
+  const end = original.indexOf("}) : undefined;", start);
+  if (start < 0 || end < 0) throw new Error(`Missing production research boundary in ${file}`);
+  const section = original.slice(start, end);
+  if (!section.includes("fetcher: options.fetcher")) throw new Error(`Missing research transport in ${file}`);
+  fs.writeFileSync(target, original.slice(0, start) + section.replace("fetcher: options.fetcher", "fetcher: options.fetcher, signal: request.signal") + original.slice(end)); changed.push(file);
+}
+const translationFile = "lib/i18n-ai-history.ts";
+const additions = fs.readFileSync(path.join(root, translationFile), "utf8").split(/\r?\n/).filter(line => ["Google search queries", "Pages read", "Some requested pages were not verified.", "Google Search returned sources,"].some(key => line.startsWith(`  "${key}`)));
+const translations = fs.readFileSync(path.join(source, translationFile), "utf8");
+fs.writeFileSync(path.join(source, translationFile), translations.replace("export const zhCNAiHistory: Record<string, string> = {", `export const zhCNAiHistory: Record<string, string> = {\n${additions.join("\n")}`)); changed.push(translationFile);
+const packagePath = path.join(source, "package.json"), pkg = JSON.parse(fs.readFileSync(packagePath, "utf8"));
+pkg.dependencies["@ai-sdk/google"] = "4.0.112"; fs.writeFileSync(packagePath, JSON.stringify(pkg, null, 2) + "\n"); changed.push("package.json", "package-lock.json");
+fs.mkdirSync(path.join(source, ".vercel"), { recursive: true }); fs.copyFileSync(path.join(root, ".vercel/project.json"), path.join(source, ".vercel/project.json"));
+fs.writeFileSync(path.join(directory, "manifest.json"), JSON.stringify({ baseDeployment: "dpl_9HAh54kAGBVekVSxyUo8qV4S2hdB", archiveSha1: sha1, source, files: changed, scope: "Google discovery, page reading, research evidence display and native token tracking only. Unrelated checkout edits excluded." }, null, 2) + "\n");
+console.log(JSON.stringify({ source, baselineFiles: entries.length, changedFiles: changed.length, dependency: pkg.dependencies["@ai-sdk/google"] }));

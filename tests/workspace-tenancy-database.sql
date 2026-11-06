@@ -85,6 +85,10 @@ begin
   perform crm_tenancy.pre_request();
   if current_user<>'crm_workspace_server' then raise exception 'Service role was not downgraded'; end if;
   if exists(select 1 from public.companies where id=company_b) then raise exception 'Pre-request tenant isolation failed'; end if;
+  -- Tenant calls enter the private job bodies, without scanning or dispatching
+  -- work for other workspaces. These fixtures have no due tasks or ERP connection.
+  if public.notify_due_crm_tasks()<>0 then raise exception 'Empty-workspace reminder isolation failed'; end if;
+  if public.dispatch_erp_inventory_sync() is not null then raise exception 'Empty-workspace ERP isolation failed'; end if;
   perform set_config('role','postgres',true);
   if not exists(select 1 from auth.users where id=colleague) then raise exception 'Global account was deleted'; end if;
 end $$;

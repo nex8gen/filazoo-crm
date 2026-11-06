@@ -1,4 +1,6 @@
 export const zhCNFlowScenarios: Record<string, string> = {
+  "My default email uses the workflow owner's personal account when connected, otherwise the team account. Choose a specific address to always use it.": "“我的默认邮箱”优先使用工作流所有者已连接的个人邮箱，否则使用团队邮箱。选择具体邮箱地址可固定发件账户。",
+  "My default email · No email connected": "我的默认邮箱 · 尚未连接邮箱",
   "Look back (days)": "回溯天数",
   "Checks engagement within this window after workflow entry or the latest workflow email.": "检查进入流程或最近一封流程邮件发出后，在此时间范围内的客户互动。",
   "Choose the workflow owner's personal email or a shared team email for this action.": "为此操作选择工作流所有者的个人邮箱或团队共享邮箱。",

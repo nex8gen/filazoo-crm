@@ -10,6 +10,7 @@ function split(name: string, condition: JsonConfig, yes: FlowInput["steps"], no:
   return step;
 }
 export const flowRecipeOptions = [
+  { id: "lead_ai_handoff", title: "AI lead reply and personal handoff", description: "Wait one minute, send an AI reply, then check after 24 hours. Assign replies to you or send one AI reminder.", trigger: "New lead" },
   { id: "inbound", title: "Respond to an inquiry", description: "AI answers a received email, then checks for a reply before assigning follow-up work.", trigger: "Email received" },
   { id: "qualification", title: "Qualify and route leads", description: "Route by fit score, then by market. Update the company, assign a task and notify its owner.", trigger: "New lead" },
   { id: "followup", title: "Follow up without a reply", description: "Send a reminder after two days without a reply, wait, then hand off to a teammate.", trigger: "No reply after" },
@@ -20,9 +21,35 @@ export const flowRecipeOptions = [
 ] as const;
 
 /** New independent identities on every use. Recipes are always drafts. */
-export function createFlowRecipe(id: string): FlowInput {
+export function createFlowRecipe(id: string, options: { assigneeId?: string } = {}): FlowInput {
   const base: FlowInput = { name: flowRecipeOptions.find((item) => item.id === id)?.title || "Untitled workflow", triggerType: "new_lead", triggerConfig: {}, status: "draft", steps: [] };
   const replyExit = () => split("Has the customer replied?", { field: "customer_replied" }, [action("stop", { reason: "Customer replied" })], [action("create_task")]);
+  if (id === "lead_ai_handoff") {
+    const handoff = () => [
+      action("create_task", { assigneeType: options.assigneeId ? "user" : "owner", assigneeId: options.assigneeId || null, dueInDays: 0, priority: "high", title: "Reply to this customer's email", notes: "Read the latest customer reply and continue the conversation personally. Open the linked customer context from the accompanying notification and review their email conversation. Automated reminders end on this branch." }),
+      action("internal_alert", { userId: options.assigneeId || "owner", message: "A lead replied. A task has been assigned to you to continue this email conversation.", includeThreadLink: true, channel: "in_app" }),
+      action("stop", { reason: "Customer replied; task created and automated reminders ended" }),
+    ];
+    const replyCheck = (noReply: FlowInput["steps"]) => split("Has the customer replied?", { field: "customer_replied", lookbackDays: 365 }, handoff(), noReply);
+    const replyWait = () => ({ ...blankStep("wait"), config: { amount: 24, unit: "hours", businessDays: false } });
+    const ai = (instructions: string, reminder = false) => action("ai_auto_reply", {
+      usePrices: false, attachCatalog: false, sendWindow: "anytime", smartSendingHours: 0,
+      instructions,
+      ...(reminder ? { filters: { field: "customer_replied", negate: true, lookbackDays: 365 } } : {}),
+    });
+    return { ...base, triggerConfig: { reentryMode: "no_reentry" }, steps: [
+      { ...blankStep("wait"), config: { amount: 1, unit: "minutes", businessDays: false } },
+      replyCheck([
+        ai("Write a short, friendly first response to this new Filazoo lead. Use the latest authorized conversation and active product information. Ask only for missing requirements, such as materials, order quantity and delivery destination. Do not claim to have read form answers absent from the supplied context. Do not invent prices, freight, availability, delivery dates, credit terms, order confirmation or attachments."),
+        replyWait(),
+        replyCheck([
+          ai("Write one short, polite reminder about the unanswered Filazoo inquiry. Read the conversation, refer to the previous message naturally and ask whether help with material selection, quantities or delivery requirements would be useful. Do not repeat already answered questions, invent urgency, promise prices or shipping, claim an attachment, or say that an order was confirmed.", true),
+          replyWait(),
+          replyCheck([action("stop", { reason: "One AI reminder sent; no reply at the final check" })]),
+        ]),
+      ]),
+    ] };
+  }
   if (id === "inbound") return { ...base, triggerType: "email_received", steps: [action("ai_auto_reply"), wait(2), replyExit()] };
   if (id === "qualification") return { ...base, steps: [split("Lead qualification", { field: "fit_score_at_least", fitScore: 7 }, [updateCompany({ companyStatus: "qualified" }), split("Priority market", { field: "country_is", value: "US" }, [action("create_task", { priority: "high", title: "Contact priority buyer" }), action("internal_alert", { message: "A priority buyer is ready for follow-up." })], [action("create_task", { title: "Review qualified buyer" })])], [email("welcome_intro"), wait(2), replyExit()])] };
   if (id === "followup") return { ...base, triggerType: "no_reply", triggerConfig: { amount: 2, unit: "days", businessDays: true }, steps: [email("helpful_reminder"), wait(3), replyExit()] };

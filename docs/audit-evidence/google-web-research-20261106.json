@@ -1,0 +1,70 @@
+{
+  "model": "google/gemini-2.5-flash-lite",
+  "maximumPublishedCallUsd": 0.22575968,
+  "calls": 1,
+  "budget": {
+    "version": 1,
+    "startedAt": 1793924361855,
+    "endsAt": 1794010761855,
+    "limitMicros": 4750000,
+    "chargedMicros": 4599722,
+    "pending": {},
+    "calls": 301,
+    "halted": false,
+    "usedMicros": 4599722,
+    "remainingMicros": 150278
+  },
+  "result": {
+    "status": "complete",
+    "checkedAt": "2026-11-06T05:48:58.598Z",
+    "sources": [
+      {
+        "id": "W1",
+        "label": "inovecellicarai.com",
+        "url": "https://inovecellicarai.com/",
+        "recordedAt": "2026-11-06T05:48:58.598Z"
+      },
+      {
+        "id": "W2",
+        "label": "youtube.com",
+        "url": "https://www.youtube.com/watch?v=0Jphl3WF-7E",
+        "recordedAt": "2026-11-06T05:48:58.598Z"
+      },
+      {
+        "id": "W3",
+        "label": "youtube.com",
+        "url": "https://www.youtube.com/watch?v=MAzAmRCQFek",
+        "recordedAt": "2026-11-06T05:48:58.598Z"
+      },
+      {
+        "id": "W4",
+        "label": "youtube.com",
+        "url": "https://www.youtube.com/watch?v=G6unx7hCDg8",
+        "recordedAt": "2026-11-06T05:48:58.598Z"
+      },
+      {
+        "id": "W5",
+        "label": "youtube.com",
+        "url": "https://www.youtube.com/watch?v=xNg16u2_NU8",
+        "recordedAt": "2026-11-06T05:48:58.598Z"
+      }
+    ],
+    "queries": [
+      "Inovecell Cachoeirinha Brazil",
+      "Inovecell Brazil official website",
+      "Inovecell Brazil products and services",
+      "Inovecell Brazil company size signals",
+      "Inovecell Brazil 3D printing filament",
+      "Inovecell Everton Vaz Brazil"
+    ],
+    "visitedUrls": [
+      "https://www.youtube.com/watch?v=MAzAmRCQFek",
+      "https://inovecellicarai.com/",
+      "https://www.youtube.com/watch?v=0Jphl3WF-7E",
+      "https://www.youtube.com/watch?v=G6unx7hCDg8"
+    ],
+    "findings": "{\"brief\":\"\\n## Company Report: Inovecell\\n\\nBased on the provided information, the following can be reported about Inovecell:\\n\\n**Verified Company Match:**\\n\\nThere is a verified company named **Inovecell** operating in **Icaraí, Niterói, Brazil**. This entity specializes in Apple product upgrades and technical assistance, offering services such as screen, glass, and battery replacements for iPhones, Android devices, iPads, MacBooks, and more. They also provide specialized technical assistance for various Apple devices and other electronics.\\n\\n**Products and Services:**\\n\\n*   iPhone upgrades\\n*   Specialized technical assistance for Apple devices (iPhone, MacBook, iPad, Apple Watch)\\n*   Assistance for Android devices, tablets, computers, and gaming consoles\\n*   Screen, glass, and battery replacement\\n*   Board repairs\\n*   Assistance for smartwatches, speakers, and gaming consoles\\n\\n**Location:**\\n\\nInovecell is located in **Icaraí, Niterói, Brazil**. This differs from the provided city of Cachoeirinha.\\n\\n**Company Size Signals:**\\n\\nNo specific information regarding company size (e.g., employee count, revenue) was found for Inovecell.\\n\\n**3D Printing and Filament Relevance:**\\n\\nThere is no direct evidence linking Inovecell in Icaraí, Niterói, to 3D printing or filament production/sales. However, unrelated search results indicate a market for 3D printing materials, with mentions of \\\"Innofil3D Pro1 Filament\\\" and \\\"eono PLA filament.\\\" These findings are not connected to Inovecell's business.\\n\\n**Unconfirmed Namesakes:**\\n\\n*   **Inovecell (Cachoeirinha, Brazil):** The existence and specific business activities of an Inovecell in Cachoeirinha, Brazil, remain unconfirmed.\\n*   **Everton Vaz:** The identity and role of Everton Vaz in relation to any Inovecell in Cachoeirinha are unknown.\\n\\n**Unknowns:**\\n\\n*   Confirmation of an \\\"Inovecell\\\" operating in Cachoeirinha, Brazil.\\n*   The specific business activities of an \\\"Inovecell\\\" in Cachoeirinha.\\n*   The specific products or services related to 3D printing or filament that an \\\"Inovecell\\\" in Cachoeirinha might offer.\\n*   The connection, if any, of Everton Vaz to Inovecell in Cachoeirinha.\",\"supportingStatements\":[{\"statement\":\"However, a business with the name \\\"Inovecell\\\" was found that specializes in Apple product upgrades and technical assistance in Icaraí, Niterói, Brazil\",\"sources\":[\"W1\"]},{\"statement\":\"**Products and Services:** The Inovecell located in Niterói offers upgrades for iPhones, and provides specialized technical assistance for various Apple devices (iPhone, MacBook, iPad, Apple Watch) and other electronics such as Android devices, tablets, computers, and gaming consoles\",\"sources\":[\"W1\"]},{\"statement\":\"However, unrelated search results mention \\\"Innofil3D Pro1 Filament\\\"\",\"sources\":[\"W2\",\"W3\"]},{\"statement\":\", which is a 3D printing filament known for its speed, strength, and aesthetic printing capabilities\",\"sources\":[\"W2\"]},{\"statement\":\"Another unrelated result discusses \\\"eono PLA filament\\\"\",\"sources\":[\"W4\"]},{\"statement\":\"A YouTube channel also discusses various 3D printing filaments\",\"sources\":[\"W5\"]},{\"statement\":\"They also provide specialized technical assistance for various Apple devices and other electronics.\",\"sources\":[\"W1\"]},{\"statement\":\"*   iPhone upgrades\",\"sources\":[\"W1\"]},{\"statement\":\"*   Specialized technical assistance for Apple devices (iPhone, MacBook, iPad, Apple Watch)\",\"sources\":[\"W1\"]},{\"statement\":\"*   Assistance for Android devices, tablets, computers, and gaming consoles\",\"sources\":[\"W1\"]},{\"statement\":\"*   Screen, glass, and battery replacement\",\"sources\":[\"W1\"]},{\"statement\":\"*   Board repairs\",\"sources\":[\"W1\"]},{\"statement\":\"*   Assistance for smartwatches, speakers, and gaming consoles\",\"sources\":[\"W1\"]},{\"statement\":\"Inovecell is located in **Icaraí, Niterói, Brazil**.\",\"sources\":[\"W1\"]},{\"statement\":\"However, unrelated search results indicate a market for 3D printing materials, with mentions of \\\"Innofil3D Pro1 Filament\\\"\",\"sources\":[\"W3\"]},{\"statement\":\"and \\\"eono PLA filament.\\\"\",\"sources\":[\"W4\"]},{\"statement\":\"*   **Inovecell (Cachoeirinha, Brazil):** The existence and specific business activities of an Inovecell in Cachoeirinha, Brazil, remain unconfirmed.\",\"sources\":[\"W3\"]},{\"statement\":\"\\n## Company Report: Inovecell\\n\\nBased on the provided information, the following can be reported about Inovecell:\\n\\n**Verified Company Match:**\\n\\nThere is a verified company named **Inovecell** operating in **Icaraí, Niterói, Brazil**. This entity specializes in Apple product upgrades and technical assistance, offering services such as screen, glass, and battery replacements for iPhones, Android devices, iPads, MacBooks, and more. They also provide specialized technical assistance for various Apple devices and other electronics.\\n\\n**Products and Services:**\\n\\n*   iPhone upgrades\\n*   Specialized technical assistance for Apple devices (iPhone, MacBook, iPad, Apple Watch)\\n*   Assistance for Android devices, tablets, computers, and gaming consoles\\n*   Screen, glass, and battery replacement\\n*   Board repairs\\n*   Assistance for smartwatches, speakers, and gaming consoles\\n\\n**Location:**\\n\\nInovecell is located in **Icaraí, Niterói, Brazil**. This differs from the provided city of Cachoeirinha.\\n\\n**Company Size Signals:**\\n\\nNo specific information regarding company size (e.g., employee count, revenue) was found for Inovecell.\\n\\n**3D Printing and Filament Relevance:**\\n\\nThere is no direct evidence linking Inovecell in Icaraí, Niterói, to 3D printing or filament production/sales. However, unrelated search results indicate a market for 3D printing materials, with mentions of \\\"Innofil3D Pro1 Filament\\\" and \\\"eono PLA filament.\\\" These findings are not connected to Inovecell's business.\\n\\n**Unconfirmed Namesakes:**\\n\\n*   **Inovecell (Cachoeirinha, Brazil):** The existence and specific business activities of an Inovecell in Cachoeirinha, Brazil, remain unconfirmed.\\n*   **Everton Vaz:** The identity and role of Everton Vaz in relation to any Inovecell in Cachoeirinha are unknown.\\n\\n**Unknowns:**\\n\\n*   Confirmation of an \\\"Inovecell\\\" operating in Cachoeirinha, Brazil.\\n*   The specific business activities of an \\\"Inovecell\\\" in Cachoeirinha.\\n*   The specific products or services related to 3D printing or filament that an \\\"Inovecell\\\" in Cachoeirinha might offer.\\n*   The connection, if any, of Everton Vaz to Inovecell in Cachoeirinha.\",\"sources\":[\"W1\",\"W2\",\"W3\",\"W4\"]}],\"coverage\":{\"engine\":\"Google Search\",\"queries\":6,\"pagesRead\":4},\"identityCaution\":\"A retrieved namesake is not automatically the CRM company. Preserve match uncertainty.\"}"
+  },
+  "scope": "Page reading verified live using the successful Google discovery response recorded moments earlier. Search: six actual Google queries and five sources; fresh URL Context request: four successful read receipts. All paid verification requests share the original $5 test ledger.",
+  "discoveryReplayedFromPriorLiveRequest": true
+}

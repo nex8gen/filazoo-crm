@@ -4,6 +4,7 @@ import { mailboxSyncKey, loadMailboxMessageContent } from "@/lib/data/mailbox-sy
 import { getAssignedEmailContacts } from "@/lib/data/email-access";
 import { canViewEmail } from "@/lib/email-access";
 import { validProviderFolder } from "@/lib/email-provider";
+import { readCompanyMailboxEmail } from "@/lib/data/company-email-access";
 
 export const maxDuration = 240;
 
@@ -15,6 +16,12 @@ export async function GET(request: Request) {
   const folder = params.get("folder") || "INBOX";
   if (!validProviderFolder(folder)) return Response.json({ error: "Invalid folder." }, { status: 400 });
   if (!Number.isSafeInteger(uid) || uid < 1 || !Number.isSafeInteger(uidValidity) || uidValidity < 1) return Response.json({ error: "Invalid message identifier." }, { status: 400 });
+  if (params.get("companyId")) {
+    try {
+      const result = await readCompanyMailboxEmail(viewer, params.get("companyId")!, { key: params.get("mailbox") || "", uid, validity: uidValidity, folder });
+      return result ? Response.json({ email: result.email }, { headers: { "Cache-Control": "no-store" } }) : Response.json({ error: "Email not found." }, { status: 404 });
+    } catch { return Response.json({ error: "Unable to open this email." }, { status: 502 }); }
+  }
   const mailbox = (await getViewerMailboxes(viewer.id)).find((item) => mailboxSyncKey(item, folder) === params.get("mailbox"));
   if (!mailbox || !mailboxHasImap(mailbox)) return Response.json({ error: "Mailbox unavailable." }, { status: 404 });
   try {

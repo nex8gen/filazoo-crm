@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import type { WorkspaceViewer } from "../auth";
 import { createSupabaseAdmin } from "../supabase/admin";
 import { commerceDefaults } from "../company-commerce";
-import { getEmailInboxBackendData, type InboxEmailItem } from "../email-inbox";
+import { getEmailInboxBackendData, type EmailInboxBackendData, type InboxEmailItem } from "../email-inbox";
 import { getEffectiveMailbox, getViewerMailbox, getViewerMailboxes } from "../data/mailboxes";
 import { loadMailboxMessageContent, mailboxSyncKey } from "../data/mailbox-sync";
 import { groupEmailConversations, replyTarget, replyReferences, threadKeyForEmail } from "../email-threading";
@@ -12,20 +12,30 @@ import type { agentEmailSchema, AgentEmailSearch } from "./workspace-assistant";
 import type { z } from "zod";
 
 /** Read only the signed-in user's accessible inbox; never trust client email bodies or headers. */
-export async function loadAgentEmails(viewer: WorkspaceViewer, emailId?: string, companyId?: string, mailboxId?: string) {
+export async function loadAgentEmails(viewer: WorkspaceViewer, emailId?: string, companyId?: string, mailboxId?: string, accessOnly = false, accessSnapshots?: Map<string, Promise<EmailInboxBackendData>>) {
   await requireAiData("emails", "customers");
-  let inbox = await getEmailInboxBackendData({ syncMailbox: false, history: true, ...(mailboxId ? { mailboxId } : {}) });
+  function readInbox(id?: string) {
+    const key = id ?? "default";
+    const prior = accessOnly ? accessSnapshots?.get(key) : undefined;
+    if (prior) return prior;
+    const read = getEmailInboxBackendData({ syncMailbox: false, history: true, ...(id ? { mailboxId: id } : {}) });
+    if (accessOnly) accessSnapshots?.set(key, read);
+    return read;
+  }
+  let inbox = await readInbox(mailboxId);
   // Approval and execution also reload source IDs after the user leaves the page.
   if (emailId && !mailboxId && !inbox.emails.some((email) => email.id === emailId && !email.demo)) {
     for (const mailbox of await getViewerMailboxes(viewer.id)) {
       if (mailbox.id === inbox.selectedMailboxId) continue;
-      const candidate = await getEmailInboxBackendData({ syncMailbox: false, history: true, mailboxId: mailbox.id });
+      const candidate = await readInbox(mailbox.id);
       if (candidate.emails.some((email) => email.id === emailId && !email.demo)) { inbox = candidate; break; }
     }
   }
   const { emails } = inbox;
   const selected = emailId ? emails.find((email) => email.id === emailId && !email.demo) : null;
   if (emailId && !selected) throw new Error("The selected email is unavailable or you no longer have access to it.");
+  // History only verifies visibility; never fetch MIME bodies or IMAP content.
+  if (accessOnly) return { current: selected, messages: [], mailboxId: inbox.selectedMailboxId ?? null, companyId: selected?.companyId ?? null };
   const groups = groupEmailConversations(emails);
   const conversation = selected ? [...groups.entries()].find(([, messages]) => messages.some((email) => email.id === selected.id)) : null;
   const companyContacts = companyId ? await createSupabaseAdmin().from("contacts").select("email").eq("company_id", companyId) : null;

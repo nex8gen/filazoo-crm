@@ -11,11 +11,15 @@
     "start": "next start",
     "lint": "eslint",
     "test": "node --experimental-strip-types --test --test-concurrency=2 tests/*.test.ts",
+    "ai:eval:plan": "node --experimental-strip-types scripts/run-agent-soak.ts",
+    "ai:eval:24h": "node --env-file=.env.local --experimental-strip-types scripts/run-agent-soak.ts --live",
+    "ai:eval:status": "node scripts/agent-soak-status.mjs",
     "perf:bundles": "node scripts/audit-client-bundles.mjs",
     "mail:worker": "node --env-file=.env.local --experimental-strip-types scripts/mail-sync-worker.ts",
     "verify": "npm run lint && npm run test && npm run build && npm run perf:bundles"
   },
   "dependencies": {
+    "@ai-sdk/google": "4.0.112",
     "@ai-sdk/openai": "4.0.109",
     "@base-ui/react": "^1.8.0",
     "@dnd-kit/core": "^6.3.1",
@@ -28,6 +32,7 @@
     "@tanstack/react-table": "^9.2.8",
     "@types/imap": "^0.8.43",
     "@vercel/analytics": "2.0.1",
+    "@vercel/oidc": "3.2.0",
     "@vercel/postgres": "^0.10.0",
     "@vercel/speed-insights": "2.0.0",
     "ai": "7.0.163",

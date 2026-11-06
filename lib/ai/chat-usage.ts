@@ -9,8 +9,8 @@ export function parseAiUsage(url: string, body: unknown, payload: unknown, succe
   const gemini = new URL(url).hostname === "generativelanguage.googleapis.com";
   const usage = object(gemini ? result.usageMetadata : result.usage);
   const model = String(result.modelVersion || result.model || request.model || decodeURIComponent(/\/models\/([^:]+)/.exec(url)?.[1] || "unknown")).slice(0, 200);
-  const inputTokens = tokens(gemini ? usage.promptTokenCount : usage.input_tokens ?? usage.prompt_tokens);
-  const outputTokens = gemini ? (tokens(usage.candidatesTokenCount) === null ? null : tokens(usage.candidatesTokenCount)! + (tokens(usage.thoughtsTokenCount) ?? 0)) : tokens(usage.output_tokens ?? usage.completion_tokens);
+  const inputTokens = tokens(gemini ? usage.promptTokenCount : usage.input_tokens ?? usage.prompt_tokens ?? object(usage.inputTokens).total);
+  const outputTokens = gemini ? (tokens(usage.candidatesTokenCount) === null ? null : tokens(usage.candidatesTokenCount)! + (tokens(usage.thoughtsTokenCount) ?? 0)) : tokens(usage.output_tokens ?? usage.completion_tokens ?? object(usage.outputTokens).total);
   const totalTokens = tokens(gemini ? usage.totalTokenCount : usage.total_tokens) ?? (inputTokens !== null && outputTokens !== null ? inputTokens + outputTokens : null);
   const rate = rates[model] || rates[String(request.model || /\/models\/([^:]+)/.exec(url)?.[1] || "")];
   const estimatedCostUsd = inputTokens !== null && outputTokens !== null && rate && Number.isFinite(rate.input) && rate.input >= 0 && Number.isFinite(rate.output) && rate.output >= 0
@@ -26,6 +26,8 @@ export function trackAiUsage(fetcher: typeof fetch, rates: Record<string, { inpu
     if (!["generativelanguage.googleapis.com", "ai-gateway.vercel.sh"].includes(hostname)) return fetcher(input, init);
     let body: unknown;
     try { body = typeof init?.body === "string" ? JSON.parse(init.body) : {}; } catch { body = {}; }
+    const nativeModel = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined)).get("ai-language-model-id");
+    if (nativeModel) body = { ...object(body), model: nativeModel };
     try {
       const response = await fetcher(input, init);
       const payload = await response.clone().json().catch(() => ({}));

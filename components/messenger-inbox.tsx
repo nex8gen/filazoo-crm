@@ -210,7 +210,7 @@ export function MessengerInbox({ data }: { data: MetaInboxData }) {
   }
 
   return (
-    <div data-ai-conversation-id={selectedThread?.id} className="messenger-workspace flex h-[calc(100dvh-3rem)] flex-col overflow-hidden bg-[#f7f8fa] dark:bg-background">
+    <div data-ai-conversation-id={selectedThread?.id} className="messenger-workspace flex h-dvh flex-col overflow-hidden bg-[#f7f8fa] dark:bg-background">
       <div className={`${mobileReading ? "hidden md:block" : ""} shrink-0 border-b bg-background px-4 pb-3 pt-4 sm:px-6`}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">

@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { requestHistoryJson } from "../lib/ai/history-http.ts";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import vm from "node:vm";
+import ts from "typescript";
+import { renderToStaticMarkup } from "react-dom/server";
+import { HistoryHttpError, requestHistoryJson } from "../lib/ai/history-http.ts";
 import { sessionFetch } from "../lib/supabase/session-fetch.ts";
 import { withWorkspaceViewer, currentWorkspaceContext } from "../lib/workspace-context.ts";
 
@@ -20,16 +25,65 @@ test("history mutations, authentication failures and cancellation never auto-rep
     assert.equal(calls, 1);
   }
   let calls = 0;
-  await assert.rejects(requestHistoryJson("/api/ai/history", undefined, async () => { calls++; return new Response("<html>Sign in</html>", { status: 401 }); }), /session has expired/);
+  await assert.rejects(requestHistoryJson("/api/ai/history", undefined, async () => { calls++; return new Response("<html>Sign in</html>", { status: 401 }); }), (error: unknown) => error instanceof HistoryHttpError && error.status === 401 && /session has expired/.test(error.message));
   assert.equal(calls, 1);
   const controller = new AbortController();
   await assert.rejects(requestHistoryJson("/api/ai/history", { signal: controller.signal }, async () => { controller.abort(); throw controller.signal.reason; }), { name: "AbortError" });
+});
+
+function renderHistoryFailure(source: "list" | "restore", status: number) {
+  const require = createRequire(import.meta.url);
+  let cursor = 0;
+  const failure = new HistoryHttpError(status === 401 ? "Your session has expired. Sign in again to continue." : "History is temporarily unavailable.", status);
+  const dependencies: Record<string, unknown> = {
+    react: { useState: (initial: unknown) => { const index = cursor++; return [index === 0 ? true : initial, () => {}]; } },
+    "@/components/use-ai-history-list": { useAiHistoryList: () => ({ items: [], loading: false, loaded: false, error: source === "list" ? failure : null, unavailable: 0, more: false }) },
+    "next/navigation": { usePathname: () => "/workflow" },
+    "lucide-react": new Proxy({}, { get: () => () => null }),
+    "@/components/ui/button": { Button: "button" },
+    "@/components/ui/input": { Input: "input" },
+    "@/components/ui/dropdown-menu": new Proxy({}, { get: () => () => null }),
+    "@/lib/ai/history-http": { HistoryHttpError, requestHistoryJson },
+    "./ai-usage-panel": { AiUsagePanel: () => null },
+  };
+  const code = ts.transpileModule(readFileSync(new URL("../components/ai-history-menu.tsx", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
+  const exports: { AiHistoryMenu?: (props: unknown) => ReturnType<typeof import("react").createElement> } = {};
+  vm.runInNewContext(code, { exports, require: (name: string) => dependencies[name] ?? require(name), Error, URLSearchParams });
+  return renderToStaticMarkup(exports.AiHistoryMenu!({ history: { scope: "test", error: source === "restore" ? failure.message : null, errorStatus: status, retry: () => {} }, disabled: false, onNew: () => {} }));
+}
+
+test("expired history offers sign-in without navigating away from unsaved work", () => {
+  for (const source of ["list", "restore"] as const) {
+    const html = renderHistoryFailure(source, 401);
+    assert.match(html, /href="\/login\?next=%2Fworkflow" target="_blank" rel="noopener noreferrer"/);
+    assert.match(html, /Keep this tab open to preserve your edits/);
+    assert.match(html, /Retry loading conversations/);
+    assert.doesNotMatch(html, /Start a new conversation/);
+    if (source === "list") assert.doesNotMatch(html, /Your saved conversations will appear here/);
+  }
+});
+
+test("history outages offer retry without falsely prompting sign-in or showing empty history", () => {
+  const html = renderHistoryFailure("list", 503);
+  assert.match(html, /Retry loading conversations/);
+  assert.doesNotMatch(html, /Sign in in a new tab|Your saved conversations will appear here/);
 });
 
 test("persistent history outage stops after two reads with a recoverable message", async () => {
   let calls = 0;
   await assert.rejects(requestHistoryJson("/api/ai/history", undefined, async () => { calls++; return new Response("Bad gateway", { status: 502 }); }), /Retry loading/);
   assert.equal(calls, 2);
+});
+
+test("stalled history has one bounded deadline and never retries after expiry", async t => {
+  const timeout = AbortSignal.abort(new DOMException("Timed out", "TimeoutError"));
+  t.mock.method(AbortSignal, "timeout", (milliseconds: number) => { assert.equal(milliseconds, 15000); return timeout; });
+  let calls = 0;
+  await assert.rejects(requestHistoryJson("/api/ai/history", undefined, async (_url, init) => {
+    calls++; init?.signal?.throwIfAborted();
+    throw new Error("Unreachable");
+  }), /too long to respond/);
+  assert.equal(calls, 1);
 });
 
 test("read-only POST session RPC retries preserve credentials, body, scope and request deadline", async () => {

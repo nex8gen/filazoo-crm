@@ -1,0 +1,55 @@
+{
+  "checkedAt": "2026-11-06T04:14:00.856Z",
+  "production": {
+    "domain": "https://crm.filazoosupply.com",
+    "deploymentId": "dpl_CDcG51BTBiBZqg2KK8BjB7irtKVr",
+    "baseDeployment": "dpl_9HAh54kAGBVekVSxyUo8qV4S2hdB",
+    "healthStatus": 200,
+    "database": "connected",
+    "unauthenticatedAssistantStatus": 401
+  },
+  "scope": "Google discovery, page reading, research evidence display and native token tracking only. Unrelated checkout edits excluded.",
+  "behavior": {
+    "searchEngine": "Google Search",
+    "discoveryCalls": 1,
+    "pageReadingCalls": 1,
+    "maximumRequestedPages": 4,
+    "actualQueriesAndSuccessfulReadReceiptsDisplayed": true,
+    "namesakeMatchUncertaintyPreserved": true,
+    "privateChatNotSentToSearch": true,
+    "requestScopedOidcTested": true
+  },
+  "validation": {
+    "focusedTestsPassed": 17,
+    "typescript": "passed",
+    "targetedLint": "passed",
+    "remoteProductionBuild": "READY",
+    "authenticatedCrmChatManuallyTested": false,
+    "liveProviderEvidence": [
+      "google-web-research-20261106.json",
+      "google-web-research-known-company-20261106.json"
+    ]
+  },
+  "evaluation": {
+    "workerAlive": true,
+    "pid": 3260,
+    "conservativeChargedUsd": 3.491576,
+    "enforcedMaximumUsd": 4.75,
+    "originalEndsAt": "7 Nov 2026, 08:19:21 GMT+8",
+    "latestPassed": 160,
+    "latestFailed": 0,
+    "restart": "Original worker was interrupted; resumed original ledger and deadline using an owned scheduled task. This is not a claim of uninterrupted 24-hour operation."
+  },
+  "sourceSha256": {
+    "lib/ai/gateway-research.ts": "29e67faf543d3b13b7affe92fa49022e3491561eef18ac862ab84a548ad3b258",
+    "lib/ai/google-web-research.ts": "c678b01f21bcde86338c4269c304c87ab997aa33402d7993bf54689e6972cd36",
+    "lib/ai/customer-research.ts": "5f91c3755dd8d2d52a81b8baf52be611fed84659d48ee8e46b75927620f02f9f",
+    "lib/ai/chat-usage.ts": "cca8f84da4fa15fb7abf29208c74b900053bd643f3915a6c20c8ea3278c9ba57",
+    "components/ui/customer-research.tsx": "3f3f199b822987b71bf196321a143e207adf4555be9718703c477e2d37b2d60f",
+    "app/api/ai/assistant/route.ts": "481e36f47b3372ec4f3bddffef977242455f54da21eac193bcef8d220c9d4c0f",
+    "app/api/companies/[id]/chat/route.ts": "7034b4b56720fa085a99fd21f35069e3b21772f9b508a638a59a201c50b9320d",
+    "lib/i18n-ai-history.ts": "4501d1119158e458a6e0407dae63bdfec1de32b8fda72ff375d445f534b0081a",
+    "package.json": "1c2c40c240072a226af9eb3099dc850acbda1443240dec18e72dca7949a0bb28",
+    "package-lock.json": "34bf8767461cfa3655fccac94a9ae0bd59b40563089f511cba8b630d7e7b076f"
+  }
+}

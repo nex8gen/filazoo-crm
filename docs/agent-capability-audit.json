@@ -874,6 +874,12 @@
       "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
     },
     {
+      "surface": "app/segment-actions.ts#deleteSegment",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Specialized UI test, composition or analysis flow; use its page controls. The agent must provide a handoff and must not claim it executed this feature."
+    },
+    {
       "surface": "app/segment-actions.ts#updateSegment",
       "mode": "direct",
       "tools": [
@@ -950,6 +956,12 @@
       "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
     },
     {
+      "surface": "app/settings/ai-usage-actions.ts#updateAiUsageSettings",
+      "mode": "internal",
+      "tools": [],
+      "explanation": "Retained legacy budget settings helper. Application usage limits and their Settings controls have been removed."
+    },
+    {
       "surface": "app/settings/apps/email-account-actions.ts#setEmailConnectionActive",
       "mode": "guided",
       "tools": [],
@@ -990,6 +1002,12 @@
       "mode": "guided",
       "tools": [],
       "explanation": "Connection credentials, uploads or connection testing use the relevant settings/file form."
+    },
+    {
+      "surface": "app/settings/lead-assignment-actions.ts#updateLeadAssignmentSettings",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Specialized UI test, composition or analysis flow; use its page controls. The agent must provide a handoff and must not claim it executed this feature."
     },
     {
       "surface": "app/settings/preference-actions.ts#saveUserPreferences",

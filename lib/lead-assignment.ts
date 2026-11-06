@@ -8,3 +8,9 @@ export async function claimNextBdSalesManager(admin: SupabaseClient): Promise<st
   }
   return typeof data === "string" && data.length > 0 ? data : null;
 }
+
+export async function assignIncomingCompany(admin: SupabaseClient, companyId: string): Promise<string | null> {
+  const { data, error } = await admin.rpc("assign_incoming_company", { p_company_id: companyId });
+  if (error) throw new Error(`Unable to assign incoming company: ${error.message}`);
+  return typeof data === "string" && data.length > 0 ? data : null;
+}

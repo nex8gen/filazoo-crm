@@ -9,6 +9,68 @@ import * as intent from "../lib/ai/assistant-intent.ts";
 
 const require = createRequire(import.meta.url);
 
+test("sidebar history stays enabled across close and reopen while drafts remain editable and survive automatic restore", () => {
+  const slots: unknown[] = [];
+  let cursor = 0;
+  const react = {
+    useRef(initial: unknown) { const index = cursor++; return slots[index] ??= { current: initial }; },
+    useState(initial: unknown) {
+      const index = cursor++;
+      slots[index] ??= initial && typeof initial === "object" && "pathname" in initial ? { pathname: "/email", context: {} } : initial;
+      return [slots[index], (value: unknown) => { slots[index] = typeof value === "function" ? value(slots[index]) : value; }];
+    },
+    useMemo: (read: () => unknown) => read(), useEffect: () => {}, useEffectEvent: (callback: unknown) => callback, useId: () => "composer",
+  };
+  function Composer() {}
+  const ui = new Proxy({}, { get: () => () => null });
+  const enabledValues: boolean[] = [];
+  const preparedModes: string[] = [];
+  let restore: (detail: unknown, prepend?: boolean, preserveDraft?: boolean) => void = () => {};
+  let clears = 0;
+  const controller = {
+    scope: history.conversationScope({ mode: "chat", pathname: "/email" }),
+    conversation: { mode: "agent", pathname: "/email" }, loading: true,
+    ensure: () => { throw new Error("Do not send before the saved conversation is ready"); },
+  };
+  const dependencies: Record<string, unknown> = {
+    react, "next/navigation": { usePathname: () => "/email", useRouter: () => ({}) }, "motion/react": { motion: ui },
+    "@/components/language-provider": { useLanguage: () => ({ language: "en", t: (value: string) => value }) },
+    "@/components/use-ai-conversation": { useAiConversation: (input: { mode: string }, callback: typeof restore, enabled: boolean, _browseAll: boolean, autoResume: boolean) => { assert.equal(autoResume, false, "messages must not load until a history title is selected"); if (input.mode === "chat") restore = callback; preparedModes.push(input.mode); enabledValues.push(enabled); return controller; } },
+    "@/components/ui/ai-mascot-input": { AiMascotInput: Composer },
+    "@/components/ui/ai-image-attachments": { useAiImageAttachments: () => ({ images: [], processing: false, clear: () => { clears++; } }) },
+    "@/lib/ai/chat-history": history, "@/lib/ai/assistant-intent": intent,
+    "@/lib/ai/agent-progress": { pageWorkArea: () => "email" },
+  };
+  const code = ts.transpileModule(readFileSync(new URL("../components/workspace-ai-assistant.tsx", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
+  const exports: Record<string, (props: unknown) => unknown> = {};
+  vm.runInNewContext(code, { exports, require: (name: string) => name === "react/jsx-runtime" ? require(name) : dependencies[name] ?? ui });
+  type Element = { type?: unknown; props?: { children?: unknown; busy?: boolean; loadingHistory?: boolean; value?: string; onChange?: (value: string) => void; onSend?: () => void } };
+  function findComposer(value: unknown): Element | undefined {
+    if (!value || typeof value !== "object") return;
+    if (Array.isArray(value)) return value.map(findComposer).find(Boolean);
+    const element = value as Element;
+    return element.type === Composer ? element : findComposer(element.props?.children);
+  }
+  function render(open = true) { cursor = 0; return exports.WorkspaceAiAssistant({ open, onOpenChange: () => {} }); }
+  assert.equal(render(false), null, "background preparation must not mount hidden animations");
+  assert.deepEqual(preparedModes, ["chat", "agent"], "both modes prepare before the sidebar is opened");
+  const composer = findComposer(render())!;
+  assert.equal(composer.props!.busy, false, "history loading must not simulate a working agent or disable typing");
+  assert.equal(composer.props!.loadingHistory, true, "sending still waits for saved history");
+  composer.props!.onChange!("My draft while history loads");
+  findComposer(render())!.props!.onSend!();
+  render(false);
+  assert.equal(findComposer(render())!.props!.value, "My draft while history loads");
+  assert.ok(enabledValues.every(Boolean), "closing the sidebar must not disable and restart history");
+  const detail = { messages: [], actionResults: {} };
+  restore(detail, false, true);
+  assert.equal(findComposer(render())!.props!.value, "My draft while history loads");
+  assert.equal(clears, 0, "automatic history restore must preserve attachments too");
+  restore(detail);
+  assert.equal(findComposer(render())!.props!.value, "", "explicitly opening another conversation clears the prior draft");
+  assert.equal(clears, 1);
+});
+
 test("continuing history from the inbox sends the saved page, record, AI mode and version", async () => {
   const companyId = "15693adc-0bdf-4617-b214-71b1861764a9";
   const conversationId = "a37acc59-4a11-47db-ad1e-aa9fe5d72e74";
@@ -22,7 +84,7 @@ test("continuing history from the inbox sends the saved page, record, AI mode an
       slots[index] ??= initial && typeof initial === "object" && "pathname" in initial ? { pathname: "/email", context: {} } : initial;
       return [slots[index], (value: unknown) => { slots[index] = typeof value === "function" ? value(slots[index]) : value; }];
     },
-    useMemo: (read: () => unknown) => read(), useEffect: () => {}, useId: () => "composer",
+    useMemo: (read: () => unknown) => read(), useEffect: () => {}, useEffectEvent: (callback: unknown) => callback, useId: () => "composer",
   };
   function Composer() {}
   const placeholder = () => null;
@@ -104,15 +166,16 @@ test("Open in Agent preserves the invoice request and images in a fresh Agent co
       }
       return [slots[index], (value: unknown) => { slots[index] = typeof value === "function" ? value(slots[index]) : value; }];
     },
-    useMemo: (read: () => unknown) => read(), useEffect: () => {}, useId: () => "composer",
+    useMemo: (read: () => unknown) => read(), useEffect: () => {}, useEffectEvent: (callback: unknown) => callback, useId: () => "composer",
   };
   function Composer() {}
   const ui = new Proxy({}, { get: () => () => null });
   const controller = { scope: history.conversationScope({ mode: "chat", pathname: "/email", pageContext: {} }), conversation: null, loading: false, newConversation: (target: unknown) => { freshScope = target; } };
+  const chatController = { ...controller, newConversation: () => { throw new Error("The handoff must reset the Agent controller, not the Chat controller"); } };
   const dependencies: Record<string, unknown> = {
     react, "next/navigation": { usePathname: () => "/email", useRouter: () => ({}) }, "motion/react": { motion: ui },
     "@/components/language-provider": { useLanguage: () => ({ language: "en", t: (value: string) => value }) },
-    "@/components/use-ai-conversation": { useAiConversation: () => controller },
+    "@/components/use-ai-conversation": { useAiConversation: (input: { mode: string }) => input.mode === "agent" ? controller : chatController },
     "@/components/ui/ai-mascot-input": { AiMascotInput: Composer },
     "@/components/ui/ai-image-attachments": { useAiImageAttachments: () => ({ images: [], processing: false, setImages: (value: unknown) => { attached = value; } }) },
     "@/lib/ai/chat-history": history, "@/lib/ai/assistant-intent": intent,

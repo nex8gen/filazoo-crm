@@ -1,3 +1,4 @@
+import { resolveGatewayToken, hasAiProvider } from "../ai/provider-credentials.ts";
 import "server-only";
 import { requireAiAutomation } from "./ai-settings.ts";
 import { aiBehaviorInstruction } from "../ai-policy.ts";
@@ -14,9 +15,7 @@ import { userProductRows } from "./product-personalization.ts";
 import { requireWorkspaceMember } from "../auth.ts";
 
 export function hasFlowReplyProvider() {
-  const gateway = process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
-  if (process.env.AI_PROVIDER === "gateway" || process.env.AI_BUDGET_ENFORCEMENT === "true") return Boolean(gateway);
-  return Boolean(process.env.GEMINI_API_KEY?.trim() || gateway);
+  return hasAiProvider(process.env);
 }
 
 export type FlowReplyMessage = { subject: string | null; body: string | null; direction: string; message_id?: string | null; thread_id?: string | null; created_at: string };
@@ -71,7 +70,7 @@ export async function generateFlowAiReply({ usageUserId, config, contact, compan
   const orderedMessages = [...messages].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
   const history = [...orderedMessages].reverse().map((message) => ({ ...message, body: (message.body || "").slice(0, 6000) }));
   const apiKey = process.env.AI_PROVIDER === "gateway" || process.env.AI_BUDGET_ENFORCEMENT === "true" ? undefined : process.env.GEMINI_API_KEY?.trim();
-  const token = process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
+  const token = resolveGatewayToken(process.env);
   const generate = async (systemInstruction: string, prompt: string) => {
     const options = { systemInstruction: systemInstruction + aiBehaviorInstruction(policy, true), prompt, maxOutputTokens: 8192 };
     const gateway = () => generateGatewayText({ usageUserId, ...options, token: token!, model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim(), task: "email", complex: config.usePrices === true, userText: config.instructions as string | undefined });

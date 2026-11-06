@@ -18,6 +18,14 @@ async function handle(request: Request, context: Context, method: "GET" | "PATCH
   const { id } = await context.params;
   if (!z.uuid().safeParse(id).success) return Response.json({ error: "Invalid conversation." }, { status: 400, headers });
   try {
+    if (method === "DELETE") {
+      // Deleting one's own transcript must also work after a record is removed
+      // or access changes. The RPC checks ownership and the active turn lock.
+      const { data, error } = await createSupabaseAdmin().rpc("delete_ai_conversation", { p_user_id: viewer.id, p_conversation_id: id });
+      if (error) throw new HistoryError("Unable to delete this conversation. Please retry.", 503);
+      if (!data?.success) throw new HistoryError(data?.pending ? "Wait for the current request to finish before deleting history." : "Conversation unavailable.", data?.pending ? 409 : 404);
+      return Response.json({ success: true }, { headers });
+    }
     const row = await ownedConversation(id, viewer);
     const db = createSupabaseAdmin();
     if (method === "GET") {
@@ -38,11 +46,6 @@ async function handle(request: Request, context: Context, method: "GET" | "PATCH
       if (!data) throw new HistoryError("Wait for the current request to finish before changing history.");
       return Response.json({ success: true }, { headers });
     }
-    // Executed actions remain in the audit table when a transcript is deleted.
-    const { data, error } = await db.from("ai_conversations").delete().eq("id", id).eq("user_id", viewer.id).is("active_request", null).select("id").maybeSingle();
-    if (error) throw new HistoryError("Unable to delete this conversation.", 503);
-    if (!data) throw new HistoryError("Wait for the current request to finish before deleting history.");
-    return Response.json({ success: true }, { headers });
   } catch (error) { return Response.json({ error: error instanceof HistoryError ? error.message : "Saved conversation is unavailable." }, { status: error instanceof HistoryError ? error.status : 403, headers }); }
   });
 }

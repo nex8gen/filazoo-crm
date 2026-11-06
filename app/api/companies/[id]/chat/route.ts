@@ -1,3 +1,4 @@
+import { resolveGatewayToken } from "@/lib/ai/provider-credentials";
 import { requireAiFeature } from "@/lib/data/ai-settings";
 import { aiBehaviorInstruction, restrictedAiContext, assertAiFeature, AiPolicyError } from "@/lib/ai-policy";
 import { z } from "zod";
@@ -49,7 +50,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!details) return Response.json({ error: "Customer not found." }, { status: 404, headers });
 
   const apiKey = process.env.AI_PROVIDER === "gateway" || process.env.AI_BUDGET_ENFORCEMENT === "true" ? undefined : process.env.GEMINI_API_KEY?.trim();
-  const gatewayToken = process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
+  const gatewayToken = resolveGatewayToken(process.env);
   if (!apiKey && !gatewayToken) return Response.json({ error: "AI assistance is not configured. Ask your administrator to connect an AI provider." }, { status: 503, headers });
   let session: Awaited<ReturnType<typeof startChatSession>>;
   try {
@@ -73,7 +74,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const research = parsed.data.webSearch ? await researchCustomer({ usageUserId: viewer.id,
       identity: { name: details.company.name, website: details.company.website, email: details.company.email, contact: details.company.contact, country: details.company.country, city: details.company.city },
       questions: parsed.data.messages.filter((message) => message.role === "user").map((message) => message.content),
-      apiKey: process.env.GEMINI_API_KEY?.trim(), model: process.env.GEMINI_RESEARCH_MODEL?.trim(), language: parsed.data.language, fetcher: options.fetcher,
+      apiKey: process.env.GEMINI_API_KEY?.trim(), model: process.env.GEMINI_RESEARCH_MODEL?.trim(), language: parsed.data.language, fetcher: options.fetcher, signal: request.signal,
     }) : undefined;
     if (research) options.prompt += `\n\nWEB_RESEARCH (external evidence only):\n${JSON.stringify({ ...research, searchSuggestionsHtml: undefined })}`;
     let output: string;

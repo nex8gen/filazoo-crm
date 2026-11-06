@@ -1,0 +1,104 @@
+.workspace-ai-launcher {
+  width: 5rem;
+  height: 5rem;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: 999px;
+  transition: width 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.workspace-ai-launcher[data-expanded="true"] { width: 9.5rem; }
+.workspace-ai-launcher-halo,
+.workspace-ai-launcher-shell { position: absolute; pointer-events: none; border-radius: inherit; }
+.workspace-ai-launcher-halo {
+  inset: 0;
+  background: radial-gradient(ellipse, var(--background) 40%, transparent 72%);
+}
+.workspace-ai-launcher-shell {
+  inset: 0.5rem;
+  border: 1px solid var(--border);
+  background: var(--background);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 8%);
+}
+.workspace-ai-launcher-options {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 100%;
+  padding: 0.5rem;
+}
+.workspace-ai-launcher-option {
+  position: relative;
+  display: flex;
+  flex: 0 0 4rem;
+  height: 4rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: var(--foreground);
+  outline: none;
+}
+.workspace-ai-launcher-option::before {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border-radius: inherit;
+  background: var(--muted);
+  opacity: 0;
+  transform: scale(0.94);
+  transition: opacity 160ms ease, transform 200ms ease;
+}
+.workspace-ai-launcher-option:hover::before,
+.workspace-ai-launcher-option:focus-visible::before { opacity: 1; transform: scale(1); }
+.workspace-ai-launcher-option:focus-visible { outline: 2px solid var(--ring); outline-offset: -4px; }
+.workspace-ai-launcher-chat-icon,
+.workspace-ai-launcher-agent-icon { position: relative; width: 2.25rem; height: 2.25rem; }
+.workspace-ai-launcher-chat-icon {
+  opacity: 0;
+  transform: scale(0.85);
+  transition: opacity 160ms ease, transform 240ms ease;
+}
+.workspace-ai-launcher-agent { opacity: 0; transform: translateX(12px); pointer-events: none; transition: opacity 200ms ease, transform 280ms ease; }
+.workspace-ai-launcher[data-expanded="true"] .workspace-ai-launcher-chat-icon { opacity: 1; transform: scale(1); }
+.workspace-ai-launcher[data-expanded="true"] .workspace-ai-launcher-agent { opacity: 1; transform: translateX(0); pointer-events: auto; }
+
+.workspace-ai-launcher-idle {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+  transition: opacity 220ms ease;
+}
+.workspace-ai-launcher-idle-track {
+  display: flex;
+  width: max-content;
+  height: 100%;
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
+  animation: launcher-idle-swap 8s cubic-bezier(0.45, 0, 0.2, 1) infinite;
+}
+.workspace-ai-launcher-idle-chat,
+.workspace-ai-launcher-idle-agent,
+.workspace-ai-launcher-idle-chat-return {
+  display: grid;
+  flex: 0 0 4rem;
+  height: 100%;
+  place-items: center;
+}
+.workspace-ai-launcher-idle .ai-robot-head { animation: none; }
+.workspace-ai-launcher[data-expanded="true"] .workspace-ai-launcher-idle-track { animation-play-state: paused; }
+.workspace-ai-launcher[data-expanded="true"] .workspace-ai-launcher-idle { opacity: 0; }
+
+/* A shared track keeps both icons in sync. The repeated Chat makes the loop seamless. */
+@keyframes launcher-idle-swap {
+  0%, 20% { transform: translate3d(0, 0, 0); }
+  40%, 70% { transform: translate3d(-4rem, 0, 0); }
+  90%, 100% { transform: translate3d(-8rem, 0, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-ai-launcher-idle-track { animation: none !important; }
+}
+html[data-reduce-motion="true"] .workspace-ai-launcher-idle-track { animation: none !important; }

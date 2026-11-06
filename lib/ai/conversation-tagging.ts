@@ -3,6 +3,7 @@ import { z } from "zod";
 import { conversationTagKeys, customerTags, customerTagValues, emailTagMessageKey } from "../customer-tags.ts";
 import type { InboxEmailItem } from "../email-inbox.ts";
 import { normalizeMessageId, normalizeReferences } from "../email-threading.ts";
+import { emailParticipantAddresses } from "../company-email.ts";
 
 export const conversationTagDecisionSchema = z.object({
   tag: z.enum(customerTagValues).nullable(),
@@ -11,8 +12,16 @@ export const conversationTagDecisionSchema = z.object({
   evidence: z.array(z.object({ messageKey: z.string().max(512), quote: z.string().trim().min(8).max(240) })).max(2),
 }).strict();
 export type ConversationTagDecision = z.infer<typeof conversationTagDecisionSchema>;
+// Providers can ignore output length hints. Validate the entire bounded quote
+// before shortening its verified source excerpt for storage.
+const conversationTagWireSchema = conversationTagDecisionSchema.extend({
+  evidence: z.array(z.object({ messageKey: z.string().max(512), quote: z.string().trim().min(8).max(2048) })).max(2),
+});
 export const conversationTagOutputTokens = 1_000;
 export const conversationTagCooldownMs = 60_000;
+export const conversationTagHistoryCharacters = 256_000;
+// Reassess old rule skips after the combined-history and long-message repair.
+const conversationTagAnalysisVersion = "workspace-history-v5";
 
 export const conversationTagInstruction = [
   "Classify ONE B2B customer email conversation from its subject, messages, chronology, sender direction and current situation.",
@@ -45,25 +54,27 @@ export function conversationTagInput(messages: readonly InboxEmailItem[]) {
   if (!key || !ordered.length) return null;
   const seen = new Set<string>();
   const unique = ordered.filter(message => { const id = emailTagMessageKey(message); if (seen.has(id)) return false; seen.add(id); return true; });
-  const fingerprint = createHash("sha256").update(JSON.stringify(unique.map(message => ({
+  const fingerprint = createHash("sha256").update(JSON.stringify({ version: conversationTagAnalysisVersion, messages: unique.map(message => ({
     key: emailTagMessageKey(message), subject: message.subject, timestamp: Number.isFinite(Date.parse(message.timestamp)) ? new Date(message.timestamp).toISOString() : message.timestamp,
     direction: message.direction, contact: message.contact.trim().toLowerCase(),
     // RFC message bodies are immutable. Metadata enrichment must not buy another AI analysis.
     references: normalizeReferences(message.references), inReplyTo: normalizeMessageId(message.inReplyTo),
-  })))).digest("hex");
+  })) })).digest("hex");
   return { key, keys, fingerprint, messages: unique, latestAt: unique.at(-1)!.timestamp, messageCount: unique.length };
 }
 
-/** A sender must resolve to one CRM company before any paid classification. */
+/** All known customer participants must resolve to one company before paid classification. */
 export function customerConversationTagInput(messages: readonly InboxEmailItem[], contacts: ReadonlyMap<string, string | null>) {
-  const input = conversationTagInput(messages);
+  const base = conversationTagInput(messages);
+  if (!base) return null;
+  const participantContacts = base.messages.map(message => emailParticipantAddresses(message).filter(address => contacts.has(address)));
+  if (participantContacts.some(addresses => addresses.some(address => !contacts.get(address)))) return null;
+  const companyIds = new Set(participantContacts.flat().map(address => contacts.get(address)!));
+  if (companyIds.size !== 1) return null;
+  const companyId = [...companyIds][0];
+  const input = conversationTagInput(base.messages.map((message, index) => ({ ...message, contact: participantContacts[index][0] ?? message.contact })));
   if (!input) return null;
-  const contactEmail = input.messages.at(-1)!.contact.trim().toLowerCase();
-  const companyId = contacts.get(contactEmail);
-  if (!companyId || input.messages.some(message => {
-    const company = contacts.get(message.contact.trim().toLowerCase());
-    return company && company !== companyId;
-  })) return null;
+  const contactEmail = [...input.messages].reverse().map(message => message.contact.trim().toLowerCase()).find(address => contacts.get(address) === companyId)!;
   // A previously unlinked sender becoming a customer must invalidate an old mailbox-only result.
   return { ...input, companyId, contactEmail, fingerprint: `${companyId}:${input.fingerprint}` };
 }
@@ -79,12 +90,12 @@ export function conversationTagSkipReason(messages: readonly InboxEmailItem[]): 
 
 /** Bounded evidence, with truncation made explicit. Bodies never become system instructions. */
 export function conversationTagContext(messages: readonly InboxEmailItem[], currentTag: string | null) {
-  let remaining = 80_000;
+  let remaining = conversationTagHistoryCharacters;
   const chosen = messages.length > 64 ? [...messages.slice(0, 4), ...messages.slice(-60)] : [...messages];
   // Reserve space for the newest messages first; preserve chronological order in the prompt.
   const evidence = [...chosen].reverse().map(message => {
     const body = message.body || message.preview || "";
-    const text = body.slice(0, Math.min(12_000, Math.max(0, remaining)));
+    const text = body.slice(0, Math.max(0, remaining));
     remaining -= text.length;
     return { messageKey: emailTagMessageKey(message), subject: message.subject, direction: message.direction,
       timestamp: message.timestamp, body: text, incomplete: message.bodyLoaded === false || text.length < body.length };
@@ -112,14 +123,20 @@ export function conversationTagPrompt(context: ReturnType<typeof conversationTag
 }
 
 export function parseConversationTagDecision(output: string, context: ReturnType<typeof conversationTagContext>): ConversationTagDecision {
-  const decision = conversationTagDecisionSchema.parse(JSON.parse(output.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")));
-  if (decision.tag === null) return decision;
+  const decision = conversationTagWireSchema.parse(JSON.parse(output.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")));
+  if (decision.tag === null) return { ...decision, evidence: [] };
   if (decision.tag === "Inactive Customers" || decision.tag === "Long-term Inactive Customers") throw new Error("Inactivity requires configured thresholds and company-wide activity.");
-  if (decision.confidence < 0.85 || !decision.evidence.length) return { ...decision, tag: null };
-  for (const evidence of decision.evidence) {
+  if (decision.confidence < 0.85 || !decision.evidence.length) return { ...decision, tag: null, evidence: [] };
+  const verified = decision.evidence.map(evidence => {
     const message = context.messages.find(message => message.messageKey === evidence.messageKey);
-    if (!message || !`${message.subject}\n${message.body}`.includes(evidence.quote)) throw new Error("AI tag evidence does not match the conversation.");
-  }
-  if (context.historyIncomplete) return { ...decision, tag: null, reason: "Conversation history is incomplete; keeping the current tag." };
-  return decision;
+    // Only whitespace may differ: every word, punctuation mark and message key
+    // must match. Escape model text so it can never introduce regex operators.
+    const pattern = evidence.quote.split(/\s+/).map(part => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+");
+    const match = message ? new RegExp(pattern).exec(`${message.subject}\n${message.body}`) : null;
+    if (!match) throw new Error("AI tag evidence does not match the conversation.");
+    const excerpt = match[0].slice(0, 240).replace(/[\uD800-\uDBFF]$/, "").trimEnd();
+    return { messageKey: evidence.messageKey, quote: excerpt };
+  });
+  if (context.historyIncomplete) return { ...decision, tag: null, evidence: [], reason: "Conversation history is incomplete; keeping the current tag." };
+  return conversationTagDecisionSchema.parse({ ...decision, evidence: verified });
 }

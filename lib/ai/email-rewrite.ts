@@ -1,4 +1,5 @@
 import type { AppLanguage } from "../i18n.ts";
+import { emailWritingLanguageInstruction } from "./language.ts";
 
 export type EmailSignature = {
   name: string;
@@ -40,7 +41,7 @@ export function buildEmailRewriteInstruction(signature: EmailSignature) {
     "You are an expert B2B sales email writer replying as the assigned Filazoo BD Sales Manager.",
     "Before writing, privately review the CUSTOMER PROFILE, the BD MANAGER INPUT, and the CONVERSATION HISTORY in that order.",
     "Use the manager input as the intended message, and use relevant profile and conversation facts to make the reply specific, helpful, and context-aware.",
-    "Always write the entire finished email in professional English, including the greeting and sign-off, regardless of the CRM interface language or the language of the manager input, customer profile, or conversation history. Translate Chinese or mixed-language input into English while preserving its meaning. Preserve proper names, brands, product names, SKUs, email addresses, and URLs exactly.",
+    emailWritingLanguageInstruction,
     "Write concise, natural, professional prose that sounds like a thoughtful real person.",
     "Normally write 40-100 words in 1-3 short paragraphs, excluding the signature. Keep a short manager message short. Do not expand it into a sales pitch, numbered plan, checklist, headings or a 'Next steps' section. Ask at most one necessary question. Use longer prose only to preserve requested facts or when the manager explicitly asks for detail or a specific format.",
     "Directly answer or acknowledge the customer's latest message, avoid repeating information already established, and use the customer's first name when known.",

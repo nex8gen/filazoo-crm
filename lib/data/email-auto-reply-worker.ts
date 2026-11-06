@@ -1,3 +1,4 @@
+import { resolveGatewayToken } from "../ai/provider-credentials.ts";
 import "server-only";
 import { requireAiAutomation } from "./ai-settings";
 import { aiBehaviorInstruction } from "../ai-policy";
@@ -87,7 +88,7 @@ async function planReply(row: AutoReplyRow, history: InboxEmailItem[]) {
   // Never silently discard early commitments or product/policy records.
   if (prompt.length > 300_000) throw new Error("The conversation or business context is too large for automatic review. A person must review this reply.");
   const apiKey = process.env.AI_PROVIDER === "gateway" || process.env.AI_BUDGET_ENFORCEMENT === "true" ? undefined : process.env.GEMINI_API_KEY?.trim();
-  const token = process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
+  const token = resolveGatewayToken(process.env);
   const options = { prompt, systemInstruction: autoReplyInstruction + aiBehaviorInstruction(policy, true), maxOutputTokens: 8192 };
   const gateway = () => {
     if (!token) throw new Error("AI auto-reply is not configured.");

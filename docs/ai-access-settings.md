@@ -8,6 +8,12 @@ Each action category supports **Blocked**, **Require approval**, and **Allow aut
 
 ## Enforcement
 
+Application usage limits were removed on November 5, 2026. Settings no longer shows workspace budgets, daily caps, automatic shares or per-member spending controls. Chat no longer shows allowance meters. Provider requests bypass the old reservation ledger even if `AI_BUDGET_ENFORCEMENT=true` remains in an existing environment. Historical usage and budget data remain stored. The workspace AI master switch, feature switches, data scopes and action permissions still apply.
+
+History startup restores the latest conversation and messages in one HTTP request. List checks reuse mailbox snapshots only within the current authenticated request and omit full customer activity and email body loading. Client reads have a 15-second operation deadline, and the assistant code warms after the page settles. Deletion checks ownership under a database row lock, protects requests less than five minutes old, cancels pending proposals, cascades transcript removal, and preserves usage and completed audit actions.
+
+The November 5 update passed 1,256 automated tests, lint, production build, bundle budgets, and rollback-only database tests for both the new controls and the existing history/budget contracts. Local browser verification reached the workspace chooser because the signed-in local account has no workspace membership; the new admin form was not verified in an authenticated browser session. Its access was left unchanged.
+
 - Chat, customer chat, research, image input, email rewrites, summaries, translations, and reply planning check the saved policy before contacting a provider.
 - Agent context loaders omit disabled CRM sources. Tool lookups independently check their required scopes. Customer profiles omit commerce fields when billing access is disabled.
 - Agent action preparation classifies every supported operation. Unclassified operations are blocked. Combined invoice/email/catalog actions require all relevant permissions. Activating or editing a potentially live flow also requires sending permission.

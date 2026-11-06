@@ -1,6 +1,6 @@
 ﻿import test from "node:test";
 import assert from "node:assert/strict";
-import { quoteAiBudget, chargedAiBudget, budgetMeter, AiBudgetError } from "../lib/ai/budget.ts";
+import { quoteAiBudget, chargedAiBudget, budgetMeter, budgetFailure, AiBudgetError, type AiBudgetSummary } from "../lib/ai/budget.ts";
 import { createBudgetedAiFetch, type AiBudgetStore } from "../lib/ai/budget-fetch.ts";
 const rate = { input: .0000002, output: .00000075, context: 1050000, webSearch: .01 };
 const body = { model: "openai/gpt-5-nano", input: "Hello", max_output_tokens: 1200 };
@@ -76,5 +76,53 @@ test("parallel requests reserve before sending and cannot reuse the same allowan
   const guarded = createBudgetedAiFetch("owner", store, async () => rate, async () => { calls++; return Response.json({}); });
   const result = await Promise.allSettled([guarded(endpoint, init), guarded(endpoint, init), guarded(endpoint, init)]);
   assert.equal(result.filter(item => item.status === "fulfilled").length, 1); assert.equal(calls, 1);
+});
+
+test("a reservation denied at 85% usage never claims the balance is exhausted or reaches the provider", async () => {
+  for (const [reason, field] of [["user_daily", "daily"], ["workspace_daily", "workspaceDaily"], ["workspace_monthly", "monthly"]] as const) {
+    const meter = budgetMeter(168001, 200000, "2026-11-05T16:00:00Z");
+    assert.equal(meter.percent, 85);
+    const largeRequest = { ...body, input: "customer details ".repeat(12000) };
+    assert.ok(quoteAiBudget(largeRequest, rate).reservedMicros > meter.remainingMicros);
+    const limits: AiBudgetSummary = { timezone: "Asia/Shanghai", members: 5, daily: meter, workspaceDaily: meter, monthly: meter };
+    let calls = 0, reads = 0;
+    const store: AiBudgetStore = {
+      reserve: async () => ({ allowed: false, reason }),
+      read: async owner => { assert.equal(owner, "trusted-owner"); reads++; return limits; },
+      settle: async () => { throw new Error("Denied reservations must not settle"); },
+    };
+    const guarded = createBudgetedAiFetch("trusted-owner", store, async () => rate, async () => { calls++; return Response.json({}); });
+    await assert.rejects(guarded(endpoint, { ...init, body: JSON.stringify(largeRequest) }), (error: Error) => {
+      assert.match(error.message, /remaining.*too low for this request/);
+      assert.doesNotMatch(error.message, /used up|exhausted/);
+      return true;
+    });
+    assert.equal(reads, 1); assert.equal(calls, 0);
+    limits[field] = budgetMeter(200000, 200000, "reset");
+    assert.match(budgetFailure(reason, limits).message, /used up/);
+    limits[field] = budgetMeter(0, 0, "reset");
+    const paused = budgetFailure(reason, limits);
+    assert.equal(paused.status, 403);
+    assert.match(paused.message, /paused by a zero allowance/);
+    assert.doesNotMatch(paused.message, /resets|wait/);
+  }
+  assert.equal(budgetMeter(0, 0, "reset").percent, 100);
+});
+
+test("an unavailable balance read keeps the original denial and never permits a paid retry", async () => {
+  let calls = 0;
+  const store: AiBudgetStore = {
+    reserve: async () => ({ allowed: false, reason: "user_daily" }),
+    read: async () => { throw new Error("private database error"); },
+    settle: async () => {},
+  };
+  const guarded = createBudgetedAiFetch("trusted", store, async () => rate, async () => { calls++; return Response.json({}); });
+  await assert.rejects(guarded(endpoint, init), (error: Error) => {
+    assert.equal(error.name, "AiBudgetError");
+    assert.match(error.message, /remaining daily AI allowance/);
+    assert.doesNotMatch(error.message, /used up|private database/);
+    return true;
+  });
+  assert.equal(calls, 0);
 });
 

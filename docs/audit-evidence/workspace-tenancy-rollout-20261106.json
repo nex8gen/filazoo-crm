@@ -1,0 +1,57 @@
+{
+  "date": "2026-11-06",
+  "feature": "Production self-service workspace creation",
+  "project": "hukbmbicpdmhoxpkvljz",
+  "database": {
+    "migrationVersion": "20261106010757",
+    "migrationName": "multi_workspace_tenancy",
+    "installed": true,
+    "rollbackOnlyRehearsalsPassed": true,
+    "allExistingTableRowCountsPreservedWithinTransaction": true,
+    "installedIsolationAssertionsPassed": true,
+    "emptyWorkspaceCronAssertionsPassed": true,
+    "unscopedCrmTables": 0,
+    "publicTablesWithoutRls": 0,
+    "originalWorkspaceCount": 1,
+    "baselineAndPostMigrationCounts": { "companies": 250, "contacts": 250, "emails": 285, "products": 58, "members": 6 },
+    "healthAdvisories": 0,
+    "securityAdvisories": { "error": 0, "warning": 0, "info": "Service-only workspace_invitations intentionally has no browser RLS policy; browser grants are revoked." }
+  },
+  "deployment": {
+    "id": "dpl_nPADbWrohpcmL2cfN9L78MFh5hgE",
+    "url": "https://filazoo-it6ft69cd-nex8gens-projects.vercel.app",
+    "baseCommit": "29278a93d5c5defde1fb52690b7ef2d8742e5a8b",
+    "isolatedReviewedOverlays": true,
+    "unrelatedWorkingTreeChangesExcluded": true,
+    "target": "production",
+    "status": "READY",
+    "promoted": true,
+    "buildAndTypescript": "passed",
+    "runtimeErrorAndFatalLogScan": "No matching logs in 15-minute window"
+  },
+  "applicationChecks": {
+    "fullReleaseSuitePassed": 1250,
+    "fullReleaseSuiteFailed": 0,
+    "focusedTestsPassed": 23,
+    "scopedLint": "passed",
+    "signedWebhookCompatibility": "Retry only rejected legacy conflict targets (42P10); successful writes and other failures are not replayed."
+  },
+  "liveProductionHttpCheck": {
+    "syntheticOnly": true,
+    "emailSent": false,
+    "emailOtpVerified": true,
+    "renderedServerFormSubmitted": true,
+    "creationRedirectedToSetup": true,
+    "workspaceCookieSet": true,
+    "getStartedPageRendered": true,
+    "crmDashboardRendered": true,
+    "newWorkspaceCustomerCount": 0,
+    "ownerMembershipCreated": true,
+    "defaultPolicyCreated": true,
+    "forgedOriginalWorkspaceAccessDenied": true,
+    "syntheticSessionRevoked": true,
+    "retainedTestAccounts": 0,
+    "retainedTestWorkspaces": 0
+  },
+  "remainingSeparateCheck": "Actual inbox delivery through hosted Auth SMTP remains unverified."
+}

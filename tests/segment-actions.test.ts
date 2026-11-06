@@ -8,7 +8,7 @@ import { segmentInputSchema } from "../lib/segments.ts";
 
 const companyId = "a1111111-1111-4111-8111-111111111111";
 const segmentId = "b2222222-2222-4222-8222-222222222222";
-function fixture(role = "operator", error: { code: string } | null = null) {
+function fixture(role = "operator", error: { code: string } | null = null, businessCount = 3) {
   const writes: unknown[] = [];
   const paths: string[] = [];
   const exports: Record<string, unknown> = {};
@@ -19,13 +19,17 @@ function fixture(role = "operator", error: { code: string } | null = null) {
     "@/lib/supabase/admin": { createSupabaseAdmin: () => ({ from: (table: string) => ({
       select: () => ({ in: (_key: string, ids: string[]) => ({ or: async () => ({ data: ids.filter((id) => id === companyId).map((id) => ({ id })), error: null }) }) }),
       insert: async (row: unknown) => { writes.push({ table, row }); return { error }; },
-      update: (row: unknown) => ({ eq: (_key: string, id: string) => ({ select: () => ({ maybeSingle: async () => { writes.push({ table, row, id }); return { error, data: id === segmentId && !error ? { id } : null }; } }) }) }),
+      update: (row: unknown, options?: unknown) => ({ eq: (key: string, id: string) => ({
+        select: () => ({ maybeSingle: async () => { writes.push({ table, row, id }); return { error, data: id === segmentId && !error ? { id } : null }; } }),
+        or: async (filter: string) => { writes.push({ table, row, key, id, options, filter }); return { error, count: businessCount }; },
+      }) }),
+      delete: () => ({ eq: (key: string, id: string) => ({ select: () => ({ maybeSingle: async () => { writes.push({ table, operation: "delete", key, id }); return { error, data: id === segmentId && !error ? { id } : null }; } }) }) }),
     }) }) },
     "@/lib/segments": { segmentInputSchema },
   };
   const source = ts.transpileModule(readFileSync(new URL("../app/segment-actions.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   vm.runInNewContext(source, { exports, require: (name: string) => { if (!(name in dependencies)) throw new Error(`Unexpected dependency ${name}`); return dependencies[name]; } });
-  return { createSegment: exports.createSegment as typeof import("../app/segment-actions.ts").createSegment, updateSegment: exports.updateSegment as typeof import("../app/segment-actions.ts").updateSegment, writes, paths };
+  return { createSegment: exports.createSegment as typeof import("../app/segment-actions.ts").createSegment, updateSegment: exports.updateSegment as typeof import("../app/segment-actions.ts").updateSegment, deleteSegment: exports.deleteSegment as typeof import("../app/segment-actions.ts").deleteSegment, writes, paths };
 }
 
 function form(rules = '{"hasEmail":false,"minFitScore":7}') {
@@ -94,4 +98,68 @@ test("editing a segment can change individual membership and rechecks writer per
   data.set("segmentId", "invalid");
   assert.ok((await invalid.updateSegment({}, data)).error);
   assert.equal(invalid.writes.length, 0);
+});
+
+function deleteForm(kind = "saved", value = segmentId) {
+  const data = new FormData();
+  data.set("kind", kind);
+  data.set("segmentId", value);
+  return data;
+}
+
+test("saved segment deletion requires a writer and deletes only the requested audience", async () => {
+  const viewer = fixture("viewer");
+  await assert.rejects(() => viewer.deleteSegment({}, deleteForm()), /Access denied/);
+  assert.equal(viewer.writes.length, 0);
+  for (const role of ["admin", "operator", "bd_manager"]) {
+    const action = fixture(role);
+    assert.equal((await action.deleteSegment({}, deleteForm())).success, "Segment deleted.");
+    assert.equal(JSON.stringify(action.writes), JSON.stringify([{ table: "company_segments", operation: "delete", key: "id", id: segmentId }]));
+    assert.deepEqual(action.paths, ["/segments", "/companies", "/email/workflows"]);
+  }
+});
+
+test("invalid delete targets never write or invalidate pages", async () => {
+  for (const [kind, value] of [["saved", "invalid"], ["business", ""], ["business", "x".repeat(121)], ["unknown", segmentId]]) {
+    const action = fixture();
+    assert.ok((await action.deleteSegment({}, deleteForm(kind, value))).error);
+    assert.equal(action.writes.length, 0);
+    assert.equal(action.paths.length, 0);
+  }
+});
+
+test("failed and missing saved segment deletions never announce success", async () => {
+  for (const action of [fixture("admin", { code: "42501" }), fixture()]) {
+    const result = await action.deleteSegment({}, deleteForm("saved", companyId));
+    assert.ok(result.error);
+    assert.equal(result.success, undefined);
+    assert.equal(action.paths.length, 0);
+  }
+});
+
+test("business segment deletion clears only matching company labels and preserves records", async () => {
+  for (const role of ["admin", "operator"]) {
+    const action = fixture(role);
+    assert.equal((await action.deleteSegment({}, deleteForm("business", "Wholesale"))).success, "Segment deleted.");
+    assert.equal(JSON.stringify(action.writes), JSON.stringify([{ table: "companies", row: { segment: null }, key: "segment", id: "Wholesale", options: { count: "exact" }, filter: "source.is.null,source.neq.sample_seed" }]));
+    assert.deepEqual(action.paths, ["/companies/[id]", "/segments", "/companies", "/email/workflows"]);
+  }
+});
+
+test("business deletion rejects limited roles and the default group before writing", async () => {
+  for (const [role, name] of [["bd_manager", "Wholesale"], ["admin", "Unclassified"]]) {
+    const action = fixture(role);
+    assert.ok((await action.deleteSegment({}, deleteForm("business", name))).error);
+    assert.equal(action.writes.length, 0);
+    assert.equal(action.paths.length, 0);
+  }
+});
+
+test("failed or stale business segment deletions keep the current page intact", async () => {
+  for (const action of [fixture("operator", { code: "42501" }), fixture("operator", null, 0)]) {
+    const result = await action.deleteSegment({}, deleteForm("business", "Wholesale"));
+    assert.ok(result.error);
+    assert.equal(result.success, undefined);
+    assert.equal(action.paths.length, 0);
+  }
 });

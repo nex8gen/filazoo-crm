@@ -2,7 +2,6 @@ import crypto from "node:crypto";
 
 import { env, hasSupabaseConfig } from "./env.ts";
 import { createSupabaseAdmin } from "./supabase/admin.ts";
-import { claimNextBdSalesManager } from "./lead-assignment.ts";
 import { twilioClient } from "./twilio-messaging.ts";
 import { hasLegacyIntegrations } from "./data/workspace-runtime.ts";
 
@@ -329,8 +328,11 @@ export async function saveMetaLead(event: FacebookLeadEvent) {
   const fields = normalizeLeadFields(detailPayload.field_data);
   const fullName = fields.full_name || [fields.first_name, fields.last_name].filter(Boolean).join(" ") || null;
   const admin = createSupabaseAdmin();
-  const { data: existing } = await admin.from("meta_leads").select("owner_id,assignment_method").eq("leadgen_id", event.leadgenId).maybeSingle();
-  const ownerId = existing?.owner_id ?? await claimNextBdSalesManager(admin);
+  const { data: existing, error: existingError } = await admin.from("meta_leads").select("owner_id,assignment_method").eq("leadgen_id", event.leadgenId).maybeSingle();
+  if (existingError) return { ok: false as const, saved: false, error: existingError.message };
+  // The linking trigger selects and persists the owner atomically. Pre-claiming
+  // here consumes a second round-robin turn and races capacity checks.
+  const ownerId = existing?.owner_id ?? null;
   const { data: savedLead, error } = await admin.from("meta_leads").upsert({
     leadgen_id: event.leadgenId,
     page_id: event.pageId,

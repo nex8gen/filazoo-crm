@@ -6,6 +6,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import { z } from "zod";
 import * as rules from "../lib/ai-policy.ts";
+import * as credentials from "../lib/ai/provider-credentials.ts";
 import * as assistant from "../lib/ai/workspace-assistant.ts";
 import * as assistantIntent from "../lib/ai/assistant-intent.ts";
 import * as tools from "../lib/ai/crm-tools.ts";
@@ -21,6 +22,7 @@ function load<T>(file: string, dependencies: Record<string, unknown>, extra = {}
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   vm.runInNewContext(code, { exports, require: (name: string) => {
     if (name === "server-only") return {};
+    if (name === "@/lib/ai/provider-credentials") return credentials;
     if (name === "@/lib/workspace-context") return policyTestDependency(name);
     if (name in dependencies) return dependencies[name];
     if (name.replace(/\.ts$/, "") in dependencies) return dependencies[name.replace(/\.ts$/, "")];

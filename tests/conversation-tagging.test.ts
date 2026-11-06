@@ -6,6 +6,7 @@ import ts from "typescript";
 import * as crypto from "node:crypto";
 import { z } from "zod";
 import * as tagging from "../lib/ai/conversation-tagging.ts";
+import * as credentials from "../lib/ai/provider-credentials.ts";
 import * as tags from "../lib/customer-tags.ts";
 import * as threading from "../lib/email-threading.ts";
 import { mergeAutoReplyHistory } from "../lib/email-auto-reply.ts";
@@ -49,6 +50,18 @@ test("only unambiguous registered customer conversations are eligible for paid t
   assert.notEqual(customer.fingerprint, tagging.customerConversationTagInput([message()], new Map([["buyer@example.test", "reassigned-company"]]))!.fingerprint);
 });
 
+test("tag ownership follows all known header recipients and rejects mixed or ambiguous customer companies", () => {
+  const contacts = new Map<string, string | null>([["buyer@example.test", "company-a"], ["accounts@example.test", "company-a"], ["other@example.test", "company-b"], ["duplicate@example.test", null]]);
+  const copy = message({ contact: "staff@seller.test", from: "staff@seller.test", to: [{ address: "staff2@seller.test" }], cc: [{ address: "BUYER@example.test" }] });
+  const result = tagging.customerConversationTagInput([copy], contacts)!;
+  assert.equal(result.companyId, "company-a");
+  assert.equal(result.contactEmail, "buyer@example.test");
+  assert.equal(result.messages[0].contact, "buyer@example.test");
+  assert.equal(tagging.customerConversationTagInput([{ ...copy, cc: [{ address: "buyer@example.test" }, { address: "other@example.test" }] }], contacts), null);
+  assert.equal(tagging.customerConversationTagInput([{ ...copy, cc: [{ address: "buyer@example.test" }, { address: "duplicate@example.test" }] }], contacts), null);
+  assert.ok(tagging.customerConversationTagInput([{ ...copy, cc: [{ address: "buyer@example.test" }, { address: "accounts@example.test" }] }], contacts));
+});
+
 test("proposals require strong confidence and exact evidence from this conversation", () => {
   const context = tagging.conversationTagContext([message()], null);
   assert.equal(tagging.parseConversationTagDecision(JSON.stringify(decision()), context).tag, "New Inquiries");
@@ -59,6 +72,35 @@ test("proposals require strong confidence and exact evidence from this conversat
   assert.throws(() => tagging.parseConversationTagDecision(JSON.stringify(decision({ tag: "S02" })), context));
 });
 
+test("line wrapping and tabs are accepted only when every quoted word and punctuation mark matches", () => {
+  const body = "Our quote (rev. 2):\r\n100 kg\tblue PLA at $8/kg.\nPlease confirm the delivery terms.";
+  const context = tagging.conversationTagContext([message({ body })], null);
+  const evidence = [{ messageKey: "imap-root@buyer.test", quote: "Our quote (rev. 2): 100 kg blue PLA at $8/kg." }];
+  const result = tagging.parseConversationTagDecision(JSON.stringify(decision({ evidence })), context);
+  assert.equal(result.tag, "New Inquiries");
+  assert.ok(body.includes(result.evidence[0].quote), "Stored evidence is the exact original source text");
+  for (const quote of ["Our quote (rev. 2): 200 kg blue PLA at $8/kg.", "Our quote .* 100 kg blue PLA at $8/kg."]) {
+    assert.throws(() => tagging.parseConversationTagDecision(JSON.stringify(decision({ evidence: [{ ...evidence[0], quote }] })), context), /evidence/);
+  }
+});
+
+test("long provider quotes are verified in full before storing a bounded exact excerpt", () => {
+  const body = "Please review these purchasing requirements carefully. ".repeat(7) + "We have not paid or accepted the quote.";
+  const context = tagging.conversationTagContext([message({ body })], null);
+  const quote = body.replace(/\s+/g, " ").trim();
+  assert.ok(quote.length > 240);
+  const evidence = [{ messageKey: "imap-root@buyer.test", quote }];
+  const result = tagging.parseConversationTagDecision(JSON.stringify(decision({ evidence })), context);
+  assert.ok(result.evidence[0].quote.length <= 240);
+  assert.ok(body.includes(result.evidence[0].quote));
+  const fabricatedTail = quote.replace("not paid or accepted", "fully paid and accepted");
+  assert.throws(() => tagging.parseConversationTagDecision(JSON.stringify(decision({ evidence: [{ ...evidence[0], quote: fabricatedTail }] })), context), /evidence/, "An authentic prefix cannot hide a fabricated suffix beyond the storage limit");
+  assert.throws(() => tagging.parseConversationTagDecision(JSON.stringify(decision({ evidence: [{ ...evidence[0], quote: "A".repeat(2049) }] })), context));
+  const unicodeBody = "A".repeat(239) + "😀 accepted requirements";
+  const unicode = tagging.parseConversationTagDecision(JSON.stringify(decision({ evidence: [{ ...evidence[0], quote: unicodeBody }] })), tagging.conversationTagContext([message({ body: unicodeBody })], null));
+  assert.equal(unicode.evidence[0].quote, "A".repeat(239), "Stored text must not split an emoji into an invalid database surrogate");
+});
+
 test("inactivity cannot be invented from old dates, and a null decision preserves the current tag", () => {
   const context = tagging.conversationTagContext([message()], "Active Negotiations");
   for (const tag of ["Inactive Customers", "Long-term Inactive Customers"]) assert.throws(() => tagging.parseConversationTagDecision(JSON.stringify(decision({ tag })), context), /thresholds/);
@@ -66,7 +108,7 @@ test("inactivity cannot be invented from old dates, and a null decision preserve
 });
 
 test("truncated or missing history cannot replace a tag", () => {
-  const context = tagging.conversationTagContext([message({ body: "A".repeat(20_000) })], null);
+  const context = tagging.conversationTagContext([message({ body: "A".repeat(tagging.conversationTagHistoryCharacters + 1) })], null);
   assert.equal(context.historyIncomplete, true);
   assert.equal(tagging.parseConversationTagDecision(JSON.stringify(decision({ evidence: [{ messageKey: "imap-root@buyer.test", quote: "A".repeat(8) }] })), context).tag, null);
   assert.equal(tagging.conversationTagContext([message({ bodyLoaded: false })], null).historyIncomplete, true);
@@ -75,9 +117,18 @@ test("truncated or missing history cannot replace a tag", () => {
   assert.match(tagging.conversationTagInstruction, /not keyword matching/);
 });
 
-function workerFixture(options: { denied?: boolean; current?: string; manual?: boolean; providerFails?: boolean; stale?: boolean; cached?: boolean; revoke?: boolean; cooldown?: boolean; messages?: InboxEmailItem[]; noCustomer?: boolean; folderMessages?: InboxEmailItem[] } = {}) {
+test("ordinary long replies retain their complete text instead of permanently skipping analysis at 12,000 characters", () => {
+  const messages = Array.from({ length: 10 }, (_, index) => message({ id: `message-${index}`, messageId: `message-${index}@test`, body: `Message ${index}: ${"Full quotation and reply history. ".repeat(650)}` }));
+  const context = tagging.conversationTagContext(messages, null);
+  assert.equal(context.historyIncomplete, false);
+  assert.deepEqual(context.messages.map(message => message.body), messages.map(message => message.body));
+});
+
+function workerFixture(options: { denied?: boolean; current?: string; manual?: boolean; providerFails?: boolean; stale?: boolean; cached?: boolean; revoke?: boolean; cooldown?: boolean; messages?: InboxEmailItem[]; noCustomer?: boolean; folderMessages?: InboxEmailItem[]; otherMessages?: InboxEmailItem[]; otherFails?: boolean; otherStale?: boolean; hydrate?: boolean; staffContact?: boolean } = {}) {
   const calls = { provider: 0, policy: 0, finish: [] as Record<string, unknown>[], claim: 0, history: 0, prompt: "", bodyDownloads: 0, outputBudget: 0 };
   const original = options.messages?.[0] ?? message();
+  const bodyMailboxes: string[] = [];
+  const historyReads = new Map<string, number>();
   const input = tagging.customerConversationTagInput([original], new Map([[original.contact.trim().toLowerCase(), "company-a"]]))!;
   const tables: Record<string, Record<string, unknown>[]> = {
     workspace_mailboxes: [{ id: "mailbox", user_id: "owner", type: "personal", email: "sales@seller.test", is_active: true, imap_host: "imap.test", imap_username: "sales", imap_password: "never-expose-this-secret" }],
@@ -86,6 +137,11 @@ function workerFixture(options: { denied?: boolean; current?: string; manual?: b
     crm_conversation_tag_analysis: options.cached || options.cooldown ? [{ conversation_key: input.key, input_hash: options.cooldown ? "older-input" : input.fingerprint, latest_message_at: original.timestamp, message_count: 1, status: "done", lease_until: null, retry_at: null, checked_at: new Date(options.cooldown ? Date.now() : Date.now() - 120_000).toISOString() }] : [],
     crm_email_tags: options.current ? [{ message_key: input.key, tag: options.current, source: options.manual ? "manual" : "ai", updated_at: "2026-10-31T03:00:00Z" }] : [],
   };
+  if (options.staffContact) tables.contacts.push({ email: "sales@seller.test", company_id: "staff-company" });
+  if (options.otherMessages) {
+    tables.workspace_mailboxes.push({ ...tables.workspace_mailboxes[0], id: "other-mailbox", user_id: "other-owner" });
+    tables.workspace_members.push({ user_id: "other-owner", role: "bd_manager" });
+  }
   const db = {
     from(table: string) {
       const query = { select() { return query; }, eq() { return query; }, not() { return query; }, neq() { return query; }, in() { return query; }, order() { return query; }, range() { return query; },
@@ -98,6 +154,7 @@ function workerFixture(options: { denied?: boolean; current?: string; manual?: b
     } }; },
   };
   const dependencies: Record<string, unknown> = {
+    "../ai/provider-credentials.ts": credentials,
     "node:crypto": crypto, zod: { z }, "../supabase/admin": { createSupabaseAdmin: () => db },
     "../mailbox-utils": { normalizeMailboxRows }, "../email-threading": threading, "../customer-tags": tags,
     "../ai/conversation-tagging": tagging,
@@ -108,8 +165,18 @@ function workerFixture(options: { denied?: boolean; current?: string; manual?: b
       if (options.denied || (options.revoke && calls.policy >= 3)) throw new Error("Paused");
       return defaultAiPolicy();
     } },
-    "./email-auto-reply": { mailboxHistory: async () => { calls.history++; return { mailbox: { id: "mailbox" }, messages: options.stale && calls.history > 1 ? [original, message({ id: "reply", messageId: "reply@test", inReplyTo: original.messageId, references: [original.messageId!], timestamp: "2026-10-31T04:00:00Z" })] : options.messages ?? [original] }; } },
-    "./mailbox-sync": { loadMailboxWorkspace: async (_mailbox: unknown, loadOptions: { sync: boolean }) => { assert.equal(loadOptions.sync, false); return { messages: options.folderMessages ?? [] }; }, loadMailboxMessageContent: async () => { calls.bodyDownloads++; throw new Error("No body download expected"); } },
+    "./email-auto-reply": { mailboxHistory: async (id: string) => {
+      calls.history++; historyReads.set(id, (historyReads.get(id) ?? 0) + 1);
+      if (id === "other-mailbox" && options.otherFails) throw new Error("Saved history unavailable");
+      const messages = id === "other-mailbox" ? options.otherMessages! : options.messages ?? [original];
+      const changed = (id === "other-mailbox" ? options.otherStale : options.stale) && historyReads.get(id)! > 1;
+      return { mailbox: { id }, messages: changed ? [...messages, message({ id: "new-reply", messageId: "new-reply@test", inReplyTo: original.messageId, references: [original.messageId!], timestamp: "2026-10-31T04:00:00Z" })] : messages };
+    } },
+    "./mailbox-sync": { loadMailboxWorkspace: async (_mailbox: unknown, loadOptions: { sync: boolean }) => { assert.equal(loadOptions.sync, false); return { messages: options.folderMessages ?? [] }; }, loadMailboxMessageContent: async (mailbox: { id: string }) => {
+      calls.bodyDownloads++; bodyMailboxes.push(mailbox.id);
+      if (options.hydrate) return { body: mailbox.id === "other-mailbox" ? "Latest customer response from the second account" : message().body, bodyLoaded: true };
+      throw new Error("No body download expected");
+    } },
     "../ai/gemini": { generateGeminiText: async (input: { prompt: string; maxOutputTokens: number; onUsage: (value: unknown) => void }) => {
       calls.provider++; calls.prompt = input.prompt; calls.outputBudget = input.maxOutputTokens; input.onUsage({ inputTokens: 250, outputTokens: 80, cachedInputTokens: 100 });
       if (options.providerFails) throw new Error("Provider unavailable"); return JSON.stringify(decision());
@@ -121,7 +188,7 @@ function workerFixture(options: { denied?: boolean; current?: string; manual?: b
     exports, require: (name: string) => { if (name === "server-only") return {}; if (name in dependencies) return dependencies[name]; throw new Error(`Unexpected capability ${name}`); },
     process: { env: { GEMINI_API_KEY: "synthetic-test-key" } }, Date, Map, Set, AbortSignal, fetch,
   });
-  return { run: () => exports.processAutomaticConversationTags({ budgetMs: 100_000 }), calls };
+  return { run: () => exports.processAutomaticConversationTags({ budgetMs: 100_000 }), calls, bodyMailboxes };
 }
 
 test("background classifier reads subject and body, then writes the shared conversation tag", async () => {
@@ -137,6 +204,13 @@ test("background classifier reads subject and body, then writes the shared conve
   const metrics = worker.calls.finish[0].p_metrics as { providerCalls: number; usage: { inputTokens: number } };
   assert.equal(metrics.providerCalls, 1);
   assert.equal(metrics.usage.inputTokens, 250);
+});
+
+test("a staff CRM contact cannot steal a CC customer's tag or turn the seller's copied reply into buyer activity", async () => {
+  const worker = workerFixture({ staffContact: true, hydrate: true, messages: [message({ contact: "sales@seller.test", from: "sales@seller.test", cc: [{ address: "buyer@example.test" }], bodyLoaded: false, uid: 42, uidValidity: 7 })] });
+  assert.equal((await worker.run()).analyzed, 1);
+  assert.equal(worker.calls.finish[0].p_contact, "buyer@example.test");
+  assert.equal(JSON.parse(worker.calls.prompt).messages[0].direction, "outbound");
 });
 
 test("preview hydration and unsent drafts do not create new paid conversation activity", () => {
@@ -204,4 +278,35 @@ test("provider failure and new replies during analysis leave existing tags untou
     const worker = workerFixture(options); assert.equal((await worker.run()).failed, 1);
     assert.equal(worker.calls.finish[0].p_tag, null); assert.equal(worker.calls.finish[0].p_error, true);
   }
+});
+
+test("one thread split across staff mailboxes is classified once from the full combined conversation", async () => {
+  const parent = message();
+  const reply = message({ id: "reply", messageId: "reply@buyer.test", inReplyTo: parent.messageId, references: [parent.messageId!], body: "Second account confirms requirements", timestamp: "2026-10-31T02:00:00Z" });
+  const worker = workerFixture({ messages: [parent], otherMessages: [reply] });
+  assert.equal((await worker.run()).analyzed, 1);
+  assert.equal(worker.calls.claim, 1);
+  assert.equal(worker.calls.provider, 1);
+  assert.match(worker.calls.prompt, /Second account confirms requirements/);
+  assert.equal(JSON.parse(worker.calls.prompt).messages.length, 2);
+});
+
+test("combined history hydrates each message from its actual source account", async () => {
+  const parent = message({ bodyLoaded: false, uid: 10, uidValidity: 7 });
+  const reply = message({ id: "reply", messageId: "reply@buyer.test", inReplyTo: parent.messageId, references: [parent.messageId!], bodyLoaded: false, uid: 20, uidValidity: 8, timestamp: "2026-10-31T02:00:00Z" });
+  const worker = workerFixture({ messages: [parent], otherMessages: [reply], hydrate: true });
+  assert.equal((await worker.run()).analyzed, 1);
+  assert.deepEqual(worker.bodyMailboxes, ["other-mailbox", "mailbox"]);
+  assert.match(worker.calls.prompt, /Latest customer response from the second account/);
+});
+
+test("inaccessible source history and new activity in another account cannot produce a partial or stale tag", async () => {
+  const missing = workerFixture({ otherMessages: [], otherFails: true });
+  assert.equal((await missing.run()).failed, 1);
+  assert.equal(missing.calls.claim, 0);
+  assert.equal(missing.calls.provider, 0);
+  const stale = workerFixture({ otherMessages: [], otherStale: true });
+  assert.equal((await stale.run()).failed, 1);
+  assert.equal(stale.calls.finish[0].p_tag, null);
+  assert.equal((stale.calls.finish[0].p_metrics as { failureStage: string }).failureStage, "history-revalidation");
 });

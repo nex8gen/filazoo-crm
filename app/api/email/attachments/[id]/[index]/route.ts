@@ -4,6 +4,8 @@ import { getAssignedEmailContacts } from "@/lib/data/email-access";
 import { canViewEmail } from "@/lib/email-access";
 import { getViewerMailbox } from "@/lib/data/mailboxes";
 import { emailAttachmentHeaders } from "@/lib/email-files";
+import { getCompanyEmailScope } from "@/lib/data/company-email-access";
+import { filterCompanyEmails } from "@/lib/company-email";
 
 export async function GET(request: Request, context: RouteContext<"/api/email/attachments/[id]/[index]">) {
   const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
@@ -14,15 +16,21 @@ export async function GET(request: Request, context: RouteContext<"/api/email/at
   }
 
   const admin = createSupabaseAdmin();
-  const { data: message, error } = await admin.from("mailbox_sent_messages")
-    .select("attachments,to_email,mailbox_id").eq("id", id).eq("user_id", viewer.id).maybeSingle();
+  const companyId = new URL(request.url).searchParams.get("companyId");
+  const company = companyId ? await getCompanyEmailScope(viewer, companyId) : null;
+  if (companyId && !company) return new Response("Attachment not found.", { status: 404 });
+  let query = admin.from("mailbox_sent_messages").select("attachments,to_email,to_recipients,cc_recipients,bcc_recipients,mailbox_id,user_id,status").eq("id", id);
+  if (!company) query = query.eq("user_id", viewer.id);
+  const { data: message, error } = await query.maybeSingle();
   if (error || !message || !Array.isArray(message.attachments)) return new Response("Attachment not found.", { status: 404 });
-  const mailbox = message.mailbox_id ? await getViewerMailbox(viewer.id, message.mailbox_id) : null;
-  if (message.mailbox_id && !mailbox) return new Response("Attachment not found.", { status: 404 });
+  if (company && (message.status !== "sent" || !filterCompanyEmails([{ contact: message.to_email,
+    to: message.to_recipients, cc: message.cc_recipients, bcc: message.bcc_recipients }], company).length)) return new Response("Attachment not found.", { status: 404 });
+  const mailbox = !company && message.mailbox_id ? await getViewerMailbox(viewer.id, message.mailbox_id) : null;
+  if (!company && message.mailbox_id && !mailbox) return new Response("Attachment not found.", { status: 404 });
   const assignedContacts = mailbox?.type === "personal" ? null : await getAssignedEmailContacts(viewer);
-  if (!canViewEmail(viewer, message.to_email, assignedContacts, mailbox)) return new Response("Attachment not found.", { status: 404 });
+  if (!company && !canViewEmail(viewer, message.to_email, assignedContacts, mailbox)) return new Response("Attachment not found.", { status: 404 });
   const attachment = message.attachments[index];
-  if (!attachment || typeof attachment.path !== "string" || typeof attachment.filename !== "string" || !attachment.path.startsWith(`${viewer.id}/${id}/`)) {
+  if (!attachment || typeof attachment.path !== "string" || typeof attachment.filename !== "string" || !attachment.path.startsWith(`${message.user_id ?? viewer.id}/${id}/`)) {
     return new Response("Attachment not found.", { status: 404 });
   }
 

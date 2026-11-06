@@ -9,6 +9,7 @@ export type CustomerResearch = {
   sources: ResearchSource[];
   queries: string[];
   searchSuggestionsHtml?: string;
+  visitedUrls?: string[];
   warning?: string;
 };
 export type ResearchIdentity = { name?: string; website?: string; email?: string; contact?: string; country?: string; city?: string };
@@ -60,14 +61,14 @@ type ResearchResponse = {
   }>;
 };
 
-export async function researchCustomer({ identity, questions, apiKey, model = "gemini-3.5-flash-lite", language = "en", fetcher = fetch, usageUserId }: {
-  usageUserId?: string; identity: ResearchIdentity; questions: string[]; apiKey?: string; model?: string; language?: AppLanguage; fetcher?: typeof fetch;
+export async function researchCustomer({ identity, questions, apiKey, model = "gemini-3.5-flash-lite", language = "en", fetcher = fetch, usageUserId, signal }: {
+  usageUserId?: string; identity: ResearchIdentity; questions: string[]; apiKey?: string; model?: string; language?: AppLanguage; fetcher?: typeof fetch; signal?: AbortSignal;
 }): Promise<CustomerResearch> {
   const checkedAt = new Date().toISOString();
   const empty = { checkedAt, findings: "", sources: [], queries: [] };
   if (process.env.AI_PROVIDER === "gateway" || process.env.AI_BUDGET_ENFORCEMENT === "true") {
     const { researchWithGateway } = await import("./gateway-research.ts");
-    return researchWithGateway({ identity: researchIdentity(identity), language, checkedAt, usageUserId, fetcher });
+    return researchWithGateway({ identity: researchIdentity(identity), questions, language, checkedAt, usageUserId, fetcher, signal });
   }
   if (!apiKey) return { ...empty, status: "unavailable", warning: "Google web search is not configured. Ask your administrator to connect Gemini. CRM-only assistance remains available." };
   try {
@@ -122,6 +123,7 @@ export async function researchCustomer({ identity, questions, apiKey, model = "g
       // Ungrounded generated text must never masquerade as researched company evidence.
       findings: sources.length && text ? JSON.stringify({ brief: text.slice(0, 16_000), supportingStatements: support }) : "No verifiable public sources were returned. Ask for a more precise company name or website.",
       queries: (metadata?.webSearchQueries ?? []).slice(0, 12).map((query) => query.slice(0, 300)),
+      visitedUrls: visits.filter(visit => visit.urlRetrievalStatus === "URL_RETRIEVAL_STATUS_SUCCESS").flatMap(visit => { const url = publicResearchUrl(visit.retrievedUrl); return url ? [url] : []; }).slice(0, 20),
       searchSuggestionsHtml: metadata?.searchEntryPoint?.renderedContent?.slice(0, 50_000),
       warning: failedVisit ? "Some website pages could not be accessed. The report may rely on other public sources." : !sources.length || !text ? "Web search did not return verifiable company information." : undefined,
     };

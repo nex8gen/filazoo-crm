@@ -1,7 +1,7 @@
 import { EmptyState } from "@/components/data-state";
 import { Mail } from "lucide-react";
 import Link from "next/link";
-import { CheckCircle2, KeyRound, Settings2, ShieldCheck, Shuffle, UserRoundCheck, UsersRound } from "lucide-react";
+import { KeyRound, ShieldCheck, UsersRound } from "lucide-react";
 import { MembersTable } from "@/components/members-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,7 @@ import { PaymentMethodsForm } from "./payment-methods-form";
 import { invoicePaymentMethods } from "@/lib/data/invoice-payment-methods";
 import { canManageBilling } from "@/lib/invoice-permissions";
 import { PreferencesForm, SessionSettings } from "./preferences-form";
-import { SettingsLanguage } from "./settings-language";
+import { GeneralSettings } from "./general-settings";
 import { settingsSections } from "@/lib/settings-sections";
 import { Suspense } from "react";
 import { SettingsSkeleton } from "@/components/settings-skeleton";
@@ -33,6 +33,9 @@ import { ErpConnectionForm } from "./erp-connection-form";
 import { AiSettingsForm } from "./ai-settings-form";
 import { PendingInvitations } from "./pending-invitations";
 import { getAiSettings } from "@/lib/data/ai-settings";
+import { withWorkspaceViewer } from "@/lib/workspace-context";
+import { getLeadAssignmentSettings } from "@/lib/data/lead-assignment-settings";
+import { LeadAssignmentForm } from "./lead-assignment-form";
 
 type SettingsPageProps = { params?: Promise<{ section?: string }> };
 
@@ -47,8 +50,16 @@ async function SettingsWorkspace({ params }: SettingsPageProps) {
   const currentSection = settingsSections.find(item => item.id === section);
   if (!titles[section]) notFound();
   const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
-  const aiSettings = section === "ai" ? await getAiSettings() : null;
+  if (section === "general") return <GeneralSettings viewer={viewer} />;
+  if (section === "ai") {
+    const aiSettings = await withWorkspaceViewer(viewer, () => getAiSettings());
+    return <div className="settings-content settings-section-enter !max-w-3xl space-y-5"><header className="mb-6 border-b pb-6"><p className="mb-3 text-xs font-medium text-primary">Workspace</p><h1 className="text-2xl font-semibold tracking-tight">AI access & behavior</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">Control AI access, behavior and writing for your team.</p></header><AiSettingsForm initial={aiSettings} canManage={viewer.role === "admin"} /></div>;
+  }
   if ((section === "team" || section === "advanced" || section === "erp") && viewer.role !== "admin") notFound();
+  if (section === "advanced") {
+    const assignment = await withWorkspaceViewer(viewer, () => getLeadAssignmentSettings(viewer.id).then(data => ({ data, error: "" })).catch(error => ({ data: null, error: error instanceof Error ? error.message : "Unable to load lead assignment controls." })));
+    return <div className="settings-content settings-section-enter !max-w-5xl space-y-5"><header className="mb-6 border-b pb-6"><p className="mb-3 text-xs font-medium text-primary">Workspace</p><h1 className="text-2xl font-semibold tracking-tight">Lead assignment</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">Customize distribution rules, manager availability and workload limits.</p></header>{assignment.data ? <LeadAssignmentForm initial={assignment.data} /> : <p role="alert" className="rounded-lg border p-4 text-sm text-destructive">{assignment.error}</p>}</div>;
+  }
   const [members, paymentMethods, invoiceDefaults, erp, defaultWorkspaceMailbox, personalMailbox, mailboxResult] = await Promise.all([
     viewer.role === "admin" && (section === "team" || section === "advanced") ? listWorkspaceMembers() : Promise.resolve([]),
     section === "payments" ? invoicePaymentMethods() : Promise.resolve([]),
@@ -60,14 +71,11 @@ async function SettingsWorkspace({ params }: SettingsPageProps) {
   ]);
   const { mailboxes, error: mailboxError } = mailboxResult;
   const ownMailboxes = mailboxes.filter((mailbox) => mailbox.type === "personal" && mailbox.userId === viewer.id);
-  const assignmentManagers = members.filter((member) => member.role === "bd_manager" && member.autoAssignLeads && member.activated);
-  if (aiSettings) return <div className="settings-content settings-section-enter !max-w-3xl space-y-5"><header className="mb-6 border-b pb-6"><p className="mb-3 text-xs font-medium text-primary">Workspace</p><h1 className="text-2xl font-semibold tracking-tight">AI access & behavior</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">Control what AI can read, what it can do, and how it writes for your team.</p></header><AiSettingsForm initial={aiSettings} canManage={viewer.role === "admin"} /></div>;
 
   return (
     <div key={section} className={`settings-content settings-section-enter space-y-5 ${section === "team" || section === "advanced" || section === "erp" ? "!max-w-5xl" : "!max-w-3xl"}`}>
       <header className="mb-6 border-b pb-6"><p className="mb-3 text-xs font-medium text-primary">{currentSection?.group || "Email & connections"}</p><h1 className="text-2xl font-semibold tracking-tight">{titles[section]}</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">{currentSection?.description || "Manage connected channels and open their workspaces."}</p></header>
       {erp ? <ErpConnectionForm key={erp[0].revision} initial={erp[0]} status={erp[1].status} products={[...new Map(erp[2].products.flatMap(product => [{ sku: product.sku, name: product.name }, ...product.variants.map(variant => ({ sku: variant.sku, name: `${product.name} — ${variant.name}` }))]).map(product => [product.sku, product])).values()]} /> : null}
-      {section === "general" ? <div className="grid gap-5"><Card className="shadow-none"><CardHeader><CardTitle>Language</CardTitle><CardDescription>Choose English or Chinese for this browser.</CardDescription></CardHeader><CardContent><SettingsLanguage /></CardContent></Card><Card className="shadow-none"><CardHeader><CardTitle>List preferences</CardTitle><CardDescription>Choose how many records you see when browsing your CRM.</CardDescription></CardHeader><CardContent><PreferencesForm section="general" /></CardContent></Card></div> : null}
       {section === "appearance" ? <Card className="shadow-none"><CardHeader><CardTitle>Color theme</CardTitle><CardDescription>Choose a theme or follow your device settings.</CardDescription></CardHeader><CardContent><AppearanceSettings /></CardContent></Card> : null}
       {section === "appearance" ? <Card className="mb-4 max-w-2xl shadow-none"><CardHeader><CardTitle>Display and accessibility</CardTitle><CardDescription>Control table spacing and animation across your workspace.</CardDescription></CardHeader><CardContent><PreferencesForm section="appearance" /></CardContent></Card> : null}
       {section === "email" ? <Card className="max-w-2xl shadow-none"><CardHeader><CardTitle>Reading and sending</CardTitle><CardDescription>Your defaults for the email inbox and company conversations.</CardDescription></CardHeader><CardContent><PreferencesForm section="email" /><Separator className="my-5" /><Button variant="outline" nativeButton={false} render={<Link href="/settings/mailboxes" />}>Manage my mailbox</Button></CardContent></Card> : null}
@@ -98,25 +106,7 @@ async function SettingsWorkspace({ params }: SettingsPageProps) {
           </div>
         ) : null}
 
-        {viewer.role === "admin" && section === "advanced" ? (
-          <div className="space-y-4">
-            <div className="grid gap-4 xl:grid-cols-2">
-              <Card className="shadow-none">
-                <CardHeader><div className="mb-2 grid size-9 place-items-center rounded-lg bg-primary/10 text-primary"><Shuffle className="size-4" /></div><div className="flex items-center justify-between gap-3"><div><CardTitle className="text-sm">Automatic assignment</CardTitle><CardDescription className="mt-1 text-xs">New customer and company profiles from Shopify, Meta, and manual creation are assigned immediately.</CardDescription></div><Badge variant={assignmentManagers.length ? "default" : "outline"}>{assignmentManagers.length ? "Active" : "Needs manager"}</Badge></div></CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="rounded-lg border bg-muted/30 p-4"><p className="text-sm font-medium">Lowest active workload rule</p><p className="mt-1 text-xs leading-5 text-muted-foreground">The system selects the eligible active BD Manager with the fewest assigned company profiles. The last assignment time breaks ties without moving existing ownership.</p></div>
-                  <div className="space-y-2"><div className="flex items-center justify-between"><p className="text-xs font-medium">Eligible BD Managers</p><Badge variant="secondary">{assignmentManagers.length}</Badge></div>{assignmentManagers.length ? assignmentManagers.map((member) => <div key={member.id} className="flex items-center justify-between rounded-md border px-3 py-2"><div className="flex items-center gap-2"><UserRoundCheck className="size-4 text-emerald-600" /><div><p className="text-xs font-medium">{member.displayName || member.email}</p><p className="text-xs text-muted-foreground">Automatic assignment on</p></div></div><CheckCircle2 className="size-4 text-emerald-600" /></div>) : <EmptyState compact icon={UsersRound} title="No eligible BD Managers" description="Enable automatic lead assignment for at least one active BD Manager under Team and access." />}</div>
-                </CardContent>
-              </Card>
 
-              <Card className="shadow-none">
-                <CardHeader><div className="mb-2 grid size-9 place-items-center rounded-lg border bg-muted"><Settings2 className="size-4 text-muted-foreground" /></div><CardTitle className="text-sm">Manual assignment</CardTitle><CardDescription className="text-xs">Admins can override ownership for exceptions without disabling the automatic rule.</CardDescription></CardHeader>
-                <CardContent className="space-y-4"><div className="rounded-lg border bg-muted/30 p-4"><p className="text-sm font-medium">Account ownership controls</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Open a company profile and choose a BD Manager. The change is recorded while future profiles continue using automatic assignment.</p></div><Button nativeButton={false} variant="outline" render={<Link href="/companies" />}><UsersRound />Open company assignments</Button></CardContent>
-              </Card>
-            </div>
-
-          </div>
-        ) : null}
     </div>
   );
 }

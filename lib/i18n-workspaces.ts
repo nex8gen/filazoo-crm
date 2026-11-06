@@ -1,4 +1,5 @@
 export const zhCNWorkspaces: Record<string, string> = {
+  "Enter the verification code from your email to finish setting up your account.": "输入邮件中的验证码以完成账户设置。",
   "Verify your email": "验证您的邮箱",
   "Enter the 6-digit code from your email to finish setting up your account.": "输入邮件中的 6 位验证码以完成账户设置。",
   "We sent a verification code to": "我们已发送验证码至",

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import * as customerTags from "../lib/customer-tags.ts";
+import * as credentials from "../lib/ai/provider-credentials.ts";
 import * as leadInquiries from "../lib/lead-inquiries.ts";
 import test from "node:test";
 import { readFileSync } from "node:fs";
@@ -15,12 +16,17 @@ import * as workbench from "../lib/email-workbench.ts";
 import * as provider from "../lib/email-provider.ts";
 import * as emailFiles from "../lib/email-files.ts";
 import * as emailMime from "../lib/email-mime.ts";
+import * as companyEmail from "../lib/company-email.ts";
 import type { EmailInboxBackendData, InboxEmailItem } from "../lib/email-inbox.ts";
 import type { WorkspaceMailboxRecord } from "../lib/data/mailboxes.ts";
 import type { WorkspaceViewer } from "../lib/auth.ts";
 
 const require = createRequire(import.meta.url);
 function loadModule<T>(path: string, dependencies: Record<string, unknown>): T {
+  dependencies["@/lib/data/company-email-access"] ??= {};
+  dependencies["@/lib/company-email"] = companyEmail;
+  dependencies["./company-email.ts"] = companyEmail;
+  dependencies["./ai/provider-credentials.ts"] = credentials;
   dependencies["../email-workbench"] = workbench;
   dependencies["./customer-tags.ts"] = customerTags;
   dependencies["./lead-inquiries.ts"] = leadInquiries;
@@ -147,6 +153,7 @@ async function setupInbox(role = "operator", assignedContacts: Map<string, strin
   const reads: string[] = [];
   const counts = { auth: 0, mailboxes: 0 };
   const knownCompanies: { id: string; name: string; email: string }[] = [];
+  const received: Partial<InboxEmailItem> = {};
   const viewer: WorkspaceViewer = { id: "actor", role: role as WorkspaceViewer["role"], email: null, displayName: null };
   const backend = loadModule<{ getEmailInboxBackendData: (options?: { mailboxId?: string; syncMailbox?: boolean; context?: { viewer: WorkspaceViewer; mailboxes: WorkspaceMailboxRecord[] } }) => Promise<EmailInboxBackendData> }>("../lib/email-inbox.ts", {
     "./auth.ts": { requireWorkspaceMember: async () => { counts.auth++; return viewer; } },
@@ -176,12 +183,26 @@ async function setupInbox(role = "operator", assignedContacts: Map<string, strin
     "./data/mailbox-sync.ts": { loadMailboxWorkspace: async (mailbox: WorkspaceMailboxRecord, options: { sync: boolean; includeContent: boolean }) => {
       assert.equal(options.sync, false);
       synced.push(mailbox.id);
-      return { messages: [{ id: `received-${mailbox.id}`, source: "mailbox", contact: "buyer@example.com", body: "Hello" }], error: null, syncedAt: null };
+      return { messages: [{ id: `received-${mailbox.id}`, source: "mailbox", contact: "buyer@example.com", body: "Hello", ...received }], error: null, syncedAt: null };
     } },
     "./supabase/admin.ts": { createSupabaseAdmin: () => ({ from: () => ({ select: () => ({ eq: () => ({ order: () => ({ range: async () => ({ data: [], error: null }) }) }) }) }) }) },
   });
-  return { backend, synced, sentScopes, reads, counts, knownCompanies, context: { viewer, mailboxes } };
+  return { backend, synced, sentScopes, reads, counts, knownCompanies, received, context: { viewer, mailboxes } };
 }
+
+test("company-scoped admin reads a colleague's CC customer mail while ordinary personal access still denies it", async () => {
+  const { backend, context, received } = await setupInbox("admin");
+  context.mailboxes.find(mailbox => mailbox.id === "mine")!.userId = "colleague";
+  Object.assign(received, { contact: "other-staff@example.com", cc: [{ address: "buyer@example.com" }] });
+  const companyContext = { ...context, allowedPersonalContacts: new Set(["buyer@example.com"]) };
+  const data = await backend.getEmailInboxBackendData({ mailboxId: "mine", syncMailbox: false, context: companyContext });
+  assert.equal(data.emails.find(message => message.id === "received-mine")?.contact, "buyer@example.com");
+  const ordinary = await backend.getEmailInboxBackendData({ mailboxId: "mine", syncMailbox: false, context });
+  assert.equal(ordinary.emails.length, 0);
+  received.cc = [{ address: "private@example.com" }];
+  const unrelated = await backend.getEmailInboxBackendData({ mailboxId: "mine", syncMailbox: false, context: companyContext });
+  assert.ok(!unrelated.emails.some(message => message.id === "received-mine"));
+});
 
 test("an authorized route context avoids repeated auth and mailbox queries while validating the selected ID", async () => {
   const { backend, context, counts } = await setupInbox();

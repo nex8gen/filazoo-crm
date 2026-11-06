@@ -42,6 +42,8 @@ const zhCN: Record<string, string> = {
   ...zhCNQuotations,
   "= Yes": "= 是",
   "Choose a starting point": "选择起点",
+  "AI lead reply and personal handoff": "AI 线索回复并转交给我",
+  "Wait one minute, send an AI reply, then check after 24 hours. Assign replies to you or send one AI reminder.": "等待 1 分钟后发送 AI 回复，24 小时后检查。客户已回复则分配任务给您，否则发送一次 AI 提醒。",
   "Start from scratch": "从空白流程开始",
   "All starters open as drafts. Check the sender mailbox and audience before launch.": "所有起始模板均以草稿打开。启用前请检查发件邮箱与受众。",
   "Start with a complete journey, customize its audience and actions, then preview and test before turning it on.": "从完整的客户流程开始，自定义受众及操作，预览并测试后再启用。",
@@ -322,6 +324,9 @@ const zhCN: Record<string, string> = {
 const translated = (input: string) => translateUiText(input, "zh-CN");
 // Only match known UI sentence shapes; customer names, content and IDs stay intact.
 const patterns: Array<[RegExp, (...parts: string[]) => string]> = [
+  [/^My default email · (.+) \((personal|team)\)$/, (email, type) => `我的默认邮箱 · ${email}（${type === "personal" ? "个人" : "团队"}）`],
+  [/^Daily AI limit for (.+)$/, (name) => `${name} 的每日 AI 限额`],
+  [/^Enable AI for (.+)$/, (name) => `为 ${name} 启用 AI`],
   [/^Choose product for item (\d+)$/, (index) => `为第 ${index} 项选择产品`],
   [/^(\d+) (USD|EUR|GBP|CNY) products$/, (count, currency) => `${count} 款${currency}产品`],
   [/^(\d+) saved · (\d+) business$/, (saved, business) => `${saved} 个已保存 · ${business} 个业务细分`],

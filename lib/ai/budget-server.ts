@@ -39,6 +39,7 @@ export async function readBudgetRate(model: string): Promise<BudgetRate> {
 }
 export function budgetedAiFetch(userId: string, fetcher: typeof fetch = fetch) {
   const store: AiBudgetStore = {
+    read: readAiBudget,
     async reserve(owner, model, micros) {
       const { data, error } = await createSupabaseAdmin().rpc("reserve_ai_budget", { p_user_id: owner, p_model: model, p_micros: micros });
       if (error) throw budgetStoreError("reserve", error, model);

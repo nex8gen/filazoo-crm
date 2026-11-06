@@ -96,11 +96,15 @@ export function viewerMailboxes(mailboxes: NormalizedMailboxRecord[], viewerId: 
   return mailboxes.filter((mailbox) => mailbox.type === "workspace" || mailbox.userId === viewerId);
 }
 
-export function defaultViewerMailbox(mailboxes: NormalizedMailboxRecord[]) {
+export function defaultMailboxForType<T extends Pick<NormalizedMailboxRecord, "type" | "isDefault" | "isActive">>(mailboxes: T[], type: NormalizedMailboxRecord["type"]) {
+  return mailboxes.find((mailbox) => mailbox.type === type && mailbox.isDefault)
+    ?? mailboxes.find((mailbox) => mailbox.type === type && mailbox.isActive)
+    ?? null;
+}
+
+export function defaultViewerMailbox<T extends Pick<NormalizedMailboxRecord, "type" | "isDefault" | "isActive">>(mailboxes: T[]) {
   // A stopped default stays selected; never silently send through another account.
-  return mailboxes.find((mailbox) => mailbox.type === "personal" && mailbox.isDefault)
-    ?? mailboxes.find((mailbox) => mailbox.type === "personal" && mailbox.isActive)
-    ?? mailboxes.find((mailbox) => mailbox.type === "workspace" && mailbox.isDefault)
-    ?? mailboxes.find((mailbox) => mailbox.type === "workspace" && mailbox.isActive)
+  return defaultMailboxForType(mailboxes, "personal")
+    ?? defaultMailboxForType(mailboxes, "workspace")
     ?? null;
 }

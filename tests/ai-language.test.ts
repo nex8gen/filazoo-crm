@@ -4,7 +4,7 @@ import { aiLanguageSchema } from "../lib/ai/language.ts";
 import { companyChatInstruction, companyChatSchema } from "../lib/ai/company-chat.ts";
 import { workspaceAssistantInstruction, workspaceAssistantSchema } from "../lib/ai/workspace-assistant.ts";
 import { buildEmailReplyInstruction } from "../lib/ai/email-reply.ts";
-import { applyEmailSignature } from "../lib/ai/email-rewrite.ts";
+import { applyEmailSignature, buildEmailRewriteInstruction } from "../lib/ai/email-rewrite.ts";
 import { buildEmailSummaryInstruction, generateEmailSummary } from "../lib/ai/email-summary.ts";
 import { runMockProfileAgent } from "../lib/ai/mock-agent.ts";
 import { readFileSync } from "node:fs";
@@ -13,12 +13,21 @@ const now = "2026-10-26T02:00:00.000Z";
 const signature = { name: "Casey", title: "商务拓展经理", company: "Filazoo" };
 
 test("localized AI instructions prioritize the selected Chinese UI language over English input and history", () => {
-  const instructions = [companyChatInstruction(now, "zh-CN"), workspaceAssistantInstruction("analyze", now, "zh-CN"), workspaceAssistantInstruction("work", now, "zh-CN"), buildEmailReplyInstruction("zh-CN"), buildEmailSummaryInstruction("zh-CN")];
+  const instructions = [companyChatInstruction(now, "zh-CN"), workspaceAssistantInstruction("analyze", now, "zh-CN"), workspaceAssistantInstruction("work", now, "zh-CN"), buildEmailSummaryInstruction("zh-CN")];
   for (const instruction of instructions) {
     assert.match(instruction, /professional Simplified Chinese/);
     assert.match(instruction, /even when.*English/);
     assert.match(instruction, /JSON keys and enum values exactly/);
     assert.doesNotMatch(instruction, /Use English\.|professional English|language of the latest|customer's language/);
+  }
+});
+
+test("customer email replies and rewrites use English independently of CRM localization", () => {
+  for (const instruction of [buildEmailReplyInstruction(), buildEmailRewriteInstruction(signature)]) {
+    assert.match(instruction, /Always write the entire finished email in professional English/);
+    assert.match(instruction, /regardless of the CRM interface language/);
+    assert.match(instruction, /Translate Chinese or mixed-language input into English/);
+    assert.doesNotMatch(instruction, /professional Simplified Chinese/);
   }
 });
 
@@ -60,7 +69,7 @@ test("mock profiling also supports Chinese descriptions and preserves source evi
   assert.ok(profile.fitScore >= 8);
 });
 
-test("AI clients pass language selection and both email provider paths use localized instructions", () => {
+test("AI clients pass language selection and email summaries retain localized instructions", () => {
   for (const file of ["components/company-ai.tsx", "components/workspace-ai-assistant.tsx", "components/email-inbox.tsx", "components/email-ai-summary.tsx"]) {
     const source = readFileSync(file, "utf8");
     assert.match(source, /useLanguage\(\)/, file);
@@ -69,6 +78,7 @@ test("AI clients pass language selection and both email provider paths use local
   for (const file of ["app/api/email/assist/route.ts", "app/api/email/reply/route.ts"]) {
     const source = readFileSync(file, "utf8");
     assert.match(source, /language: aiLanguageSchema/, file);
-    assert.match(source, /buildEmail(?:Reply|Rewrite|Summary)Instruction\([^)]*language/, file);
+    assert.match(source, /buildEmail(?:Reply|Rewrite|Summary)Instruction\(/, file);
   }
+  assert.match(readFileSync("app/api/email/assist/route.ts", "utf8"), /buildEmailSummaryInstruction\(language\)/);
 });

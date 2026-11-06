@@ -82,6 +82,13 @@ test("different messages retain different tags; removing one assignment leaves o
   assert.equal((await app.data.listSharedEmailTags()).get("order"), null);
 });
 
+test("duplicate customer contacts cannot silently attach a shared tag to the first company", async () => {
+  const app = fixture();
+  app.db.contacts.push({ email: "buyer@example.test", company_id: "other-company" });
+  await assert.rejects(app.data.saveSharedEmailTag({ messageKey: "new-thread", tag: "New Inquiries", contactEmail: "buyer@example.test" }), /multiple customer contacts/);
+  assert.equal(app.db.crm_email_tags.length, 0);
+});
+
 test("one subject tag persists across replies while a separate conversation keeps its own situation", async () => {
   const app = fixture();
   const original = { id: "root", messageId: "<root@buyer.test>", direction: "inbound" as const, subject: "Product inquiry", contact: "buyer@example.test", timestamp: "2026-10-30T01:00:00Z", category: "Active Negotiations" as const };
@@ -107,6 +114,19 @@ test("matching subject text from the same customer does not combine independent 
   const second = { ...base, id: "second", messageId: "<second@buyer.test>" };
   const states = new Map([[vocabulary.conversationTagKeys([first])[0], { category: "New Inquiries" as const }], [vocabulary.conversationTagKeys([second])[0], { category: "Payment Follow-up" as const }]]);
   assert.deepEqual(vocabulary.applyConversationCustomerTags([first, second], states).map(email => email.category), ["New Inquiries", "Payment Follow-up"]);
+});
+
+test("the latest shared alias wins across mailbox views, including explicit removals", () => {
+  const root = { id: "first", messageId: "<root@test>", threadId: "old-thread", direction: "inbound" as const, subject: "Pricing", contact: "buyer@example.test", timestamp: "2026-10-30T01:00:00Z" };
+  const reply = { ...root, id: "reply", messageId: "<reply@test>", threadId: "new-thread", references: [root.messageId], timestamp: "2026-10-31T01:00:00Z" };
+  const states = new Map<string, { category: vocabulary.CustomerTag | null; updatedAt: string }>([
+    ["conversation:old-thread", { category: "New Inquiries", updatedAt: "2026-10-30T02:00:00Z" }],
+    ["conversation:message:<root@test>", { category: "Payment Follow-up", updatedAt: "2026-10-31T02:00:00Z" }],
+  ]);
+  assert.deepEqual(vocabulary.applyConversationCustomerTags([root, reply], states).map(message => message.category), ["Payment Follow-up", "Payment Follow-up"]);
+  assert.equal(vocabulary.applyConversationCustomerTags([reply], states)[0].category, "Payment Follow-up");
+  states.set("conversation:message:<root@test>", { category: null, updatedAt: "2026-10-31T03:00:00Z" });
+  assert.deepEqual(vocabulary.applyConversationCustomerTags([root, reply], states).map(message => message.category), [null, null]);
 });
 
 test("the state endpoint blocks read-only tag edits and enrolls changes using the shared email identity", async () => {

@@ -1,6 +1,7 @@
 import { requireWorkspaceMember } from "@/lib/auth";
 import { getEmailInboxBackendData } from "@/lib/email-inbox";
-import { getUserMailbox, getViewerMailboxes, mailboxHasImap } from "@/lib/data/mailboxes";
+import { getViewerMailboxes, mailboxHasImap } from "@/lib/data/mailboxes";
+import { listCompanyEmailMailboxes } from "@/lib/data/company-email-access";
 import { enqueueMailboxSync, readMailboxSyncHealth } from "@/lib/data/mail-sync-worker";
 import { getCompanyDetails } from "@/lib/data/crm";
 import { getCompanyEmailBackendData } from "@/lib/data/company-emails";
@@ -31,8 +32,7 @@ export async function GET(request: Request) {
   let syncQueueError: string | null = null;
   {
     const refreshRequested = params.get("refresh") !== "false";
-    const ownerMailbox = company?.company.ownerId ? await getUserMailbox(company.company.ownerId) : null;
-    const availableMailboxes = [...new Map([...mailboxes, ...(ownerMailbox ? [ownerMailbox] : [])].map((mailbox) => [mailbox.id, mailbox])).values()];
+    const availableMailboxes = company ? await listCompanyEmailMailboxes() : mailboxes;
     const refreshMailboxes = availableMailboxes.filter((item) => (company || item.id === data.selectedMailboxId) && mailboxHasImap(item));
     await Promise.all(refreshMailboxes.map(async (mailbox) => {
       try {
@@ -44,10 +44,12 @@ export async function GET(request: Request) {
         syncQueueError = refreshRequested ? "Mailbox refresh could not be queued. Saved messages are still available." : "Unable to check mailbox updates. Saved messages are still available.";
       }
     }));
-    if (refreshRequested && viewer.role !== "viewer" && refreshMailboxes.length) after(async () => {
+    // Company polling also recovers old untagged threads; it must not depend on
+    // a manual refresh or the hosted scheduler when the CRM runs locally.
+    if ((refreshRequested || company) && viewer.role !== "viewer" && refreshMailboxes.length) after(async () => {
       try {
         const { processAutomaticConversationTags } = await import("@/lib/data/conversation-tagging");
-        await processAutomaticConversationTags({ mailboxIds: refreshMailboxes.map(mailbox => mailbox.id), maxConversations: 2 });
+        await processAutomaticConversationTags({ mailboxIds: refreshMailboxes.map(mailbox => mailbox.id), ...(company ? { companyIds: [company.company.id] } : {}), maxConversations: 2 });
       } catch { console.error("Automatic conversation tagging will retry on the next mailbox refresh."); }
     });
   }

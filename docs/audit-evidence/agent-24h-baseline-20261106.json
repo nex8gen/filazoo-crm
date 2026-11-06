@@ -1,0 +1,217 @@
+{
+  "checkpoint": "Initial coverage after fixes; 24-hour run remains in progress",
+  "capturedAt": "2026-11-06T01:55:41.198Z",
+  "timezone": "Asia/Shanghai",
+  "validation": {
+    "repositoryTests": 1488,
+    "passed": 1488,
+    "failed": 0,
+    "focusedChecks": 170,
+    "typeScript": "passed",
+    "targetedLint": "passed"
+  },
+  "coverage": {
+    "supportedActions": 58,
+    "expectedModelCases": 160,
+    "latestUncoachedPassed": 160,
+    "latestUncoachedFailed": 0,
+    "models": [
+      {
+        "model": "anthropic/claude-haiku-5.5",
+        "cases": 80,
+        "passed": 80
+      },
+      {
+        "model": "google/gemini-3.5-flash-lite",
+        "cases": 80,
+        "passed": 80
+      }
+    ]
+  },
+  "worker": {
+    "pid": 26472,
+    "status": "waiting for next evaluation round",
+    "heartbeat": "2026-11-06T01:55:27.087Z"
+  },
+  "scope": "Synthetic planning and production AI instructions/parsers; no real CRM writes or customer messages. Local instruction fixes, no production deployment or model-weight fine-tuning.",
+  "limitations": "Finite scenario coverage does not prove every possible prompt or conversation. Historical failures and coached retries remain in the live evidence.",
+  "manifest": {
+    "suiteVersion": "2026-11-06.2",
+    "runId": "2026-11-06T01:53:13.023Z",
+    "contract": "2026-11-05.2",
+    "capturedAt": "2026-11-06T01:53:13.023Z",
+    "files": {
+      "scripts/run-agent-soak.ts": "f5e285ae03fb96969fb86c5fa3a299b70f91ead2977d018e1c35e8050ee5cdf8",
+      "scripts/agent-evaluation-cases.ts": "bfa57f781330e57ad3a8f8c41a22f4133f39801c606050632e68f319ca3c0711",
+      "scripts/ai-text-evaluation-cases.ts": "6139633ada9e4f7c9a418cefc1f79525f99203ff089ecb0dd14c119f36a40108",
+      "lib/ai/evaluation-budget.ts": "4ae445f57425dc49d905654a85eb9f556457c14287d0a2a5a325950c73545f2d",
+      "lib/ai/native-agent.ts": "c097c76d5ab92a33a38144924810ebd323801998e6432f138e26ddd9fb955898",
+      "lib/ai/capabilities.ts": "b2628df79156326a2fdc65ea7c0500886540ac137de29a575e521fddb905f6c3",
+      "lib/ai/model-routing.ts": "a42087f9f316fe7956dfa14533c01716c8e98f56f9a550672584f673508b85a8",
+      "lib/ai/email-reply.ts": "609157edc6d958b13a797976947aa94cd30e6d653350273efa34dcc1611e026a",
+      "lib/task-workflows.ts": "5344b551fcfb8d4c4fda1abae23f85286a5d46968efffa20d319f301063dd21c",
+      "lib/ai/gateway.ts": "bbc6b8fe56b46fa5d2044a4b644781f63d0616ee165def6116a07e8a43738a27"
+    }
+  },
+  "report": {
+    "suiteVersion": "2026-11-06.2",
+    "contract": "2026-11-05.2",
+    "status": "evaluating capability:write_email",
+    "updatedAt": "2026-11-06T01:53:57.046Z",
+    "syntheticOnly": true,
+    "models": [
+      "anthropic/claude-haiku-5.5",
+      "google/gemini-3.5-flash-lite"
+    ],
+    "expectedModelCases": 160,
+    "coveredModelCases": 160,
+    "latestPassed": 160,
+    "latestFailed": 0,
+    "originalAttemptsPassed": 167,
+    "originalAttemptsFailed": 18,
+    "coachedRecoveries": 9,
+    "gaps": [],
+    "failures": [
+      {
+        "model": "anthropic/claude-haiku-5.5",
+        "case": "capability:create_quotation",
+        "reasons": [
+          "Expected exactly the requested action and field values."
+        ]
+      },
+      {
+        "model": "anthropic/claude-haiku-5.5",
+        "case": "capability:delete_company",
+        "reasons": [
+          "Expected exactly the requested action and field values."
+        ]
+      },
+      {
+        "model": "anthropic/claude-haiku-5.5",
+        "case": "capability:invite_member",
+        "reasons": [
+          "Expected exactly the requested action and field values."
+        ]
+      },
+      {
+        "model": "anthropic/claude-haiku-5.5",
+        "case": "money:invoice",
+        "reasons": [
+          "Changed unrequested details fields."
+        ]
+      },
+      {
+        "model": "anthropic/claude-haiku-5.5",
+        "case": "email:quotation-draft",
+        "reasons": [
+          "Expected exactly the requested action and field values."
+        ]
+      },
+      {
+        "model": "anthropic/claude-haiku-5.5",
+        "case": "long:123-turn-correction",
+        "reasons": [
+          "Expected exactly the requested action and field values."
+        ]
+      },
+      {
+        "model": "anthropic/claude-haiku-5.5",
+        "case": "ai-email:reply-invoice",
+        "reasons": [
+          "AI text output failed its production parser or grounded behavior check."
+        ]
+      },
+      {
+        "model": "anthropic/claude-haiku-5.5",
+        "case": "ai-task:reply-extraction",
+        "reasons": [
+          "ZodError: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"subject\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n  },\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"inclusive\": true,\n    \"path\": [\n      \"text\"\n    ],\n    \"message\": \"Too small: expected string to have >=1 characters\"\n"
+        ]
+      },
+      {
+        "model": "google/gemini-3.5-flash-lite",
+        "case": "capability:create_flow",
+        "reasons": [
+          "Expected exactly the requested action and field values."
+        ]
+      },
+      {
+        "model": "anthropic/claude-haiku-5.5",
+        "case": "ai-task:reply-extraction",
+        "reasons": [
+          "AI text output failed its production parser or grounded behavior check."
+        ]
+      },
+      {
+        "model": "google/gemini-3.5-flash-lite",
+        "case": "capability:create_flow",
+        "reasons": [
+          "Expected exactly the requested action and field values."
+        ]
+      },
+      {
+        "model": "google/gemini-3.5-flash-lite",
+        "case": "capability:wait_for_customer_reply",
+        "reasons": [
+          "Expected exactly the requested action and field values."
+        ]
+      },
+      {
+        "model": "google/gemini-3.5-flash-lite",
+        "case": "capability:save_order",
+        "reasons": [
+          "Changed unrequested changes fields."
+        ]
+      },
+      {
+        "model": "google/gemini-3.5-flash-lite",
+        "case": "capability:update_flow",
+        "reasons": [
+          "Changed unrequested changes fields."
+        ]
+      },
+      {
+        "model": "google/gemini-3.5-flash-lite",
+        "case": "conversation:generated-followup",
+        "reasons": [
+          "Expected exactly the requested action and field values."
+        ]
+      },
+      {
+        "model": "google/gemini-3.5-flash-lite",
+        "case": "ai-workflow:catalog-scope",
+        "reasons": [
+          "Error: AI selected unavailable catalog products. No reply was sent."
+        ]
+      },
+      {
+        "model": "google/gemini-3.5-flash-lite",
+        "case": "ai-tagging:buyer-inquiry",
+        "reasons": [
+          "ZodError: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"evidence\",\n      0,\n      \"quote\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n]"
+        ]
+      },
+      {
+        "model": "google/gemini-3.5-flash-lite",
+        "case": "ai-task:reply-extraction",
+        "reasons": [
+          "ZodError: [\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"approval\"\n    ],\n    \"path\": [],\n    \"message\": \"Unrecognized key: \\\"approval\\\"\"\n  }\n]"
+        ]
+      }
+    ],
+    "budget": {
+      "version": 1,
+      "startedAt": 1793924361855,
+      "endsAt": 1794010761855,
+      "limitMicros": 4750000,
+      "chargedMicros": 2375656,
+      "pending": {},
+      "calls": 278,
+      "halted": false,
+      "usedMicros": 2375656,
+      "remainingMicros": 2374344
+    },
+    "offlineRuns": 8,
+    "offlineFailures": 1
+  }
+}

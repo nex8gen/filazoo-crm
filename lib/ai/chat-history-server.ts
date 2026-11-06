@@ -2,15 +2,12 @@ import "server-only";
 import { createHash } from "node:crypto";
 import type { WorkspaceViewer } from "../auth";
 import { createSupabaseAdmin } from "../supabase/admin";
-import { getCompanyDetails } from "../data/crm";
-import { getInvoice } from "../data/invoices";
 import { getViewerMailboxes } from "../data/mailboxes";
 import { getAssignedEmailContacts } from "../data/email-access";
-import { loadAgentEmails } from "./agent-records";
-import { loadAgentConversation, loadAgentFlow } from "./agent-page-records";
 import { conversationMemory, conversationScope, type ConversationInput, type HistoryReference, type HistoryMessage } from "./chat-history";
 import type { AiUsage } from "./chat-usage";
 import type { AgentActionResult } from "./agent-actions";
+import type { EmailInboxBackendData } from "../email-inbox";
 
 export class HistoryError extends Error {
   constructor(message: string, public status = 409) { super(message); }
@@ -25,22 +22,50 @@ export const presentConversation = (row: ConversationRow) => ({ id: row.id, mode
 // Histories can include emails discovered by an agent away from an open record.
 // Changed mailbox grants or sales assignments invalidate the whole transcript.
 export async function conversationAccessKey(viewer: WorkspaceViewer) {
-  const [mailboxes, assigned] = await Promise.all([getViewerMailboxes(viewer.id), getAssignedEmailContacts(viewer)]);
+  const [mailboxes, assigned] = await Promise.all([getViewerMailboxes(viewer.id, true), getAssignedEmailContacts(viewer)]);
   const mailboxScope = mailboxes.map((m) => ({ id: m.id, type: m.type, userId: m.userId, isActive: m.isActive, email: m.email })).sort((a, b) => a.id.localeCompare(b.id));
   const assignments = [...(assigned?.entries() ?? [])].sort(([a], [b]) => a.localeCompare(b));
   return createHash("sha256").update(JSON.stringify([viewer.id, viewer.role, mailboxScope, assignments])).digest("hex");
 }
 
-export async function assertConversationAccess(input: ConversationInput, viewer: WorkspaceViewer) {
+export type ConversationAccessContext = { emailInboxes: Map<string, Promise<EmailInboxBackendData>> };
+export async function assertConversationAccess(input: ConversationInput, viewer: WorkspaceViewer, accessContext?: ConversationAccessContext) {
   const context = input.pageContext ?? {};
   const companyId = context.companyId || /^\/companies\/([a-f0-9-]{36})(?:\/|$)/i.exec(input.pathname)?.[1];
   const invoiceId = context.invoiceId || /^\/invoices\/([a-f0-9-]{36})(?:\/|$)/i.exec(input.pathname)?.[1];
   if (input.mode === "customer" && (!companyId || input.pathname !== `/companies/${companyId}`)) throw new HistoryError("Choose a customer for this conversation.", 400);
-  if (companyId && !(await getCompanyDetails(companyId)).details) throw new HistoryError("This customer is no longer available.", 404);
-  if (invoiceId && !(await getInvoice(invoiceId))) throw new HistoryError("This invoice is no longer available.", 404);
-  if (context.emailId) await loadAgentEmails(viewer, context.emailId, undefined, context.mailboxId);
-  if (context.conversationId) await loadAgentConversation(context.conversationId);
-  if (context.flowId) await loadAgentFlow(context.flowId);
+  // History needs an access check, not the customer's entire activity, invoice
+  // payment history, product images and member avatars.
+  const checks: Promise<unknown>[] = [];
+  if (companyId) checks.push((async () => {
+    const db = createSupabaseAdmin();
+    const { data, error } = await db.from("companies").select("id").eq("id", companyId).maybeSingle();
+    if (error) throw new HistoryError("Unable to verify customer access.", 503);
+    if (!data) throw new HistoryError("This customer is no longer available.", 404);
+    if (viewer.role === "bd_manager") {
+      const assignment = await db.from("pipeline").select("company_id").eq("company_id", companyId).eq("owner_id", viewer.id).maybeSingle();
+      if (assignment.error) throw new HistoryError("Unable to verify customer assignment.", 503);
+      if (!assignment.data) throw new HistoryError("This customer is no longer available.", 404);
+    }
+  })());
+  if (invoiceId) checks.push((async () => {
+    const db = createSupabaseAdmin();
+    const { data, error } = await db.from("invoices").select("id").eq("id", invoiceId).maybeSingle();
+    if (error) throw new HistoryError("Unable to verify invoice access.", 503);
+    if (!data) throw new HistoryError("This invoice is no longer available.", 404);
+  })());
+  // Keep mailbox and messenger authorization identical to the agent's loaders,
+  // but don't import their large dependency trees for ordinary chats.
+  if (context.emailId) checks.push(import("./agent-records").then(({ loadAgentEmails }) => loadAgentEmails(viewer, context.emailId, undefined, context.mailboxId, true, accessContext?.emailInboxes)));
+  if (context.conversationId) checks.push(import("./agent-page-records").then(({ loadAgentConversation }) => loadAgentConversation(context.conversationId!)));
+  if (context.flowId) checks.push(import("./agent-page-records").then(({ loadAgentFlow }) => loadAgentFlow(context.flowId!)));
+  await Promise.all(checks);
+}
+
+export async function conversationDetail(row: ConversationRow, viewer: WorkspaceViewer, before?: number) {
+  const page = await conversationMessages(row.id, 40, before);
+  const ids = page.messages.flatMap(message => message.actions?.map(action => action.id) ?? []);
+  return { conversation: presentConversation(row), ...page, actionResults: await conversationActions(row.id, viewer, ids) };
 }
 
 export async function ownedConversation(id: string, viewer: WorkspaceViewer) {

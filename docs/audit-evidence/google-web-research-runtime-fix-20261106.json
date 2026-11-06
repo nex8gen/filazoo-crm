@@ -1,0 +1,52 @@
+{
+  "checkedAt": "2026-11-06T05:56:14.533Z",
+  "problem": "The failed CRM turn returned no sources or queries. Live reproduction showed an unexpected code_execution response instead of Google Search. A subsequent successful search returned Google redirect citations that URL Context could not verify.",
+  "production": {
+    "domain": "https://crm.filazoosupply.com",
+    "deploymentId": "dpl_FrpbGSgRuvkCuQNDogtiyb3s7rkc",
+    "previousDeploymentId": "dpl_CDcG51BTBiBZqg2KK8BjB7irtKVr",
+    "state": "READY",
+    "healthStatus": 200,
+    "database": "connected",
+    "unauthenticatedAssistantStatus": 401
+  },
+  "fixes": [
+    "Prefer Google native endpoint with existing Vertex failover.",
+    "Retry once if no search evidence is returned.",
+    "Read all supported Google metadata aliases.",
+    "Resolve known Google citation redirect headers to public destination URLs before page reading.",
+    "Preserve grounded sources if the discovery summary is cut short.",
+    "Keep personal email out of discovery prompts."
+  ],
+  "validation": {
+    "focusedTestsPassed": 23,
+    "typescript": "passed",
+    "targetedLint": "passed",
+    "authenticatedCrmChatManuallyTested": false,
+    "liveGoogleQueries": 6,
+    "sourceCount": 5,
+    "freshSuccessfulPageReads": 4,
+    "pageReadVerificationReusedPriorLiveDiscovery": true,
+    "actualUnexpectedCodeExecutionRegressionTest": "passed"
+  },
+  "evaluation": {
+    "workerAlive": true,
+    "conservativeChargedUsd": 4.599722,
+    "enforcedMaximumUsd": 4.75,
+    "originalEndsAt": "7 Nov 2026, 08:19:21 GMT+8",
+    "latestPassed": 160,
+    "latestFailed": 0
+  },
+  "localAppearance": {
+    "file": "components/workspace-ai-assistant.css",
+    "blurBeforePx": 12,
+    "blurAfterPx": 28,
+    "widerFeatheredArea": true,
+    "deployedWithResearchFix": false,
+    "visuallyVerified": false
+  },
+  "sourceSha256": {
+    "lib/ai/google-web-research.ts": "abd660bc97366c295943ca74d890743f9be7446cfadc539b57cf88a7f7beda1b",
+    "lib/i18n-ai-history.ts": "2851e712e39ce8ca5987b0d93360ba9bedce340e1cd6851bfed69c1314622c0a"
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "date": "2026-11-05",
+  "feature": "Signup email OTP and authentication SMTP",
+  "confirmationEmail": {
+    "hostedTemplateSaved": true,
+    "subject": "Your Filazoo verification code",
+    "usesTokenInsteadOfLink": true
+  },
+  "smtp": {
+    "userApproved": true,
+    "hostedSettingsSaved": true,
+    "sender": "raul@filazoo.com",
+    "host": "smtphz.qiye.163.com",
+    "port": 465,
+    "localConnectionCheck": "ETIMEDOUT before authentication (CONN)",
+    "inboxDeliveryVerified": false
+  },
+  "liveAuthCheck": {
+    "syntheticOnly": true,
+    "emailSent": false,
+    "providerCodeLength": 8,
+    "verifiedSession": true,
+    "replayedCodeRejected": true,
+    "syntheticAccountRemoved": true,
+    "realAccountsChanged": false
+  },
+  "application": {
+    "standaloneNestedAuthRoutes": true,
+    "acceptedNumericCodeLengths": [6, 7, 8, 9, 10],
+    "focusedTestsPassed": 22,
+    "focusedTestFiles": ["tests/signup.test.ts", "tests/signup-verification.test.ts", "tests/i18n.test.ts"],
+    "productionBuildPassed": true,
+    "fullSuite": {
+      "passed": 1226,
+      "failed": 14,
+      "failureArea": "Concurrent AI-provider credential changes: missing test mocks and module resolution in AI, conversation tagging, mailer, inbox performance, and Shopify lead tests."
+    }
+  },
+  "remaining": [
+    "Confirm actual inbox delivery through the saved hosted SMTP settings.",
+    "Install the existing tenancy migration together with the matching app release before live workspace provisioning."
+  ]
+}

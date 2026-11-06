@@ -41,7 +41,6 @@ export async function listBdSalesManagers({ withAvatars = true }: { withAvatars?
     .from("workspace_members")
     .select("user_id,display_name")
     .eq("role", "bd_manager")
-    .eq("auto_assign_leads", true)
     .not("activated_at", "is", null)
     .order("display_name");
   if (error) throw new Error(`Unable to load BD Sales Managers: ${error.message}`);

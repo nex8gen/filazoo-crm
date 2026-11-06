@@ -13,7 +13,8 @@ import { env } from "../env.ts";
 import { sendMailboxEmail } from "../mailer.ts";
 import { getUserEmailFooter, prepareUserEmail } from "./email-footers.ts";
 import { removeStandardSignoff } from "../email-footer.ts";
-import { normalizeMailboxRow } from "../mailbox-utils.ts";
+import { normalizeMailboxRows } from "../mailbox-utils.ts";
+import { resolveFlowSender } from "../flow-mailboxes.ts";
 import { evaluateSend } from "../outreach-policy.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 import { isCustomerTag, emailTagMessageKey } from "../customer-tags.ts";
@@ -149,13 +150,10 @@ async function getContact(contactId: string | null) {
 
 async function getMailbox(flow: FlowRow, mailboxId: unknown) {
   const admin = createSupabaseAdmin();
-  let query = admin.from("workspace_mailboxes").select("id,user_id,type,email,display_name,is_default,provider,notes,smtp_host,smtp_port,smtp_username,smtp_password,imap_host,imap_port,imap_username,imap_password,created_at,updated_at");
-  if (typeof mailboxId === "string" && mailboxId !== "default" && mailboxId !== "owner") query = query.eq("id", mailboxId);
-  else if (mailboxId === "owner") query = query.eq("user_id", flow.user_id).eq("type", "personal").eq("is_default", true);
-  else query = query.eq("type", "workspace").eq("is_default", true);
-  query = query.eq("is_active", true).or(`type.eq.workspace,user_id.eq.${flow.user_id}`);
-  const { data } = await query.limit(1).maybeSingle().throwOnError();
-  return normalizeMailboxRow(data);
+  const { data } = await admin.from("workspace_mailboxes").select("*")
+    .or(`type.eq.workspace,user_id.eq.${flow.user_id}`).order("created_at", { ascending: false }).throwOnError();
+  const mailbox = resolveFlowSender(normalizeMailboxRows(data), flow.user_id, mailboxId);
+  return mailbox?.isActive ? mailbox : null;
 }
 
 // Real delivery tests resolve the sender with the same rules as live flows.

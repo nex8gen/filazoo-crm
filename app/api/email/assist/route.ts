@@ -1,3 +1,4 @@
+import { resolveGatewayToken } from "@/lib/ai/provider-credentials";
 import { requireAiFeature } from "@/lib/data/ai-settings";
 import { aiBehaviorInstruction, restrictedAiContext, AiPolicyError } from "@/lib/ai-policy";
 import { requireWorkspaceMember } from "@/lib/auth";
@@ -15,11 +16,14 @@ import { getEmailTranslationProvider, looksLikeEnglish, translateEmailSegments, 
 import { z } from "zod";
 import { aiLanguageSchema } from "@/lib/ai/language";
 import { buildEmailSummaryInstruction, generateEmailSummary } from "@/lib/ai/email-summary";
+import { attachSummaryProducts, loadSummaryCatalog, summaryProductContext } from "@/lib/ai/email-summary-products";
 
 const requestSchema = z.object({
   language: aiLanguageSchema,
   mode: z.enum(["rewrite", "translate", "summary"]),
   text: z.string().trim().min(1).max(20_000),
+  subject: z.string().max(500).optional(),
+  messageSource: z.enum(["mailbox", "shopify", "crm"]).optional(),
   segments: z.array(z.string().trim().min(1).max(20_000)).min(1).max(500)
     .refine((segments) => segments.reduce((length, text) => length + text.length, 0) <= 20_000, "Email is too long to translate.").optional(),
   context: z.string().max(8_000).optional(),
@@ -86,7 +90,7 @@ export async function POST(request: Request) {
   }
 
   const apiKey = process.env.AI_PROVIDER === "gateway" || process.env.AI_BUDGET_ENFORCEMENT === "true" ? undefined : process.env.GEMINI_API_KEY?.trim();
-  const gatewayToken = process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
+  const gatewayToken = resolveGatewayToken(process.env);
 
   const signature = {
     name: normalizeSignatureName(assignedManagerName, normalizeSignatureName(viewer.displayName)),
@@ -95,12 +99,19 @@ export async function POST(request: Request) {
   };
   const system = mode === "summary" ? `${buildEmailSummaryInstruction(language)}\nCURRENT TIME: ${new Date().toISOString()}\nWORKSPACE TIMEZONE: Asia/Shanghai` : buildEmailRewriteInstruction(signature);
   const governedSystem = system + aiBehaviorInstruction(policy, true);
+  const catalog = mode === "summary" ? await loadSummaryCatalog(policy.data.products, async () => {
+    const { listProducts } = await import("@/lib/data/crm");
+    return listProducts(undefined, { requireComplete: true });
+  }) : null;
   const userContent = mode === "summary" ? JSON.stringify({
+    subject: parsed.data.subject,
+    messageSource: parsed.data.messageSource,
     contact: recipient,
     customerProfile,
     conversationHistory,
     latestMessage: text,
     currentFollowUpAt: parsed.data.currentFollowUpAt,
+    productCatalog: catalog ? summaryProductContext(catalog) : undefined,
   }) : buildEmailRewritePrompt({
     recipient,
     managerInput: text,
@@ -109,7 +120,7 @@ export async function POST(request: Request) {
     legacyContext: context,
   });
   const finalizeOutput = async (generate: (correction: string) => Promise<string>) => mode === "summary"
-    ? generateEmailSummary(generate, undefined, language)
+    ? attachSummaryProducts(await generateEmailSummary(generate, undefined, language), catalog!)
     : applyEmailSignature(await generate(""), signature);
 
   const generateWithGateway = (correction: string) => generateGatewayText({ usageUserId: viewer.id,

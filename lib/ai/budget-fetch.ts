@@ -1,7 +1,8 @@
-import { AiBudgetError, budgetFailure, chargedAiBudget, quoteAiBudget, type BudgetRate } from "./budget.ts";
+import { AiBudgetError, budgetFailure, chargedAiBudget, quoteAiBudget, type AiBudgetSummary, type BudgetRate } from "./budget.ts";
 export type AiBudgetStore = {
   reserve(userId: string, model: string, micros: number): Promise<{ allowed: boolean; reason?: string; reservationId?: string }>;
   settle(userId: string, id: string, micros: number): Promise<void>;
+  read?(userId: string): Promise<AiBudgetSummary>;
 };
 export function createBudgetedAiFetch(userId: string, store: AiBudgetStore, rateFor: (model: string) => Promise<BudgetRate>, fetcher: typeof fetch = fetch): typeof fetch {
   return async (input, init) => {
@@ -13,7 +14,12 @@ export function createBudgetedAiFetch(userId: string, store: AiBudgetStore, rate
     const quote = quoteAiBudget(body, rate);
     init.signal?.throwIfAborted();
     const reservation = await store.reserve(userId, String(body.model), quote.reservedMicros);
-    if (!reservation.allowed) throw budgetFailure(reservation.reason ?? "request");
+    if (!reservation.allowed) {
+      // A rejected reservation may exceed a nonzero balance. Never describe
+      // that as exhausted credit, and never retry a paid call to work around it.
+      const limits = reservation.reason === "user_disabled" ? undefined : await store.read?.(userId).catch(() => undefined);
+      throw budgetFailure(reservation.reason ?? "request", limits);
+    }
     if (!reservation.reservationId) throw new AiBudgetError("Unable to reserve AI allowance. Please try again later.", 503);
     let charged = quote.reservedMicros;
     let started = false;

@@ -1,3 +1,4 @@
+import * as credentials from "../lib/ai/provider-credentials.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
@@ -15,7 +16,7 @@ const require = createRequire(import.meta.url);
 function load(file: string, deps: Record<string, unknown>) {
   const exports: Record<string, (...args: unknown[]) => Promise<unknown>> = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { fileName: file, compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => name in deps ? deps[name] : name === "zod" ? require(name) : {}, Date, Intl, Map, Set, console, process: { env: { NODE_ENV: "test" } } });
+  vm.runInNewContext(code, { exports, require: (name: string) => name === "./ai/provider-credentials.ts" ? credentials : name in deps ? deps[name] : name === "zod" ? require(name) : {}, Date, Intl, Map, Set, console, process: { env: { NODE_ENV: "test" } } });
   return exports;
 }
 function chain(result: unknown, record: (method: string, args: unknown[]) => void = () => {}) {

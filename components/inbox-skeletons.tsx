@@ -11,7 +11,7 @@ function ConversationSkeleton() {
 }
 
 export function EmailSkeleton({ reading = false }: { reading?: boolean }) {
-  return <LoadingRegion label="Loading email" className="email-workspace flex h-[calc(100dvh-3rem)] min-w-0 flex-col overflow-hidden bg-background">
+  return <LoadingRegion label="Loading email" className="email-workspace flex h-dvh min-w-0 flex-col overflow-hidden bg-background">
     <div className="mail-layout" data-reading={reading} data-details={false}>
       <div className="mail-folders min-h-0 flex-col border-r bg-muted/20">
         <div className="p-3"><Skeleton className="h-10 w-full" /></div>
@@ -39,7 +39,7 @@ export function EmailSkeleton({ reading = false }: { reading?: boolean }) {
 }
 
 export function MessengerSkeleton() {
-  return <LoadingRegion label="Loading messenger" className="messenger-workspace flex h-[calc(100dvh-3rem)] flex-col overflow-hidden bg-[#f7f8fa] dark:bg-background">
+  return <LoadingRegion label="Loading messenger" className="messenger-workspace flex h-dvh flex-col overflow-hidden bg-[#f7f8fa] dark:bg-background">
     <div className="shrink-0 border-b bg-background px-4 pb-3 pt-4 sm:px-6">
       <div className="flex flex-wrap items-center justify-between gap-3"><Skeleton className="h-10 w-44" /><div className="flex gap-2"><Skeleton className="hidden h-9 w-44 sm:block" /><Skeleton className="h-9 w-32" /></div></div>
       <div className="mt-3 flex gap-1 overflow-hidden">{Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-9 w-28 shrink-0" />)}</div>

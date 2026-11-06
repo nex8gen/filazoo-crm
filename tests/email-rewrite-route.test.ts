@@ -34,6 +34,7 @@ for (const provider of ["gemini", "gateway", "regional-fallback", "budget-gatewa
           "@/lib/email-translation": {},
           "@/lib/ai/language": { aiLanguageSchema },
           "@/lib/ai/email-summary": {},
+          "@/lib/ai/email-summary-products": {},
           zod: { z },
         };
         const exports = {} as { POST: (request: Request) => Promise<Response> };

@@ -28,10 +28,11 @@ export function conversationCustomerTag(messages: readonly { id: string; categor
 }
 
 type TaggedMessage = EmailThreadMetadata & { timestamp: string; subject: string; contact: string; direction: "inbound" | "outbound"; category?: CustomerTag | null };
-export function applyConversationCustomerTags<T extends TaggedMessage>(emails: T[], states: ReadonlyMap<string, { category: CustomerTag | null }>): T[] {
+export function applyConversationCustomerTags<T extends TaggedMessage>(emails: T[], states: ReadonlyMap<string, { category: CustomerTag | null; updatedAt?: string }>): T[] {
   const tags = new Map<string, CustomerTag | null>();
   for (const messages of groupEmailConversations(emails).values()) {
-    const assignment = conversationTagKeys(messages).map(key => states.get(key)).find(Boolean);
+    const assignment = conversationTagKeys(messages).map(key => states.get(key)).filter(value => value !== undefined)
+      .sort((a, b) => (Date.parse(b.updatedAt || "") || 0) - (Date.parse(a.updatedAt || "") || 0))[0];
     const category = assignment ? assignment.category : conversationCustomerTag([...messages].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp)));
     for (const email of messages) tags.set(email.id, category);
   }

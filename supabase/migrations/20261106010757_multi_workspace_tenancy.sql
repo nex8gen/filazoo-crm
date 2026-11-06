@@ -1,6 +1,16 @@
 -- Coordinate this migration with the application release: upsert keys become tenant-scoped.
 -- No customer data is deleted. Existing rows and integrations stay in the legacy workspace.
 begin;
+set local lock_timeout='5s';
+set local statement_timeout='60s';
+-- Abort the rollout if assigning existing rows to the original workspace changes a count.
+create temporary table rollout_row_counts(name text primary key, expected bigint) on commit drop;
+do $$ declare r record; n bigint; begin
+  for r in select tablename from pg_tables where schemaname='public' loop
+    execute format('select count(*) from public.%I',r.tablename) into n;
+    insert into rollout_row_counts values(r.tablename,n);
+  end loop;
+end $$;
 
 create schema if not exists crm_tenancy;
 revoke all on schema crm_tenancy from public, anon, authenticated;
@@ -320,4 +330,11 @@ revoke all on function public.notify_due_crm_tasks(),public.dispatch_erp_invento
 grant execute on function public.notify_due_crm_tasks(),public.dispatch_erp_inventory_sync() to service_role,crm_workspace_server;
 notify pgrst,'reload config';
 notify pgrst,'reload schema';
+do $$ declare r record; n bigint; legacy uuid; begin
+  select id into legacy from public.workspaces where is_legacy;
+  for r in select * from rollout_row_counts loop
+    execute format('select count(*) from public.%I where workspace_id=$1',r.name) into n using legacy;
+    if n<>r.expected then raise exception 'Existing row count changed for %',r.name; end if;
+  end loop;
+end $$;
 commit;

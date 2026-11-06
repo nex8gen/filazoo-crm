@@ -1,0 +1,37 @@
+.ai-composer {
+  container: ai-composer / inline-size;
+}
+
+.ai-composer-toolbar {
+  display: flex;
+  min-width: 0;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: .25rem;
+}
+
+.ai-composer-optional-actions,
+.ai-composer-submit-actions {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: .25rem;
+}
+
+.ai-composer-submit-actions { margin-left: auto; }
+.ai-composer-toolbar > button { flex-shrink: 0; }
+.ai-composer-toolbar .ai-composer-action { white-space: nowrap; }
+
+/* Follow the prompt's available width, including when the sidebar is resized. */
+@container ai-composer (max-width: 24rem) {
+  .ai-composer-toolbar .ai-composer-action-label { display: none; }
+  .ai-composer-toolbar .ai-composer-action {
+    width: 2.25rem;
+    height: 2.25rem;
+    min-width: 2.25rem;
+    min-height: 2.25rem;
+    justify-content: center;
+    padding-inline: 0;
+  }
+}

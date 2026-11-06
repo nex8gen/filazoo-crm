@@ -48,3 +48,30 @@ test("legacy rollout compatibility preserves the existing database API and upser
   assert.equal(observed!.headers.get("x-crm-workspace-id"), null);
   assert.equal(observed!.url.searchParams.get("on_conflict"), "email");
 });
+
+test("signed webhook upserts adapt only a rejected legacy conflict target after the rollout", async () => {
+  for (const scope of [null, { workspaceId: "legacy" }]) {
+    const calls: { target: string | null; body: string; headers: Headers }[] = [];
+    const request = workspaceFetch(async () => scope, async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      calls.push({ target: url.searchParams.get("on_conflict"), body: String(init?.body), headers: new Headers(init?.headers) });
+      return calls.length === 1 ? Response.json({ code: "42P10" }, { status: 400 }) : Response.json([{ webhook_id: "test" }]);
+    });
+    const response = await request("https://test.supabase.co/rest/v1/shopify_leads?on_conflict=webhook_id", {
+      method: "POST", body: '{"webhook_id":"test"}', headers: { "x-crm-control": "1", "x-crm-workspace-id": "forged" },
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(calls.map(call => call.target), ["webhook_id", "workspace_id,webhook_id"]);
+    assert.ok(calls.every(call => call.body === '{"webhook_id":"test"}' && !call.headers.has("x-crm-control") && !call.headers.has("x-crm-workspace-id")));
+  }
+});
+
+test("webhook compatibility never replays successful writes, permission errors or server failures", async () => {
+  for (const [status, code] of [[200, ""], [400, "23505"], [403, "42501"], [500, "42P10"]] as const) {
+    let count = 0;
+    const request = workspaceFetch(async () => null, async () => { count++; return Response.json({ code }, { status }); });
+    const response = await request("https://test.supabase.co/rest/v1/shopify_leads?on_conflict=webhook_id", { method: "POST", body: "{}" });
+    assert.equal(response.status, status);
+    assert.equal(count, 1);
+  }
+});

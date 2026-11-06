@@ -10,8 +10,8 @@ export function canViewEmail(
   mailbox?: Pick<NormalizedMailboxRecord, "type" | "userId"> | null,
   allowedPersonalContacts?: ReadonlySet<string>,
 ) {
-  // Company history may read only its exact saved contacts from the assigned
-  // manager's personal mailbox. Other personal messages remain private.
+  // Authorized company history may read only its exact saved contacts across
+  // staff accounts. Other personal messages remain private.
   if (mailbox?.type === "personal") return Boolean((viewer.id && mailbox.userId === viewer.id)
     || allowedPersonalContacts?.has(contact.trim().toLowerCase()));
   return viewer.role !== "bd_manager"

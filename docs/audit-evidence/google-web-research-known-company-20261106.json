@@ -1,0 +1,132 @@
+{
+  "model": "google/gemini-2.5-flash-lite",
+  "maximumPublishedCallUsd": 0.22575968,
+  "calls": 2,
+  "budget": {
+    "version": 1,
+    "startedAt": 1793924361855,
+    "endsAt": 1794010761855,
+    "limitMicros": 4750000,
+    "chargedMicros": 3432480,
+    "pending": {},
+    "calls": 286,
+    "halted": false,
+    "usedMicros": 3432480,
+    "remainingMicros": 1317520
+  },
+  "result": {
+    "status": "complete",
+    "checkedAt": "2026-11-06T03:54:42.782Z",
+    "sources": [
+      {
+        "id": "W1",
+        "label": "creditsafe.com",
+        "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQGkGMiLlvOObAyjH7TqTz9gs5MO94_9RwTQYDunBhMy_F7qlrXEvF1I4_EXn1Vc8vwDwIv3TC59oSEY0hb3zG7Ldqnzc9HhmVkiR0WJfP-c0lkGKQiBZs7Omf0O0xQu7poEjnzi5gbSEnen3326uR2Qinnx697kmJY10paRVfw2pQ99zKItjDZ7BQ==",
+        "recordedAt": "2026-11-06T03:54:42.782Z"
+      },
+      {
+        "id": "W2",
+        "label": "tracxn.com",
+        "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQHLsfYRIgfayHF4cqnsf0HXfFEym50_UO4J6_PHfsia89zGzvOZU36Geb_Tqh5UEIygXWd9Qe2IqSt9pYLXLzLOrcbRu3Eq0alIdKdTGUC9FgcSZE-NgxizMfXE2O08ANi1P-7jFbrmHECMjk9jPHagLusRi7PAzwJQNghcCx-8JUsJHpY7ujhYqWdehYCO",
+        "recordedAt": "2026-11-06T03:54:42.782Z"
+      },
+      {
+        "id": "W3",
+        "label": "wikipedia.org",
+        "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFumEDcAAxmpYkF1EWpAM1aVeT2f8exFsyH6GKNBmT8m6el8RtWaLB1W3SB82s_RFclZIhSynRbDn0Ma2eKXiwM4lFVOnNrVAJcLVjklz51SU-aDJhrn6ci18RO_tD_nQ==",
+        "recordedAt": "2026-11-06T03:54:42.782Z"
+      },
+      {
+        "id": "W4",
+        "label": "texau.com",
+        "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQG8byHAklHoxLt06mCKV80AP5RutidYTBWSN5e4fDEuzjU1-wxbWkaJDqxj4Q9c1y4gXC3lizVo1D94hHnvQctkrsKaXpUfB2wRA6FrluzYUlcxZF5eYrGb5HBD4-0nftM=",
+        "recordedAt": "2026-11-06T03:54:42.782Z"
+      },
+      {
+        "id": "W5",
+        "label": "pitchbook.com",
+        "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQGT_1FhjUPn7isO47U1NOBawAaBUYzvmpMXQiFVTYu2ms962XVDB24-HpHt2UjVvmXd0uCJLu3fmCiaxRPXT1fTlFORwFlt4oPg7oHvCTtrRVaFqe_WVhcuTcrX_NvqNjILYayOdcNtdeRsrA==",
+        "recordedAt": "2026-11-06T03:54:42.782Z"
+      },
+      {
+        "id": "W6",
+        "label": "contrary.com",
+        "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFMMOrhJcOJNZkUhXYN3bRBWKtMJXrNze54JQKr96IDtiDH7ZMNOVG0s8sII3CfncKnA5lvpMONQ-e69SjTqoOt5jMm3_TtGPcWzfavLyQllgWXPKZnDe4erKsPODb2NIGhNnHRatvI",
+        "recordedAt": "2026-11-06T03:54:42.782Z"
+      },
+      {
+        "id": "W7",
+        "label": "vercel.com",
+        "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQHKNLGXZlUUUp1m4zWd9ndhWahTQlJ_5YUDG12yhzwMQn9zJM9_4RwCLjaS80h5puk4ZXTcmFY0F7qd-ByoaOAR4EuC0tdH0nFLnCXdlFNC-D3-Sb_SRBB6tmZ9",
+        "recordedAt": "2026-11-06T03:54:42.782Z"
+      },
+      {
+        "id": "W8",
+        "label": "vercel.com",
+        "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQHTncJ5OVQADZjxJWjpC60mzXbp28kRIEKt2s0zqwoyhabZbJoMWA151kaXwRcAMwqKU1MvWFd6orZ_US20nDA0LB5m7An4uj66_0oCLCE=",
+        "recordedAt": "2026-11-06T03:54:42.782Z"
+      },
+      {
+        "id": "W9",
+        "label": "therundown.ai",
+        "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFjzhJkZvLDFb30y-Rrst1kNvMgUNzSoonOyMaf254SY5WYkKNliUylEB8nGhZoiVLLGD_ssezFwEEk7T2khhkHLzEeiA7Gn03krDmlRv17qKu7XHSbJGntkZZkiMzqnAt6",
+        "recordedAt": "2026-11-06T03:54:42.782Z"
+      },
+      {
+        "id": "W10",
+        "label": "venturecapitaltracker.com",
+        "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQG--tnjrxQYYXUqrpQDyH9OSFb0rrhEIod-5fh3p5YljkJL3jYDNBDUBecZ0bGJ3i2TDRYFK4luwdJloJuIcmlculWdLggrxnGsPWd_bHXTf12G9cq2LKQZPn0QbuEAlf0R9T5L1pbA_-0l09wYO3SLzzgzAWXRl9v6JBUuUCOteNuuvZg=",
+        "recordedAt": "2026-11-06T03:54:42.782Z"
+      },
+      {
+        "id": "W11",
+        "label": "youtube.com",
+        "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQHi-HC3pf_CkocMKnC0bl2zU5yLMGQjqkpZ-gMa7TxrWxSQMpJTM70PH3HZ9VitG9WTZAKtT45pKkZLRJrwg-iEzB__MptAoOuCSwVSoo9AZqlbbzn9ZvyIN83nu6omj0mG-zc=",
+        "recordedAt": "2026-11-06T03:54:42.782Z"
+      },
+      {
+        "id": "W12",
+        "label": "bambulab.com",
+        "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQHq0txtbKUxZkK3RIgEiLWKMYBnhgJd7xZLk6ZZ_1zddWxcxSHcrVw2U9J-1HYWQTarGv11QGyeuhGj9AhFYLtoUUOYtvxR3ApGokbyleOubZ6RWWSSZ7MJXAZmQTZNCdxl3GbxAiNCAOGclO3dOShm5D9r-UstA09j206EQ1_uDX1SIz6EzwG1nwVsrkpJRnpkpTmd4ujADu2X2TPLsiVLb3q1",
+        "recordedAt": "2026-11-06T03:54:42.782Z"
+      },
+      {
+        "id": "W13",
+        "label": "filamentcalcs.com",
+        "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQGkbPOcvF3t8JVkF69hIWkmqrf1OfuVtu3qb_LX_AqLeq4lZClDjnjzToWCuwOp2wfBYOxKsUljfErRhogF4o46quLkf6BtqxJgYX5gfBSmDl6pW9PWOjSRjxE=",
+        "recordedAt": "2026-11-06T03:54:42.782Z"
+      },
+      {
+        "id": "W14",
+        "label": "github.com",
+        "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQEBzDZE0M7FH3_JAy9IXrymLdQDzRqwL0wBHKU41chiJBChY1mrJDYOhcwBPMpQJGQuH_dGdXWrp-KWXbAB2VaEkmnJ3YfD4r2Z5gAVwQW2tsw-roFW_lSzNOU4skn1kZwzntylPhaPRjjNHXvhWS4ke1E=",
+        "recordedAt": "2026-11-06T03:54:42.782Z"
+      },
+      {
+        "id": "W15",
+        "label": "mathgrrl.com",
+        "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFf7gy0sdyhk7UkO8RAvEX3z3APHBnYsNXn3eEYY_0__aC80XLx7vR_Vv4FUTdfrshMHBZ0FkosSn8NaWVdcxX8j43QPrfUbL-8vkzg3gkO__YnO7H7aaleRhUvrJqB25hQY71WDRZUmmrAITew4wsSdjkoLTQFmA0YZ8EW",
+        "recordedAt": "2026-11-06T03:54:42.782Z"
+      },
+      {
+        "id": "W16",
+        "label": "Vercel: Agentic Infrastructure",
+        "url": "https://vercel.com/",
+        "recordedAt": "2026-11-06T03:54:42.782Z"
+      }
+    ],
+    "queries": [
+      "about products company",
+      "\"Vercel\" United States company registration",
+      "\"Vercel\" official website",
+      "\"Vercel\" products and services",
+      "\"Vercel\" company size signals",
+      "\"Vercel\" 3D printing filament"
+    ],
+    "visitedUrls": [
+      "https://vercel.com/"
+    ],
+    "findings": "{\"brief\":\"\\nVercel Inc. is a confirmed company based in the United States, with its official website being vercel.com. The company provides infrastructure for shipping applications and agents, focusing on AI-powered tools and web development.\\n\\nVercel's offerings include:\\n*   **Agent Stack**: AI SDK, AI Gateway, Sandbox, Passport, Connect, and eve.\\n*   **Core Platform**: Security, Content Delivery, Fluid Compute, Observability, Workflows, and CI/CD.\\n*   **Tools**: Next.js, Vercel Agent, Vercel Plugin, Open Source, Domains, and v0.\\n\\nVercel's infrastructure is used by various companies, including Notion and Zapier, for their applications and services. The company also offers features like durable orchestration, sandboxed environments, an AI model gateway, and fluid compute for building agents. For shipping applications, Vercel provides global delivery, deployment environments, serverless functions, and a web application firewall. They also support hosting platforms with tenant isolation, domain management, custom SSL certificates, and preview URLs.\\n\\nInferred Filament Opportunities:\\nWhile Vercel's primary business is not directly related to 3D printing or filament, there are several instances where Vercel-hosted projects intersect with this industry:\\n*   A YouTube video discussing 3D printing filament choices links to a Vercel-hosted site for custom 3D printing.\\n*   A \\\"Filament Plotter\\\" tool, which compares 3D printing filaments by price and performance, is hosted on Vercel.\\n*   A website dedicated to 3D printing calculations, including filament costs, utilizes Vercel's web analytics.\\n*   A 3D print management system, developed with Next.js and deployed on Vercel, is available on GitHub.\\n*   A project for creating 3D printing filament samples was built and hosted using Vercel.\",\"supportingStatements\":[{\"statement\":\"Vercel Inc. is a confirmed company based in the United States.\",\"sources\":[\"W1\",\"W2\",\"W3\",\"W4\",\"W5\"]},{\"statement\":\"The company was founded in 2015 and operates as a provider of cloud infrastructure and developer tools for web applications.\",\"sources\":[\"W2\",\"W6\",\"W4\",\"W5\"]},{\"statement\":\"Vercel offers services such as continuous integration and delivery, content delivery, serverless computing, and AI-powered tools for website development.\",\"sources\":[\"W2\",\"W7\",\"W8\",\"W9\"]},{\"statement\":\"As of October 2026, Vercel had an estimated 1,024 employees,\",\"sources\":[\"W2\"]},{\"statement\":\"As of October 2026, Vercel had an estimated 1,024 employees, and as of September 2025, it was valued at $9.3 billion after raising $300 million in a Series F funding round.\",\"sources\":[\"W3\",\"W4\"]},{\"statement\":\"The company's revenue was reported as a $340 million run rate at the end of February 2026.\",\"sources\":[\"W10\"]},{\"statement\":\"js web development framework.\",\"sources\":[\"W3\"]},{\"statement\":\"The company has also developed AI tools such as v0 and the AI SDK.\",\"sources\":[\"W3\"]},{\"statement\":\"A YouTube video discusses choosing 3D printing filament and links to a site hosted on Vercel for custom 3D printing.\",\"sources\":[\"W11\"]},{\"statement\":\"A \\\"Filament Plotter\\\" tool, which compares 3D printing filaments by price and performance, is hosted on Vercel.\",\"sources\":[\"W12\"]},{\"statement\":\"A website focused on 3D printing calculations, including filament costs, is operated using Vercel's web analytics.\",\"sources\":[\"W13\"]},{\"statement\":\"js and deployed on Vercel, is available on GitHub.\",\"sources\":[\"W14\"]},{\"statement\":\"A project for creating filament samples for 3D printing was built using Vercel for hosting.\",\"sources\":[\"W15\"]},{\"statement\":\"Vercel Inc. is a confirmed company based in the United States, with its official website being vercel.com\",\"sources\":[\"W16\"]},{\"statement\":\"The company provides infrastructure for shipping applications and agents, focusing on AI-powered tools and web development\",\"sources\":[\"W16\"]},{\"statement\":\"**Agent Stack**: AI SDK, AI Gateway, Sandbox, Passport, Connect, and eve\",\"sources\":[\"W16\"]},{\"statement\":\"**Core Platform**: Security, Content Delivery, Fluid Compute, Observability, Workflows, and CI/CD\",\"sources\":[\"W16\"]},{\"statement\":\"js, Vercel Agent, Vercel Plugin, Open Source, Domains, and v0\",\"sources\":[\"W16\"]},{\"statement\":\"Vercel's infrastructure is used by various companies, including Notion and Zapier, for their applications and services\",\"sources\":[\"W16\"]},{\"statement\":\"The company also offers features like durable orchestration, sandboxed environments, an AI model gateway, and fluid compute for building agents\",\"sources\":[\"W16\"]},{\"statement\":\"For shipping applications, Vercel provides global delivery, deployment environments, serverless functions, and a web application firewall\",\"sources\":[\"W16\"]},{\"statement\":\"They also support hosting platforms with tenant isolation, domain management, custom SSL certificates, and preview URLs\",\"sources\":[\"W16\"]},{\"statement\":\"\\nVercel Inc. is a confirmed company based in the United States, with its official website being vercel.com. The company provides infrastructure for shipping applications and agents, focusing on AI-powered tools and web development.\\n\\nVercel's offerings include:\\n*   **Agent Stack**: AI SDK, AI Gateway, Sandbox, Passport, Connect, and eve.\\n*   **Core Platform**: Security, Content Delivery, Fluid Compute, Observability, Workflows, and CI/CD.\\n*   **Tools**: Next.js, Vercel Agent, Vercel Plugin, Open Source, Domains, and v0.\\n\\nVercel's infrastructure is used by various companies, including Notion and Zapier, for their applications and services. The company also offers features like durable orchestration, sandboxed environments, an AI model gateway, and fluid compute for building agents. For shipping applications, Vercel provides global delivery, deployment environments, serverless functions, and a web application firewall. They also support hosting platforms with tenant isolation, domain management, custom SSL certificates, and preview URLs.\\n\\nInferred Filament Opportunities:\\nWhile Vercel's primary business is not directly related to 3D printing or filament, there are several instances where Vercel-hosted projects intersect with this industry:\\n*   A YouTube video discussing 3D printing filament choices links to a Vercel-hosted site for custom 3D printing.\\n*   A \\\"Filament Plotter\\\" tool, which compares 3D printing filaments by price and performance, is hosted on Vercel.\\n*   A website dedicated to 3D printing calculations, including filament costs, utilizes Vercel's web analytics.\\n*   A 3D print management system, developed with Next.js and deployed on Vercel, is available on GitHub.\\n*   A project for creating 3D printing filament samples was built and hosted using Vercel.\",\"sources\":[\"W16\"]}],\"coverage\":{\"engine\":\"Google Search\",\"queries\":6,\"pagesRead\":1},\"identityCaution\":\"A retrieved namesake is not automatically the CRM company. Preserve match uncertainty.\"}"
+  },
+  "scope": "Public business identity only. No CRM writes or customer messages."
+}

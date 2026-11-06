@@ -8,18 +8,22 @@ function tokenRate(rate: BudgetRate, input: number) {
   return (rate.tiers ?? []).filter(tier => input >= tier.min).sort((a,b) => b.min-a.min)[0] ?? rate;
 }
 export type BudgetMeter = { usedMicros: number; limitMicros: number; remainingMicros: number; percent: number; resetsAt: string };
-export type AiBudgetSummary = { timezone: string; members: number; daily: BudgetMeter; workspaceDaily: BudgetMeter; monthly: BudgetMeter };
+export type AiBudgetSummary = { timezone: string; members: number; enabled?: boolean; daily: BudgetMeter; workspaceDaily: BudgetMeter; monthly: BudgetMeter };
 export class AiBudgetError extends Error {
   status: number;
   constructor(message: string, status = 429) { super(message); this.name = "AiBudgetError"; this.status = status; }
 }
 export function budgetMeter(used: number, limit: number, resetsAt: string): BudgetMeter {
-  return { usedMicros: used, limitMicros: limit, remainingMicros: Math.max(0, limit - used), percent: Math.min(100, Math.max(0, Math.ceil(used / Math.max(1, limit) * 100))), resetsAt };
+  return { usedMicros: used, limitMicros: limit, remainingMicros: Math.max(0, limit - used), percent: limit === 0 ? 100 : Math.min(100, Math.max(0, Math.ceil(used / Math.max(1, limit) * 100))), resetsAt };
 }
-export function budgetFailure(reason: string) {
-  if (reason === "user_daily") return new AiBudgetError("Your daily AI allowance is used up. It resets at midnight China time.");
-  if (reason === "workspace_daily") return new AiBudgetError("The workspace daily AI allowance is used up. It resets at midnight China time.");
-  if (reason === "workspace_monthly") return new AiBudgetError("The workspace monthly AI budget is used up. It resets on the first day of next month.");
+export function budgetFailure(reason: string, limits?: AiBudgetSummary) {
+  if (reason === "user_disabled") return new AiBudgetError("AI is paused for your account. Ask an administrator to enable it in Settings → AI access & behavior.", 403);
+  const meter = reason === "user_daily" ? limits?.daily : reason === "workspace_daily" ? limits?.workspaceDaily : reason === "workspace_monthly" ? limits?.monthly : undefined;
+  if (meter?.limitMicros === 0) return new AiBudgetError("AI spending is paused by a zero allowance. Ask an administrator to review Settings → AI access & behavior.", 403);
+  const exhausted = meter?.remainingMicros === 0;
+  if (reason === "user_daily") return new AiBudgetError(exhausted ? "Your daily AI allowance is used up. It resets at midnight China time." : "Your remaining daily AI allowance is too low for this request. Try a smaller task, wait for midnight China time, or ask an administrator to review your limit.");
+  if (reason === "workspace_daily") return new AiBudgetError(exhausted ? "The workspace daily AI allowance is used up. It resets at midnight China time." : "The workspace remaining daily AI allowance is too low for this request. Try a smaller task, wait for midnight China time, or ask an administrator to review the workspace limit.");
+  if (reason === "workspace_monthly") return new AiBudgetError(exhausted ? "The workspace monthly AI budget is used up. It resets on the first day of next month." : "The workspace remaining monthly AI budget is too low for this request. Try a smaller task or ask an administrator to review the workspace budget.");
   return new AiBudgetError("This request needs more AI allowance than is available. Try a smaller task or wait for the allowance to reset.");
 }
 export function quoteAiBudget(body: Record<string, unknown>, rate: BudgetRate) {

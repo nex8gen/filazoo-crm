@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 
 import { env, hasSupabaseConfig } from "./env.ts";
 import { createSupabaseAdmin } from "./supabase/admin.ts";
-import { claimNextBdSalesManager } from "./lead-assignment.ts";
+import { assignIncomingCompany } from "./lead-assignment.ts";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -335,26 +335,12 @@ export async function saveShopifyLead(lead: ShopifyLead, webhookId: string, shop
     if (existingPipelineResult.error) throw existingPipelineResult.error;
 
     const existingOwnerId = existingPipelineResult.data?.owner_id ?? null;
-    const assignedOwnerId = existingOwnerId ?? await claimNextBdSalesManager(admin);
+    const assignedOwnerId = await assignIncomingCompany(admin, company.id);
     const claimedAutomatically = !existingOwnerId && Boolean(assignedOwnerId);
-    let pipelineResult: { error: { message: string } | null };
-    if (!existingPipelineResult.data) {
-      pipelineResult = await admin.from("pipeline").insert({
-        company_id: company.id,
-        stage: "new",
-        owner_id: assignedOwnerId,
-        ...(quantity == null ? {} : { estimated_order_quantity: quantity }),
-      });
-    } else {
-      const pipelineUpdates = {
-        ...(claimedAutomatically ? { owner_id: assignedOwnerId } : {}),
-        ...(quantity == null ? {} : { estimated_order_quantity: quantity }),
-      };
-      pipelineResult = Object.keys(pipelineUpdates).length
-        ? await admin.from("pipeline").update(pipelineUpdates).eq("company_id", company.id)
-        : { error: null };
+    if (quantity != null) {
+      const pipelineResult = await admin.from("pipeline").update({ estimated_order_quantity: quantity }).eq("company_id", company.id);
+      if (pipelineResult.error) throw pipelineResult.error;
     }
-    if (pipelineResult.error) throw pipelineResult.error;
 
     let contactId = existingContact?.id ?? null;
     if (existingContact) {

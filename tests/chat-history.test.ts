@@ -24,7 +24,7 @@ function load(file: string, dependencies: Record<string, unknown>, env = {}) {
   dependencies = { "@/lib/ai/assistant-intent": assistantIntent, "@/lib/ai/history-http": historyHttp, ...dependencies };
   const exports: Record<string, unknown> = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (dependencies[name] ?? (name === "@/lib/ai/invoice-readiness" ? readiness : undefined) ?? (name === "server-only" ? {} : require(name))), Request, Response, URL, AbortSignal, Date, Error, Object, JSON, console, process: { env }, fetch: dependencies.fetch ?? fetch });
+  vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (dependencies[name] ?? (name === "@/lib/ai/invoice-readiness" ? readiness : undefined) ?? (name === "server-only" ? {} : require(name))), Request, Response, URL, AbortSignal, AbortController, Date, Error, Object, JSON, console, process: { env }, fetch: dependencies.fetch ?? fetch });
   return exports;
 }
 function req(method: string, body?: unknown, url = "http://localhost:3000/api/ai/history", origin = "http://localhost:3000") {
@@ -121,6 +121,92 @@ test("search uses the authenticated owner and role, binds search text and pagina
   assert.equal(args.p_user_id, viewer.id); assert.equal(args.p_role, viewer.role); assert.equal(args.p_search, "' OR true --"); assert.equal(args.p_offset, 30);
 });
 
+test("resume returns authorized messages with the conversation in one request", async () => {
+  let checks = 0, details = 0;
+  const row = { ...scopeInput, id: conversationId, page_context: {}, version: 2 };
+  const query = { select() { return this; }, eq() { return this; }, gt() { return this; }, order() { return this; }, limit: async () => ({ data: [row], error: null }) };
+  const routes = load("../app/api/ai/history/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer },
+    "@/lib/supabase/admin": { createSupabaseAdmin: () => ({ from: () => query }) },
+    "@/lib/ai/chat-history": history,
+    "@/lib/ai/chat-history-server": {
+      conversationAccessKey: async () => "current-access", presentConversation: (value: unknown) => value,
+      assertConversationAccess: async () => { checks++; },
+      conversationDetail: async (value: unknown, owner: unknown) => { assert.equal(value, row); assert.equal(owner, viewer); details++; return { conversation: row, messages: [{ content: "Saved reply" }], actionResults: {} }; },
+    },
+  });
+  const result = await (routes.GET as Handler)(req("GET", undefined, `http://localhost:3000/api/ai/history?${new URLSearchParams({ scope: history.conversationScope(scopeInput), resume: "true", detail: "true" })}`));
+  assert.equal(result.status, 200); assert.equal(checks, 1); assert.equal(details, 1);
+  assert.equal((await result.json()).detail.messages[0].content, "Saved reply");
+});
+
+test("title-only history uses a bounded owner/role/access index without reading transcripts or original records", async () => {
+  const reads: Array<[string, unknown[]]> = [];
+  const row = { id: conversationId, mode: "agent", pathname: "/email", page_context: {}, title: "Saved title", version: 2, summary: "Must never be returned in the title index", active_request: null };
+  const query: Record<string, unknown> = {};
+  for (const method of ["select", "eq", "gt", "in", "order", "range"]) query[method] = (...args: unknown[]) => { reads.push([method, args]); return query; };
+  query.then = (resolve: (value: unknown) => void) => Promise.resolve({ data: [row], error: null }).then(resolve);
+  const routes = load("../app/api/ai/history/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer },
+    "@/lib/supabase/admin": { createSupabaseAdmin: () => ({ from: (table: string) => { assert.equal(table, "ai_conversations"); return query; } }) },
+    "@/lib/ai/chat-history": history,
+    "@/lib/ai/chat-history-server": {
+      conversationAccessKey: async () => "fresh-access", presentConversation: (value: unknown) => value,
+      assertConversationAccess: () => { throw new Error("Original records load only when a title is opened"); },
+      conversationDetail: () => { throw new Error("Do not read messages, summaries or actions for titles"); },
+    },
+  });
+  const result = await (routes.GET as Handler)(req("GET", undefined, `http://localhost:3000/api/ai/history?${new URLSearchParams({ scope: "test", view: "all", titles: "true" })}`));
+  assert.equal(result.status, 200);
+  const body = await result.json();
+  assert.equal(body.conversations[0].title, "Saved title");
+  assert.equal(body.conversations[0].summary, "");
+  assert.equal("detail" in body, false);
+  assert.ok(reads.some(([method, args]) => method === "eq" && args[0] === "user_id" && args[1] === viewer.id));
+  assert.ok(reads.some(([method, args]) => method === "eq" && args[0] === "owner_role" && args[1] === viewer.role));
+  assert.ok(reads.some(([method, args]) => method === "eq" && args[0] === "access_key" && args[1] === "fresh-access"));
+  assert.ok(reads.some(([method, args]) => method === "range" && args[0] === 0 && args[1] === 30));
+  assert.ok(reads.some(([method, args]) => method === "select" && !/summary|metadata|content|\*/.test(String(args[0]))));
+});
+
+test("resume overlaps record checks with message reads and never exposes a denied transcript", { timeout: 3000 }, async () => {
+  for (const denied of [false, true]) {
+    let release: () => void = () => {};
+    const messagesStarted = new Promise<void>(resolve => { release = resolve; });
+    const row = { ...scopeInput, id: conversationId, page_context: {}, version: 2 };
+    const query = { select() { return this; }, eq() { return this; }, gt() { return this; }, order() { return this; }, limit: async () => ({ data: [row], error: null }) };
+    const routes = load("../app/api/ai/history/route.ts", {
+      "@/lib/auth": { getWorkspaceViewer: async () => viewer },
+      "@/lib/supabase/admin": { createSupabaseAdmin: () => ({ from: () => query }) },
+      "@/lib/ai/chat-history": history,
+      "@/lib/ai/chat-history-server": {
+        conversationAccessKey: async () => "current-access", presentConversation: (value: unknown) => value,
+        assertConversationAccess: async () => { await messagesStarted; if (denied) throw new Error("Record no longer accessible"); },
+        conversationDetail: async () => { release(); return { messages: [{ content: "Private saved reply" }] }; },
+      },
+    });
+    const result = await (routes.GET as Handler)(req("GET", undefined, `http://localhost:3000/api/ai/history?${new URLSearchParams({ scope: history.conversationScope(scopeInput), resume: "true", detail: "true" })}`));
+    assert.equal(result.status, denied ? 403 : 200);
+    assert.equal((await result.text()).includes("Private saved reply"), !denied);
+  }
+});
+
+test("deleting history uses trusted ownership without loading inaccessible records and preserves active-turn errors", async () => {
+  for (const scenario of ["deleted", "pending", "missing", "storage-error"]) {
+    const routes = load("../app/api/ai/history/[id]/route.ts", {
+      "@/lib/auth": { getWorkspaceViewer: async () => viewer },
+      "@/lib/ai/chat-history": history,
+      "@/lib/ai/chat-history-server": { HistoryError: class extends Error { status: number; constructor(message: string, status: number) { super(message); this.status = status; } }, ownedConversation: () => { throw new Error("Deletion must not load a transcript or old records"); } },
+      "@/lib/supabase/admin": { createSupabaseAdmin: () => ({ rpc: async (name: string, args: Record<string, unknown>) => {
+        assert.equal(name, "delete_ai_conversation"); assert.deepEqual(JSON.parse(JSON.stringify(args)), { p_user_id: viewer.id, p_conversation_id: conversationId });
+        return { data: { success: scenario === "deleted", pending: scenario === "pending" }, error: scenario === "storage-error" ? { code: "failure" } : null };
+      } }) },
+    });
+    const response = await (routes.DELETE as Handler)(req("DELETE"), { params: Promise.resolve({ id: conversationId }) });
+    assert.equal(response.status, scenario === "deleted" ? 200 : scenario === "pending" ? 409 : scenario === "missing" ? 404 : 503);
+  }
+});
+
 test("all workspace history finds other pages and modes, rechecks each record and skips unavailable records", async () => {
   const rows = [
     { id: "email-history", mode: "agent", pathname: "/email", scope: "email-scope", page_context: { emailId: "old-email" } },
@@ -204,6 +290,25 @@ test("revoked mailbox access blocks saved transcripts even for the original owne
     "./agent-records": { loadAgentEmails: async () => { throw new Error("mailbox access revoked"); } }, "./agent-page-records": {}, "./chat-history": history,
   });
   await assert.rejects((server.assertConversationAccess as (i: unknown, v: unknown) => Promise<unknown>)({ ...scopeInput, pageContext: { emailId: "private-mail" } }, viewer), /mailbox access revoked/);
+});
+
+test("history checks share an inbox snapshot within one request without loading email content", async () => {
+  let inboxReads = 0;
+  const server = load("../lib/ai/agent-records.ts", {
+    "../data/ai-settings": { requireAiData: async () => {} },
+    "../supabase/admin": {}, "../company-commerce": {}, "../data/mailboxes": {}, "../email-threading": {},
+    "../data/mailbox-sync": { loadMailboxMessageContent: () => { throw new Error("History must never load message bodies"); } },
+    "../email-inbox": { getEmailInboxBackendData: async (options: { syncMailbox: boolean; mailboxId: string }) => {
+      inboxReads++; assert.equal(options.syncMailbox, false); assert.equal(options.mailboxId, "synthetic-mailbox");
+      return { selectedMailboxId: "synthetic-mailbox", emails: [{ id: "email-one", bodyLoaded: false }, { id: "email-two", bodyLoaded: false }] };
+    } },
+  });
+  const access = server.loadAgentEmails as (...args: unknown[]) => Promise<unknown>;
+  const snapshots = new Map();
+  await Promise.all(["email-one", "email-two"].map(id => access(viewer, id, undefined, "synthetic-mailbox", true, snapshots)));
+  assert.equal(inboxReads, 1);
+  await access(viewer, "email-one", undefined, "synthetic-mailbox", true, new Map());
+  assert.equal(inboxReads, 2, "A later request must recheck live permissions and records");
 });
 
 test("saved workspace requests use authoritative messages and action results and never regenerate a replay", async () => {

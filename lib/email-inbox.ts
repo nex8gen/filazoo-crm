@@ -1,3 +1,4 @@
+import { hasAiProvider } from "./ai/provider-credentials.ts";
 import type { DataMode, EmailDraft, Reply } from "./types.ts";
 import { emailTagMessageKey, applyConversationCustomerTags } from "./customer-tags.ts";
 import { buildShopifyFormInboxItems, type ShopifyInquiryRow as ShopifyInboxRow } from "./lead-inquiries.ts";
@@ -11,6 +12,7 @@ import type { WorkspaceMailboxRecord } from "./data/mailboxes.ts";
 import { listInboxCompanies } from "./data/inbox-companies.ts";
 import { canViewEmail } from "./email-access.ts";
 import { getAssignedEmailContacts } from "./data/email-access.ts";
+import { companyEmailContact } from "./company-email.ts";
 import { normalizeMessageId, normalizeReferences, threadKeyForEmail } from "./email-threading.ts";
 import type { CustomerProfileContext } from "./ai/email-rewrite.ts";
 
@@ -41,6 +43,7 @@ export type InboxEmailItem = {
   contact: string;
   company: string;
   companyId?: string | null;
+  companyScopeId?: string;
   ownerId?: string | null;
   ownerName?: string;
   ownerInitials?: string;
@@ -313,15 +316,16 @@ async function readWorkspaceInboxSources(viewer: WorkspaceViewer) {
 
 type EmailInboxReadContext = {
   viewer: WorkspaceViewer; mailboxes: WorkspaceMailboxRecord[];
+  senderMailboxes?: WorkspaceMailboxRecord[];
   states?: ReturnType<typeof listEmailInboxStates>;
   workspace?: ReturnType<typeof readWorkspaceInboxSources>;
   allowedPersonalContacts?: ReadonlySet<string>;
 };
 
 /** One request's authorized snapshots; never retained between users or requests. */
-export function createEmailInboxReadContext(viewer: WorkspaceViewer, mailboxes: WorkspaceMailboxRecord[], allowedPersonalContacts?: Iterable<string>): EmailInboxReadContext {
+export function createEmailInboxReadContext(viewer: WorkspaceViewer, mailboxes: WorkspaceMailboxRecord[], allowedPersonalContacts?: Iterable<string>, senderMailboxes?: WorkspaceMailboxRecord[]): EmailInboxReadContext {
   return {
-    viewer, mailboxes,
+    viewer, mailboxes, senderMailboxes,
     allowedPersonalContacts: allowedPersonalContacts ? new Set(Array.from(allowedPersonalContacts, normalizedEmail).filter(Boolean)) : undefined,
     states: listEmailInboxStates(viewer.id).catch(() => new Map()),
     workspace: !mailboxes.length || mailboxes.some(mailbox => mailbox.type === "workspace") ? readWorkspaceInboxSources(viewer) : undefined,
@@ -331,7 +335,7 @@ export function createEmailInboxReadContext(viewer: WorkspaceViewer, mailboxes: 
 export async function getEmailInboxBackendData({ syncMailbox = true, history = false, mailboxId, context }: { syncMailbox?: boolean; history?: boolean; mailboxId?: string; context?: EmailInboxReadContext } = {}): Promise<EmailInboxBackendData> {
   const viewer = context?.viewer ?? await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   const mailboxes = context?.mailboxes ?? await getViewerMailboxes(viewer.id);
-  const defaultSender = defaultViewerMailbox(mailboxes);
+  const defaultSender = defaultViewerMailbox(context?.senderMailboxes ?? mailboxes);
   const defaultMailbox = mailboxId !== undefined ? mailboxes.find((mailbox) => mailbox.id === mailboxId) : defaultSender;
   if (mailboxId !== undefined && !defaultMailbox) throw new Error("Mailbox unavailable.");
   const personal = defaultMailbox?.type === "personal";
@@ -349,7 +353,7 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
   const [workspace, states, sentMessages, mailboxResult] = await Promise.all([
     personal ? Promise.resolve(null) : context?.workspace ?? readWorkspaceInboxSources(viewer),
     context?.states ?? listEmailInboxStates(viewer.id).catch(() => new Map()),
-    defaultMailbox ? listSentMailboxMessages(viewer.id, defaultMailbox.id).catch(() => []) : Promise.resolve([]),
+    defaultMailbox ? listSentMailboxMessages(viewer.id, defaultMailbox.id, context?.allowedPersonalContacts).catch(() => []) : Promise.resolve([]),
     loadInbound(),
   ]);
   const { emails, mode } = workspace?.drafts ?? { emails: [], mode: "live" as const };
@@ -361,7 +365,10 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
   const visibleInbox = [...buildInboxEmailItems({ drafts: emails, replies, inbound: [...shopifyMessages, ...liveInbound.filter((item) => !sentIds.has(normalizeMessageId(item.messageId)))] }), ...sentMessages.map((sent) => {
     const provider = liveInbound.find((item) => item.messageId && normalizeMessageId(item.messageId) === normalizeMessageId(sent.messageId));
     return provider ? { ...sent, uid: provider.uid, uidValidity: provider.uidValidity, mailboxKey: provider.mailboxKey, providerFolder: provider.providerFolder, providerKind: provider.providerKind, read: provider.read, starred: provider.starred, folder: provider.folder } : sent;
-  })]
+  })].map(item => {
+    const contact = context?.allowedPersonalContacts && companyEmailContact(item, context.allowedPersonalContacts);
+    return contact ? { ...item, contact } : item;
+  })
     .filter((item) => canViewEmail(viewer, item.contact, assignedContacts, defaultMailbox, context?.allowedPersonalContacts));
   // There is nothing to enrich when access rules exclude the saved messages.
   const [companyResult, automation] = await Promise.all([
@@ -409,11 +416,7 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
   const inboxConfigured = mailboxHasImap(defaultMailbox);
   const mailboxConfigured = sendConfigured && inboxConfigured;
 
-  const aiConfigured = Boolean(
-    process.env.GEMINI_API_KEY?.trim()
-    || process.env.AI_GATEWAY_API_KEY?.trim()
-    || process.env.VERCEL_OIDC_TOKEN?.trim(),
-  );
+  const aiConfigured = hasAiProvider(process.env);
   return {
     mode,
     mailboxConfigured,

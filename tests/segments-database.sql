@@ -10,6 +10,8 @@ begin
   assert not has_table_privilege('anon', 'public.company_segments', 'SELECT'), 'Anonymous clients must not read segments';
   assert not has_table_privilege('authenticated', 'public.company_segments', 'INSERT'), 'Browser clients must not write segments';
   assert has_table_privilege('service_role', 'public.company_segments', 'INSERT'), 'Authorized server must be able to create segments';
+  assert has_table_privilege('service_role', 'public.company_segments', 'DELETE'), 'Authorized server must be able to delete segments';
+  assert not has_table_privilege('authenticated', 'public.company_segments', 'DELETE'), 'Browser clients must not delete segments';
 
   insert into public.company_segments(name, description, rules)
   values(segment_name, 'Transactional segment verification', saved_rules) returning id into segment_id;
@@ -32,6 +34,8 @@ begin
     raise exception 'Unknown rule fields must be rejected';
   exception when check_violation then null;
   end;
+  delete from public.company_segments where id = segment_id;
+  assert not exists(select 1 from public.company_segments where id = segment_id), 'Deleted audience must no longer exist';
 end;
 $$;
 rollback;

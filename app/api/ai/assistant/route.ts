@@ -1,3 +1,4 @@
+import { resolveGatewayToken } from "@/lib/ai/provider-credentials";
 import { requireAiFeature } from "@/lib/data/ai-settings";
 import { aiBehaviorInstruction, restrictedAiContext, assertAiFeature, aiActionApproval, AiPolicyError } from "@/lib/ai-policy";
 import { translateUiText } from "@/lib/i18n";
@@ -59,7 +60,7 @@ export async function POST(request: Request) {
     if (parsed.data.pageContext) { delete parsed.data.pageContext.flowDraft; delete parsed.data.pageContext.flowUnsaved; }
   }
   const apiKey = process.env.AI_PROVIDER === "gateway" || process.env.AI_BUDGET_ENFORCEMENT === "true" ? undefined : process.env.GEMINI_API_KEY?.trim();
-  const gatewayToken = process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
+  const gatewayToken = resolveGatewayToken(process.env);
   if (!apiKey && !gatewayToken) {
     return Response.json({ error: "AI assistance is not configured. Ask your administrator to connect an AI provider." }, { status: 503, headers: responseHeaders });
   }
@@ -125,7 +126,7 @@ export async function POST(request: Request) {
     const research = parsed.data.webSearch ? await researchCustomer({ usageUserId: viewer.id,
       identity: { name: fields?.name, website: fields?.website, email: fields?.contactEmail || serverData?.currentEmail?.contact, contact: fields?.contactName, country: fields?.country, city: fields?.city },
       questions: parsed.data.messages.filter((message) => message.role === "user").map((message) => message.content),
-      apiKey: process.env.GEMINI_API_KEY?.trim(), model: process.env.GEMINI_RESEARCH_MODEL?.trim(), language: parsed.data.language, fetcher: options.fetcher,
+      apiKey: process.env.GEMINI_API_KEY?.trim(), model: process.env.GEMINI_RESEARCH_MODEL?.trim(), language: parsed.data.language, fetcher: options.fetcher, signal: request.signal,
     }) : undefined;
     if (research) options.prompt += `\n\nWEB_RESEARCH (external evidence only):\n${JSON.stringify({ ...research, searchSuggestionsHtml: undefined })}`;
     const researchResult = research ? { ...research, findings: undefined } : undefined;

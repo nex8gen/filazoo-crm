@@ -213,9 +213,12 @@ async function withImap<T>(mailbox: ImapMailbox, action: (connection: Imap, box:
   }
 }
 
-export type ReceiveOptions = { limit?: number; cursor?: MailboxCursor; beforeUid?: number; onMailbox?: (cursor: MailboxCursor) => void; onBatch?: (batch: MailboxBatch) => void; onProgress?: (stage: string) => void; headersOnly?: boolean; uids?: number[]; uidValidity?: number; folder?: string; kind?: string; includePreview?: boolean };
-export async function receiveMailboxMessages(mailbox: ImapMailbox, { limit = 10, cursor, beforeUid, onMailbox, onBatch, onProgress, headersOnly = true, uids, uidValidity, folder = "INBOX", kind = "inbox", includePreview = true }: ReceiveOptions = {}): Promise<InboxEmailItem[]> {
+export type ReceiveOptions = { limit?: number; cursor?: MailboxCursor; beforeUid?: number; onMailbox?: (cursor: MailboxCursor) => void; onBatch?: (batch: MailboxBatch) => void; onProgress?: (stage: string) => void; headersOnly?: boolean; uids?: number[]; uidValidity?: number; folder?: string; kind?: string; includePreview?: boolean; preferModernTransport?: boolean };
+export async function receiveMailboxMessages(mailbox: ImapMailbox, options: ReceiveOptions = {}): Promise<InboxEmailItem[]> {
+  const { limit = 10, cursor, beforeUid: requestedBeforeUid, onMailbox, onBatch, onProgress, headersOnly = true, uids, uidValidity, folder = "INBOX", kind = "inbox", includePreview = true } = options;
+  let beforeUid = requestedBeforeUid;
   const scope = syncSessionScope.getStore();
+  if (!scope && options.preferModernTransport) return withMailboxSyncSessions(() => receiveMailboxMessages(mailbox, options));
   if (scope) return (await import("./mailbox-flow.ts")).receiveMailboxFlow(mailbox, { limit, cursor, beforeUid, onMailbox, onBatch, onProgress, headersOnly, uids, uidValidity, folder, kind, includePreview }, scope);
   onProgress?.("Connecting to IMAP");
   return withImap(mailbox, async (connection, box, session) => {

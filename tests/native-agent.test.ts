@@ -94,8 +94,8 @@ test("native function schemas are metered; provider-side tools remain blocked", 
   assert.throws(() => quoteAiBudget({ ...body, tools: [{ type: "computer_use" }] }, rate));
 });
 
-test("Gateway SDK transport keeps storage off, bounded output and real function schemas", async () => {
-  const previous = process.env.AI_BUDGET_ENFORCEMENT; process.env.AI_BUDGET_ENFORCEMENT = "false";
+test("Gateway SDK ignores legacy allowances and keeps storage off, bounded output and real function schemas", async () => {
+  const previous = process.env.AI_BUDGET_ENFORCEMENT; process.env.AI_BUDGET_ENFORCEMENT = "true";
   try {
     let payload: Record<string, unknown> = {};
     const models = await nativeGatewayModels({ token: "synthetic", userId: id, userText: "create a quotation", fetcher: async (_url, init) => {

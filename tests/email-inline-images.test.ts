@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import * as customerTags from "../lib/customer-tags.ts";
+import * as companyEmail from "../lib/company-email.ts";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -22,6 +23,7 @@ const gifHtml = `<img src="data:image/gif;base64,${gif.toString("base64")}" alt=
 function load<T>(path: string, dependencies: Record<string, unknown>): T {
   dependencies["../email-workbench"] = workbench;
   dependencies["../customer-tags.ts"] = customerTags;
+  dependencies["../company-email.ts"] = companyEmail;
   dependencies["./customer-tags.ts"] = {};
   if (path === "../app/api/email/send/route.ts") dependencies["@/lib/data/manual-email-send"] = load("../lib/data/manual-email-send.ts", dependencies);
   const exports = {};

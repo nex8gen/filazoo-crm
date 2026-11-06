@@ -17,6 +17,9 @@ import * as tracking from "../lib/flow-tracking.ts";
 import * as autoReply from "../lib/email-auto-reply.ts";
 import * as attachmentUpload from "../lib/attachment-upload.ts";
 import * as flowSmtp from "../lib/flow-smtp.ts";
+import * as mailboxUtils from "../lib/mailbox-utils.ts";
+import * as flowMailboxes from "../lib/flow-mailboxes.ts";
+import { createFlowRecipe } from "../lib/flow-recipes.ts";
 
 type Row = Record<string, unknown>;
 const require = createRequire(import.meta.url);
@@ -116,7 +119,8 @@ function runtime(options: { businessWindow?: Date | null; beforeQuery?: (table: 
       auth: { admin: { getUserById: async (id: string) => ({ data: { user: { email: `${id}@example.com` } } }) } },
       storage: { from: () => ({ upload: async () => ({ error: null }), remove: async () => ({ error: null }) }) },
     }) },
-    "../mailbox-utils.ts": { normalizeMailboxRow: (row: unknown) => row },
+    "../mailbox-utils.ts": { ...mailboxUtils, normalizeMailboxRows: (rows: Row[]) => mailboxUtils.normalizeMailboxRows(rows.map((row) => ({ ...row, smtp_host: row.smtpHost as string, smtp_port: row.smtpPort as number, smtp_username: row.smtpUsername as string, smtp_password: row.smtpPassword as string }))) },
+    "../flow-mailboxes.ts": flowMailboxes,
     "../flow-tracking.ts": tracking,
     "./email-footers.ts": { getUserEmailFooter: async () => null, prepareUserEmail: async (_id: string, mail: unknown) => mail },
     "../email-footer.ts": { removeStandardSignoff: (text: string) => text },
@@ -459,6 +463,47 @@ function route(condition: flows.JsonConfig, yes: flows.FlowInput["steps"], no: f
   return step;
 }
 
+test("AI lead starter waits one minute, sends one reminder and assigns replying customers to its chosen user", async () => {
+  for (const replyAt of ["before-introduction", "after-introduction", "after-reminder", "never"]) {
+    const app = runtime();
+    const definition = createFlowRecipe("lead_ai_handoff", { assigneeId: "specific-user" });
+    app.db.flows[0].trigger_config = definition.triggerConfig;
+    steps(app, definition.steps);
+    assert.equal((await app.exports.enrollNewLeadFlows(app.contactId))[0].reason, "waiting");
+    const run = app.db.flow_runs[0];
+    const intakeAt = Date.parse(String(app.db.contacts[0].created_at));
+    assert.equal(Date.parse(String(run.next_run_at)) - intakeAt, 60_000);
+    const reply = () => app.db.emails.push({ contact_id: app.contactId, direction: "received", thread_id: (run.context as Row).emailThreadId || run.conversation_id, created_at: new Date(Date.now() + 10).toISOString() });
+    if (replyAt === "before-introduction") reply();
+    run.next_run_at = null;
+    assert.equal((await app.exports.processFlowRun(String(run.id))).status, replyAt === "before-introduction" ? "done" : "waiting");
+    if (replyAt !== "before-introduction") {
+      assert.ok(Date.parse(String(run.next_run_at)) - Date.now() > 23.9 * 3_600_000);
+      if (replyAt === "after-introduction") reply();
+      run.next_run_at = null;
+      assert.equal((await app.exports.processFlowRun(String(run.id))).status, replyAt === "after-introduction" ? "done" : "waiting");
+      if (replyAt !== "after-introduction") {
+        if (replyAt === "after-reminder") reply();
+        run.next_run_at = null;
+        assert.equal((await app.exports.processFlowRun(String(run.id))).status, "done");
+      }
+    }
+    const expectedSends = replyAt === "before-introduction" ? 0 : replyAt === "after-introduction" ? 1 : 2;
+    assert.equal(app.delivered(), expectedSends, replyAt);
+    assert.equal(app.aiCalls.length, expectedSends);
+    assert.equal(app.db.crm_tasks?.length ?? 0, replyAt === "never" ? 0 : 1);
+    if (replyAt !== "never") {
+      assert.equal(app.db.crm_tasks[0].assigned_to, "specific-user");
+      assert.equal(app.db.crm_tasks[0].follows_company_owner, false);
+      assert.equal(app.db.internal_notifications[0].user_id, "specific-user");
+      assert.equal(app.db.internal_notifications[0].include_thread_link, true);
+    }
+    await app.exports.processFlowRun(String(run.id));
+    assert.equal(app.delivered(), expectedSends, "A finished run cannot send again");
+    assert.equal(app.db.crm_tasks?.length ?? 0, replyAt === "never" ? 0 : 1, "A finished run cannot duplicate the handoff task");
+  }
+});
+
 test("screenshot journey stops replies, resumes the other path and rechecks replies before the follow-up", async () => {
   for (const replyAt of ["never", "first-wait", "branch-wait"]) {
     const app = runtime();
@@ -696,14 +741,14 @@ test("custom subject, body, preheader and tracking toggles reach the delivered e
 
 test("template emails, AI replies and email alerts send using their selected personal or team account", async () => {
   for (const type of ["send_email", "ai_auto_reply", "internal_alert"] as const) {
-    for (const [choice, expected] of [["default", "sales@example.com"], ["owner", "personal@example.com"], ["personal", "personal@example.com"], ["explicit", "specific@example.com"]]) {
+    for (const [choice, expected] of [["default", "personal@example.com"], ["workspace", "sales@example.com"], ["owner", "personal@example.com"], ["personal", "personal@example.com"], ["explicit", "specific@example.com"]]) {
       const app = runtime();
       app.db.workspace_mailboxes.push({ ...app.db.workspace_mailboxes[0], id: "personal", type: "personal", user_id: "owner", email: "personal@example.com", smtpUsername: "personal-login" }, { ...app.db.workspace_mailboxes[0], id: "explicit", is_default: false, email: "specific@example.com", smtpUsername: "team-login" });
       steps(app, [{ type, config: { ...flows.blankStep(type).config, templateId: "welcome_intro", sendWindow: "anytime", mailboxId: choice, channel: "email" } }]);
       await app.exports.enrollNewLeadFlows(app.contactId);
       assert.equal(app.deliveries[0].mailbox.from, expected);
-      assert.equal(app.deliveries[0].mailbox.user, choice === "default" ? "sales" : choice === "explicit" ? "team-login" : "personal-login");
-      if (type !== "internal_alert") assert.equal(app.db.mailbox_sent_messages[0].mailbox_id, choice === "owner" ? "personal" : choice === "default" ? "sender" : choice);
+      assert.equal(app.deliveries[0].mailbox.user, choice === "workspace" ? "sales" : choice === "explicit" ? "team-login" : "personal-login");
+      if (type !== "internal_alert") assert.equal(app.db.mailbox_sent_messages[0].mailbox_id, choice === "owner" || choice === "default" ? "personal" : choice === "workspace" ? "sender" : choice);
     }
   }
 });
@@ -720,6 +765,26 @@ test("unavailable or another user's personal sender never falls back to team ema
       await app.exports.enrollNewLeadFlows(app.contactId);
       assert.equal(app.deliveries.length, 0, `${type}: ${choice}`);
       assert.equal(app.db.flow_runs[0].status, "failed");
+    }
+  }
+});
+
+test("all workflow email actions follow changed personal defaults without requiring a default flag", async () => {
+  for (const type of ["send_email", "ai_auto_reply", "internal_alert"] as const) {
+    for (const stopped of [false, true]) {
+      const app = runtime();
+      app.db.workspace_mailboxes.push({ ...app.db.workspace_mailboxes[0], id: "mine", type: "personal", user_id: "owner", is_default: false, is_active: !stopped, email: "first@example.com", smtpUsername: "first-login" });
+      steps(app, [{ type, config: { ...flows.blankStep(type).config, templateId: "welcome_intro", sendWindow: "anytime", mailboxId: "default", channel: "email" } }]);
+      // Change the saved default account before the queued action is executed.
+      Object.assign(app.db.workspace_mailboxes[1], { is_default: stopped, email: "changed@example.com", smtpUsername: "changed-login" });
+      await app.exports.enrollNewLeadFlows(app.contactId);
+      if (stopped) {
+        assert.equal(app.deliveries.length, 0);
+        assert.equal(app.db.flow_runs[0].status, "failed");
+      } else {
+        assert.equal(app.deliveries[0].mailbox.from, "changed@example.com");
+        assert.equal(app.deliveries[0].mailbox.user, "changed-login");
+      }
     }
   }
 });
