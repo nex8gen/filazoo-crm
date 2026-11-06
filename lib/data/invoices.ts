@@ -23,6 +23,7 @@ export async function listInvoices(
   search = "",
   status = "",
   companyId?: string,
+  legacyOnly = false,
 ) {
   const admin = createSupabaseAdmin();
   let query = admin
@@ -30,6 +31,7 @@ export async function listInvoices(
     .select("*", { count: "exact" })
     .order("number", { ascending: false });
   if (companyId) query = query.eq("company_id", companyId);
+  if (legacyOnly) query = query.is("purchase_order_id", null);
   if (search)
     query = query.ilike(
       "document->>customerName",
@@ -101,6 +103,7 @@ export async function getInvoice(id: string) {
 }
 
 export async function createInvoice(document: InvoiceDocument, userId: string, id?: string) {
+  if (!document.purchaseOrderId) throw Object.assign(new Error("Create a purchase order first. Its invoice is generated automatically."), { code: "P0001" });
   await validateInvoiceConnections(document);
   const { data, error } = await createSupabaseAdmin()
     .from("invoices")

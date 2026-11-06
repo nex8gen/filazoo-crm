@@ -1,5 +1,4 @@
 import { Suspense } from "react";
-import { PageHeader } from "@/components/page-header";
 import { SettingsSkeleton } from "@/components/settings-skeleton";
 import { requireWorkspaceMember } from "@/lib/auth";
 import { getAppConnectionSummaries, getEmailConnectionsOverview } from "@/lib/data/app-connections";
@@ -21,10 +20,6 @@ async function AppsConnectionsWorkspace({ searchParams }: Props) {
 
   return (
         <div className="settings-content settings-section-enter space-y-6">
-          <PageHeader
-            title="Apps & connections"
-            description="Connect your apps and manage personal and team email accounts in one place."
-          />
           <EmailConnectionsHub connections={connections} overview={overview} isAdmin={viewer.role === "admin"} initialView={initialView} />
         </div>
   );

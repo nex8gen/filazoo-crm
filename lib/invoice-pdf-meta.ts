@@ -1,6 +1,6 @@
 import { invoiceLabel, type Invoice } from "./invoices.ts";
 
-export function invoicePdfFilename(invoice: Pick<Invoice, "number" | "status">) {
+export function invoicePdfFilename(invoice: Pick<Invoice, "number" | "status"> & { order_managed?: boolean; purchase_order_id?: string | null; document?: { purchaseOrderId?: string } }) {
   return `${invoiceLabel(invoice)}${invoice.status === "draft" ? "-DRAFT" : invoice.status === "void" ? "-VOID" : ""}.pdf`;
 }
 

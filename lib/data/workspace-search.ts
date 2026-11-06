@@ -1,4 +1,6 @@
 import "server-only";
+import { invoiceLabel } from "../invoices.ts";
+import { orderInvoiceHref } from "../order-invoice-links.ts";
 import { requireWorkspaceMember } from "../auth.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 import { personalizeProductRows, type PersonalProductOverride } from "../product-personalization.ts";
@@ -7,7 +9,7 @@ import { normalizeWorkspaceSearch, validWorkspaceSearch, workspaceSearchFilter, 
 type Relation<T> = T | T[] | null;
 const first = <T,>(value: Relation<T>) => Array.isArray(value) ? value[0] ?? null : value;
 type Company = { id: string; name: string };
-type Invoice = { id: string; number: number; company_id: string | null; customer_name: string; reference: string; companies?: Relation<Company> };
+type Invoice = { id: string; number: number; purchase_order_id?: string | null; company_id: string | null; customer_name: string; reference: string; companies?: Relation<Company> };
 type Product = { sku: string; name: string; active: boolean };
 type QueryResult = { data: unknown[] | null; error: unknown };
 async function rows<T>(query: PromiseLike<QueryResult>): Promise<T[]> {
@@ -27,7 +29,7 @@ export async function readWorkspaceSearch(client: ReturnType<typeof createSupaba
     try { return await read(); } catch { unavailable.push(kind); return []; }
   }
   const companyHref = (id: string) => `/companies/${encodeURIComponent(id)}`;
-  const invoiceFields = "id,number,company_id,customer_name:document->>customerName,reference:document->>reference";
+  const invoiceFields = "id,number,purchase_order_id,company_id,customer_name:document->>customerName,reference:document->>reference";
   function invoiceQuery(creator = false) {
     let request = client.from("invoices").select(`${invoiceFields},${assigned && !creator ? companyJoin : "companies(id,name)"}`);
     if (assigned) request = creator ? request.eq("created_by", viewer.id) : request.eq("companies.pipeline.owner_id", viewer.id);
@@ -52,7 +54,7 @@ export async function readWorkspaceSearch(client: ReturnType<typeof createSupaba
     }),
     source("invoice", async () => {
       const invoices = (await Promise.all([rows<Invoice>(invoiceQuery()), ...(assigned ? [rows<Invoice>(invoiceQuery(true))] : [])])).flat();
-      return invoices.map(row => ({ id: row.id, kind: "invoice", title: `INV-${String(row.number).padStart(6, "0")}`, detail: [row.customer_name, row.reference].filter(Boolean).join(" · "), href: `/invoices/${encodeURIComponent(row.id)}` }));
+      return invoices.map(row => ({ id: row.id, kind: "invoice", title: invoiceLabel(row), detail: [row.customer_name, row.reference].filter(Boolean).join(" · "), href: orderInvoiceHref(row) }));
     }),
     source("order", async () => {
       let request = client.from("purchase_orders").select(`id,company_id,reference:document->>reference,${companyJoin}`)

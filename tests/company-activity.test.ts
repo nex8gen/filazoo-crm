@@ -36,7 +36,7 @@ test("billing timeline preserves each partial payment, reference, actor, and rec
   assert.equal(payment.metadata?.find((field) => field.label === "Payment reference")?.value, "WIRE-1");
   assert.equal(payment.metadata?.find((field) => field.label === "Payment date")?.value, "2026-10-22");
   assert.match(payment.detail, /3,334\.00/);
-  assert.equal(payment.href, "/invoices/invoice-1");
+  assert.equal(payment.href, "/purchase-orders");
   assert.equal(payment.metadata?.find((field) => field.label === "Outstanding now")?.value, "$0.00");
 });
 

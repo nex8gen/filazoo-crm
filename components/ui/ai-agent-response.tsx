@@ -7,6 +7,8 @@ import { ThinkingGlyph } from "@/components/ui/thinking-indicator";
 import { AgentWorkIcon } from "@/components/agent-work-icon";
 import { agentWorkAreaLabels, type AgentWorkProgress } from "@/lib/ai/agent-progress";
 import "./ai-agent-response.css";
+import { SourceCitedText } from "@/components/ui/customer-research";
+import type { CitationSource } from "@/lib/ai/source-citations";
 
 // Adapted from the supplied response design. Progress follows real request
 // state; there are no simulated reasoning, terminal or tool-execution traces.
@@ -72,12 +74,13 @@ function subscribeToMotion(onChange: () => void) {
 const getMotion = () => window.matchMedia(motionQuery).matches;
 const getServerMotion = () => false;
 
-export function StreamingText({ text, animate = true, onComplete, onProgress, className }: {
+export function StreamingText({ text, animate = true, onComplete, onProgress, className, sources = [] }: {
   text: string;
   animate?: boolean;
   onComplete?: () => void;
   onProgress?: () => void;
   className?: string;
+  sources?: CitationSource[];
 }) {
   const [visibleCount, setVisibleCount] = useState(0);
   const reducedMotion = useSyncExternalStore(subscribeToMotion, getMotion, getServerMotion);
@@ -107,6 +110,6 @@ export function StreamingText({ text, animate = true, onComplete, onProgress, cl
   }, [text, animate, reducedMotion]);
 
   return <div data-no-translate aria-busy={!finished} className={cn("agent-streaming-text whitespace-pre-wrap break-words text-sm leading-7 text-foreground/90 [overflow-wrap:anywhere]", className)}>
-    <span>{finished ? text : characters.slice(0, visibleCount).join("")}{!finished ? <span aria-hidden="true" className="agent-writing-cursor" /> : null}</span>
+    <span>{sources.length ? <SourceCitedText text={finished ? text : characters.slice(0, visibleCount).join("")} sources={sources} /> : finished ? text : characters.slice(0, visibleCount).join("")}{!finished ? <span aria-hidden="true" className="agent-writing-cursor" /> : null}</span>
   </div>;
 }

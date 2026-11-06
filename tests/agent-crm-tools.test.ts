@@ -374,7 +374,10 @@ test("lookup protocol validates resources, rejects combined read/mutate output, 
   assert.equal(output.actions[0].type, "crm_action");
   const instruction = assistant.workspaceAssistantInstruction("work", "2026-10-27T04:00:00Z");
   assert.match(instruction, /create_invoice/); assert.match(instruction, /write_email/); assert.match(instruction, /shippingMinor:3900/); assert.match(instruction, /FILAZOO_CRM_READ_JSON/);
-  assert.ok(!assistant.workspaceAssistantInstruction("analyze", "now").includes("FILAZOO_CRM_READ_JSON"));
+  const chat = assistant.workspaceAssistantInstruction("analyze", "now");
+  assert.match(chat, /FILAZOO_CRM_READ_JSON/);
+  assert.match(chat, /Never emit mutation actions in Chat/);
+  assert.doesNotMatch(chat, /Supported actions:\s/);
 });
 
 test("custom-price invoices use explicit cents, remain drafts, and cannot detach order links", async () => {

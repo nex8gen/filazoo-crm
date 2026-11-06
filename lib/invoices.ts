@@ -138,6 +138,9 @@ export type InvoiceReceivable = {
   overdue_minor: number;
 };
 export type Invoice = {
+  purchase_order_id?: string | null;
+  order_managed?: boolean;
+  last_sent_at?: string | null;
   customer_portal_url?: string;
   id: string;
   number: number;
@@ -217,7 +220,8 @@ export function invoiceTotals(doc: InvoiceDocument) {
   };
 }
 
-export function invoiceLabel(invoice: Pick<Invoice, "number">) {
+export function invoiceLabel(invoice: { number: number; order_managed?: boolean; purchase_order_id?: string | null; document?: { purchaseOrderId?: string } }) {
+  if (invoice.order_managed || invoice.purchase_order_id || invoice.document?.purchaseOrderId) return `#${invoice.number}`;
   return `INV-${String(invoice.number).padStart(6, "0")}`;
 }
 export function invoiceStatus(invoice: Invoice, today: string) {

@@ -21,7 +21,7 @@ import type { AgentActionResult, AgentProposal } from "@/lib/ai/agent-actions";
 import { actionWorkProgress, pageWorkArea, requestedWorkProgress, type AgentWorkProgress } from "@/lib/ai/agent-progress";
 import { AgentWorkIcon } from "@/components/agent-work-icon";
 import { AgentApprovalMenu } from "@/components/agent-approval-menu";
-import { CustomerResearchSources, WebSearchOption, type ResearchResult } from "@/components/ui/customer-research";
+import { CustomerResearchSources, ResearchSearching, WebSearchOption, type ResearchResult } from "@/components/ui/customer-research";
 import { AiImageFeedback, AiImagePicker, AiImagePreviews, useAiImageAttachments } from "@/components/ui/ai-image-attachments";
 import { chatImageLimitError, type ChatImage } from "@/lib/ai/image-input";
 import { assistantRecordScope, readAssistantPageContext } from "@/lib/ai/page-context";
@@ -30,10 +30,13 @@ import { useAiConversation } from "@/components/use-ai-conversation";
 import { AiHistoryMenu } from "@/components/ai-history-menu";
 import { createHistoryListCache, type HistoryListCache } from "@/lib/ai/history-list-cache";
 import { isInvoiceCreationRequest } from "@/lib/ai/assistant-intent";
+import { webSearchForRequest, type WebSearchPreference } from "@/lib/ai/research-request";
+import { readResearchResponse, researchStreamType, type ResearchProgress } from "@/lib/ai/research-progress";
 
 type Mode = "chat" | "agent";
 export type WorkspaceAiLaunchRequest = { id: number; mode: Mode };
 type Message = { id: string; role: "user" | "assistant"; content: string; images?: ChatImage[]; attachmentNames?: string[]; actions?: AgentProposal[]; durationMs?: number; work?: AgentWorkProgress; research?: ResearchResult };
+type AssistantReply = { output: string; error?: string; actions?: AgentProposal[]; research?: ResearchResult; history?: Parameters<ReturnType<typeof useAiConversation>["accept"]>[0] };
 
 const pageNames: Array<[RegExp, string]> = [
   [/^\/companies\/[^/]+/, "Company profile"],
@@ -84,9 +87,12 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest }: { op
   const [approvalMode, setApprovalMode] = useState<"ask" | "auto">("ask");
   const [question, setQuestion] = useState("");
   const attachments = useAiImageAttachments();
-  const [webSearch, setWebSearch] = useState(false);
+  const [webSearchPreference, setWebSearchPreference] = useState<WebSearchPreference>("auto");
+  const webSearch = webSearchForRequest(webSearchPreference, question);
+  const setWebSearch = (enabled: boolean) => setWebSearchPreference(enabled ? "on" : "off");
   const [chats, setChats] = useState<Record<string, Message[]>>({});
   const [pending, setPending] = useState(false);
+  const [activeResearch, setActiveResearch] = useState<{ chatKey: string; progress?: ResearchProgress } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [applying, setApplying] = useState<string | null>(null);
@@ -183,6 +189,8 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest }: { op
   async function send(value = question) {
     const content = value.trim();
     if ((!content && !attachments.images.length) || attachments.processing || busy || loadingHistory || abort.current || actionLock.current) return;
+    const requestWebSearch = webSearchForRequest(webSearchPreference, content);
+    if (requestWebSearch && webSearchPreference === "auto") setWebSearchPreference("on");
     const pageContext = restoredElsewhere ? history.conversation!.pageContext ?? {} : readAssistantPageContext(document.querySelector("#workspace-content"));
     const requestPathname = restoredElsewhere ? history.conversation!.pathname : pathname;
     const requestPageLabel = pageNames.find(([pattern]) => pattern.test(requestPathname))?.[1] ?? "Workspace";
@@ -199,6 +207,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest }: { op
     setActiveWork(work ?? null);
     setWorkPage(requestPageLabel);
     setPending(true);
+    setActiveResearch(requestWebSearch ? { chatKey: requestChatKey } : null);
     const controller = new AbortController();
     abort.current = controller;
     const started = performance.now();
@@ -207,11 +216,11 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest }: { op
       if (controller.signal.aborted) return;
       const response = await fetch("/api/ai/assistant", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Accept: researchStreamType },
         body: JSON.stringify({
           language,
           history: reference,
-          webSearch,
+          webSearch: requestWebSearch,
           mode: activeMode === "agent" ? "work" : "analyze",
           approvalMode,
           completedActionIds: Object.values(chats).flat().flatMap((message) => message.actions ?? []).filter((proposal) => ["completed", "failed", "unknown"].includes(actionResults[proposal.id]?.status ?? "")).map((proposal) => proposal.id).slice(-20),
@@ -223,7 +232,10 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest }: { op
         }),
         signal: controller.signal,
       });
-      const result = await response.json().catch(() => null);
+      const result = await readResearchResponse<AssistantReply>(response, progress => {
+        if (!controller.signal.aborted) setActiveResearch({ chatKey: requestChatKey, progress });
+      });
+      if (controller.signal.aborted) return;
       if (!response.ok || typeof result?.output !== "string") throw new Error(result?.error || "Unable to reach Filazoo AI.");
       history.accept(result.history);
       const id = crypto.randomUUID();
@@ -252,6 +264,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest }: { op
     } finally {
       if (abort.current === controller) abort.current = null;
       setPending(false);
+      setActiveResearch(current => current?.chatKey === requestChatKey ? null : current);
     }
   }
 
@@ -375,7 +388,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest }: { op
           </div> : <div className="space-y-5">{messages.map((message, index) => <div key={message.id} className={message.role === "user" ? "ml-auto max-w-[88%] rounded-2xl rounded-br-md bg-muted px-4 py-3" : "group max-w-full"}>
             {message.role === "user" ? <><AiImagePreviews images={message.images} />{message.attachmentNames?.length ? <p className="mb-2 text-xs text-muted-foreground">Attached: {message.attachmentNames.join(", ")}. Images are not retained; reattach to inspect them again.</p> : null}<p data-no-translate className="whitespace-pre-wrap text-sm leading-6">{message.content}</p></> : <>
               <ThinkingState working={false} writing={animation?.id === message.id} durationMs={message.durationMs} scope={t(pageLabel)} activity={message.work} className="mb-2" />
-              <StreamingText key={`${message.id}-${animation?.id === message.id ? animation.run : 0}`} text={message.content} animate={animation?.id === message.id} onProgress={() => { const viewport = log.current; if (viewport && viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 120) viewport.scrollTop = viewport.scrollHeight; }} onComplete={() => setAnimation((current) => current?.id === message.id ? null : current)} />
+              <StreamingText key={`${message.id}-${animation?.id === message.id ? animation.run : 0}`} text={message.content} sources={message.research?.sources} animate={animation?.id === message.id} onProgress={() => { const viewport = log.current; if (viewport && viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 120) viewport.scrollTop = viewport.scrollHeight; }} onComplete={() => setAnimation((current) => current?.id === message.id ? null : current)} />
               <CustomerResearchSources research={message.research} />
               {activeMode === "chat" && !restoredElsewhere && messages[index - 1]?.role === "user" && isInvoiceCreationRequest(messages[index - 1].content) ? <Button type="button" variant="outline" size="sm" className="mt-3" disabled={busy} onClick={() => openInAgent(message.id)}><AgentIcon className="size-5" />{language === "zh-CN" ? "转到 Agent" : "Open in Agent"}</Button> : null}
               {animation?.id === message.id ? <Button type="button" variant="ghost" size="xs" className="mt-2" onClick={() => setAnimation(null)}>Show full reply</Button> : <>
@@ -385,7 +398,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest }: { op
             </>}
           </div>)}</div>}
           {pending && activeMode === "chat" ? <div className="mt-5"><ThinkingState working scope={t(pageLabel)} /></div> : null}
-          {pending && webSearch ? <p role="status" className="mt-2 text-xs text-muted-foreground">Searching Google and checking company websites…</p> : null}
+          {pending && activeResearch?.chatKey === chatKey ? <ResearchSearching progress={activeResearch.progress} /> : null}
           {error && error !== history.error ? <div role="alert" className="mt-4 rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-sm leading-6 text-destructive">{error}</div> : null}
         </div>
         </div>

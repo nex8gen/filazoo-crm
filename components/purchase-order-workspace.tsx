@@ -11,16 +11,16 @@ import { Plus, Trash2, ClipboardList, X } from "lucide-react";
 import {
   listCompanyPurchaseOrders,
   savePurchaseOrder,
-  createOrderInvoice,
   getPurchaseOrderProfile,
   loadPurchaseOrderProducts,
 } from "@/app/purchase-order-actions";
 import {
   poStatuses,
   poStatusLabels,
+  purchaseOrderLabel,
   purchaseOrderTotal,
   orderBillingSummary,
-  orderHasUnreservedItems,
+  orderInvoiceLocksDetails,
   type PurchaseOrder,
   type PurchaseOrderDocument,
   type OrderProfile,
@@ -30,7 +30,9 @@ import { applyOrderProfile, customOrderLine, orderProductLine, refreshOrderProdu
 import { productUnitPrice, type InvoiceProduct } from "@/lib/invoice-links";
 import { PurchaseOrderProductPicker } from "@/components/purchase-order-product-picker";
 import { PurchaseOrderProfileFields } from "@/components/purchase-order-profile-fields";
-import { formatMoney, invoiceCurrencies, invoiceLabel } from "@/lib/invoices";
+import { PurchaseOrderStatus } from "@/components/purchase-order-status";
+import { PurchaseOrderInvoices } from "@/components/purchase-order-invoices";
+import { formatMoney, invoiceCurrencies } from "@/lib/invoices";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -70,6 +72,7 @@ export function PurchaseOrderWorkspace({
   catalogAvailability: { currency: string; count: number }[];
   focusedOrderId?: string;
 }) {
+  const router = useRouter();
   const [profile, setProfile] = useState(initialProfile);
   const [result, setResult] = useState(initial);
   const [page, setPage] = useState(0);
@@ -176,7 +179,8 @@ export function PurchaseOrderWorkspace({
             {result.orders.map((order) => (
               <tr key={order.id}>
                 <td className="px-4 py-4 font-medium">
-                  {order.document.reference}
+                  {purchaseOrderLabel(order)}
+                  {purchaseOrderLabel(order) !== order.document.reference ? <p className="mt-1 text-xs font-normal text-muted-foreground">{order.document.reference}</p> : null}
                 </td>
                 <td className="whitespace-nowrap px-4 py-4">
                   {order.document.orderDate}
@@ -185,9 +189,7 @@ export function PurchaseOrderWorkspace({
                   {order.document.deliveryDate || "Not scheduled"}
                 </td>
                 <td className="px-4 py-4">
-                  <span className="whitespace-nowrap rounded-full bg-muted px-2.5 py-1 text-xs">
-                    {poStatusLabels[order.document.status]}
-                  </span>
+                  <PurchaseOrderStatus status={order.document.status} />
                 </td>
                 <td className="whitespace-nowrap px-4 py-4">
                   {formatMoney(order.total_minor, order.document.currency)}
@@ -197,7 +199,7 @@ export function PurchaseOrderWorkspace({
                     variant="ghost"
                     size="sm"
                     disabled={pending}
-                    onClick={() => setEditing(order)}
+                    onClick={() => router.push(`/purchase-orders/${order.id}`)}
                   >
                     {canWrite ? "View / edit" : "View"}
                     <span className="sr-only"> {order.document.reference}</span>
@@ -244,7 +246,7 @@ export function PurchaseOrderWorkspace({
   );
 }
 
-function PurchaseOrderEditor({
+export function PurchaseOrderEditor({
   companyId,
   order,
   commerce,
@@ -261,7 +263,7 @@ function PurchaseOrderEditor({
   catalogAvailability: { currency: string; count: number }[];
   canWrite: boolean;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (orderId?: string) => void;
 }) {
   const [profile, setProfile] = useState(initialProfile);
   const [document, setDocument] = useState<PurchaseOrderDocument>(() => {
@@ -297,10 +299,11 @@ function PurchaseOrderEditor({
   const [savedDocument] = useState(document);
   const dirty = JSON.stringify(document) !== JSON.stringify(savedDocument);
   const [linkingIndex, setLinkingIndex] = useState<number | null>(null);
+  const [catalogOpen, setCatalogOpen] = useState(false);
   const router = useRouter();
   const summary = order ? orderBillingSummary(order) : null;
   const locked = Boolean(
-    order?.invoices?.some((invoice) => invoice.status !== "void"),
+    order?.invoices?.some(orderInvoiceLocksDetails),
   );
   const [productCache, setProductCache] = useState(new Map<string, InvoiceProduct>());
   const linkedSkus = JSON.stringify(
@@ -411,10 +414,10 @@ function PurchaseOrderEditor({
   );
   return (
     <Card>
-      <CardHeader className="flex-row items-start justify-between">
+      <CardHeader className="flex flex-row items-start justify-between gap-3">
         <div className="space-y-1">
           <CardTitle>
-            {order ? `PO ${order.document.reference}` : "New purchase order"}
+            {order ? `Order ${purchaseOrderLabel(order)}` : "New purchase order"}
           </CardTitle>
           <CardDescription>
             Amounts are in the selected currency. Order details are saved with
@@ -436,34 +439,6 @@ function PurchaseOrderEditor({
           <div className="mb-6 space-y-3 rounded-lg border bg-muted/30 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="font-medium">Linked invoices & payment</h3>
-              {canWrite && (
-                <Button
-                  variant="outline"
-                  disabled={
-                    pending ||
-                    dirty ||
-                    !orderHasUnreservedItems(order) ||
-                    ["draft", "cancelled"].includes(order.document.status)
-                  }
-                  onClick={() =>
-                    startTransition(async () => {
-                      try {
-                        const result = await createOrderInvoice(
-                          companyId,
-                          order.id,
-                        );
-                        if (result.error) setError(result.error);
-                        else if (result.invoiceId)
-                          router.push(`/invoices/${result.invoiceId}`);
-                      } catch {
-                        setError("Unable to create invoice. Please try again.");
-                      }
-                    })
-                  }
-                >
-                  Create invoice for remaining items
-                </Button>
-              )}
             </div>
             <p className="text-sm">
               Issued: {formatMoney(summary.total, order.document.currency)} ·
@@ -482,30 +457,10 @@ function PurchaseOrderEditor({
                 ? "Payment requirement met"
                 : "Awaiting invoice / required payment"}
             </p>
-            {order.invoices?.map((invoice) => (
-              <div
-                key={invoice.id}
-                className="flex flex-wrap justify-between gap-3 text-sm"
-              >
-                <Link
-                  className="text-primary underline"
-                  href={`/invoices/${invoice.id}`}
-                >
-                  {invoiceLabel(invoice)}
-                </Link>
-                <span>
-                  {invoice.status} ·{" "}
-                  {formatMoney(invoice.total_minor, order.document.currency)}
-                  {invoice.status === "issued"
-                    ? ` · ${formatMoney(invoice.paid_minor, order.document.currency)} paid`
-                    : ""}
-                </span>
-              </div>
-            ))}
+            <PurchaseOrderInvoices order={order} canWrite={canWrite && !dirty} />
             <p className="text-xs text-muted-foreground">
-              Draft invoices reserve quantities. Issued invoices determine
-              billing and payment status. Edit the linked draft for a partial
-              invoice; create another invoice for the remaining items.
+              The automatic draft follows saved order changes until it is issued.
+              Issued invoices determine billing and payment status.
             </p>
             {dirty && <p className="text-sm text-muted-foreground">Save your order changes before creating an invoice.</p>}
           </div>
@@ -522,7 +477,7 @@ function PurchaseOrderEditor({
                   document,
                 );
                 if (result.error) setError(result.error);
-                else onSaved();
+                else onSaved(result.orderId);
               } catch {
                 setError(
                   "Unable to save. Check your connection and try again.",
@@ -554,7 +509,7 @@ function PurchaseOrderEditor({
               }
             />
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {field("reference", "Customer PO number", "text", true)}
+              {field("reference", order ? "Customer PO reference" : "Customer PO reference (optional)", "text", Boolean(order))}
               {field("orderDate", "Order date", "date", true)}
               {field("deliveryDate", "Expected delivery", "date")}
               <div className="space-y-2">
@@ -645,18 +600,21 @@ function PurchaseOrderEditor({
               )}
             </div>
             <div className="space-y-3">
-              <h3 className="text-sm font-medium">Order items</h3>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-sm font-medium">Order items</h3>
+                {canWrite && !locked ? <Button type="button" size="sm" variant="outline" aria-expanded={catalogOpen || linkingIndex !== null} aria-controls="po-product-catalog" disabled={document.items.length >= 100 && linkingIndex === null} onClick={() => { setCatalogOpen(!(catalogOpen || linkingIndex !== null)); setLinkingIndex(null); }}><Plus />{catalogOpen || linkingIndex !== null ? "Hide product catalog" : "Add from product catalog"}</Button> : null}
+              </div>
               {locked && (
                 <p className="text-sm text-muted-foreground">
                   Products and commercial details are locked while linked
                   invoices exist.
                 </p>
               )}
-              <PurchaseOrderProductPicker
+              {catalogOpen || linkingIndex !== null ? <div id="po-product-catalog"><PurchaseOrderProductPicker
                 currency={document.currency}
                 catalogAvailability={catalogAvailability}
                 title={linkingIndex === null ? "Add from product catalog" : `Choose product for item ${linkingIndex + 1}`}
-                onCancel={linkingIndex === null ? undefined : () => setLinkingIndex(null)}
+                onCancel={() => { setLinkingIndex(null); setCatalogOpen(false); }}
                 disabled={locked || !canWrite || (document.items.length >= 100 && linkingIndex === null)}
                 onAdd={(item, product) => {
                   setProductCache((current) => new Map(current).set(product.sku, product));
@@ -674,8 +632,9 @@ function PurchaseOrderEditor({
                         : [...current.items, item],
                   }));
                   setLinkingIndex(null);
+                  setCatalogOpen(false);
                 }}
-              />
+              /></div> : null}
               {document.items.map((item, index) => (
                 <div
                   key={index}

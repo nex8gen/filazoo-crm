@@ -22,7 +22,7 @@ test("enabled research actually discovers with Google then reads multiple provid
   assert.equal(result.queries.length, 2); assert.equal(result.visitedUrls?.length, 2);
   assert.match(result.findings, /printing business/); assert.match(result.findings, /"sources":\["W1"\]/);
   assert.doesNotMatch(JSON.stringify(calls.map(call => [call.prompt, call.system])), /PRIVATE_QUOTE_123|PRIVATE_DEAL_456/);
-  assert.match(calls[0].system, /unconfirmed.*namesakes|namesakes.*unconfirmed/);
+  assert.match(calls[0].system, /Never merge companies/);
 });
 test("ungrounded text, missing actual searches and invented links never become verified facts", async t => {
   token(t);
@@ -34,7 +34,7 @@ test("ungrounded text, missing actual searches and invented links never become v
   }
 });
 
-test("missing search execution gets one bounded retry and keeps personal email out of provider prompts", async t => {
+test("missing search execution gets one bounded retry and uses contact email only as an identity clue", async t => {
   token(t); const calls: Parameters<ResearchGenerator>[0][] = [];
   const result = await researchWithGateway({ ...options, identity: { ...options.identity, email: "private-buyer@gmail.com" }, generate: async input => {
     calls.push(input);
@@ -44,7 +44,8 @@ test("missing search execution gets one bounded retry and keeps personal email o
   assert.deepEqual(calls.map(call => Object.keys(call.tools)[0]), ["google_search", "google_search", "url_context"]);
   assert.deepEqual(calls[0].providerOptions?.gateway.order, ["google", "vertex"]);
   assert.match(calls[1].system, /Do not write or execute Python/);
-  assert.doesNotMatch(JSON.stringify(calls.map(call => call.prompt)), /private-buyer/);
+  assert.match(calls[0].prompt, /private-buyer@gmail.com/);
+  assert.match(calls[0].system, /personal mailbox is never an employer/);
 });
 
 test("Vertex grounding survives an empty Google metadata object and omitted query list", async t => {
@@ -124,4 +125,73 @@ test("native Gateway search and URL-reading usage retain model identity and toke
   const tracker = trackAiUsage(async () => Response.json({ usage: { inputTokens: { total: 123, cacheRead: 0 }, outputTokens: { total: 45 } } }));
   await tracker.fetcher("https://ai-gateway.vercel.sh/v3/ai/language-model", { method: "POST", headers: { "ai-language-model-id": GOOGLE_WEB_RESEARCH_MODEL }, body: JSON.stringify({ maxOutputTokens: 1800 }) });
   assert.equal(tracker.usage[0].model, GOOGLE_WEB_RESEARCH_MODEL); assert.equal(tracker.usage[0].inputTokens, 123); assert.equal(tracker.usage[0].outputTokens, 45);
+});
+
+test("supplied website is read when search is empty or fails, without retaining ungrounded search claims", async t => {
+  token(t);
+  for (const failedSearch of [false, true]) {
+    const calls: Parameters<ResearchGenerator>[0][] = [];
+    const result = await researchWithGateway({ ...options, identity: { name: "3D Near You", email: "info@3dnearyou.com", website: "https://3dnearyou.com/", city: "Brooklyn" }, generate: async input => {
+      calls.push(input);
+      if (calls.length === 1) {
+        if (failedSearch) throw new Error("Search timeout");
+        return { text: "Invented revenue $900 million" };
+      }
+      assert.deepEqual(Object.keys(input.tools), ["url_context"]);
+      assert.match(input.prompt, /https:\/\/3dnearyou.com\//);
+      assert.doesNotMatch(input.prompt, /Invented revenue/);
+      return { text: "The supplied store page was read; company size is unverified.", providerMetadata: { google: { urlContextMetadata: { urlMetadata: [{ retrievedUrl: "https://3dnearyou.com/", urlRetrievalStatus: "URL_RETRIEVAL_STATUS_SUCCESS" }] } } } };
+    } });
+    assert.equal(calls.length, 2);
+    assert.equal(result.status, "complete");
+    assert.deepEqual(result.visitedUrls, ["https://3dnearyou.com/"]);
+    assert.match(result.warning!, /Google Search did not verify/);
+    assert.doesNotMatch(result.findings, /Invented revenue/);
+    assert.deepEqual(result.queries, []);
+  }
+});
+
+test("failed search and failed supplied website cannot claim a completed research report", async t => {
+  token(t); let calls = 0;
+  const result = await researchWithGateway({ ...options, identity: { name: "3D Near You", website: "https://3dnearyou.com/" }, generate: async () => { calls++; return { text: "Unverified company claims" }; } });
+  assert.equal(calls, 2);
+  assert.equal(result.status, "no_results");
+  assert.equal(result.findings, "");
+  assert.deepEqual(result.sources, []);
+  assert.deepEqual(result.visitedUrls, []);
+  assert.match(result.warning!, /Neither Google Search nor the supplied website/);
+});
+
+test("page budget prioritizes the customer's catalog and about pages over other search results", async t => {
+  token(t); let calls = 0;
+  const site = "https://3dnearyou.com/";
+  const sourceUrls = ["https://registry.org/business", "https://other.org/one", "https://other.org/two", `${site}collections/filament`, `${site}pages/about`];
+  await researchWithGateway({ ...options, identity: { name: "3D Near You", email: "info@3dnearyou.com", website: site }, generate: async input => {
+    if (++calls === 1) return { text: "Search evidence", sources: sourceUrls.map(url => ({ sourceType: "url", url })), providerMetadata: { google: { groundingMetadata: { webSearchQueries: ["3D Near You"] } } } };
+    const urls = JSON.parse(input.prompt.split("URLS_TO_READ: ")[1].split("\n")[0]);
+    assert.deepEqual(urls, [site, `${site}collections/filament`, `${site}pages/about`, sourceUrls[0]]);
+    return { text: "No page receipts" };
+  } });
+  assert.equal(calls, 2);
+});
+
+test("discovery searches exact name and email and requests commercially relevant evidence", async t => {
+  token(t); let calls = 0;
+  const identity = { name: "3D Near You", email: "info@3dnearyou.com", website: "https://3dnearyou.com/", city: "Brooklyn" };
+  const queries = researchQueries(identity);
+  assert.ok(queries.some(query => query.includes('"3D Near You"') && query.includes("Brooklyn")));
+  assert.ok(queries.some(query => query.includes('"info@3dnearyou.com"')));
+  assert.ok(queries.some(query => query.startsWith("site:3dnearyou.com")));
+  assert.ok(queries.some(query => query.includes("company size")));
+  assert.ok(researchQueries({ email: identity.email }).length);
+  await researchWithGateway({ ...options, identity, generate: async input => {
+    calls++;
+    assert.match(input.system, /sales channels/);
+    assert.match(input.system, /catalog breadth/);
+    assert.match(input.system, /confidence/);
+    assert.match(input.system, /Omit CRM email history/);
+    assert.match(input.system, /Omit unrelated namesakes/);
+    return calls === 1 ? discovery : pages;
+  } });
+  assert.equal(calls, 2);
 });

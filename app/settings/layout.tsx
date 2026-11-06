@@ -2,6 +2,7 @@ import { Suspense, type ReactNode } from "react";
 import { requireWorkspaceMember } from "@/lib/auth";
 import { SettingsNavigation } from "./settings-navigation";
 import { SettingsSkeleton, SettingsNavigationSkeleton } from "@/components/settings-skeleton";
+import { SettingsContent } from "./settings-content";
 import "./settings.css";
 
 async function Navigation() {
@@ -14,8 +15,8 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
     <div className="settings-navigation-frame">
       <Suspense fallback={<SettingsNavigationSkeleton />}><Navigation /></Suspense>
     </div>
-    <div className="settings-main">
+    <SettingsContent>
       <Suspense fallback={<SettingsSkeleton />}>{children}</Suspense>
-    </div>
+    </SettingsContent>
   </div>;
 }

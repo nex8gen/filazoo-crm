@@ -39,7 +39,7 @@ async function AppConnectionWorkspace({ params, searchParams }: Props) {
         <div className="settings-content settings-section-enter !max-w-4xl space-y-7">
           <Link href={isEmailApp ? `/settings/apps?view=${scope === "workspace" ? "team" : "personal"}` : "/settings/apps"} className="inline-flex items-center gap-2 rounded-sm text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"><ArrowLeft className="size-4" />Apps & connections</Link>
           <header className="flex flex-wrap items-start justify-between gap-4 border-b pb-6">
-            <div className="flex min-w-0 items-start gap-4"><ConnectionAppLogo src={app.logo} large /><div><h1 className="text-xl font-semibold">{app.name}</h1><p className="mt-1 max-w-xl text-sm leading-6 text-muted-foreground">{app.description}</p></div></div>
+            <div className="flex min-w-0 items-start gap-4"><ConnectionAppLogo src={app.logo} large /><div><h2 className="text-xl font-semibold">{app.name}</h2><p className="mt-1 max-w-xl text-sm leading-6 text-muted-foreground">{app.description}</p></div></div>
             <Badge variant="outline" className={connected ? "gap-1.5 border-emerald-600/20 text-emerald-700 dark:text-emerald-400" : "text-muted-foreground"}>{connected ? <CheckCircle2 className="size-3.5" /> : null}{connectionStatusLabel(summary?.status ?? "unavailable")}</Badge>
           </header>
           {isEmailApp ? <nav aria-label="Email connection ownership" className="grid gap-3 sm:grid-cols-2">{([

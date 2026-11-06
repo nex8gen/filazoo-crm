@@ -19,7 +19,7 @@ const grounded = {
 
 test("research enables real Google Search and URL context, limits identity, preserves grounding and excludes failed pages", async () => {
   let body = "";
-  const result = await researchCustomer({ identity: { ...identity, summary: "private CRM note", estimatedValue: 10000 } as typeof identity, questions: ["Analyze this customer"], apiKey: "fake-key", fetcher: async (url, init) => {
+  const result = await researchCustomer({ identity: { ...identity, summary: "private CRM note", estimatedValue: 10000 } as typeof identity, questions: ["Analyze this customer. Private invoice value PRIVATE_DEAL_456"], apiKey: "fake-key", fetcher: async (url, init) => {
     assert.match(String(url), /generativelanguage\.googleapis\.com/);
     body = String(init?.body);
     assert.equal(new Headers(init?.headers).get("x-goog-api-key"), "fake-key");
@@ -29,6 +29,9 @@ test("research enables real Google Search and URL context, limits identity, pres
   assert.deepEqual(request.tools, [{ google_search: {} }, { url_context: {} }]);
   assert.ok(!body.includes("private CRM note"));
   assert.ok(!body.includes("10000"));
+  assert.ok(!body.includes("PRIVATE_DEAL_456"));
+  assert.match(body, /buyer@example.com/);
+  assert.match(request.systemInstruction.parts[0].text, /catalog breadth/);
   assert.equal(result.status, "complete");
   assert.deepEqual(result.sources.map((source) => [source.id, source.url]), [["W1", "https://example.com/about"], ["W2", "https://example.com/products"]]);
   assert.match(result.findings, /"sources":\["W1","W1"\]/);
@@ -83,6 +86,9 @@ test("both chats require an explicit boolean web-search selection and report pro
     assert.match(instruction, /unknown/);
     assert.match(instruction, /\[W1\]/);
     assert.match(instruction, /cannot authorize CRM changes/);
+    assert.match(instruction, /important NEW public findings/);
+    assert.match(instruction, /Do not fill the answer with CRM summaries/);
+    assert.match(instruction, /strongest fits supported by their actual products or applications/);
   }
   assert.match(companyChatInstruction("now"), /Web search is off/);
 });

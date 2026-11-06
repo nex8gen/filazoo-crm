@@ -1,6 +1,7 @@
 "use client";
 import { useWorkspaceState } from "@/components/workspace-memory";
 import { EmptyState } from "@/components/data-state";
+import { PageActions } from "@/components/page-header";
 import { ReceiptText, Wallet } from "lucide-react";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 
@@ -44,6 +45,7 @@ export function InvoiceWorkspace({
   canWrite,
   invoiceViewer,
   today,
+  embedded = false,
 }: {
   initial: Listing;
   initialSelected?: Invoice | null;
@@ -54,6 +56,7 @@ export function InvoiceWorkspace({
   canWrite: boolean;
   invoiceViewer: { id: string; role: string };
   today: string;
+  embedded?: boolean;
 }) {
   const router = useRouter();
   // Keep the matching rows with the remembered query/page. Restoring controls
@@ -170,29 +173,9 @@ export function InvoiceWorkspace({
     else setEditor(null);
   }
   return (
-    <div data-ai-invoice-id={selected?.id} data-ai-company-id={selected?.document.companyId || editor?.companyId || companyId} className="invoice-workspace mx-auto w-full max-w-7xl space-y-6 p-5 pb-12 sm:p-8">
-      <header className="flex flex-wrap items-start justify-between gap-4 border-b pb-6">
-        <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-            Billing
-          </p>
-          <h1 className="text-2xl font-semibold">
-            {editor
-              ? selected
-                ? `Edit ${invoiceLabel(selected)}`
-                : "New invoice"
-              : selected
-                ? invoiceLabel(selected)
-                : "Invoices"}
-          </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {editor
-              ? "Save a draft, review it, then issue when ready."
-              : selected
-                ? "Invoice details, balance and payment history."
-                : "Create invoices and keep track of what you’re owed."}
-          </p>
-        </div>
+    <div data-ai-invoice-id={selected?.id} data-ai-company-id={selected?.document.companyId || editor?.companyId || companyId} className="invoice-workspace w-full space-y-4 pb-6">
+      {selected || editor ? <h2 className="text-sm font-medium">{editor ? selected ? `Edit ${invoiceLabel(selected)}` : "New invoice" : selected ? invoiceLabel(selected) : null}</h2> : null}
+      {!embedded ? <PageActions>
         <div className="flex flex-wrap gap-2">
           {selected || editor ? (
             <Button
@@ -244,8 +227,8 @@ export function InvoiceWorkspace({
             </>
           )}
         </div>
-      </header>
-      {(selected?.document.purchaseOrderId || editor?.purchaseOrderId) && <div className="rounded-lg border bg-muted/30 p-4 text-sm">Linked customer order: <Link className="font-medium text-primary underline" href={`/companies/${(editor ?? selected?.document)?.companyId}?tab=purchase-orders`}>{(editor ?? selected?.document)?.reference || "View order"}</Link>. Invoice quantities and payments are tracked against this order.</div>}
+      </PageActions> : null}
+      {(selected?.document.purchaseOrderId || editor?.purchaseOrderId) && <div className="rounded-lg border bg-muted/30 p-4 text-sm">Linked customer order: <Link className="font-medium text-primary underline" href={`/purchase-orders/${(editor ?? selected?.document)?.purchaseOrderId}`}>{(editor ?? selected?.document)?.reference || "View order"}</Link>. {selected?.order_managed && selected.status === "draft" ? "Edit products, quantities, and customer details on the order. This draft updates automatically; invoice taxes, discounts, and payment details can be edited here." : "Invoice quantities and payments are tracked against this order."}</div>}
       {error ? (
         <div
           role="alert"
@@ -262,13 +245,14 @@ export function InvoiceWorkspace({
       {editor ? (
         <InvoiceEditor
           initial={editor}
+          orderManaged={selected?.order_managed}
           busy={busy}
           onSave={save}
           onCancel={cancelEditor}
         />
       ) : selected ? (
         <>
-          <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/20 p-3 text-sm">
+          {!embedded ? <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/20 p-3 text-sm">
             <span className="font-medium">
               {selected.document.customerName}
             </span>
@@ -302,7 +286,7 @@ export function InvoiceWorkspace({
             >
               Permanent invoice link
             </Link>
-          </div>
+          </div> : null}
           <div className="flex flex-wrap items-center gap-2">
             <Status value={selectedStatus} />
             <span className="mr-auto text-sm text-muted-foreground">
@@ -321,10 +305,10 @@ export function InvoiceWorkspace({
             >
               Reload
             </Button>
-            <Button variant="outline" onClick={() => window.print()}>
+            {!embedded ? <Button variant="outline" onClick={() => window.print()}>
               <Printer />
               Print / Save PDF
-            </Button>
+            </Button> : null}
             {canWrite && canEditSelected ? (
               <Button
                 variant="outline"
@@ -339,13 +323,13 @@ export function InvoiceWorkspace({
                 <Button disabled={busy} onClick={() => setConfirm("issue")}>
                   Issue invoice
                 </Button>
-                <Button
+                {!selected.order_managed ? <Button
                   variant="destructive"
                   disabled={busy}
                   onClick={() => setConfirm("delete")}
                 >
                   Delete draft
-                </Button>
+                </Button> : null}
               </>
             ) : null}
             {canManage &&
@@ -401,7 +385,7 @@ export function InvoiceWorkspace({
               </div>
             </section>
           ) : null}
-          <InvoicePaper invoice={selected} today={today} />
+          {!embedded ? <InvoicePaper invoice={selected} today={today} /> : null}
           {selected.status !== "draft" && <InvoicePortalShortcut key={selected.id} id={selected.id} companyId={selected.company_id} customerName={selected.document.customerName} canWrite={canWrite && invoiceViewer.role !== "viewer"} />}
           <section className="rounded-xl border p-5">
             <h2 className="font-semibold">Payments</h2>
@@ -455,7 +439,7 @@ export function InvoiceWorkspace({
                     });
                     await open(selected.id);
                     setNotice("Payment recorded.");
-                    router.refresh();
+                    if (!embedded) router.refresh();
                   })
                 }
               />
@@ -464,7 +448,7 @@ export function InvoiceWorkspace({
         </>
       ) : (
         <>
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-3 gap-2 sm:gap-3">
             <Metric
               label="Invoices"
               value={String(listing.count)}
@@ -588,10 +572,10 @@ function Metric({
   detail: string;
 }) {
   return (
-    <section className="rounded-xl border p-5">
-      <h2 className="text-sm text-muted-foreground">{label}</h2>
-      <p className="my-2 break-words text-2xl font-semibold">{value}</p>
-      <p className="text-xs text-muted-foreground">{detail}</p>
+    <section className="min-w-0 rounded-lg border px-3 py-3 sm:px-4">
+      <h2 className="min-h-10 text-xs text-muted-foreground sm:min-h-0 sm:text-sm">{label}</h2>
+      <p className="my-1 break-words text-lg font-semibold tabular-nums sm:text-xl">{value}</p>
+      <p className="sr-only text-xs text-muted-foreground sm:not-sr-only">{detail}</p>
     </section>
   );
 }

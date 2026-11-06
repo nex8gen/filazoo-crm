@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { invoiceCurrencies } from "./invoices.ts";
+import { invoiceCurrencies, invoiceDocumentSchema } from "./invoices.ts";
 
 export const poStatuses = [
   "draft",
@@ -31,13 +31,23 @@ export const orderCustomerSchema = z.object({
 });
 export type OrderCustomer = z.infer<typeof orderCustomerSchema>;
 export type OrderProfile = {
+  country?: string;
   customer: OrderCustomer;
   commerce: import("./company-commerce.ts").CompanyCommerce;
   contacts: { id: string; name: string; role: string; email: string }[];
 };
+export const orderBillingSchema = z.object({
+  issueDate: invoiceDocumentSchema.shape.issueDate,
+  dueDate: invoiceDocumentSchema.shape.dueDate,
+  discountMinor: invoiceDocumentSchema.shape.discountMinor,
+  taxBps: z.number().int().min(0).max(10000),
+  paymentMethods: invoiceDocumentSchema.shape.paymentMethods,
+}).strict();
+export type OrderBilling = z.infer<typeof orderBillingSchema>;
 export const purchaseOrderSchema = z
   .object({
     customer: orderCustomerSchema.optional(),
+    billing: orderBillingSchema.optional(),
     reference: z
       .string()
       .trim()
@@ -56,6 +66,7 @@ export const purchaseOrderSchema = z
     shippingRecipient: z.string().trim().max(160),
     shippingPhone: z.string().trim().max(80),
     notes: z.string().trim().max(5000),
+    tags: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
     items: z
       .array(
         z.object({
@@ -105,9 +116,20 @@ export const purchaseOrderSchema = z
   .refine(
     (po) => purchaseOrderTotal(po.items) <= 1_000_000_000_000,
     "Order total is too large.",
-  );
+  )
+  .superRefine((po, ctx) => {
+    const billing = po.billing;
+    if (!billing) return;
+    if (billing.dueDate < billing.issueDate) ctx.addIssue({ code: "custom", message: "Due date must be on or after the issue date.", path: ["billing", "dueDate"] });
+    if (billing.discountMinor > purchaseOrderTotal(po.items)) ctx.addIssue({ code: "custom", message: "Discount cannot exceed the order subtotal.", path: ["billing", "discountMinor"] });
+    if (billing.paymentMethods?.some(method => method.currency && method.currency !== po.currency)) ctx.addIssue({ code: "custom", message: "Choose payment methods for the order currency.", path: ["billing", "paymentMethods"] });
+  });
 export type PurchaseOrderDocument = z.infer<typeof purchaseOrderSchema>;
+// A new order may omit the customer's external reference; the database fills it
+// from the generated order number before applying the stored-document constraints.
+export const purchaseOrderCreateSchema = purchaseOrderSchema.safeExtend({ reference: z.string().trim().max(100) });
 export type PurchaseOrder = {
+  number?: number;
   invoices?: OrderInvoice[];
   id: string;
   company_id: string;
@@ -115,18 +137,29 @@ export type PurchaseOrder = {
   document: PurchaseOrderDocument;
   total_minor: number;
   created_at: string;
+  updated_at?: string;
 };
+export type PurchaseOrderActivity = { id: string; createdAt: string; type: string; summary: string };
+export function purchaseOrderLabel(order: Pick<PurchaseOrder, "number" | "document">) {
+  return order.number ? `#${order.number}` : order.document.reference;
+}
 export type OrderInvoice = {
   id: string;
+  order_managed?: boolean;
+  last_sent_at?: string | null;
   number: number;
   status: "draft" | "issued" | "void";
   total_minor: number;
   paid_minor: number;
   document: {
+    purchaseOrderId?: string;
     currency: string;
     items: { purchaseOrderLineId?: string; quantity: number }[];
   };
 };
+export function orderInvoiceLocksDetails(invoice: OrderInvoice) {
+  return invoice.status === "issued" || (invoice.status === "draft" && !invoice.order_managed);
+}
 export function orderLineId(index: number) {
   return `line-${index + 1}`;
 }

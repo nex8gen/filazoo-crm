@@ -2,7 +2,7 @@
 
 import { Activity, type ReactNode, useOptimistic, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Building2, ChartNoAxesCombined, ClipboardList, History, Mail, MessageCircle, ReceiptText } from "lucide-react";
+import { Building2, ChartNoAxesCombined, ClipboardList, History, Mail, MessageCircle } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CompanyBillingSkeleton } from "@/components/workspace-skeletons";
 import { companyTab, companyTabHref, type CompanyTab } from "@/lib/company-tabs";
@@ -12,7 +12,6 @@ const sections = [
   { value: "email", label: "Email", icon: Mail },
   { value: "purchase-orders", label: "Purchase orders", icon: ClipboardList },
   { value: "analyse", label: "Analyse", icon: ChartNoAxesCombined },
-  { value: "invoices", label: "Invoices", icon: ReceiptText },
   { value: "customer-portal", label: "Customer portal", icon: MessageCircle },
   { value: "history", label: "Activity history", icon: History },
 ] as const;

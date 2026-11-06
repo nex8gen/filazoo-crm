@@ -10,6 +10,7 @@ import { useLanguage } from "@/components/language-provider";
 import { AnalyticsFilters, initialAnalyticsFilters } from "@/components/analytics-filters";
 import { analyticsChange, analyticsCsv, channelLabels, computeAnalytics, type AnalyticsDashboardData, type AnalyticsSource } from "@/lib/analytics-dashboard";
 import { Button } from "@/components/ui/button";
+import { PageActions } from "@/components/page-header";
 
 const AnalyticsChart = dynamic(() => import("@/components/analytics-chart").then(module => module.AnalyticsChart), { loading: () => <div className="h-[250px] animate-pulse rounded-lg bg-muted/50" aria-label="Loading chart" /> });
 const count = (value: number) => value.toLocaleString();
@@ -79,11 +80,10 @@ export function AnalyticsDashboard({ data }: { data: AnalyticsDashboardData }) {
     const anchor = document.createElement("a"); anchor.href = url; anchor.download = `filazoo-analytics-${filters.from}-${filters.to}.csv`; anchor.click(); URL.revokeObjectURL(url);
   }
 
-  return <div className="mx-auto max-w-[1500px] space-y-5 pb-8">
-    <header className="flex flex-wrap items-start justify-between gap-4">
-      <div><p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Workspace overview</p><h1 className="text-3xl font-semibold tracking-tight">Analytics</h1><p className="mt-2 text-sm text-muted-foreground">From first conversation to paid invoice.</p></div>
+  return <div className="w-full space-y-5 pb-8">
+    <PageActions>
       <div className="flex flex-wrap items-center gap-2"><span className="mr-2 inline-flex items-center gap-1.5 text-[11px] text-muted-foreground"><span className={`size-1.5 rounded-full ${failures.length ? "bg-amber-500" : "bg-emerald-500"}`} />Updated {refreshed} CST</span><Button size="sm" variant="outline" disabled={refreshing} onClick={() => startRefresh(() => router.refresh())}><RefreshCw className={refreshing ? "animate-spin" : ""} />{refreshing ? "Refreshing…" : "Refresh"}</Button><Button size="sm" variant="outline" onClick={exportReport}><Download />Export CSV</Button></div>
-    </header>
+    </PageActions>
     <AnalyticsFilters value={filters} data={data} onChange={setFilters} />
     {failures.length ? <div role="alert" className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-xs"><CircleAlert className="size-4 shrink-0 text-amber-600" /><div><p className="font-medium">Some reports could not be loaded</p><p className="mt-1 text-muted-foreground">{failures.map(source => source.label).join(", ")}. Affected metrics are marked unavailable.</p></div></div> : null}
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -111,11 +111,11 @@ export function AnalyticsDashboard({ data }: { data: AnalyticsDashboardData }) {
       </Panel>
     </div>
     <div id="billing" className="grid scroll-mt-5 gap-4 xl:grid-cols-2">
-      <Panel title="Orders & receivables" subtitle="Order activity for the period · balances as of now" link={{ href: "/invoices", label: "Invoices" }} available={billingReady && ready("orders")}>
+      <Panel title="Orders & receivables" subtitle="Order activity for the period · balances as of now" link={{ href: "/purchase-orders", label: "Purchase orders" }} available={billingReady && ready("orders")}>
         <div className="grid grid-cols-2 gap-x-6 gap-y-7"><SmallMetric label="Confirmed order value" value={money(report.current.orderValue / 100)} /><SmallMetric label="Outstanding balance" value={money(report.outstanding / 100)} /><SmallMetric label="Orders in period" value={report.current.periodOrders.length} /><SmallMetric label="Overdue balance" value={money(report.overdue / 100)} warning={report.overdue > 0} /></div>
         <p className="mt-5 border-t pt-3 text-[11px] leading-relaxed text-muted-foreground">Orders use their order date and exclude drafts and cancellations. Receivables include all issued unpaid invoices in {filters.currency}, regardless of the date range.</p>
       </Panel>
-      <Panel title="Overdue invoices" subtitle="Unpaid issued invoices past their due date · current" link={{ href: "/invoices?status=issued", label: "View issued" }} available={billingReady}>
+      <Panel title="Overdue invoices" subtitle="Unpaid issued invoices past their due date · current" link={{ href: "/purchase-orders", label: "View orders" }} available={billingReady}>
         {overdueInvoices.length ? <div className="divide-y">{overdueInvoices.slice(0, 5).map(invoice => <Link key={invoice.id} href={`/invoices/${invoice.id}`} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0 hover:text-primary"><div className="min-w-0"><p className="truncate text-xs font-medium">Invoice #{invoice.number}{invoice.companyId ? ` · ${report.companyMap.get(invoice.companyId)?.name ?? "Company"}` : ""}</p><p className="mt-1 text-[11px] text-muted-foreground">Due {invoice.dueDate}</p></div><span className="shrink-0 text-xs font-medium tabular-nums">{money((invoice.totalMinor - invoice.paidMinor) / 100)}</span></Link>)}</div> : <Empty>No overdue invoices in this currency and company scope.</Empty>}
       </Panel>
     </div>

@@ -1,7 +1,8 @@
-export const companyTabs = ["profile", "email", "purchase-orders", "analyse", "invoices", "customer-portal", "history"] as const;
+export const companyTabs = ["profile", "email", "purchase-orders", "analyse", "customer-portal", "history"] as const;
 export type CompanyTab = typeof companyTabs[number];
 
 export function companyTab(value: unknown): CompanyTab {
+  if (value === "invoices") return "purchase-orders";
   return typeof value === "string" && companyTabs.some(tab => tab === value) ? value as CompanyTab : "profile";
 }
 

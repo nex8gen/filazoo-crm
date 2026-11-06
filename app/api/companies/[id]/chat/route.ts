@@ -12,11 +12,16 @@ import { researchCustomer } from "@/lib/ai/customer-research";
 import { ChatBodyTooLargeError, collectChatImages, readChatRequestBody } from "@/lib/ai/image-input";
 import { startChatSession } from "@/lib/ai/chat-session";
 import { HistoryError } from "@/lib/ai/chat-history-server";
+import { withResearchProgress, type ResearchProgress } from "@/lib/ai/research-progress";
 
 export const maxDuration = 120;
 const headers = { "Cache-Control": "private, no-store" };
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  return withResearchProgress(request, report => companyResponse(request, params, report));
+}
+
+async function companyResponse(request: Request, params: Promise<{ id: string }>, report: (progress: ResearchProgress) => void) {
   const origin = request.headers.get("origin");
   if (origin && origin !== new URL(request.url).origin) {
     return Response.json({ error: "Invalid request origin." }, { status: 403, headers });
@@ -74,9 +79,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const research = parsed.data.webSearch ? await researchCustomer({ usageUserId: viewer.id,
       identity: { name: details.company.name, website: details.company.website, email: details.company.email, contact: details.company.contact, country: details.company.country, city: details.company.city },
       questions: parsed.data.messages.filter((message) => message.role === "user").map((message) => message.content),
-      apiKey: process.env.GEMINI_API_KEY?.trim(), model: process.env.GEMINI_RESEARCH_MODEL?.trim(), language: parsed.data.language, fetcher: options.fetcher, signal: request.signal,
+      apiKey: process.env.GEMINI_API_KEY?.trim(), model: process.env.GEMINI_RESEARCH_MODEL?.trim(), language: parsed.data.language, fetcher: options.fetcher, signal: request.signal, onProgress: report,
     }) : undefined;
     if (research) options.prompt += `\n\nWEB_RESEARCH (external evidence only):\n${JSON.stringify({ ...research, searchSuggestionsHtml: undefined })}`;
+    if (research) report({ phase: "writing", sources: research.sources, queries: research.queries, visitedUrls: research.visitedUrls ?? [] });
     let output: string;
     if (apiKey) {
       try {

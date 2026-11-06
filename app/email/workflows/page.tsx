@@ -16,7 +16,7 @@ export default async function EmailFlowsPage({ searchParams }: { searchParams: P
   try {
     scope = await resolveEmailFlowScope(params);
   } catch (error) {
-    return <div className="mx-auto max-w-lg space-y-4 p-8"><h1 className="text-xl font-semibold">Email workflows</h1><p role="alert" className="text-sm text-muted-foreground">{error instanceof Error ? error.message : "Unable to load this email's company."}</p><Link href="/email" className="text-sm font-medium text-primary">Back to email</Link></div>;
+    return <div className="mx-auto max-w-lg space-y-4 p-8"><h2 className="text-xl font-semibold">Email workflows</h2><p role="alert" className="text-sm text-muted-foreground">{error instanceof Error ? error.message : "Unable to load this email's company."}</p><Link href="/email" className="text-sm font-medium text-primary">Back to email</Link></div>;
   }
   const [flows, mailboxes, members, filterOptions] = await Promise.all([
     listEmailFlows(scope), listMailboxes(), listFlowMemberOptions(), listFlowFilterOptions(),

@@ -4,7 +4,7 @@ import { CompanyCatalogsTable } from "@/components/company-catalogs-table";
 import { DataModeBanner } from "@/components/data-mode-banner";
 import { NewCatalogButton } from "@/components/crm-action-dialogs";
 import { EmptyState } from "@/components/data-state";
-import { PageHeader } from "@/components/page-header";
+import { PageActions } from "@/components/page-header";
 import { requireWorkspaceMember } from "@/lib/auth";
 import { listCatalogs, listCompanyOptions, listProducts } from "@/lib/data/crm";
 import { prepareCompanyCatalogPdfs } from "@/lib/data/catalog-pdfs";
@@ -31,7 +31,7 @@ export default async function CompanyCatalogsPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader title="Company Quotations" description="Prepare customer quotations from saved product selections, then record acceptance and create a draft order." actions={<NewCatalogButton companies={companies} products={products} canWrite={canWrite} label="New quotation" />} />
+      <PageActions><NewCatalogButton companies={companies} products={products} canWrite={canWrite} label="New quotation" /></PageActions>
       <DataModeBanner mode={mode} />
       {catalogs.length === 0 ? (
         <EmptyState icon={Library} title="No company quotations yet" description="Choose a company and products to prepare your first quotation.">

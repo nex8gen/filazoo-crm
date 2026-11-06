@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { HeaderSkeleton, LoadingRegion, TableSkeleton } from "@/components/page-skeletons";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageActions } from "@/components/page-header";
 import { AuthShell } from "@/components/auth-shell";
 
 function PanelSkeleton({ className = "", children }: { className?: string; children?: ReactNode }) {
@@ -23,8 +24,9 @@ function PaginationSkeleton() {
 }
 
 export function DashboardSkeleton() {
-  return <LoadingRegion label="Loading dashboard" className="mx-auto max-w-[1500px] space-y-6">
-    <div className="rounded-xl border bg-card p-5 shadow-sm"><div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between"><div className="min-w-0"><Skeleton className="mb-2 h-4 w-48 max-w-full" /><Skeleton className="h-8 w-52 max-w-full" /><Skeleton className="mt-1 h-5 w-96 max-w-full" /></div><div className="flex flex-wrap gap-2 xl:max-w-[850px]">{["w-60", "w-36", "w-24", "w-32"].map((width) => <Skeleton key={width} className={`h-9 max-w-full ${width}`} />)}</div></div></div>
+  return <LoadingRegion label="Loading dashboard" className="w-full space-y-6">
+    <HeaderSkeleton />
+    <div className="flex flex-wrap gap-2">{["w-60", "w-36", "w-24", "w-32"].map((width) => <Skeleton key={width} className={`h-9 max-w-full ${width}`} />)}</div>
     <Skeleton className="h-8 w-full rounded-lg" />
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 4 }, (_, index) => <div key={index} className="rounded-xl border bg-card p-5 shadow-sm"><div className="flex justify-between gap-3"><Skeleton className="h-4 w-24" /><Skeleton className="h-4 w-12" /></div><Skeleton className="mt-3 h-8 w-28" /><Skeleton className="mt-1 h-4 w-24" /></div>)}</div>
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">{["xl:col-span-12", "xl:col-span-4", "xl:col-span-8", "xl:col-span-4", "xl:col-span-5", "xl:col-span-7"].map((span, index) => <PanelSkeleton key={index} className={span}><div className="mt-6 flex h-64 items-end gap-3 border-b border-l px-4 pb-3 pt-6">{["h-1/3", "h-1/2", "h-2/5", "h-3/4", "h-3/5", "h-5/6", "h-2/3"].map((height, bar) => <Skeleton key={bar} className={`min-w-0 flex-1 rounded-t-md ${height}`} />)}</div></PanelSkeleton>)}</div>
@@ -32,7 +34,7 @@ export function DashboardSkeleton() {
 }
 
 export function ProductsSkeleton() {
-  return <LoadingRegion label="Loading products" className="space-y-6"><Skeleton className="h-7 w-28" /><TableSkeleton /></LoadingRegion>;
+  return <LoadingRegion label="Loading products"><TableSkeleton /></LoadingRegion>;
 }
 
 export function CatalogsSkeleton() {
@@ -40,13 +42,13 @@ export function CatalogsSkeleton() {
 }
 
 function InvoiceHeaderSkeleton() {
-  return <div className="flex flex-wrap items-start justify-between gap-4 border-b pb-6"><div className="min-w-0"><Skeleton className="mb-2 h-4 w-16" /><Skeleton className="h-8 w-40" /><Skeleton className="mt-2 h-5 w-96 max-w-full" /></div><div className="flex gap-2"><Skeleton className="h-9 w-24" /><Skeleton className="h-9 w-28" /></div></div>;
+  return <PageActions><Skeleton className="h-9 w-24" /><Skeleton className="h-9 w-28" /></PageActions>;
 }
 
 export function InvoicesSkeleton() {
-  return <LoadingRegion label="Loading invoices" className="invoice-workspace mx-auto w-full max-w-7xl space-y-6 p-5 pb-12 sm:p-8">
+  return <LoadingRegion label="Loading invoices" className="invoice-workspace w-full space-y-4 pb-6">
     <InvoiceHeaderSkeleton />
-    <div className="grid gap-4 sm:grid-cols-3">{Array.from({ length: 3 }, (_, index) => <div key={index} className="rounded-xl border p-5"><Skeleton className="h-5 w-28" /><Skeleton className="my-2 h-8 w-24" /><Skeleton className="h-4 w-full" /></div>)}</div>
+    <div className="grid grid-cols-3 gap-2 sm:gap-3">{Array.from({ length: 3 }, (_, index) => <div key={index} className="min-w-0 rounded-lg border px-3 py-3 sm:px-4"><Skeleton className="h-10 w-full sm:h-5 sm:w-28" /><Skeleton className="my-1 h-7 w-full sm:w-24" /><Skeleton className="hidden h-4 w-full sm:block" /></div>)}</div>
     <div className="flex flex-wrap items-end gap-3"><div className="flex-[1_1_16rem]"><FieldSkeleton /></div><div className="w-40 max-w-full"><FieldSkeleton /></div><Skeleton className="h-10 w-24" /></div>
     <div className="crm-table-frame"><RowsSkeleton columns={7} /></div>
     <div className="flex items-center justify-between gap-3"><Skeleton className="h-5 w-32" /><Skeleton className="h-9 w-40" /></div>
@@ -54,7 +56,7 @@ export function InvoicesSkeleton() {
 }
 
 export function InvoiceEditorSkeleton() {
-  return <LoadingRegion label="Loading invoice editor" className="invoice-workspace mx-auto w-full max-w-7xl space-y-6 p-5 pb-12 sm:p-8"><InvoiceHeaderSkeleton />
+  return <LoadingRegion label="Loading invoice editor" className="invoice-workspace w-full space-y-4 pb-6"><InvoiceHeaderSkeleton />
     <div className="space-y-7">
       <div className="grid gap-6 lg:grid-cols-2">{Array.from({ length: 2 }, (_, index) => <PanelSkeleton key={index}><div className="mt-4 space-y-4">{Array.from({ length: 4 }, (_, field) => <FieldSkeleton key={field} />)}</div></PanelSkeleton>)}</div>
       <div className="grid gap-4 rounded-xl border p-5 sm:grid-cols-2 lg:grid-cols-4">{Array.from({ length: 4 }, (_, index) => <FieldSkeleton key={index} />)}</div>
@@ -65,7 +67,7 @@ export function InvoiceEditorSkeleton() {
 }
 
 export function InvoiceDetailsSkeleton() {
-  return <LoadingRegion label="Loading invoice details" className="invoice-workspace mx-auto w-full max-w-7xl space-y-6 p-5 pb-12 sm:p-8"><InvoiceHeaderSkeleton /><Skeleton className="h-12 w-full rounded-lg border" /><div className="flex flex-wrap items-center gap-2"><Skeleton className="h-6 w-16 rounded-full" /><Skeleton className="mr-auto h-5 w-32" /><Skeleton className="h-9 w-24" /><Skeleton className="h-9 w-36" /></div><div className="mx-auto w-full max-w-[210mm] space-y-8 rounded-lg border bg-card p-6 sm:p-10"><div className="flex justify-between gap-6"><Skeleton className="h-16 w-40" /><Skeleton className="h-20 w-40" /></div><div className="grid gap-6 sm:grid-cols-2"><Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /></div><RowsSkeleton columns={4} rows={4} /><Skeleton className="ml-auto h-24 w-56 max-w-full" /><Skeleton className="h-24 w-full" /></div></LoadingRegion>;
+  return <LoadingRegion label="Loading invoice details" className="invoice-workspace w-full space-y-4 pb-6"><InvoiceHeaderSkeleton /><Skeleton className="h-12 w-full rounded-lg border" /><div className="flex flex-wrap items-center gap-2"><Skeleton className="h-6 w-16 rounded-full" /><Skeleton className="mr-auto h-5 w-32" /><Skeleton className="h-9 w-24" /><Skeleton className="h-9 w-36" /></div><div className="mx-auto w-full max-w-[210mm] space-y-8 rounded-lg border bg-card p-6 sm:p-10"><div className="flex justify-between gap-6"><Skeleton className="h-16 w-40" /><Skeleton className="h-20 w-40" /></div><div className="grid gap-6 sm:grid-cols-2"><Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /></div><RowsSkeleton columns={4} rows={4} /><Skeleton className="ml-auto h-24 w-56 max-w-full" /><Skeleton className="h-24 w-full" /></div></LoadingRegion>;
 }
 
 export function RepliesSkeleton() {

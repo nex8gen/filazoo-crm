@@ -1,6 +1,7 @@
 "use client";
 
 import { EmptyState } from "@/components/data-state";
+import { PageActions } from "@/components/page-header";
 import { AiIcon } from "@/components/ai-icon";
 
 import { useLanguage } from "@/components/language-provider";
@@ -210,18 +211,15 @@ export function MessengerInbox({ data }: { data: MetaInboxData }) {
   }
 
   return (
-    <div data-ai-conversation-id={selectedThread?.id} className="messenger-workspace flex h-dvh flex-col overflow-hidden bg-[#f7f8fa] dark:bg-background">
+    <div data-ai-conversation-id={selectedThread?.id} className="messenger-workspace flex h-full min-h-0 flex-col overflow-hidden bg-[#f7f8fa] dark:bg-background">
       <div className={`${mobileReading ? "hidden md:block" : ""} shrink-0 border-b bg-background px-4 pb-3 pt-4 sm:px-6`}>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-[1.9rem] font-semibold tracking-[-0.02em]">Messenger</h1>
-          </div>
+        <PageActions>
           <div className="flex items-center gap-2">
             <div className="hidden items-center gap-2 rounded-md border bg-background px-3 py-2 text-xs text-muted-foreground sm:flex"><span className={`size-2 rounded-full ${data.connection.configured ? "bg-emerald-500" : "bg-amber-400"}`} />{data.connection.configured ? `Live · ${[data.connection.pageName, data.connection.instagramName, data.connection.whatsappConfigured ? (data.connection.whatsappSandbox ? "WhatsApp sandbox (test)" : "WhatsApp") : null].filter(Boolean).join(" + ") || "Meta"}` : "Disconnected · Meta setup needed"}</div>
             <Link href="/settings" className="inline-flex h-9 items-center gap-2 rounded-md border bg-background px-3 text-xs font-medium hover:bg-muted"><Settings2 className="size-4" />Inbox settings</Link>
           </div>
-        </div>
-        <div className="mt-3 flex gap-1 overflow-x-auto" aria-label="Messaging channels">
+        </PageActions>
+        <div className="flex gap-1 overflow-x-auto" aria-label="Messaging channels">
           {channelOptions.map((channel) => {
             const active = channel.id === activeChannel;
             const connected = isChannelConnected(channel.id);

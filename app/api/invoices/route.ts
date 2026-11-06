@@ -29,6 +29,7 @@ export async function GET(request: Request) {
         (url.searchParams.get("search") ?? "").slice(0, 200),
         url.searchParams.get("status") ?? "",
         companyId,
+        url.searchParams.get("legacy") === "1",
       ),
       { headers: { "Cache-Control": "no-store" } },
     );

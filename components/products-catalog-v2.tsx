@@ -134,7 +134,7 @@ export function ProductEditor({ product, open = true, onOpenChange, canWrite, mo
   }
 
   const contents = <div className="space-y-5">
-      {fullPage ? <div><h1 className="text-xl font-semibold">{product?.name}</h1><p className="mt-1 text-sm text-muted-foreground">Your prices, product details, and photos are private to your account. Your catalogs and AI automations use these saved details.</p></div> : <DialogHeader><DialogTitle>{product ? product.name : "Add product"}</DialogTitle><DialogDescription>{canWrite ? "Edit product details and manage every variant individually." : "View product details and variants."}</DialogDescription></DialogHeader>}
+      {fullPage ? <div><h2 className="text-xl font-semibold">{product?.name}</h2><p className="mt-1 text-sm text-muted-foreground">Your prices, product details, and photos are private to your account. Your catalogs and AI automations use these saved details.</p></div> : <DialogHeader><DialogTitle>{product ? product.name : "Add product"}</DialogTitle><DialogDescription>{canWrite ? "Edit product details and manage every variant individually." : "View product details and variants."}</DialogDescription></DialogHeader>}
       <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
         <fieldset disabled={saving || uploading} className="contents">
         <input type="hidden" name="variants" />

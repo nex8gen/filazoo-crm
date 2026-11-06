@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { PageHeader } from "@/components/page-header";
+import { PageActions } from "@/components/page-header";
 import { MetaLeadsTable } from "@/components/meta-leads-table";
 import { MetaLeadRefresh } from "@/components/meta-lead-refresh";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,7 +39,7 @@ export default async function MetaLeadsPage() {
   } else loadError = "Connect the CRM database before receiving leads.";
 
   return <div className="space-y-6">
-    <PageHeader title="Meta Leads" description="Submissions create company profiles and contacts automatically. This connection log refreshes every 15 seconds." actions={<MetaLeadRefresh />} />
+    <PageActions><MetaLeadRefresh /></PageActions>
     <p className="text-sm"><Link href="/companies" className="font-medium underline">Open Companies</Link> to manage Meta and Shopify leads together.</p>
     {isAdmin ? <Card>
       <CardHeader><CardTitle>Simple connection with Make</CardTitle></CardHeader>

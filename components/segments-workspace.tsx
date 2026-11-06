@@ -6,7 +6,7 @@ import Link from "next/link";
 import { ArrowRight, Building2, Globe2, Mail, Plus, Search, Tags, Trash2, Users, Workflow, Zap } from "lucide-react";
 import { CreateSegmentDialog } from "@/components/create-segment-dialog";
 import { DeleteSegmentDialog, type DeletableSegment } from "@/components/delete-segment-dialog";
-import { PageHeader } from "@/components/page-header";
+import { PageActions } from "@/components/page-header";
 import { EmptyState } from "@/components/data-state";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,7 +44,7 @@ export function SegmentsWorkspace({ companies, savedSegments, canWrite, canDelet
   const createButton = <Button size="sm" onClick={() => setCreateOpen(true)} disabled={!canWrite} title={canWrite ? "Create segment" : "Viewer access is read-only"}><Plus className="size-4" />Create segment</Button>;
 
   return <div className="min-w-0 space-y-6 pb-8">
-    <PageHeader title="Segments" description="Understand your audiences and organize company relationships." actions={createButton} />
+    <PageActions>{createButton}</PageActions>
     <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
       {[
         { label: "Total segments", value: segments.length.toLocaleString(), detail: `${savedSegments.length} saved · ${segments.length - savedSegments.length} business`, icon: Tags },

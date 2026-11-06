@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import * as researchRequest from "../lib/ai/research-request.ts";
+import * as requestContext from "../lib/ai/request-context.ts";
 import { policyTestDependency } from "./helpers/ai-policy.ts";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
@@ -24,6 +26,7 @@ function load<T>(file: string, dependencies: Record<string, unknown>, extra = {}
     if (name === "server-only") return {};
     if (name === "@/lib/ai/provider-credentials") return credentials;
     if (name === "@/lib/workspace-context") return policyTestDependency(name);
+    if (name === "@/lib/ai/research-progress") return policyTestDependency(name);
     if (name in dependencies) return dependencies[name];
     if (name.replace(/\.ts$/, "") in dependencies) return dependencies[name.replace(/\.ts$/, "")];
     throw new Error(`Unexpected dependency: ${name}`);
@@ -124,6 +127,8 @@ function assistantFixture(policy: rules.AiPolicy) {
   const calls: string[] = [];
   let sessionCalls = 0;
   const route = load<Post>("../app/api/ai/assistant/route.ts", {
+    "@/lib/ai/research-request": researchRequest,
+    "@/lib/ai/request-context": requestContext,
     "@/lib/data/ai-settings": gates(policy), "@/lib/ai-policy": rules,
     "@/lib/auth": { getWorkspaceViewer: async () => ({ id: userId, role: "admin" }) },
     "@/lib/ai/workspace-assistant": assistant, "@/lib/i18n": { translateUiText: (text: string) => text },

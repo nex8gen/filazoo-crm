@@ -6,6 +6,7 @@ import { FlowSenderField } from "@/components/flow-sender-field";
 import { flowSenderOptions, type FlowMailboxOption } from "@/lib/flow-mailboxes";
 
 import { EmptyState } from "@/components/data-state";
+import { PageActions } from "@/components/page-header";
 import Link from "next/link";
 import { isSegmentAudienceFlow, segmentCompaniesHref } from "@/lib/segment-flows";
 import { useLanguage } from "@/components/language-provider";
@@ -893,16 +894,12 @@ function FlowListView({ flows, canEdit, viewerId, isAdmin, memberOptions, onCrea
   }
 
   return <section className="scroll-surface h-full min-h-0 overflow-y-auto bg-muted/20">
-    <div className="w-full px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <span className="grid size-10 shrink-0 place-items-center rounded-xl border bg-background text-primary shadow-sm"><Workflow className="size-5" /></span>
-          <div><h1 className="text-xl font-semibold tracking-tight">{scopedContext ? "Email workflows" : "Workflow"}</h1><p className="mt-1 text-sm text-muted-foreground">Build, monitor, and improve automated customer journeys.</p></div>
-        </div>
-        <Button size="lg" onClick={onCreate} disabled={!canEdit || bulkBusy} className="shadow-sm"><Plus />Create workflow</Button>
-      </div>
+    <div className="w-full px-5 pb-6 pt-2 sm:px-6">
+      <PageActions>
+        <Button onClick={onCreate} disabled={!canEdit || bulkBusy}><Plus />Create workflow</Button>
+      </PageActions>
 
-      <div className="mt-6 grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-3">
         <FlowSummary icon={Workflow} label="Live workflows" value={liveFlows} detail={`${flows.length} total`} tone="bg-primary/10 text-primary" />
         <FlowSummary icon={Play} label="Active runs" value={activeRuns} detail="Currently in progress" tone="bg-blue-500/10 text-blue-600 dark:text-blue-400" />
         <FlowSummary icon={CheckCircle2} label="Completed" value={completedRuns} detail="All-time journeys" tone="bg-violet-500/10 text-violet-600 dark:text-violet-400" />

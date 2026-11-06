@@ -67,6 +67,8 @@ test("native SDK reads real records then stages a quotation without a business w
   assert.match(JSON.stringify(plan.actions), /create_quotation/);
   assert.doesNotMatch(JSON.stringify(plan.actions), /invoice/);
   assert.equal(model.doGenerateCalls[0].providerOptions?.openai?.store, false);
+  assert.match(JSON.stringify(model.doGenerateCalls[0].prompt), /REQUEST CONTEXT PRIORITY/);
+  assert.match(JSON.stringify(model.doGenerateCalls[0].prompt), /The page is context, not a restriction/);
 });
 
 test("failed or mixed native tool batches cannot leak partial proposals", async () => {

@@ -6,7 +6,7 @@ import { requireWorkspaceMember } from "@/lib/auth";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import {
   purchaseOrderSchema,
-  purchaseOrderTotal,
+  purchaseOrderCreateSchema,
   orderBillingSummary,
   orderLineId,
   type PurchaseOrder,
@@ -26,6 +26,7 @@ import {
 } from "@/lib/purchase-order-links";
 import { createInvoice } from "@/lib/data/invoices";
 import { invoiceCurrencies, type InvoiceDocument } from "@/lib/invoices";
+import { purchaseOrderAmounts } from "@/lib/purchase-order-billing";
 
 export async function getPurchaseOrderCatalogAvailability() {
   await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
@@ -68,6 +69,7 @@ export async function getPurchaseOrderProfile(
   const commerce = commerceDefaults(billing.data?.profile);
   const contact = contacts.data?.[0];
   return {
+    country: company.data.country || "",
     commerce,
     contacts: (contacts.data ?? []).map((item) => ({
       ...item,
@@ -121,7 +123,7 @@ export async function listCompanyPurchaseOrders(companyId: string, page = 0, ord
   let query = createSupabaseAdmin()
     .from("purchase_orders")
     .select(
-      "id,company_id,version,document,total_minor,created_at,invoices:invoices!invoices_purchase_order_id_fkey(id,number,status,total_minor,paid_minor,document)",
+      "id,number,company_id,version,document,total_minor,created_at,invoices:invoices!invoices_purchase_order_id_fkey(id,number,status,total_minor,paid_minor,document,order_managed,last_sent_at)",
       {
         count: "exact",
       },
@@ -161,7 +163,7 @@ export async function savePurchaseOrder(
       version: z.number().int().min(0),
     })
     .safeParse({ companyId, orderId, version });
-  const parsed = purchaseOrderSchema.safeParse(input);
+  const parsed = (orderId ? purchaseOrderSchema : purchaseOrderCreateSchema).safeParse(input);
   if (!ids.success || !parsed.success)
     return {
       error: parsed.error?.issues[0]?.message || "Invalid purchase order.",
@@ -242,7 +244,7 @@ export async function savePurchaseOrder(
   const values = {
     document: parsed.data,
     reference: parsed.data.reference,
-    total_minor: purchaseOrderTotal(parsed.data.items),
+    total_minor: purchaseOrderAmounts(parsed.data).total,
     updated_by: viewer.id,
     updated_at: new Date().toISOString(),
     version: version + 1,
@@ -276,6 +278,10 @@ export async function savePurchaseOrder(
         "This PO was changed by another user. Close the editor and reload before editing again.",
     };
   revalidatePath(`/companies/${companyId}`);
+  revalidatePath("/invoices", "layout");
+  revalidatePath("/purchase-orders");
+  revalidatePath(`/purchase-orders/${result.data.id}`);
+  revalidatePath(`/purchase-orders/${result.data.id}/edit`);
   return { success: "Purchase order saved.", orderId: result.data.id };
 }
 
@@ -296,7 +302,7 @@ export async function createOrderInvoice(
   const { data, error } = await createSupabaseAdmin()
     .from("purchase_orders")
     .select(
-      "*,invoices:invoices!invoices_purchase_order_id_fkey(id,number,status,total_minor,paid_minor,document)",
+      "*,invoices:invoices!invoices_purchase_order_id_fkey(id,number,status,total_minor,paid_minor,document,order_managed,last_sent_at)",
     )
     .eq("id", orderId)
     .eq("company_id", companyId)
@@ -307,6 +313,8 @@ export async function createOrderInvoice(
     ...data,
     document: purchaseOrderSchema.parse(data.document),
   } as PurchaseOrder;
+  const automaticDraft = order.invoices?.find(invoice => invoice.status === "draft" && invoice.order_managed);
+  if (automaticDraft) return { invoiceId: automaticDraft.id };
   if (["draft", "cancelled"].includes(order.document.status))
     return { error: "Confirm the order before creating an invoice." };
   const summary = orderBillingSummary(order);
@@ -350,6 +358,9 @@ export async function createOrderInvoice(
     };
     const invoice = await createInvoice(document, viewer.id);
     revalidatePath(`/companies/${companyId}`);
+    revalidatePath("/purchase-orders");
+    revalidatePath(`/purchase-orders/${orderId}`);
+    revalidatePath(`/purchase-orders/${orderId}/edit`);
     return { invoiceId: invoice.id };
   } catch (error) {
     const issue = error as { code?: string; message?: string };

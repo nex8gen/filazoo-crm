@@ -74,7 +74,7 @@ export function QuotationWorkspace({ initialDetail }: { initialDetail: Quotation
   return <div data-no-translate className="mx-auto max-w-6xl space-y-5 [&_input:disabled]:opacity-100 [&_textarea:disabled]:opacity-100 [&_select:disabled]:opacity-100">
     <Link href="/company-quotations" className="text-sm text-muted-foreground hover:underline">← {c("Company quotations", "公司报价")}</Link>
     <div className="flex flex-wrap items-start justify-between gap-3">
-      <div><div className="flex flex-wrap items-center gap-3"><h1 className="text-2xl font-semibold">{quotationLabel(catalog)}</h1><Badge variant="secondary">{language === "zh-CN" ? statusZh[state] : quotationStatusLabels[state]}</Badge></div><p className="mt-2 text-muted-foreground">{catalog.company} · {catalog.currency}</p></div>
+      <div><div className="flex flex-wrap items-center gap-3"><h2 className="text-2xl font-semibold">{quotationLabel(catalog)}</h2><Badge variant="secondary">{language === "zh-CN" ? statusZh[state] : quotationStatusLabels[state]}</Badge></div><p className="mt-2 text-muted-foreground">{catalog.company} · {catalog.currency}</p></div>
       <div className="flex flex-wrap gap-2"><Button type="button" variant="outline" disabled={pending || dirty} onClick={reload}>{c("Reload", "刷新")}</Button>{canWrite ? <Button type="button" variant="outline" disabled={pending || dirty} onClick={() => act("revise")}>{legacy ? c("Create current version", "创建当前版本") : c("New version", "新建版本")}</Button> : null}</div>
     </div>
     {catalog.quote_previous_id ? <Link href={`/company-quotations/${catalog.quote_previous_id}`} className="block text-sm underline">{c("View previous version", "查看上一版本")}</Link> : null}

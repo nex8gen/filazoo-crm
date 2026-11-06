@@ -1,6 +1,6 @@
 {
   "contractVersion": "2026-11-05.2",
-  "generatedOn": "2026-11-05",
+  "generatedOn": "2026-11-06",
   "capabilities": [
     {
       "name": "create_company",
@@ -609,6 +609,14 @@
       "tools": [
         "update_invoice",
         "invoice_lifecycle"
+      ],
+      "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/api/invoices/[id]/send/route.ts#POST",
+      "mode": "direct",
+      "tools": [
+        "send_invoice"
       ],
       "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
     },

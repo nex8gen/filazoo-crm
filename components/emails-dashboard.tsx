@@ -437,10 +437,6 @@ export function EmailsDashboard({ initialEmails }: { initialEmails: Array<Partia
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 border-b pb-5 lg:flex-row lg:items-end lg:justify-between">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Emails</h1>
-          <p className="max-w-xl text-sm text-muted-foreground">Review personalized drafts and keep every outbound message controlled.</p>
-        </div>
         <Button size="sm" className="w-fit gap-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-400">
           <AiIcon className="size-3.5" />
           New sequence
@@ -494,13 +490,6 @@ export function DeliverabilityDashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between border-b pb-5">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Deliverability</h1>
-          <p className="text-sm text-muted-foreground">Review mailbox health and keep every outbound message compliant.</p>
-        </div>
-      </div>
-
       <div className="flex flex-wrap gap-2 border-b pb-4">
         {[
           { key: "errors", label: "Errors", color: "text-red-600", bg: "bg-red-100 text-red-700" },

@@ -15,6 +15,8 @@ import { useVisitedPageRefresh } from "@/components/use-visited-page-refresh";
 import { useCustomerTagRefresh } from "@/components/use-customer-tag-refresh";
 import { WorkspaceSidebar, itemIsActive, useWorkspaceSidebar } from "@/components/workspace-sidebar";
 import { isStandaloneRoute } from "@/lib/standalone-routes";
+import { WorkspacePageHeader } from "@/components/workspace-page-header";
+import { PageHeaderProvider } from "@/components/page-header";
 
 const loadAiAssistant = () => import("@/components/workspace-ai-assistant");
 const WorkspaceAiAssistant = lazy(() => loadAiAssistant().then((module) => ({ default: module.WorkspaceAiAssistant })));
@@ -100,9 +102,12 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
         </SheetContent>
       </Sheet>
 
-      <div className={`workspace-page min-w-0 bg-background transition-transform duration-300 ease-out lg:ml-[var(--workspace-sidebar-width)] ${isSettings ? "lg:bg-[#0b0b0b]" : ""} ${aiOpen ? "h-dvh overflow-y-auto overscroll-y-contain max-lg:-translate-x-full lg:mr-[var(--workspace-ai-width)]" : "translate-x-0 lg:mr-0"}`}>
-        <main id="workspace-content" tabIndex={-1} className={`${isEmails || isSettings ? "" : "crm-workspace-content"} outline-none ${usesViewportCanvas ? "h-dvh min-h-0 w-full overflow-hidden p-0" : isSettings ? "min-h-dvh w-full" : "min-h-svh w-full px-5 py-7 sm:px-7 lg:px-10 lg:py-10"}`}>{children}</main>
-      </div>
+      <PageHeaderProvider key={isSettings ? "settings" : "workspace"}>
+        <div className={`workspace-page flex min-w-0 flex-col bg-background transition-transform duration-300 ease-out lg:ml-[var(--workspace-sidebar-width)] ${usesViewportCanvas || isSettings || aiOpen ? "h-dvh" : "min-h-dvh"} ${aiOpen ? "overflow-y-auto overscroll-y-contain max-lg:-translate-x-full lg:mr-[var(--workspace-ai-width)]" : "translate-x-0 lg:mr-0"}`}>
+          {!isSettings ? <WorkspacePageHeader pathname={pathname} /> : null}
+          <main id="workspace-content" tabIndex={-1} className={`${isEmails || isSettings ? "" : "crm-workspace-content"} min-h-0 w-full flex-1 outline-none ${usesViewportCanvas ? "overflow-hidden p-0" : isSettings ? "overflow-y-auto p-0 lg:overflow-hidden" : "px-5 pb-6 pt-2 sm:px-6"}`}>{children}</main>
+        </div>
+      </PageHeaderProvider>
 
       {commandOpen ? (
         <WorkspaceCommandMenu navigation={navigation} open={commandOpen} onOpenChange={setCommandOpen} onNavigate={navigate} />

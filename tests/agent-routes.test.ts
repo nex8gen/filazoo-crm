@@ -17,6 +17,8 @@ import * as imageInput from "../lib/ai/image-input.ts";
 import * as crmTools from "../lib/ai/crm-tools.ts";
 import * as assistantIntent from "../lib/ai/assistant-intent.ts";
 import * as documentIntent from "../lib/ai/document-intent.ts";
+import { webSearchForRequest } from "../lib/ai/research-request.ts";
+import { readResearchResponse, researchStreamType, type ResearchProgress } from "../lib/ai/research-progress.ts";
 
 const require = createRequire(import.meta.url);
 class TestHistoryError extends Error { status = 503; }
@@ -456,7 +458,7 @@ test("email lookup failures, invalid requests and repeated reads never save part
     const body = await response.json();
     assert.deepEqual(body.actions, []);
     assert.equal(prepares, 0);
-    assert.equal(reads, scenario === "limit" ? 2 : scenario === "failure" ? 1 : 0);
+    assert.equal(reads, scenario === "limit" || scenario === "analyze" ? 2 : scenario === "failure" ? 1 : 0);
     assert.ok(!body.output.includes("FILAZOO_"));
     assert.ok(!body.output.includes("Private mailbox detail"));
   }
@@ -558,7 +560,7 @@ test("batch failures, budget exhaustion and Chat never prepare partial actions",
     }, { GEMINI_API_KEY: "synthetic" });
     const response = await post(request({ mode: scenario === "analyze" ? "analyze" : "work", pathname: "/tasks", pageLabel: "Tasks", pageText: "", messages: [{ role: "user", content: "Check tasks, inventory and segments" }] }));
     const body = await response.json();
-    assert.equal(prepared, 0); assert.equal(reads, scenario === "analyze" ? 0 : 3); assert.deepEqual(body.actions, []);
+    assert.equal(prepared, 0); assert.equal(reads, 3); assert.deepEqual(body.actions, []);
     assert.doesNotMatch(body.output, /Private|FILAZOO_/);
   }
 });
@@ -577,7 +579,7 @@ test("a provider failure after a successful lookup remains a provider error", as
   assert.doesNotMatch((await response.json()).error, /Unable to read the requested CRM/);
 });
 
-test("CRM read failures and read budgets never create partial mutations or run in Chat mode", async () => {
+test("CRM read failures and read budgets never create partial mutations in Chat or Agent", async () => {
   for (const scenario of ["failure", "budget", "analyze"]) {
     let reads = 0;
     let preparations = 0;
@@ -590,7 +592,7 @@ test("CRM read failures and read budgets never create partial mutations or run i
     }, { GEMINI_API_KEY: "synthetic" });
     const response = await post(request({ mode: scenario === "analyze" ? "analyze" : "work", pathname: "/products", pageLabel: "Products", pageText: "", messages: [{ role: "user", content: "Find PLA" }] }));
     const body = await response.json();
-    assert.deepEqual(body.actions, []); assert.equal(preparations, 0); assert.equal(reads, scenario === "budget" ? 4 : scenario === "failure" ? 1 : 0);
+    assert.deepEqual(body.actions, []); assert.equal(preparations, 0); assert.equal(reads, scenario === "failure" ? 1 : 4);
     assert.ok(!body.output.includes("Private connection error")); assert.ok(!body.output.includes("FILAZOO_"));
   }
 });
@@ -645,6 +647,58 @@ test("live progress reads only the current user's action and never returns invoi
   assert.equal((await mock.get(new Request("http://localhost:3000/api/ai/assistant/action?id=invalid"))).status, 400);
 });
 
+test("Chat can look up an explicitly named customer's invoices from Analytics without mutations", async () => {
+  let generated = 0, reads = 0;
+  const post = route("../app/api/ai/assistant/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
+    "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) }, "@/lib/ai/gateway": {},
+    "@/lib/ai/gemini": { generateGeminiText: async ({ systemInstruction, prompt }: { systemInstruction: string; prompt: string }) => {
+      assert.match(systemInstruction, /look up authorized CRM records from any page/);
+      if (++generated === 1) return 'FILAZOO_CRM_READ_JSON: {"resource":"companies","query":"Inovecell"}';
+      if (generated === 2) { assert.match(prompt, /Inovecell/); return `FILAZOO_CRM_READ_JSON: {"resource":"invoices","companyId":"${id}"}`; }
+      assert.match(prompt, /INV-VERIFIED/); return "Inovecell has saved invoice INV-VERIFIED.";
+    } },
+    "@/lib/ai/crm-records": { readCrmRecords: async (_actor: unknown, lookup: crmTools.CrmRead) => { reads++; return { records: lookup.resource === "companies" ? [{ id, name: "Inovecell" }] : [{ id: "invoice", number: "INV-VERIFIED", company_id: id }] }; } },
+    "@/lib/ai/agent-execution": { prepareAgentActions: async () => { throw new Error("Chat cannot stage writes"); } },
+  }, { GEMINI_API_KEY: "synthetic" });
+  const response = await post(request({ mode: "analyze", pathname: "/analytics", pageLabel: "Analytics", pageText: "Aggregate metrics", messages: [{ role: "user", content: "Which invoices does Inovecell have?" }] }));
+  const body = await response.json(); assert.equal(response.status, 200); assert.equal(reads, 2); assert.equal(generated, 3);
+  assert.match(body.output, /INV-VERIFIED/); assert.deepEqual(body.actions, []);
+});
+
+test("an explicit other customer bypasses the open customer's missing-address shortcut and email evidence", async () => {
+  let generated = 0;
+  let prepared = 0;
+  let addressQuestion = true;
+  const otherId = viewer.id;
+  const post = route("../app/api/ai/assistant/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant, "@/lib/ai/gateway": {},
+    "@/lib/ai/agent-context": { loadAgentContext: async () => ({ currentCompanyId: id, currentCompany: { fields: { name: "Page Customer" } }, customerChoices: [{ id, name: "Page Customer" }, { id: otherId, name: "Inovecell" }], currentEmail: { id: "page-email", direction: "inbound", text: "Old customer's price" } }) },
+    "@/lib/ai/gemini": { generateGeminiText: async ({ prompt }: { prompt: string }) => { generated++; assert.match(prompt, /"usePageCompany":false/); return addressQuestion ? 'FILAZOO_QUESTION_JSON: {"question":"Which shipping address should I use for Inovecell?"}' : `Ready.\nFILAZOO_ACTIONS_JSON: [{"type":"update_company","companyId":"${otherId}","changes":{"city":"Berlin"}}]`; } },
+    "@/lib/ai/agent-execution": { prepareAgentActions: async (_actions: unknown, _viewer: unknown, _mode: unknown, context: { quotationSource?: unknown }) => { prepared++; assert.equal(context.quotationSource, undefined); return []; } },
+  }, { GEMINI_API_KEY: "synthetic" });
+  const response = await post(request({ mode: "work", pathname: `/companies/${id}`, pageLabel: "Company profile", pageText: "Page Customer", messages: [{ role: "user", content: "Include shipping address for Inovecell" }] }));
+  assert.equal(response.status, 200); assert.equal(generated, 1);
+  assert.match((await response.json()).clarification.question, /Inovecell/); assert.equal(prepared, 0);
+  addressQuestion = false;
+  const update = await post(request({ mode: "work", pathname: `/companies/${id}`, pageLabel: "Company profile", pageText: "Page Customer", messages: [{ role: "user", content: "Change Inovecell's city to Berlin" }] }));
+  assert.equal(update.status, 200); assert.equal(generated, 2); assert.equal(prepared, 1);
+});
+
+test("ordinary page and general-knowledge answers do not trigger extra Chat lookups", async () => {
+  for (const content of ["Summarize this page", "What is 2 + 2?"]) {
+    let generated = 0;
+    const post = route("../app/api/ai/assistant/route.ts", {
+      "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
+      "@/lib/ai/agent-context": {}, "@/lib/ai/gateway": {},
+      "@/lib/ai/gemini": { generateGeminiText: async ({ systemInstruction, prompt }: { systemInstruction: string; prompt: string }) => { generated++; assert.match(systemInstruction, /explicit general-knowledge question/i); assert.match(prompt, /Revenue 100/); return content.startsWith("What") ? "4" : "The page shows revenue of 100."; } },
+      "@/lib/ai/agent-execution": {}, "@/lib/ai/crm-records": { readCrmRecords: async () => { throw new Error("No lookup was needed"); } },
+    }, { GEMINI_API_KEY: "synthetic" });
+    const response = await post(request({ mode: "analyze", pathname: "/analytics", pageLabel: "Analytics", pageText: "Revenue 100", messages: [{ role: "user", content }] }));
+    assert.equal(response.status, 200); assert.equal(generated, 1); assert.deepEqual((await response.json()).actions, []);
+  }
+});
+
 test("workspace web research uses selected server identity, returns source links, and remains read-only", async () => {
   let searches = 0;
   let loads = 0;
@@ -678,6 +732,79 @@ test("workspace web research uses selected server identity, returns source links
   assert.equal((await post(request({ ...input, webSearch: "true" }))).status, 400);
   assert.equal((await post(request({ ...input, webSearch: true }, "https://attacker.example"))).status, 403);
   assert.equal(searches, 1);
+});
+
+test("research about this customer passes the selected name, email and website and streams source progress", async () => {
+  let searches = 0;
+  const post = route("../app/api/ai/assistant/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
+    "@/lib/ai/gateway": {}, "@/lib/ai/assistant-provider-error": providerError,
+    "@/lib/ai/agent-context": { loadAgentContext: async () => ({ currentCompanyId: id, currentCompany: { fields: { name: "3D Near You", contactEmail: "info@3dnearyou.com", website: "https://3dnearyou.com/", city: "Brooklyn", summary: "PRIVATE_CRM_NOTE" } } }) },
+    "@/lib/ai/customer-research": { researchCustomer: async ({ identity, onProgress }: { identity: { name: string; email: string; website: string }; onProgress: (progress: ResearchProgress) => void }) => {
+      searches++;
+      assert.equal(identity.name, "3D Near You"); assert.equal(identity.email, "info@3dnearyou.com"); assert.equal(identity.website, "https://3dnearyou.com/");
+      assert.doesNotMatch(JSON.stringify(identity), /PRIVATE_CRM_NOTE|about this customer/);
+      const sources = [{ id: "W1", label: "3D Near You", url: identity.website, recordedAt: "2026-11-06T08:00:00Z" }];
+      onProgress({ phase: "searching", sources: [], queries: [], visitedUrls: [] });
+      onProgress({ phase: "reading", sources, queries: ['"3D Near You" Brooklyn'], visitedUrls: [] });
+      return { status: "complete", findings: "New sourced business findings", queries: ['"3D Near You" Brooklyn'], sources, visitedUrls: [identity.website] };
+    } },
+    "@/lib/ai/gemini": { generateGeminiText: async ({ systemInstruction, prompt }: { systemInstruction: string; prompt: string }) => {
+      assert.match(systemInstruction, /Do not fill the answer with CRM summaries/);
+      assert.match(systemInstruction, /brands\/materials and sales channels/);
+      assert.match(prompt, /WEB_RESEARCH_TARGET.*3D Near You/);
+      return "New public customer intelligence.";
+    } },
+    "@/lib/ai/agent-execution": { prepareAgentActions: async () => { throw new Error("Research must remain read-only"); } },
+  }, { GEMINI_API_KEY: "synthetic" });
+  const response = await post(request({ mode: "analyze", pathname: `/companies/${id}`, pageLabel: "Company profile", pageText: "", messages: [{ role: "user", content: "Research about this customer" }], webSearch: true }));
+  assert.equal(response.status, 200); const result = await response.json();
+  assert.equal(searches, 1); assert.deepEqual(result.actions, []); assert.deepEqual(result.research.visitedUrls, ["https://3dnearyou.com/"]);
+  const streaming = request({ mode: "analyze", pathname: `/companies/${id}`, pageLabel: "Company profile", pageText: "", messages: [{ role: "user", content: "Research about this customer" }], webSearch: true });
+  streaming.headers.set("Accept", researchStreamType);
+  const updates: ResearchProgress[] = [];
+  const streamed = await readResearchResponse<{ output: string; research: { sources: Array<{ id: string }> } }>(await post(streaming), update => updates.push(update));
+  assert.deepEqual(updates.map(update => update.phase), ["searching", "reading", "writing"]);
+  assert.equal(updates[0].sources.length, 0);
+  assert.equal(updates[1].sources[0].id, streamed.research.sources[0].id);
+  assert.equal(streamed.output, "New public customer intelligence.");
+});
+
+test("Research Inovecell again from Analytics resolves the authorized company and returns research in Chat", async () => {
+  let searches = 0;
+  const content = "Research Inovecell again.";
+  const post = route("../app/api/ai/assistant/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
+    "@/lib/ai/gateway": {}, "@/lib/ai/assistant-provider-error": providerError,
+    "@/lib/ai/agent-context": { loadAgentContext: async () => ({ currentCompany: null, customerChoices: [{ id, name: "Inovecell", city: "Cachoeirinha", country: "Brazil" }] }) },
+    "@/lib/ai/customer-research": { researchCustomer: async ({ identity }: { identity: { name: string; city: string } }) => {
+      searches++; assert.equal(identity.name, "Inovecell"); assert.equal(identity.city, "Cachoeirinha");
+      return { status: "complete", checkedAt: "now", findings: "A sourced namesake, not a confirmed company match.", queries: ["Inovecell Brazil"], sources: [{ id: "W1", url: "https://example.com/inovecell", label: "Registry" }], visitedUrls: ["https://example.com/inovecell"] };
+    } },
+    "@/lib/ai/gemini": { generateGeminiText: async ({ systemInstruction, prompt }: { systemInstruction: string; prompt: string }) => {
+      assert.match(systemInstruction, /does not restrict public research/);
+      assert.match(prompt, /WEB_RESEARCH_TARGET.*Inovecell/);
+      assert.match(prompt, /Cachoeirinha/);
+      return "Here is the sourced company research [W1].";
+    } },
+    "@/lib/ai/agent-execution": { prepareAgentActions: async () => { throw new Error("Chat research must remain read-only"); } },
+  }, { GEMINI_API_KEY: "synthetic" });
+  const response = await post(request({ mode: "analyze", pathname: "/analytics", pageLabel: "Analytics", pageText: "Aggregated metrics only", messages: [{ role: "user", content }], webSearch: webSearchForRequest("auto", content) }));
+  assert.equal(response.status, 200); const result = await response.json();
+  assert.equal(searches, 1); assert.equal(result.research.status, "complete"); assert.equal(result.research.visitedUrls.length, 1); assert.deepEqual(result.actions, []);
+});
+
+test("ambiguous cross-page research asks for a company before spending any provider tokens", async () => {
+  const unexpected = async () => { throw new Error("No provider call should run before company selection"); };
+  const post = route("../app/api/ai/assistant/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
+    "@/lib/ai/gateway": {}, "@/lib/ai/assistant-provider-error": providerError,
+    "@/lib/ai/agent-context": { loadAgentContext: async () => ({ customerChoices: [{ id, name: "Inovecell", city: "Cachoeirinha" }, { id: viewer.id, name: "Inovecell", city: "Osasco" }] }) },
+    "@/lib/ai/customer-research": { researchCustomer: unexpected }, "@/lib/ai/gemini": { generateGeminiText: unexpected }, "@/lib/ai/agent-execution": {},
+  }, { GEMINI_API_KEY: "synthetic" });
+  const response = await post(request({ mode: "analyze", pathname: "/analytics", pageLabel: "Analytics", pageText: "", messages: [{ role: "user", content: "Research Inovecell" }], webSearch: true }));
+  assert.equal(response.status, 200); const result = await response.json();
+  assert.match(result.clarification.question, /Cachoeirinha.*Osasco/); assert.deepEqual(result.actions, []); assert.equal(result.research, undefined);
 });
 
 test("customer research starts only after authentication and loading the authorized customer", async () => {

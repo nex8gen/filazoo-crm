@@ -1,10 +1,12 @@
 import type { CompanyActivity } from "./types.ts";
 import { normalizeMessageId } from "./email-threading.ts";
+import { invoiceLabel } from "./invoices.ts";
+import { orderInvoiceHref } from "./order-invoice-links.ts";
 
 export type ActivityInvoice = {
   id: string; number: number; status: string; total_minor: number; paid_minor: number;
   created_by: string | null; created_at: string;
-  document: { currency: string; customerName: string; customerEmail: string; issueDate: string; dueDate: string; reference: string };
+  document: { currency: string; customerName: string; customerEmail: string; issueDate: string; dueDate: string; reference: string; purchaseOrderId?: string };
 };
 export type ActivityPayment = {
   id: string; invoice_id: string; amount_minor: number; paid_on: string;
@@ -22,7 +24,7 @@ export type ActivitySentMail = {
 export function billingActivity(invoices: ActivityInvoice[], payments: ActivityPayment[], events: ActivityInvoiceEvent[], names: Map<string, string>): CompanyActivity[] {
   const actor = (id: string | null) => id ? names.get(id) || "Workspace member" : "System";
   return invoices.flatMap((invoice) => {
-    const number = `INV-${String(invoice.number).padStart(6, "0")}`;
+    const number = invoiceLabel(invoice);
     const money = (minor: number) => new Intl.NumberFormat("en", { style: "currency", currency: invoice.document.currency }).format(minor / 100);
     const metadata = [
       { label: "Invoice", value: number },
@@ -35,7 +37,7 @@ export function billingActivity(invoices: ActivityInvoice[], payments: ActivityP
       { label: "Due date", value: invoice.document.dueDate },
       ...(invoice.document.reference ? [{ label: "Reference", value: invoice.document.reference }] : []),
     ];
-    const base = { type: "invoice" as const, href: `/invoices/${invoice.id}`, metadata };
+    const base = { type: "invoice" as const, href: orderInvoiceHref(invoice), metadata };
     return [
       { ...base, id: `invoice-${invoice.id}`, title: "Invoice created", detail: `${number} · ${money(invoice.total_minor)}`, actor: actor(invoice.created_by), actorId: invoice.created_by, createdAt: invoice.created_at },
       ...events.filter((event) => event.invoice_id === invoice.id && event.action !== "payment").map((event) => ({

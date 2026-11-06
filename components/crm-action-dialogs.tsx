@@ -22,7 +22,7 @@ function ActionMessage({ state }: { state: CrmActionState }) {
   return null;
 }
 
-function useActionDialog(actionHandler: (state: CrmActionState, formData: FormData) => Promise<CrmActionState>) {
+function useActionDialog(actionHandler: (state: CrmActionState, formData: FormData) => Promise<CrmActionState>, onSuccess?: (state: CrmActionState) => void) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState(async (previousState: CrmActionState, formData: FormData) => {
     try {
@@ -31,6 +31,7 @@ function useActionDialog(actionHandler: (state: CrmActionState, formData: FormDa
         window.dispatchEvent(new Event("flow-activity-updated"));
         toast.success(result.success);
         setOpen(false);
+        onSuccess?.(result);
       }
       return result;
     } catch {
@@ -40,11 +41,11 @@ function useActionDialog(actionHandler: (state: CrmActionState, formData: FormDa
   return { open, setOpen, state, action, pending };
 }
 
-export function AddCompanyButton({ canWrite, compact = false, existingSegments }: { canWrite: boolean; compact?: boolean; existingSegments?: string[] }) {
-  const dialog = useActionDialog(createCompany);
+export function AddCompanyButton({ canWrite, compact = false, existingSegments, label, onCreated }: { canWrite: boolean; compact?: boolean; existingSegments?: string[]; label?: string; onCreated?: (id: string) => void }) {
+  const dialog = useActionDialog(createCompany, result => { if (result?.companyId) onCreated?.(result.companyId); });
   return (
     <>
-      <Button size="sm" disabled={!canWrite} title={canWrite ? "Add a company" : "Viewer access is read-only"} onClick={() => dialog.setOpen(true)}><Plus />{compact ? "Add" : "Add company"}</Button>
+      <Button size="sm" disabled={!canWrite} title={canWrite ? "Add a company" : "Viewer access is read-only"} onClick={() => dialog.setOpen(true)}><Plus />{label ?? (compact ? "Add" : "Add company")}</Button>
       <Dialog open={dialog.open} onOpenChange={dialog.setOpen}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader><DialogTitle>Add company</DialogTitle><DialogDescription>Create a company profile, optional contact, and audit event.</DialogDescription></DialogHeader>

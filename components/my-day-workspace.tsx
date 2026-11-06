@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowUpRight, CalendarDays, CheckCheck, ClipboardList, Clock3, MessageSquareText, ReceiptText, RefreshCw, Search } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { PageActions } from "@/components/page-header";
 import { Input } from "@/components/ui/input";
 import { useLanguage } from "@/components/language-provider";
 import { type MyDayData, type MyDayItem, type MyDayKind } from "@/lib/my-day";
@@ -72,8 +73,8 @@ export function MyDayWorkspace({ initial }: { initial: MyDayData }) {
   const filtered = data.items.filter(item => (includeUpcoming || item.urgency !== "upcoming") && (kind === "all" || kind === item.kind) && `${item.title} ${item.company ?? ""}`.toLowerCase().includes(query.trim().toLowerCase()));
   const unavailable = data.sources.filter(source => !source.ok);
   const stats = [{ label: "Needs action", count: active.length }, { label: "Overdue", count: active.filter(item => item.urgency === "overdue").length }, { label: "Customer replies", count: active.filter(item => item.kind === "reply").length }, { label: "Payments due", count: active.filter(item => item.kind === "payment").length }];
-  return <div className="mx-auto max-w-5xl space-y-6 pb-8">
-    <header className="flex items-start justify-between gap-4"><div><p className="mb-2 text-xs text-muted-foreground"><time dateTime={data.asOf}>{new Intl.DateTimeFormat(locale, { timeZone: "Asia/Shanghai", weekday: "long", month: "long", day: "numeric" }).format(new Date(data.asOf))}</time></p><h1 className="text-3xl font-semibold tracking-tight">My Day</h1><p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">Your work, customer follow-ups and payments in one place.</p></div><Button variant="outline" size="sm" onClick={() => void refresh()} disabled={refreshing}><RefreshCw className={`size-3.5 ${refreshing ? "animate-spin motion-reduce:animate-none" : ""}`} />Refresh</Button></header>
+  return <div className="w-full space-y-6 pb-8">
+    <PageActions><Button variant="outline" size="sm" onClick={() => void refresh()} disabled={refreshing}><RefreshCw className={`size-3.5 ${refreshing ? "animate-spin motion-reduce:animate-none" : ""}`} />Refresh</Button></PageActions>
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{stats.map(stat => <div key={stat.label} className="rounded-2xl border bg-card p-4 sm:p-5"><p className="text-xs text-muted-foreground">{stat.label}</p><p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums">{stat.count}</p></div>)}</div>
     {error || unavailable.length ? <div role="alert" className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-4 text-xs leading-5"><p>{error || "Some work could not be loaded. This list may be incomplete."}</p>{unavailable.length ? <ul className="mt-1 list-inside list-disc">{unavailable.map(source => <li key={source.id}>{source.label}</li>)}</ul> : null}<button type="button" className="mt-2 font-medium underline" onClick={() => void refresh()} disabled={refreshing}>Try again</button></div> : null}
     <section className="overflow-hidden rounded-2xl border bg-card" aria-label="Daily work list">

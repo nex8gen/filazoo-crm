@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageActions } from "@/components/page-header";
 
 export function LoadingRegion({ children, className = "", label }: { children: ReactNode; className?: string; label: string }) {
   return <div role="status" aria-label={label} aria-busy="true" className={`min-w-0 ${className}`}>
@@ -9,13 +10,7 @@ export function LoadingRegion({ children, className = "", label }: { children: R
 }
 
 export function HeaderSkeleton({ actions = true }: { actions?: boolean }) {
-  return <div className="mb-7 flex shrink-0 flex-wrap items-start justify-between gap-4 border-b pb-6">
-    <div className="min-w-0 flex-[1_1_20rem] space-y-1">
-      <Skeleton className="h-7 w-36 max-w-full" />
-      <Skeleton className="h-5 w-[32rem] max-w-full" />
-    </div>
-    {actions ? <div className="flex gap-2"><Skeleton className="h-9 w-24" /><Skeleton className="h-9 w-28" /></div> : null}
-  </div>;
+  return actions ? <PageActions><Skeleton className="h-9 w-24" /><Skeleton className="h-9 w-28" /></PageActions> : null;
 }
 
 function SummarySkeleton({ flow = false }: { flow?: boolean }) {
@@ -53,12 +48,11 @@ export function CompaniesSkeleton() {
 
 export function FlowsSkeleton() {
   return <LoadingRegion label="Loading automation workflows" className="scroll-surface h-full min-h-0 overflow-y-auto bg-muted/20">
-    <div className="w-full px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex min-w-0 items-start gap-3"><Skeleton className="size-10 shrink-0 rounded-xl" /><div className="min-w-0"><Skeleton className="h-7 w-24" /><Skeleton className="mt-1 h-5 w-96 max-w-full" /></div></div>
+    <div className="w-full px-5 pb-6 pt-2 sm:px-6">
+      <PageActions>
         <Skeleton className="h-10 w-32" />
-      </div>
-      <div className="mt-6 grid gap-3 sm:grid-cols-3">
+      </PageActions>
+      <div className="grid gap-3 sm:grid-cols-3">
         {Array.from({ length: 3 }, (_, index) => <SummarySkeleton key={index} flow />)}
       </div>
       <TableSkeleton flow className="mt-5 shadow-none" />

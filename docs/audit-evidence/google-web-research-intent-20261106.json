@@ -1,0 +1,52 @@
+{
+  "checkedAt": "2026-11-06T06:18:13.324Z",
+  "reportedScenario": {
+    "page": "/analytics",
+    "request": "Research Inovecell again.",
+    "initialWebSearch": false
+  },
+  "production": {
+    "domain": "https://crm.filazoosupply.com",
+    "deploymentId": "dpl_C4zRZuUPM1Wxazp12N7fexSZrLBg",
+    "baseDeployment": "dpl_5djDt41vmUHRCujuQpBouLkKczre",
+    "baseCommit": "dc8497bc6630bbd2efa762358f74352816494085",
+    "state": "READY",
+    "healthStatus": 200,
+    "database": "connected",
+    "unauthenticatedAssistantStatus": 401
+  },
+  "scope": "Explicit public-research intent, visible search state, authorized cross-page company identity and read-only research report. Existing production UI and other CRM changes preserved.",
+  "resultingBehavior": [
+    "Explicit public research enables Web search before submission when no manual Off choice exists.",
+    "Manual Off remains authoritative.",
+    "A named company resolves from authorized CRM choices on Analytics and other pages.",
+    "Duplicate names require a distinguishing company choice.",
+    "Public research remains read-only in Chat.",
+    "The toggle displays Web search on or Web search off."
+  ],
+  "validation": {
+    "rootRegressionChecksPassed": 99,
+    "scopedProductionResearchChecksPassed": 32,
+    "typescript": "passed",
+    "lint": "passed",
+    "componentRequestBodyVerified": true,
+    "actualApiHandlerVerifiedWithIsolatedProvider": true,
+    "paidLiveRequestsThisChange": 0,
+    "authenticatedBrowserSubmissionPerformed": false,
+    "unrelatedExistingChineseCoverageGaps": 17
+  },
+  "evaluation": {
+    "workerAlive": true,
+    "conservativeChargedUsd": 4.599722,
+    "enforcedMaximumUsd": 4.75,
+    "originalEndsAt": "7 Nov 2026, 08:19:21 GMT+8"
+  },
+  "sourceSha256": {
+    "lib/ai/research-request.ts": "51c4869d3192cbad6e2254181788cb589b0d801e56bac7ccd955d4a06406277c",
+    "components/ui/customer-research.tsx": "88142eefbb775dc0d937018990af5be69392c80adbb367720d84402867838c74",
+    "components/workspace-ai-assistant.tsx": "84ad22be52b29b688b5d8f86ebb1b07d2e006fdb4d4213a65f85e618756897a7",
+    "app/api/ai/assistant/route.ts": "a3b9362894a346384a5939d04da7f7faf2a05edb3b0a60a483a97d1fe3576805",
+    "lib/ai/workspace-assistant.ts": "dac381aefbc422a6227caf56cd8caae16113cae2e3e049d5bfc56bfb9df8cbe9",
+    "lib/i18n-ai-history.ts": "2a0e62a5fa94967b1f67e287159c8ffdc35c684408a0432c12238b18523e5826"
+  }
+}

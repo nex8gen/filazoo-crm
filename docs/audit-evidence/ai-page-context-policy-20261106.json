@@ -1,0 +1,46 @@
+{
+  "checkedAt": "2026-11-06T06:35:54.422Z",
+  "production": {
+    "domain": "https://crm.filazoosupply.com",
+    "deploymentId": "dpl_BmBQvCyShPi7jc9fqrdEHiJdsSkk",
+    "baseDeployment": "dpl_C4zRZuUPM1Wxazp12N7fexSZrLBg",
+    "state": "READY",
+    "healthStatus": 200,
+    "database": "connected",
+    "unauthenticatedAssistantStatus": 401
+  },
+  "scope": "Current-page defaults, explicit cross-page targets, general questions and bounded read-only Chat lookups. Existing CRM UI and navigation preserved.",
+  "behavior": [
+    "Explicit subject and task take priority over page defaults.",
+    "An unspecified subject uses the active page and selected record.",
+    "Pending clarification follows the established task.",
+    "Explicit general questions can use general knowledge, with CRM facts grounded in saved evidence.",
+    "Chat supports bounded, authorized CRM and email reads without mutation preparation.",
+    "Cross-customer actions do not inherit the open customer email as quotation evidence."
+  ],
+  "validation": {
+    "rootFocusedChecksPassed": 124,
+    "scopedProductionChecksPassed": 97,
+    "offlineAgentRegressionChecksPassed": 437,
+    "typescript": "passed",
+    "lint": "passed",
+    "nativeAgentSystemPromptChecked": true,
+    "paidProviderRequestsThisChange": 0,
+    "authenticatedBrowserSubmissionPerformed": false
+  },
+  "evaluation": {
+    "workerAlive": true,
+    "status": "waiting for next evaluation round",
+    "conservativeChargedUsd": 4.599722,
+    "enforcedMaximumUsd": 4.75,
+    "originalEndsAt": "7 Nov 2026, 08:19:21 GMT+8",
+    "lastOfflinePassed": true,
+    "sourceManifestIncludesRequestContext": true
+  },
+  "sourceSha256": {
+    "lib/ai/request-context.ts": "37f645557f3262f758929400cfe93b4a93f988100e5e721bbfb6bc8903527e2c",
+    "lib/ai/native-agent.ts": "939e505dc0542b4ba60d5f2159ab657f754ed593e7909b2069b13876ad436b4a",
+    "lib/ai/workspace-assistant.ts": "72c329dd526474afb9ebccc1bca4165c4e882d5eb2cf846079a8c0abfb7a8a43",
+    "app/api/ai/assistant/route.ts": "04ee9ea213d68aad2bd1488ec8f87c5537e3acd57f90e4dcb82abc3a7f929515"
+  }
+}

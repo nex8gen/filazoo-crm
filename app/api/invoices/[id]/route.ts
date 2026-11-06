@@ -19,7 +19,7 @@ export async function GET(_request: Request, context: Context) {
   try {
     const invoice = await getInvoice(id);
     return invoice
-      ? Response.json({ invoice }, { headers: { "Cache-Control": "no-store" } })
+      ? Response.json({ invoice, invoiceViewer: { id: access.viewer.id, role: access.viewer.role } }, { headers: { "Cache-Control": "no-store" } })
       : Response.json({ error: "Invoice not found." }, { status: 404 });
   } catch (error) {
     return invoiceError(error);
@@ -57,6 +57,11 @@ export async function PATCH(request: Request, context: Context) {
     );
     revalidatePath(`/invoices/${id}`);
     revalidatePath("/invoices");
+    revalidatePath("/purchase-orders");
+    if (existing.document?.purchaseOrderId) {
+      revalidatePath(`/purchase-orders/${existing.document.purchaseOrderId}`);
+      revalidatePath(`/purchase-orders/${existing.document.purchaseOrderId}/edit`);
+    }
     revalidatePath("/companies");
     if (existing.company_id) revalidatePath(`/companies/${existing.company_id}`);
     if (invoice?.company_id && invoice.company_id !== existing.company_id) revalidatePath(`/companies/${invoice.company_id}`);

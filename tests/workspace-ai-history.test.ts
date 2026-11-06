@@ -6,6 +6,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import * as history from "../lib/ai/chat-history.ts";
 import * as intent from "../lib/ai/assistant-intent.ts";
+import * as researchRequest from "../lib/ai/research-request.ts";
 
 const require = createRequire(import.meta.url);
 
@@ -38,7 +39,7 @@ test("sidebar history stays enabled across close and reopen while drafts remain 
     "@/components/use-ai-conversation": { useAiConversation: (input: { mode: string }, callback: typeof restore, enabled: boolean, _browseAll: boolean, autoResume: boolean) => { assert.equal(autoResume, false, "messages must not load until a history title is selected"); if (input.mode === "chat") restore = callback; preparedModes.push(input.mode); enabledValues.push(enabled); return controller; } },
     "@/components/ui/ai-mascot-input": { AiMascotInput: Composer },
     "@/components/ui/ai-image-attachments": { useAiImageAttachments: () => ({ images: [], processing: false, clear: () => { clears++; } }) },
-    "@/lib/ai/chat-history": history, "@/lib/ai/assistant-intent": intent,
+    "@/lib/ai/chat-history": history, "@/lib/ai/assistant-intent": intent, "@/lib/ai/research-request": researchRequest,
     "@/lib/ai/agent-progress": { pageWorkArea: () => "email" },
   };
   const code = ts.transpileModule(readFileSync(new URL("../components/workspace-ai-assistant.tsx", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
@@ -107,7 +108,7 @@ test("continuing history from the inbox sends the saved page, record, AI mode an
     "@/components/use-ai-conversation": { useAiConversation: () => controller },
     "@/components/ui/ai-mascot-input": { AiMascotInput: Composer },
     "@/components/ui/ai-image-attachments": { useAiImageAttachments: () => ({ images: [], processing: false, clear: () => {} }) },
-    "@/lib/ai/chat-history": history,
+    "@/lib/ai/chat-history": history, "@/lib/ai/research-request": researchRequest,
     "@/lib/ai/image-input": { chatImageLimitError: () => null },
     "@/lib/ai/agent-progress": { requestedWorkProgress: () => undefined, pageWorkArea: () => "email" },
     "@/lib/ai/page-context": { readAssistantPageContext: () => { throw new Error("Visible inbox must not replace saved context"); } },
@@ -178,7 +179,7 @@ test("Open in Agent preserves the invoice request and images in a fresh Agent co
     "@/components/use-ai-conversation": { useAiConversation: (input: { mode: string }) => input.mode === "agent" ? controller : chatController },
     "@/components/ui/ai-mascot-input": { AiMascotInput: Composer },
     "@/components/ui/ai-image-attachments": { useAiImageAttachments: () => ({ images: [], processing: false, setImages: (value: unknown) => { attached = value; } }) },
-    "@/lib/ai/chat-history": history, "@/lib/ai/assistant-intent": intent,
+    "@/lib/ai/chat-history": history, "@/lib/ai/assistant-intent": intent, "@/lib/ai/research-request": researchRequest,
     "@/lib/ai/agent-progress": { pageWorkArea: () => "email" },
   };
   const code = ts.transpileModule(readFileSync(new URL("../components/workspace-ai-assistant.tsx", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;

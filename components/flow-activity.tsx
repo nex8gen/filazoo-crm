@@ -3,6 +3,7 @@
 import { Bell, CheckCheck, ChevronLeft, ChevronRight, ClipboardCheck, Clock3, LoaderCircle, Plus, RefreshCw, Search, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { PageActions } from "@/components/page-header";
 import { activityPageSize, taskDueGroup, type ActivityTask, type FlowActivityData, type TaskView } from "@/lib/task-activity";
 import { TaskEditor } from "./task-editor";
 import { ActivityEmptyState, NotificationItem, TaskItem } from "./activity-items";
@@ -114,11 +115,10 @@ export function FlowActivity({ initial, canManage = true, taskId, initialView = 
   const chooseTaskView = (next: TaskView) => { setTaskView(next); setTaskPage(0); };
   const clearFilters = () => { setSearch(""); setQuery(""); chooseTaskView("all"); setAlertView("all"); setAlertPage(0); };
 
-  return <div className="@container mx-auto max-w-[960px] space-y-6 pb-6">
-    <header className="flex flex-wrap items-start justify-between gap-5">
-      <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.035em] sm:text-[30px]">Tasks and notifications</h1>
-      <div className="flex items-center gap-2 pt-1"><Button size="icon-sm" variant="outline" aria-label="Refresh activity" title="Refresh activity" disabled={refreshing || Boolean(pending)} onClick={() => window.dispatchEvent(new Event("flow-activity-updated"))}><RefreshCw className={`size-3.5 ${refreshing ? "animate-spin motion-reduce:animate-none" : ""}`} /></Button>{canManage ? <Button size="sm" onClick={() => setEditor("new")}><Plus className="size-4" />New task</Button> : null}</div>
-    </header>
+  return <div className="@container w-full space-y-6 pb-6">
+    <PageActions>
+      <Button size="icon-sm" variant="outline" aria-label="Refresh activity" title="Refresh activity" disabled={refreshing || Boolean(pending)} onClick={() => window.dispatchEvent(new Event("flow-activity-updated"))}><RefreshCw className={`size-3.5 ${refreshing ? "animate-spin motion-reduce:animate-none" : ""}`} /></Button>{canManage ? <Button size="sm" onClick={() => setEditor("new")}><Plus className="size-4" />New task</Button> : null}
+    </PageActions>
     {view !== "replies" && (error || syncError) ? <div role="alert" className="flex items-center justify-between gap-3 rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-xs text-destructive"><p>{error || syncError}{syncError ? " Showing the last available activity." : ""}</p><Button size="xs" variant="ghost" onClick={() => window.dispatchEvent(new Event("flow-activity-updated"))}>Try again</Button></div> : null}
     {editor ? <TaskEditor key={editor === "new" ? "new" : editor.id} task={editor === "new" ? undefined : editor} viewerId={activity.viewerId} onClose={() => setEditor(null)} onSaved={saved => { revision.current++; setEditor(null); setView("tasks"); setTaskScope(saved?.assigned_to && saved.assigned_to !== activity.viewerId ? "delegated" : "mine"); clearFilters(); window.dispatchEvent(new Event("flow-activity-updated")); }} /> : null}
     <section className="overflow-hidden rounded-2xl border border-border/80 bg-card shadow-[0_2px_8px_-5px_rgb(0_0_0/0.12)]" aria-label="Work inbox">

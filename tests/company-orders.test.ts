@@ -127,12 +127,12 @@ test("badge artwork renders all tiers and an accessible uncapped count", () => {
   }
 });
 
-function paymentRoute(options: { denied?: boolean; mutationFailure?: boolean } = {}) {
+function paymentRoute(options: { denied?: boolean; mutationFailure?: boolean; purchaseOrderId?: string } = {}) {
   const require = createRequire(import.meta.url);
   const id = "9c030b66-e226-4b40-b2c3-eae77eb89c79";
   const paths: string[] = [];
   let mutations = 0;
-  const saved = { id, company_id: "company-a", status: "issued", total_minor: 1000, paid_minor: 0 };
+  const saved = { id, company_id: "company-a", status: "issued", total_minor: 1000, paid_minor: 0, document: { purchaseOrderId: options.purchaseOrderId } };
   const exports: Record<string, (request: Request, context: unknown) => Promise<Response>> = {};
   const deps: Record<string, unknown> = {
     zod: require("zod"),
@@ -170,6 +170,15 @@ test("successful payment invalidates the company list and profile and returns th
   assert.equal(route.mutations(), 1);
   assert.ok(route.paths.includes("/companies"));
   assert.ok(route.paths.includes("/companies/company-a"));
+  assert.ok(route.paths.includes("/purchase-orders"));
+});
+
+test("payment refreshes the linked PO detail as well as the order register", async () => {
+  const route = paymentRoute({ purchaseOrderId: "linked-order" });
+  assert.equal((await route.submit()).status, 200);
+  assert.ok(route.paths.includes("/purchase-orders/linked-order"));
+  assert.ok(route.paths.includes("/purchase-orders/linked-order/edit"));
+  assert.ok(route.paths.includes("/purchase-orders"));
 });
 
 test("denied and failed payments cannot invalidate the badge or report successful payment", async () => {

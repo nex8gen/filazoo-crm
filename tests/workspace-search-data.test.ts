@@ -5,6 +5,8 @@ import vm from "node:vm";
 import ts from "typescript";
 import * as search from "../lib/workspace-search.ts";
 import * as personalization from "../lib/product-personalization.ts";
+import * as invoices from "../lib/invoices.ts";
+import * as invoiceLinks from "../lib/order-invoice-links.ts";
 
 type Call = { table: string; method: string; args: unknown[] };
 function load(options: { role?: string; denied?: boolean; failed?: string } = {}) {
@@ -28,6 +30,7 @@ function load(options: { role?: string; denied?: boolean; failed?: string } = {}
     return query;
   } };
   const deps: Record<string, unknown> = {
+    "../invoices.ts": invoices, "../order-invoice-links.ts": invoiceLinks,
     "../workspace-search.ts": search, "../product-personalization.ts": personalization,
     "../auth.ts": { requireWorkspaceMember: async () => { if (options.denied) throw new Error("Denied"); authorized = true; return { id: "viewer", role: options.role ?? "operator" }; } },
     "../supabase/admin.ts": { createSupabaseAdmin: () => db },

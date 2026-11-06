@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { CompaniesTable } from "@/components/companies-table";
 import { AddCompanyButton, ExportCompaniesButton } from "@/components/crm-action-dialogs";
-import { PageHeader } from "@/components/page-header";
+import { PageActions } from "@/components/page-header";
 import { requireWorkspaceMember } from "@/lib/auth";
 import { listCompanies } from "@/lib/data/crm";
 import { getSavedSegment } from "@/lib/data/segments";
@@ -23,11 +23,7 @@ export default async function CompaniesPage({ searchParams }: { searchParams: Pr
   return (
     <div className="flex min-w-0 flex-col pb-8">
       <div>
-        <PageHeader
-          title="Companies"
-          description={segmentName ? `Companies in the ${segmentName} segment.` : "A clear view of every account, source, market, and next follow-up."}
-          actions={<>{segmentName ? <><Link href="/segments" className="inline-flex min-h-9 items-center px-3 text-sm text-primary underline-offset-4 hover:underline">Segments</Link><Link href="/companies" className="inline-flex min-h-9 items-center px-3 text-sm text-primary underline-offset-4 hover:underline">All companies</Link></> : null}<ExportCompaniesButton companies={visibleCompanies} /><AddCompanyButton canWrite={viewer.role !== "viewer"} existingSegments={[...new Set(companies.map((company) => company.segment).filter((segment) => segment && segment !== "Unclassified"))].sort()} /></>}
-        />
+        <PageActions>{segmentName ? <><span className="mr-auto text-sm text-muted-foreground">{segmentName}</span><Link href="/segments" className="inline-flex min-h-9 items-center px-3 text-sm text-primary underline-offset-4 hover:underline">Segments</Link><Link href="/companies" className="inline-flex min-h-9 items-center px-3 text-sm text-primary underline-offset-4 hover:underline">All companies</Link></> : null}<ExportCompaniesButton companies={visibleCompanies} /><AddCompanyButton canWrite={viewer.role !== "viewer"} existingSegments={[...new Set(companies.map((company) => company.segment).filter((segment) => segment && segment !== "Unclassified"))].sort()} /></PageActions>
       </div>
       <CompaniesTable key={savedSegment?.id ?? selectedSegment ?? "all"} viewKey={savedSegment?.id ?? selectedSegment ?? "all"} companies={visibleCompanies} mode={mode} canWrite={viewer.role !== "viewer"} canDelete={viewer.role === "admin"} />
     </div>

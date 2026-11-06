@@ -6,10 +6,6 @@ import { SettingsLanguage } from "./settings-language";
 
 export function GeneralSettings({ viewer }: { viewer: Pick<WorkspaceViewer, "workspaceName" | "displayName" | "email" | "role"> }) {
   return <div className="settings-content settings-general settings-section-enter">
-    <header className="settings-store-header">
-      <div className="settings-store-title"><span className="settings-store-avatar" aria-hidden="true">{viewer.workspaceName.slice(0, 3).toUpperCase()}</span><h1>{viewer.workspaceName}</h1><span className="sr-only"> — General settings</span></div>
-      <span className="settings-workspace-badge"><span aria-hidden="true" />Workspace settings</span>
-    </header>
 
     <section aria-labelledby="business-details-title" className="settings-general-section">
       <h2 id="business-details-title">Business details</h2>

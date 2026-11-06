@@ -1,6 +1,5 @@
 import type { ComponentType } from "react";
-import { BookOpen, Building2, ChartNoAxesCombined, LayoutDashboard, ListTodo, Mail, MessageSquareText, Package2, ReceiptText, Settings, Tags } from "lucide-react";
-import { AiIcon } from "@/components/ai-icon";
+import { BookOpen, Building2, ChartNoAxesCombined, ClipboardList, LayoutDashboard, ListTodo, Mail, MessageSquareText, Package2, Settings, Tags, Workflow } from "lucide-react";
 
 export type NavigationItem = {
   label: string;
@@ -40,11 +39,11 @@ export const navigation: NavigationGroup[] = [
     ],
   },
   {
-    label: "Invoices",
-    eyebrow: "Billing",
-    icon: ReceiptText,
+    label: "Purchase orders",
+    eyebrow: "Orders",
+    icon: ClipboardList,
     direct: true,
-    items: [{ label: "Invoices", href: "/invoices", icon: ReceiptText, description: "Billing, balances and payments" }],
+    items: [{ label: "Purchase orders", href: "/purchase-orders", icon: ClipboardList, description: "Customer orders, delivery and fulfillment" }],
   },
   {
     label: "Email",
@@ -63,9 +62,9 @@ export const navigation: NavigationGroup[] = [
   {
     label: "Workflow",
     eyebrow: "Workflow",
-    icon: AiIcon,
+    icon: Workflow,
     direct: true,
-    items: [{ label: "Workflow", href: "/workflow", icon: AiIcon, description: "Email follow-up workflows and automation rules" }],
+    items: [{ label: "Workflow", href: "/workflow", icon: Workflow, description: "Email follow-up workflows and automation rules" }],
   },
   {
     label: "Products",

@@ -20,11 +20,13 @@ export function InvoiceEditor({
   busy,
   onSave,
   onCancel,
+  orderManaged = false,
 }: {
   initial: InvoiceDocument;
   busy: boolean;
   onSave: (doc: InvoiceDocument) => Promise<void>;
   onCancel: () => void;
+  orderManaged?: boolean;
 }) {
   const [doc, setDoc] = useState(initial);
   const [error, setError] = useState("");
@@ -100,6 +102,7 @@ export function InvoiceEditor({
       {label}
       {type === "date" ? <DatePicker value={doc[key]} required={required} onValueChange={value => field(key, value)} /> : <input
         type={type}
+        readOnly={orderManaged && (key.startsWith("customer") || key === "reference")}
         value={doc[key]}
         required={required}
         maxLength={key.includes("TaxId") ? 100 : 200}
@@ -114,6 +117,7 @@ export function InvoiceEditor({
     <label className="grid gap-2 text-sm">
       {label}
       <textarea
+        readOnly={orderManaged && key === "customerAddress"}
         rows={3}
         maxLength={key === "notes" ? 4000 : 2000}
         value={doc[key]}
@@ -145,13 +149,13 @@ export function InvoiceEditor({
       className="space-y-7"
     >
       <fieldset disabled={busy} className="space-y-7 disabled:opacity-60">
-        {doc.purchaseOrderId && <p className="rounded-lg border bg-muted/30 p-4 text-sm">This invoice is linked to customer PO {doc.reference}. Keep its customer, currency, descriptions, and agreed unit prices unchanged. Reduce quantities or remove lines for partial billing; remaining quantities can be invoiced from the order.</p>}
-        <fieldset disabled={Boolean(doc.purchaseOrderId)}><InvoiceConnections
+        {orderManaged ? <p className="rounded-lg border bg-muted/30 p-4 text-sm">Products, quantities, prices, and customer details come from this order. Edit them on the order; adjust taxes, discounts, dates, and payment details here.</p> : doc.purchaseOrderId ? <p className="rounded-lg border bg-muted/30 p-4 text-sm">This invoice is linked to customer PO {doc.reference}. Keep its customer, currency, descriptions, and agreed unit prices unchanged. Reduce quantities or remove lines for partial billing; remaining quantities can be invoiced from the order.</p> : null}
+        {!orderManaged ? <fieldset disabled={Boolean(doc.purchaseOrderId)}><InvoiceConnections
           doc={doc}
           onChange={setDoc}
           onProducts={rememberProducts}
           onBusyChange={setConnectionsBusy}
-        /></fieldset>
+        /></fieldset> : null}
         <div className="grid gap-6 lg:grid-cols-2">
           {(["seller", "customer"] as const).map((party) => (
             <section key={party} className="space-y-4 rounded-xl border p-5">
@@ -185,7 +189,7 @@ export function InvoiceEditor({
           {textField("Due date", "dueDate", "date", true)}
           <label className="grid gap-2 text-sm">
             Currency
-            <Select value={doc.currency} onValueChange={(value) => { if (value === null) return; return field(
+            <Select value={doc.currency} disabled={orderManaged} onValueChange={(value) => { if (value === null) return; return field(
                   "currency",
                   value as InvoiceDocument["currency"],
                 ); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>
@@ -202,7 +206,7 @@ export function InvoiceEditor({
             <Button
               type="button"
               variant="outline"
-              disabled={doc.items.length >= 100}
+              disabled={orderManaged || doc.items.length >= 100}
               onClick={() =>
                 field("items", [
                   ...doc.items,
@@ -232,6 +236,7 @@ export function InvoiceEditor({
                     type="button"
                     variant="ghost"
                     size="sm"
+                    disabled={orderManaged}
                     onClick={() => {
                       const product = productCache.current.get(
                         item.productSku!,
@@ -269,6 +274,7 @@ export function InvoiceEditor({
                     type="button"
                     variant="ghost"
                     size="sm"
+                    disabled={orderManaged}
                     onClick={() =>
                       field(
                         "items",
@@ -298,6 +304,7 @@ export function InvoiceEditor({
                     required
                     maxLength={500}
                     value={item.description}
+                    readOnly={orderManaged}
                     onChange={(event) =>
                       itemField(index, "description", event.target.value)
                     }
@@ -312,6 +319,7 @@ export function InvoiceEditor({
                     max="1000000"
                     step="1"
                     value={item.quantity}
+                    readOnly={orderManaged}
                     onChange={(event) =>
                       itemField(index, "quantity", Number(event.target.value))
                     }
@@ -326,6 +334,7 @@ export function InvoiceEditor({
                     max="1000000"
                     step="0.01"
                     value={item.unitPriceMinor / 100}
+                    readOnly={orderManaged}
                     onChange={(event) =>
                       itemField(
                         index,
@@ -357,7 +366,7 @@ export function InvoiceEditor({
                   type="button"
                   variant="ghost"
                   aria-label={`Remove item ${index + 1}`}
-                  disabled={doc.items.length === 1}
+                  disabled={orderManaged || doc.items.length === 1}
                   onClick={() =>
                     field(
                       "items",

@@ -43,12 +43,13 @@ type Progress = { suiteVersion?: string; paidStopped?: boolean; averageCaseMicro
 const progress: Progress = existsSync(progressPath) ? JSON.parse(readFileSync(progressPath, "utf8")) : { contract: AGENT_CONTRACT_VERSION, next: 0, passed: 0, failed: 0, recovered: 0, rounds: 0, offlineRuns: 0, offlineFailures: 0, lastOfflineAt: 0, lastOfflinePassed: false, nextRoundAt: 0, status: "starting" };
 if (progress.contract !== AGENT_CONTRACT_VERSION || !Number.isSafeInteger(progress.next) || progress.next < 0) throw new Error("Evaluation contract or progress changed; inspect before resuming.");
 progress.paidStopped ||= budget.snapshot().halted;
+if (process.argv.includes("--recheck-offline")) { progress.lastOfflineAt = 0; progress.lastOfflinePassed = false; }
 progress.lastOfflineAt = 0; // Always verify the current source when resuming.
 if (progress.suiteVersion !== suiteVersion) {
   appendFileSync(resolve(directory, "suite-revisions.jsonl"), JSON.stringify({ at: new Date().toISOString(), from: progress.suiteVersion ?? "initial-fixtures", to: suiteVersion, note: "Correct duplicate/new-customer and no-op-city fixtures; add scoped synthetic reads and live AI text cases. Retain all original evidence, costs and deadline." }) + "\n");
   progress.suiteVersion = suiteVersion; progress.next = 0; progress.lastOfflineAt = 0;
 }
-const manifestFiles = ["scripts/run-agent-soak.ts", "scripts/agent-evaluation-cases.ts", "scripts/ai-text-evaluation-cases.ts", "lib/ai/evaluation-budget.ts", "lib/ai/native-agent.ts", "lib/ai/capabilities.ts", "lib/ai/model-routing.ts", "lib/ai/email-reply.ts", "lib/task-workflows.ts", "lib/ai/gateway.ts"];
+const manifestFiles = ["scripts/run-agent-soak.ts", "scripts/agent-evaluation-cases.ts", "scripts/ai-text-evaluation-cases.ts", "lib/ai/evaluation-budget.ts", "lib/ai/native-agent.ts", "lib/ai/request-context.ts", "lib/ai/workspace-assistant.ts", "lib/ai/capabilities.ts", "lib/ai/model-routing.ts", "lib/ai/email-reply.ts", "lib/task-workflows.ts", "lib/ai/gateway.ts"];
 const runId = new Date().toISOString();
 const manifestPath = resolve(directory, "manifest.json");
 if (existsSync(manifestPath)) appendFileSync(resolve(directory, "manifests.jsonl"), JSON.stringify(JSON.parse(readFileSync(manifestPath, "utf8"))) + "\n");
@@ -72,7 +73,7 @@ function report() {
   atomicEvaluationJson(resolve(directory, "report.json"), { suiteVersion, contract: AGENT_CONTRACT_VERSION, status: progress.status, updatedAt: new Date().toISOString(), syntheticOnly: true, models, expectedModelCases: models.length * scenarios.length, coveredModelCases: latest.size, latestPassed: [...latest.values()].filter(row => row.passed).length, latestFailed: [...latest.values()].filter(row => !row.passed).length, originalAttemptsPassed: baselines.filter(row => row.passed).length, originalAttemptsFailed: failures.length, coachedRecoveries: current.filter(row => row.repair && row.passed).length, gaps, failures: failures.map(row => ({ model: row.model, case: row.case, reasons: row.reasons })), budget: budget.snapshot(), offlineRuns: progress.offlineRuns, offlineFailures: progress.offlineFailures });
 }
 function offlineChecks() {
-  const files = readdirSync("tests").filter(name => /^(agent-|ai-|native-agent|chat-history|chat-usage|quotation-selection|provider-credentials|evaluation-).*\.test\.ts$/.test(name)).map(name => `tests/${name}`);
+  const files = readdirSync("tests").filter(name => /^(agent-|ai-|native-agent|chat-history|chat-usage|quotation-selection|provider-credentials|evaluation-|request-context|research-).*\.test\.ts$/.test(name)).map(name => `tests/${name}`);
   const childEnv = { ...process.env };
   for (const name of Object.keys(childEnv)) if (/KEY|TOKEN|SECRET|PASSWORD|SUPABASE|DATABASE_URL/.test(name) || /^AI_GATEWAY_.*_MODEL$/.test(name)) delete childEnv[name];
   const result = spawnSync(process.execPath, ["--experimental-strip-types", "--test", "--test-concurrency=2", ...files], { encoding: "utf8", timeout: 120_000, env: childEnv, windowsHide: true, maxBuffer: 8 * 1024 * 1024 });

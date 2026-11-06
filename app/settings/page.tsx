@@ -47,18 +47,17 @@ async function SettingsWorkspace({ params }: SettingsPageProps) {
   const section = (await params)?.section || "general";
   if (section === "integrations") redirect("/settings/apps");
   const titles: Record<string, string> = Object.fromEntries(settingsSections.map(item => [item.id, item.title]));
-  const currentSection = settingsSections.find(item => item.id === section);
   if (!titles[section]) notFound();
   const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   if (section === "general") return <GeneralSettings viewer={viewer} />;
   if (section === "ai") {
     const aiSettings = await withWorkspaceViewer(viewer, () => getAiSettings());
-    return <div className="settings-content settings-section-enter !max-w-3xl space-y-5"><header className="mb-6 border-b pb-6"><p className="mb-3 text-xs font-medium text-primary">Workspace</p><h1 className="text-2xl font-semibold tracking-tight">AI access & behavior</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">Control AI access, behavior and writing for your team.</p></header><AiSettingsForm initial={aiSettings} canManage={viewer.role === "admin"} /></div>;
+    return <div className="settings-content settings-section-enter !max-w-3xl space-y-5"><AiSettingsForm initial={aiSettings} canManage={viewer.role === "admin"} /></div>;
   }
   if ((section === "team" || section === "advanced" || section === "erp") && viewer.role !== "admin") notFound();
   if (section === "advanced") {
     const assignment = await withWorkspaceViewer(viewer, () => getLeadAssignmentSettings(viewer.id).then(data => ({ data, error: "" })).catch(error => ({ data: null, error: error instanceof Error ? error.message : "Unable to load lead assignment controls." })));
-    return <div className="settings-content settings-section-enter !max-w-5xl space-y-5"><header className="mb-6 border-b pb-6"><p className="mb-3 text-xs font-medium text-primary">Workspace</p><h1 className="text-2xl font-semibold tracking-tight">Lead assignment</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">Customize distribution rules, manager availability and workload limits.</p></header>{assignment.data ? <LeadAssignmentForm initial={assignment.data} /> : <p role="alert" className="rounded-lg border p-4 text-sm text-destructive">{assignment.error}</p>}</div>;
+    return <div className="settings-content settings-section-enter !max-w-5xl space-y-5">{assignment.data ? <LeadAssignmentForm initial={assignment.data} /> : <p role="alert" className="rounded-lg border p-4 text-sm text-destructive">{assignment.error}</p>}</div>;
   }
   const [members, paymentMethods, invoiceDefaults, erp, defaultWorkspaceMailbox, personalMailbox, mailboxResult] = await Promise.all([
     viewer.role === "admin" && (section === "team" || section === "advanced") ? listWorkspaceMembers() : Promise.resolve([]),
@@ -73,8 +72,7 @@ async function SettingsWorkspace({ params }: SettingsPageProps) {
   const ownMailboxes = mailboxes.filter((mailbox) => mailbox.type === "personal" && mailbox.userId === viewer.id);
 
   return (
-    <div key={section} className={`settings-content settings-section-enter space-y-5 ${section === "team" || section === "advanced" || section === "erp" ? "!max-w-5xl" : "!max-w-3xl"}`}>
-      <header className="mb-6 border-b pb-6"><p className="mb-3 text-xs font-medium text-primary">{currentSection?.group || "Email & connections"}</p><h1 className="text-2xl font-semibold tracking-tight">{titles[section]}</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">{currentSection?.description || "Manage connected channels and open their workspaces."}</p></header>
+    <div key={section} className={`settings-content settings-section-enter ${section === "appearance" ? "settings-appearance" : "space-y-4"}`}>
       {erp ? <ErpConnectionForm key={erp[0].revision} initial={erp[0]} status={erp[1].status} products={[...new Map(erp[2].products.flatMap(product => [{ sku: product.sku, name: product.name }, ...product.variants.map(variant => ({ sku: variant.sku, name: `${product.name} — ${variant.name}` }))]).map(product => [product.sku, product])).values()]} /> : null}
       {section === "appearance" ? <Card className="shadow-none"><CardHeader><CardTitle>Color theme</CardTitle><CardDescription>Choose a theme or follow your device settings.</CardDescription></CardHeader><CardContent><AppearanceSettings /></CardContent></Card> : null}
       {section === "appearance" ? <Card className="mb-4 max-w-2xl shadow-none"><CardHeader><CardTitle>Display and accessibility</CardTitle><CardDescription>Control table spacing and animation across your workspace.</CardDescription></CardHeader><CardContent><PreferencesForm section="appearance" /></CardContent></Card> : null}
