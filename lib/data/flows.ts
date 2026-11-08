@@ -1,6 +1,6 @@
 import "server-only";
 
-import { requireWorkspaceMember } from "../auth.ts";
+import { requireWorkspaceMember, type WorkspaceViewer } from "../auth.ts";
 import { validateFlowResources } from "./flow-runtime.ts";
 import { validateEmailFlowScope } from "./email-flows.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
@@ -49,17 +49,27 @@ async function insertFlow(userId: string, input: FlowInput) {
 
 // Flows belong to this CRM workspace. Ownership supplies the mailbox/runtime
 // identity; owners and workspace administrators can manage the definition.
+async function accessibleFlows(flows: AutomationFlow[], viewer: Pick<WorkspaceViewer, "id" | "role">) {
+  if (viewer.role !== "bd_manager" || !flows.some(flow => isEmailScopedFlow(flow.triggerConfig))) return flows;
+  const { data, error } = await createSupabaseAdmin().from("pipeline").select("company_id").eq("owner_id", viewer.id);
+  if (error) throw new Error("Unable to verify workflow company assignments.");
+  const assigned = new Set((data ?? []).map(row => row.company_id));
+  return flows.filter(flow => !isEmailScopedFlow(flow.triggerConfig) || assigned.has(flow.triggerConfig.scopeCompanyId));
+}
+
 export async function listWorkspaceFlows(): Promise<AutomationFlow[]> {
-  await requireWorkspaceMember();
-  return (await loadFlows()).filter((flow) => !isEmailScopedFlow(flow.triggerConfig));
+  const viewer = await requireWorkspaceMember();
+  return accessibleFlows(await loadFlows(), viewer);
 }
 
 export async function listFlows(userId: string): Promise<AutomationFlow[]> {
-  return (await loadFlows(userId)).filter((flow) => !isEmailScopedFlow(flow.triggerConfig));
+  const viewer = await requireWorkspaceMember();
+  if (viewer.id !== userId && viewer.role !== "admin") throw new Error("Access denied.");
+  return accessibleFlows(await loadFlows(userId), viewer);
 }
 
 export async function listEmailFlows(scope: JsonConfig): Promise<AutomationFlow[]> {
-  // Scoped flows are retrieved only from the email workspace.
+  // Email keeps its filtered view; the main list also includes accessible scopes.
   await validateEmailFlowScope(scope);
   return (await loadFlows(undefined, undefined, scope)).filter((flow) => flow.triggerConfig.flowScope === scope.flowScope
     && flow.triggerConfig.scopeCompanyId === scope.scopeCompanyId

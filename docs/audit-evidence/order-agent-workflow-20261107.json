@@ -1,0 +1,25 @@
+{
+  "passed": true,
+  "syntheticOnly": true,
+  "businessWrites": false,
+  "provider": "vercel-ai-gateway",
+  "providerCalls": 1,
+  "contractVersion": "2026-11-07.2",
+  "action": {
+    "type": "create_order",
+    "companyId": "15693adc-0bdf-4617-b214-71b1861764a9",
+    "email": {
+      "to": "buyer@example.com",
+      "subject": "Your Synthetic Printing Invoice and Order Draft",
+      "text": "Hi,\n\nWe have created your order and draft invoice for 100 units of PLA Basic (Black) as requested. Please find the attached invoice for your review. Let us know if you need any further assistance!",
+      "delivery": "send"
+    },
+    "items": [
+      {
+        "productSku": "PLA-BASIC",
+        "variantId": "black",
+        "quantity": 100
+      }
+    ]
+  }
+}

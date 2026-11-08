@@ -1,10 +1,8 @@
 import { z } from "zod";
 import { conversationTagInstruction, conversationTagContext, conversationTagDecisionSchema, parseConversationTagDecision, conversationTagPrompt, conversationTagOutputTokens } from "../lib/ai/conversation-tagging.ts";
-import { generateGeminiText } from "../lib/ai/gemini.ts";
-import { generateGatewayText, isGeminiRegionError } from "../lib/ai/gateway.ts";
-const apiKey = process.env.GEMINI_API_KEY?.trim();
+import { generateGatewayText } from "../lib/ai/gateway.ts";
 const token = process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
-if (!apiKey && !token) throw new Error("AI provider is not configured");
+if (!token) throw new Error("AI provider is not configured");
 const cases = [
   { expected: "New Inquiries", bodies: ["Hi, we manufacture 3D printer parts. Could you quote 100 kg blue PLA and tell me the available spool sizes?"] },
   { expected: "Quotation Follow-up", bodies: ["Please quote 100 kg blue PLA.", "Here is our firm quote for your requested 100 kg: $8/kg, total $800 excluding freight, valid for 15 days. Please review and let us know whether you would like to proceed."] },
@@ -20,9 +18,7 @@ for (const [index, fixture] of cases.entries()) {
   })), null);
   const common = { systemInstruction: conversationTagInstruction, prompt: conversationTagPrompt(context), maxOutputTokens: conversationTagOutputTokens,
     fetcher: ((url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(40_000) })) as typeof fetch };
-  let output;
-  try { output = apiKey ? await generateGeminiText({ ...common, apiKey, model: process.env.GEMINI_EMAIL_MODEL?.trim() || "gemini-3.5-flash-lite", responseJsonSchema: z.toJSONSchema(conversationTagDecisionSchema) }) : await generateGatewayText({ ...common, token: token! }); }
-  catch (error) { if (!apiKey || !token || !isGeminiRegionError(error)) throw error; output = await generateGatewayText({ ...common, token }); }
+  const output = await generateGatewayText({ ...common, token: token!, task: "tagging", responseJsonSchema: z.toJSONSchema(conversationTagDecisionSchema) });
   const decision = parseConversationTagDecision(output, context);
   console.log(JSON.stringify({ expected: fixture.expected, actual: decision.tag, confidence: decision.confidence, pass: decision.tag === fixture.expected }));
   if (decision.tag !== fixture.expected) process.exitCode = 1;

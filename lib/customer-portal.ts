@@ -10,7 +10,7 @@ export const shipmentSchema = z.object({
   location: z.string().trim().max(200),
   carrier: z.string().trim().max(100),
   tracking_number: z.string().trim().max(200),
-  tracking_url: z.union([z.url().max(2000).refine(value => new URL(value).protocol === "https:", "Use an HTTPS tracking link."), z.literal("")]),
+  tracking_url: z.union([z.url({ protocol: /^https$/, error: "Use an HTTPS tracking link." }).max(2000), z.literal("")]),
   expected_delivery: z.union([z.iso.date(), z.literal("")]),
 });
 export type PortalShipment = z.infer<typeof shipmentSchema> & { updated_at?: string };

@@ -4,8 +4,7 @@ import { aiBehaviorInstruction, restrictedAiContext, AiPolicyError } from "@/lib
 import { z } from "zod";
 import { aiLanguageSchema } from "@/lib/ai/language";
 import { requireWorkspaceMember } from "@/lib/auth";
-import { generateGeminiText } from "@/lib/ai/gemini";
-import { generateGatewayText, isGeminiRegionError } from "@/lib/ai/gateway";
+import { generateGatewayText } from "@/lib/ai/gateway";
 import { buildEmailReplyInstruction, parseEmailReplyPlan, replyProductSchema } from "@/lib/ai/email-reply";
 import { applyEmailSignature, DEFAULT_EMAIL_COMPANY, DEFAULT_EMAIL_TITLE, normalizeSignatureName } from "@/lib/ai/email-rewrite";
 import { canCreateInvoices } from "@/lib/invoice-permissions";
@@ -40,20 +39,13 @@ export async function POST(request: Request) {
   if (!policy.data.products) input.data.products = [];
   if (!policy.data.team) input.data.assignedManagerName = undefined;
   const instruction = buildEmailReplyInstruction() + aiBehaviorInstruction(policy, true);
-  const apiKey = process.env.AI_PROVIDER === "gateway" || process.env.AI_BUDGET_ENFORCEMENT === "true" ? undefined : process.env.GEMINI_API_KEY?.trim();
   const token = resolveGatewayToken(process.env);
-  if (!apiKey && !token) return Response.json({ error: "AI reply is not configured. Add an AI provider in the server settings." }, { status: 503 });
+  if (!token) return Response.json({ error: "AI reply is not configured. Add an AI provider in the server settings." }, { status: 503 });
   const canCreateInvoice = canCreateInvoices(viewer.role) && policy.data.billing && policy.data.products && policy.data.customers && policy.actions.invoices !== "deny";
   const prompt = JSON.stringify({ ...input.data, language: "en", canCreateInvoice, seller: DEFAULT_EMAIL_COMPANY });
   const gateway = () => generateGatewayText({ usageUserId: viewer.id, token: token!, model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim(), systemInstruction: instruction, prompt, maxOutputTokens: 8192, task: "reply", signal: request.signal });
   try {
-    let output: string;
-    try {
-      output = apiKey ? await generateGeminiText({ apiKey, model: process.env.GEMINI_EMAIL_MODEL?.trim(), systemInstruction: instruction, prompt, maxOutputTokens: 8192 }) : await gateway();
-    } catch (error) {
-      if (!apiKey || !token || !isGeminiRegionError(error)) throw error;
-      output = await gateway();
-    }
+    const output = await gateway();
     const plan = parseEmailReplyPlan(output);
     if (!canCreateInvoice && plan.invoiceItems.length) throw new Error("Your role cannot create invoices. Ask an operator to prepare the invoice.");
     for (const item of plan.invoiceItems) {

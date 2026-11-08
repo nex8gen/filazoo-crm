@@ -15,7 +15,7 @@ export function EmailSyncStatus({ health, lastSuccessAt, error }: { health: Mail
   return <div role="status" aria-live="polite" className="flex min-h-7 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b px-3 py-1.5 text-[11px] text-muted-foreground">
     <span className={`inline-flex items-center gap-1.5 ${warning ? "text-amber-700 dark:text-amber-300" : ""}`} title={success ? `Last checked: ${new Date(success).toLocaleString()}` : undefined}>
       <span aria-hidden="true" className={`size-1.5 rounded-full ${warning ? "bg-amber-500" : active || retrying ? "animate-pulse bg-muted-foreground" : "bg-emerald-500"}`} />
-      {label}{reconnect ? <> · <Link href="/settings/mailboxes" className="underline">Check mailbox settings</Link></> : null}
+      {label}{reconnect ? <> · <Link href="/settings/apps?view=personal" className="underline">Check mailbox settings</Link></> : null}
     </span>
     {history ? <span>{history.history === "running" ? "Loading older mail…" : history.history === "retrying" ? "Older mail will retry" : "Older mail queued"}{history.historyTotal && history.historyImported !== undefined ? ` ${history.historyImported}/${history.historyTotal}` : ""}</span> : null}
   </div>;

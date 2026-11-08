@@ -97,7 +97,9 @@ export async function readCrmRecords(viewer: WorkspaceViewer, request: CrmRead) 
     return { records: [{ billing: data?.settings ?? {}, ...personal, billingAvailable: true }], coverage: { matching: 1, included: 1, nextOffset: null } };
   }
   if (input.resource === "flows") {
-    const all = (await listWorkspaceFlows()).filter((flow) => (!input.id || flow.id === input.id) && (!input.query || flow.name.toLowerCase().includes(input.query.toLowerCase())));
+    const all = (await listWorkspaceFlows()).filter((flow) => (!input.id || flow.id === input.id)
+      && (!input.companyId || flow.triggerConfig.scopeCompanyId === input.companyId)
+      && (!input.query || `${flow.name} ${String(flow.triggerConfig.scopeLabel || "")}`.toLowerCase().includes(input.query.toLowerCase())));
     return { records: all.slice(input.offset, input.offset + 10), coverage: { matching: all.length, included: Math.min(10, Math.max(0, all.length - input.offset)), nextOffset: all.length > input.offset + 10 ? input.offset + 10 : null } };
   }
   if (input.resource === "members" && viewer.role === "admin") {

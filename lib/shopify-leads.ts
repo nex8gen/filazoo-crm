@@ -253,17 +253,9 @@ export function hasShopifyLeadTag(tags: string[], requiredTag: string) {
 export async function saveShopifyLead(lead: ShopifyLead, webhookId: string, shopDomain: string) {
   if (!hasSupabaseConfig()) return { ok: false as const, error: "Supabase is not configured." };
   const admin = createSupabaseAdmin();
-  const { data: existingWebhook, error: webhookLookupError } = await admin
-    .from("shopify_leads")
-    .select("webhook_id,status,company_id,contact_id")
-    .eq("webhook_id", webhookId)
-    .maybeSingle();
-  if (webhookLookupError) return { ok: false as const, error: webhookLookupError.message };
-  if (existingWebhook?.status === "processed") {
-    return { ok: true as const, duplicate: true, companyId: existingWebhook.company_id, contactId: existingWebhook.contact_id };
-  }
-
-  const { error: leadError } = await admin.from("shopify_leads").upsert({
+  // Claim before any CRM writes. The database serializes identical submissions,
+  // including concurrent requests with different browser-generated IDs.
+  const { data: claim, error: leadError } = await admin.rpc("claim_shopify_lead", { p_lead: {
     webhook_id: webhookId,
     shop_domain: shopDomain,
     customer_id: lead.customerId,
@@ -276,8 +268,14 @@ export async function saveShopifyLead(lead: ShopifyLead, webhookId: string, shop
     error_message: null,
     raw_payload: lead.rawPayload,
     created_at: lead.createdAt,
-  }, { onConflict: "webhook_id" });
+  } });
   if (leadError) return { ok: false as const, error: leadError.message };
+  if (!claim?.claimed) {
+    if (claim?.status === "processed") {
+      return { ok: true as const, duplicate: true, companyId: claim.company_id, contactId: claim.contact_id };
+    }
+    return { ok: false as const, error: "This Shopify submission is already being processed. Retry shortly." };
+  }
 
   try {
     const { data: existingContact, error: contactLookupError } = await admin

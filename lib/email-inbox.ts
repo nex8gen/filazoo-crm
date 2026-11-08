@@ -156,6 +156,7 @@ async function listShopifyFormInboxMessages() {
       .from("shopify_leads")
       .select("webhook_id,customer_id,email,full_name,company_name,phone,tags,raw_payload,created_at")
       .eq("status", "processed")
+      .is("duplicate_of", null)
       .order("created_at", { ascending: false })
       .range(from, from + pageSize - 1);
     if (error) throw new Error(`Unable to load Shopify enquiries: ${error.message}`);

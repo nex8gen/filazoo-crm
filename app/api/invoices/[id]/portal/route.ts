@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { revalidatePath } from "next/cache";
 import { invoiceAccess, checkInvoiceOrigin, invoiceError } from "@/lib/invoice-api";
 import { getInvoice } from "@/lib/data/invoices";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
@@ -50,6 +51,11 @@ export async function POST(request: Request, context: Context) {
       ? await db.from("customer_portal_messages").upsert({ id: input.id, invoice_id: id, sender: "staff", staff_id: access.viewer.id, body: input.body }, { onConflict: "id", ignoreDuplicates: true })
       : await db.from("customer_portal_shipments").upsert({ ...input.shipment, invoice_id: id, updated_by: access.viewer.id, updated_at: new Date().toISOString() });
     if (result.error) throw result.error;
+    if (input.action === "shipment") {
+      revalidatePath("/purchase-orders");
+      revalidatePath(`/companies/${invoice.company_id}`);
+      if (invoice.document.purchaseOrderId) revalidatePath(`/purchase-orders/${invoice.document.purchaseOrderId}`);
+    }
     return Response.json({ ok: true }, { headers: portalHeaders });
   } catch (error) { return invoiceError(error); }
 }

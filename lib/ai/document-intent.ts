@@ -32,7 +32,10 @@ export function assertDocumentIntent(actions: WorkspaceAction[], context?: Conve
     if (!documentActionAllowed(name, context)) throw new Error("For the requested quotation email draft, prepare one write_email with delivery:draft and attachCatalog:true. The CRM prepares its quotation attachment; do not create a separate document.");
     const kind = ["create_invoice", "update_invoice", "send_invoice", "custom_invoice", "invoice_order", "invoice_lifecycle"].includes(name) ? "invoice"
       : ["create_quotation", "update_quotation", "quotation_lifecycle"].includes(name) ? "quotation"
-      : name === "save_order" ? "order" : name === "create_catalog" ? "quotation" : null;
+      : name === "save_order" || name === "create_order" ? "order" : name === "create_catalog" ? "quotation" : null;
+    // An order is the CRM's required dependency for a new invoice. The
+    // compound tool resolves it internally, without substituting a quotation.
+    if (name === "create_order" && requested.includes("invoice")) continue;
     if (kind && !requested.includes(kind)) throw new Error(`You requested a ${requested.join(" or ")}. The agent proposed a different document (${kind}), so no actions were prepared. Please retry the original request.`);
   }
 }

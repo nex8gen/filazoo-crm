@@ -19,6 +19,7 @@ export function PurchaseOrderProfileFields({
   locked,
   onChange,
   onRefresh,
+  hideProfileLink = false,
 }: {
   companyId: string;
   document: PurchaseOrderDocument;
@@ -26,6 +27,7 @@ export function PurchaseOrderProfileFields({
   locked: boolean;
   onChange: (document: PurchaseOrderDocument) => void;
   onRefresh: () => void;
+  hideProfileLink?: boolean;
 }) {
   const customer = document.customer;
   if (!customer)
@@ -76,12 +78,12 @@ export function PurchaseOrderProfileFields({
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
-          <Link
+          {!hideProfileLink ? <Link
             className="self-center text-sm text-primary underline"
             href={`/companies/${companyId}`}
           >
             Open company profile
-          </Link>
+          </Link> : null}
           {!locked && (
             <Button
               type="button"

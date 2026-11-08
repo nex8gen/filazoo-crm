@@ -8,6 +8,6 @@ export function assistantProviderError(error: unknown) {
   if (/incomplete response|empty response/i.test(message)) return "AI returned an incomplete response. No actions from it were prepared. Please retry with a smaller task.";
   if (/credit card|billing|insufficient credits|payment required/i.test(message)) return "AI provider billing needs attention. Ask an administrator to review AI Gateway credits, payment verification, and spending limits.";
   if (/authentication failed|invalid.*(?:api key|token)|unauthorized|expired.*token/i.test(message)) return "AI provider authentication failed. An administrator must refresh the Vercel development token or configure a valid AI Gateway API key.";
-  if (/location is not supported|unsupported (?:user )?location|region is not supported/i.test(message)) return "Gemini is unavailable in this server's location. Configure AI Gateway or run the app in a supported region.";
+  if (/location is not supported|unsupported (?:user )?location|region is not supported/i.test(message)) return "The selected model is unavailable in this server's region. Check its provider routing in Vercel AI Gateway.";
   return "Filazoo AI could not respond. Please retry or ask an administrator to check the AI provider.";
 }

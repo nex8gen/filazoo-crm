@@ -113,8 +113,8 @@ function workerFixture() {
       mailboxHistory: async () => ({ mailbox: { id: "mailbox" }, messages: fresh }), hydrateAutoReplyHistory: async (_box: unknown, history: unknown) => history },
     "./flow-ai-reply": { loadFlowReplyProducts: async () => [{ sku: "PLA", name: "PLA", currency: "USD", price: 10, moq: 10, tags: [], color: null, active: true }] },
     "../invoice-links": invoiceLinks, "../ai/email-reply": reply,
-    "../ai/gemini": { generateGeminiText: async () => { calls.provider++; onProvider?.(); return JSON.stringify(plan); } },
-    "../ai/gateway": {}, "../ai/email-rewrite": { applyEmailSignature: (body: string) => body, DEFAULT_EMAIL_COMPANY: "Filazoo", DEFAULT_EMAIL_TITLE: "Manager" },
+    "../ai/gateway": { generateGatewayText: async () => { calls.provider++; onProvider?.(); return JSON.stringify(plan); } },
+    "../ai/email-rewrite": { applyEmailSignature: (body: string) => body, DEFAULT_EMAIL_COMPANY: "Filazoo", DEFAULT_EMAIL_TITLE: "Manager" },
     "../product-utils": { crmProduct: (product: unknown) => product }, "../catalog-pdf-server": { buildServerCatalogPdf: async () => Buffer.from("%PDF-synthetic-catalog") },
     "./catalog-pdfs": { ensureCompanyCatalogPdf: async (catalog: Row) => { renderedCatalogs.push(catalog); return Buffer.from("%PDF-current-template"); } },
     "./invoice-connections": { invoiceBootstrap: async () => ({ document, billing: null }) },
@@ -133,7 +133,7 @@ function workerFixture() {
   vm.runInNewContext(ts.transpileModule(readFileSync(new URL("../lib/data/email-auto-reply-worker.ts", import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText, { exports, require: (name: string) => { const aiDependency = policyTestDependency(name); if (aiDependency) return aiDependency;  assert.ok(name in dependencies, name); return dependencies[name]; },
-    Buffer, process: { env: { GEMINI_API_KEY: "synthetic" } }, console });
+    Buffer, process: { env: { AI_GATEWAY_API_KEY: "synthetic" } }, console });
   return { row, calls, tables, document, savedInvoices, renderedCatalogs, first, next, run: () => exports.processEmailAutoReply!("automation"),
     setPlan: (value: Partial<autoReply.AutoReplyPlan>) => { plan = { ...plan, ...value }; },
     setFresh: (messages: InboxEmailItem[]) => { fresh = messages; }, setFailSmtp: () => { failSmtp = true; },

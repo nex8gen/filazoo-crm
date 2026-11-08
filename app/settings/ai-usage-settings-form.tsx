@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { aiUsageAmount, aiUsageSettingsSchema, type AiUsageSettingsView } from "@/lib/ai/usage-settings";
 import { updateAiUsageSettings } from "./ai-usage-actions";
+import { useUnsavedSettings } from "./use-unsaved-settings";
 
 const dollars = (micros: number) => String(micros / 1e6);
 function draftOf(saved: AiUsageSettingsView) {
@@ -21,6 +22,7 @@ export function AiUsageSettingsForm({ initial, viewerId }: { initial: AiUsageSet
   const [success, setSuccess] = useState(false);
   const saving = useRef(false);
   const dirty = JSON.stringify(draft) !== JSON.stringify(draftOf(saved));
+  useUnsavedSettings(dirty);
   function change(next: typeof draft) { if (saving.current) return; setDraft(next); setError(""); setSuccess(false); }
   function save() {
     if (saving.current || pending || !dirty) return;

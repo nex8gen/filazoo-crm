@@ -18,7 +18,7 @@ function fixture(role = "operator", error: { code: string } | null = null, busin
     "@/lib/auth": { requireWorkspaceMember: async (roles: string[]) => { if (!roles.includes(role)) throw new Error("Access denied"); return { id: "actor", role }; } },
     "@/lib/supabase/admin": { createSupabaseAdmin: () => ({ from: (table: string) => ({
       select: () => ({ in: (_key: string, ids: string[]) => ({ or: async () => ({ data: ids.filter((id) => id === companyId).map((id) => ({ id })), error: null }) }) }),
-      insert: async (row: unknown) => { writes.push({ table, row }); return { error }; },
+      insert: (row: unknown) => ({ select: () => ({ maybeSingle: async () => { writes.push({ table, row }); return { error, data: error ? null : { id: segmentId } }; } }) }),
       update: (row: unknown, options?: unknown) => ({ eq: (key: string, id: string) => ({
         select: () => ({ maybeSingle: async () => { writes.push({ table, row, id }); return { error, data: id === segmentId && !error ? { id } : null }; } }),
         or: async (filter: string) => { writes.push({ table, row, key, id, options, filter }); return { error, count: businessCount }; },
@@ -49,6 +49,7 @@ test("segment creation rejects viewers before writing and attributes valid write
     const writer = fixture(role);
     const result = await writer.createSegment({}, form());
     assert.equal(result.success, "Segment created.");
+    assert.equal(result.segmentId, segmentId);
     assert.equal(JSON.stringify(writer.writes), JSON.stringify([{ table: "company_segments", row: { name: "Focused audience", description: "Follow-up prospects", rules: { minFitScore: 7, hasEmail: false }, created_by: "actor" } }]));
     assert.deepEqual(writer.paths, ["/segments"]);
   }

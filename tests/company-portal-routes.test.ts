@@ -70,6 +70,31 @@ test("a forged company scope cannot read or write another customer's conversatio
   assert.equal((await route.POST!(post(url, { action: "reply", id: invoiceId, body: "wrong customer" }), context())).status, 404);
   assert.equal(reads, 0);
 });
+test("saved shipment updates refresh the company PO register and connected order", async () => {
+  const orderId = "69c82025-b164-4ae4-b7d5-f2ec77e20cf2";
+  const shipment = { status: "delivered", location: "Customer warehouse", carrier: "DHL", tracking_number: "123", tracking_url: "", expected_delivery: "2026-11-07" };
+  for (const failed of [false, true]) {
+    const invalidated: string[] = [];
+    let writes = 0;
+    const route = handlers("../app/api/invoices/[id]/portal/route.ts", {
+      "@/lib/data/invoices": { getInvoice: async () => ({ id: invoiceId, company_id: companyA, status: "issued", document: { purchaseOrderId: orderId } }) },
+      "@/lib/supabase/admin": { createSupabaseAdmin: () => ({ from: (table: string) => {
+        assert.equal(table, "customer_portal_shipments");
+        return { upsert: async (input: Record<string, unknown>) => {
+          writes++;
+          assert.equal(input.invoice_id, invoiceId);
+          assert.equal(input.status, "delivered");
+          return { error: failed ? { message: "Shipment update failed" } : null };
+        } };
+      } }) },
+      "next/cache": { revalidatePath: (path: string) => invalidated.push(path) },
+    });
+    const response = await route.POST!(post(`/api/invoices/${invoiceId}/portal?companyId=${companyA}`, { action: "shipment", shipment }), context());
+    assert.equal(writes, 1);
+    assert.equal(response.status, failed ? 409 : 200);
+    assert.deepEqual(invalidated, failed ? [] : ["/purchase-orders", `/companies/${companyA}`, `/purchase-orders/${orderId}`]);
+  }
+});
 test("viewer and customer roles cannot connect invoices or create customer profiles", async () => {
   let writes = 0;
   for (const role of ["viewer", "customer", ""]) {

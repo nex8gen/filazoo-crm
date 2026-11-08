@@ -1,6 +1,15 @@
 import { z } from "zod";
 
+export const startPages = [
+  { href: "/", label: "Home" },
+  { href: "/analytics", label: "Analytics" },
+  { href: "/my-day", label: "My day" },
+  { href: "/companies", label: "Companies" },
+  { href: "/email", label: "Email" },
+] as const;
+
 export const userPreferencesSchema = z.object({
+  startPage: z.enum(["/", "/analytics", "/my-day", "/companies", "/email"]).default("/"),
   tablePageSize: z.union([z.literal(10), z.literal(25), z.literal(50), z.literal(100)]).default(25),
   density: z.enum(["comfortable", "compact"]).default("comfortable"),
   reduceMotion: z.boolean().default(false),
@@ -12,6 +21,10 @@ export const userPreferencesSchema = z.object({
 });
 export type UserPreferences = z.infer<typeof userPreferencesSchema>;
 export const defaultUserPreferences = userPreferencesSchema.parse({});
+
+export function preferredStartPage(value: unknown) {
+  return readUserPreferences(value).startPage;
+}
 
 // Older or independently corrupted fields must not discard other saved choices.
 export function readUserPreferences(value: unknown): UserPreferences {

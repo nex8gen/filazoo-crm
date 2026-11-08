@@ -8,7 +8,7 @@ const checkpoint = "docs/audit-evidence/flow-live-ai-email-checkpoint-20261030.j
 if (!existsSync(checkpoint)) writeFileSync(checkpoint, JSON.stringify({ id: randomUUID() }, null, 2));
 for (const path of ["lib", "public/fonts", "public/catalog-default-product.jpg", "package.json", "package-lock.json", "scripts/verify-flow-live-ai-email.ts", checkpoint]) cpSync(path, `${stage}/${path}`, { recursive: true });
 const local = parseEnv(readFileSync(".env.local", "utf8"));
-const keys = ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY", "GEMINI_API_KEY", "GEMINI_EMAIL_MODEL", "DAILY_SEND_LIMIT", "BOUNCE_PAUSE_PERCENT"];
+const keys = ["AI_GATEWAY_API_KEY", "VERCEL_OIDC_TOKEN", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY", "DAILY_SEND_LIMIT", "BOUNCE_PAUSE_PERCENT"];
 const env = Object.fromEntries(keys.filter((key) => local[key]).map((key) => [key, local[key]]));
 env.DRY_RUN = "true";
 env.NEXT_PUBLIC_APP_URL = "https://crm.filazoosupply.com";

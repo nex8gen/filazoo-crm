@@ -1,7 +1,6 @@
 // Read-only provider checks with synthetic records. Never reads CRM data or executes actions.
 import assert from "node:assert/strict";
-import { generateGeminiText } from "../lib/ai/gemini.ts";
-import { generateGatewayText, isGeminiRegionError } from "../lib/ai/gateway.ts";
+import { generateGatewayText } from "../lib/ai/gateway.ts";
 import { assistantProviderError } from "../lib/ai/assistant-provider-error.ts";
 import { buildWorkspaceAssistantPrompt, extractWorkspaceActions, workspaceAssistantInstruction, workspaceAssistantSchema } from "../lib/ai/workspace-assistant.ts";
 import { defaultFlowInput, flowAgentCapabilities } from "../lib/flows.ts";
@@ -18,16 +17,8 @@ async function plan(pathname: string, question: string, data: object) {
   const token = process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim();
   let output: string;
   try {
-    if (!process.env.GEMINI_API_KEY?.trim()) {
-      if (!token) throw new Error("No AI provider configured");
-      output = await generateGatewayText({ ...options, token, model: process.env.AI_GATEWAY_AGENT_MODEL || process.env.AI_GATEWAY_EMAIL_MODEL });
-    } else {
-      try { output = await generateGeminiText({ ...options, apiKey: process.env.GEMINI_API_KEY, model: process.env.GEMINI_AGENT_MODEL || process.env.GEMINI_EMAIL_MODEL }); }
-      catch (error) {
-        if (!token || !isGeminiRegionError(error)) throw error;
-        output = await generateGatewayText({ ...options, token, model: process.env.AI_GATEWAY_AGENT_MODEL || process.env.AI_GATEWAY_EMAIL_MODEL });
-      }
-    }
+    if (!token) throw new Error("Vercel AI Gateway authentication is required.");
+    output = await generateGatewayText({ ...options, token, model: process.env.AI_GATEWAY_AGENT_MODEL || process.env.AI_GATEWAY_EMAIL_MODEL });
   } catch (error) {
     const code = (error as { cause?: { code?: string } })?.cause?.code;
     throw new Error(`${assistantProviderError(error)}${code && /^[A-Z_0-9]+$/.test(code) ? ` (${code})` : ""}`);

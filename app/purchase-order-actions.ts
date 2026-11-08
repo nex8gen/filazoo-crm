@@ -150,6 +150,7 @@ export async function savePurchaseOrder(
   orderId: string | null,
   version: number,
   input: unknown,
+  creationId?: string,
 ): Promise<{ error?: string; success?: string; orderId?: string }> {
   const viewer = await requireWorkspaceMember([
     "admin",
@@ -161,13 +162,15 @@ export async function savePurchaseOrder(
       companyId: z.uuid(),
       orderId: z.uuid().nullable(),
       version: z.number().int().min(0),
+      creationId: z.uuid().optional(),
     })
-    .safeParse({ companyId, orderId, version });
+    .safeParse({ companyId, orderId, version, creationId });
   const parsed = (orderId ? purchaseOrderSchema : purchaseOrderCreateSchema).safeParse(input);
   if (!ids.success || !parsed.success)
     return {
       error: parsed.error?.issues[0]?.message || "Invalid purchase order.",
     };
+  if (orderId && creationId) return { error: "A creation ID is only valid for a new order." };
   const db = createSupabaseAdmin();
   const { data: company, error: companyError } = await db
     .from("companies")
@@ -249,6 +252,18 @@ export async function savePurchaseOrder(
     updated_at: new Date().toISOString(),
     version: version + 1,
   };
+  async function savedCreation() {
+    if (!creationId) return null;
+    const saved = await db.from("purchase_orders").select("id,document").eq("id", creationId).eq("company_id", companyId).eq("created_by", viewer.id).maybeSingle();
+    if (saved.error) throw new Error("Unable to verify the saved order. Check its status before retrying.");
+    if (!saved.data) return null;
+    const current = purchaseOrderCreateSchema.parse(saved.data.document);
+    const expected = purchaseOrderCreateSchema.parse({ ...values.document, reference: values.document.reference || current.reference });
+    if (JSON.stringify(current) !== JSON.stringify(expected)) throw new Error("The saved order changed. Prepare a new review before continuing.");
+    return { success: "Purchase order saved.", orderId: saved.data.id };
+  }
+  const alreadySaved = await savedCreation();
+  if (alreadySaved) return alreadySaved;
   const result = orderId
     ? await db
         .from("purchase_orders")
@@ -260,9 +275,13 @@ export async function savePurchaseOrder(
         .maybeSingle()
     : await db
         .from("purchase_orders")
-        .insert({ ...values, company_id: companyId, created_by: viewer.id })
+        .insert({ ...values, ...(creationId ? { id: creationId } : {}), company_id: companyId, created_by: viewer.id })
         .select("id")
         .single();
+  if (result.error?.code === "23505" && creationId) {
+    const saved = await savedCreation();
+    if (saved) return saved;
+  }
   if (result.error)
     return {
       error:
@@ -280,6 +299,7 @@ export async function savePurchaseOrder(
   revalidatePath(`/companies/${companyId}`);
   revalidatePath("/invoices", "layout");
   revalidatePath("/purchase-orders");
+  revalidatePath("/purchase-orders/drafts");
   revalidatePath(`/purchase-orders/${result.data.id}`);
   revalidatePath(`/purchase-orders/${result.data.id}/edit`);
   return { success: "Purchase order saved.", orderId: result.data.id };

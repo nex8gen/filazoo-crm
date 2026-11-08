@@ -1,0 +1,5 @@
+import { Skeleton } from "@/components/ui/skeleton";
+
+export function HomeSkeleton() {
+  return <div role="status" aria-label="Loading Home" className="mx-auto w-full max-w-[1440px] flex min-h-[calc(100dvh-2rem)] flex-col gap-6 pt-3"><span className="sr-only">Loading Home</span><div className="flex justify-between"><Skeleton className="h-5 w-44" /><Skeleton className="h-8 w-52" /></div><div className="grid grid-cols-2 gap-3 xl:grid-cols-4">{[0, 1, 2, 3].map(index => <Skeleton key={index} className="h-12 rounded-md" />)}</div><div className="mx-auto w-full max-w-[1000px] space-y-4"><Skeleton className="h-5 w-32" /><div className="flex flex-wrap justify-center gap-4">{[0, 1, 2].map(index => <Skeleton key={index} className="h-[332px] w-full max-w-[400px] flex-[0_1_100%] rounded-xl sm:max-w-none sm:flex-[0_1_calc((100%-16px)/2)] xl:flex-[0_1_calc((100%-32px)/3)]" />)}</div></div><div className="sticky bottom-0 mt-auto py-4"><Skeleton className="mx-auto h-[108px] w-full max-w-[640px] rounded-[20px]" /></div></div>;
+}

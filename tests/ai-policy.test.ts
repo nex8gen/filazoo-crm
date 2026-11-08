@@ -132,14 +132,14 @@ function assistantFixture(policy: rules.AiPolicy) {
     "@/lib/data/ai-settings": gates(policy), "@/lib/ai-policy": rules,
     "@/lib/auth": { getWorkspaceViewer: async () => ({ id: userId, role: "admin" }) },
     "@/lib/ai/workspace-assistant": assistant, "@/lib/i18n": { translateUiText: (text: string) => text },
-    "@/lib/ai/gemini": { generateGeminiText: async ({ prompt }: { prompt: string }) => { calls.push(prompt); return "Answer"; } },
-    "@/lib/ai/gateway": {}, "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) }, "@/lib/ai/agent-execution": {},
+    "@/lib/ai/gateway": { generateGatewayText: async ({ prompt }: { prompt: string }) => { calls.push(prompt); return "Answer"; } },
+     "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) }, "@/lib/ai/agent-execution": {},
     "@/lib/ai/assistant-provider-error": {}, "@/lib/ai/customer-research": {}, "@/lib/ai/image-input": images,
     "@/lib/ai/crm-tools": tools, "@/lib/ai/crm-records": {},
     "@/lib/ai/chat-session": { startChatSession: async () => { sessionCalls++; return undefined; } },
     "@/lib/ai/chat-history-server": { HistoryError: Error }, "@/lib/ai/chat-history": { savedPageContext: () => ({}) },
     "@/lib/ai/invoice-readiness": {},
-  }, { process: { env: { GEMINI_API_KEY: "synthetic-test" } } });
+  }, { process: { env: { AI_GATEWAY_API_KEY: "synthetic-test" } } });
   const request = (patch = {}) => new Request("http://localhost:3000/api/ai/assistant", { method: "POST", body: JSON.stringify({ mode: "analyze", pathname: "/companies", pageLabel: "Companies", pageText: "PRIVATE PAGE SNAPSHOT", messages: [{ role: "user", content: "Earlier private customer data" }, { role: "assistant", content: "Earlier private answer" }, { role: "user", content: "Hello" }], ...patch }) });
   return { ...route, calls, request, sessionCalls: () => sessionCalls };
 }

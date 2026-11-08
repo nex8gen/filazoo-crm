@@ -115,13 +115,8 @@ export async function generateGatewayText({
     if (result.status && result.status !== "completed") throw new Error("AI returned an incomplete response. No actions from it can be prepared. Please retry with a smaller task.");
     const output = result.output?.filter((item) => item.type === "message").flatMap((item) => item.content ?? []).filter((part) => part.type === "output_text").map((part) => part.text || "").join("\n").trim();
 
-    if (!output) throw new Error("The fallback AI provider returned an empty response.");
+    if (!output) throw new Error("AI Gateway returned an empty response.");
     return output;
   }
   throw new Error("AI Gateway could not respond. Please retry shortly.");
-}
-
-export function isGeminiRegionError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  return /location is not supported|unsupported (?:user )?location|region is not supported/i.test(message);
 }

@@ -11,8 +11,7 @@ import { authorizeAutoReply, hydrateAutoReplyHistory, mailboxHistory, type AutoR
 import { loadFlowReplyProducts } from "./flow-ai-reply";
 import { invoiceProduct } from "../invoice-links";
 import { replyInvoiceLines } from "../ai/email-reply";
-import { generateGeminiText } from "../ai/gemini";
-import { generateGatewayText, isGeminiRegionError } from "../ai/gateway";
+import { generateGatewayText } from "../ai/gateway";
 import { applyEmailSignature, DEFAULT_EMAIL_COMPANY, DEFAULT_EMAIL_TITLE } from "../ai/email-rewrite";
 import { crmProduct } from "../product-utils";
 import { buildServerCatalogPdf } from "../catalog-pdf-server";
@@ -87,16 +86,13 @@ async function planReply(row: AutoReplyRow, history: InboxEmailItem[]) {
   });
   // Never silently discard early commitments or product/policy records.
   if (prompt.length > 300_000) throw new Error("The conversation or business context is too large for automatic review. A person must review this reply.");
-  const apiKey = process.env.AI_PROVIDER === "gateway" || process.env.AI_BUDGET_ENFORCEMENT === "true" ? undefined : process.env.GEMINI_API_KEY?.trim();
   const token = resolveGatewayToken(process.env);
   const options = { prompt, systemInstruction: autoReplyInstruction + aiBehaviorInstruction(policy, true), maxOutputTokens: 8192 };
   const gateway = () => {
     if (!token) throw new Error("AI auto-reply is not configured.");
     return generateGatewayText({ usageUserId: row.user_id, ...options, token, model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim(), task: "reply" });
   };
-  let output: string;
-  try { output = apiKey ? await generateGeminiText({ ...options, apiKey, model: process.env.GEMINI_EMAIL_MODEL?.trim() }) : await gateway(); }
-  catch (error) { if (!apiKey || !token || !isGeminiRegionError(error)) throw error; output = await gateway(); }
+  const output = await gateway();
   const plan = autoReplyPlanSchema.parse(JSON.parse(output.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")));
   if (plan.action === "reply" && plan.invoiceItems.length) throw new Error("Invoice requests must pause for shipping approval.");
   return { plan, products, profile, bootstrap };

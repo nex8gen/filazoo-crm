@@ -18,6 +18,7 @@ import { CompanyOrderBadge } from "@/components/company-order-badge";
 import { CustomerTagBadge } from "@/components/customer-tag-badges";
 import { CompanyListTags } from "@/components/company-list-tags";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -34,7 +35,6 @@ import { customerTagValues } from "@/lib/customer-tags";
 const addedAtFormatter = new Intl.DateTimeFormat(undefined, {
   timeZone: "Asia/Shanghai",
   dateStyle: "medium",
-  timeStyle: "short",
 });
 
 function CompanyIdentity({ company }: { company: Company }) {
@@ -55,8 +55,9 @@ function CompanyIdentity({ company }: { company: Company }) {
 function CountryFlag({ country }: { country: string }) {
   const code = countryFlagCode(country);
   const label = country.trim() || "Unknown country";
-  return <span className="inline-flex h-6 items-center" title={label}>
-    {code ? <Image src={`/flags/${code}.svg`} alt={label} width={24} height={18} className="h-[18px] w-6 rounded-sm object-cover ring-1 ring-border/50" /> : <Globe2 role="img" aria-label={label} className="size-5 text-muted-foreground" />}
+  return <span className="inline-flex h-6 items-center gap-2" title={label}>
+    {code ? <Image src={`/flags/${code}.svg`} alt="" width={24} height={18} className="h-[18px] w-6 rounded-sm object-cover ring-1 ring-border/50" /> : <Globe2 aria-hidden className="size-5 text-muted-foreground" />}
+    <span>{label}</span>
   </span>;
 }
 
@@ -70,18 +71,19 @@ export function CompaniesTable({ companies, mode, canDelete, viewKey = "all" }: 
   const [tag, setTag] = useWorkspaceState(`${memoryKey}.tag`, "all");
   const [draft, setDraft] = useWorkspaceState(`${memoryKey}.filters`, { country: "all" });
   const [sorting, setSorting] = useWorkspaceState<SortingState>(`${memoryKey}.sorting`, []);
-  const [columnVisibility, setColumnVisibility] = useWorkspaceState<Record<string, boolean>>(`${memoryKey}.columns`, {});
+  const [columnVisibility, setColumnVisibility] = useWorkspaceState<Record<string, boolean>>(`${memoryKey}.columns`, { addedAt: false });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const selectedCompanyIds = useMemo(() => companies.filter(company => selectedIds.has(company.id)).map(company => company.id), [companies, selectedIds]);
 
-  const countries = useMemo(() => [...new Set(companies.map((company) => company.country))].sort(), [companies]);
+  const countries = useMemo(() => [...new Set(companies.map((company) => company.country).filter(country => country.trim()))].sort(), [companies]);
   const filtered = useMemo(() => companies.filter((company) => {
     const matchesQuery = `${company.name} ${company.domain} ${company.email} ${company.segment} ${company.ownerName} ${(company.customerTags ?? []).join(" ")}`.toLowerCase().includes(query.toLowerCase());
     return matchesQuery && (country === "all" || company.country === country) && (tag === "all" || (company.customerTags ?? []).some(value => value === tag));
   }), [companies, country, query, tag]);
   const shopifyCount = useMemo(() => companies.filter((company) => company.source.includes("shopify")).length, [companies]);
-  const needsReviewCount = useMemo(() => companies.filter((company) => company.country === "Unknown" || !company.email).length, [companies]);
-  const knownCountryCount = useMemo(() => new Set(companies.map((company) => company.country).filter((item) => item !== "Unknown")).size, [companies]);
+  const needsReviewCount = useMemo(() => companies.filter((company) => !company.country.trim() || /^unknown$/i.test(company.country.trim()) || !company.email).length, [companies]);
+  const knownCountryCount = useMemo(() => new Set(companies.map((company) => company.country.trim()).filter((item) => item && !/^unknown$/i.test(item))).size, [companies]);
 
   const toggleOne = (id: string, checked: boolean) => setSelectedIds((current) => {
     const next = new Set(current);
@@ -95,9 +97,9 @@ export function CompaniesTable({ companies, mode, canDelete, viewKey = "all" }: 
       header: ({ table }) => {
         const ids = table.getRowModel().rows.map((row) => row.original.id);
         const allSelected = ids.length > 0 && ids.every((id) => selectedIds.has(id));
-        return <input aria-label="Select this page" type="checkbox" checked={allSelected} className="size-4 accent-current" onChange={(event) => setSelectedIds((current) => { const next = new Set(current); for (const id of ids) { if (event.target.checked) next.add(id); else next.delete(id); } return next; })} />;
+        return <Checkbox aria-label="Select companies on this page" checked={allSelected} indeterminate={!allSelected && ids.some(id => selectedIds.has(id))} onCheckedChange={checked => setSelectedIds((current) => { const next = new Set(current); for (const id of ids) { if (checked) next.add(id); else next.delete(id); } return next; })} />;
       },
-      cell: ({ row }) => <input aria-label={`Select ${row.original.name}`} type="checkbox" checked={selectedIds.has(row.original.id)} className="size-4 accent-current" onChange={(event) => toggleOne(row.original.id, event.target.checked)} />,
+      cell: ({ row }) => <Checkbox aria-label={`Select ${row.original.name}`} checked={selectedIds.has(row.original.id)} onCheckedChange={checked => toggleOne(row.original.id, checked)} />,
     },
     {
       accessorKey: "name", header: "Company / customer", enableHiding: false,
@@ -115,11 +117,12 @@ export function CompaniesTable({ companies, mode, canDelete, viewKey = "all" }: 
     getCoreRowModel: getCoreRowModel(), getSortedRowModel: getSortedRowModel(), getPaginationRowModel: getPaginationRowModel(),
   });
 
-  if (companies.length === 0) return <EmptyState icon={Building2} title={mode === "live" ? "No companies yet" : "Supabase setup required"} description={mode === "live" ? "Your Supabase companies table is connected and empty. Add or import the first company to begin." : "Add a valid project secret key to the server environment, then redeploy the app."} />;
+  if (companies.length === 0) return <EmptyState icon={Building2} title={mode === "live" ? "No companies yet" : "Company data is unavailable"} description={mode === "live" ? "Add or import your first company to start building account history." : "Check your workspace connection in Settings and try again."} />;
 
   return <div className="flex min-w-0 flex-col gap-6">
-    <ConfirmActionDialog open={deleteOpen} onOpenChange={setDeleteOpen} title="Delete selected companies?" description={`Delete ${selectedIds.size} selected companies and their contacts, catalogs, and account history? This cannot be undone.`} onConfirm={async () => {
-      const result = await bulkUpdateCompanies([...selectedIds], "delete");
+    <ConfirmActionDialog open={deleteOpen} onOpenChange={setDeleteOpen} title="Delete selected companies?" description={`Delete ${selectedCompanyIds.length} selected companies and their contacts, catalogs, and account history? This cannot be undone.`} onConfirm={async () => {
+      if (!canDelete || !selectedCompanyIds.length) throw new Error("Select companies you have permission to delete.");
+      const result = await bulkUpdateCompanies(selectedCompanyIds, "delete");
       if (!result?.success) throw new Error(result?.error || "Unable to delete the selected companies.");
       toast.success(result.success);
       setSelectedIds(new Set());
@@ -153,12 +156,13 @@ export function CompaniesTable({ companies, mode, canDelete, viewKey = "all" }: 
       <TableFilter label="Country"><Select value={draft.country} onValueChange={(value) => setDraft({ ...draft, country: value ?? "all" })}><SelectTrigger><SelectValue>{draft.country === "all" ? "All countries" : draft.country}</SelectValue></SelectTrigger><SelectContent><SelectItem value="all">All countries</SelectItem>{countries.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></TableFilter>
     </TableFilters>
     <Card className="crm-table-frame gap-0 py-0">
-    {selectedIds.size > 0 && <div className="flex flex-wrap items-center gap-2 border-b bg-brand-soft px-4 py-3"><p className="mr-auto text-sm font-semibold text-primary">{selectedIds.size} selected</p><Button size="sm" variant="destructive" disabled={!canDelete} title={canDelete ? "Delete selected companies" : "Only admins can delete companies"} onClick={() => setDeleteOpen(true)}><Trash2 />Delete</Button></div>}
+    {selectedCompanyIds.length > 0 && <div className="flex flex-wrap items-center gap-2 border-b bg-brand-soft px-4 py-2"><p className="mr-auto text-sm font-semibold text-primary" aria-live="polite">{selectedCompanyIds.length} selected</p><Button size="sm" variant="destructive" disabled={!canDelete} title={canDelete ? "Delete selected companies" : "Only admins can delete companies"} onClick={() => setDeleteOpen(true)}><Trash2 />Delete</Button></div>}
 
     {filtered.length === 0 ? <div className="p-8"><EmptyState icon={Building2} title="No companies found" description="Try changing your search or filters to see more results." /></div> : <>
       <div className="crm-table-flex-body"><Table>
-        <TableHeader>{table.getHeaderGroups().map((group) => <TableRow key={group.id} className="hover:bg-transparent">{group.headers.map((header) => <TableHead key={header.id} aria-sort={header.column.getIsSorted() === "asc" ? "ascending" : header.column.getIsSorted() === "desc" ? "descending" : undefined}>{header.isPlaceholder ? null : header.column.getCanSort() ? <button className="flex items-center gap-1 hover:text-foreground" onClick={header.column.getToggleSortingHandler()}>{flexRender(header.column.columnDef.header, header.getContext())}<ChevronsUpDown className="size-3" /></button> : flexRender(header.column.columnDef.header, header.getContext())}</TableHead>)}</TableRow>)}</TableHeader>
-        <TableBody>{table.getRowModel().rows.map((row) => <TableRow key={row.id} className="group cursor-pointer" tabIndex={0} onClick={(event) => { if (!(event.target as HTMLElement).closest("button,a,input,[role=checkbox]")) router.push(`/companies/${row.original.id}`); }} onKeyDown={(event) => { if (event.target === event.currentTarget && event.key === "Enter") router.push(`/companies/${row.original.id}`); }}>{row.getVisibleCells().map((cell) => <TableCell key={cell.id} >{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}</TableRow>)}</TableBody>
+        <caption className="sr-only">Companies, contact details, account owners, and business segments</caption>
+        <TableHeader>{table.getHeaderGroups().map((group) => <TableRow key={group.id} className="hover:bg-transparent">{group.headers.map((header) => <TableHead key={header.id} data-column={header.column.id} aria-sort={header.column.getIsSorted() === "asc" ? "ascending" : header.column.getIsSorted() === "desc" ? "descending" : undefined}>{header.isPlaceholder ? null : header.column.getCanSort() ? <button className="flex items-center gap-1 hover:text-foreground" onClick={header.column.getToggleSortingHandler()}>{flexRender(header.column.columnDef.header, header.getContext())}<ChevronsUpDown className="size-3" /></button> : flexRender(header.column.columnDef.header, header.getContext())}</TableHead>)}</TableRow>)}</TableHeader>
+        <TableBody>{table.getRowModel().rows.map((row) => <TableRow key={row.id} className="group cursor-pointer" tabIndex={0} onClick={(event) => { if (!(event.target as HTMLElement).closest("button,a,input,[role=checkbox]")) router.push(`/companies/${row.original.id}`); }} onKeyDown={(event) => { if (event.target === event.currentTarget && event.key === "Enter") router.push(`/companies/${row.original.id}`); }}>{row.getVisibleCells().map((cell) => <TableCell key={cell.id} data-column={cell.column.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}</TableRow>)}</TableBody>
       </Table></div>
     </>}
     </Card>

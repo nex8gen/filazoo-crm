@@ -17,6 +17,8 @@ import { zhCNAiHistory } from "./i18n-ai-history.ts";
 import { zhCNTaskActivity } from "./i18n-task-activity.ts";
 import { zhCNPurchaseOrders } from "./i18n-purchase-orders.ts";
 import { zhCNWorkspaces } from "./i18n-workspaces.ts";
+import { zhCNTables } from "./i18n-tables.ts";
+import { zhCNHome } from "./i18n-home.ts";
 
 import type { AppLanguage } from "./app-language.ts";
 export type { AppLanguage } from "./app-language.ts";
@@ -25,6 +27,8 @@ export { LANGUAGE_STORAGE_KEY } from "./app-language.ts";
 // Product terminology is centralized so sales, catalog, mailbox, and
 // automation screens use consistent professional Chinese wording.
 const zhCN: Record<string, string> = {
+  ...zhCNHome,
+  ...zhCNTables,
   "Custom": "自定义",
   "Type to narrow the list.": "输入内容以缩小列表范围。",
   "Unable to load cities. Enter a city manually or": "无法加载城市。请手动输入城市，或",

@@ -41,6 +41,6 @@ export function InvoicePaymentSelect({ doc, onChange }: { doc: InvoiceDocument; 
     {!loading && !options.length && !error ? <EmptyState compact icon={Wallet} title="No saved payment methods" description="Add them in Settings, or use the manual instructions below." /> : null}
     {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
     {selected.some((method) => method.currency && method.currency !== doc.currency) ? <p role="alert" className="text-sm text-destructive">Remove payment methods that do not support {doc.currency}.</p> : null}
-    <Link href="/settings/payments" target="_blank" rel="noreferrer" className="inline-block text-xs text-primary underline">Manage payment methods in Settings</Link>
+    <Link href="/settings/invoices#payment-methods" target="_blank" rel="noreferrer" className="inline-block text-xs text-primary underline">Manage payment methods in Settings</Link>
   </fieldset>;
 }

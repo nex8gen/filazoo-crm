@@ -52,6 +52,7 @@ export function flowEmailTestTrace(input: FlowEmailTestInput, now = new Date()):
   return [{ step: input.messageStepPath[0] + 1, stepPath: input.messageStepPath, type: step.type, status: "would_run", scheduledAt: now.toISOString(), detail: "Previewing this message independently of journey entry and delays." }];
 }
 export const flowEmailDeliveryTestSchema = flowEmailTestSchema.extend({
+  timing: z.enum(["fast", "scheduled"]).default("fast"),
   requestId: z.uuid(),
   recipient: z.email().max(300).transform((value) => value.toLowerCase()),
   emails: flowEmailTestSchema.shape.emails.max(1, "Use one sample email for a real delivery test."),

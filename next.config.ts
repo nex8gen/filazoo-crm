@@ -10,7 +10,6 @@ const nextConfig: NextConfig = {
   partialPrefetching: true,
   redirects() {
     return [
-      { source: "/", destination: "/analytics", permanent: true },
       { source: "/lead-channel/ai-agent/:path*", destination: "/workflow/:path*", permanent: true },
       { source: "/automation", destination: "/workflow", permanent: true },
       { source: "/catalogs/companies/:path*", destination: "/company-quotations/:path*", permanent: true },

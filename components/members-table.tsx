@@ -20,9 +20,11 @@ import type { WorkspaceMemberRecord } from "@/lib/data/members";
 
 import { usePreferences } from "@/components/preferences-provider";
 
-function formatDate(value: string | null) {
-  return value ? new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "Never";
+function formatDate(value: string | null, withTime = true) {
+  return value ? new Intl.DateTimeFormat("en", { timeZone: "Asia/Shanghai", dateStyle: "medium", ...(withTime ? { timeStyle: "short" as const } : {}) }).format(new Date(value)) : "Never";
 }
+
+const roleLabels = { admin: "Admin", operator: "Operator", bd_manager: "BD Sales Manager", viewer: "Viewer" };
 
 function EditMemberDialog({ member, open, onOpenChange }: { member: WorkspaceMemberRecord; open: boolean; onOpenChange: (open: boolean) => void }) {
   const [state, action, pending] = useActionState(updateMember, undefined);
@@ -69,7 +71,7 @@ function DeleteMemberDialog({ member, open, onOpenChange }: { member: WorkspaceM
 function MemberActions({ member }: { member: WorkspaceMemberRecord }) {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  return <><DropdownMenu><DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Actions for ${member.displayName || member.email}`} />}><MoreHorizontal /></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => setEditOpen(true)}><Pencil />Edit member</DropdownMenuItem><DropdownMenuItem variant="destructive" onClick={() => setDeleteOpen(true)}><Trash2 />Delete member</DropdownMenuItem></DropdownMenuContent></DropdownMenu><EditMemberDialog member={member} open={editOpen} onOpenChange={setEditOpen} /><DeleteMemberDialog member={member} open={deleteOpen} onOpenChange={setDeleteOpen} /></>;
+  return <><DropdownMenu><DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Actions for ${member.displayName || member.email}`} />}><MoreHorizontal /></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => setEditOpen(true)}><Pencil />Edit member</DropdownMenuItem><DropdownMenuItem variant="destructive" onClick={() => setDeleteOpen(true)}><Trash2 />Delete member</DropdownMenuItem></DropdownMenuContent></DropdownMenu><EditMemberDialog key={`${member.id}:${editOpen}`} member={member} open={editOpen} onOpenChange={setEditOpen} /><DeleteMemberDialog member={member} open={deleteOpen} onOpenChange={setDeleteOpen} /></>;
 }
 
 export function MembersTable({ members, viewerId }: { members: WorkspaceMemberRecord[]; viewerId: string }) {
@@ -83,9 +85,10 @@ export function MembersTable({ members, viewerId }: { members: WorkspaceMemberRe
   return (
     <div className="space-y-6">
     <Card className="crm-table-frame crm-table-page-wide gap-0 overflow-hidden py-0 shadow-none">
-      <Table>
-        <TableHeader><TableRow><TableHead>Member</TableHead><TableHead>Role</TableHead><TableHead>Status</TableHead><TableHead>Activity</TableHead><TableHead className="w-12"><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader>
-        <TableBody>{visibleMembers.map((member) => <TableRow key={member.id}><TableCell><p className="text-sm font-medium">{member.displayName || "Unnamed member"}</p><p className="text-xs text-muted-foreground">{member.email}</p></TableCell><TableCell><Badge variant="outline" className="capitalize">{member.role.replace("_", " ")}</Badge>{member.autoAssignLeads && member.activated ? <p className="mt-1 text-xs text-muted-foreground">Auto-assign on</p> : null}</TableCell><TableCell><Badge variant={member.activated ? "secondary" : "outline"}>{member.activated ? "Active" : "Invited"}</Badge><p className="mt-1 text-xs text-muted-foreground">{member.activatedAt ? `Activated ${formatDate(member.activatedAt)}` : `Invited ${formatDate(member.createdAt)}`}</p></TableCell><TableCell className="text-xs"><p>Last sign-in: {formatDate(member.lastSignInAt)}</p><p className="mt-1 text-xs text-muted-foreground">Member since {formatDate(member.createdAt)}</p><p className="mt-1 text-xs text-muted-foreground">Updated {formatDate(member.updatedAt)}</p></TableCell><TableCell>{member.id === viewerId ? <Badge variant="outline">You</Badge> : <MemberActions member={member} />}</TableCell></TableRow>)}{!members.length ? <TableRow><TableCell colSpan={5}><EmptyState compact icon={UsersRound} title="No team members yet" description="Invite a team member to collaborate in this workspace." className="border-0 bg-transparent" /></TableCell></TableRow> : null}</TableBody>
+      <Table className="min-w-[820px]">
+        <caption className="sr-only">Workspace members, access roles, and account activity. Times are shown in China time.</caption>
+        <TableHeader><TableRow><TableHead>Member</TableHead><TableHead>Role</TableHead><TableHead>Status</TableHead><TableHead>Last sign-in</TableHead><TableHead>Joined</TableHead><TableHead className="w-12"><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader>
+        <TableBody>{visibleMembers.map((member) => <TableRow key={member.id}><TableCell><p className="font-medium">{member.displayName || "Unnamed member"}</p><p className="text-xs text-muted-foreground">{member.email}</p></TableCell><TableCell><Badge variant="outline">{roleLabels[member.role]}</Badge>{member.autoAssignLeads && member.activated ? <p className="mt-1 text-xs text-muted-foreground">Auto-assign on</p> : null}</TableCell><TableCell><Badge variant={member.activated ? "secondary" : "outline"} title={member.activatedAt ? `Activated ${formatDate(member.activatedAt)}` : `Invited ${formatDate(member.createdAt)}`}>{member.activated ? "Active" : "Invited"}</Badge></TableCell><TableCell className="text-xs">{formatDate(member.lastSignInAt)}</TableCell><TableCell className="text-xs">{formatDate(member.createdAt, false)}</TableCell><TableCell>{member.id === viewerId ? <Badge variant="outline">You</Badge> : <MemberActions member={member} />}</TableCell></TableRow>)}{!members.length ? <TableRow><TableCell colSpan={6}><EmptyState compact icon={UsersRound} title="No team members yet" description="Invite a team member to collaborate in this workspace." className="border-0 bg-transparent" /></TableCell></TableRow> : null}</TableBody>
       </Table>
       
     </Card>

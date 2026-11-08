@@ -1,5 +1,5 @@
 import type { ComponentType } from "react";
-import { BookOpen, Building2, ChartNoAxesCombined, ClipboardList, LayoutDashboard, ListTodo, Mail, MessageSquareText, Package2, Settings, Tags, Workflow } from "lucide-react";
+import { BookOpen, Building2, ChartNoAxesCombined, ClipboardList, FilePenLine, House, LayoutDashboard, ListTodo, Mail, MessageSquareText, Package2, Settings, Tags, Workflow } from "lucide-react";
 
 export type NavigationItem = {
   label: string;
@@ -8,6 +8,7 @@ export type NavigationItem = {
   description: string;
   exact?: boolean;
   activePrefix?: string;
+  excludePrefixes?: string[];
 };
 
 export type NavigationGroup = {
@@ -15,10 +16,18 @@ export type NavigationGroup = {
   eyebrow: string;
   icon: ComponentType<{ className?: string }>;
   direct?: boolean;
+  nested?: boolean;
   items: NavigationItem[];
 };
 
 export const navigation: NavigationGroup[] = [
+  {
+    label: "Home",
+    eyebrow: "Workspace",
+    icon: House,
+    direct: true,
+    items: [{ label: "Home", href: "/", icon: House, description: "Your AI workspace and sales priorities", exact: true }],
+  },
   {
     label: "Overview",
     eyebrow: "CRM",
@@ -39,11 +48,14 @@ export const navigation: NavigationGroup[] = [
     ],
   },
   {
-    label: "Purchase orders",
+    label: "PO",
     eyebrow: "Orders",
     icon: ClipboardList,
-    direct: true,
-    items: [{ label: "Purchase orders", href: "/purchase-orders", icon: ClipboardList, description: "Customer orders, delivery and fulfillment" }],
+    nested: true,
+    items: [
+      { label: "PO", href: "/purchase-orders", icon: ClipboardList, description: "Customer orders, delivery and fulfillment", excludePrefixes: ["/purchase-orders/drafts"] },
+      { label: "Drafts", href: "/purchase-orders/drafts", icon: FilePenLine, description: "Purchase orders awaiting confirmation" },
+    ],
   },
   {
     label: "Email",

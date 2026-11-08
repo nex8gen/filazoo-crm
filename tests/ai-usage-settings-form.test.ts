@@ -46,6 +46,7 @@ function formHarness(save: (input: settings.AiUsageSettingsInput) => Promise<unk
     "@/components/ui/switch": { Switch: "switch" },
     "@/lib/ai/usage-settings": settings,
     "./ai-usage-actions": { updateAiUsageSettings: save },
+    "./use-unsaved-settings": { useUnsavedSettings: () => {} },
   };
   const code = ts.transpileModule(readFileSync(new URL("../app/settings/ai-usage-settings-form.tsx", import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },

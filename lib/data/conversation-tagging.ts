@@ -8,8 +8,7 @@ import { groupEmailConversations } from "../email-threading";
 import { emailTagMessageKey } from "../customer-tags";
 import { conversationTagContext, conversationTagDecisionSchema, conversationTagInput, conversationTagInstruction, parseConversationTagDecision,
   conversationTagSkipReason, conversationTagPrompt, conversationTagCooldownMs, conversationTagOutputTokens, customerConversationTagInput } from "../ai/conversation-tagging";
-import { generateGeminiText } from "../ai/gemini";
-import { generateGatewayText, isGeminiRegionError } from "../ai/gateway";
+import { generateGatewayText } from "../ai/gateway";
 import type { AiTokenUsage } from "../ai/usage";
 import { requireAiAutomation } from "./ai-settings";
 import { mailboxHistory } from "./email-auto-reply";
@@ -34,9 +33,8 @@ export async function processAutomaticConversationTags(options: { mailboxIds?: s
   let policy;
   try { policy = await requireAiAutomation(["tagging"], ["emails", "customers"]); }
   catch { return { ...result, paused: true }; }
-  const apiKey = process.env.AI_PROVIDER === "gateway" || process.env.AI_BUDGET_ENFORCEMENT === "true" ? undefined : process.env.GEMINI_API_KEY?.trim();
   const token = resolveGatewayToken(process.env);
-  if (!apiKey && !token) return { ...result, paused: true };
+  if (!token) return { ...result, paused: true };
   const db = createSupabaseAdmin();
   const deadline = Date.now() + (options.budgetMs ?? 100_000);
   const contacts = new Map<string, string | null>();
@@ -173,16 +171,8 @@ export async function processAutomaticConversationTags(options: { mailboxIds?: s
           outputTokens: (usage?.outputTokens ?? 0) + reported.outputTokens, cachedInputTokens: (usage?.cachedInputTokens ?? 0) + reported.cachedInputTokens }; } };
       const trackRequest = () => { providerCalls++; result.providerCalls++; const size = prompt.length + conversationTagInstruction.length;
         promptCharacters += size; result.promptCharacters += size; };
-      let output: string;
-      try {
-        trackRequest();
-        output = apiKey ? await generateGeminiText({ ...common, apiKey, model: process.env.GEMINI_EMAIL_MODEL?.trim() || "gemini-3.5-flash-lite", responseJsonSchema: z.toJSONSchema(conversationTagDecisionSchema) })
-          : await generateGatewayText({ usageUserId: userId, ...common, token: token!, task: "tagging", responseJsonSchema: z.toJSONSchema(conversationTagDecisionSchema) });
-      } catch (error) {
-        if (!apiKey || !token || !isGeminiRegionError(error)) throw error;
-        trackRequest();
-        output = await generateGatewayText({ usageUserId: userId, ...common, token, task: "tagging", responseJsonSchema: z.toJSONSchema(conversationTagDecisionSchema) });
-      }
+      trackRequest();
+      const output = await generateGatewayText({ usageUserId: userId, ...common, token: token!, task: "tagging", responseJsonSchema: z.toJSONSchema(conversationTagDecisionSchema) });
       stage = "evidence-validation";
       const decision = parseConversationTagDecision(output, context);
       // A reply imported during model execution invalidates this result immediately.

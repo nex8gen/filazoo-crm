@@ -34,6 +34,7 @@ export function requestedWorkProgress(request: string, page: string): AgentWorkP
 }
 
 export function actionWorkProgress(action: PreparedAgentAction): AgentWorkProgress {
+  if (action.type === "run_workflow") return { area: "workspace", label: "Completing your workflow…", detail: `${action.steps.length} connected steps` };
   if (action.type === "crm_action") return { area: "workspace", label: `${crmOperationLabels[action.operation.op]}…`, detail: action.target };
   if (action.type === "create_flow") return { area: "flow", label: "Creating automation workflow…", detail: action.flow.name };
   if (action.type === "create_company") return { area: "company", label: "Creating company…", detail: action.company.name };
@@ -41,5 +42,5 @@ export function actionWorkProgress(action: PreparedAgentAction): AgentWorkProgre
   if (action.type === "write_email") return { area: "email", label: action.email.delivery === "draft" ? "Preparing email draft…" : "Sending email…", detail: action.email.to };
   const detail = `${action.document.customerName}${action.email ? ` · ${action.email.to}` : ""}`;
   if (action.type === "send_invoice") return { area: "email", label: "Preparing invoice email…", detail, relatedAreas: ["invoice"] };
-  return { area: "invoice", label: action.type === "create_invoice" ? "Creating draft invoice…" : "Updating draft invoice…", detail, relatedAreas: action.email ? ["email"] : [] };
+  return { area: "invoice", label: action.type === "create_invoice" ? action.order ? "Creating order and draft invoice…" : "Creating draft invoice…" : "Updating draft invoice…", detail, relatedAreas: action.email ? ["email"] : [] };
 }

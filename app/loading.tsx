@@ -1,1 +1,1 @@
-export { DashboardSkeleton as default } from "@/components/workspace-skeletons";
+export { HomeSkeleton as default } from "@/components/home-skeleton";

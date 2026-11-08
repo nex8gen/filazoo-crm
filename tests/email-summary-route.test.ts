@@ -17,7 +17,7 @@ const code = ts.transpileModule(readFileSync(new URL("../app/api/email/assist/ro
 const product = { ...b2bProducts.find(product => product.sku === "PETG-CF")!, imageUrl: "https://cdn.example.com/petg-cf.jpg" };
 const brief = { title: "Shopify lead — material inquiry", summary: "Wilson requests PETG-CF in volumes under 50 kg monthly.", nextStep: "Confirm colors and quantity before quoting.", followUpAt: null, followUpReason: "No explicit commitment.", productSkus: ["PETG-CF", "INVENTED"] };
 
-for (const provider of ["gemini", "gateway", "fallback"] as const) {
+for (const provider of ["gateway", "oidc", "legacy-budget"] as const) {
   for (const catalogState of ["available", "disabled", "failed"] as const) {
     test(`${provider} summary resolves verified product cards with ${catalogState} catalog`, async () => {
       const policy = defaultAiPolicy();
@@ -31,8 +31,7 @@ for (const provider of ["gemini", "gateway", "fallback"] as const) {
       const dependencies: Record<string, unknown> = {
         "@/lib/auth": { requireWorkspaceMember: async () => ({ id: "member", displayName: "Sales" }) },
         "@/lib/data/ai-settings": { requireAiFeature: async () => policy },
-        "@/lib/ai/gemini": { generateGeminiText: provider === "fallback" ? async () => { throw new Error("Region unavailable"); } : generate },
-        "@/lib/ai/gateway": { generateGatewayText: generate, isGeminiRegionError: () => true },
+        "@/lib/ai/gateway": { generateGatewayText: generate, },
         "@/lib/ai/email-rewrite": { normalizeSignatureName: () => "Sales" },
         "@/lib/ai/email-summary": summaries,
         "@/lib/ai/email-summary-products": catalog,
@@ -47,8 +46,7 @@ for (const provider of ["gemini", "gateway", "fallback"] as const) {
         zod: { z },
       };
       const exports = {} as { POST(request: Request): Promise<Response> };
-      vm.runInNewContext(code, { exports, Response, process: { env: provider === "gateway"
-        ? { AI_GATEWAY_API_KEY: "test" } : { GEMINI_API_KEY: "test", AI_GATEWAY_API_KEY: "test" } },
+      vm.runInNewContext(code, { exports, Response, process: { env: provider === "oidc" ? { VERCEL_OIDC_TOKEN: "test-oidc" } : { AI_GATEWAY_API_KEY: "test", ...(provider === "legacy-budget" ? { AI_BUDGET_ENFORCEMENT: "true" } : {}) } },
         require: (name: string) => {
           if (name in dependencies) return dependencies[name];
           const dependency = policyTestDependency(name);
@@ -64,7 +62,7 @@ for (const provider of ["gemini", "gateway", "fallback"] as const) {
       }));
       assert.equal(response.status, 200);
       const result = await response.json();
-      assert.equal(result.provider, provider === "gemini" ? "gemini" : "vercel-ai-gateway");
+      assert.equal(result.provider, "vercel-ai-gateway");
       const summary = summaries.parseEmailSummary(result.output);
       const prompt = JSON.parse(calls[0].prompt);
       assert.equal(prompt.messageSource, "shopify");

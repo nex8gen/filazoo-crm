@@ -120,3 +120,16 @@
 }
 
 html[data-reduce-motion="true"] :is(.settings-navigation-frame, .settings-navigation, .settings-reveal-item) { animation: none !important; }
+
+/* Settings use one readable column and explicit ownership at every destination. */
+.settings-account-context { padding: 0 .5rem .75rem; color: #a3a3a3; overflow-wrap: anywhere; font-size: .75rem; }
+.settings-nav-group + .settings-nav-group { margin-top: 1.25rem; }
+.settings-group-title { margin: 0 .5rem .375rem; color: #a3a3a3; font-size: .6875rem; font-weight: 600; letter-spacing: .04em; }
+.settings-section-intro { max-width: 48rem; padding: .5rem 0 1.5rem; }
+.settings-section-intro p { margin-top: .5rem; color: var(--muted-foreground); font-size: .875rem; line-height: 1.6; }
+.settings-scope { display: inline-block; border: 1px solid var(--border); border-radius: 999px; padding: .25rem .625rem; color: var(--muted-foreground); font-size: .6875rem; }
+.settings-main .settings-content { max-width: 48rem !important; }
+.settings-main .settings-appearance { display: grid; grid-template-columns: minmax(0, 1fr); max-width: 48rem !important; }
+.settings-content :is(section, [data-slot="card"])[id] { scroll-margin-top: 1rem; }
+.settings-menu-link { animation-delay: 0ms; }
+@media (min-width: 1024px) { .settings-menu-link { min-height: 2.25rem; } }

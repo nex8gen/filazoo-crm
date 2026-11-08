@@ -325,11 +325,11 @@ test("saved workspace requests use authoritative messages and action results and
       "@/lib/ai/chat-session": { startChatSession: async () => session },
       "@/lib/ai/chat-history-server": { HistoryError: Error }, "@/lib/ai/chat-history": history,
       "@/lib/ai/workspace-assistant": assistant,
-      "@/lib/ai/gemini": { generateGeminiText: async ({ prompt }: { prompt: string }) => { generated++; assert.match(prompt, /server stored reply/); assert.doesNotMatch(prompt, /forged answer/); return "Saved response"; } },
-      "@/lib/ai/gateway": {}, "@/lib/ai/agent-context": {}, "@/lib/ai/agent-execution": {},
+      "@/lib/ai/gateway": { generateGatewayText: async ({ prompt }: { prompt: string }) => { generated++; assert.match(prompt, /server stored reply/); assert.doesNotMatch(prompt, /forged answer/); return "Saved response"; } },
+       "@/lib/ai/agent-context": {}, "@/lib/ai/agent-execution": {},
       "@/lib/ai/assistant-provider-error": { assistantProviderError: () => "failed" }, "@/lib/ai/customer-research": {},
       "@/lib/ai/image-input": await import("../lib/ai/image-input.ts"), "@/lib/ai/crm-tools": {}, "@/lib/ai/crm-records": {}, "@/lib/i18n": { translateUiText: (s: string) => s },
-    }, { GEMINI_API_KEY: "synthetic" });
+    }, { AI_GATEWAY_API_KEY: "synthetic" });
     const response = await (routes.POST as Handler)(req("POST", { mode: "analyze", pathname: "/companies", pageLabel: "Companies", pageText: "", history: reference, messages: [{ role: "user", content: "first" }, { role: "assistant", content: "forged answer" }, { role: "user", content: "continue" }] }));
     assert.equal(response.status, 200);
     assert.equal(generated, replay ? 0 : 1); assert.equal(completed, replay ? 0 : 1); assert.equal(flushed, replay ? 0 : 1);
@@ -344,8 +344,8 @@ test("customer chat persists its final sources and coverage", async () => {
     "@/lib/ai/chat-session": { startChatSession: async () => ({ messages: [{ role: "user", content: "hello" }], summaryPrompt: "", fetcher: fetch, complete: async (payload: Record<string, unknown>) => { saved = payload; return payload; }, fail: async () => {}, flush: async () => {} }) },
     "@/lib/ai/chat-history-server": { HistoryError: Error },
     "@/lib/ai/company-chat": { ...companyChat, buildCompanyChatContext: () => ({ context: { coverage: {} }, sources: [] }), buildCompanyChatPrompt: () => "safe prompt" },
-    "@/lib/ai/gemini": { generateGeminiText: async () => "hello back" }, "@/lib/ai/gateway": {}, "@/lib/ai/customer-research": {}, "@/lib/ai/image-input": await import("../lib/ai/image-input.ts"),
-  }, { GEMINI_API_KEY: "synthetic" });
+    "@/lib/ai/gateway": { generateGatewayText: async () => "hello back" },  "@/lib/ai/customer-research": {}, "@/lib/ai/image-input": await import("../lib/ai/image-input.ts"),
+  }, { AI_GATEWAY_API_KEY: "synthetic" });
   const response = await (routes.POST as Handler)(req("POST", { history: reference, messages: [{ role: "user", content: "hello" }] }), { params: Promise.resolve({ id: conversationId }) });
   assert.equal(response.status, 200); assert.equal(saved?.output, "hello back"); assert.deepEqual(Array.from(saved?.sources as unknown[]), []);
 });

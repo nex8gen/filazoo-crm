@@ -13,6 +13,7 @@ import { removeStandardSignoff } from "../email-footer.ts";
 import { buildFlowEmail } from "../flow-tracking.ts";
 import { emailTemplates, getFlowTestMailbox } from "./flow-runtime.ts";
 import { generateFlowAiReply, hasFlowReplyProvider, loadFlowReplyProducts, prepareFlowTemplateCatalog } from "./flow-ai-reply.ts";
+import { resolveGatewayTokenAsync } from "../ai/provider-credentials.ts";
 
 type PlanAction = { step: number; stepPath?: number[]; sendAt: string };
 type TestRow = FlowEmailDeliveryTestRun & {
@@ -26,12 +27,12 @@ export function planFlowEmailDeliveryTest(input: FlowEmailDeliveryTestInput, now
   const actions: PlanAction[] = [];
   let sendAt = now.toISOString();
   for (const entry of trace) {
-    if (entry.scheduledAt) sendAt = entry.scheduledAt;
+    if (entry.scheduledAt && input.timing === "scheduled") sendAt = entry.scheduledAt;
     if (entry.status === "would_run" && (entry.type === "send_email" || entry.type === "ai_auto_reply")) actions.push({ step: entry.step, stepPath: entry.stepPath, sendAt });
   }
   if (!actions.length) throw new Error("This test path does not send an email. Review the workflow conditions.");
   if (actions.length > 6) throw new Error("Test up to six email actions at a time.");
-  if (actions.some((action) => Date.parse(action.sendAt) > now.getTime() + 3_600_000)) throw new Error("For a real test, shorten the total wait to one hour or less.");
+  if (input.timing === "scheduled" && actions.some((action) => Date.parse(action.sendAt) > now.getTime() + 3_600_000)) throw new Error("Scheduled tests support waits up to one hour. Choose a fast test to skip waits without editing the workflow.");
   return actions;
 }
 
@@ -55,7 +56,7 @@ export async function startFlowEmailDeliveryTest(input: FlowEmailDeliveryTestInp
     if (!step) throw new Error("The test action no longer exists.");
     const mailbox = await getFlowTestMailbox(userId, step.config.mailboxId);
     if (!mailbox?.smtpHost || !mailbox.smtpUsername || !mailbox.smtpPassword) throw new Error("The test sender needs an active mailbox with complete SMTP settings.");
-    if (step.type === "ai_auto_reply" && !hasFlowReplyProvider()) throw new Error("Configure an AI provider before sending an AI test reply.");
+    if (step.type === "ai_auto_reply" && !hasFlowReplyProvider() && !await resolveGatewayTokenAsync()) throw new Error("Configure an AI provider before sending an AI test reply.");
   }
   const { count: active } = await admin.from(table).select("id", { count: "exact", head: true }).eq("user_id", userId).eq("status", "waiting").gt("expires_at", new Date().toISOString()).throwOnError();
   if ((active ?? 0) >= 3) throw new Error("Finish or cancel an existing delivery test before starting another.");

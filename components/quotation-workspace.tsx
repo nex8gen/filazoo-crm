@@ -112,7 +112,7 @@ export function QuotationWorkspace({ initialDetail }: { initialDetail: Quotation
         {state === "accepted" ? <><p className="text-sm text-muted-foreground">{c("Create one draft purchase order with the accepted quantities, prices, shipping and payment terms. Review and confirm it in the order workspace.", "根据已接受的数量、价格、运费及付款条款创建一份采购订单草稿，并在订单页面审核确认。")}</p><label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={allowCustom} disabled={pending} onChange={e => setAllowCustom(e.target.checked)} />{c("Allow custom order items if a saved product or variant is no longer available. Keep the accepted SKU and price.", "若保存的产品或规格已不可用，允许作为自定义订单项目，并保留已接受的SKU及价格。")}</label><Button type="button" className="self-start" disabled={pending || dirty} onClick={() => act("convert")}>{c("Create draft order", "创建订单草稿")}</Button></> : null}
         {["draft", "shared"].includes(catalog.quote_status) ? <Button type="button" variant="ghost" className="self-start text-destructive" disabled={pending || dirty} onClick={() => act("cancel")}>{c("Cancel quotation", "取消报价")}</Button> : null}
       </> : null}
-      {catalog.quote_order_id ? <Link href={`/companies/${catalog.company_id}?tab=purchase-orders&orderId=${catalog.quote_order_id}`} className="text-sm font-medium underline">{c("Open linked order", "打开关联订单")}</Link> : null}
+      {catalog.quote_order_id ? <Link href={`/purchase-orders/${catalog.quote_order_id}`} className="text-sm font-medium underline">{c("Open linked order", "打开关联订单")}</Link> : null}
       {!canWrite ? <p className="text-sm text-muted-foreground">{c("You have read-only access to this quotation.", "您对此报价仅有查看权限。")}</p> : null}
     </Card>
   </div>;

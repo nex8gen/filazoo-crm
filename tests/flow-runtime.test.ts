@@ -17,6 +17,7 @@ import * as tracking from "../lib/flow-tracking.ts";
 import * as autoReply from "../lib/email-auto-reply.ts";
 import * as attachmentUpload from "../lib/attachment-upload.ts";
 import * as flowSmtp from "../lib/flow-smtp.ts";
+import * as executionErrors from "../lib/flow-execution-errors.ts";
 import * as mailboxUtils from "../lib/mailbox-utils.ts";
 import * as flowMailboxes from "../lib/flow-mailboxes.ts";
 import { createFlowRecipe } from "../lib/flow-recipes.ts";
@@ -29,7 +30,7 @@ const code = ts.transpileModule(readFileSync(new URL("../lib/data/flow-runtime.t
 
 // Execute the real enrollment and email runtime against an in-memory database.
 // SMTP is intercepted even when testing live-send mode.
-function runtime(options: { businessWindow?: Date | null; beforeQuery?: (table: string, operation: string) => Promise<void> } = {}) {
+function runtime(options: { businessWindow?: Date | null; beforeQuery?: (table: string, operation: string) => Promise<void>; aiReplyError?: unknown; smtpError?: unknown } = {}) {
   const contactId = randomUUID(), companyId = randomUUID(), flowId = randomUUID();
   const createdAt = new Date().toISOString();
   const db: Record<string, Row[]> = {
@@ -44,7 +45,8 @@ function runtime(options: { businessWindow?: Date | null; beforeQuery?: (table: 
   let delivered = 0;
   const deliveries: Array<{ mailbox: Row; mail: Row }> = [];
   const aiCalls: Row[] = [];
-  const valueAt = (row: Row, key: string) => key.includes("->>") ? (row[key.split("->>")[0]] as Row)?.[key.split("->>")[1]] : row[key];
+  const failures = { ai: options.aiReplyError, smtp: options.smtpError };
+  const valueAt = (row: Row, key: string) => key === "flows.status" ? db.flows.find(flow => flow.id === row.flow_id)?.status : key.includes("->>") ? (row[key.split("->>")[0]] as Row)?.[key.split("->>")[1]] : row[key];
   const env = { DAILY_SEND_LIMIT: 20, BOUNCE_PAUSE_PERCENT: 3, dryRun: false, NEXT_PUBLIC_APP_URL: "https://crm.example.com", supabaseSecretKey: "test" };
   function from(table: string) {
     const filters: Array<(row: Row) => boolean> = [];
@@ -55,6 +57,7 @@ function runtime(options: { businessWindow?: Date | null; beforeQuery?: (table: 
     const query = {
       select(_columns?: string, options?: { head?: boolean }) { head = options?.head ?? false; return query; },
       eq(key: string, value: unknown) { filters.push((row) => valueAt(row, key) === value); return query; },
+      neq(key: string, value: unknown) { filters.push((row) => valueAt(row, key) !== value); return query; },
       is(key: string, value: unknown) { filters.push((row) => (row[key] ?? null) === value); return query; },
       lte(key: string, value: string) { filters.push((row) => row[key] != null && String(row[key]) <= value); return query; },
       lt(key: string, value: string) { filters.push((row) => row[key] != null && String(row[key]) < value); return query; },
@@ -84,6 +87,7 @@ function runtime(options: { businessWindow?: Date | null; beforeQuery?: (table: 
         selected = selected.slice(0, maximum);
         if (operation === "insert") {
           const inputs = Array.isArray(payload) ? payload : [payload];
+          if (inputs.some(input => input.id && rows.some(row => row.id === input.id))) return Promise.resolve({ data: null, error: { code: "23505" } }).then(resolve);
           if (table === "flow_runs" && inputs.some((input) => rows.some((row) => row.flow_id === input.flow_id && (row.event_key === input.event_key || (row.status === "active" && input.status === "active" && row.conversation_id === input.conversation_id))))) {
             return Promise.resolve({ data: null, error: { code: "23505" } }).then(resolve);
           }
@@ -108,6 +112,8 @@ function runtime(options: { businessWindow?: Date | null; beforeQuery?: (table: 
     "./customer-tags.ts": customerTagDataFixture(() => ({ from })),
     "../attachment-upload.ts": attachmentUpload,
     "../flow-smtp.ts": flowSmtp,
+    "../flow-execution-errors.ts": executionErrors,
+    "../ai/gateway-health.ts": { verifyGatewayAccess: async () => { if (failures.ai) throw failures.ai; } },
     "./email-footers.ts": { getUserEmailFooter: async () => null, prepareUserEmail: async (_userId: string, input: unknown) => input },
     "../email-footer.ts": { removeStandardSignoff: (text: string) => text },
     "../email-auto-reply.ts": autoReply,
@@ -124,19 +130,20 @@ function runtime(options: { businessWindow?: Date | null; beforeQuery?: (table: 
     "../flow-tracking.ts": tracking,
     "./email-footers.ts": { getUserEmailFooter: async () => null, prepareUserEmail: async (_id: string, mail: unknown) => mail },
     "../email-footer.ts": { removeStandardSignoff: (text: string) => text },
-    "../mailer.ts": { sendMailboxEmail: async (mailbox: Row, mail: Row) => { delivered++; deliveries.push({ mailbox, mail }); return { messageId: `<test-${delivered}@example.com>` }; } },
+    "../mailer.ts": { verifyMailboxSmtp: async () => { if (failures.smtp) throw failures.smtp; }, sendMailboxEmail: async (mailbox: Row, mail: Row) => { if (failures.smtp) throw failures.smtp; delivered++; deliveries.push({ mailbox, mail }); return { messageId: `<test-${delivered}@example.com>` }; } },
     "./flow-mail-sync.ts": { syncFlowMailboxMessages: async () => { throw new Error("Resume worker must not wait for IMAP"); } },
-    "./flow-ai-reply.ts": { hasFlowReplyProvider: () => true, prepareFlowAiReply: async (input: Row) => { aiCalls.push(input); return { subject: "AI reply", body: "Synthetic provider reply", attachments: [] }; }, prepareFlowTemplateCatalog: async () => [{ filename: "Filazoo-product-catalog.pdf", content: Buffer.from("test catalog"), contentType: "application/pdf" }] },
+    "./flow-ai-reply.ts": { hasFlowReplyProvider: () => true, prepareFlowAiReply: async (input: Row) => { aiCalls.push(input); if (failures.ai) throw failures.ai; return { subject: "AI reply", body: "Synthetic provider reply", attachments: [] }; }, prepareFlowTemplateCatalog: async () => [{ filename: "Filazoo-product-catalog.pdf", content: Buffer.from("test catalog"), contentType: "application/pdf" }] },
   };
   const exports = {} as {
     enrollNewLeadFlows: (id: string) => Promise<Array<{ enrolled: boolean; reason: string }>>;
     enrollMatchingFlows: (event: engine.TriggerEvent) => Promise<Array<{ enrolled: boolean; reason: string }>>;
     processFlowRun: (id: string, options?: { deadline?: number }) => Promise<{ status: string }>;
-    processDueFlowRuns: (limit: number, options: { syncMailbox: boolean; budgetMs?: number }) => Promise<unknown[]>;
+    validateFlowResources: (userId: string, input: flows.FlowInput) => Promise<void>;
+    processDueFlowRuns: (limit: number, options: { syncMailbox: boolean; budgetMs?: number; actionDeadline?: number }) => Promise<unknown[]>;
     scanTimeBasedFlowTriggers: (id?: string, onError?: unknown, options?: { deadline?: number; deferExecution?: boolean }) => Promise<number>;
   };
   vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (dependencies[name] ?? require(name)), Date, console });
-  return { db, env, contactId, companyId, flowId, exports, deliveries, aiCalls, delivered: () => delivered };
+  return { db, env, contactId, companyId, flowId, exports, deliveries, aiCalls, failures, delivered: () => delivered };
 }
 
 test("budgeted recovery queues enrollment without sending and resumes it once on the next tick", async () => {
@@ -764,7 +771,8 @@ test("unavailable or another user's personal sender never falls back to team ema
       steps(app, [{ type, config: { ...flows.blankStep(type).config, templateId: "welcome_intro", sendWindow: "anytime", mailboxId: choice, channel: "email" } }]);
       await app.exports.enrollNewLeadFlows(app.contactId);
       assert.equal(app.deliveries.length, 0, `${type}: ${choice}`);
-      assert.equal(app.db.flow_runs[0].status, "failed");
+      assert.equal(app.db.flow_runs[0].status, "active");
+      assert.equal((app.db.flow_runs[0].context as Row).executionState, "blocked");
     }
   }
 });
@@ -780,7 +788,8 @@ test("all workflow email actions follow changed personal defaults without requir
       await app.exports.enrollNewLeadFlows(app.contactId);
       if (stopped) {
         assert.equal(app.deliveries.length, 0);
-        assert.equal(app.db.flow_runs[0].status, "failed");
+        assert.equal(app.db.flow_runs[0].status, "active");
+      assert.equal((app.db.flow_runs[0].context as Row).executionState, "blocked");
       } else {
         assert.equal(app.deliveries[0].mailbox.from, "changed@example.com");
         assert.equal(app.deliveries[0].mailbox.user, "changed-login");
@@ -964,7 +973,7 @@ test("one broken run cannot block other due flows", async () => {
     { id: "good", flow_id: app.flowId, contact_id: app.contactId, company_id: app.companyId, status: "active", current_step: 0, started_at: new Date().toISOString(), next_run_at: null, event_key: `new_lead:${app.contactId}`, conversation_id: "good" },
   ];
   const results = await app.exports.processDueFlowRuns(50, { syncMailbox: false }) as Array<{ runId: string; status: string }>;
-  assert.equal(results.find(result => result.runId === "broken")?.status, "error");
+  assert.equal(results.some(result => result.runId === "broken"), false, "The live-flow join excludes orphaned or paused runs.");
   assert.equal(results.find(result => result.runId === "good")?.status, "done");
 });
 
@@ -1084,4 +1093,154 @@ test("minute worker enrolls a new received email and skips historical messages a
   assert.equal(app.db.flow_runs.length, 1);
   assert.equal(app.db.flow_runs[0].event_key, "email_received:new");
   assert.equal(app.delivered(), 1);
+});
+
+test("a workspace time slice below two minutes still executes due work within the invocation deadline", async () => {
+  const app = runtime();
+  await app.exports.scanTimeBasedFlowTriggers(undefined, undefined, { deferExecution: true });
+  await app.exports.processDueFlowRuns(50, { syncMailbox: false, budgetMs: 90_000, actionDeadline: Date.now() + 240_000 } as Parameters<typeof app.exports.processDueFlowRuns>[1]);
+  assert.equal(app.delivered(), 1, "Two workspaces must not make every due email skip execution.");
+  assert.equal(app.db.flow_runs[0].status, "done");
+});
+
+test("AI auth and quota errors checkpoint the email action before SMTP and recover without repeating tasks", async () => {
+  for (const message of ["AI Gateway authentication failed. Refresh the development token or configure a valid AI Gateway API key.", "AI Gateway is busy or its rate limit was reached."]) {
+    const app = runtime({ aiReplyError: new Error(message) });
+    steps(app, [flows.blankStep("create_task"), flows.blankStep("ai_auto_reply")]);
+    const enrolled = await app.exports.enrollNewLeadFlows(app.contactId);
+    const run = app.db.flow_runs[0];
+    assert.equal(enrolled[0].reason, "retrying");
+    assert.equal(run.status, "active");
+    assert.equal(run.current_step, 1);
+    assert.equal(run.locked_at, null);
+    assert.ok(Date.parse(String(run.next_run_at)) > Date.now());
+    assert.equal(app.delivered(), 0);
+    assert.equal(app.db.crm_tasks.length, 1);
+    assert.ok(["retry_scheduled", "action_blocked"].includes(String((app.db.flow_run_logs.at(-1)?.result as Row).action)));
+    app.failures.ai = undefined;
+    run.next_run_at = null;
+    assert.equal((await app.exports.processFlowRun(String(run.id))).status, "done");
+    assert.equal(app.delivered(), 1);
+    assert.equal(app.db.crm_tasks.length, 1);
+    await app.exports.processFlowRun(String(run.id));
+    assert.equal(app.delivered(), 1);
+  }
+});
+
+test("persistent provider failures stay blocked with backoff rather than losing the customer journey", async () => {
+  const app = runtime({ aiReplyError: new Error("AI Gateway is busy or its rate limit was reached.") });
+  steps(app, [flows.blankStep("ai_auto_reply")]);
+  await app.exports.enrollNewLeadFlows(app.contactId);
+  const run = app.db.flow_runs[0];
+  for (let i = 0; i < 5; i++) { run.next_run_at = null; await app.exports.processFlowRun(String(run.id)); }
+  assert.equal(run.status, "active");
+  assert.equal((run.context as Row).executionState, "blocked");
+  assert.equal(app.delivered(), 0);
+  assert.equal(app.db.flow_run_logs.filter(log => (log.result as Row)?.action === "retry_scheduled").length, 5);
+});
+
+test("SMTP submission uncertainty is terminal and never enters AI preparation retries", async () => {
+  const app = runtime({ smtpError: Object.assign(new Error("Timeout after DATA submission"), { command: "DATA", code: "ETIMEDOUT" }) });
+  steps(app, [flows.blankStep("ai_auto_reply")]);
+  await app.exports.enrollNewLeadFlows(app.contactId);
+  const run = app.db.flow_runs[0];
+  assert.equal(run.status, "failed");
+  assert.equal(run.next_run_at, null);
+  assert.equal(app.db.flow_run_logs.some(log => (log.result as Row)?.action === "retry_scheduled"), false);
+  assert.match(String(app.db.flow_run_logs.at(-1)?.error), /DATA/);
+});
+
+test("plain database errors retain their diagnostic message instead of an unhelpful generic failure", async () => {
+  const app = runtime({ aiReplyError: { message: "Product query failed: permission denied", code: "42501" } });
+  steps(app, [flows.blankStep("ai_auto_reply")]);
+  await app.exports.enrollNewLeadFlows(app.contactId);
+  const run = app.db.flow_runs[0];
+  assert.equal(run.status, "failed");
+  assert.equal(app.db.flow_run_logs.at(-1)?.error, "Product query failed: permission denied");
+});
+
+test("daily send capacity defers an email until the next UTC day instead of failing the customer journey", async () => {
+  const app = runtime();
+  app.env.DAILY_SEND_LIMIT = 1;
+  app.db.mailbox_sent_messages = [{ id: "already-sent", user_id: "owner", sent_at: new Date().toISOString() }];
+  await app.exports.enrollNewLeadFlows(app.contactId);
+  const run = app.db.flow_runs[0];
+  assert.equal(run.status, "active");
+  assert.equal(run.current_step, 0);
+  assert.equal(app.delivered(), 0);
+  const tomorrow = new Date(); tomorrow.setUTCHours(0, 0, 0, 0); tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+  assert.ok(Math.abs(Date.parse(String(run.next_run_at)) - tomorrow.getTime()) < 1000);
+  app.db.mailbox_sent_messages = [];
+  run.next_run_at = null;
+  assert.equal((await app.exports.processFlowRun(String(run.id))).status, "done");
+  assert.equal(app.delivered(), 1);
+});
+
+test("CRM action replay after a lost cursor update cannot duplicate tasks, alerts or timeline entries", async () => {
+  for (const type of ["create_task", "internal_alert", "update_company"] as const) {
+    const app = runtime();
+    const step = flows.blankStep(type);
+    if (type === "update_company") step.config = { companyStatus: "qualified" };
+    steps(app, [step]);
+    await app.exports.enrollNewLeadFlows(app.contactId);
+    const run = app.db.flow_runs[0];
+    const table = type === "create_task" ? "crm_tasks" : type === "internal_alert" ? "internal_notifications" : "events";
+    assert.equal(app.db[table].length, 1);
+    Object.assign(run, { status: "active", current_step: 0, locked_at: null, next_run_at: null });
+    await app.exports.processFlowRun(String(run.id));
+    assert.equal(run.status, "done");
+    assert.equal(app.db[table].length, 1, type);
+  }
+});
+
+test("missing contacts wait and automatically resume only when a single recipient is available", async () => {
+  const app = runtime();
+  Object.assign(app.db.flows[0], { trigger_type: "company_segment_changed", trigger_config: { segment: "Shopify B2B lead", segmentAudience: true, reentryMode: "no_reentry" } });
+  app.db.companies[0].contacts = [];
+  app.db.contacts = [];
+  await app.exports.scanTimeBasedFlowTriggers();
+  const run = app.db.flow_runs[0];
+  assert.equal(run.status, "active");
+  assert.equal((run.context as Row).executionState, "blocked");
+  assert.equal(app.delivered(), 0);
+  app.db.contacts.push({ id: app.contactId, company_id: app.companyId, email: "new@example.com", name: "New contact", verification_status: "valid", unsubscribed: false });
+  run.next_run_at = null;
+  await app.exports.processFlowRun(String(run.id));
+  assert.equal(run.status, "done");
+  assert.equal(run.contact_id, app.contactId);
+  assert.equal(app.delivered(), 1);
+});
+
+test("paused runs cannot starve a live workflow's due batch", async () => {
+  const app = runtime();
+  await app.exports.scanTimeBasedFlowTriggers(undefined, undefined, { deferExecution: true });
+  app.db.flows.push({ ...app.db.flows[0], id: "paused-flow", status: "paused" });
+  app.db.flow_runs.unshift({ ...app.db.flow_runs[0], id: "paused-run", flow_id: "paused-flow", next_run_at: new Date(0).toISOString() });
+  await app.exports.processDueFlowRuns(1, { syncMailbox: false, budgetMs: 180_000 });
+  assert.equal(app.delivered(), 1);
+  assert.equal(app.db.flow_runs.find(run => run.id === "paused-run")?.status, "active");
+});
+
+test("interrupted preparation resumes while a possibly submitted email is held for review", async () => {
+  for (const phase of ["preparing", "submitting"]) {
+    const app = runtime();
+    await app.exports.scanTimeBasedFlowTriggers(undefined, undefined, { deferExecution: true });
+    const run = app.db.flow_runs[0];
+    run.locked_at = new Date(Date.now() - 20 * 60_000).toISOString();
+    run.context = { ...(run.context as Row), executionCheckpoint: { phase, stepId: app.db.flow_steps[0].id } };
+    await app.exports.processDueFlowRuns(50, { syncMailbox: false, budgetMs: 180_000 });
+    assert.equal(app.delivered(), phase === "preparing" ? 1 : 0);
+    assert.equal(run.status, phase === "preparing" ? "done" : "failed");
+  }
+});
+
+test("activation refuses a sender or AI identity that fails real connection checks", async () => {
+  for (const kind of ["smtp", "ai"]) {
+    const app = runtime({ ...(kind === "smtp" ? { smtpError: new Error("SMTP authentication failed") } : { aiReplyError: new Error("AI Gateway authentication failed") }) });
+    const step = flows.blankStep("ai_auto_reply");
+    step.config.attachCatalog = false;
+    const input = flows.flowInputSchema.parse({ name: "Activation probe", triggerType: "new_lead", triggerConfig: {}, status: "live", steps: [step] });
+    await assert.rejects(() => app.exports.validateFlowResources("owner", input), /authentication failed/);
+    assert.equal(app.delivered(), 0);
+  }
 });

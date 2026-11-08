@@ -22,7 +22,7 @@ function load(file: string, dependencies: Record<string, unknown>, clock: typeof
   vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (name === "server-only" ? {} : dependencies[name] ?? require(name)), Date: clock, Response, Request, URL, Error, console });
   return exports;
 }
-const payload = () => schema.flowEmailDeliveryTestSchema.parse({ requestId: randomUUID(), recipient: "test-inbox@example.com", customerName: "Alex", companyName: "Test company",
+const payload = () => schema.flowEmailDeliveryTestSchema.parse({ timing: "scheduled", requestId: randomUUID(), recipient: "test-inbox@example.com", customerName: "Alex", companyName: "Test company",
   flow: { name: "Draft before activation", triggerType: "new_lead", triggerConfig: {}, status: "draft", steps: [
     { type: "wait", config: { amount: 2, unit: "minutes" } }, blankStep("ai_auto_reply"),
     { type: "if_condition", config: { field: "customer_replied", action: "stop_flow", unmatchedAction: "continue", lookbackDays: 7 } },
@@ -209,4 +209,18 @@ test("real-send routes require membership, reject other origins and use only the
   const response = await tick(request(), { params: Promise.resolve({ id: randomUUID() }) }) as Response;
   assert.equal(response.status, 200); assert.equal(response.headers.get("cache-control"), "no-store");
   assert.equal(calls, 2);
+});
+
+test("fast delivery uses the original multi-day workflow but submits immediately to the test inbox", async () => {
+  const f = fixture(), input = payload();
+  input.timing = "fast";
+  input.flow.steps[0].config = { amount: 10, unit: "days", businessDays: true };
+  const original = JSON.stringify(input.flow);
+  const started = await f.service.startFlowEmailDeliveryTest(input, "owner", null) as Run;
+  assert.equal(started.next_run_at, "2026-10-27T06:00:00.000Z");
+  const completed = await f.service.processFlowEmailDeliveryTest(started.id, "owner") as Run;
+  assert.equal(completed.status, "completed");
+  assert.equal(f.mails.length, 1);
+  assert.equal(f.mails[0].to, input.recipient);
+  assert.equal(JSON.stringify(input.flow), original);
 });

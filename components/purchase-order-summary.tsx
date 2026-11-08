@@ -28,7 +28,7 @@ export function PurchaseOrderSummary({ order, companyName, country, customer, ac
   const updated = order.updated_at && order.updated_at !== order.created_at;
   const history = activity.length ? activity : [{ id: order.id, createdAt: order.created_at, type: "purchase_order_created", summary: "Order created" }];
   return <div className="mx-auto max-w-[1100px] pb-12 pt-3">
-    <Link href="/purchase-orders" className="mb-5 inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" />Purchase orders</Link>
+    <Link href={po.status === "draft" ? "/purchase-orders/drafts" : "/purchase-orders"} className="mb-5 inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" />{po.status === "draft" ? "Drafts" : "PO"}</Link>
     <div className="grid min-w-0 gap-8 lg:grid-cols-[minmax(0,1fr)_280px] lg:gap-12">
       <div className="min-w-0 space-y-8">
         <header><div className="flex flex-wrap items-center gap-3"><h2 className="text-2xl font-medium tracking-tight">{purchaseOrderLabel(order)}</h2><PurchaseOrderStatus status={po.status} /></div><p className="mt-2 text-xs text-muted-foreground">{updated ? "Updated" : "Created"} {orderDisplayDate(updated ? order.updated_at! : order.created_at, true)}</p></header>

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { generateGatewayText, isGeminiRegionError } from "../lib/ai/gateway.ts";
+import { generateGatewayText } from "../lib/ai/gateway.ts";
 
 test("uses the cheap writing model through Responses when an unsupported legacy pin requests another model", async () => {
   let requestUrl = "";
@@ -23,10 +23,7 @@ test("uses the cheap writing model through Responses when an unsupported legacy 
   assert.equal(output, "Professional reply");
 });
 
-test("detects Gemini regional availability errors", () => {
-  assert.equal(isGeminiRegionError(new Error("User location is not supported for the API use.")), true);
-  assert.equal(isGeminiRegionError(new Error("Rate limit exceeded")), false);
-});
+
 
 test("expired local OIDC tokens fail with a refresh instruction before making a provider request", async () => {
   const payload = Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) - 60 })).toString("base64url");

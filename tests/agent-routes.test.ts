@@ -19,6 +19,8 @@ import * as assistantIntent from "../lib/ai/assistant-intent.ts";
 import * as documentIntent from "../lib/ai/document-intent.ts";
 import { webSearchForRequest } from "../lib/ai/research-request.ts";
 import { readResearchResponse, researchStreamType, type ResearchProgress } from "../lib/ai/research-progress.ts";
+import { blankInvoiceDocument } from "../lib/invoices.ts";
+import { agentOrderFromInvoice } from "../lib/ai/order-actions.ts";
 
 const require = createRequire(import.meta.url);
 class TestHistoryError extends Error { status = 503; }
@@ -39,6 +41,20 @@ const company = { type: "create_company", company: { name: "Acme", country: "US"
 const request = (body: unknown, origin = "http://localhost:3000") => new Request("http://localhost:3000/api/ai/assistant/action", { method: "POST", headers: { "Content-Type": "application/json", origin }, body: JSON.stringify(body) });
 const decision = { id, decision: "approve", approval: "manual" };
 
+test("Gateway credentials select native tools by default, with no legacy text-parser fallback", async () => {
+  let native = 0, google = 0;
+  const post = route("../app/api/ai/assistant/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
+    "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
+    "@/lib/ai/gateway": { generateGatewayText: () => { throw new Error("Legacy text generation must not run"); } },
+    "@/lib/ai/native-agent": { nativeGatewayModels: () => { google++; return { model: {} }; }, generateCrmPlan: async () => { native++; return { output: "Saved records checked.", actions: [] }; } },
+    "@/lib/ai/agent-execution": { prepareAgentActions: async () => [] },
+  }, { AI_AGENT_RUNTIME: "sdk", AI_GATEWAY_API_KEY: "synthetic" });
+  const response = await post(request({ mode: "work", pathname: "/email", pageLabel: "Email", pageText: "", messages: [{ role: "user", content: "Check the saved products." }] }));
+  assert.equal(response.status, 200); assert.equal(google, 1); assert.equal(native, 1);
+  assert.equal((await response.json()).output, "Saved records checked.");
+});
+
 test("Chat hands off the reported Abe invoice request without model analysis or record mutations", async () => {
   const post = dialogueRoute(async () => { throw new Error("Chat must not analyze an action request"); }, {}, async () => { throw new Error("Chat must not prepare mutations"); });
   const response = await post(request({ mode: "analyze", pathname: "/email", pageLabel: "Email", pageText: "Abe M", messages: [{ role: "user", content: "can create a invoice for abe m for pla basic 500 qty" }] }));
@@ -57,7 +73,7 @@ test("Agent repairs unmarked analysis into verified customer/product reads befor
     const invoice = { type: "create_invoice", companyId: id, items: [{ productSku: "PLA-BASIC", variantId: "black", quantity: 500 }] };
     const post = route("../app/api/ai/assistant/route.ts", {
       "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
-      "@/lib/ai/assistant-provider-error": providerError, "@/lib/ai/gemini": {},
+      "@/lib/ai/assistant-provider-error": providerError,
       "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
       "@/lib/ai/gateway": { generateGatewayText: async ({ prompt }: { prompt: string }) => {
         assert.equal(prepared, 0);
@@ -96,12 +112,12 @@ test("repeated unmarked Agent analysis stops safely after one repair without lea
   assert.doesNotMatch(body.output, /SERVER_DATA|APPROVAL_MODE|Analysis of current state/);
 });
 
-test("Gateway primary overrides Gemini and escalates an invalid agent response before preparing any write", async () => {
+test("Gateway escalates an invalid agent response before preparing any write", async () => {
   const calls: Array<{ task: string; complex: boolean; userText: string }> = [];
   let prepared = 0;
   const post = route("../app/api/ai/assistant/route.ts", {
     "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
-    "@/lib/ai/gemini": { generateGeminiText: async () => { throw new Error("Gemini must not be used when Gateway is primary"); } },
+
     "@/lib/ai/gateway": { generateGatewayText: async (options: { task: string; complex: boolean; userText: string }) => {
       assert.equal(prepared, 0);
       calls.push({ task: options.task, complex: options.complex, userText: options.userText });
@@ -109,7 +125,7 @@ test("Gateway primary overrides Gemini and escalates an invalid agent response b
     } },
     "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
     "@/lib/ai/agent-execution": { prepareAgentActions: async () => { prepared++; return []; } },
-  }, { AI_PROVIDER: "gateway", GEMINI_API_KEY: "synthetic", AI_GATEWAY_API_KEY: "synthetic" });
+  }, { AI_PROVIDER: "gateway",  AI_GATEWAY_API_KEY: "synthetic" });
   const response = await post(request({ mode: "work", pathname: "/companies", pageLabel: "Companies", pageText: "", messages: [{ role: "user", content: "Create company Acme in the US retail segment" }] }));
   assert.equal(response.status, 200);
   assert.equal(calls.length, 2);
@@ -121,7 +137,7 @@ test("Gateway primary overrides Gemini and escalates an invalid agent response b
 
 test("routing receives only the latest request while retaining earlier conversation in the model prompt", async () => {
   const post = route("../app/api/ai/assistant/route.ts", {
-    "@/lib/ai/gemini": {}, "@/lib/ai/assistant-provider-error": providerError,
+     "@/lib/ai/assistant-provider-error": providerError,
     "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
     "@/lib/ai/gateway": { generateGatewayText: async (options: { userText: string; prompt: string; complex: boolean; standard: boolean }) => {
       assert.equal(options.userText, "Find customer Acme");
@@ -146,7 +162,7 @@ test("a second valid lookup raises the minimum tier to Terra without triggering 
   const calls: Array<{ standard: boolean; complex: boolean }> = [];
   let prepared = 0;
   const post = route("../app/api/ai/assistant/route.ts", {
-    "@/lib/ai/gemini": {}, "@/lib/ai/assistant-provider-error": providerError,
+     "@/lib/ai/assistant-provider-error": providerError,
     "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
     "@/lib/ai/gateway": { generateGatewayText: async (options: { standard: boolean; complex: boolean }) => {
       assert.equal(prepared, 0);
@@ -166,22 +182,22 @@ test("a second valid lookup raises the minimum tier to Terra without triggering 
 function dialogueRoute(generate: (options: { prompt: string }) => Promise<string>, context: object = {}, prepare: (values: unknown, viewer: unknown, mode: string, context?: unknown) => Promise<unknown[]> = async () => []) {
   return route("../app/api/ai/assistant/route.ts", {
     "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
-    "@/lib/ai/assistant-provider-error": providerError, "@/lib/ai/gateway": {},
+    "@/lib/ai/assistant-provider-error": providerError,
     "@/lib/ai/agent-context": { loadAgentContext: async () => context },
-    "@/lib/ai/gemini": { generateGeminiText: generate }, "@/lib/ai/agent-execution": { prepareAgentActions: prepare },
-  }, { GEMINI_API_KEY: "synthetic" });
+    "@/lib/ai/gateway": { generateGatewayText: generate }, "@/lib/ai/agent-execution": { prepareAgentActions: prepare },
+  }, { AI_GATEWAY_API_KEY: "synthetic" });
 }
 
 test("ambiguous customer lookup stops at a distinguishing question before another model call or invoice proposal", async () => {
   let generated = 0, prepared = 0;
   const post = route("../app/api/ai/assistant/route.ts", {
     "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
-    "@/lib/ai/assistant-provider-error": providerError, "@/lib/ai/gateway": {},
+    "@/lib/ai/assistant-provider-error": providerError,
     "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
-    "@/lib/ai/gemini": { generateGeminiText: async () => { generated++; return 'FILAZOO_CRM_READ_JSON: {"resource":"companies","query":"Acme"}'; } },
+    "@/lib/ai/gateway": { generateGatewayText: async () => { generated++; return 'FILAZOO_CRM_READ_JSON: {"resource":"companies","query":"Acme"}'; } },
     "@/lib/ai/crm-records": { readCrmRecords: async () => ({ records: [{ id, name: "Acme North", city: "Boston", country: "US" }, { id: viewer.id, name: "Acme South", city: "Miami", country: "US" }], coverage: { matching: 2, included: 2 } }) },
     "@/lib/ai/agent-execution": { prepareAgentActions: async () => { prepared++; return []; } },
-  }, { GEMINI_API_KEY: "synthetic" });
+  }, { AI_GATEWAY_API_KEY: "synthetic" });
   const body = await (await post(request({ mode: "work", approvalMode: "auto", pathname: "/companies", pageLabel: "Companies", pageText: "", messages: [{ role: "user", content: "Create an invoice for Acme, 100 Black PLA" }] }))).json();
   assert.equal(generated, 1); assert.equal(prepared, 0); assert.deepEqual(body.actions, []); assert.match(body.output, /Acme North \(Boston, US\)/); assert.match(body.output, /Acme South \(Miami, US\)/);
 });
@@ -259,9 +275,9 @@ test("malformed compound actions are replanned once before storing any proposal"
   ];
   const post = route("../app/api/ai/assistant/route.ts", {
     "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
-    "@/lib/ai/assistant-provider-error": providerError, "@/lib/ai/gateway": {},
+    "@/lib/ai/assistant-provider-error": providerError,
     "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
-    "@/lib/ai/gemini": { generateGeminiText: async ({ prompt }: { prompt: string }) => {
+    "@/lib/ai/gateway": { generateGatewayText: async ({ prompt }: { prompt: string }) => {
       generated++;
       assert.equal(preparations, 0);
       if (generated === 1) return 'FILAZOO_ACTIONS_JSON: [{"type":"crm_action","operation":{"op":"update_task","taskId":"invalid","changes":{"status":"canceled"}}}]';
@@ -269,7 +285,7 @@ test("malformed compound actions are replanned once before storing any proposal"
       return `Review each change.\nFILAZOO_ACTIONS_JSON: ${JSON.stringify(operations)}`;
     } },
     "@/lib/ai/agent-execution": { prepareAgentActions: async (values: unknown) => { preparations++; assert.deepEqual(JSON.parse(JSON.stringify(values)), operations); return operations.map((action) => ({ id, action, approvalMode: "ask" })); } },
-  }, { GEMINI_API_KEY: "synthetic" });
+  }, { AI_GATEWAY_API_KEY: "synthetic" });
   const response = await post(request({ mode: "work", pathname: "/tasks", pageLabel: "Tasks", pageText: "", messages: [{ role: "user", content: "Cancel my test task and preview a business fact." }] }));
   assert.equal((await response.json()).actions.length, 2); assert.equal(generated, 2); assert.equal(preparations, 1);
 });
@@ -279,11 +295,11 @@ test("persistent invalid actions stop after one repair and Chat never retries th
     let calls = 0, prepared = 0;
     const post = route("../app/api/ai/assistant/route.ts", {
       "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
-      "@/lib/ai/assistant-provider-error": providerError, "@/lib/ai/gateway": {},
+      "@/lib/ai/assistant-provider-error": providerError,
       "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
-      "@/lib/ai/gemini": { generateGeminiText: async () => { calls++; return 'FILAZOO_ACTIONS_JSON: [{"type":"crm_action","operation":{"op":"invent_a_tool"}}]'; } },
+      "@/lib/ai/gateway": { generateGatewayText: async () => { calls++; return 'FILAZOO_ACTIONS_JSON: [{"type":"crm_action","operation":{"op":"invent_a_tool"}}]'; } },
       "@/lib/ai/agent-execution": { prepareAgentActions: async () => { prepared++; return []; } },
-    }, { GEMINI_API_KEY: "synthetic" });
+    }, { AI_GATEWAY_API_KEY: "synthetic" });
     const body = await (await post(request({ mode, pathname: "/tasks", pageLabel: "Tasks", pageText: "", messages: [{ role: "user", content: "Check my task" }] }))).json();
     assert.deepEqual(body.actions, []); assert.doesNotMatch(body.output, /FILAZOO_|invent_a_tool/);
     assert.equal(calls, mode === "work" ? 2 : 1); assert.equal(prepared, 0);
@@ -294,11 +310,11 @@ test("read-protocol and action-protocol failures share a single repair allowance
   let calls = 0;
   const post = route("../app/api/ai/assistant/route.ts", {
     "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
-    "@/lib/ai/assistant-provider-error": providerError, "@/lib/ai/gateway": {},
+    "@/lib/ai/assistant-provider-error": providerError,
     "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
-    "@/lib/ai/gemini": { generateGeminiText: async () => ++calls === 1 ? 'FILAZOO_CRM_READ_JSON: {}\nFILAZOO_ACTIONS_JSON: []' : 'FILAZOO_ACTIONS_JSON: [bad JSON]' },
+    "@/lib/ai/gateway": { generateGatewayText: async () => ++calls === 1 ? 'FILAZOO_CRM_READ_JSON: {}\nFILAZOO_ACTIONS_JSON: []' : 'FILAZOO_ACTIONS_JSON: [bad JSON]' },
     "@/lib/ai/agent-execution": { prepareAgentActions: async () => { throw new Error("Must never prepare"); } },
-  }, { GEMINI_API_KEY: "synthetic" });
+  }, { AI_GATEWAY_API_KEY: "synthetic" });
   const body = await (await post(request({ mode: "work", pathname: "/tasks", pageLabel: "Tasks", pageText: "", messages: [{ role: "user", content: "Cancel my test task" }] }))).json();
   assert.deepEqual(body.actions, []); assert.equal(calls, 2);
 });
@@ -313,10 +329,10 @@ test("the assistant never returns raw email JSON and only prepares actions from 
         "@/lib/auth": { getWorkspaceViewer: async () => viewer },
         "@/lib/ai/workspace-assistant": assistant,
         "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
-        "@/lib/ai/gemini": { generateGeminiText: async () => `\`\`\`json\n${JSON.stringify(email)}\n\`\`\`${valid ? `\nFILAZOO_ACTIONS_JSON: ${JSON.stringify([action])}` : ""}` },
-        "@/lib/ai/gateway": {}, "@/lib/ai/assistant-provider-error": providerError,
+        "@/lib/ai/gateway": { generateGatewayText: async () => `\`\`\`json\n${JSON.stringify(email)}\n\`\`\`${valid ? `\nFILAZOO_ACTIONS_JSON: ${JSON.stringify([action])}` : ""}` },
+         "@/lib/ai/assistant-provider-error": providerError,
         "@/lib/ai/agent-execution": { prepareAgentActions: async (values: assistant.WorkspaceAction[]) => { prepared += values.length; return []; } },
-      }, { GEMINI_API_KEY: "synthetic" });
+      }, { AI_GATEWAY_API_KEY: "synthetic" });
       const response = await post(request({ mode, pathname: "/email", pageLabel: "Email", pageText: "", messages: [{ role: "user", content: "Write an email and attach the catalog PDF" }] }));
       assert.equal(response.status, 200);
       const body = await response.json();
@@ -334,10 +350,10 @@ test("Chat and Agent reload the open email and bind reply proposals to its selec
     const post = route("../app/api/ai/assistant/route.ts", {
       "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
       "@/lib/ai/agent-context": { loadAgentContext: async (input: assistant.WorkspaceAssistantInput) => { loads++; assert.equal(input.pageContext?.mailboxId, id); return { currentEmail: { id: "selected-email", mailboxId: id, text: "I need 500 kg PLA" } }; } },
-      "@/lib/ai/gemini": { generateGeminiText: async ({ prompt }: { prompt: string }) => { assert.match(prompt, /I need 500 kg PLA/); return `Reply ready.\nFILAZOO_ACTIONS_JSON: ${JSON.stringify([action])}`; } },
-      "@/lib/ai/gateway": {}, "@/lib/ai/assistant-provider-error": providerError,
+      "@/lib/ai/gateway": { generateGatewayText: async ({ prompt }: { prompt: string }) => { assert.match(prompt, /I need 500 kg PLA/); return `Reply ready.\nFILAZOO_ACTIONS_JSON: ${JSON.stringify([action])}`; } },
+       "@/lib/ai/assistant-provider-error": providerError,
       "@/lib/ai/agent-execution": { prepareAgentActions: async (values: assistant.WorkspaceAction[]) => { preparations++; assert.equal(values[0].type, "write_email"); if (values[0].type === "write_email") assert.equal(values[0].email.mailboxId, id); return []; } },
-    }, { GEMINI_API_KEY: "synthetic" });
+    }, { AI_GATEWAY_API_KEY: "synthetic" });
     const response = await post(request({ mode, pathname: "/email", pageLabel: "Email", pageText: "", pageContext: { emailId: "selected-email", mailboxId: id }, messages: [{ role: "user", content: "Write a reply to this" }] }));
     assert.equal(response.status, 200);
     assert.equal(loads, 1);
@@ -356,13 +372,8 @@ test("image prompts reach workspace providers in Chat and Agent mode without byp
       "@/lib/auth": { getWorkspaceViewer: async () => signedIn ? viewer : null },
       "@/lib/ai/workspace-assistant": assistant,
       "@/lib/ai/assistant-provider-error": providerError,
-      "@/lib/ai/gemini": { generateGeminiText: async ({ images, prompt }: { images: imageInput.ProviderImage[]; prompt: string }) => {
-        assert.equal(images[0].dataUrl, image.dataUrl);
-        assert.match(prompt, /Message 1, image 1/);
-        assert.ok(!prompt.includes("base64"));
-        throw new Error("Regional availability");
-      } },
-      "@/lib/ai/gateway": { isGeminiRegionError: () => true, generateGatewayText: async ({ images, visionModel }: { images: imageInput.ProviderImage[]; visionModel: string }) => {
+
+      "@/lib/ai/gateway": { generateGatewayText: async ({ images, visionModel }: { images: imageInput.ProviderImage[]; visionModel: string }) => {
         gatewayCalls++;
         assert.equal(images[0].dataUrl, image.dataUrl);
         assert.equal(visionModel, "test-vision-model");
@@ -375,7 +386,7 @@ test("image prompts reach workspace providers in Chat and Agent mode without byp
         assert.equal(JSON.stringify(actions), JSON.stringify([proposal]));
         return [{ id: "pending-approval" }];
       } },
-    }, { GEMINI_API_KEY: "test", AI_GATEWAY_API_KEY: "test", AI_GATEWAY_VISION_MODEL: "test-vision-model" });
+    }, {  AI_GATEWAY_API_KEY: "test", AI_GATEWAY_VISION_MODEL: "test-vision-model" });
     const body = { mode, pathname: "/companies", pageLabel: "Companies", pageText: "", messages: [{ role: "user", content: "Update this customer's shipping address from the image.", images: [image] }] };
     const response = await post(request(body));
     assert.equal(response.status, 200);
@@ -398,15 +409,15 @@ test("customer image questions use authorized records and retain image context i
     "@/lib/auth": { getWorkspaceViewer: async () => viewer },
     "@/lib/data/crm": { getCompanyDetails: async (companyId: string) => { assert.equal(companyId, id); loaded = true; return { details: { company: {} } }; } },
     "@/lib/ai/company-chat": { ...companyChat, buildCompanyChatContext: () => ({ context: { coverage: {} }, sources: [] }) },
-    "@/lib/ai/gemini": { generateGeminiText: async ({ images, prompt }: { images: imageInput.ProviderImage[]; prompt: string }) => {
+    "@/lib/ai/gateway": { generateGatewayText: async ({ images, prompt }: { images: imageInput.ProviderImage[]; prompt: string }) => {
       assert.equal(loaded, true);
       assert.deepEqual(images, [{ ...image, label: "Message 1, image 1" }]);
       assert.match(prompt, /What is the postal code/);
       assert.ok(!prompt.includes("base64"));
       return "The image shows postal code 12345.";
     } },
-    "@/lib/ai/gateway": {},
-  }, { GEMINI_API_KEY: "test" });
+
+  }, { AI_GATEWAY_API_KEY: "test" });
   const response = await post(request({ messages: [
     { role: "user", content: "Read this image.", images: [image] },
     { role: "assistant", content: "It shows an address." },
@@ -426,11 +437,11 @@ test("agent reads email results before preparing customer updates and discards p
     "@/lib/auth": { getWorkspaceViewer: async () => viewer },
     "@/lib/ai/workspace-assistant": assistant,
     "@/lib/ai/assistant-provider-error": providerError,
-    "@/lib/ai/gemini": { generateGeminiText: async ({ prompt }: { prompt: string }) => { prompts.push(prompt); generated++; return generated === 1 ? `FILAZOO_ACTIONS_JSON: ${JSON.stringify([company])}\nFILAZOO_EMAIL_SEARCH_JSON: {"companyId":"${id}"}` : `Shipping address ready for review.\nFILAZOO_ACTIONS_JSON: ${JSON.stringify([proposed])}`; } },
-    "@/lib/ai/gateway": {},
+    "@/lib/ai/gateway": { generateGatewayText: async ({ prompt }: { prompt: string }) => { prompts.push(prompt); generated++; return generated === 1 ? `FILAZOO_ACTIONS_JSON: ${JSON.stringify([company])}\nFILAZOO_EMAIL_SEARCH_JSON: {"companyId":"${id}"}` : `Shipping address ready for review.\nFILAZOO_ACTIONS_JSON: ${JSON.stringify([proposed])}`; } },
+
     "@/lib/ai/agent-context": { loadAgentContext: async () => ({}), searchAgentEmails: async (_viewer: unknown, search: { companyId: string }) => { reads++; assert.equal(search.companyId, id); assert.equal(stored, undefined); return { messages: [{ id: "mail-1", text: "Ship to 99 New Road" }] }; } },
     "@/lib/ai/agent-execution": { prepareAgentActions: async (actions: unknown, _viewer: unknown, mode: string) => { stored = actions; assert.equal(mode, "auto"); return []; } },
-  }, { GEMINI_API_KEY: "test-key" });
+  }, { AI_GATEWAY_API_KEY: "test-key" });
   const response = await post(request({ mode: "work", approvalMode: "auto", pathname: "/companies", pageLabel: "Companies", pageText: "", messages: [{ role: "user", content: "Check the emails and add the shipping address to the profile" }] }));
   assert.equal(response.status, 200);
   assert.equal(reads, 1);
@@ -448,11 +459,11 @@ test("email lookup failures, invalid requests and repeated reads never save part
     const post = route("../app/api/ai/assistant/route.ts", {
       "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
       "@/lib/ai/assistant-provider-error": providerError,
-      "@/lib/ai/gemini": { generateGeminiText: async () => `FILAZOO_EMAIL_SEARCH_JSON: ${scenario === "invalid" ? '{"companyId":"forged"}' : '{}'} ` },
-      "@/lib/ai/gateway": {},
+      "@/lib/ai/gateway": { generateGatewayText: async () => `FILAZOO_EMAIL_SEARCH_JSON: ${scenario === "invalid" ? '{"companyId":"forged"}' : '{}'} ` },
+
       "@/lib/ai/agent-context": { loadAgentContext: async () => ({}), searchAgentEmails: async () => { reads++; if (scenario === "failure") throw new Error("Private mailbox detail"); return { messages: [] }; } },
       "@/lib/ai/agent-execution": { prepareAgentActions: async () => { prepares++; return []; } },
-    }, { GEMINI_API_KEY: "test-key" });
+    }, { AI_GATEWAY_API_KEY: "test-key" });
     const response = await post(request({ mode: scenario === "analyze" ? "analyze" : "work", pathname: "/email", pageLabel: "Email", pageText: "", messages: [{ role: "user", content: "Check emails" }] }));
     assert.equal(response.status, 200);
     const body = await response.json();
@@ -471,15 +482,15 @@ test("CRM lookups feed verified IDs back to planning before new actions enter ap
   const proposal = { type: "crm_action", operation: { op: "schedule_followup", companyId: id, dueAt: "2026-10-28T09:00:00+08:00" } };
   const post = route("../app/api/ai/assistant/route.ts", {
     "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant, "@/lib/ai/assistant-provider-error": providerError,
-    "@/lib/ai/gemini": { generateGeminiText: async ({ prompt }: { prompt: string }) => {
+    "@/lib/ai/gateway": { generateGatewayText: async ({ prompt }: { prompt: string }) => {
       generated++;
       if (generated === 1) return 'FILAZOO_CRM_READ_JSON: {"resource":"companies","query":"Acme"}';
       assert.match(prompt, /CRM_READ_RESULTS/); assert.match(prompt, /Verified Acme/);
       return `Ready for review.\nFILAZOO_ACTIONS_JSON: ${JSON.stringify([proposal])}`;
-    } }, "@/lib/ai/gateway": {}, "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
+    } },  "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
     "@/lib/ai/crm-records": { readCrmRecords: async (actor: { id: string }, lookup: crmTools.CrmRead) => { read++; assert.equal(actor.id, viewer.id); assert.equal(lookup.resource, "companies"); assert.equal(prepared, 0); return { records: [{ id, name: "Verified Acme" }], coverage: { included: 1 } }; } },
     "@/lib/ai/agent-execution": { prepareAgentActions: async (actions: unknown) => { prepared++; assert.equal(JSON.stringify(actions), JSON.stringify([proposal])); return []; } },
-  }, { GEMINI_API_KEY: "synthetic" });
+  }, { AI_GATEWAY_API_KEY: "synthetic" });
   const response = await post(request({ mode: "work", pathname: "/companies", pageLabel: "Companies", pageText: "", messages: [{ role: "user", content: "Schedule Acme follow-up tomorrow at 9am" }] }));
   assert.equal(response.status, 200); assert.equal(read, 1); assert.equal(prepared, 1); assert.equal(generated, 2);
   assert.ok(!(await response.json()).output.includes("FILAZOO_"));
@@ -491,8 +502,8 @@ test("agent repairs a mixed lookup/action response once before reading and never
     const proposal = { type: "add_company_note", companyId: id, note: "Synthetic audit" };
     const post = route("../app/api/ai/assistant/route.ts", {
       "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant, "@/lib/ai/assistant-provider-error": providerError,
-      "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) }, "@/lib/ai/gateway": {},
-      "@/lib/ai/gemini": { generateGeminiText: async ({ prompt }: { prompt: string }) => {
+      "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
+      "@/lib/ai/gateway": { generateGatewayText: async ({ prompt }: { prompt: string }) => {
         generated++;
         if (generated === 1 || repeats) return `FILAZOO_CRM_READ_JSON: {"resource":"companies","query":"Audit"}\nFILAZOO_ACTIONS_JSON: ${JSON.stringify([proposal])}`;
         assert.match(prompt, /SERVER_PROTOCOL_CORRECTION/);
@@ -502,7 +513,7 @@ test("agent repairs a mixed lookup/action response once before reading and never
       } },
       "@/lib/ai/crm-records": { readCrmRecords: async () => { reads++; assert.equal(prepared, 0); return { records: [{ id, name: "Verified audit company" }] }; } },
       "@/lib/ai/agent-execution": { prepareAgentActions: async () => { prepared++; assert.equal(reads, 1); return []; } },
-    }, { GEMINI_API_KEY: "synthetic" });
+    }, { AI_GATEWAY_API_KEY: "synthetic" });
     const response = await post(request({ mode: "work", approvalMode: "auto", pathname: "/companies", pageLabel: "Companies", pageText: "", messages: [{ role: "user", content: "Add the audit note to Audit company" }] }));
     assert.equal(response.status, 200);
     assert.equal(generated, repeats ? 2 : 3); assert.equal(reads, repeats ? 0 : 1); assert.equal(prepared, repeats ? 0 : 1);
@@ -514,10 +525,10 @@ test("a prepared proposal never repeats the model's premature success claim", as
   let executed = 0;
   const post = route("../app/api/ai/assistant/route.ts", {
     "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant, "@/lib/ai/assistant-provider-error": providerError,
-    "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) }, "@/lib/ai/gateway": {},
-    "@/lib/ai/gemini": { generateGeminiText: async () => `The company has been created and saved.\nFILAZOO_ACTIONS_JSON: ${JSON.stringify([company])}` },
+    "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
+    "@/lib/ai/gateway": { generateGatewayText: async () => `The company has been created and saved.\nFILAZOO_ACTIONS_JSON: ${JSON.stringify([company])}` },
     "@/lib/ai/agent-execution": { prepareAgentActions: async () => [{ id, approvalMode: "ask", action: company }], executeAgentAction: async () => { executed++; } },
-  }, { GEMINI_API_KEY: "synthetic" });
+  }, { AI_GATEWAY_API_KEY: "synthetic" });
   const response = await post(request({ mode: "work", pathname: "/companies", pageLabel: "Companies", pageText: "", messages: [{ role: "user", content: "Create Acme" }] }));
   const body = await response.json();
   assert.equal(body.output, "The requested actions are ready for review.");
@@ -529,8 +540,8 @@ test("independent CRM lookups start together and need only one additional model 
   const pending: Array<() => void> = [];
   const post = route("../app/api/ai/assistant/route.ts", {
     "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant, "@/lib/ai/assistant-provider-error": providerError,
-    "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) }, "@/lib/ai/gateway": {},
-    "@/lib/ai/gemini": { generateGeminiText: async ({ prompt }: { prompt: string }) => {
+    "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
+    "@/lib/ai/gateway": { generateGatewayText: async ({ prompt }: { prompt: string }) => {
       generated++;
       if (generated === 1) return 'FILAZOO_CRM_READS_JSON: [{"resource":"tasks"},{"resource":"inventory","id":"PLA-BLACK"}]';
       assert.equal(finished, 2); assert.match(prompt, /Verified task/); assert.match(prompt, /ERP-BLACK/); assert.match(prompt, /2 record lookups remain/);
@@ -543,7 +554,7 @@ test("independent CRM lookups start together and need only one additional model 
       return { records: [lookup.resource === "tasks" ? { id, title: "Verified task" } : { sku: "ERP-BLACK" }] };
     } },
     "@/lib/ai/agent-execution": { prepareAgentActions: async () => { assert.equal(finished, 2); prepared++; return []; } },
-  }, { GEMINI_API_KEY: "synthetic" });
+  }, { AI_GATEWAY_API_KEY: "synthetic" });
   assert.equal((await post(request({ mode: "work", pathname: "/tasks", pageLabel: "Tasks", pageText: "", messages: [{ role: "user", content: "Check my task and PLA stock, then create Acme" }] }))).status, 200);
   assert.equal(generated, 2); assert.equal(prepared, 1);
 });
@@ -553,11 +564,11 @@ test("batch failures, budget exhaustion and Chat never prepare partial actions",
     let generated = 0, reads = 0, prepared = 0;
     const post = route("../app/api/ai/assistant/route.ts", {
       "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant, "@/lib/ai/assistant-provider-error": providerError,
-      "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) }, "@/lib/ai/gateway": {},
-      "@/lib/ai/gemini": { generateGeminiText: async () => { generated++; return `FILAZOO_CRM_READS_JSON: ${JSON.stringify(generated === 1 ? [{ resource: "tasks" }, { resource: "inventory" }, { resource: "segments" }] : [{ resource: "products" }, { resource: "companies" }])}`; } },
+      "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
+      "@/lib/ai/gateway": { generateGatewayText: async () => { generated++; return `FILAZOO_CRM_READS_JSON: ${JSON.stringify(generated === 1 ? [{ resource: "tasks" }, { resource: "inventory" }, { resource: "segments" }] : [{ resource: "products" }, { resource: "companies" }])}`; } },
       "@/lib/ai/crm-records": { readCrmRecords: async (_actor: unknown, lookup: crmTools.CrmRead) => { reads++; if (scenario === "failure" && lookup.resource === "tasks") throw new Error("Private database detail"); return { records: [] }; } },
       "@/lib/ai/agent-execution": { prepareAgentActions: async () => { prepared++; return []; } },
-    }, { GEMINI_API_KEY: "synthetic" });
+    }, { AI_GATEWAY_API_KEY: "synthetic" });
     const response = await post(request({ mode: scenario === "analyze" ? "analyze" : "work", pathname: "/tasks", pageLabel: "Tasks", pageText: "", messages: [{ role: "user", content: "Check tasks, inventory and segments" }] }));
     const body = await response.json();
     assert.equal(prepared, 0); assert.equal(reads, 3); assert.deepEqual(body.actions, []);
@@ -569,11 +580,11 @@ test("a provider failure after a successful lookup remains a provider error", as
   let generated = 0, reads = 0;
   const post = route("../app/api/ai/assistant/route.ts", {
     "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant, "@/lib/ai/assistant-provider-error": providerError,
-    "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) }, "@/lib/ai/gateway": {},
-    "@/lib/ai/gemini": { generateGeminiText: async () => { if (++generated === 1) return 'FILAZOO_CRM_READ_JSON: {"resource":"tasks"}'; throw new Error("AI provider is temporarily unavailable"); } },
+    "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
+    "@/lib/ai/gateway": { generateGatewayText: async () => { if (++generated === 1) return 'FILAZOO_CRM_READ_JSON: {"resource":"tasks"}'; throw new Error("AI provider is temporarily unavailable"); } },
     "@/lib/ai/crm-records": { readCrmRecords: async () => { reads++; return { records: [] }; } },
     "@/lib/ai/agent-execution": { prepareAgentActions: async () => { throw new Error("Must not prepare"); } },
-  }, { GEMINI_API_KEY: "synthetic" });
+  }, { AI_GATEWAY_API_KEY: "synthetic" });
   const response = await post(request({ mode: "work", pathname: "/tasks", pageLabel: "Tasks", pageText: "", messages: [{ role: "user", content: "Find my task" }] }));
   assert.equal(response.status, 502); assert.equal(reads, 1);
   assert.doesNotMatch((await response.json()).error, /Unable to read the requested CRM/);
@@ -585,11 +596,11 @@ test("CRM read failures and read budgets never create partial mutations in Chat 
     let preparations = 0;
     const post = route("../app/api/ai/assistant/route.ts", {
       "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant, "@/lib/ai/assistant-provider-error": providerError,
-      "@/lib/ai/gemini": { generateGeminiText: async () => 'FILAZOO_CRM_READ_JSON: {"resource":"products"}' }, "@/lib/ai/gateway": {},
+      "@/lib/ai/gateway": { generateGatewayText: async () => 'FILAZOO_CRM_READ_JSON: {"resource":"products"}' },
       "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
       "@/lib/ai/crm-records": { readCrmRecords: async () => { reads++; if (scenario === "failure") throw new Error("Private connection error"); return { records: [] }; } },
       "@/lib/ai/agent-execution": { prepareAgentActions: async () => { preparations++; return []; } },
-    }, { GEMINI_API_KEY: "synthetic" });
+    }, { AI_GATEWAY_API_KEY: "synthetic" });
     const response = await post(request({ mode: scenario === "analyze" ? "analyze" : "work", pathname: "/products", pageLabel: "Products", pageText: "", messages: [{ role: "user", content: "Find PLA" }] }));
     const body = await response.json();
     assert.deepEqual(body.actions, []); assert.equal(preparations, 0); assert.equal(reads, scenario === "failure" ? 1 : 4);
@@ -597,7 +608,7 @@ test("CRM read failures and read budgets never create partial mutations in Chat 
   }
 });
 
-function actionRoute(options: { mode?: string; role?: string; owner?: string; expired?: boolean; fail?: boolean } = {}) {
+function actionRoute(options: { mode?: string; role?: string; owner?: string; expired?: boolean; fail?: boolean; failOnce?: boolean } = {}) {
   const row = { id, user_id: options.owner || viewer.id, action: company, approval_mode: options.mode || "ask", status: "pending", expires_at: new Date(Date.now() + (options.expired ? -1000 : 60000)).toISOString(), result: null as Record<string, unknown> | null };
   let executions = 0;
   const db = { from() {
@@ -622,6 +633,7 @@ function actionRoute(options: { mode?: string; role?: string; owner?: string; ex
     "@/lib/ai/agent-actions": actions,
     "@/lib/ai/agent-execution": { executeAgentAction: async () => {
       executions++;
+      if (options.failOnce && executions === 1) { row.result = { stage: "order_saved", canResume: true, orderId: id }; throw new Error("Temporary invoice read interruption"); }
       if (options.fail) { row.result = { href: "/invoices/saved", invoiceId: "saved" }; throw new Error("Invoice saved, but mailbox failed."); }
       return { success: "Acme was added." };
     } },
@@ -647,12 +659,54 @@ test("live progress reads only the current user's action and never returns invoi
   assert.equal((await mock.get(new Request("http://localhost:3000/api/ai/assistant/action?id=invalid"))).status, 400);
 });
 
+test("action status recovers completed results, partial failures and expiration without executing writes", async () => {
+  const mock = actionRoute();
+  mock.row.status = "completed";
+  mock.row.result = { success: "Draft prepared.", href: "/email?agentDraft=saved", draft: { to: "buyer@example.com" }, privateBankDetails: "internal-only" };
+  const url = new Request(`http://localhost:3000/api/ai/assistant/action?id=${id}`);
+  const completed = await (await mock.get(url)).json();
+  assert.equal(completed.success, "Draft prepared.");
+  assert.equal(completed.draft.to, "buyer@example.com");
+  assert.equal(completed.privateBankDetails, undefined);
+  mock.row.status = "failed";
+  mock.row.result = { success: "Invoice saved.", error: "Email not confirmed.", href: "/invoices/saved" };
+  const partial = await (await mock.get(url)).json();
+  assert.equal(partial.success, "Invoice saved."); assert.equal(partial.href, "/invoices/saved");
+  mock.row.status = "pending"; mock.row.expires_at = "2020-01-01T00:00:00Z";
+  assert.equal((await (await mock.get(url)).json()).status, "expired");
+  assert.equal(mock.executions(), 0);
+});
+
+test("only a manually requested, checkpointed pre-send workflow can resume", async () => {
+  const document = { ...blankInvoiceDocument("2026-11-07"), companyId: viewer.id, customerName: "Synthetic", customerEmail: "buyer@example.com", items: [{ description: "Custom part", quantity: 1, unitPriceMinor: 500, taxBps: 0 }] };
+  for (const [stage, approval, expected] of [["order_saved", "manual", 200], ["sending", "manual", 409], ["order_saved", "auto", 409]] as const) {
+    const mock = actionRoute();
+    Object.assign(mock.row, { action: { type: "create_invoice", document, order: agentOrderFromInvoice(document).order }, status: "failed", result: { stage, canResume: true, orderId: id } });
+    const response = await mock.post(request({ id, decision: "resume", approval }));
+    assert.equal(response.status, expected);
+    assert.equal(mock.executions(), expected === 200 ? 1 : 0);
+    if (expected === 200) {
+      await mock.post(request({ id, decision: "resume", approval }));
+      assert.equal(mock.executions(), 1);
+    }
+  }
+});
+
+test("a temporary pre-send workflow interruption continues automatically under its original approval", async () => {
+  const document = { ...blankInvoiceDocument("2026-11-07"), companyId: viewer.id, customerName: "Synthetic", items: [{ description: "Part", quantity: 1, unitPriceMinor: 500, taxBps: 0 }] };
+  const mock = actionRoute({ failOnce: true });
+  Object.assign(mock.row, { action: { type: "create_invoice", document, order: agentOrderFromInvoice(document).order } });
+  const response = await mock.post(request(decision));
+  assert.equal(response.status, 200); assert.equal(mock.executions(), 2);
+  assert.equal((await response.json()).status, "completed");
+});
+
 test("Chat can look up an explicitly named customer's invoices from Analytics without mutations", async () => {
   let generated = 0, reads = 0;
   const post = route("../app/api/ai/assistant/route.ts", {
     "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
-    "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) }, "@/lib/ai/gateway": {},
-    "@/lib/ai/gemini": { generateGeminiText: async ({ systemInstruction, prompt }: { systemInstruction: string; prompt: string }) => {
+    "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
+    "@/lib/ai/gateway": { generateGatewayText: async ({ systemInstruction, prompt }: { systemInstruction: string; prompt: string }) => {
       assert.match(systemInstruction, /look up authorized CRM records from any page/);
       if (++generated === 1) return 'FILAZOO_CRM_READ_JSON: {"resource":"companies","query":"Inovecell"}';
       if (generated === 2) { assert.match(prompt, /Inovecell/); return `FILAZOO_CRM_READ_JSON: {"resource":"invoices","companyId":"${id}"}`; }
@@ -660,7 +714,7 @@ test("Chat can look up an explicitly named customer's invoices from Analytics wi
     } },
     "@/lib/ai/crm-records": { readCrmRecords: async (_actor: unknown, lookup: crmTools.CrmRead) => { reads++; return { records: lookup.resource === "companies" ? [{ id, name: "Inovecell" }] : [{ id: "invoice", number: "INV-VERIFIED", company_id: id }] }; } },
     "@/lib/ai/agent-execution": { prepareAgentActions: async () => { throw new Error("Chat cannot stage writes"); } },
-  }, { GEMINI_API_KEY: "synthetic" });
+  }, { AI_GATEWAY_API_KEY: "synthetic" });
   const response = await post(request({ mode: "analyze", pathname: "/analytics", pageLabel: "Analytics", pageText: "Aggregate metrics", messages: [{ role: "user", content: "Which invoices does Inovecell have?" }] }));
   const body = await response.json(); assert.equal(response.status, 200); assert.equal(reads, 2); assert.equal(generated, 3);
   assert.match(body.output, /INV-VERIFIED/); assert.deepEqual(body.actions, []);
@@ -672,11 +726,11 @@ test("an explicit other customer bypasses the open customer's missing-address sh
   let addressQuestion = true;
   const otherId = viewer.id;
   const post = route("../app/api/ai/assistant/route.ts", {
-    "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant, "@/lib/ai/gateway": {},
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
     "@/lib/ai/agent-context": { loadAgentContext: async () => ({ currentCompanyId: id, currentCompany: { fields: { name: "Page Customer" } }, customerChoices: [{ id, name: "Page Customer" }, { id: otherId, name: "Inovecell" }], currentEmail: { id: "page-email", direction: "inbound", text: "Old customer's price" } }) },
-    "@/lib/ai/gemini": { generateGeminiText: async ({ prompt }: { prompt: string }) => { generated++; assert.match(prompt, /"usePageCompany":false/); return addressQuestion ? 'FILAZOO_QUESTION_JSON: {"question":"Which shipping address should I use for Inovecell?"}' : `Ready.\nFILAZOO_ACTIONS_JSON: [{"type":"update_company","companyId":"${otherId}","changes":{"city":"Berlin"}}]`; } },
+    "@/lib/ai/gateway": { generateGatewayText: async ({ prompt }: { prompt: string }) => { generated++; assert.match(prompt, /"usePageCompany":false/); return addressQuestion ? 'FILAZOO_QUESTION_JSON: {"question":"Which shipping address should I use for Inovecell?"}' : `Ready.\nFILAZOO_ACTIONS_JSON: [{"type":"update_company","companyId":"${otherId}","changes":{"city":"Berlin"}}]`; } },
     "@/lib/ai/agent-execution": { prepareAgentActions: async (_actions: unknown, _viewer: unknown, _mode: unknown, context: { quotationSource?: unknown }) => { prepared++; assert.equal(context.quotationSource, undefined); return []; } },
-  }, { GEMINI_API_KEY: "synthetic" });
+  }, { AI_GATEWAY_API_KEY: "synthetic" });
   const response = await post(request({ mode: "work", pathname: `/companies/${id}`, pageLabel: "Company profile", pageText: "Page Customer", messages: [{ role: "user", content: "Include shipping address for Inovecell" }] }));
   assert.equal(response.status, 200); assert.equal(generated, 1);
   assert.match((await response.json()).clarification.question, /Inovecell/); assert.equal(prepared, 0);
@@ -690,10 +744,10 @@ test("ordinary page and general-knowledge answers do not trigger extra Chat look
     let generated = 0;
     const post = route("../app/api/ai/assistant/route.ts", {
       "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
-      "@/lib/ai/agent-context": {}, "@/lib/ai/gateway": {},
-      "@/lib/ai/gemini": { generateGeminiText: async ({ systemInstruction, prompt }: { systemInstruction: string; prompt: string }) => { generated++; assert.match(systemInstruction, /explicit general-knowledge question/i); assert.match(prompt, /Revenue 100/); return content.startsWith("What") ? "4" : "The page shows revenue of 100."; } },
+      "@/lib/ai/agent-context": {},
+      "@/lib/ai/gateway": { generateGatewayText: async ({ systemInstruction, prompt }: { systemInstruction: string; prompt: string }) => { generated++; assert.match(systemInstruction, /explicit general-knowledge question/i); assert.match(prompt, /Revenue 100/); return content.startsWith("What") ? "4" : "The page shows revenue of 100."; } },
       "@/lib/ai/agent-execution": {}, "@/lib/ai/crm-records": { readCrmRecords: async () => { throw new Error("No lookup was needed"); } },
-    }, { GEMINI_API_KEY: "synthetic" });
+    }, { AI_GATEWAY_API_KEY: "synthetic" });
     const response = await post(request({ mode: "analyze", pathname: "/analytics", pageLabel: "Analytics", pageText: "Revenue 100", messages: [{ role: "user", content }] }));
     assert.equal(response.status, 200); assert.equal(generated, 1); assert.deepEqual((await response.json()).actions, []);
   }
@@ -708,12 +762,12 @@ test("workspace web research uses selected server identity, returns source links
     "@/lib/auth": { getWorkspaceViewer: async () => viewer },
     "@/lib/ai/workspace-assistant": assistant,
     "@/lib/ai/assistant-provider-error": providerError,
-    "@/lib/ai/gemini": { generateGeminiText: async (options: { prompt: string }) => { prompt = options.prompt; return `Company report [W1].\nFILAZOO_ACTIONS_JSON: ${JSON.stringify([company])}`; } },
-    "@/lib/ai/gateway": {},
+    "@/lib/ai/gateway": { generateGatewayText: async (options: { prompt: string }) => { prompt = options.prompt; return `Company report [W1].\nFILAZOO_ACTIONS_JSON: ${JSON.stringify([company])}`; } },
+
     "@/lib/ai/agent-context": { loadAgentContext: async () => { loads++; return { currentCompany: { fields: { name: "Selected Customer", website: "example.com", contactEmail: "buyer@example.com", summary: "private-note" } } }; } },
     "@/lib/ai/customer-research": { researchCustomer: async (options: { identity: Record<string, string> }) => { searches++; assert.equal(options.identity.name, "Selected Customer"); assert.ok(!JSON.stringify(options).includes("private-note")); return report; } },
     "@/lib/ai/agent-execution": { prepareAgentActions: async () => { throw new Error("Read-only research must not prepare actions"); } },
-  }, { GEMINI_API_KEY: "test-key" });
+  }, { AI_GATEWAY_API_KEY: "test-key" });
   const input = { mode: "analyze", pathname: "/companies", pageLabel: "Companies", pageText: "Untrusted company text", messages: [{ role: "user", content: "analsye the customer" }] };
   const off = await post(request(input));
   assert.equal(off.status, 200);
@@ -738,7 +792,7 @@ test("research about this customer passes the selected name, email and website a
   let searches = 0;
   const post = route("../app/api/ai/assistant/route.ts", {
     "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
-    "@/lib/ai/gateway": {}, "@/lib/ai/assistant-provider-error": providerError,
+     "@/lib/ai/assistant-provider-error": providerError,
     "@/lib/ai/agent-context": { loadAgentContext: async () => ({ currentCompanyId: id, currentCompany: { fields: { name: "3D Near You", contactEmail: "info@3dnearyou.com", website: "https://3dnearyou.com/", city: "Brooklyn", summary: "PRIVATE_CRM_NOTE" } } }) },
     "@/lib/ai/customer-research": { researchCustomer: async ({ identity, onProgress }: { identity: { name: string; email: string; website: string }; onProgress: (progress: ResearchProgress) => void }) => {
       searches++;
@@ -749,14 +803,14 @@ test("research about this customer passes the selected name, email and website a
       onProgress({ phase: "reading", sources, queries: ['"3D Near You" Brooklyn'], visitedUrls: [] });
       return { status: "complete", findings: "New sourced business findings", queries: ['"3D Near You" Brooklyn'], sources, visitedUrls: [identity.website] };
     } },
-    "@/lib/ai/gemini": { generateGeminiText: async ({ systemInstruction, prompt }: { systemInstruction: string; prompt: string }) => {
+    "@/lib/ai/gateway": { generateGatewayText: async ({ systemInstruction, prompt }: { systemInstruction: string; prompt: string }) => {
       assert.match(systemInstruction, /Do not fill the answer with CRM summaries/);
       assert.match(systemInstruction, /brands\/materials and sales channels/);
       assert.match(prompt, /WEB_RESEARCH_TARGET.*3D Near You/);
       return "New public customer intelligence.";
     } },
     "@/lib/ai/agent-execution": { prepareAgentActions: async () => { throw new Error("Research must remain read-only"); } },
-  }, { GEMINI_API_KEY: "synthetic" });
+  }, { AI_GATEWAY_API_KEY: "synthetic" });
   const response = await post(request({ mode: "analyze", pathname: `/companies/${id}`, pageLabel: "Company profile", pageText: "", messages: [{ role: "user", content: "Research about this customer" }], webSearch: true }));
   assert.equal(response.status, 200); const result = await response.json();
   assert.equal(searches, 1); assert.deepEqual(result.actions, []); assert.deepEqual(result.research.visitedUrls, ["https://3dnearyou.com/"]);
@@ -775,20 +829,20 @@ test("Research Inovecell again from Analytics resolves the authorized company an
   const content = "Research Inovecell again.";
   const post = route("../app/api/ai/assistant/route.ts", {
     "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
-    "@/lib/ai/gateway": {}, "@/lib/ai/assistant-provider-error": providerError,
+     "@/lib/ai/assistant-provider-error": providerError,
     "@/lib/ai/agent-context": { loadAgentContext: async () => ({ currentCompany: null, customerChoices: [{ id, name: "Inovecell", city: "Cachoeirinha", country: "Brazil" }] }) },
     "@/lib/ai/customer-research": { researchCustomer: async ({ identity }: { identity: { name: string; city: string } }) => {
       searches++; assert.equal(identity.name, "Inovecell"); assert.equal(identity.city, "Cachoeirinha");
       return { status: "complete", checkedAt: "now", findings: "A sourced namesake, not a confirmed company match.", queries: ["Inovecell Brazil"], sources: [{ id: "W1", url: "https://example.com/inovecell", label: "Registry" }], visitedUrls: ["https://example.com/inovecell"] };
     } },
-    "@/lib/ai/gemini": { generateGeminiText: async ({ systemInstruction, prompt }: { systemInstruction: string; prompt: string }) => {
+    "@/lib/ai/gateway": { generateGatewayText: async ({ systemInstruction, prompt }: { systemInstruction: string; prompt: string }) => {
       assert.match(systemInstruction, /does not restrict public research/);
       assert.match(prompt, /WEB_RESEARCH_TARGET.*Inovecell/);
       assert.match(prompt, /Cachoeirinha/);
       return "Here is the sourced company research [W1].";
     } },
     "@/lib/ai/agent-execution": { prepareAgentActions: async () => { throw new Error("Chat research must remain read-only"); } },
-  }, { GEMINI_API_KEY: "synthetic" });
+  }, { AI_GATEWAY_API_KEY: "synthetic" });
   const response = await post(request({ mode: "analyze", pathname: "/analytics", pageLabel: "Analytics", pageText: "Aggregated metrics only", messages: [{ role: "user", content }], webSearch: webSearchForRequest("auto", content) }));
   assert.equal(response.status, 200); const result = await response.json();
   assert.equal(searches, 1); assert.equal(result.research.status, "complete"); assert.equal(result.research.visitedUrls.length, 1); assert.deepEqual(result.actions, []);
@@ -798,10 +852,10 @@ test("ambiguous cross-page research asks for a company before spending any provi
   const unexpected = async () => { throw new Error("No provider call should run before company selection"); };
   const post = route("../app/api/ai/assistant/route.ts", {
     "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
-    "@/lib/ai/gateway": {}, "@/lib/ai/assistant-provider-error": providerError,
+     "@/lib/ai/assistant-provider-error": providerError,
     "@/lib/ai/agent-context": { loadAgentContext: async () => ({ customerChoices: [{ id, name: "Inovecell", city: "Cachoeirinha" }, { id: viewer.id, name: "Inovecell", city: "Osasco" }] }) },
-    "@/lib/ai/customer-research": { researchCustomer: unexpected }, "@/lib/ai/gemini": { generateGeminiText: unexpected }, "@/lib/ai/agent-execution": {},
-  }, { GEMINI_API_KEY: "synthetic" });
+    "@/lib/ai/customer-research": { researchCustomer: unexpected }, "@/lib/ai/gateway": { generateGatewayText: unexpected }, "@/lib/ai/agent-execution": {},
+  }, { AI_GATEWAY_API_KEY: "synthetic" });
   const response = await post(request({ mode: "analyze", pathname: "/analytics", pageLabel: "Analytics", pageText: "", messages: [{ role: "user", content: "Research Inovecell" }], webSearch: true }));
   assert.equal(response.status, 200); const result = await response.json();
   assert.match(result.clarification.question, /Cachoeirinha.*Osasco/); assert.deepEqual(result.actions, []); assert.equal(result.research, undefined);
@@ -815,10 +869,10 @@ test("customer research starts only after authentication and loading the authori
     "@/lib/auth": { getWorkspaceViewer: async () => signedIn ? viewer : null },
     "@/lib/data/crm": { getCompanyDetails: async () => ({ details: found ? { company: { name: "Saved Company", website: "example.com" } } : null }) },
     "@/lib/ai/company-chat": { ...companyChat, buildCompanyChatContext: () => ({ context: { coverage: { omittedActivity: 0 } }, sources: [{ id: "P", label: "Profile" }] }), buildCompanyChatPrompt: () => "CRM profile" },
-    "@/lib/ai/gemini": { generateGeminiText: async () => "Report [P] [W1]" },
-    "@/lib/ai/gateway": {},
+    "@/lib/ai/gateway": { generateGatewayText: async () => "Report [P] [W1]" },
+
     "@/lib/ai/customer-research": { researchCustomer: async (options: { identity: { name: string } }) => { searches++; assert.equal(options.identity.name, "Saved Company"); return { status: "complete", findings: "Evidence", sources: [{ id: "W1", label: "Official", url: "https://example.com/" }] }; } },
-  }, { GEMINI_API_KEY: "test-key" });
+  }, { AI_GATEWAY_API_KEY: "test-key" });
   const input = { webSearch: true, messages: [{ role: "user", content: "Analyze customer" }] };
   const context = { params: Promise.resolve({ id }) };
   signedIn = false;
@@ -868,6 +922,19 @@ test("auto-approved proposals execute and declines never execute", async () => {
   assert.equal((await declined.post(request(decision))).status, 409);
 });
 
+test("declining remaining workflow work preserves confirmed progress in saved result reads", async () => {
+  const mock = actionRoute();
+  mock.row.result = { workflow: { completed: 1, total: 2, steps: [{ id: "customer", tool: "create_company", status: "completed" }] }, href: "/companies/saved" };
+  const response = await mock.post(request({ ...decision, decision: "decline" }));
+  assert.equal(response.status, 200);
+  const saved = await (await mock.get(new Request(`http://localhost:3000/api/ai/assistant/action?id=${id}`))).json();
+  assert.equal(saved.workflow.completed, 1);
+  assert.equal(saved.href, "/companies/saved");
+  assert.match(saved.success, /Saved results are kept/);
+  assert.doesNotMatch(saved.success, /Nothing was changed/);
+  assert.equal(mock.executions(), 0);
+});
+
 test("rejects other users, viewers, expired proposals, and cross-origin approvals", async () => {
   assert.equal((await actionRoute({ owner: "someone-else" }).post(request(decision))).status, 404);
   assert.equal((await actionRoute({ role: "viewer" }).post(request(decision))).status, 403);
@@ -894,11 +961,11 @@ test("chat remains read-only even when a provider emits valid action JSON", asyn
     "@/lib/auth": { getWorkspaceViewer: async () => viewer },
     "@/lib/ai/workspace-assistant": assistant,
     "@/lib/ai/assistant-provider-error": providerError,
-    "@/lib/ai/gemini": { generateGeminiText: async () => `Ready.\nFILAZOO_ACTIONS_JSON: ${JSON.stringify([company])}` },
-    "@/lib/ai/gateway": {},
+    "@/lib/ai/gateway": { generateGatewayText: async () => `Ready.\nFILAZOO_ACTIONS_JSON: ${JSON.stringify([company])}` },
+
     "@/lib/ai/agent-context": { loadAgentContext: async () => { contextLoads++; return {}; } },
     "@/lib/ai/agent-execution": { prepareAgentActions: async () => { prepared++; return []; } },
-  }, { GEMINI_API_KEY: "test-provider" });
+  }, { AI_GATEWAY_API_KEY: "test-provider" });
   const response = await post(request({ mode: "analyze", pathname: "/companies", pageLabel: "Companies", pageText: "", messages: [{ role: "user", content: "Create Acme" }] }));
   assert.equal(response.status, 200);
   assert.deepEqual((await response.json()).actions, []);
@@ -913,11 +980,11 @@ test("agent uses its separate model and stores the requested approval mode befor
     "@/lib/auth": { getWorkspaceViewer: async () => viewer },
     "@/lib/ai/workspace-assistant": assistant,
     "@/lib/ai/assistant-provider-error": providerError,
-    "@/lib/ai/gemini": { generateGeminiText: async (options: { model: string }) => { selectedModel = options.model; return `Ready.\nFILAZOO_ACTIONS_JSON: ${JSON.stringify([company])}`; } },
-    "@/lib/ai/gateway": {},
+    "@/lib/ai/gateway": { generateGatewayText: async (options: { model: string }) => { selectedModel = options.model; return `Ready.\nFILAZOO_ACTIONS_JSON: ${JSON.stringify([company])}`; } },
+
     "@/lib/ai/agent-context": { loadAgentContext: async () => ({ currentCompanyId: null }) },
     "@/lib/ai/agent-execution": { prepareAgentActions: async (_actions: unknown, _viewer: unknown, mode: string) => { storedMode = mode; return [{ id, action: company, approvalMode: mode }]; } },
-  }, { GEMINI_API_KEY: "test-provider", GEMINI_CHAT_MODEL: "chat-model", GEMINI_AGENT_MODEL: "agent-model" });
+  }, { AI_GATEWAY_API_KEY: "test-provider", AI_GATEWAY_CHAT_MODEL: "chat-model", AI_GATEWAY_AGENT_MODEL: "agent-model" });
   const response = await post(request({ mode: "work", approvalMode: "auto", pathname: "/companies", pageLabel: "Companies", pageText: "", messages: [{ role: "user", content: "Create Acme" }] }));
   assert.equal(response.status, 200);
   assert.equal(selectedModel, "agent-model");
@@ -925,17 +992,17 @@ test("agent uses its separate model and stores the requested approval mode befor
   assert.equal((await response.json()).actions[0].id, id);
 });
 
-test("agent keeps the existing working Gemini model when no override is configured", async () => {
+test("agent keeps the configured Gateway email model when no override is configured", async () => {
   let selectedModel = "";
   const post = route("../app/api/ai/assistant/route.ts", {
     "@/lib/auth": { getWorkspaceViewer: async () => viewer },
     "@/lib/ai/workspace-assistant": assistant,
     "@/lib/ai/assistant-provider-error": providerError,
-    "@/lib/ai/gemini": { generateGeminiText: async (options: { model: string }) => { selectedModel = options.model; return "Which products should I add?"; } },
-    "@/lib/ai/gateway": {},
+    "@/lib/ai/gateway": { generateGatewayText: async (options: { model: string }) => { selectedModel = options.model; return "Which products should I add?"; } },
+
     "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
     "@/lib/ai/agent-execution": { prepareAgentActions: async () => [] },
-  }, { GEMINI_API_KEY: "existing-gemini-key", GEMINI_EMAIL_MODEL: "existing-working-model" });
+  }, { AI_GATEWAY_API_KEY: "existing-gateway-key", AI_GATEWAY_EMAIL_MODEL: "existing-working-model" });
   const response = await post(request({ mode: "work", pathname: "/companies", pageLabel: "Companies", pageText: "", messages: [{ role: "user", content: "Create an invoice for 10 Black PLA" }] }));
   assert.equal(response.status, 200);
   assert.equal(selectedModel, "existing-working-model");
@@ -948,11 +1015,11 @@ test("email context failures are reported separately from provider failures and 
     "@/lib/auth": { getWorkspaceViewer: async () => viewer },
     "@/lib/ai/workspace-assistant": assistant,
     "@/lib/ai/assistant-provider-error": providerError,
-    "@/lib/ai/gemini": { generateGeminiText: async () => { generated++; return "Ready"; } },
-    "@/lib/ai/gateway": {},
+    "@/lib/ai/gateway": { generateGatewayText: async () => { generated++; return "Ready"; } },
+
     "@/lib/ai/agent-context": { loadAgentContext: async () => { throw new Error("Private database failure details"); } },
     "@/lib/ai/agent-execution": { prepareAgentActions: async () => { prepared++; return []; } },
-  }, { GEMINI_API_KEY: "existing-gemini-key" });
+  }, { AI_GATEWAY_API_KEY: "existing-gateway-key" });
   const response = await post(request({ language: "zh-CN", mode: "work", pathname: "/email", pageContext: { emailId: "mail-1" }, pageLabel: "Email", pageText: "", messages: [{ role: "user", content: "Create profile for this company" }] }));
   assert.equal(response.status, 503);
   const body = await response.json();

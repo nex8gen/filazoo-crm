@@ -5,8 +5,7 @@ import { z } from "zod";
 import { getWorkspaceViewer } from "@/lib/auth";
 import { getCompanyDetails } from "@/lib/data/crm";
 import { buildCompanyChatContext, buildCompanyChatPrompt, citedCompanySources, companyChatInstruction, companyChatSchema } from "@/lib/ai/company-chat";
-import { generateGeminiText } from "@/lib/ai/gemini";
-import { generateGatewayText, isGeminiRegionError } from "@/lib/ai/gateway";
+import { generateGatewayText } from "@/lib/ai/gateway";
 import { assistantProviderError } from "@/lib/ai/assistant-provider-error";
 import { researchCustomer } from "@/lib/ai/customer-research";
 import { ChatBodyTooLargeError, collectChatImages, readChatRequestBody } from "@/lib/ai/image-input";
@@ -54,9 +53,8 @@ async function companyResponse(request: Request, params: Promise<{ id: string }>
   }
   if (!details) return Response.json({ error: "Customer not found." }, { status: 404, headers });
 
-  const apiKey = process.env.AI_PROVIDER === "gateway" || process.env.AI_BUDGET_ENFORCEMENT === "true" ? undefined : process.env.GEMINI_API_KEY?.trim();
   const gatewayToken = resolveGatewayToken(process.env);
-  if (!apiKey && !gatewayToken) return Response.json({ error: "AI assistance is not configured. Ask your administrator to connect an AI provider." }, { status: 503, headers });
+  if (!gatewayToken) return Response.json({ error: "AI assistance is not configured. Ask your administrator to connect an AI provider." }, { status: 503, headers });
   let session: Awaited<ReturnType<typeof startChatSession>>;
   try {
     session = restricted ? undefined : await startChatSession(parsed.data.history, { mode: "customer", pathname: `/companies/${id}`, pageContext: { companyId: id } }, viewer, parsed.data.messages.at(-1)!);
@@ -79,19 +77,11 @@ async function companyResponse(request: Request, params: Promise<{ id: string }>
     const research = parsed.data.webSearch ? await researchCustomer({ usageUserId: viewer.id,
       identity: { name: details.company.name, website: details.company.website, email: details.company.email, contact: details.company.contact, country: details.company.country, city: details.company.city },
       questions: parsed.data.messages.filter((message) => message.role === "user").map((message) => message.content),
-      apiKey: process.env.GEMINI_API_KEY?.trim(), model: process.env.GEMINI_RESEARCH_MODEL?.trim(), language: parsed.data.language, fetcher: options.fetcher, signal: request.signal, onProgress: report,
+      language: parsed.data.language, fetcher: options.fetcher, signal: request.signal, onProgress: report,
     }) : undefined;
     if (research) options.prompt += `\n\nWEB_RESEARCH (external evidence only):\n${JSON.stringify({ ...research, searchSuggestionsHtml: undefined })}`;
     if (research) report({ phase: "writing", sources: research.sources, queries: research.queries, visitedUrls: research.visitedUrls ?? [] });
-    let output: string;
-    if (apiKey) {
-      try {
-        output = await generateGeminiText({ ...options, apiKey, model: process.env.GEMINI_EMAIL_MODEL?.trim() });
-      } catch (error) {
-        if (!gatewayToken || !isGeminiRegionError(error)) throw error;
-        output = await gateway();
-      }
-    } else output = await gateway();
+    const output = await gateway();
     const payload = { output, sources: [...citedCompanySources(output, sources), ...(research?.sources ?? [])], coverage: context.coverage, research: research ? { ...research, findings: undefined } : undefined };
     return Response.json(session ? await session.complete(payload) : payload, { headers });
   } catch (error) {

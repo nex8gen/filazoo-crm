@@ -62,7 +62,7 @@ export function validateEmailFollowUp(summary: EmailSummary, now: Date) {
 
 export function resolveOverdueEmailFollowUp(summary: EmailSummary, now: Date, language: AppLanguage = "en"): EmailSummary {
   if (!summary.followUpAt || Date.parse(summary.followUpAt) > now.getTime()) return summary;
-  // Gemini decides whether action is needed. The app handles overdue date
+  // The model decides whether action is needed. The app handles overdue date
   // arithmetic so a past customer deadline cannot break an otherwise valid brief.
   const morning = new Date(now.getTime() + 8 * 60 * 60 * 1000);
   morning.setUTCDate(morning.getUTCDate() + 1);

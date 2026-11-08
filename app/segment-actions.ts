@@ -6,7 +6,7 @@ import { requireWorkspaceMember } from "@/lib/auth";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { segmentInputSchema } from "@/lib/segments";
 
-export type SegmentActionState = { error?: string; success?: string };
+export type SegmentActionState = { error?: string; success?: string; segmentId?: string };
 
 export async function createSegment(_state: SegmentActionState, formData: FormData): Promise<SegmentActionState> {
   return saveSegment(formData, false);
@@ -66,12 +66,13 @@ async function saveSegment(formData: FormData, updating: boolean): Promise<Segme
   const payload = { name: parsed.data.name, description: parsed.data.description, rules: parsed.data.rules };
   const result = segmentId?.success
     ? await admin.from("company_segments").update(payload).eq("id", segmentId.data).select("id").maybeSingle()
-    : await admin.from("company_segments").insert({ ...payload, created_by: viewer.id });
+    : await admin.from("company_segments").insert({ ...payload, created_by: viewer.id }).select("id").maybeSingle();
   const { error } = result;
   if (error?.code === "23505") return { error: "A saved segment with this name already exists. Choose another name." };
   if (error) return { error: "Unable to create the segment. Please try again." };
   if (segmentId?.success && !result.data) return { error: "This segment could not be found." };
   revalidatePath("/segments");
   if (segmentId?.success) revalidatePath("/companies");
-  return { success: updating ? "Segment updated." : "Segment created." };
+  if (!result.data?.id) return { error: "The saved segment was not confirmed. Check Segments before creating it again." };
+  return { success: updating ? "Segment updated." : "Segment created.", segmentId: result.data.id };
 }

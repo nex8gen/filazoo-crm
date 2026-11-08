@@ -17,10 +17,9 @@ type Row = Record<string, unknown>;
 function fixture() {
   const calls: Array<{ prompt: string; systemInstruction: string }> = [];
   const catalogRequests: Array<Parameters<typeof buildCatalogPdf>[0]> = [];
-  const env: Record<string, string> = { GEMINI_API_KEY: "synthetic-test-key" };
+  const env: Record<string, string> = { AI_GATEWAY_API_KEY: "synthetic-test-key" };
   let catalogPlan = { intent: "none", scope: "all", productSkus: [] as string[] };
   let replyBodies = ["Hello from a synthetic test"];
-  let geminiError: string | null = null;
   let gatewayError: string | null = null;
   const exports = {} as { hasFlowReplyProvider: () => boolean; generateFlowAiReply: (input: Row) => Promise<{ subject: string; body: string; inReplyTo: string | null; attachments: Array<{ content: Buffer }> }>; prepareFlowTemplateCatalog: () => Promise<Array<{ content: Buffer }>> };
   const query = { select: () => query, eq: () => query, order: () => query, range: () => query, throwOnError: async () => ({ data: productRows }) };
@@ -31,19 +30,19 @@ function fixture() {
     "../product-utils.ts": { crmProduct },
     "../invoice-links.ts": { invoiceProduct },
     "../catalog-pdf-server.ts": { buildServerCatalogPdf: async (...args: Parameters<typeof buildCatalogPdf>) => { catalogRequests.push(args[0]); return buildCatalogPdf(...args); } },
-    "../ai/gemini.ts": { generateGeminiText: async (input: typeof calls[number]) => {
-      if (geminiError) throw new Error(geminiError);
+    "../ai/gateway.ts": { generateGatewayText: async (input: typeof calls[number]) => {
+      if (gatewayError) throw new Error(gatewayError);
       calls.push(input);
       if (JSON.parse(input.prompt).task === "select_catalog_products") return JSON.stringify(catalogPlan);
       const body = replyBodies.length > 1 ? replyBodies.shift()! : replyBodies[0];
       return JSON.stringify({ subject: "Synthetic subject", body, quotes: [] });
     } },
-    "../ai/gateway.ts": { isGeminiRegionError: (error: Error) => /location is not supported/.test(error.message), generateGatewayText: async () => { if (gatewayError) throw new Error(gatewayError); return JSON.stringify({ subject: "Fallback", body: "Fallback reply", quotes: [] }); } }, "../ai/flow-reply.ts": replyPolicy,
+    "../ai/flow-reply.ts": replyPolicy,
     "../ai/email-rewrite.ts": signatures,
   };
   const code = ts.transpileModule(readFileSync(new URL("../lib/data/flow-ai-reply.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (dependencies[name] ?? require(name)), process: { env }, Buffer, Error });
-  return { calls, catalogRequests, exports, env, setProviderErrors: (primary: string, fallback: string) => { geminiError = primary; gatewayError = fallback; }, setCatalog: (plan: typeof catalogPlan) => { catalogPlan = plan; }, setBodies: (bodies: string[]) => { replyBodies = [...bodies]; } };
+  return { calls, catalogRequests, exports, env, setProviderError: (message: string) => { gatewayError = message; }, setCatalog: (plan: typeof catalogPlan) => { catalogPlan = plan; }, setBodies: (bodies: string[]) => { replyBodies = [...bodies]; } };
 }
 
 const productRows = ["PLA", "PETG", "ABS"].map((material) => ({ sku: material, name: `Synthetic ${material}`, material,
@@ -53,24 +52,19 @@ const baseInput = () => ({ config: blankStep("ai_auto_reply").config, contact: {
   company: { name: "Synthetic company" }, managerName: "Synthetic manager", productRows,
   messages: [{ subject: "Material inquiry", body: "Synthetic message", direction: "received", created_at: "2026-10-27T00:00:00Z", message_id: "<synthetic@example.com>", thread_id: "synthetic-thread" }], previousAutomatedMessages: 1 });
 
-test("AI flow readiness checks the selected provider instead of an unused Gemini credential", () => {
+test("AI flow readiness requires Gateway credentials and supports local OIDC", () => {
   const app = fixture();
-  assert.equal(app.exports.hasFlowReplyProvider(), true);
-  app.env.AI_PROVIDER = "gateway";
-  assert.equal(app.exports.hasFlowReplyProvider(), false);
-  app.env.AI_GATEWAY_API_KEY = "synthetic-gateway-key";
   assert.equal(app.exports.hasFlowReplyProvider(), true);
   delete app.env.AI_GATEWAY_API_KEY;
-  delete app.env.AI_PROVIDER;
-  app.env.AI_BUDGET_ENFORCEMENT = "true";
   assert.equal(app.exports.hasFlowReplyProvider(), false);
+  app.env.VERCEL_OIDC_TOKEN = "synthetic-oidc";
+  assert.equal(app.exports.hasFlowReplyProvider(), true);
 });
 
-test("a failed local fallback preserves the actual Google location blocker in the user-facing error", async () => {
+test("Gateway authentication errors reach the caller without a direct-provider retry", async () => {
   const app = fixture();
-  app.env.VERCEL_OIDC_TOKEN = "synthetic-expired-token";
-  app.setProviderErrors("User location is not supported for the API use.", "AI Gateway authentication has expired. Refresh the development token.");
-  await assert.rejects(app.exports.generateFlowAiReply({ ...baseInput(), config: { ...blankStep("ai_auto_reply").config, attachCatalog: false } }), /Gemini is unavailable from this server location.*authentication has expired/);
+  app.setProviderError("AI Gateway authentication has expired. Refresh the development token.");
+  await assert.rejects(app.exports.generateFlowAiReply({ ...baseInput(), config: { ...blankStep("ai_auto_reply").config, attachCatalog: false } }), /authentication has expired/);
 });
 
 test("AI product, price, catalog, first-message, language, instructions and threading options reach generation", async () => {
@@ -163,7 +157,7 @@ test("Chinese drafts are repaired once and persistent Chinese output is blocked 
 });
 
 test("an unavailable AI provider fails before any external request", async () => {
-  const app = fixture(); delete app.env.GEMINI_API_KEY;
+  const app = fixture(); delete app.env.AI_GATEWAY_API_KEY;
   await assert.rejects(() => app.exports.generateFlowAiReply({ config: blankStep("ai_auto_reply").config, productRows: [] }), /not configured/);
   assert.equal(app.calls.length, 0);
 });

@@ -16,7 +16,7 @@ function loadModule(file: string, dependencies: Record<string, unknown>) {
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (dependencies[name] ?? {}), Response, Error, Date });
+  vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (dependencies[name] ?? {}), Response, Error, Date, URL });
   return exports;
 }
 
@@ -92,15 +92,28 @@ test("shared reads reject nonmembers before issuing privileged queries", async (
   assert.equal(f.calls.length, 0);
 });
 
-test("email and company flows are absent from shared and legacy lists and cannot be broadened on edit", async () => {
+test("email and company flows appear in shared and owned lists and cannot be broadened on edit", async () => {
   for (const scope of ["email", "company"]) {
     const f = fixture();
     f.rows.flows[0].trigger_config = { flowScope: scope, scopeCompanyId: "company", ...(scope === "email" ? { scopeContactId: "contact" } : {}) };
-    assert.equal((await f.flows.listWorkspaceFlows() as flowModel.AutomationFlow[]).length, 1);
-    assert.equal((await f.flows.listFlows("alice") as flowModel.AutomationFlow[]).length, 0);
+    assert.equal((await f.flows.listWorkspaceFlows() as flowModel.AutomationFlow[]).length, 2);
+    assert.equal((await f.flows.listFlows("alice") as flowModel.AutomationFlow[]).length, 1);
     await assert.rejects(f.flows.updateFlow("alice", "flow-alice", flowModel.defaultFlowInput), /must keep its original/);
     assert.equal(f.calls.filter((call) => call.operation === "save_automation_flow").length, 0);
   }
+});
+
+test("BD managers see scoped flows only for their currently assigned companies", async () => {
+  const f = fixture("bd_manager");
+  f.rows.flows[0].trigger_config = { flowScope: "email", scopeCompanyId: "assigned", scopeContactId: "contact-a" };
+  f.rows.flows[1].trigger_config = { flowScope: "company", scopeCompanyId: "unassigned" };
+  f.rows.pipeline = [{ company_id: "assigned", owner_id: "alice" }];
+  assert.deepEqual((await f.flows.listWorkspaceFlows() as flowModel.AutomationFlow[]).map(flow => flow.id), ["flow-alice"]);
+  f.rows.pipeline = [];
+  assert.equal((await f.flows.listFlows("alice") as unknown[]).length, 0);
+  await assert.rejects(f.flows.listFlows("bob"), /Access denied/);
+  f.fail("assignment read unavailable");
+  await assert.rejects(f.flows.listWorkspaceFlows(), /Unable to load workflows/);
 });
 
 test("owner-scoped reads remain isolated for legacy automation and save responses", async () => {
@@ -301,12 +314,15 @@ test("flow listing and insights routes return shared data without caching and en
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("cache-control"), "no-store");
     assert.equal((await response.json()).flows.length, 2);
-    const history = await insights(undefined, { params: Promise.resolve({ id: "flow-bob" }) }) as Response;
+    const history = await insights(new Request("https://crm.test/api/flows/flow-bob/runs"), { params: Promise.resolve({ id: "flow-bob" }) }) as Response;
     assert.equal(history.status, 200);
     assert.equal(history.headers.get("cache-control"), "no-store");
     assert.equal((await history.json()).runs[0].id, "run-bob");
-    const missing = await insights(undefined, { params: Promise.resolve({ id: "missing" }) }) as Response;
+    const missing = await insights(new Request("https://crm.test/api/flows/missing/runs"), { params: Promise.resolve({ id: "missing" }) }) as Response;
     assert.equal(missing.status, 404);
+    for (const query of ["?status=invalid", "?page=-1", "?page=1001", "?page=1.5"]) {
+      assert.equal((await insights(new Request(`https://crm.test/api/flows/flow-bob/runs${query}`), { params: Promise.resolve({ id: "flow-bob" }) }) as Response).status, 400);
+    }
   }
 });
 
@@ -437,6 +453,59 @@ test("email builder prefills the scoped trigger and changing events retains its 
   assert.equal(draft.triggerConfig.scopeCompanyId, scope.scopeCompanyId);
 });
 
+test("workflow tabs isolate email recipients, statistics and bulk actions from workspace automations", async () => {
+  const hooks = { values: [] as unknown[], cursor: 0 };
+  const initialFlows = [
+    { id: "segment", triggerConfig: { segment: "Wholesale" }, activeRuns: 7 },
+    { id: "contact", triggerConfig: { flowScope: "email", scopeContactId: "contact-a", scopeCompanyId: "company-a" }, activeRuns: 2 },
+    { id: "company", triggerConfig: { flowScope: "company", scopeCompanyId: "company-b" }, activeRuns: 3 },
+  ].map(flow => ({ ...flowModel.defaultFlowInput, createdBy: "alice", updatedAt: "2026-10-27T00:00:00Z", steps: [], status: "live", ...flow }));
+  const tree = await builder(hooks)({ initialFlows, viewerId: "alice", canEdit: true, mailboxOptions: [], memberOptions: [], filterOptions: {} });
+  const list = elements(tree).find(node => typeof node.type === "function" && node.type.name === "FlowListView")!;
+  assert.equal(list.props.listTab, "workspace");
+  const calls: unknown[] = [];
+  const props = { ...list.props, onTabChange: (tab: string) => { props.listTab = tab; }, onBulkAction: async (ids: string[], action: string) => { calls.push({ ids, action }); return ids.map(id => ({ id, ok: true })); } };
+  hooks.values = [];
+  const render = () => { hooks.cursor = 0; return (list.type as (props: Element["props"]) => Element)(props); };
+  const ids = (output: Element) => elements(output).filter(node => typeof node.type === "function" && node.type.name === "FlowActions").map(node => (node.props.flow as { id: string }).id);
+  let output = render();
+  assert.deepEqual(Array.from(ids(output)), ["segment"]);
+  const tabs = elements(output).filter(node => node.type === "TabsTrigger");
+  assert.equal(tabs.length, 2);
+  assert.equal(elements(output).find(node => node.type === "TablePagination")!.props.total, 1);
+  assert.equal(elements(output).find(node => typeof node.type === "function" && node.type.name === "FlowSummary" && node.props.label === "Active runs")!.props.value, 7);
+  (checkboxes(output)[0].props.onCheckedChange as (checked: boolean) => void)(true);
+  output = render();
+  assert.equal(selectionCount(output), "1 selected");
+  const search = elements(output).find(node => node.type === "Input" && node.props.type === "search")!;
+  (search.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: "segment" } });
+  (elements(render()).find(node => node.type === "Tabs")!.props.onValueChange as (value: string) => void)("email");
+  output = render();
+  assert.deepEqual(Array.from(ids(output)), ["contact", "company"]);
+  assert.equal(selectionCount(output), undefined);
+  assert.equal(elements(output).find(node => node.type === "Input" && node.props.type === "search")!.props.value, "");
+  assert.equal(elements(output).find(node => typeof node.type === "function" && node.type.name === "FlowSummary" && node.props.label === "Active runs")!.props.value, 5);
+  assert.equal(elements(output).find(node => node.type === "TablePagination")!.props.total, 2);
+  (checkboxes(output)[0].props.onCheckedChange as (checked: boolean) => void)(true);
+  await (button(render(), "Pause").props.onClick as () => Promise<void>)();
+  assert.equal(JSON.stringify(calls), JSON.stringify([{ ids: ["contact", "company"], action: "paused" }]));
+  const scoped = (list.type as (props: Element["props"]) => Element)({ ...props, flows: [initialFlows[1]], listTab: "workspace", scopedContext: { config: initialFlows[1].triggerConfig } });
+  assert.equal(elements(scoped).some(node => node.type === "TabsTrigger"), false);
+  assert.deepEqual(Array.from(ids(scoped)), ["contact"]);
+});
+
+test("an email workflow deep link returns to the email workflow tab", async () => {
+  const hooks = { values: [] as unknown[], cursor: 0 };
+  const render = builder(hooks);
+  const props = { initialFlows: [{ ...flowModel.defaultFlowInput, id: "email-flow", createdBy: "alice", triggerConfig: { flowScope: "email", scopeContactId: "contact-a", scopeCompanyId: "company-a" } }], initialFlowId: "email-flow", viewerId: "alice", canEdit: true, mailboxOptions: [], memberOptions: [], filterOptions: {} };
+  const tree = await render(props);
+  const back = elements(tree).find(node => node.type === "button" && Array.isArray(node.props.children) && node.props.children.includes("Workflow"))!;
+  (back.props.onClick as () => void)();
+  hooks.cursor = 0;
+  const list = elements(await render(props)).find(node => typeof node.type === "function" && node.type.name === "FlowListView")!;
+  assert.equal(list.props.listTab, "email");
+});
+
 async function flowListHarness(count: number, isAdmin = true, canEdit = true, onBulkAction: (ids: string[], action: flowModel.FlowBulkAction) => Promise<flowModel.FlowBulkResult[]> = async (ids) => ids.map((id) => ({ id, ok: true }))) {
   const hooks = { values: [] as unknown[], cursor: 0 };
   const initialFlows = Array.from({ length: count }, (_, index) => ({
@@ -445,10 +514,10 @@ async function flowListHarness(count: number, isAdmin = true, canEdit = true, on
   }));
   const tree = await builder(hooks)({ initialFlows, viewerId: "alice", isAdmin, canEdit, mailboxOptions: [], memberOptions: [], filterOptions: {} });
   const list = elements(tree).find((element) => typeof element.type === "function" && element.type.name === "FlowListView")!;
-  const props = { ...list.props, onBulkAction };
+  const props: Element["props"] = { ...list.props, onBulkAction, onTabChange: (tab: string) => { props.listTab = tab; } };
   hooks.values = [];
   const render = () => { hooks.cursor = 0; return (list.type as (props: Element["props"]) => Element)(props); };
-  return { render };
+  return { render, initialFlows };
 }
 
 const checkboxes = (tree: Element) => elements(tree).filter((element) => element.type === "Checkbox");
@@ -487,6 +556,45 @@ test("flow selection persists across pages and page selection only changes that 
   const cell = elements(tree).find((element) => element.type === "TableCell")!;
   (cell.props.onClick as (event: { stopPropagation: () => void }) => void)({ stopPropagation: () => { stopped = true; } });
   assert.equal(stopped, true);
+});
+
+test("workflow filters reset pagination while preserving selected rows outside the filtered view", async () => {
+  const list = await flowListHarness(30);
+  let tree = list.render();
+  (elements(tree).find(element => element.type === "TablePagination")!.props.onNext as () => void)();
+  tree = list.render();
+  (checkboxes(tree)[0].props.onCheckedChange as (checked: boolean) => void)(true);
+  tree = list.render();
+  const search = elements(tree).find(element => element.type === "Input" && element.props.type === "search")!;
+  (search.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: "Flow 0" } });
+  tree = list.render();
+  let pagination = elements(tree).find(element => element.type === "TablePagination")!;
+  assert.equal(pagination.props.page, 1);
+  assert.equal(pagination.props.total, 1);
+  assert.equal(selectionCount(tree), "5 selected");
+  assert.equal(checkboxes(tree)[1].props.checked, false);
+  const status = elements(tree).find(element => element.type === "Select")!;
+  (status.props.onValueChange as (value: string) => void)("live");
+  tree = list.render();
+  pagination = elements(tree).find(element => element.type === "TablePagination")!;
+  assert.equal(pagination.props.total, 0);
+  assert.ok(elements(tree).some(element => element.type === "EmptyState" && element.props.title === "No matching workflows"));
+  (button(tree, "Clear filters").props.onClick as () => void)();
+  tree = list.render();
+  assert.equal(elements(tree).find(element => element.type === "TablePagination")!.props.total, 30);
+  assert.equal(selectionCount(tree), "5 selected");
+});
+
+test("the email workflow tab finds a recipient even when the flow name has no email", async () => {
+  const list = await flowListHarness(2);
+  list.initialFlows[0].triggerConfig = { flowScope: "email", scopeCompanyId: "company", scopeContactId: "contact", scopeLabel: "buyer@example.com" };
+  (elements(list.render()).find(element => element.type === "Tabs")!.props.onValueChange as (tab: string) => void)("email");
+  const search = elements(list.render()).find(element => element.type === "Input" && element.props.type === "search")!;
+  (search.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: "BUYER@example.com" } });
+  const tree = list.render();
+  const pagination = elements(tree).find(element => element.type === "TablePagination")!;
+  assert.equal(pagination.props.total, 1);
+  assert.ok(JSON.stringify(tree).includes("buyer@example.com"));
 });
 
 test("non-admin selection excludes other creators and viewers cannot select flows", async () => {
@@ -567,4 +675,17 @@ test("bulk deletion waits for confirmation and request failures retain every sel
   tree = list.render();
   assert.equal(selectionCount(tree), "2 selected");
   assert.ok(JSON.stringify(elements(tree).find((element) => element.props.role === "alert")).includes("Network unavailable"));
+});
+
+test("run insights can select older failures and paginate beyond the newest 25 runs", async () => {
+  const f = fixture("admin");
+  f.rows.flow_runs = Array.from({ length: 60 }, (_, index) => ({ id: `failed-${index}`, flow_id: "flow-bob", status: "failed" }));
+  f.rows.flow_runs.push({ id: "latest-active", flow_id: "flow-bob", status: "active" });
+  const first = await f.runtime.listFlowRunInsights("flow-bob", { status: "failed", page: 0 }) as Array<{ id: string }>;
+  const second = await f.runtime.listFlowRunInsights("flow-bob", { status: "failed", page: 1 }) as Array<{ id: string }>;
+  assert.equal(first.length, 26);
+  assert.equal(second.length, 26);
+  assert.equal(first[0].id, "failed-0");
+  assert.equal(second[0].id, "failed-25");
+  assert.ok(![...first, ...second].some(run => run.id === "latest-active"));
 });

@@ -17,7 +17,8 @@ import type { WorkspaceViewer } from "../auth";
 import { createSupabaseAdmin } from "../supabase/admin";
 import { createFlow, updateFlow, deleteFlow, listWorkspaceFlows } from "../data/flows";
 import { getInvoice, mutateInvoice, createInvoice } from "../data/invoices";
-import { invoiceBootstrap, validateInvoiceConnections } from "../data/invoice-connections";
+import { invoiceBootstrap, invoiceProducts, validateInvoiceConnections } from "../data/invoice-connections";
+import { groundOrderProducts } from "./order-actions";
 import { invoiceDocumentSchema, invoiceTotals } from "../invoices";
 import { invoicePaymentMethodsSchema } from "../invoice-payment-methods";
 import { canMutateInvoice, canEditInvoice } from "../invoice-permissions";
@@ -185,8 +186,14 @@ async function target(operation: CrmOperation, viewer: WorkspaceViewer): Promise
         const profile = row ? null : await getPurchaseOrderProfile(operation.companyId);
         const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
         const base = row?.document ?? { customer: profile?.customer, orderDate: today, deliveryDate: "", currency: profile?.commerce.currency || "USD", status: "draft", shippingAddress: profile?.commerce.shippingAddress || "", shippingRecipient: profile?.commerce.shippingRecipient || "", shippingPhone: profile?.commerce.shippingPhone || "", notes: "" };
-        const document = purchaseOrderSchema.parse({ ...base as object, ...operation.changes });
-        value = { company, order: row, profile };
+        const requested = purchaseOrderSchema.parse({ ...base as object, ...operation.changes });
+        const previous = row ? purchaseOrderSchema.parse(row.document) : undefined;
+        const skus = [...new Set(requested.items.flatMap((item, index) => item.productSku && (previous?.currency !== requested.currency || JSON.stringify(previous.items[index]) !== JSON.stringify(item)) ? [item.productSku] : []))];
+        const products = skus.length ? (await invoiceProducts("", 0, "", skus)).products : [];
+        const document = groundOrderProducts(requested, products, previous);
+        // Include grounded lines in the fingerprint: a catalog change requires
+        // fresh review, rather than applying prices different from the preview.
+        value = { company, order: row, profile, document };
         preview = { document, version: row?.version ?? 0 };
       }
     }
@@ -246,8 +253,8 @@ export async function executeCrmAction(action: PreparedCrmAction, viewer: Worksp
   if (operation.op === "create_segment" || operation.op === "update_segment") {
     const segment = segmentInputSchema.parse(current.preview.segment);
     const data = form({ ...segment, rules: JSON.stringify(segment.rules), ...(operation.op === "update_segment" ? { segmentId: operation.segmentId } : {}) });
-    result = operation.op === "create_segment" ? await createSegment({}, data) : await updateSegment({}, data);
-    return { success: checked(result, "Saved segment updated."), href: "/segments" };
+    const saved = operation.op === "create_segment" ? await createSegment({}, data) : await updateSegment({}, data);
+    return { success: checked(saved, "Saved segment updated."), segmentId: saved.segmentId, href: "/segments" };
   }
   if (operation.op === "sync_inventory") {
     const saved = await syncInventory();

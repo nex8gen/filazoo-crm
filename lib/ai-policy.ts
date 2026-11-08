@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { workflowPolicyAction } from "./ai/workflow-schema.ts";
 
 export const aiFeatures = {
   chat: ["AI chat", "Workspace and customer conversations."],
@@ -92,7 +93,8 @@ group("create_task update_task complete_activity", ["tasks"], ["tasks"]);
 group("create_product update_product sync_inventory", ["products"], ["products"]);
 group("create_catalog", ["catalogs"], ["customers", "products"]);
 group("create_quotation update_quotation quotation_lifecycle", ["catalogs"], ["billing", "customers", "products"]);
-group("create_invoice update_invoice custom_invoice invoice_order", ["invoices"], ["billing", "customers", "products"]);
+group("update_invoice custom_invoice invoice_order", ["invoices"], ["billing", "customers", "products"]);
+group("create_order create_invoice", ["orders", "invoices"], ["billing", "customers", "products"]);
 group("send_invoice", ["sending"], ["billing", "customers", "emails"]);
 group("save_order", ["orders"], ["billing", "customers"]);
 group("create_flow update_flow flow_status duplicate_flow", ["flows"], ["flows", "emails", "team"]);
@@ -116,8 +118,13 @@ group("task_workflow_action", ["tasks"], ["tasks", "billing", "customers", "emai
 group("portal_reply", ["sending"], ["billing", "customers", "emails"]);
 group("update_shipment", ["invoices"], ["billing", "customers"]);
 
-type PolicyAction = { type: string; changes?: Record<string, unknown>; flow?: { status?: string }; operation?: { op: string; [key: string]: unknown }; email?: { delivery?: string; attachCatalog?: boolean; quotationId?: string; catalogSnapshot?: unknown; sourceEmailId?: string }; sourceEmailId?: string };
-export function aiActionRequirements(action: PolicyAction) {
+type PolicyAction = { type: string; steps?: Array<{ tool: string; input: Record<string, unknown> }>; changes?: Record<string, unknown>; flow?: { status?: string }; operation?: { op: string; [key: string]: unknown }; email?: { delivery?: string; attachCatalog?: boolean; quotationId?: string; catalogSnapshot?: unknown; sourceEmailId?: string }; sourceEmailId?: string };
+export function aiActionRequirements(action: PolicyAction): { actions: AiAction[]; data: AiData[] } {
+  if (action.type === "run_workflow") {
+    if (!action.steps?.length || action.steps.length > 20 || action.steps.some(step => step.tool === "run_workflow")) throw new AiPolicyError("Choose a bounded workflow of registered CRM actions.");
+    const requirements = action.steps.map(step => aiActionRequirements(workflowPolicyAction(step)));
+    return { actions: [...new Set(requirements.flatMap(value => value.actions))], data: [...new Set(requirements.flatMap(value => value.data))] };
+  }
   const name = action.type === "crm_action" ? action.operation?.op : action.type;
   let required = name ? operations[name] : undefined;
   if (name === "write_email") required = { actions: [action.email?.delivery === "draft" ? "emailDrafts" : "sending"], data: ["emails"] };

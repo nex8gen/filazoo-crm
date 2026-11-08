@@ -19,6 +19,7 @@ import * as segments from "../lib/segments.ts";
 import * as flows from "../lib/flows.ts";
 import * as orders from "../lib/purchase-orders.ts";
 import * as products from "../lib/product-utils.ts";
+import * as orderActions from "../lib/ai/order-actions.ts";
 
 const require = createRequire(import.meta.url);
 const actorId = "a1111111-1111-4111-8111-111111111111";
@@ -31,6 +32,7 @@ const request = new Request("https://crm.example.com/api/ai/assistant/action");
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 function load<T>(file: string, dependencies: Record<string, unknown>) {
   dependencies["../customer-tags.ts"] = customerTags;
+  dependencies["./order-actions"] = orderActions;
   const exports = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (name === "server-only" ? {} : dependencies[name] ?? (name === "./crm-reply-tools" ? replyTools : name === "./crm-reply-execution" ? { replyOperationTarget: () => { throw new Error("Reply workflows use their dedicated fixtures"); } } : name === "../data/customer-reply-requests" ? { listReplyRequests: async () => [] } : name === "@/lib/ai/invoice-readiness" ? readiness : undefined) ?? require(name)), crypto, Date, Intl, URL, Request, Response, FormData, Error, console });

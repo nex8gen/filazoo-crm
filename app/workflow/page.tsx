@@ -38,6 +38,7 @@ export default async function AiAgentPage({ searchParams }: PageProps<"/workflow
       key={initialDraft ? `segment:${String(params.segmentId ?? params.segment)}` : typeof params.flow === "string" ? params.flow : "list"}
       initialFlows={flows}
       viewerId={viewer.id}
+      viewerEmail={viewer.email}
       isAdmin={viewer.role === "admin"}
       initialFlowId={!initialDraft && typeof params.flow === "string" ? params.flow : undefined}
       initialDraft={initialDraft}

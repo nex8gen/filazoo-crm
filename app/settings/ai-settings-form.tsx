@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { aiActionAccess, aiDataAccess, aiFeatures, defaultAiPolicy, type AiPolicy } from "@/lib/ai-policy";
 import type { AiSettingsView } from "@/lib/data/ai-settings";
 import { updateAiSettings } from "./ai-settings-actions";
+import { useUnsavedSettings } from "./use-unsaved-settings";
 
 const selectClass = "h-10 w-full rounded-lg border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-44";
 function Section({ title, description, icon: Icon, children }: { title: string; description: string; icon: LucideIcon; children: ReactNode }) {
@@ -23,6 +24,7 @@ export function AiSettingsForm({ initial, canManage }: { initial: AiSettingsView
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const dirty = JSON.stringify(draft) !== JSON.stringify(saved.policy);
+  useUnsavedSettings(canManage && dirty);
   function change(next: AiPolicy) { setDraft(next); setSuccess(false); setError(""); }
   function save() {
     startTransition(async () => {

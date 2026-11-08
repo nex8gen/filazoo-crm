@@ -92,15 +92,15 @@ test("unknown/ambiguous contacts and changed companies fail without creating a f
   await assert.rejects(app.scope.resolveEmailFlowScope({ recipient: "customer@example.com" }), /unavailable/);
 });
 
-test("saved scoped flows reopen from Email and stay absent from general flow lists", async () => {
+test("saved scoped flows reopen from both Email and general flow lists", async () => {
   const app = fixture();
   for (const flowScope of ["email", "company"]) {
     const config = await app.scope.resolveEmailFlowScope({ recipient: "customer@example.com", scope: flowScope }) as flowModel.JsonConfig;
     const flow = await app.flows.createFlow("alice", { ...flowModel.defaultFlowInput, triggerConfig: { ...flowModel.defaultFlowInput.triggerConfig, ...config } }) as flowModel.AutomationFlow;
     assert.equal(flow.id, "saved");
     assert.equal(flow.triggerConfig.flowScope, flowScope);
-    assert.equal((await app.flows.listWorkspaceFlows() as unknown[]).length, 0);
-    assert.equal((await app.flows.listFlows("alice") as unknown[]).length, 0);
+    assert.equal((await app.flows.listWorkspaceFlows() as unknown[]).length, 1);
+    assert.equal((await app.flows.listFlows("alice") as unknown[]).length, 1);
     assert.equal((await app.flows.listEmailFlows(config) as flowModel.AutomationFlow[])[0].id, flow.id);
     assert.equal((await app.flows.listEmailFlows({ ...config, scopeContactId: "other-contact", flowScope: "company" }) as unknown[]).length, 0);
     await assert.rejects(app.flows.updateFlow("alice", flow.id, flowModel.defaultFlowInput), /must keep its original/);

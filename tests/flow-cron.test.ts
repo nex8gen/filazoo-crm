@@ -4,14 +4,14 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
 
-function fixture(failedPhase?: string) {
+function fixture(failedPhase?: string, workspaceCount = 1) {
   const callbacks: Array<() => Promise<void>> = [];
   const calls: string[] = [];
   const failures: Array<{ phase: string }> = [];
-  let flowOptions: { syncMailbox: boolean; budgetMs: number } | undefined;
+  let flowOptions: { syncMailbox: boolean; budgetMs: number; actionDeadline: number } | undefined;
   const run = async (phase: string) => { calls.push(phase); if (phase === failedPhase) throw new Error(`Synthetic ${phase} failure`); return 1; };
   const dependencies: Record<string, unknown> = {
-    "@/lib/data/workspace-runtime": { forEachWorkspace: async (run: (id: string, count: number) => Promise<unknown>) => [await run("test-workspace", 1)] },
+    "@/lib/data/workspace-runtime": { forEachWorkspace: async (run: (id: string, count: number) => Promise<unknown>) => [await run("test-workspace", workspaceCount)] },
     "next/server": { after: (callback: () => Promise<void>) => callbacks.push(callback) },
     "@/lib/env": { env: { dryRun: true } },
     "@/lib/data/flow-runtime": { processDueFlowRuns: async (_limit: number, options: typeof flowOptions) => { flowOptions = options; return run("workflows"); } },
@@ -67,4 +67,12 @@ test("the minute resume tick skips mailbox sync while still processing saved wor
   await app.GET(app.request("resume"));
   await app.flush();
   assert.equal(app.flowOptions()?.syncMailbox, false);
+});
+
+test("multiple workspaces share scheduling time without shrinking the action deadline below one email", async () => {
+  const app = fixture(undefined, 2);
+  await app.GET(app.request("resume"));
+  await app.flush();
+  assert.equal(app.flowOptions()?.budgetMs, 90_000);
+  assert.ok(app.flowOptions()!.actionDeadline - Date.now() > 230_000);
 });

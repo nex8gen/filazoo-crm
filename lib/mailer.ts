@@ -78,7 +78,7 @@ export async function sendMailboxEmail(
   }
 }
 
-export async function verifyMailboxSmtp(mailbox: MailboxTransportInput) {
+export async function verifyMailboxSmtp(mailbox: MailboxTransportInput, options: { timeoutMs?: number } = {}) {
   const config = buildMailerTransportConfig(mailbox);
   if (!config) throw new Error("SMTP settings are incomplete.");
   const transport = nodemailer.createTransport({
@@ -87,9 +87,16 @@ export async function verifyMailboxSmtp(mailbox: MailboxTransportInput) {
     greetingTimeout: 15_000,
     socketTimeout: 20_000,
   });
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    await transport.verify();
+    await Promise.race([
+      transport.verify(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => { transport.close(); reject(new Error("SMTP check timed out. The sender connection has not been verified.")); }, options.timeoutMs ?? 20_000);
+      }),
+    ]);
   } finally {
+    clearTimeout(timer);
     transport.close();
   }
 }

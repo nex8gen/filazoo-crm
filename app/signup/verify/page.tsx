@@ -16,8 +16,9 @@ export default async function VerifyEmailPage({ searchParams }: { searchParams: 
   const next = signupDestination((await searchParams).next || pending?.next);
   if (await getViewer()) redirect(next);
   return <AuthShell step={2}><MailCheck className="mb-6 size-10 text-primary" /><AuthHeading title="Verify your email">Enter the verification code from your email to finish setting up your account.</AuthHeading>
-    {pending ? <p className="mb-6 break-words text-sm text-black/60 dark:text-white/60">We sent a verification code to <strong className="text-black dark:text-white">{pending.email}</strong>.</p> : null}
+    {pending ? <p className="mb-6 break-words text-sm text-black/60 dark:text-white/60">If your account needs verification, check for a code at <strong className="text-black dark:text-white">{pending.email}</strong>.</p> : null}
     <VerificationForm email={pending?.email} next={next} />
-    <div className="mt-7 flex flex-wrap justify-between gap-4 text-sm"><Link href={`/login?next=${encodeURIComponent(next)}`} className="text-primary underline underline-offset-4">Already verified? Sign in</Link><Link href={`/signup?next=${encodeURIComponent(next)}`} className="text-primary underline underline-offset-4">Use another email</Link></div>
+    <p className="mt-7 text-sm leading-6 text-black/60 dark:text-white/60">Already verified this email? Signing up again does not send a new code. Sign in with your existing password, or reset it below.</p>
+    <div className="mt-4 flex flex-wrap justify-between gap-4 text-sm"><Link href={`/login?next=${encodeURIComponent(next)}`} className="text-primary underline underline-offset-4">Already verified? Sign in</Link><Link href="/forgot-password" className="text-primary underline underline-offset-4">Reset your password</Link><Link href={`/signup?next=${encodeURIComponent(next)}`} className="text-primary underline underline-offset-4">Use another email</Link></div>
   </AuthShell>;
 }

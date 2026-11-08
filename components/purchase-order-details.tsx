@@ -32,7 +32,7 @@ export function PurchaseOrderDetails({ order, companyName, country, customer, ac
       try {
         const result = await savePurchaseOrder(order.company_id, order.id, order.version, { ...order.document, status });
         if (result.error) setError(result.error);
-        else { setError(""); router.refresh(); }
+        else { setError(""); if (order.document.status === "draft" && status === "confirmed") router.push("/purchase-orders"); router.refresh(); }
       } catch { setError("The order status could not be updated. Please try again."); }
     });
   }

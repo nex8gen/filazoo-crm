@@ -6,7 +6,7 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { useWorkspaceState } from "@/components/workspace-memory";
 import { Bot, Building2, ChevronDown, ChevronLeft, CreditCard, LayoutGrid, Mail, MailCheck, Plug, ReceiptText, Search, Settings2, ShieldCheck, Sun, UserRound, UsersRound, Workflow, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { settingsSectionForPath, visibleSettingsSections } from "@/lib/settings-sections";
+import { settingsGroups, settingsSectionForPath, visibleSettingsSections } from "@/lib/settings-sections";
 import "./settings.css";
 
 const icons = { bot: Bot, settings: Settings2, sun: Sun, user: UserRound, shield: ShieldCheck, mailCheck: MailCheck, apps: LayoutGrid, mail: Mail, plug: Plug, creditCard: CreditCard, receipt: ReceiptText, users: UsersRound, workflow: Workflow };
@@ -18,8 +18,6 @@ export function SettingsNavigation({ isAdmin, workspaceName }: { isAdmin: boolea
   const [expanded, setExpanded] = useState(false);
   const [entering, setEntering] = useState(true);
   const filtered = visibleSettingsSections(isAdmin, search);
-  const organization = filtered.filter(section => section.id === "workspace" || section.id === "team");
-  const workspace = filtered.filter(section => section.id !== "workspace" && section.id !== "team");
 
   // Finish the entrance once, so searching and switching sections stay immediate.
   useEffect(() => {
@@ -47,8 +45,11 @@ export function SettingsNavigation({ isAdmin, workspaceName }: { isAdmin: boolea
     <div id="settings-menu" className={`settings-menu ${expanded ? "is-expanded" : ""}`}>
       <div className="settings-search settings-reveal-item" style={revealStyle(1)}><Search aria-hidden="true" className="settings-search-icon" /><Input type="search" aria-label="Search settings" value={search} onChange={event => { setEntering(false); setSearch(event.target.value); }} placeholder="Search settings" />{search ? <button type="button" aria-label="Clear settings search" onClick={() => setSearch("")}><X aria-hidden="true" className="size-3.5" /></button> : null}</div>
       <nav aria-label="Settings navigation">
-        {organization.length ? <div className="settings-organization"><div className="settings-workspace-label settings-reveal-item" style={revealStyle(2)}><span><strong>{workspaceName}</strong><small>Workspace</small></span><Building2 aria-hidden="true" className="size-4" /></div>{links(organization, 3)}</div> : null}
-        {workspace.length ? <div><div className="settings-workspace-label settings-reveal-item" style={revealStyle(3 + organization.length)}><span><strong>{workspaceName}</strong><small>Workspace settings</small></span><span className="settings-workspace-avatar" aria-hidden="true">{workspaceName.slice(0, 3).toUpperCase()}</span></div>{links(workspace, 4 + organization.length)}</div> : null}
+        <p className="settings-account-context">{workspaceName}</p>
+        {settingsGroups.map((group, index) => {
+          const sections = filtered.filter(section => section.group === group);
+          return sections.length ? <section key={group} aria-label={group} className="settings-nav-group"><h2 className="settings-group-title">{group}</h2>{links(sections, 2 + index * 4)}</section> : null;
+        })}
         {!filtered.length ? <div role="status" className="settings-no-results"><p>No settings found.</p><p>Try a different keyword.</p><button type="button" onClick={() => setSearch("")}>Clear search</button></div> : null}
       </nav>
     </div>

@@ -1,5 +1,7 @@
 # Settings and feature audit
 
+The current settings structure and competitor comparison are documented in [Settings benchmark and implementation review — 7 November 2026](settings-benchmark-2026-11-07.md). The older organization and verification notes below are historical; My mailbox and Payment methods now forward to their consolidated homes.
+
 Originally reviewed 2026-10-27 against the application's routes and their data/action handlers. Settings organization and interaction were reworked on 2026-10-30.
 
 ## Settings rework — 2026-10-30

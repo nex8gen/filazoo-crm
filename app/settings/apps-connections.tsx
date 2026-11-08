@@ -11,20 +11,21 @@ import { appCategories, connectionApps, type Category } from "@/lib/connection-a
 import { connectionStatusLabel, type AppConnectionSummary } from "@/lib/app-connection-status";
 import { emailProviderHref } from "@/lib/email-connections";
 
-type Filter = "available" | "connected" | "planned";
+type Filter = "available" | "connected";
 const filters: { value: Filter; label: string }[] = [
   { value: "available", label: "Available apps" },
   { value: "connected", label: "Connected" },
-  { value: "planned", label: "Coming soon" },
 ];
 
 export function AppsConnections({ connections }: { connections: Record<string, AppConnectionSummary> }) {
   const [query, setQuery] = useWorkspaceState("settings.apps.query", "");
-  const [filter, setFilter] = useWorkspaceState<Filter>("settings.apps.filter", "available");
+  const [savedFilter, setFilter] = useWorkspaceState<Filter>("settings.apps.filter", "available");
+  const filter = savedFilter === "connected" ? "connected" : "available";
   const [category, setCategory] = useWorkspaceState<Category | "all">("settings.apps.category", "all");
   const normalizedQuery = query.trim().toLowerCase();
+  const availableCategories = appCategories.filter(category => connectionApps.some(app => app.category === category && app.availability === "existing"));
   const filteredApps = connectionApps.filter((app) =>
-    (filter === "available" ? app.availability === "existing" : filter === "connected" ? connections[app.id]?.status === "connected" : app.availability === "planned")
+    app.availability === "existing" && (filter !== "connected" || connections[app.id]?.status === "connected")
     && (category === "all" || app.category === category)
     && `${app.name} ${app.category} ${app.description} ${app.keywords ?? ""}`.toLowerCase().includes(normalizedQuery),
   );
@@ -44,7 +45,7 @@ export function AppsConnections({ connections }: { connections: Record<string, A
         </div>
       </div>
       <div role="group" aria-label="Filter apps by category" className="flex flex-wrap gap-2">
-        {(["all", ...appCategories] as const).map((item) => (
+        {(["all", ...availableCategories] as const).map((item) => (
           <Button key={item} variant={category === item ? "secondary" : "ghost"} size="sm" aria-pressed={category === item} onClick={() => setCategory(item)} className="rounded-full">
             {item === "all" ? "All categories" : item}
           </Button>

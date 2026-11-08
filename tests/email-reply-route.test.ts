@@ -14,7 +14,7 @@ const code = ts.transpileModule(readFileSync(new URL("../app/api/email/reply/rou
   compilerOptions: { module: ts.ModuleKind.CommonJS },
 }).outputText;
 
-for (const provider of ["gemini", "gateway", "regional-fallback", "budget-gateway"] as const) {
+for (const provider of ["gateway", "oidc", "legacy-budget"] as const) {
   for (const language of ["en", "zh-CN", undefined] as const) {
     test(`${provider} generates English replies with ${language ?? "legacy"} interface selection`, async () => {
       const calls: { systemInstruction: string; prompt: string }[] = [];
@@ -25,15 +25,11 @@ for (const provider of ["gemini", "gateway", "regional-fallback", "budget-gatewa
       };
       const dependencies: Record<string, unknown> = {
         "@/lib/auth": { requireWorkspaceMember: async () => ({ id: "trusted-member", role: "bd_manager", displayName: "Unassigned" }) },
-        "@/lib/ai/gemini": { generateGeminiText: provider === "budget-gateway"
-          ? async () => { throw new Error("Budgeted requests must not call direct Gemini"); }
-          : provider === "regional-fallback" ? async () => { throw new Error("region unavailable"); } : generate },
         "@/lib/ai/gateway": {
           generateGatewayText: async (input: Parameters<typeof generate>[0] & { usageUserId?: string }) => {
             assert.equal(input.usageUserId, "trusted-member");
             return generate(input);
           },
-          isGeminiRegionError: () => true,
         },
         "@/lib/ai/email-reply": reply,
         "@/lib/ai/email-rewrite": rewrite,
@@ -51,11 +47,7 @@ for (const provider of ["gemini", "gateway", "regional-fallback", "budget-gatewa
           return dependencies[name];
         },
         Response, URL, console,
-        process: { env: provider === "budget-gateway"
-          ? { AI_BUDGET_ENFORCEMENT: "true", GEMINI_API_KEY: "test-key", AI_GATEWAY_API_KEY: "test-token" }
-          : provider === "gemini" ? { GEMINI_API_KEY: "test-key" }
-          : provider === "gateway" ? { AI_GATEWAY_API_KEY: "test-token" }
-          : { GEMINI_API_KEY: "test-key", AI_GATEWAY_API_KEY: "test-token" } },
+        process: { env: provider === "oidc" ? { VERCEL_OIDC_TOKEN: "test-oidc" } : { AI_GATEWAY_API_KEY: "test", ...(provider === "legacy-budget" ? { AI_BUDGET_ENFORCEMENT: "true" } : {}) } },
       });
       const conversationHistory = [{ direction: "inbound", subject: "Invoice request for ORDER #1297", body: "Please update my billing address and send your catalog." }];
       const customerProfile = { summary: "意大利客户，需要产品目录。" };

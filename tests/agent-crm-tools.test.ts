@@ -25,6 +25,9 @@ import * as segments from "../lib/segments.ts";
 import * as productivity from "../lib/ai/crm-productivity.ts";
 import { personalProductService } from "./helpers/personal-products.ts";
 import * as documentIntent from "../lib/ai/document-intent.ts";
+import * as orderActions from "../lib/ai/order-actions.ts";
+import { invoiceProduct } from "../lib/invoice-links.ts";
+import * as workflowContract from "../lib/ai/workflow-contract.ts";
 
 const require = createRequire(import.meta.url);
 const companyId = "a1111111-1111-4111-8111-111111111111";
@@ -35,6 +38,7 @@ const viewer = { id: actorId, role: "admin" as const, displayName: "Sales Manage
 const request = new Request("http://localhost:3000/api/ai/assistant/action");
 
 function moduleUnderTest<T>(file: string, dependencies: Record<string, unknown>): T {
+  dependencies["./workflow-contract"] = workflowContract;
   dependencies["./document-intent"] = documentIntent;
   dependencies["../customer-tags.ts"] = customerTags;
   const exports = {};
@@ -77,6 +81,7 @@ function fixture() {
   } };
   const shared = (name: string) => async (...args: unknown[]) => { calls.push({ name, args }); return failure ? { error: "Shared CRM validation failed" } : { success: "Saved by shared service" }; };
   const dependencies = {
+    "./order-actions": orderActions,
     "../data/product-personalization": personalProductService(tables),
     "./crm-productivity": productivity, "./crm-productivity-execution": {}, "./crm-productivity-records": {},
     "next/cache": { revalidatePath() {} }, "./crm-tools": tools, "../supabase/admin": { createSupabaseAdmin: () => db },
@@ -89,9 +94,9 @@ function fixture() {
     "@/app/purchase-order-actions": { savePurchaseOrder: shared("savePurchaseOrder"), createOrderInvoice: async (...args: unknown[]) => { calls.push({ name: "createOrderInvoice", args }); return { invoiceId: recordId }; }, getPurchaseOrderProfile: async () => ({ customer: { companyName: "Buyer", contactName: "", contactRole: "", contactEmail: "", billingEmail: "", billingAddress: "", taxId: "", phone: "" }, commerce: { currency: "USD", shippingAddress: "Default warehouse" } }) },
     "@/app/api/email/state/route": { POST: async (input: Request) => { calls.push({ name: "saveEmailState", args: [await input.json()] }); return Response.json({ ok: true }); } },
     "../meta-messenger": { sendMetaTextMessage: async (...args: unknown[]) => { calls.push({ name: "sendMetaTextMessage", args }); return { ok: true }; } },
-    "../data/flows": { listWorkspaceFlows: async () => [flow], createFlow: async (_user: string, input: object) => { calls.push({ name: "createFlow", args: [input] }); return { id: recordId, ...input }; }, updateFlow: async (_user: string, _id: string, input: object) => { calls.push({ name: "updateFlow", args: [input] }); return { id: recordId, ...input }; }, deleteFlow: shared("deleteFlow") },
+    "../data/flows": { listWorkspaceFlows: async () => [flow], createFlow: async (_user: string, input: object) => { calls.push({ name: "createFlow", args: [input] }); return { id: recordId, ...input }; }, updateFlow: async (_user: string, _id: string, input: object) => { calls.push({ name: "updateFlow", args: [input, _id] }); return { id: recordId, ...input }; }, deleteFlow: shared("deleteFlow") },
     "../data/invoices": { getInvoice: async () => invoice, mutateInvoice: async (...args: unknown[]) => { calls.push({ name: "mutateInvoice", args }); return invoice; }, createInvoice: async (...args: unknown[]) => { calls.push({ name: "createInvoice", args }); return invoice; } },
-    "../data/invoice-connections": { invoiceBootstrap: async () => ({ document: invoice.document }), validateInvoiceConnections: async () => {} },
+    "../data/invoice-connections": { invoiceBootstrap: async () => ({ document: invoice.document }), invoiceProducts: async () => ({ products: [invoiceProduct(product)] }), validateInvoiceConnections: async () => {} },
     "../data/invoice-payment-methods": { patchInvoiceSettings: shared("patchInvoiceSettings"), invoicePaymentMethods: async () => [] },
     "../data/members": { listWorkspaceMembers: async () => [{ id: actorId, displayName: "Sales Manager", email: "sales@example.com", role: "admin", autoAssignLeads: false, activated: true }] },
     "../data/flow-activity": { updateFlowActivity: shared("updateFlowActivity") },
@@ -101,6 +106,29 @@ function fixture() {
   const execution = moduleUnderTest<typeof import("../lib/ai/crm-execution.ts")>("../lib/ai/crm-execution.ts", dependencies);
   return { ...execution, tables, calls, flow, invoice, inventory, dependencies, changeCompany() { companyName = "Changed"; }, fail() { failure = true; } };
 }
+
+test("agent finds a scoped workflow by ID, name or recipient and activates its saved definition", async () => {
+  const f = fixture();
+  const scope = { flowScope: "email", scopeCompanyId: companyId, scopeContactId: actionId, scopeLabel: "buyer@example.com", reentryMode: "every_event" };
+  f.flow.triggerType = "email_received";
+  f.flow.triggerConfig = scope;
+  const records = moduleUnderTest<typeof import("../lib/ai/crm-records.ts")>("../lib/ai/crm-records.ts", f.dependencies);
+  for (const input of [{ id: recordId }, { query: f.flow.name }, { query: "BUYER@example.com" }, { companyId }]) {
+    const result = await records.readCrmRecords(viewer, tools.crmReadSchema.parse({ resource: "flows", ...input }));
+    assert.equal((result.records as flows.AutomationFlow[])[0]?.id, recordId);
+  }
+  const unmatched = await records.readCrmRecords(viewer, tools.crmReadSchema.parse({ resource: "flows", companyId: actionId }));
+  assert.equal(unmatched.records.length, 0);
+  const proposal = await f.prepareCrmAction({ op: "flow_status", flowId: recordId, status: "live" }, viewer);
+  const next = proposal.preview.flow as flows.FlowInput;
+  assert.equal(next.status, "live");
+  assert.deepEqual(next.triggerConfig, scope);
+  assert.deepEqual(next.steps, f.flow.steps);
+  await f.executeCrmAction(proposal, viewer, actionId, request);
+  const saved = f.calls.find(call => call.name === "updateFlow")!;
+  assert.equal(saved.args[1], recordId);
+  assert.deepEqual((saved.args[0] as flows.FlowInput).triggerConfig, scope);
+});
 
 test("saved audience segment actions execute through the CRM service, preserve omitted fields and reject stale rules", async () => {
   const f = fixture();
@@ -255,6 +283,33 @@ test("new purchase orders use profile defaults and require an actual PO referenc
   assert.equal(document.shippingAddress, "Default warehouse");
   assert.equal(document.preShipmentPercent, 100);
   await assert.rejects(() => f.prepareCrmAction({ op: "save_order", companyId, changes: { notes: "Insufficient information" } }, viewer));
+});
+
+test("agent order preparation resolves variant SKUs and catalog details before review and execution", async () => {
+  const f = fixture();
+  const operation = { op: "save_order" as const, companyId, changes: { reference: "PO-CATALOG", items: [{ description: "Model display text", sku: "PLA-BLACK", productSku: "PLA", pricingMode: "catalog" as const, quantity: 100, unitPriceMinor: 50_000 }] } };
+  const proposal = await f.prepareCrmAction(operation, viewer);
+  const document = proposal.preview.document as orders.PurchaseOrderDocument;
+  assert.equal(document.items[0].variantId, "black");
+  assert.equal(document.items[0].variantSku, "PLA-BLACK");
+  assert.equal(document.items[0].unitPriceMinor, 950);
+  assert.equal(document.items[0].description, "PLA filament — Black");
+  await f.executeCrmAction(proposal, viewer, actionId, request);
+  assert.deepEqual(f.calls.find(call => call.name === "savePurchaseOrder")!.args[3], document);
+  f.tables.products[0].tags = ["price-tier:10:12", products.variantTag([{ id: "black", name: "Black", sku: "PLA-BLACK", price: "12", stockStatus: "In stock", imageUrl: null }])];
+  f.tables.products[0].price = 12;
+  await assert.rejects(() => f.executeCrmAction(proposal, viewer, actionId, request), /changed after the proposal/);
+});
+
+test("catalog validation failures are caught during planning, and manual order prices are retained", async () => {
+  const f = fixture();
+  const line = { description: "PLA", sku: "", productSku: "PLA", pricingMode: "manual" as const, quantity: 1, unitPriceMinor: 1200 };
+  const proposal = await f.prepareCrmAction({ op: "save_order", companyId, changes: { reference: "PO-MANUAL", items: [line] } }, viewer);
+  assert.equal((proposal.preview.document as orders.PurchaseOrderDocument).items[0].unitPriceMinor, 1200);
+  for (const changes of [{ items: [{ ...line, pricingMode: "catalog" as const }] }, { items: [{ ...line, variantId: "missing" }] }, { currency: "EUR" as const, items: [line] }, { items: [{ ...line, sku: "WRONG-SKU" }] }]) {
+    await assert.rejects(() => f.prepareCrmAction({ op: "save_order", companyId, changes: { reference: "PO-BAD", ...changes } }, viewer));
+  }
+  assert.equal(f.calls.some(call => call.name === "savePurchaseOrder"), false);
 });
 
 test("flows preserve existing definitions and enforce ownership; duplicates are always drafts", async () => {

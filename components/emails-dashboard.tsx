@@ -4,7 +4,9 @@ import { EmptyState } from "@/components/data-state";
 import { AiIcon } from "@/components/ai-icon";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   ArrowUpDown,
@@ -24,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TablePagination } from "@/components/ui/table-pagination";
 import { EmailQueueSkeleton } from "@/components/workspace-skeletons";
+import { emailProviderHref, type EmailConnectionsOverview } from "@/lib/email-connections";
 
 export type EmailStatusKey = "draft" | "needs_approval" | "scheduled" | "sent" | "failed";
 
@@ -462,86 +465,40 @@ export function EmailsDashboard({ initialEmails }: { initialEmails: Array<Partia
   );
 }
 
-export function DeliverabilityDashboard() {
-  const [activeTab, setActiveTab] = useState<"errors" | "warnings" | "info">("errors");
+export function DeliverabilityDashboard({ overview, canManageTeam }: { overview: EmailConnectionsOverview; canManageTeam: boolean }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [filter, setFilter] = useState("all");
   const [page, setPage] = useState(1);
-  const [rows] = useState([
-    { type: "Error", entity: "filazoo.com", description: "SPF or DKIM records are missing from the outbound domain.", severity: "error" },
-    { type: "Warning", entity: "noreply@filazoo.com", description: "Mailbox is disconnected and rejecting replies.", severity: "warning" },
-    { type: "Warning", entity: "Draft #PL-741", description: "Draft is missing an unsubscribe link before approval.", severity: "warning" },
-    { type: "Info", entity: "Suppression list", description: "Three contacts are currently on the suppression list.", severity: "info" },
-  ]);
-
-  const counts = {
-    errors: rows.filter((row) => row.severity === "error").length,
-    warnings: rows.filter((row) => row.severity === "warning").length,
-    info: rows.filter((row) => row.severity === "info").length,
-  };
-
-  const visibleRows = rows.filter((row) => {
-    if (activeTab === "errors") return row.severity === "error";
-    if (activeTab === "warnings") return row.severity === "warning";
-    return row.severity === "info";
-  });
+  const rows = overview.accounts.filter(account => filter === "all" || (filter === "attention" ? account.isActive && (!account.sendConfigured || !account.inboxConfigured) : !account.isActive));
   const pageSize = 25;
-  const pageCount = Math.max(1, Math.ceil(visibleRows.length / pageSize));
+  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
   const currentPage = Math.min(page, pageCount);
-  const pagedRows = visibleRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const visibleRows = rows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const status = (configured: boolean, active: boolean) => !active ? "Paused" : configured ? "Configured" : "Setup needed";
 
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap gap-2 border-b pb-4">
-        {[
-          { key: "errors", label: "Errors", color: "text-red-600", bg: "bg-red-100 text-red-700" },
-          { key: "warnings", label: "Warnings", color: "text-amber-600", bg: "bg-amber-100 text-amber-700" },
-          { key: "info", label: "Info", color: "text-blue-600", bg: "bg-blue-100 text-blue-700" },
-        ].map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => { setActiveTab(tab.key as "errors" | "warnings" | "info"); setPage(1); }}
-            className={`rounded-xl border px-3 py-2 text-left transition-colors ${activeTab === tab.key ? "border-border bg-background shadow-sm" : "border-transparent bg-muted/40 text-muted-foreground"}`}
-          >
-            <div className="flex items-center gap-2">
-              <span className={`grid size-5 place-items-center rounded-md ${tab.bg}`}><ShieldAlert className="size-3.5" /></span>
-              <span className="text-sm font-medium">{tab.label}</span>
-            </div>
-            <div className="mt-1 text-xs text-foreground/70">{counts[tab.key as keyof typeof counts]} {tab.key === "errors" ? "errors" : tab.key === "warnings" ? "warnings" : "info"}</div>
-          </button>
-        ))}
-      </div>
-
-      <div className="crm-table-frame crm-table-page-wide bg-background">
-        <div className="crm-table-viewport">
-          <table className="crm-table min-w-full">
-            <thead>
-              <tr className="border-b border-border">
-                <th className="px-3 py-2.5 font-medium">Issue</th>
-                <th className="px-3 py-2.5 font-medium">Entity</th>
-                <th className="px-3 py-2.5 font-medium">Description</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleRows.length === 0 ? (
-                <tr>
-                  <td colSpan={3} className="px-3 py-12 text-center text-sm text-muted-foreground"><EmptyState compact icon={ShieldAlert} className="border-0 bg-transparent" title="No deliverability issues in this category." description="Your outreach is clear of issues in this view." /></td>
-                </tr>
-              ) : (
-                pagedRows.map((row) => (
-                  <tr key={`${row.entity}-${row.description}`} className="border-b border-border/80 text-sm">
-                    <td className="px-3 py-3"><Badge variant={row.severity === "error" ? "destructive" : row.severity === "warning" ? "secondary" : "outline"}>{row.type}</Badge></td>
-                    <td className="px-3 py-3 font-medium text-foreground">{row.entity}</td>
-                    <td className="px-3 py-3 text-muted-foreground">{row.description}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-        </div>
-
-        <TablePagination page={currentPage} pageCount={pageCount} start={pagedRows.length ? (currentPage - 1) * pageSize + 1 : 0} end={Math.min(currentPage * pageSize, visibleRows.length)} total={visibleRows.length} itemLabel="issues" onPrevious={() => setPage(currentPage - 1)} onNext={() => setPage(currentPage + 1)} onPageChange={setPage} />
+  return <div className="space-y-4">
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div><h2 className="text-sm font-semibold">Email connection checks</h2><p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">Review the sending and receiving setup for your connected mailboxes. These checks use saved account settings; they do not verify DNS records or measure delivery rates.</p></div>
+      <Button type="button" variant="outline" size="sm" disabled={pending} onClick={() => startTransition(() => router.refresh())}><RefreshCw className={pending ? "size-3.5 animate-spin" : "size-3.5"} />{pending ? "Refreshing…" : "Refresh"}</Button>
     </div>
-  );
+    {overview.error ? <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">{overview.error}</p> : null}
+    <div role="group" aria-label="Filter email connections" className="flex flex-wrap gap-2">{[{ key: "all", label: "All accounts" }, { key: "attention", label: "Needs setup" }, { key: "paused", label: "Paused" }].map(item => <Button key={item.key} type="button" size="sm" variant={filter === item.key ? "secondary" : "ghost"} aria-pressed={filter === item.key} onClick={() => { setFilter(item.key); setPage(1); }}>{item.label}</Button>)}</div>
+    <div className="crm-table-frame crm-table-page-wide">
+      <div className="crm-table-viewport">
+        <table className="crm-table min-w-[760px]">
+          <caption className="sr-only">Connected mailbox sending and receiving configuration</caption>
+          <thead><tr><th scope="col">Mailbox</th><th scope="col">Scope</th><th scope="col">Sending</th><th scope="col">Receiving</th><th scope="col"><span className="sr-only">Connection settings</span></th></tr></thead>
+          <tbody>{visibleRows.map(account => {
+            const canManage = account.scope === "personal" || canManageTeam;
+            const settingsHref = account.providerId ? emailProviderHref(account.providerId, account.scope) : `/settings/apps?view=${account.scope === "workspace" ? "team" : "personal"}`;
+            return <tr key={account.id}><td><p className="font-medium">{account.email}</p>{account.name !== account.email ? <p className="text-xs text-muted-foreground">{account.name}</p> : null}</td><td>{account.scope === "workspace" ? "Team" : "Personal"}</td><td><Badge variant={account.isActive && !account.sendConfigured ? "outline" : "secondary"}>{status(account.sendConfigured, account.isActive)}</Badge></td><td><Badge variant={account.isActive && !account.inboxConfigured ? "outline" : "secondary"}>{status(account.inboxConfigured, account.isActive)}</Badge></td><td className="text-right">{canManage ? <Link href={settingsHref} className="text-xs font-medium text-primary hover:underline" aria-label={`Manage connection for ${account.email}`}>Manage connection</Link> : <span className="text-xs text-muted-foreground">Managed by your admin</span>}</td></tr>;
+          })}</tbody>
+        </table>
+      </div>
+      {!visibleRows.length && !overview.error ? <EmptyState compact icon={ShieldAlert} className="border-0 bg-transparent" title={overview.accounts.length ? "No accounts in this view" : "No mailboxes connected"} description={overview.accounts.length ? "Choose another filter to review your mailboxes." : "Connect a personal mailbox in Apps & connections to start sending and receiving email."} /> : null}
+    </div>
+    {!overview.accounts.length && !overview.error ? <Link href="/settings/apps?view=personal" className="inline-flex text-sm font-medium text-primary hover:underline">Connect a mailbox</Link> : null}
+    <TablePagination page={currentPage} pageCount={pageCount} start={visibleRows.length ? (currentPage - 1) * pageSize + 1 : 0} end={Math.min(currentPage * pageSize, rows.length)} total={rows.length} itemLabel="accounts" onPrevious={() => setPage(currentPage - 1)} onNext={() => setPage(currentPage + 1)} onPageChange={setPage} />
+  </div>;
 }
-

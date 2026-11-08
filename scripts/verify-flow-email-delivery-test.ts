@@ -11,7 +11,7 @@ const { registerHooks } = nodeModule as typeof nodeModule & {
 };
 
 process.env.DRY_RUN = "true";
-process.env.GEMINI_API_KEY = "intercepted-verification-only";
+process.env.AI_GATEWAY_API_KEY = "intercepted-verification-only";
 const counters = { smtp: 0, ai: 0 };
 Object.assign(globalThis, { __flowDeliveryVerification: counters });
 const hook = registerHooks({
@@ -25,15 +25,14 @@ const hook = registerHooks({
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async (input, init) => {
   const url = String(input);
-  if (url.startsWith("https://generativelanguage.googleapis.com/")) {
+  if (url.startsWith("https://ai-gateway.vercel.sh/")) {
     counters.ai++;
     const body = JSON.parse(String(init?.body || "{}"));
-    const prompt = JSON.parse(body.contents?.[0]?.parts?.[0]?.text || "{}");
+    const prompt = JSON.parse(body.input?.[0]?.content?.[0]?.text || "{}");
     const output = prompt.task === "select_catalog_products" ? { intent: "requested", scope: "all", productSkus: [] }
       : { subject: "Product catalog test", body: "Hi Test,\n\nThe product catalog is attached. Which material and quantity do you need?", quotes: [] };
-    return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify(output) }] } }] });
+    return Response.json({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(output) }] }] });
   }
-  if (url.startsWith("https://ai-gateway.vercel.sh/")) throw new Error("Unexpected AI fallback during verification.");
   return originalFetch(input, init);
 };
 const { createSupabaseAdmin } = await import("../lib/supabase/admin.ts");

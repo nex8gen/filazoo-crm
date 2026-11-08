@@ -95,7 +95,7 @@ function form(upload = false) {
 
 test("profile readers use fresh Auth metadata without requiring token rotation", async () => {
   const viewer = await getViewer();
-  assert.deepEqual(viewer, { id: userId, email: "member@example.com", avatarPath: oldPath, avatarPreset: "female", preferences: { tablePageSize: 25, density: "comfortable", reduceMotion: false, emailTranslate: true, emailMarkRead: true, emailSyncSeconds: 15, emailAiSuggestions: true, emailSignature: "" } });
+  assert.deepEqual(viewer, { id: userId, email: "member@example.com", avatarPath: oldPath, avatarPreset: "female", preferences: { startPage: "/", tablePageSize: 25, density: "comfortable", reduceMotion: false, emailTranslate: true, emailMarkRead: true, emailSyncSeconds: 15, emailAiSuggestions: true, emailSignature: "" } });
 });
 test("preset selection removes the photo and refreshes every avatar surface", async () => {
   assert.ok((await saveProfileAvatar(form())).success);

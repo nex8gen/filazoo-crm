@@ -9,12 +9,15 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { invoiceCurrencies } from "@/lib/invoices";
 import type { InvoiceDefaultsSettings } from "@/lib/invoice-defaults";
+import { useUnsavedSettings } from "./use-unsaved-settings";
 
 export function InvoiceDefaultsForm({ initial, canManage }: { initial: InvoiceDefaultsSettings; canManage: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  return <form className="space-y-5" onSubmit={async (event) => {
+  const [dirty, setDirty] = useState(false);
+  useUnsavedSettings(dirty);
+  return <form className="space-y-5" onChangeCapture={() => { setDirty(true); setNotice(""); }} onSubmit={async (event) => {
     event.preventDefault();
     if (!canManage || busy) return;
     const form = new FormData(event.currentTarget);
@@ -25,6 +28,7 @@ export function InvoiceDefaultsForm({ initial, canManage }: { initial: InvoiceDe
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Unable to save invoice defaults.");
       setNotice("Workspace defaults saved. New invoices will use these details.");
+      setDirty(false);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Unable to save invoice defaults."); }
     finally { setBusy(false); }
   }}>
@@ -33,7 +37,7 @@ export function InvoiceDefaultsForm({ initial, canManage }: { initial: InvoiceDe
       <div className="space-y-2"><Label htmlFor="sellerName">Seller / legal business name</Label><Input id="sellerName" name="sellerName" defaultValue={initial.seller.sellerName} required maxLength={200} /></div>
       <div className="space-y-2"><Label htmlFor="sellerAddress">Business address</Label><Textarea id="sellerAddress" name="sellerAddress" defaultValue={initial.seller.sellerAddress} maxLength={2000} /></div>
       <div className="space-y-2"><Label htmlFor="sellerTaxId">Tax / registration ID</Label><Input id="sellerTaxId" name="sellerTaxId" defaultValue={initial.seller.sellerTaxId} maxLength={100} /></div>
-      <div className="grid gap-4 sm:grid-cols-3"><div className="space-y-2"><Label htmlFor="invoiceCurrency">Currency</Label><Select name="currency" defaultValue={initial.defaults.currency}><SelectTrigger id="invoiceCurrency" className="w-full min-w-0"><SelectValue /></SelectTrigger><SelectContent>{invoiceCurrencies.map((currency) => <SelectItem key={currency} value={currency}>{currency}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label htmlFor="termsDays">Due after (days)</Label><Input id="termsDays" name="termsDays" type="number" min={0} max={365} step={1} required defaultValue={initial.defaults.termsDays} /></div><div className="space-y-2"><Label htmlFor="taxPercent">Default tax (%)</Label><Input id="taxPercent" name="taxPercent" type="number" min={0} max={100} step="0.01" required defaultValue={initial.defaults.taxBps / 100} /></div></div>
+      <div className="grid gap-4 sm:grid-cols-3"><div className="space-y-2"><Label htmlFor="invoiceCurrency">Currency</Label><Select name="currency" defaultValue={initial.defaults.currency} onValueChange={() => { setDirty(true); setNotice(""); }}><SelectTrigger id="invoiceCurrency" className="w-full min-w-0"><SelectValue /></SelectTrigger><SelectContent>{invoiceCurrencies.map((currency) => <SelectItem key={currency} value={currency}>{currency}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label htmlFor="termsDays">Due after (days)</Label><Input id="termsDays" name="termsDays" type="number" min={0} max={365} step={1} required defaultValue={initial.defaults.termsDays} /></div><div className="space-y-2"><Label htmlFor="taxPercent">Default tax (%)</Label><Input id="taxPercent" name="taxPercent" type="number" min={0} max={100} step="0.01" required defaultValue={initial.defaults.taxBps / 100} /></div></div>
       <p className="text-xs leading-5 text-muted-foreground">Zero days means due on the issue date. Tax initializes the first blank line; verify tax on each product line before issuing.</p>
       <div className="space-y-2"><Label htmlFor="paymentInstructions">Payment instructions</Label><Textarea id="paymentInstructions" name="paymentInstructions" defaultValue={initial.seller.paymentInstructions} maxLength={2000} /></div>
       <div className="space-y-2"><Label htmlFor="invoiceNotes">Invoice notes and terms</Label><Textarea id="invoiceNotes" name="notes" defaultValue={initial.seller.notes} maxLength={4000} rows={4} /></div>

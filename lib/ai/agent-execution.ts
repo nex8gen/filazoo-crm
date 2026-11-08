@@ -25,6 +25,9 @@ import { crmManualApproval, crmViewerOperationAllowed } from "./crm-tools";
 import { deriveCompanyAddressFields } from "../company-profile-fields";
 import { prepareAgentCatalog, agentCatalogAttachments } from "./agent-catalog";
 import { assertDocumentIntent } from "./document-intent";
+import { agentOrderFromInvoice, orderInvoiceMatchesReview } from "./order-actions";
+import { savePurchaseOrder, createOrderInvoice } from "@/app/purchase-order-actions";
+import { assertWorkflowCoverage } from "./workflow-contract";
 
 async function validateCustomerEmailSource(action: { companyId: string; sourceEmailId?: string }, viewer: WorkspaceViewer) {
   if (!action.sourceEmailId) return;
@@ -34,8 +37,9 @@ async function validateCustomerEmailSource(action: { companyId: string; sourceEm
   }
 }
 
-export async function prepareAgentActions(actions: WorkspaceAction[], viewer: WorkspaceViewer, approvalMode: "ask" | "auto", context?: AgentPlanningContext) {
+export async function prepareAgentActions(actions: WorkspaceAction[], viewer: WorkspaceViewer, approvalMode: "ask" | "auto", context?: AgentPlanningContext, options: { persist?: boolean } = {}) {
   assertDocumentIntent(actions, context);
+  if (options.persist !== false) assertWorkflowCoverage(actions, context);
   if (viewer.role === "viewer" && actions.some((action) => action.type !== "crm_action" || !crmViewerOperationAllowed(action.operation))) throw new Error("Your workspace role is read-only outside your private products, quotations and personal settings.");
   const { policy } = await getAiSettings();
   for (const action of actions) aiActionApproval(policy, action, approvalMode);
@@ -43,9 +47,11 @@ export async function prepareAgentActions(actions: WorkspaceAction[], viewer: Wo
   for (const candidate of actions) {
     let action = groundInvoiceEmailIntent(candidate, context);
     if (context && ((action.type === "crm_action" && ["create_quotation", "create_catalog"].includes(action.operation.op)) || ("email" in action && action.email?.attachCatalog))) action = await (await import("./quotation-selection-server")).groundQuotationSelection(action, viewer, context);
+    if (action.type === "create_order") action = { ...action, type: "create_invoice" };
     const policyApproval = aiActionApproval(policy, action, approvalMode);
     let prepared: PreparedAgentAction;
-    if (action.type === "crm_action") prepared = await prepareCrmAction(action.operation, viewer);
+    if (action.type === "run_workflow") prepared = await (await import("./workflow-execution")).prepareWorkflow(action, viewer, context, async child => (await prepareAgentActions([child], viewer, approvalMode, context, { persist: false }))[0]);
+    else if (action.type === "crm_action") prepared = await prepareCrmAction(action.operation, viewer);
     else if (action.type === "create_company" || action.type === "create_flow") prepared = action;
     else if (action.type === "update_company" || action.type === "add_company_note") {
       await validateCustomerEmailSource(action, viewer);
@@ -85,16 +91,21 @@ export async function prepareAgentActions(actions: WorkspaceAction[], viewer: Wo
           invoicePaymentMethods(),
         ]);
         const base = existing?.document ?? bootstrap.document;
-        const document = buildAgentInvoice(base, groundInvoiceVariant(action, catalog.products, context), catalog.products, banks, payments, { creating: action.type === "create_invoice" });
+        let document = buildAgentInvoice(base, groundInvoiceVariant(action, catalog.products, context), catalog.products, banks, payments, { creating: action.type === "create_invoice" });
+        const workflow = action.type === "create_invoice" ? agentOrderFromInvoice(document) : undefined;
+        if (workflow) {
+          if (action.bankAccountId) throw new Error("Order billing uses saved payment methods. Choose a payment method instead of a bank account.");
+          document = workflow.document;
+        }
         await validateInvoiceConnections(document);
         prepared = action.type === "create_invoice"
-          ? { type: action.type, document, ...(action.email ? { email: await prepareAgentCatalog(await prepareAgentEmail(action.email, viewer), viewer) } : {}) }
+          ? { type: action.type, document, order: workflow!.order, ...(action.email ? { email: await prepareAgentCatalog(await prepareAgentEmail(action.email, viewer), viewer) } : {}) }
           : { type: action.type, invoiceId: action.invoiceId, revision: existing!.revision, document, ...(action.email ? { email: await prepareAgentCatalog(await prepareAgentEmail(action.email, viewer), viewer) } : {}) };
       } else throw new Error("Invalid invoice action.");
     }
     proposals.push({ id: crypto.randomUUID(), action: prepared, approvalMode: action.type === "crm_action" && crmManualApproval(action.operation) ? "ask" : policyApproval, expiresAt: new Date(Date.now() + 30 * 60_000).toISOString() });
   }
-  if (proposals.length) {
+  if (proposals.length && options.persist !== false) {
     const { error } = await createSupabaseAdmin().from("workspace_agent_actions").insert(proposals.map((proposal) => ({
       id: proposal.id, user_id: viewer.id, action: proposal.action, approval_mode: proposal.approvalMode, expires_at: proposal.expiresAt,
     })));
@@ -120,9 +131,21 @@ async function validateSavedBank(document: InvoiceDocument) {
 export async function executeAgentAction(id: string, action: PreparedAgentAction, viewer: WorkspaceViewer, request: Request) {
   const { policy } = await getAiSettings();
   aiActionApproval(policy, action, "ask");
+  if (action.type === "run_workflow") return (await import("./workflow-execution")).executeWorkflow(id, action, viewer, request, async child => (await prepareAgentActions([child], viewer, "auto", { messages: action.messages }, { persist: false }))[0]);
   const db = createSupabaseAdmin();
   const activity = actionWorkProgress(action);
   let savedResult: Record<string, unknown> = {};
+  if (action.type === "create_invoice" && action.order) {
+    const checkpoint = await db.from("workspace_agent_actions").select("result").eq("id", id).eq("user_id", viewer.id).maybeSingle();
+    if (checkpoint.error) throw new Error("Unable to read the saved workflow progress.");
+    savedResult = checkpoint.data?.result ?? {};
+    if (savedResult.stage === "sending") throw new Error("Email delivery needs checking in Sent before another send can be prepared.");
+  }
+  async function checkpoint(result: Record<string, unknown>) {
+    savedResult = { ...savedResult, ...result };
+    const saved = await db.from("workspace_agent_actions").update({ result: savedResult }).eq("id", id).eq("user_id", viewer.id).eq("status", "running");
+    if (saved.error) throw new Error("Unable to save workflow progress. Check the saved action before continuing.");
+  }
   async function reportProgress(progress: AgentWorkProgress) {
     const { error } = await db.from("workspace_agent_actions").update({ result: { ...savedResult, progress } }).eq("id", id).eq("user_id", viewer.id).eq("status", "running");
     if (error) throw new Error("Unable to record action progress. Check the action result before retrying.");
@@ -164,7 +187,7 @@ export async function executeAgentAction(id: string, action: PreparedAgentAction
     const email = await prepareAgentEmail(action.email, viewer);
     const attachments = await agentCatalogAttachments(action.email, viewer);
     if (email.delivery === "draft") return { success: `Email draft prepared${attachments.length ? " with its catalog PDF" : ""} in the inbox composer.`, href: `/email?agentDraft=${id}`, draft: { ...email, ...(action.email.catalogSnapshot ? { catalogSnapshot: action.email.catalogSnapshot } : {}) } };
-    const response = await sendEmail(new Request(new URL("/api/email/send", request.url), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...email, attachments }) }));
+    const response = await sendEmail(new Request(new URL("/api/email/send", request.url), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...email, requestId: id, attachments }) }));
     const result = await response.json();
     if (!response.ok || !result.ok) throw new Error(result.error || "Email was not confirmed sent. Check Sent before retrying.");
     revalidatePath("/email");
@@ -176,7 +199,25 @@ export async function executeAgentAction(id: string, action: PreparedAgentAction
   let invoice = action.type === "create_invoice" ? null : await getInvoice(action.invoiceId);
   if (action.type !== "create_invoice" && (!invoice || invoice.revision !== action.revision || invoice.status === "void")) throw new Error("This invoice changed after the proposal. Ask the agent to prepare it again.");
   if (action.type === "update_invoice" && invoice && !canEditInvoice(viewer, invoice)) throw new Error("You no longer have permission to edit this invoice.");
-  if (action.type !== "send_invoice") {
+  if (action.type === "create_invoice" && action.order) {
+    // The proposal ID is also the order's idempotency key. If a write response
+    // is lost, resuming checks that same order instead of creating another.
+    if (!savedResult.orderId || savedResult.stage === "order_starting") {
+      await validateSavedBank(action.document);
+      await validateInvoiceConnections(action.document);
+      await checkpoint({ stage: "order_starting", orderId: id, canResume: true });
+      await reportProgress({ ...activity, label: "Saving order and linked invoice…" });
+      const order = await savePurchaseOrder(action.document.companyId!, null, 0, action.order, id);
+      if (order.error || !order.orderId) throw new Error(order.error || "The order save was not confirmed.");
+      await checkpoint({ stage: "order_saved", orderId: order.orderId, href: `/purchase-orders/${order.orderId}`, success: "Order saved. Preparing its invoice.", canResume: true });
+    }
+    const result = savedResult.invoiceId ? { invoiceId: String(savedResult.invoiceId) } : await createOrderInvoice(action.document.companyId!, String(savedResult.orderId));
+    if (result.error || !result.invoiceId) throw new Error(result.error || "The linked draft invoice is not ready yet.");
+    invoice = await getInvoice(result.invoiceId);
+    if (!invoice || invoice.document.purchaseOrderId !== savedResult.orderId || invoice.document.companyId !== action.document.companyId || invoice.status !== "draft" || !orderInvoiceMatchesReview(invoice.document, action.document)) throw Object.assign(new Error("The saved order invoice changed. Open the order and prepare a fresh review."), { name: "AgentReviewRequiredError" });
+    if (savedResult.invoiceRevision && invoice.revision !== savedResult.invoiceRevision) throw Object.assign(new Error("The invoice changed since this workflow paused. Prepare a fresh review before emailing it."), { name: "AgentReviewRequiredError" });
+    await checkpoint({ stage: "invoice_ready", invoiceId: invoice.id, invoiceRevision: invoice.revision, canResume: true });
+  } else if (action.type !== "send_invoice") {
     await validateSavedBank(action.document);
     await validateInvoiceConnections(action.document);
     await reportProgress(activity);
@@ -186,19 +227,18 @@ export async function executeAgentAction(id: string, action: PreparedAgentAction
   }
   if (!invoice) throw new Error("Unable to read the saved invoice. Check Invoices before starting another task.");
   const href = `/invoices/${invoice.id}`;
-  const saved = { invoiceId: invoice.id, href, success: `${invoiceLabel(invoice)} ${action.type === "send_invoice" ? "ready" : action.type === "create_invoice" ? "created as a draft" : "updated"}.` };
+  const saved = { ...savedResult, invoiceId: invoice.id, href, success: `${action.type === "create_invoice" && action.order ? "Order saved. " : ""}${invoiceLabel(invoice)} ${action.type === "send_invoice" ? "ready" : action.type === "create_invoice" ? "created as a draft" : "updated"}.` };
   savedResult = saved;
   // Checkpoint creation before attempting email, so a mail error still links to the saved invoice.
-  const checkpoint = await db.from("workspace_agent_actions").update({ result: saved }).eq("id", id).eq("user_id", viewer.id);
-  if (checkpoint.error) throw new Error(`The invoice was saved at ${href}, but its action result could not be recorded. Check Invoices before retrying.`);
+  await checkpoint(saved);
   revalidatePath("/invoices");
   revalidatePath(href);
   if (invoice.document.companyId) revalidatePath(`/companies/${invoice.document.companyId}`);
-  if (!action.email) return saved;
+  if (!action.email) return { ...saved, stage: "completed", canResume: false };
   // Recheck access to the source conversation at execution time.
   await prepareAgentEmail(action.email, viewer);
   if (action.email.delivery === "draft") return {
-    ...saved, success: `${saved.success} Email draft prepared with its invoice PDF${catalogAttachments.length ? " and catalog PDF" : ""}.`, href: `/email?agentDraft=${id}`,
+    ...saved, stage: "completed", canResume: false, success: `${saved.success} Email draft prepared with its invoice PDF${catalogAttachments.length ? " and catalog PDF" : ""}.`, href: `/email?agentDraft=${id}`,
     draft: { ...action.email, invoiceId: invoice.id, revision: invoice.revision },
   };
   await reportProgress({ area: "invoice", label: "Preparing invoice PDF…", detail: `${invoiceLabel(invoice)} · ${invoice.document.customerName}`, relatedAreas: ["email"] });
@@ -206,12 +246,13 @@ export async function executeAgentAction(id: string, action: PreparedAgentAction
   const { invoicePdfFilename } = await import("../invoice-pdf-meta");
   const pdf = await renderInvoicePdf(invoice, new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(new Date()));
   await reportProgress({ area: "email", label: "Sending invoice email…", detail: `${invoiceLabel(invoice)} · ${action.email.to}`, relatedAreas: ["invoice"] });
+  await checkpoint({ stage: "sending", canResume: false });
   const response = await sendEmail(new Request(new URL("/api/email/send", request.url), {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...action.email, attachments: [{ filename: invoicePdfFilename(invoice), contentType: "application/pdf", content: pdf.toString("base64") }, ...catalogAttachments] }),
+    body: JSON.stringify({ ...action.email, requestId: id, attachments: [{ filename: invoicePdfFilename(invoice), contentType: "application/pdf", content: pdf.toString("base64") }, ...catalogAttachments] }),
   }));
   const result = await response.json();
   if (!response.ok || !result.ok) throw new Error(`${saved.success} Email was not confirmed sent: ${result.error || "Mailbox request failed."} Check Sent before preparing another send.`);
   revalidatePath("/email");
-  return { ...saved, success: `${invoiceLabel(invoice)} sent to ${action.email.to} with its PDF attached.${result.saved === false ? " The mailbox accepted it, but the Sent record could not be saved." : ""}` };
+  return { ...saved, stage: "completed", canResume: false, success: `${invoiceLabel(invoice)} sent to ${action.email.to} with its PDF attached.${result.saved === false ? " The mailbox accepted it, but the Sent record could not be saved." : ""}` };
 }

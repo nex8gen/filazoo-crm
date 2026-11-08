@@ -22,6 +22,9 @@ test("nested connection pages and the general alias keep the right active sectio
   assert.equal(settingsSectionForPath("/settings/general")?.id, "general");
   assert.equal(settingsSectionForPath("/settings/appearance")?.id, "appearance");
   assert.equal(settingsSectionForPath("/settings/unknown"), undefined);
+  assert.equal(settingsSectionForPath("/settings/mailboxes")?.id, "apps");
+  assert.equal(settingsSectionForPath("/settings/payments")?.id, "invoices");
+  assert.equal(settingsSectionForPath("/settings/constructor"), undefined);
 });
 
 function fixture(role = "admin") {
@@ -36,7 +39,7 @@ function fixture(role = "admin") {
         maybeSingle: async () => ({ data: { role: "bd_manager", auto_assign_leads: true }, error: null }),
         update: (value: Record<string, unknown>) => { writes.push({ table, value }); return query; },
         upsert: async (value: Record<string, unknown>) => { writes.push({ table, value }); return { error: null }; },
-        insert: async () => ({ error: null }),
+        insert: (value: Record<string, unknown>) => { writes.push({ table, value }); return query; },
         then: (resolve: (value: { error: null }) => void) => resolve({ error: null }),
       };
       return query;

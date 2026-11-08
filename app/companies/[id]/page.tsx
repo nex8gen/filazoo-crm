@@ -26,14 +26,16 @@ import { listBdSalesManagers } from "@/lib/data/members";
 
 export const instant = false;
 
-type CompanyPageProps = { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; compose?: string; invoiceId?: string; orderId?: string }> };
+type CompanySearchParams = { tab?: string; compose?: string; invoiceId?: string; orderId?: string; view?: string; q?: string; status?: string; overdue?: string; page?: string; sort?: string };
+type CompanyPageProps = { params: Promise<{ id: string }>; searchParams: Promise<CompanySearchParams> };
 
 export default function CompanyPage({ params, searchParams }: CompanyPageProps) {
   return <Suspense fallback={<CompanyDetailsSkeleton />}><CompanyPageContent params={params} searchParams={searchParams} /></Suspense>;
 }
 
 async function CompanyPageContent({ params, searchParams }: CompanyPageProps) {
-  const [{ id }, viewer, { tab, compose, invoiceId, orderId }] = await Promise.all([params, requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]), searchParams]);
+  const [{ id }, viewer, query] = await Promise.all([params, requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]), searchParams]);
+  const { tab, compose, invoiceId, orderId } = query;
   const activeTab = companyTab(tab);
   const [{ details }, managers] = await Promise.all([
     getCompanyProfile(id),
@@ -58,20 +60,20 @@ async function CompanyPageContent({ params, searchParams }: CompanyPageProps) {
           {viewer.role === "viewer" ? <span className="text-[11px] text-muted-foreground">Read-only</span> : null}
         </div>}
       profile={<CompanyDetails key={`${id}:${details.company.nextFollowupAt || ""}`} details={details} canWrite={viewer.role !== "viewer"} />}
-      section={activeTab === "profile" ? null : <Suspense key={`${activeTab}:${compose || ""}:${invoiceId || ""}:${orderId || ""}`} fallback={<CompanyBillingSkeleton />}><CompanySection tab={activeTab} id={id} details={details} viewer={viewer} compose={compose} invoiceId={invoiceId} orderId={orderId} /></Suspense>}
+      section={activeTab === "profile" ? null : <Suspense key={`${activeTab}:${compose || ""}:${invoiceId || ""}:${orderId || ""}:${activeTab === "purchase-orders" ? JSON.stringify(query) : ""}`} fallback={<CompanyBillingSkeleton />}><CompanySection tab={activeTab} id={id} details={details} viewer={viewer} compose={compose} invoiceId={invoiceId} orderId={orderId} purchaseOrderParams={query} /></Suspense>}
     />
   </div>;
 }
 
-async function CompanySection({ tab, id, details, viewer, compose, invoiceId, orderId }: {
-  tab: CompanyTab; id: string; details: CompanyDetailsData; viewer: WorkspaceViewer; compose?: string; invoiceId?: string; orderId?: string;
+async function CompanySection({ tab, id, details, viewer, compose, invoiceId, orderId, purchaseOrderParams }: {
+  tab: CompanyTab; id: string; details: CompanyDetailsData; viewer: WorkspaceViewer; compose?: string; invoiceId?: string; orderId?: string; purchaseOrderParams?: CompanySearchParams;
 }) {
   const canWrite = viewer.role !== "viewer";
   switch (tab) {
     case "analyse": return <CompanyAnalysis companyId={id} canWrite={canWrite} preferredCurrency={details.commerce?.currency || details.company.currency} />;
     case "customer-portal": return <CompanyCustomerPortal companyId={id} companyName={details.company.name} invoiceId={invoiceId} canWrite={canWrite} />;
     case "email": return <CompanyEmails company={{ id, name: details.company.name, ownerId: details.company.ownerId, emails: [...new Set([details.company.email, ...details.contacts.map(contact => contact.email)])] }} viewer={{ id: viewer.id, role: viewer.role }} composeTo={compose === "1" && canWrite ? details.company.email : undefined} />;
-    case "purchase-orders": return <CompanyPurchaseOrders companyId={id} companyName={details.company.name} commerce={details.commerce} canWrite={canWrite} orderId={orderId && /^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(orderId) ? orderId : undefined} />;
+    case "purchase-orders": return <CompanyPurchaseOrders companyId={id} companyName={details.company.name} canWrite={canWrite} params={purchaseOrderParams} orderId={orderId && /^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(orderId) ? orderId : undefined} />;
     case "history": {
       const { details: history } = await getCompanyDetails(id);
       return <CompanyTimeline companyId={id} activity={history?.activity ?? []} canWrite={canWrite} viewerName={viewer.displayName || viewer.email || "Staff"} />;

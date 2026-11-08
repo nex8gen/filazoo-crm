@@ -18,12 +18,20 @@ import * as progress from "../lib/ai/agent-progress.ts";
 import * as flows from "../lib/flows.ts";
 import * as crmTools from "../lib/ai/crm-tools.ts";
 import * as profileFields from "../lib/company-profile-fields.ts";
+import * as orderActions from "../lib/ai/order-actions.ts";
+import * as orders from "../lib/purchase-orders.ts";
+import { orderInvoiceItem } from "../lib/purchase-order-links.ts";
+import * as workflowContract from "../lib/ai/workflow-contract.ts";
+import { MockLanguageModelV4 } from "ai/test";
+import { generateCrmPlan } from "../lib/ai/native-agent.ts";
+import type { LanguageModelV4GenerateResult } from "@ai-sdk/provider";
 import type { InvoicePaymentMethod } from "../lib/invoice-payment-methods.ts";
 import { workspaceActionSchema } from "../lib/ai/workspace-assistant.ts";
 import { buildInboxEmailItems } from "../lib/email-inbox.ts";
 
 const require = createRequire(import.meta.url);
 function moduleUnderTest<T>(file: string, dependencies: Record<string, unknown>): T {
+  dependencies["./workflow-contract"] = workflowContract;
   dependencies["./document-intent"] = documentIntent;
   const exports = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -66,18 +74,34 @@ const request = new Request("http://localhost:3000/api/ai/assistant/action");
 const email = { to: "buyer@example.com", subject: "Re: Order", text: "Your requested invoice is attached.", sourceEmailId: "mail-1", delivery: "draft" } as const;
 
 function executionFixture() {
+  invoice.document = document;
   const tables: Record<string, Record<string, unknown>[]> = { workspace_agent_actions: [{ id: actionId, user_id: viewer.id, status: "running" }] };
   const savedForms: FormData[] = [];
   const savedPatches: profileFields.CompanyProfileChanges[] = [];
   const sent: Record<string, unknown>[] = [];
   const savedFlows: { userId: string; input: flows.FlowInput }[] = [];
   const savedInvoices: invoices.InvoiceDocument[] = [];
+  const savedOrders: string[] = [];
+  const renderedInvoices: unknown[] = [];
   const payments: InvoicePaymentMethod[] = [{ id: "3280fd30-4529-4c4d-ab74-c695ab064e57", type: "paypal", label: "PayPal", currency: "", details: "PayPal payment", paymentUrl: "https://paypal.me/example" }];
   let fingerprint = "a".repeat(64);
   let invoiceReads = 0;
   let bootstrapInput: { companyId?: string; email?: string; threadId?: string } | undefined;
   const company = { id: companyId, fields: { name: "Acme", city: "Old city", summary: "Keep existing summary", contactEmail: "buyer@example.com", "commerce.address": "Saved address", "commerce.taxId": "VAT-OLD" }, contacts: [], fingerprint };
   const dependencies = {
+    "./order-actions": orderActions,
+    "@/app/purchase-order-actions": { savePurchaseOrder: async (_company: string, _order: unknown, _version: number, order: unknown, key: string) => {
+      savedOrders.push(key);
+      const po = orders.purchaseOrderCreateSchema.parse(order);
+      invoice.document = invoices.invoiceDocumentSchema.parse({ ...document, purchaseOrderId: key, reference: po.reference || "#8", currency: po.currency,
+        customerName: po.customer!.companyName, customerEmail: po.customer!.billingEmail, customerAddress: po.customer!.billingAddress, customerTaxId: po.customer!.taxId,
+        issueDate: po.billing!.issueDate, dueDate: po.billing!.dueDate, discountMinor: po.billing!.discountMinor, paymentMethods: po.billing!.paymentMethods, shippingMinor: 0,
+        shippingAddress: po.shippingAddress, shippingRecipient: po.shippingRecipient, shippingPhone: po.shippingPhone,
+        items: po.items.map((item, index) => ({ ...orderInvoiceItem(item, item.quantity, `line-${index + 1}`), taxBps: item.sku === "SHIPPING" && !item.productSku ? 0 : po.billing!.taxBps })),
+      });
+      savedInvoices.push(invoice.document);
+      return { orderId: key, success: "Order saved." };
+    }, createOrderInvoice: async () => ({ invoiceId }) },
     "./crm-execution": {},
     "./crm-tools": crmTools,
     "./agent-catalog": { prepareAgentCatalog: async (email: unknown) => email, agentCatalogAttachments: (async () => []) as (email: unknown) => Promise<{ filename: string; contentType: string; content: string; size: number }[]> },
@@ -99,12 +123,95 @@ function executionFixture() {
     "./agent-progress": progress,
     "./agent-records": { loadAgentCompany: async () => ({ ...company, fingerprint }), loadAgentEmails: async () => ({ companyId, current: { id: "mail-1", direction: "inbound", contact: "secondary@example.com", threadId: "thread-1" } }), prepareAgentEmail: async (value: unknown) => ({ ...value as object, threadId: "thread-1", inReplyTo: "<order@example.com>", references: ["<order@example.com>"] }) },
     "../email-threading": threading,
-    "../invoice-pdf": { renderInvoicePdf: async () => Buffer.from("%PDF-1.7 actual-invoice") },
+    "../invoice-pdf": { renderInvoicePdf: async (invoice: unknown) => { renderedInvoices.push(invoice); return Buffer.from("%PDF-1.7 actual-invoice"); } },
     "../invoice-pdf-meta": { invoicePdfFilename: () => "INV-000008.pdf" },
   };
   const execution = moduleUnderTest<typeof import("../lib/ai/agent-execution.ts")>("../lib/ai/agent-execution.ts", dependencies);
-  return { ...execution, tables, savedForms, savedPatches, savedFlows, savedInvoices, payments, sent, dependencies, changeCustomer: () => { fingerprint = "b".repeat(64); }, invoiceReads: () => invoiceReads, bootstrapInput: () => bootstrapInput };
+  return { ...execution, tables, savedForms, savedPatches, savedFlows, savedInvoices, savedOrders, renderedInvoices, payments, sent, dependencies, invoice, changeCustomer: () => { fingerprint = "b".repeat(64); }, invoiceReads: () => invoiceReads, bootstrapInput: () => bootstrapInput };
 }
+
+test("planning preflight validates the real invoice without storing a proposal or writing business records", async () => {
+  const f = executionFixture();
+  const before = f.tables.workspace_agent_actions.length;
+  const [proposal] = await f.prepareAgentActions([{ type: "create_invoice", companyId, items: [{ productSku: "PLA", quantity: 200 }] }], viewer, "ask", undefined, { persist: false });
+  assert.equal(proposal.action.type, "create_invoice");
+  assert.equal(f.tables.workspace_agent_actions.length, before);
+  assert.equal(f.savedInvoices.length, 0);
+  assert.equal(f.sent.length, 0);
+  await assert.rejects(() => f.prepareAgentActions([{ type: "create_invoice", companyId, items: [{ productSku: "MISSING", quantity: 200 }] }], viewer, "ask", undefined, { persist: false }));
+  assert.equal(f.tables.workspace_agent_actions.length, before);
+});
+
+const exactOrderRequest = "can you create order for souravmallick@qq.com with pla basic 100 qty black color and also send the draft invoice email with a nice written email attuch the pdf of the invoice to that email";
+function orderEmailFixture() {
+  const f = executionFixture();
+  Object.assign(f.dependencies["../data/invoice-connections"], { invoiceProducts: async () => ({ products: [{ sku: "PLA-BASIC", name: "PLA Basic", currency: "USD", moq: 1, priceMinor: 500, tiers: [], stockStatus: "Available", imageUrl: null,
+    variants: [{ id: "black", name: "Black", sku: "PLA-BLACK", priceMinor: 500, imageUrl: null }, { id: "white", name: "White", sku: "PLA-WHITE", priceMinor: 500, imageUrl: null }],
+  }] }) });
+  Object.assign(f.dependencies["../data/mailboxes"], { getEffectiveMailbox: async () => ({ id: invoiceId }), mailboxHasSmtp: () => true });
+  const action = { type: "create_order" as const, companyId, items: [{ productSku: "PLA-BASIC", variantId: "black", quantity: 100 }], email: { to: "souravmallick@qq.com", subject: "Your PLA Basic order and draft invoice", text: "Thank you for your order. Please find the draft invoice for 100 black PLA Basic spools attached for your review.", delivery: "draft" as const } };
+  return { ...f, action, context: { messages: [{ role: "user", content: exactOrderRequest }] } };
+}
+
+test("the reported order + 100 black PLA + invoice PDF email request plans and executes as one connected workflow", async () => {
+  const f = orderEmailFixture();
+  const response: LanguageModelV4GenerateResult = { content: [{ type: "tool-call", toolCallId: "order", toolName: "create_order", input: JSON.stringify(f.action) }], finishReason: { unified: "tool-calls", raw: "tool_calls" }, usage: { inputTokens: { total: 20, noCache: 20, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 10, text: 10, reasoning: 0 } }, warnings: [] };
+  const plan = await generateCrmPlan({ model: new MockLanguageModelV4({ doGenerate: response }), prompt: exactOrderRequest, messages: f.context.messages, pathname: "/email", language: "en", read: async () => ({}), searchEmails: async () => ({}), validateAction: async action => { await f.prepareAgentActions([action], viewer, "ask", f.context, { persist: false }); } });
+  assert.equal(plan.actions.length, 1); assert.equal(plan.actions[0].type, "create_order");
+  assert.equal(f.tables.workspace_agent_actions.length, 1); assert.equal(f.savedOrders.length, 0); assert.equal(f.sent.length, 0);
+  const [proposal] = await f.prepareAgentActions(plan.actions, viewer, "ask", f.context);
+  const row = f.tables.workspace_agent_actions.find(row => row.id === proposal.id)!; row.status = "running";
+  assert.equal(proposal.action.type, "create_invoice");
+  if (proposal.action.type !== "create_invoice") throw new Error("Wrong workflow");
+  assert.ok(proposal.action.order); assert.equal(proposal.action.order.reference, "");
+  assert.equal(proposal.action.email?.delivery, "send");
+  const result = await f.executeAgentAction(proposal.id, proposal.action, viewer, request);
+  assert.equal(f.savedOrders.length, 1); assert.equal(f.savedInvoices.length, 1); assert.equal(f.sent.length, 1);
+  assert.equal(f.savedInvoices[0].purchaseOrderId, proposal.id);
+  assert.equal(f.savedInvoices[0].items[0].quantity, 100); assert.equal(f.savedInvoices[0].items[0].variantId, "black");
+  assert.equal(f.sent[0].to, "souravmallick@qq.com");
+  assert.equal(f.sent[0].requestId, proposal.id);
+  const attachments = f.sent[0].attachments as Array<{ contentType: string; content: string }>;
+  assert.equal(attachments[0].contentType, "application/pdf"); assert.match(Buffer.from(attachments[0].content, "base64").toString(), /^%PDF/);
+  assert.equal((f.renderedInvoices[0] as { id: string }).id, invoiceId);
+  assert.match(result.success, /sent to souravmallick@qq.com/);
+});
+
+test("a paused order workflow resumes after its saved order without creating a second order", async () => {
+  const f = orderEmailFixture();
+  const [proposal] = await f.prepareAgentActions([f.action], viewer, "ask", f.context);
+  const row = f.tables.workspace_agent_actions.find(row => row.id === proposal.id)!; row.status = "running";
+  const service = f.dependencies["@/app/purchase-order-actions"];
+  const original = service.createOrderInvoice;
+  service.createOrderInvoice = async () => { throw new Error("Temporary invoice read interruption"); };
+  await assert.rejects(() => f.executeAgentAction(proposal.id, proposal.action, viewer, request), /interruption/);
+  assert.equal((row.result as { stage: string }).stage, "order_saved");
+  assert.equal(f.savedOrders.length, 1); assert.equal(f.sent.length, 0);
+  service.createOrderInvoice = original;
+  await f.executeAgentAction(proposal.id, proposal.action, viewer, request);
+  assert.equal(f.savedOrders.length, 1); assert.equal(f.sent.length, 1);
+});
+
+test("an uncertain email send never replays on resume", async () => {
+  const f = orderEmailFixture();
+  const [proposal] = await f.prepareAgentActions([f.action], viewer, "ask", f.context);
+  const row = f.tables.workspace_agent_actions.find(row => row.id === proposal.id)!; row.status = "running";
+  f.dependencies["@/app/api/email/send/route"].POST = async () => { throw new Error("SMTP response lost"); };
+  await assert.rejects(() => f.executeAgentAction(proposal.id, proposal.action, viewer, request), /SMTP response lost/);
+  assert.equal((row.result as { stage: string }).stage, "sending");
+  await assert.rejects(() => f.executeAgentAction(proposal.id, proposal.action, viewer, request), /delivery needs checking/);
+  assert.equal(f.savedOrders.length, 1);
+});
+
+test("review matching tolerates JSONB key order while rejecting changed invoice money or payment details", () => {
+  const approved = { ...document, paymentMethods: [{ id: invoiceId, type: "paypal" as const, label: "PayPal", currency: "USD" as const, details: "Pay via PayPal", paymentUrl: "https://paypal.me/example" }] };
+  const actual = JSON.parse(JSON.stringify(approved));
+  actual.paymentMethods[0] = Object.fromEntries(Object.entries(actual.paymentMethods[0]).reverse());
+  assert.equal(orderActions.orderInvoiceMatchesReview(actual, approved), true);
+  actual.paymentMethods[0].paymentUrl = "https://paypal.me/changed";
+  assert.equal(orderActions.orderInvoiceMatchesReview(actual, approved), false);
+  assert.equal(orderActions.orderInvoiceMatchesReview({ ...approved, discountMinor: 1 }, approved), false);
+});
 
 test("preparation grounds explicit variant colors in the actual catalog before saving any review card", async () => {
   const f = executionFixture();
@@ -356,7 +463,8 @@ test("current payment methods reach the saved invoice and changed approved payme
   const [fresh] = await fixture.prepareAgentActions([{ type: "create_invoice", companyId, items: [{ productSku: "PLA", quantity: 200 }], details: { shippingMinor: 3900 } }], viewer, "ask");
   await fixture.executeAgentAction(actionId, fresh.action, viewer, request);
   assert.deepEqual(fixture.savedInvoices[0].paymentMethods, fixture.payments);
-  assert.equal(fixture.savedInvoices[0].shippingMinor, 3900);
+  assert.equal(fixture.savedInvoices[0].shippingMinor, 0);
+  assert.equal(fixture.savedInvoices[0].items.at(-1)?.unitPriceMinor, 3900);
 });
 
 test("flow creation is saved for approval and execution uses the current user's CRM flow service", async () => {

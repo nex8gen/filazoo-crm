@@ -1,0 +1,26 @@
+{
+  "date": "2026-11-07",
+  "rootCause": "Email/company scoped flows were excluded by the shared list used by the main UI and agent read/activation preparation.",
+  "flowId": "3f6d1d45-2834-4ac3-b5f6-8460e6cf051f",
+  "recipient": "souravmallick1111@gmail.com",
+  "observedStatus": "live",
+  "activation": "Existing signed-in application's Turn on action; no replacement flow created.",
+  "observedMainList": true,
+  "configuration": {
+    "trigger": "email_received",
+    "reentry": "every_event",
+    "waitMinutes": 5,
+    "action": "ai_auto_reply",
+    "replyInThread": true
+  },
+  "checks": {
+    "tests": 1682,
+    "failed": 0,
+    "lint": "passed",
+    "typecheck": "passed",
+    "productionBuild": "passed",
+    "liveGatewayPlanner": "scoped-flow-agent-20261107.json"
+  },
+  "manualTestEmailSent": false,
+  "codeEnvironment": "Running localhost CRM; no Vercel deployment triggered."
+}

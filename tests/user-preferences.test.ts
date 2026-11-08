@@ -12,7 +12,10 @@ test("preferences preserve valid saved fields and repair invalid or missing fiel
   assert.equal(saved.emailSignature, "Sales team");
   assert.equal(saved.emailMarkRead, false);
   assert.equal(saved.emailSyncSeconds, 15);
-  for (const input of [{ tablePageSize: 1000 }, { emailSyncSeconds: 1 }, { emailSignature: "x".repeat(2001) }, { emailMarkRead: "true" }]) {
+  assert.equal(saved.startPage, "/");
+  assert.equal(preferences.readUserPreferences({ startPage: "/analytics" }).startPage, "/analytics");
+  assert.equal(preferences.readUserPreferences({ startPage: "/email" }).startPage, "/email");
+  for (const input of [{ tablePageSize: 1000 }, { emailSyncSeconds: 1 }, { emailSignature: "x".repeat(2001) }, { emailMarkRead: "true" }, { startPage: "https://example.com" }]) {
     assert.equal(preferences.userPreferencesSchema.safeParse(input).success, false);
   }
 });

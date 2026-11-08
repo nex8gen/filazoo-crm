@@ -1,0 +1,19 @@
+{
+  "passed": true,
+  "provider": "vercel-ai-gateway",
+  "syntheticOnly": true,
+  "businessWrites": false,
+  "providerCalls": 1,
+  "reads": 0,
+  "contractVersion": "2026-11-07.2",
+  "actions": [
+    {
+      "type": "crm_action",
+      "operation": {
+        "op": "flow_status",
+        "flowId": "3f6d1d45-2834-4ac3-b5f6-8460e6cf051f",
+        "status": "live"
+      }
+    }
+  ]
+}

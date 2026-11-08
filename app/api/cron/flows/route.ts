@@ -13,10 +13,10 @@ export async function GET(request: Request) {
   // pg_net shares its HTTP batch with mail sync and other scheduled work.
   // Acknowledge promptly, then drain saved work within the function lifetime.
   after(async () => {
-    await forEachWorkspace(async (_workspaceId, count) => {
     const deadline = Date.now() + 240_000;
+    await forEachWorkspace(async (_workspaceId, count) => {
     const phases = [
-      { name: "workflows", run: () => processDueFlowRuns(50, { syncMailbox: task !== "resume", budgetMs: Math.max(5_000, Math.floor(180_000 / count)) }) },
+      { name: "workflows", run: () => processDueFlowRuns(50, { syncMailbox: task !== "resume", budgetMs: Math.max(5_000, Math.floor(180_000 / count)), actionDeadline: deadline }) },
       { name: "scheduled-email", run: async () => {
         const [{ processScheduledEmails }, { deliverEmail }] = await Promise.all([import("@/lib/data/email-delivery"), import("@/lib/data/manual-email-send")]);
         return processScheduledEmails(deliverEmail, { deadline });

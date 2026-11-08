@@ -100,7 +100,7 @@ test("provider errors explain missing billing, expired credentials, and regional
   assert.match(billing, /billing needs attention/);
   assert.doesNotMatch(billing, /keep using|existing Gemini/);
   assert.match(assistantProviderError(new Error("Authentication failed")), /refresh the Vercel/);
-  assert.match(assistantProviderError(new Error("User location is not supported")), /supported region/);
+  assert.match(assistantProviderError(new Error("User location is not supported")), /provider routing in Vercel AI Gateway/);
   assert.ok(!assistantProviderError(new Error("unknown request private-token-value")).includes("private-token-value"));
 });
 

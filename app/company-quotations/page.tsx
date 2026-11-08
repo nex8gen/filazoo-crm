@@ -14,7 +14,7 @@ export const metadata = { title: "Company Quotations" };
 export default async function CompanyCatalogsPage() {
   const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   const [{ mode, catalogs }, { companies }, { products }] = await Promise.all([listCatalogs(), listCompanyOptions(), listProducts()]);
-  const canWrite = true;
+  const canWrite = viewer.role !== "viewer";
   if (catalogs.some(catalog => !catalog.pdfUrl)) {
     // Saved catalogs may reference products beyond the general selector limit.
     // Resolve those exact SKUs before entering the request-independent callback.

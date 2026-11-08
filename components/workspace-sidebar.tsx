@@ -29,12 +29,11 @@ function subscribe(onChange: () => void) {
   };
 }
 
-function getExpanded() {
-  try { return window.localStorage.getItem(sidebarStorageKey) !== "false"; }
-  catch { return true; }
-}
-
-export function useWorkspaceSidebar() {
+export function useWorkspaceSidebar(storageKey = sidebarStorageKey) {
+  const getExpanded = useCallback(() => {
+    try { return window.localStorage.getItem(storageKey) !== "false"; }
+    catch { return true; }
+  }, [storageKey]);
   const expanded = useSyncExternalStore(subscribe, getExpanded, () => true);
   const isDesktop = useSyncExternalStore(subscribeDesktop, getDesktop, () => false);
   // Storage may be disabled by browser policy; keep the toggle usable in that case.
@@ -42,14 +41,15 @@ export function useWorkspaceSidebar() {
   const toggle = useCallback(() => {
     const next = !(fallback ?? expanded);
     try {
-      window.localStorage.setItem(sidebarStorageKey, String(next));
+      window.localStorage.setItem(storageKey, String(next));
       window.dispatchEvent(new Event(sidebarChangeEvent));
     } catch { setFallback(next); }
-  }, [expanded, fallback]);
+  }, [expanded, fallback, storageKey]);
   return { expanded: fallback ?? expanded, toggle, isDesktop };
 }
 
 export function itemIsActive(pathname: string, item: NavigationItem) {
+  if (item.excludePrefixes?.some(prefix => pathname === prefix || pathname.startsWith(`${prefix}/`))) return false;
   if (item.activePrefix && pathname.startsWith(item.activePrefix)) return true;
   if (item.href === "/" || item.exact) return pathname === item.href;
   return pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -58,7 +58,8 @@ export function itemIsActive(pathname: string, item: NavigationItem) {
 function SidebarGroup({ group, pathname, expanded }: { group: NavigationGroup; pathname: string; expanded: boolean }) {
   const [open, setOpen] = useState(false);
   const active = group.items.some(item => itemIsActive(pathname, item));
-  const rowClass = `workspace-sidebar-row ${active ? "is-active" : ""}`;
+  const rowActive = expanded && group.nested ? itemIsActive(pathname, group.items[0]) : active;
+  const rowClass = `workspace-sidebar-row ${rowActive ? "is-active" : ""}`;
   const icon = <group.icon aria-hidden="true" className="size-[18px] shrink-0" />;
 
   if (!expanded && !group.direct) {

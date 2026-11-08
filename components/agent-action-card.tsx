@@ -13,7 +13,7 @@ import { actionWorkProgress, type AgentWorkProgress } from "@/lib/ai/agent-progr
 import { crmOperationLabels } from "@/lib/ai/crm-tools";
 
 const crmFieldLabels: Record<string, string> = { dueAt: "Follow-up time", unitPriceMinor: "Unit price", totalMinor: "Total", paidMinor: "Already paid", amountMinor: "Payment amount", taxBps: "Tax rate", paymentPolicy: "Payment terms", preShipmentPercent: "Payment before shipment (%)" };
-const crmHiddenFields = new Set(["op", "version", "revision", "id", "companyId", "flowId", "orderId", "messageId", "mailboxId", "userId", "ownerId"]);
+const crmHiddenFields = new Set(["type", "fingerprint", "op", "version", "revision", "id", "companyId", "flowId", "orderId", "messageId", "mailboxId", "userId", "ownerId"]);
 function CrmDetails({ value, currency = "USD" }: { value: unknown; currency?: string }) {
   if (value === null || value === undefined || value === "") return <span className="text-muted-foreground">(empty)</span>;
   if (typeof value !== "object") return <span data-no-translate={typeof value === "boolean" ? undefined : true} className="whitespace-pre-wrap break-words">{typeof value === "boolean" ? value ? "Yes" : "No" : String(value)}</span>;
@@ -27,18 +27,41 @@ function FlowSettings({ config }: { config: JsonConfig }) {
   return <dl className="mt-1 space-y-1 text-muted-foreground">{Object.entries(config).filter(([, value]) => value !== null && value !== "").map(([key, value]) => <div key={key} className="whitespace-pre-wrap break-words"><dt className="inline capitalize">{key.replace(/([a-z])([A-Z])/g, "$1 $2")}: </dt><dd className="inline">{typeof value === "boolean" ? value ? "Yes" : "No" : String(value).replaceAll("_", " ")}</dd></div>)}</dl>;
 }
 
-export function AgentActionCard({ proposal, result, executing, progress, disabled, onApprove, onDecline }: {
+export function AgentActionCard({ proposal, result, executing, progress, disabled, onApprove, onDecline, onCheck, onResume, onChildApprove, onChildDecline, onChildCheck, onChildResume }: {
   proposal: AgentProposal; result?: AgentActionResult; executing: boolean; disabled: boolean;
   onApprove: () => void; onDecline: () => void;
+  onCheck?: () => void;
+  onResume?: () => void;
+  onChildApprove?: (proposal: AgentProposal) => void;
+  onChildDecline?: (proposal: AgentProposal) => void;
+  onChildCheck?: (proposal: AgentProposal) => void;
+  onChildResume?: (proposal: AgentProposal) => void;
   progress?: AgentWorkProgress;
 }) {
   const { action } = proposal;
+  if (action.type === "run_workflow") return <div className="space-y-3 rounded-xl border bg-muted/30 p-3.5">
+    <p className="text-sm font-semibold">Connected workflow</p>
+    <p className="text-xs text-muted-foreground">{result?.workflow ? `${result.workflow.completed} of ${result.workflow.total} steps completed` : `${action.steps.length} steps ready`}</p>
+    <ol className="space-y-3">{action.steps.map((step, index) => {
+      const prepared = action.preparedSteps.find(value => value.step === step.id);
+      const saved = result?.workflow?.steps.find(value => value.id === step.id);
+      return <li key={step.id} className="rounded-lg border bg-background p-3 text-xs"><p className="font-medium capitalize">{index + 1}. {step.tool.replaceAll("_", " ")}{saved ? ` · ${saved.status}` : ""}</p>
+        {!result?.status ? <details className="mt-2"><summary className="cursor-pointer text-muted-foreground">Review step details</summary><div className="mt-2"><CrmDetails value={prepared?.action ?? step.input} /></div>{step.bindings.length ? <p className="mt-2 text-muted-foreground">Uses a saved result from an earlier step. Additional review may be needed when its details are available.</p> : null}</details> : null}
+        {saved?.href ? <Link href={saved.href} className="mt-2 inline-block underline underline-offset-4">Open result</Link> : null}</li>;
+    })}</ol>
+    {result?.success ? <p role="status" className="text-xs text-muted-foreground">{result.success}</p> : null}
+    {result?.error ? <p role="status" className="text-xs text-muted-foreground">{result.error}</p> : null}
+    {result?.awaitingAction ? <AgentActionCard proposal={result.awaitingAction} result={result.awaitingResult} executing={false} disabled={disabled} onApprove={() => onChildApprove?.(result.awaitingAction!)} onDecline={() => onChildDecline?.(result.awaitingAction!)} onCheck={() => onChildCheck?.(result.awaitingAction!)} onResume={() => onChildResume?.(result.awaitingAction!)} /> : null}
+    {!result?.status && !executing ? <div className="flex gap-2"><Button size="sm" disabled={disabled} onClick={onApprove}>Approve workflow</Button><Button size="sm" variant="outline" disabled={disabled} onClick={onDecline}>Decline</Button></div> : null}
+    {result?.canResume && !executing && onResume ? <Button size="sm" variant="outline" disabled={disabled} onClick={onResume}>Continue remaining work</Button> : null}
+    {executing ? <p role="status" className="text-xs text-muted-foreground">Completing workflow steps…</p> : null}
+  </div>;
   const company = action.type === "create_company" ? action.company : null;
   const document = "document" in action ? action.document : null;
   const email = "email" in action ? action.email : null;
   const profile = action.type === "update_company" || action.type === "add_company_note" ? action : null;
   const flow = action.type === "create_flow" ? action.flow : null;
-  const title = flow ? flow.status === "live" ? "Create live workflow" : "Create draft workflow" : company ? "Create company" : profile ? action.type === "update_company" ? "Update customer profile" : "Add customer note" : action.type === "create_invoice" ? "Create draft invoice" : action.type === "update_invoice" ? "Update draft invoice" : email?.delivery === "draft" ? "Prepare email draft" : "Send email";
+  const title = flow ? flow.status === "live" ? "Create live workflow" : "Create draft workflow" : company ? "Create company" : profile ? action.type === "update_company" ? "Update customer profile" : "Add customer note" : action.type === "create_invoice" ? action.order ? "Create order and draft invoice" : "Create draft invoice" : action.type === "update_invoice" ? "Update draft invoice" : email?.delivery === "draft" ? "Prepare email draft" : "Send email";
   const finished = Boolean(result?.status || result?.success || result?.error);
   const crmAction = action.type === "crm_action" ? action : null;
   return <div className="rounded-xl border bg-muted/30 p-3.5">
@@ -61,9 +84,11 @@ export function AgentActionCard({ proposal, result, executing, progress, disable
     </div> : null}
     {email ? <div className="mt-3 space-y-2 rounded-lg border bg-background p-3 text-xs"><p className="font-medium">{email.delivery === "draft" ? "Email draft" : "Send email"}{document ? " with invoice PDF" : ""}</p><p className="break-all">To: {email.to}</p><p>Subject: {email.subject}</p>{email.attachCatalog ? <p>Attachment: Filazoo quotation PDF · {email.catalogSnapshot?.productSkus.length} active products · Current saved prices and photos</p> : null}{email.quotationId ? <p>Attachment: saved quotation PDF · {email.quotationId} · Revision {email.quotationSnapshot?.revision}</p> : null}<p className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words leading-5">{email.text}</p></div> : null}
     {executing || result?.status === "running" ? <p className="mt-3 flex items-center gap-2 text-xs"><LoaderCircle aria-hidden="true" className="size-3.5 animate-spin motion-reduce:animate-none" /><AgentWorkIcon area={(progress ?? actionWorkProgress(action)).area} />{executing ? (progress ?? actionWorkProgress(action)).label : "Action is running. Reopen History to check its result."}</p> : null}
-    {result?.status ? <p className="mt-2 text-[10px] capitalize text-muted-foreground">{result.status}{result.approval ? ` · ${result.approval === "auto" ? "Automatic approval" : "Manually approved"}` : ""}{result.finishedAt ? ` · ${new Date(result.finishedAt).toLocaleString(undefined, { timeZone: "Asia/Shanghai" })}` : ""}</p> : null}
+    {result?.status ? <p className="mt-2 text-[10px] capitalize text-muted-foreground">{result.status === "failed" ? "Needs attention" : result.status === "unknown" ? "Checking needed" : result.status}{result.approval ? ` · ${result.approval === "auto" ? "Automatic approval" : "Manually approved"}` : ""}{result.finishedAt ? ` · ${new Date(result.finishedAt).toLocaleString(undefined, { timeZone: "Asia/Shanghai" })}` : ""}</p> : null}
     {result?.success ? <p className="mt-3 flex items-start gap-1.5 text-xs text-emerald-700 dark:text-emerald-300"><Check className="mt-0.5 size-3.5 shrink-0" />{result.success}</p> : null}
-    {result?.error ? <p role="alert" className="mt-2 text-xs leading-5 text-destructive">{result.error}</p> : null}
+    {result?.error ? <p role="status" className="mt-2 text-xs leading-5 text-muted-foreground">{result.error}</p> : null}
+    {!executing && result?.status === "failed" && result.canResume && onResume ? <Button type="button" variant="outline" size="sm" className="mt-3" disabled={disabled} onClick={onResume}>Resume remaining work</Button> : null}
+    {!executing && onCheck && ["running", "unknown"].includes(result?.status ?? "") ? <Button type="button" variant="outline" size="sm" className="mt-3" disabled={disabled} onClick={onCheck}>Check saved result</Button> : null}
     {result?.href && crmAction && ["export_companies", "download_document"].includes(crmAction.operation.op) ? <a href={result.href} download className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-primary underline underline-offset-4">Download file<ExternalLink className="size-3" /></a> : result?.href ? <Link href={result.href} onClick={(event) => {
       if (result.draftMessage && window.document.querySelector(".messenger-workspace")) {
         event.preventDefault();

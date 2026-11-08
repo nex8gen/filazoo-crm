@@ -2,9 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { ChatBodyTooLargeError, MAX_CHAT_BODY_BYTES, MAX_IMAGE_BYTES, chatImageSchema, chatImageLimitError, collectChatImages, readChatRequestBody } from "../lib/ai/image-input.ts";
 import { companyChatSchema } from "../lib/ai/company-chat.ts";
-import { buildWorkspaceAssistantPrompt, extractWorkspaceActions, workspaceAssistantInstruction, workspaceAssistantSchema } from "../lib/ai/workspace-assistant.ts";
-import { generateGeminiText } from "../lib/ai/gemini.ts";
-import { generateGatewayText, isGeminiRegionError } from "../lib/ai/gateway.ts";
+import { buildWorkspaceAssistantPrompt, workspaceAssistantInstruction, workspaceAssistantSchema } from "../lib/ai/workspace-assistant.ts";
+import { generateGatewayText } from "../lib/ai/gateway.ts";
 
 const image = { name: "shipping-address.png", dataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1kAAAAASUVORK5CYII=" };
 const messages = [{ role: "user" as const, content: "Use the shipping address in this image for this customer.", images: [image] }];
@@ -47,29 +46,9 @@ test("keeps image bytes out of text prompts and preserves image-to-turn referenc
   assert.match(workspaceAssistantInstruction("work", "now"), /normal action protocol and approval settings/);
 });
 
-test("Gemini receives real inline image parts alongside the action prompt", async () => {
-  let body: Record<string, unknown> = {};
-  const output = await generateGeminiText({
-    apiKey: "test", systemInstruction: "Use images as evidence.", prompt: "Update the customer from the image.", images: collectChatImages(messages),
-    fetcher: async (_input, init) => {
-      body = JSON.parse(String(init?.body));
-      return Response.json({ candidates: [{ content: { parts: [{ text: 'Review this address.\nFILAZOO_ACTIONS_JSON: [{"type":"update_company","companyId":"11111111-1111-4111-8111-111111111111","changes":{"commerce":{"shippingAddress":"42 Test Road"}}}]' }] } }] });
-    },
-  });
-  const parts = (body.contents as Array<{ parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> }>)[0].parts;
-  assert.equal(parts[0].text, "Update the customer from the image.");
-  assert.match(parts[1].text!, /Message 1, image 1/);
-  assert.deepEqual(parts[2].inlineData, { mimeType: "image/png", data: image.dataUrl.split(",")[1] });
-  assert.equal(extractWorkspaceActions(output).actions[0]?.type, "update_company");
-});
-
-test("regional fallback keeps image content and selects a vision-capable gateway model", async () => {
+test("Gateway keeps image content and selects a vision-capable gateway model", async () => {
   let body: { model: string; input: Array<{ content: Array<{ type: string; image_url?: string }> }> } | undefined;
   const images = collectChatImages(messages);
-  try {
-    await generateGeminiText({ apiKey: "test", systemInstruction: "Read image", prompt: "Read", images, fetcher: async () => Response.json({ error: { message: "User location is not supported" } }, { status: 400 }) });
-    assert.fail("Expected a regional error");
-  } catch (error) { assert.equal(isGeminiRegionError(error), true); }
   await generateGatewayText({ token: "test", model: "text-only-model", systemInstruction: "Read image", prompt: "Read", images, fetcher: async (_input, init) => {
     body = JSON.parse(String(init?.body));
     return Response.json({ output: [{ type: "message", content: [{ type: "output_text", text: "Address extracted" }] }] });

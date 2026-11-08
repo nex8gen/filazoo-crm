@@ -21,7 +21,7 @@ const links = load<typeof import("../lib/customer-portal-links.ts")>("lib/custom
 const draft: invoices.Invoice = {
   id: "c58b80f9-b3c5-4c85-bb80-9c88a38a04dd", number: 4, status: "draft", revision: 1,
   created_at: "", updated_at: "", total_minor: 100, paid_minor: 0,
-  document: { ...invoices.blankInvoiceDocument("2026-10-26"), customerEmail: "buyer@example.test", items: [{ description: "Test", quantity: 1, unitPriceMinor: 100, taxBps: 0 }] },
+  document: { ...invoices.blankInvoiceDocument("2026-10-26"), purchaseOrderId: "083bb9b2-a99d-461e-aba2-c3d571598174", customerEmail: "buyer@example.test", items: [{ description: "Test", quantity: 1, unitPriceMinor: 100, taxBps: 0 }] },
 };
 
 test("saved draft QR credentials stay usable after issue, payment and void", () => {
@@ -41,9 +41,10 @@ test("invoice QR links remain reachable from a phone when generated locally", ()
   assert.equal(new URL(local.customerPortalUrl(draft)!).origin, "https://crm.filazoosupply.com");
 });
 
-test("creating, saving, listing and reopening a draft all return its QR immediately", async () => {
+test("PO-linked draft creation, saving, listing and reopening return the same QR; standalone creation is rejected", async () => {
   const query: Record<string, unknown> = {};
-  for (const name of ["select", "order", "eq", "insert"]) query[name] = () => query;
+  let inserts = 0;
+  for (const name of ["select", "order", "eq", "insert"]) query[name] = () => { if (name === "insert") inserts++; return query; };
   query.single = query.maybeSingle = async () => ({ data: structuredClone(draft), error: null });
   query.range = async () => ({ data: [structuredClone(draft)], error: null, count: 1 });
   const data = load<typeof import("../lib/data/invoices.ts")>("lib/data/invoices.ts", {
@@ -53,7 +54,12 @@ test("creating, saving, listing and reopening a draft all return its QR immediat
     "../invoice-links": {}, "./cached-member-avatars": {}, "../profile-avatar": {},
   });
   const expected = links.customerPortalUrl(draft);
-  assert.equal((await data.createInvoice(draft.document, "staff")).customer_portal_url, expected);
+  await assert.rejects(data.createInvoice({ ...draft.document, purchaseOrderId: undefined }, "staff"), { code: "P0001" });
+  assert.equal(inserts, 0, "a standalone invoice cannot reach the database insert");
+  const created = await data.createInvoice(draft.document, "staff");
+  assert.equal(created.document.purchaseOrderId, draft.document.purchaseOrderId);
+  assert.equal(created.customer_portal_url, expected);
+  assert.equal(inserts, 1);
   assert.equal((await data.mutateInvoice(draft.id, "staff", { action: "save", document: draft.document })).customer_portal_url, expected);
   assert.equal((await data.getInvoice(draft.id))?.customer_portal_url, expected);
   assert.equal((await data.listInvoices()).invoices[0].customer_portal_url, expected);

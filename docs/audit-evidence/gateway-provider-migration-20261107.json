@@ -1,0 +1,33 @@
+{
+  "checkedAt": "2026-11-07",
+  "project": "filazoo-crm",
+  "provider": "vercel-ai-gateway",
+  "directProviderRemoved": true,
+  "vercelRemovedVariables": [
+    "GEMINI_API_KEY",
+    "GEMINI_EMAIL_MODEL"
+  ],
+  "verifiedRemainingGeminiVariables": 0,
+  "localGatewayOidcRefreshed": true,
+  "verification": {
+    "tests": 1679,
+    "failed": 0,
+    "lint": "passed",
+    "typecheck": "passed",
+    "productionBuild": "passed",
+    "syntheticTwoToolPlans": 3481,
+    "liveSyntheticPlannerCases": [
+      "new-customer-and-task",
+      "existing-customer-task-and-note",
+      "new-flow-and-status",
+      "order-invoice-pdf-email"
+    ],
+    "liveBusinessWrites": false,
+    "customerEmailsSent": 0
+  },
+  "deployment": "Local code changes have not been deployed. Vercel environment removals are saved for future deployments.",
+  "receipts": [
+    "general-agent-workflows-20261107.json",
+    "order-agent-workflow-20261107.json"
+  ]
+}

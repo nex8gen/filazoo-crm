@@ -177,16 +177,16 @@ function workerFixture(options: { denied?: boolean; current?: string; manual?: b
       if (options.hydrate) return { body: mailbox.id === "other-mailbox" ? "Latest customer response from the second account" : message().body, bodyLoaded: true };
       throw new Error("No body download expected");
     } },
-    "../ai/gemini": { generateGeminiText: async (input: { prompt: string; maxOutputTokens: number; onUsage: (value: unknown) => void }) => {
+
+    "../ai/gateway": { generateGatewayText: async (input: { prompt: string; maxOutputTokens: number; onUsage: (value: unknown) => void }) => {
       calls.provider++; calls.prompt = input.prompt; calls.outputBudget = input.maxOutputTokens; input.onUsage({ inputTokens: 250, outputTokens: 80, cachedInputTokens: 100 });
       if (options.providerFails) throw new Error("Provider unavailable"); return JSON.stringify(decision());
     } },
-    "../ai/gateway": { generateGatewayText: async () => { throw new Error("Unexpected fallback"); }, isGeminiRegionError: () => false },
   };
   const exports = {} as typeof import("../lib/data/conversation-tagging.ts");
   vm.runInNewContext(ts.transpileModule(readFileSync(new URL("../lib/data/conversation-tagging.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, {
     exports, require: (name: string) => { if (name === "server-only") return {}; if (name in dependencies) return dependencies[name]; throw new Error(`Unexpected capability ${name}`); },
-    process: { env: { GEMINI_API_KEY: "synthetic-test-key" } }, Date, Map, Set, AbortSignal, fetch,
+    process: { env: { AI_GATEWAY_API_KEY: "synthetic-test-key" } }, Date, Map, Set, AbortSignal, fetch,
   });
   return { run: () => exports.processAutomaticConversationTags({ budgetMs: 100_000 }), calls, bodyMailboxes };
 }

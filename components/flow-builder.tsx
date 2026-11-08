@@ -45,7 +45,7 @@ import { TablePagination } from "@/components/ui/table-pagination";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  emailFlowScope, blankStep, cloneFlowStep, companyStatuses, defaultFlowInput, emailCategories, flowInputSchema, flowLeadLists, formatTrigger, stepLabels, stepTypes,
+  emailFlowScope, isEmailScopedFlow, blankStep, cloneFlowStep, companyStatuses, defaultFlowInput, emailCategories, flowInputSchema, flowLeadLists, formatTrigger, stepLabels, stepTypes,
   triggerLabels, triggerTypes, type AutomationFlow, type FlowInput, type FlowStatus, type FlowStepType,
   type JsonConfig, type TriggerType, type FlowBulkAction, type FlowBulkResult,
 } from "@/lib/flows";
@@ -57,6 +57,7 @@ import {
 const LazyScenarioLab = lazy(() => import("@/components/flow-scenario-lab").then((module) => ({ default: module.FlowScenarioLab })));
 const LazyStarterDialog = lazy(() => import("@/components/flow-starter-dialog").then((module) => ({ default: module.FlowStarterDialog })));
 const LazyJourneyPreview = lazy(() => import("@/components/flow-journey-preview").then((module) => ({ default: module.FlowJourneyPreview })));
+const LazyFlowCheckDialog = lazy(() => import("@/components/flow-check-dialog").then((module) => ({ default: module.FlowCheckDialog })));
 const LazyEmailTestDialog = lazy(() => import("@/components/flow-email-test-dialog").then((module) => ({ default: module.FlowEmailTestDialog })));
 
 function FlowJourneyPreview(props: ComponentProps<typeof LazyJourneyPreview>) {
@@ -601,7 +602,7 @@ function FlowCanvas({ draft, selection, insertAt, canEdit, setSelection, setInse
   </main>;
 }
 
-export function FlowBuilder({ initialFlows, mailboxOptions, memberOptions, initialFlowId, canEdit: canCreate, viewerId, isAdmin = false, filterOptions, initialDraft, scopedContext }: { initialFlows: AutomationFlow[]; mailboxOptions: FlowMailboxOption[]; memberOptions: Option[]; initialFlowId?: string; canEdit: boolean; viewerId: string; isAdmin?: boolean; filterOptions: FilterOptions; initialDraft?: FlowInput; scopedContext?: { config: JsonConfig; refreshUrl: string; returnHref: string } }) {
+export function FlowBuilder({ initialFlows, mailboxOptions, memberOptions, initialFlowId, canEdit: canCreate, viewerId, viewerEmail, isAdmin = false, filterOptions, initialDraft, scopedContext }: { initialFlows: AutomationFlow[]; mailboxOptions: FlowMailboxOption[]; memberOptions: Option[]; initialFlowId?: string; canEdit: boolean; viewerId: string; viewerEmail?: string | null; isAdmin?: boolean; filterOptions: FilterOptions; initialDraft?: FlowInput; scopedContext?: { config: JsonConfig; refreshUrl: string; returnHref: string } }) {
   const { t } = useLanguage();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const [flows, setFlows] = useState(initialFlows);
@@ -610,6 +611,7 @@ export function FlowBuilder({ initialFlows, mailboxOptions, memberOptions, initi
   const [deletingFlow, setDeletingFlow] = useState<AutomationFlow | null>(null);
   const actionBusy = useRef(false);
   const initial = initialFlowId === "default" ? initialFlows.find((flow) => flow.name === "3-step follow-up" && flow.createdBy === viewerId) : initialFlows.find((flow) => flow.id === initialFlowId);
+  const [listTab, setListTab] = useState<"workspace" | "email">(initial && isEmailScopedFlow(initial.triggerConfig) ? "email" : "workspace");
   const [draft, setDraft] = useState<DraftFlow | null>(initial ? toDraft(initial) : initialDraft ? { ...initialDraft, id: null } : null);
   const [view, setView] = useState<"list" | "builder">(initial || initialDraft ? "builder" : "list");
   const [selection, updateSelection] = useState<Selection>("trigger");
@@ -622,6 +624,8 @@ export function FlowBuilder({ initialFlows, mailboxOptions, memberOptions, initi
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState("");
   const [emailTestOpen, setEmailTestOpen] = useState(false);
+  const [deliveryTestRequested, setDeliveryTestRequested] = useState(false);
+  const [quickCheckOpen, setQuickCheckOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewResult, setPreviewResult] = useState<FlowPreviewResult | null>(null);
   const [emailTestPath, setEmailTestPath] = useState<number[] | undefined>(undefined);
@@ -792,13 +796,13 @@ export function FlowBuilder({ initialFlows, mailboxOptions, memberOptions, initi
     }
   }
 
-  if (view === "list" || !draft) return <><FlowListView flows={flows} canEdit={canCreate} viewerId={viewerId} isAdmin={isAdmin} memberOptions={memberOptions} scopedContext={scopedContext} onBulkAction={runBulkAction} onCreate={() => { if (!scopedContext) { setStarterOpen(true); return; } setDraft(initialDraft ? { ...initialDraft, id: null, triggerConfig: { ...initialDraft.triggerConfig }, steps: initialDraft.steps.map((step) => ({ ...step, id: crypto.randomUUID(), config: { ...step.config } })) } : newDraft()); setSelection("trigger"); setView("builder"); }} onOpen={openFlow} onDuplicate={duplicateFlow} onChangeStatus={changeStatus} onRemove={async (flow) => { setDeletingFlow(flow); }} />{starterOpen ? <Suspense fallback={null}><LazyStarterDialog viewerId={viewerId} onOpenChange={setStarterOpen} onChoose={(flow) => { setDraft({ ...flow, id: null }); setSelection("trigger"); setView("builder"); setErrors({}); setNotice(""); setStarterOpen(false); }} /></Suspense> : null}<ConfirmActionDialog open={Boolean(deletingFlow)} onOpenChange={(open) => { if (!open) setDeletingFlow(null); }} title="Delete workflow?" description={`Delete “${deletingFlow?.name ?? ""}” and its run history? This cannot be undone.`} onConfirm={async () => { if (deletingFlow) await removeFlow(deletingFlow); }} /></>;
+  if (view === "list" || !draft) return <><FlowListView listTab={listTab} onTabChange={setListTab} flows={flows} canEdit={canCreate} viewerId={viewerId} isAdmin={isAdmin} memberOptions={memberOptions} scopedContext={scopedContext} onBulkAction={runBulkAction} onCreate={() => { if (!scopedContext) { setStarterOpen(true); return; } setDraft(initialDraft ? { ...initialDraft, id: null, triggerConfig: { ...initialDraft.triggerConfig }, steps: initialDraft.steps.map((step) => ({ ...step, id: crypto.randomUUID(), config: { ...step.config } })) } : newDraft()); setSelection("trigger"); setView("builder"); }} onOpen={openFlow} onDuplicate={duplicateFlow} onChangeStatus={changeStatus} onRemove={async (flow) => { setDeletingFlow(flow); }} />{starterOpen ? <Suspense fallback={null}><LazyStarterDialog viewerId={viewerId} onOpenChange={setStarterOpen} onChoose={(flow) => { setDraft({ ...flow, id: null }); setSelection("trigger"); setView("builder"); setErrors({}); setNotice(""); setStarterOpen(false); }} /></Suspense> : null}<ConfirmActionDialog open={Boolean(deletingFlow)} onOpenChange={(open) => { if (!open) setDeletingFlow(null); }} title="Delete workflow?" description={`Delete “${deletingFlow?.name ?? ""}” and its run history? This cannot be undone.`} onConfirm={async () => { if (deletingFlow) await removeFlow(deletingFlow); }} /></>;
 
   const selectedStep = selectedLocation?.action;
   const savedFlow = flows.find((flow) => flow.id === draft.id);
   const hasUnsavedChanges = !savedFlow || JSON.stringify(draft) !== JSON.stringify(toDraft(savedFlow));
   return <div data-ai-flow-id={draft.id} data-ai-flow-draft={JSON.stringify({ name: draft.name, triggerType: draft.triggerType, triggerConfig: draft.triggerConfig, status: draft.status, steps: draft.steps })} data-ai-flow-unsaved={hasUnsavedChanges} data-ai-flow-step-id={selection} className="flex h-full min-h-0 flex-col overflow-hidden bg-muted/20 [&>header]:static! [&>header]:shrink-0">
-    <header className="sticky top-0 z-20 flex min-h-14 flex-wrap items-center gap-3 border-b bg-background/95 px-4 py-2 backdrop-blur"><button type="button" onClick={() => { if (scopedContext) window.location.assign(scopedContext.returnHref); else setView("list"); }} className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"><ArrowLeft className="size-3.5" />{scopedContext ? "Email" : "Workflow"}</button><ChevronRight className="size-3.5 text-muted-foreground" /><Input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} aria-label="Workflow name" className="h-8 min-w-0 flex-1 sm:w-64 sm:flex-none border-transparent px-2 text-sm font-semibold hover:border-input focus:border-input" disabled={!canEdit || previewOpen} /><Badge variant={statusVariant(draft.status)} className="capitalize">{draft.status}</Badge><span className="hidden text-xs text-muted-foreground xl:inline">{flowActionLocations(draft.steps).length} actions · {draft.activeRuns || 0} active</span><div className="ml-auto flex w-full flex-wrap items-center gap-2 sm:w-auto max-sm:[&_svg]:hidden">{previewOpen ? <Button variant="outline" size="sm" onClick={() => { setPreviewOpen(false); setPreviewResult(null); }}>Exit preview</Button> : <><DropdownMenu><DropdownMenuTrigger render={<Button variant="outline" size="sm" />}><ListFilter />Test workflow</DropdownMenuTrigger><DropdownMenuContent align="end" className="w-52"><DropdownMenuItem onClick={() => setAuditOpen(true)} disabled={!canEdit}><AiIcon />Audit workflow</DropdownMenuItem><DropdownMenuItem onClick={() => setScenarioLabOpen(true)}><ListFilter />Test scenarios</DropdownMenuItem><DropdownMenuItem onClick={() => { setEmailTestPath(undefined); setEmailTestOpen(true); }} disabled={!canCreate}><Mail />Test with emails</DropdownMenuItem></DropdownMenuContent></DropdownMenu><Button variant="outline" size="sm" onClick={() => { setPreviewOpen(true); setPreviewResult(null); setInsertAt(null); setMobileBuilderPanel("settings"); }}><Eye />Preview</Button><Button variant="outline" size="sm" onClick={() => void persist(draft.status)} disabled={!canEdit || saving}><Save />{saving ? "Saving…" : "Save"}</Button>{draft.status === "live" ? <Button size="sm" variant="secondary" onClick={() => void persist("paused")} disabled={!canEdit || saving}><Pause />Pause</Button> : <Button size="sm" onClick={() => void persist("live")} disabled={!canEdit || saving}><Play />Turn on</Button>}</>}</div></header>
+    <header className="sticky top-0 z-20 flex min-h-14 flex-wrap items-center gap-3 border-b bg-background/95 px-4 py-2 backdrop-blur"><button type="button" onClick={() => { if (scopedContext) window.location.assign(scopedContext.returnHref); else setView("list"); }} className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"><ArrowLeft className="size-3.5" />{scopedContext ? "Email" : "Workflow"}</button><ChevronRight className="size-3.5 text-muted-foreground" /><Input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} aria-label="Workflow name" className="h-8 min-w-0 flex-1 sm:w-64 sm:flex-none border-transparent px-2 text-sm font-semibold hover:border-input focus:border-input" disabled={!canEdit || previewOpen} /><Badge variant={statusVariant(draft.status)} className="capitalize">{draft.status}</Badge><span className="hidden text-xs text-muted-foreground xl:inline">{flowActionLocations(draft.steps).length} actions · {draft.activeRuns || 0} active</span><div className="ml-auto flex w-full flex-wrap items-center gap-2 sm:w-auto max-sm:[&_svg]:hidden">{previewOpen ? <Button variant="outline" size="sm" onClick={() => { setPreviewOpen(false); setPreviewResult(null); }}>Exit preview</Button> : <><Button variant="outline" size="sm" onClick={() => setQuickCheckOpen(true)}><CheckCircle2 />Quick test</Button><DropdownMenu><DropdownMenuTrigger render={<Button variant="outline" size="sm" />}><ListFilter />More tests</DropdownMenuTrigger><DropdownMenuContent align="end" className="w-52"><DropdownMenuItem onClick={() => setAuditOpen(true)} disabled={!canEdit}><AiIcon />Audit workflow</DropdownMenuItem><DropdownMenuItem onClick={() => setScenarioLabOpen(true)}><ListFilter />Simulate scenarios</DropdownMenuItem><DropdownMenuItem onClick={() => { setEmailTestPath(undefined); setEmailTestOpen(true); }} disabled={!canCreate}><Mail />Test with emails</DropdownMenuItem></DropdownMenuContent></DropdownMenu><Button variant="outline" size="sm" onClick={() => { setPreviewOpen(true); setPreviewResult(null); setInsertAt(null); setMobileBuilderPanel("settings"); }}><Eye />Preview</Button><Button variant="outline" size="sm" onClick={() => void persist(draft.status)} disabled={!canEdit || saving}><Save />{saving ? "Saving…" : "Save"}</Button>{draft.status === "live" ? <Button size="sm" variant="secondary" onClick={() => void persist("paused")} disabled={!canEdit || saving}><Pause />Pause</Button> : <Button size="sm" onClick={() => void persist("live")} disabled={!canEdit || saving}><Play />Turn on</Button>}</>}</div></header>
     {scopedContext ? <div className="flex items-center gap-3 border-b bg-background px-4 py-2 text-xs"><span className="min-w-0 flex-1 truncate">{String(scopedContext.config.scopeLabel)}</span><Button size="sm" variant="ghost" onClick={() => setView("list")}>Manage email workflows</Button></div> : null}
     {!canEdit ? <div className="border-b bg-amber-50 px-4 py-2 text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">{canCreate ? "Shared workflow is read-only. Its creator or an administrator can change it." : "Viewer access is read-only."}</div> : null}
     <div className="flex shrink-0 gap-2 border-b bg-background px-4 py-2 md:hidden" role="group" aria-label="Workflow workspace view">
@@ -820,15 +824,18 @@ export function FlowBuilder({ initialFlows, mailboxOptions, memberOptions, initi
     </div>
     <FlowPaletteOverlay />
     </DndContext>
+    {quickCheckOpen ? <Suspense fallback={null}><LazyFlowCheckDialog flow={draft} flowId={draft.id} onOpenChange={setQuickCheckOpen} onDeliveryTest={() => { setQuickCheckOpen(false); setDeliveryTestRequested(true); setEmailTestPath(undefined); setEmailTestOpen(true); }} /></Suspense> : null}
     {scenarioLabOpen ? <Suspense fallback={null}><LazyScenarioLab flow={draft} onOpenChange={setScenarioLabOpen} /></Suspense> : null}
-    {emailTestOpen ? <FlowEmailTestDialog key={emailTestPath?.join("-") || "journey"} flow={draft} messageStepPath={emailTestPath} sample={previewOpen && previewResult ? { facts: previewResult.facts, customerName: previewResult.customer?.name, email: previewResult.customer?.email } : undefined} open={emailTestOpen} onOpenChange={setEmailTestOpen} /> : null}
+    {emailTestOpen ? <FlowEmailTestDialog key={emailTestPath?.join("-") || "journey"} flow={draft} initialSendReal={deliveryTestRequested} defaultRecipient={viewerEmail} messageStepPath={emailTestPath} sample={previewOpen && previewResult ? { facts: previewResult.facts, customerName: previewResult.customer?.name, email: previewResult.customer?.email } : undefined} open={emailTestOpen} onOpenChange={(open) => { setEmailTestOpen(open); if (!open) setDeliveryTestRequested(false); }} /> : null}
 
     <Dialog open={auditOpen} onOpenChange={setAuditOpen}><DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle className="flex items-center gap-2"><AiIcon className="size-4 text-violet-600" />Workflow audit</DialogTitle><DialogDescription>Checks configuration, B2B safety, message pressure, and customer experience before launch.</DialogDescription></DialogHeader><div className="max-h-[55vh] space-y-2 overflow-auto">{auditFindings.map((finding) => <AuditRow key={finding.id} severity={finding.severity} label={`${finding.label}${finding.step ? ` · step ${finding.step}` : ""}`} />)}</div>{notice ? <p role="status" className="text-xs text-muted-foreground">{notice}</p> : null}<DialogFooter showCloseButton><Button onClick={() => { setAuditOpen(false); if (!auditCanLaunch) setNotice("Resolve blocking audit findings before turning on this workflow."); }}><Check />{auditCanLaunch ? "Audit passed" : "Review findings"}</Button></DialogFooter></DialogContent></Dialog>
   </div>;
 }
 
-function FlowListView({ flows, canEdit, viewerId, isAdmin, memberOptions, onCreate, onOpen, onDuplicate, onChangeStatus, onRemove, onBulkAction, scopedContext }: {
+function FlowListView({ flows: allFlows, listTab, onTabChange, canEdit, viewerId, isAdmin, memberOptions, onCreate, onOpen, onDuplicate, onChangeStatus, onRemove, onBulkAction, scopedContext }: {
   scopedContext?: { config: JsonConfig; returnHref: string };
+  listTab: "workspace" | "email";
+  onTabChange: (tab: "workspace" | "email") => void;
   flows: AutomationFlow[];
   canEdit: boolean;
   viewerId: string;
@@ -842,21 +849,27 @@ function FlowListView({ flows, canEdit, viewerId, isAdmin, memberOptions, onCrea
   onBulkAction: (ids: string[], action: FlowBulkAction) => Promise<FlowBulkResult[]>;
 }) {
   const { language, t } = useLanguage();
+  const emailFlows = allFlows.filter(flow => isEmailScopedFlow(flow.triggerConfig));
+  const workspaceFlows = allFlows.filter(flow => !isEmailScopedFlow(flow.triggerConfig));
+  const flows = scopedContext ? allFlows : listTab === "email" ? emailFlows : workspaceFlows;
   const memberLabels = new Map(memberOptions.map((member) => [member.id, member.label]));
   const liveFlows = flows.filter((flow) => flow.status === "live").length;
   const activeRuns = flows.reduce((total, flow) => total + (flow.activeRuns || 0), 0);
   const completedRuns = flows.reduce((total, flow) => total + (flow.completedRuns || 0), 0);
   const dateFormatter = new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" });
   const [page, setPage] = useState(1);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkBusy, setBulkBusy] = useState(false);
   const bulkBusyRef = useRef(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [bulkErrors, setBulkErrors] = useState<Array<{ id: string; error: string }>>([]);
   const pageSize = 25;
-  const pageCount = Math.max(1, Math.ceil(flows.length / pageSize));
+  const filteredFlows = flows.filter(flow => (statusFilter === "all" || flow.status === statusFilter) && `${flow.name} ${String(flow.triggerConfig.scopeLabel || "")} ${formatTrigger(flow.triggerType, flow.triggerConfig)} ${memberLabels.get(flow.createdBy) ?? ""}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+  const pageCount = Math.max(1, Math.ceil(filteredFlows.length / pageSize));
   const currentPage = Math.min(page, pageCount);
-  const visibleFlows = flows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const visibleFlows = filteredFlows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const canManage = (flow: AutomationFlow) => canEdit && (isAdmin || flow.createdBy === viewerId);
   const selectedFlows = flows.filter((flow) => selectedIds.includes(flow.id) && canManage(flow));
   const selectablePage = visibleFlows.filter(canManage);
@@ -893,10 +906,10 @@ function FlowListView({ flows, canEdit, viewerId, isAdmin, memberOptions, onCrea
     }
   }
 
-  return <section className="scroll-surface h-full min-h-0 overflow-y-auto bg-muted/20">
+  const content = <section className="scroll-surface h-full min-h-0 overflow-y-auto bg-muted/20">
     <div className="w-full px-5 pb-6 pt-2 sm:px-6">
       <PageActions>
-        <Button onClick={onCreate} disabled={!canEdit || bulkBusy}><Plus />Create workflow</Button>
+        {!scopedContext && listTab === "email" ? <Button variant="outline" nativeButton={false} render={<Link href="/email" />}><Mail />Open Email</Button> : <Button onClick={onCreate} disabled={!canEdit || bulkBusy}><Plus />Create workflow</Button>}
       </PageActions>
 
       <div className="grid gap-3 sm:grid-cols-3">
@@ -907,10 +920,15 @@ function FlowListView({ flows, canEdit, viewerId, isAdmin, memberOptions, onCrea
 
       
         <div className="mt-6 mb-3 flex items-center justify-between">
-          <div><h2 className="text-sm font-semibold">All workflows</h2><p className="mt-0.5 text-xs text-muted-foreground">{scopedContext ? "Workflows for this recipient, accessible from Email." : "All workspace workflows. Select a workflow to view its canvas and configuration."}</p></div>
+          <div><h2 className="text-sm font-semibold">{scopedContext ? "Recipient workflows" : listTab === "email" ? "Email workflows" : "Workspace workflows"}</h2><p className="mt-0.5 text-xs text-muted-foreground">{scopedContext ? "Workflows for this recipient, accessible from Email." : listTab === "email" ? "Individual contact and company workflows created from Email." : "Segment and workspace automations. Select a workflow to view its canvas and configuration."}</p></div>
           <Badge variant="secondary" className="tabular-nums">{flows.length}</Badge>
         </div>
 
+      <div className="crm-table-filter-bar mb-3">
+        <label className="crm-table-filter crm-table-filter-search"><span className="sr-only">Search workflows</span><Input type="search" placeholder="Search workflows or triggers" value={query} onChange={event => { setQuery(event.target.value); setPage(1); }} /></label>
+        <label className="crm-table-filter"><span className="sr-only">Workflow status</span><Select value={statusFilter} onValueChange={value => { if (value) { setStatusFilter(value); setPage(1); } }}><SelectTrigger aria-label="Workflow status"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem><SelectItem value="live">Live</SelectItem><SelectItem value="paused">Paused</SelectItem><SelectItem value="draft">Draft</SelectItem></SelectContent></Select></label>
+        {query || statusFilter !== "all" ? <Button type="button" variant="ghost" size="sm" onClick={() => { setQuery(""); setStatusFilter("all"); setPage(1); }}>Clear filters</Button> : null}
+      </div>
       <Card className="crm-table-frame crm-table-page-wide gap-0 py-0">
         {selectedFlows.length ? <div role="group" aria-label="Bulk workflow actions" aria-busy={bulkBusy} className="flex flex-wrap items-center gap-2 border-b bg-primary/5 px-4 py-3">
           <span className="mr-auto text-sm font-semibold">{t(`${selectedFlows.length} selected`)}</span>
@@ -920,22 +938,34 @@ function FlowListView({ flows, canEdit, viewerId, isAdmin, memberOptions, onCrea
           <Button size="sm" variant="ghost" disabled={bulkBusy} onClick={() => setSelectedIds([])}>Clear selection</Button>
         </div> : null}
         {bulkErrors.length ? <div role="alert" className="max-h-48 overflow-auto border-b bg-destructive/5 px-4 py-3 text-sm"><p className="font-medium">Some workflows could not be updated. Review the errors below.</p><ul className="mt-2 list-disc space-y-1 pl-5">{bulkErrors.map((item) => <li key={item.id}><span translate="no" className="font-medium">{flows.find((flow) => flow.id === item.id)?.name || item.id}</span>: {item.error}</li>)}</ul></div> : null}
-        {flows.length ? <>
+        {filteredFlows.length ? <>
           <div>
-            <Table className="min-w-[1040px]">
-              <TableHeader><TableRow className="bg-muted/30 hover:bg-muted/30"><TableHead className="w-12 pl-5"><Checkbox aria-label="Select all editable workflows on this page" checked={allPageSelected} indeterminate={!allPageSelected && somePageSelected} disabled={bulkBusy || !selectablePage.length} onCheckedChange={(checked) => selectFlows(checked ? [...new Set([...selectedFlows.map((flow) => flow.id), ...selectablePage.map((flow) => flow.id)])] : selectedIds.filter((id) => !selectablePage.some((flow) => flow.id === id)))} /></TableHead><TableHead>Workflow</TableHead><TableHead>Created by</TableHead><TableHead>Trigger</TableHead><TableHead>Status</TableHead><TableHead className="text-center">Active</TableHead><TableHead className="text-center">Completed</TableHead><TableHead>Last updated</TableHead><TableHead className="w-12" /></TableRow></TableHeader>
-              <TableBody>{visibleFlows.map((flow) => <TableRow key={flow.id} data-state={selectedIds.includes(flow.id) ? "selected" : undefined} className="group cursor-pointer" onClick={() => { if (!bulkBusy) onOpen(flow); }}><TableCell className="pl-5" onClick={(event) => event.stopPropagation()}><Checkbox aria-label={`Select ${flow.name}`} checked={selectedIds.includes(flow.id)} disabled={bulkBusy || !canManage(flow)} onCheckedChange={(checked) => selectFlows(checked ? [...selectedFlows.map((item) => item.id), flow.id] : selectedIds.filter((id) => id !== flow.id))} /></TableCell><TableCell><div className="flex items-center gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary"><Workflow className="size-4" /></span><div><p className="font-semibold group-hover:text-primary">{flow.name}</p><p className="mt-0.5 text-xs text-muted-foreground">{t(`${flowActionLocations(flow.steps).length} actions`)}</p></div></div></TableCell><TableCell className="text-sm">{memberLabels.get(flow.createdBy) || (flow.createdBy === viewerId ? "You" : "Workspace member")}</TableCell><TableCell><p className="max-w-64 truncate text-sm">{formatTrigger(flow.triggerType, flow.triggerConfig)}</p></TableCell><TableCell><FlowStatusBadge status={flow.status} /></TableCell><TableCell className="text-center font-medium tabular-nums">{flow.activeRuns || 0}</TableCell><TableCell className="text-center font-medium tabular-nums">{flow.completedRuns || 0}</TableCell><TableCell className="whitespace-nowrap text-xs text-muted-foreground">{dateFormatter.format(new Date(flow.updatedAt))}</TableCell><TableCell><FlowActions flow={flow} canEdit={canManage(flow) && !bulkBusy} canDuplicate={canEdit && !bulkBusy} onOpen={onOpen} onDuplicate={onDuplicate} onChangeStatus={onChangeStatus} onRemove={onRemove} /></TableCell></TableRow>)}</TableBody>
+            <Table className="min-w-[1040px]"><caption className="sr-only">Workflows, trigger conditions, run counts, and available actions</caption>
+              <TableHeader><TableRow className="bg-muted/30 hover:bg-muted/30"><TableHead className="crm-table-check"><Checkbox aria-label="Select all editable workflows on this page" checked={allPageSelected} indeterminate={!allPageSelected && somePageSelected} disabled={bulkBusy || !selectablePage.length} onCheckedChange={(checked) => selectFlows(checked ? [...new Set([...selectedFlows.map((flow) => flow.id), ...selectablePage.map((flow) => flow.id)])] : selectedIds.filter((id) => !selectablePage.some((flow) => flow.id === id)))} /></TableHead><TableHead>Workflow</TableHead><TableHead>Created by</TableHead><TableHead>Trigger</TableHead><TableHead>Status</TableHead><TableHead className="text-center">Active</TableHead><TableHead className="text-center">Completed</TableHead><TableHead>Last updated</TableHead><TableHead className="w-12"><span className="sr-only">Workflow actions</span></TableHead></TableRow></TableHeader>
+              <TableBody>{visibleFlows.map((flow) => <TableRow key={flow.id} data-state={selectedIds.includes(flow.id) ? "selected" : undefined} className="group cursor-pointer" onClick={() => { if (!bulkBusy) onOpen(flow); }}><TableCell className="crm-table-check" onClick={(event) => event.stopPropagation()}><Checkbox aria-label={`Select ${flow.name}`} checked={selectedIds.includes(flow.id)} disabled={bulkBusy || !canManage(flow)} onCheckedChange={(checked) => selectFlows(checked ? [...selectedFlows.map((item) => item.id), flow.id] : selectedIds.filter((id) => id !== flow.id))} /></TableCell><TableCell><div className="flex items-center gap-3"><span className="grid size-7 shrink-0 place-items-center rounded-md bg-primary/10 text-primary"><Workflow className="size-3.5" /></span><div><button type="button" disabled={bulkBusy} onClick={event => { event.stopPropagation(); onOpen(flow); }} className="rounded-sm text-left font-medium hover:text-primary focus-visible:outline-2 focus-visible:outline-ring">{flow.name}</button><p className="mt-0.5 text-xs text-muted-foreground">{t(`${flowActionLocations(flow.steps).length} actions`)}{flow.triggerConfig.scopeLabel ? <> · <span data-no-translate>{String(flow.triggerConfig.scopeLabel)}</span></> : null}</p></div></div></TableCell><TableCell className="text-sm">{memberLabels.get(flow.createdBy) || (flow.createdBy === viewerId ? "You" : "Workspace member")}</TableCell><TableCell><p className="max-w-64 truncate text-sm">{formatTrigger(flow.triggerType, flow.triggerConfig)}</p></TableCell><TableCell><FlowStatusBadge status={flow.status} /></TableCell><TableCell className="text-center font-medium tabular-nums">{flow.activeRuns || 0}</TableCell><TableCell className="text-center font-medium tabular-nums">{flow.completedRuns || 0}</TableCell><TableCell className="whitespace-nowrap text-xs text-muted-foreground">{dateFormatter.format(new Date(flow.updatedAt))}</TableCell><TableCell><FlowActions flow={flow} canEdit={canManage(flow) && !bulkBusy} canDuplicate={canEdit && !bulkBusy} onOpen={onOpen} onDuplicate={onDuplicate} onChangeStatus={onChangeStatus} onRemove={onRemove} /></TableCell></TableRow>)}</TableBody>
             </Table>
           </div>
 
 
 
-        </> : <div className="grid min-h-64 place-items-center px-6 py-12 text-center"><div><span className="mx-auto grid size-12 place-items-center rounded-2xl bg-primary/10 text-primary"><Workflow className="size-5" /></span><h3 className="mt-4 font-semibold">Create your first workflow</h3><p className="mx-auto mt-1 max-w-sm text-sm leading-6 text-muted-foreground">Automate timely follow-ups, internal tasks, and customer journey decisions.</p><Button className="mt-5" onClick={onCreate} disabled={!canEdit}><Plus />Create workflow</Button></div></div>}
+        </> : !scopedContext && listTab === "email" && !flows.length ? <EmptyState compact icon={Mail} title="No email workflows yet" description="Create a workflow from a contact’s conversation in Email. It will appear here." className="border-0 bg-transparent" /> : flows.length ? <EmptyState compact icon={Search} title="No matching workflows" description="Try another workflow name, trigger, creator, or status." className="border-0 bg-transparent" /> : <div className="grid min-h-64 place-items-center px-6 py-12 text-center"><div><span className="mx-auto grid size-12 place-items-center rounded-2xl bg-primary/10 text-primary"><Workflow className="size-5" /></span><h3 className="mt-4 font-semibold">Create your first workflow</h3><p className="mx-auto mt-1 max-w-sm text-sm leading-6 text-muted-foreground">Automate timely follow-ups, internal tasks, and customer journey decisions.</p><Button className="mt-5" onClick={onCreate} disabled={!canEdit}><Plus />Create workflow</Button></div></div>}
       </Card>
-      <TablePagination className="mt-6" page={currentPage} pageCount={pageCount} total={flows.length} itemLabel="workflows" onPrevious={() => setPage(currentPage - 1)} onNext={() => setPage(currentPage + 1)} />
+      <TablePagination className="mt-4" page={currentPage} pageCount={pageCount} start={visibleFlows.length ? (currentPage - 1) * pageSize + 1 : 0} end={Math.min(currentPage * pageSize, filteredFlows.length)} total={filteredFlows.length} itemLabel="workflows" onPrevious={() => setPage(currentPage - 1)} onNext={() => setPage(currentPage + 1)} onPageChange={setPage} />
       <ConfirmActionDialog open={deleteOpen} onOpenChange={setDeleteOpen} title="Delete selected workflows?" description={t("Delete the selected workflows and their run history? This cannot be undone.")} onConfirm={() => applyBulk("delete")} />
     </div>
   </section>;
+  return scopedContext ? content : <Tabs value={listTab} onValueChange={value => {
+    if (bulkBusyRef.current || (value !== "workspace" && value !== "email")) return;
+    setPage(1); setQuery(""); setStatusFilter("all"); setSelectedIds([]); setBulkErrors([]); setDeleteOpen(false);
+    onTabChange(value);
+  }} className="h-full min-h-0 gap-0">
+    <TabsList variant="line" aria-label="Workflow groups" className="w-full shrink-0 justify-start border-b bg-background px-5 sm:px-6">
+      <TabsTrigger value="workspace" disabled={bulkBusy} className="flex-none gap-2 px-3"><Workflow />Workspace workflows<span className="text-xs tabular-nums text-muted-foreground">{workspaceFlows.length}</span></TabsTrigger>
+      <TabsTrigger value="email" disabled={bulkBusy} className="flex-none gap-2 px-3"><Mail />Email workflows<span className="text-xs tabular-nums text-muted-foreground">{emailFlows.length}</span></TabsTrigger>
+    </TabsList>
+    <TabsContent value="workspace" className="min-h-0 overflow-hidden">{listTab === "workspace" ? content : null}</TabsContent>
+    <TabsContent value="email" className="min-h-0 overflow-hidden">{listTab === "email" ? content : null}</TabsContent>
+  </Tabs>;
 }
 
 function FlowSummary({ icon: Icon, label, value, detail, tone }: { icon: typeof Workflow; label: string; value: number; detail: string; tone: string }) {

@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 
 process.env.DRY_RUN = "true";
-process.env.GEMINI_API_KEY = "verification-only-intercepted";
+process.env.AI_GATEWAY_API_KEY = "verification-only-intercepted";
 const { createSupabaseAdmin } = await import("../lib/supabase/admin.ts");
 const { blankStep } = await import("../lib/flows.ts");
 const { enrollMatchingFlows, scanTimeBasedFlowTriggers, processFlowRun } = await import("../lib/data/flow-runtime.ts");
@@ -21,20 +21,19 @@ let expectedCatalog = true;
 let expectedProducts = true;
 globalThis.fetch = async (input, init) => {
   const url = String(input);
-  if (url.startsWith("https://generativelanguage.googleapis.com/")) {
+  if (url.startsWith("https://ai-gateway.vercel.sh/")) {
     providerRequests += 1;
     const request = JSON.parse(String(init?.body));
-    const context = JSON.parse(request.contents[0].parts[0].text);
+    const context = JSON.parse(request.input[0].content[0].text);
     assert.equal(context.conversation.at(-1).body, "Please tell me about black PLA for our print farm.");
     if (context.task === "select_catalog_products") {
-      return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify({ intent: "none", scope: "all", productSkus: [] }) }] } }] });
+      return Response.json({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({ intent: "none", scope: "all", productSkus: [] }) }] }] });
     }
     assert.equal(context.catalogAttached, expectedCatalog);
     assert.equal(context.products.length > 0, expectedProducts);
     if (expectedProducts) assert.ok(context.products[0].pricing);
-    return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify({ subject: "PLA information", body: expectedCatalog ? "Hi Test,\n\nThank you for your PLA inquiry. The product catalog is attached. What quantities do you need?" : "Hi Test,\n\nWhat quantities do you need?", quotes: [] }) }] } }] });
+    return Response.json({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({ subject: "PLA information", body: expectedCatalog ? "Hi Test,\n\nThank you for your PLA inquiry. The product catalog is attached. What quantities do you need?" : "Hi Test,\n\nWhat quantities do you need?", quotes: [] }) }] }] });
   }
-  if (url.startsWith("https://ai-gateway.vercel.sh/")) throw new Error("Unexpected provider fallback in verification.");
   return originalFetch(input, init);
 };
 

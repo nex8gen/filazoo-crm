@@ -41,8 +41,8 @@ export default async function MetaLeadsPage() {
   return <div className="space-y-6">
     <PageActions><MetaLeadRefresh /></PageActions>
     <p className="text-sm"><Link href="/companies" className="font-medium underline">Open Companies</Link> to manage Meta and Shopify leads together.</p>
-    {isAdmin ? <Card>
-      <CardHeader><CardTitle>Simple connection with Make</CardTitle></CardHeader>
+    {isAdmin ? <details className="rounded-xl border bg-card">
+      <summary className="cursor-pointer px-4 py-3 text-sm font-medium">Meta connection setup <span className="ml-2 text-xs font-normal text-muted-foreground">{ready ? "Receiver configured" : "Setup needed"}</span></summary>
       <CardContent className="space-y-4 text-sm">
         <p className="font-medium">{ready ? "CRM receiver configured — send a test lead to confirm the connection." : "Setup needed — leads are not connected through Make yet."}</p>
         <p>Connect Facebook once in Make, select your Page and Instant Form, then forward new leads here. You do not need to build your own Meta Developer app.</p>
@@ -59,7 +59,7 @@ export default async function MetaLeadsPage() {
         <p className="text-muted-foreground">Use this for the B2B USA campaign’s Meta Instant Forms. Your B2B SHOPIFY FORM LEADS campaign uses the website form connection. Existing leads need a separate backfill; enabling this scenario receives new submissions.</p>
         <a href="https://apps.make.com/facebook-lead-ads" target="_blank" rel="noreferrer" className="underline">Make connection guide</a>
       </CardContent>
-    </Card> : null}
+    </details> : null}
     <Card><CardHeader><CardTitle>Latest submissions</CardTitle></CardHeader><CardContent>
       {loadError ? <p role="alert" className="text-sm text-destructive">{loadError}</p> : <MetaLeadsTable leads={leads.map((lead) => ({ ...lead, owner: lead.owner_id ? ownerNames.get(lead.owner_id) || "Assigned" : "Unassigned" }))} />}
       <p className="mt-4 text-xs text-muted-foreground">Form submissions are lead records. They do not open a Messenger conversation. <Link href="/messenger" className="underline">Open Messenger</Link></p>

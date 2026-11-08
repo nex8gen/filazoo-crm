@@ -1,4 +1,4 @@
-import { resolveGatewayToken, hasAiProvider } from "../ai/provider-credentials.ts";
+import { resolveGatewayTokenAsync, hasAiProvider } from "../ai/provider-credentials.ts";
 import "server-only";
 import { requireAiAutomation } from "./ai-settings.ts";
 import { aiBehaviorInstruction } from "../ai-policy.ts";
@@ -6,8 +6,7 @@ import { createSupabaseAdmin } from "../supabase/admin.ts";
 import { crmProduct, type CrmProductRow } from "../product-utils.ts";
 import { invoiceProduct } from "../invoice-links.ts";
 import { buildServerCatalogPdf } from "../catalog-pdf-server.ts";
-import { generateGeminiText } from "../ai/gemini.ts";
-import { generateGatewayText, isGeminiRegionError } from "../ai/gateway.ts";
+import { generateGatewayText } from "../ai/gateway.ts";
 import { flowReplyInstruction, resolveFlowReply, flowCatalogInstruction, resolveFlowCatalog, flowReplyContainsChinese } from "../ai/flow-reply.ts";
 import { applyEmailSignature, DEFAULT_EMAIL_COMPANY, DEFAULT_EMAIL_TITLE } from "../ai/email-rewrite.ts";
 import type { JsonConfig } from "../flows.ts";
@@ -38,7 +37,7 @@ export async function prepareFlowAiReply({ userId, contactId, companyId, convers
   userId: string; contactId: string; companyId: string; conversationId: string; config: JsonConfig;
 }) {
   await requireAiAutomation(["sending", ...(config.attachCatalog === true ? ["catalogs"] as const : [])], ["emails", "customers", "team", ...(config.useProducts || config.attachCatalog ? ["products"] as const : [])]);
-  if (!hasFlowReplyProvider()) throw new Error("AI auto-reply is not configured. Add an AI provider in the server settings.");
+  if (!await resolveGatewayTokenAsync(process.env)) throw new Error("AI auto-reply is not configured. Add an AI provider in the server settings.");
   const admin = createSupabaseAdmin();
   const leadConversation = /^(company:|shopify:|lead:)/.test(conversationId);
   let messagesQuery = admin.from("emails").select("subject,body,direction,message_id,thread_id,created_at")
@@ -63,26 +62,16 @@ export async function generateFlowAiReply({ usageUserId, config, contact, compan
   usageUserId?: string; config: JsonConfig; contact: { name: string | null; email: string }; company: { name: string; country?: string | null; segment?: string | null };
   managerName: string | null; messages: FlowReplyMessage[]; productRows: CrmProductRow[]; previousAutomatedMessages: number;
 }) {
-  if (!hasFlowReplyProvider()) throw new Error("AI auto-reply is not configured. Add an AI provider in the server settings.");
+  const token = await resolveGatewayTokenAsync(process.env);
+  if (!token) throw new Error("AI auto-reply is not configured. Add an AI provider in the server settings.");
   const policy = await requireAiAutomation(["sending", ...(config.attachCatalog === true ? ["catalogs"] as const : [])], ["emails", "customers", "team", ...(config.useProducts || config.attachCatalog ? ["products"] as const : [])]);
   const priceProducts = productRows.map((row) => invoiceProduct({ ...row, tags: row.tags ?? [] }));
   const catalogProducts = productRows.map(crmProduct);
   const orderedMessages = [...messages].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
   const history = [...orderedMessages].reverse().map((message) => ({ ...message, body: (message.body || "").slice(0, 6000) }));
-  const apiKey = process.env.AI_PROVIDER === "gateway" || process.env.AI_BUDGET_ENFORCEMENT === "true" ? undefined : process.env.GEMINI_API_KEY?.trim();
-  const token = resolveGatewayToken(process.env);
   const generate = async (systemInstruction: string, prompt: string) => {
     const options = { systemInstruction: systemInstruction + aiBehaviorInstruction(policy, true), prompt, maxOutputTokens: 8192 };
-    const gateway = () => generateGatewayText({ usageUserId, ...options, token: token!, model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim(), task: "email", complex: config.usePrices === true, userText: config.instructions as string | undefined });
-    try {
-      return apiKey ? await generateGeminiText({ ...options, apiKey, model: process.env.GEMINI_EMAIL_MODEL?.trim() }) : await gateway();
-    } catch (error) {
-      if (!apiKey || !token || !isGeminiRegionError(error)) throw error;
-      try { return await gateway(); }
-      catch (fallbackError) {
-        throw new Error(`Gemini is unavailable from this server location. The fallback provider also failed: ${fallbackError instanceof Error ? fallbackError.message : "Unknown provider error"}`);
-      }
-    }
+    return generateGatewayText({ usageUserId, ...options, token: token!, model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim(), task: "email", complex: config.usePrices === true, userText: config.instructions as string | undefined });
   };
   // Resolve the attachment before drafting so the email describes exactly what will be sent.
   const selectedSkus = config.attachCatalog === true ? resolveFlowCatalog(await generate(flowCatalogInstruction, JSON.stringify({

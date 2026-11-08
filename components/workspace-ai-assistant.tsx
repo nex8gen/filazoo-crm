@@ -18,6 +18,7 @@ import { AiMascotInput } from "@/components/ui/ai-mascot-input";
 import OrbitingCirclesGlobe from "@/components/ui/orbiting-circles-02";
 import { AgentActionCard } from "@/components/agent-action-card";
 import type { AgentActionResult, AgentProposal } from "@/lib/ai/agent-actions";
+import { recoverAgentAction } from "@/lib/ai/action-recovery";
 import { actionWorkProgress, pageWorkArea, requestedWorkProgress, type AgentWorkProgress } from "@/lib/ai/agent-progress";
 import { AgentWorkIcon } from "@/components/agent-work-icon";
 import { AgentApprovalMenu } from "@/components/agent-approval-menu";
@@ -28,17 +29,19 @@ import { assistantRecordScope, readAssistantPageContext } from "@/lib/ai/page-co
 import { conversationScope, savedPageContext, type HistoryDetail } from "@/lib/ai/chat-history";
 import { useAiConversation } from "@/components/use-ai-conversation";
 import { AiHistoryMenu } from "@/components/ai-history-menu";
+import { HomeAiInput } from "@/components/home-ai-composer";
 import { createHistoryListCache, type HistoryListCache } from "@/lib/ai/history-list-cache";
 import { isInvoiceCreationRequest } from "@/lib/ai/assistant-intent";
 import { webSearchForRequest, type WebSearchPreference } from "@/lib/ai/research-request";
 import { readResearchResponse, researchStreamType, type ResearchProgress } from "@/lib/ai/research-progress";
 
 type Mode = "chat" | "agent";
-export type WorkspaceAiLaunchRequest = { id: number; mode: Mode };
+export type WorkspaceAiLaunchRequest = { id: number; mode: Mode; prompt?: string; submit?: boolean };
 type Message = { id: string; role: "user" | "assistant"; content: string; images?: ChatImage[]; attachmentNames?: string[]; actions?: AgentProposal[]; durationMs?: number; work?: AgentWorkProgress; research?: ResearchResult };
 type AssistantReply = { output: string; error?: string; actions?: AgentProposal[]; research?: ResearchResult; history?: Parameters<ReturnType<typeof useAiConversation>["accept"]>[0] };
 
 const pageNames: Array<[RegExp, string]> = [
+  [/^\/$/, "Home"],
   [/^\/companies\/[^/]+/, "Company profile"],
   [/^\/companies/, "Companies"],
   [/^\/segments/, "Segments"],
@@ -75,7 +78,7 @@ function visiblePageText() {
   return (main.innerText || "").replace(/\n{3,}/g, "\n\n").trim().slice(0, 14_000);
 }
 
-export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest }: { open: boolean; onOpenChange: (open: boolean) => void; launchRequest?: WorkspaceAiLaunchRequest }) {
+export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presentation = "sidebar" }: { open: boolean; onOpenChange: (open: boolean) => void; launchRequest?: WorkspaceAiLaunchRequest; presentation?: "sidebar" | "page" }) {
   const { language, t } = useLanguage();
   const pathname = usePathname();
   const router = useRouter();
@@ -85,7 +88,9 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest }: { op
   const [recordScope, setRecordScope] = useState("");
   const [historyContext, setHistoryContext] = useState<{ pathname: string; context: ReturnType<typeof savedPageContext> }>({ pathname: "", context: {} });
   const [approvalMode, setApprovalMode] = useState<"ask" | "auto">("ask");
-  const [question, setQuestion] = useState("");
+  const [question, setQuestion] = useState(launchRequest?.prompt ?? "");
+  const [queuedLaunch, setQueuedLaunch] = useState<WorkspaceAiLaunchRequest | null>(launchRequest?.submit ? launchRequest : null);
+  const submittedLaunch = useRef<number | undefined>(undefined);
   const attachments = useAiImageAttachments();
   const [webSearchPreference, setWebSearchPreference] = useState<WebSearchPreference>("auto");
   const webSearch = webSearchForRequest(webSearchPreference, question);
@@ -113,6 +118,8 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest }: { op
   const chatKey = `${pathname}:${recordScope}:${mode}`;
   const visibleChatKey = useRef(chatKey);
   const messages = useMemo(() => chats[chatKey] ?? [], [chatKey, chats]);
+  // A reply animation from another conversation must not keep this composer busy.
+  if (animation && !messages.some(message => message.id === animation.id)) setAnimation(null);
   function restoreHistory(targetMode: Mode, detail: HistoryDetail, prepend?: boolean, preserveDraft?: boolean) {
     const selected = targetMode === mode;
     if (selected && (pending || applying)) return;
@@ -135,14 +142,36 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest }: { op
   const busy = pending || Boolean(animation) || Boolean(applying);
   const loadingHistory = history.loading || historyContext.pathname !== pathname;
 
-  const selectLaunchMode = useEffectEvent((value: Mode) => changeMode(value));
+  const selectLaunchMode = useEffectEvent((request: WorkspaceAiLaunchRequest) => {
+    const { mode: value, prompt } = request;
+    if (busy) return;
+    if (prompt !== undefined && restoredElsewhere && value === activeMode) newChat();
+    changeMode(value);
+    if (prompt !== undefined) {
+      setQuestion(prompt);
+      attachments.clear();
+    }
+    setQueuedLaunch(request.submit ? request : null);
+    input.current?.focus();
+  });
   useEffect(() => {
-    if (!launchRequest || handledLaunch.current === launchRequest.id) return;
+    if (!launchRequest || handledLaunch.current === launchRequest.id || busy) return;
     handledLaunch.current = launchRequest.id;
-    selectLaunchMode(launchRequest.mode);
-  }, [launchRequest]);
+    selectLaunchMode(launchRequest);
+  }, [launchRequest, busy]);
 
-  useEffect(() => { visibleChatKey.current = chatKey; setAnimation(null); }, [chatKey]);
+  const submitLaunch = useEffectEvent(() => {
+    if (!queuedLaunch?.prompt || activeMode !== queuedLaunch.mode || submittedLaunch.current === queuedLaunch.id) return;
+    submittedLaunch.current = queuedLaunch.id;
+    setQueuedLaunch(null);
+    void send(queuedLaunch.prompt);
+  });
+  useEffect(() => {
+    if (open && presentation === "page" && queuedLaunch && !busy && !loadingHistory && !attachments.processing) submitLaunch();
+  }, [open, presentation, queuedLaunch, busy, loadingHistory, attachments.processing, activeMode]);
+  useEffect(() => { if (open && presentation === "page") input.current?.focus(); }, [open, presentation]);
+
+  useEffect(() => { visibleChatKey.current = chatKey; }, [chatKey]);
 
   useEffect(() => {
     const main = document.querySelector("#workspace-content");
@@ -315,9 +344,37 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest }: { op
     }
   }
 
-  async function applyAction(proposal: AgentProposal, decision: "approve" | "decline" = "approve", approval: "manual" | "auto" = "manual") {
+  function openActionResult(proposal: AgentProposal, result: AgentActionResult) {
+    router.refresh();
+    window.dispatchEvent(new CustomEvent("filazoo:agent-action", { detail: { draftId: result.draft ? proposal.id : undefined, draftMessage: result.draftMessage, flowId: result.flowId, flowEditorBefore: proposalContexts.current.get(proposal.id)?.flowDraft } }));
+    if (result.draft && !document.querySelector(".email-workspace")) router.push(`/email?agentDraft=${proposal.id}`);
+  }
+
+  function continueParentWorkflow(childId: string) {
+    const parent = Object.values(chats).flat().flatMap(message => message.actions ?? []).find(proposal => actionResults[proposal.id]?.awaitingAction?.id === childId);
+    if (parent) setTimeout(() => void applyAction(parent, "resume", "manual"), 0);
+  }
+
+  function currentActionResult(id: string) {
+    const result = actionResults[id];
+    return result?.awaitingAction ? { ...result, awaitingResult: actionResults[result.awaitingAction.id] ?? result.awaitingResult } : result;
+  }
+
+  async function checkAction(proposal: AgentProposal) {
     const actionId = proposal.id;
-    if (actionLock.current || actionResults[actionId]?.status) return false;
+    if (actionLock.current) return;
+    actionLock.current = true;
+    setApplying(actionId);
+    try {
+      const result = await recoverAgentAction(actionId);
+      setActionResults(current => ({ ...current, [actionId]: result.status === "pending" && !result.workflow ? {} : result }));
+      if (result.status === "completed") { openActionResult(proposal, result); continueParentWorkflow(actionId); }
+    } finally { setApplying(null); actionLock.current = false; }
+  }
+
+  async function applyAction(proposal: AgentProposal, decision: "approve" | "decline" | "resume" = "approve", approval: "manual" | "auto" = "manual") {
+    const actionId = proposal.id;
+    if (actionLock.current || (actionResults[actionId]?.status && !(decision === "resume" && actionResults[actionId]?.canResume))) return false;
     actionLock.current = true;
     setApplying(actionId);
     const progress = actionWorkProgress(proposal.action);
@@ -330,22 +387,28 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest }: { op
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: actionId, decision, approval }),
       });
-      const result = await response.json().catch(() => null);
-      if (!response.ok || typeof result?.success !== "string") {
-        setActionResults((current) => ({ ...current, [actionId]: { error: result?.error || "The action could not be completed.", href: result?.href, status: result?.status || "failed" } }));
+      let result = await response.json().catch(() => null);
+      // An interrupted response may follow a committed write. Reconcile the
+      // same stored action before showing a failure or attempting other work.
+      if (!result || (result.status === "running" && !result.workflow) || (!result.status && (response.ok || response.status >= 500))) result = await recoverAgentAction(actionId);
+      if (result?.status !== "completed" && result?.status !== "declined") {
+        setActionResults((current) => ({ ...current, [actionId]: result?.status === "pending" && !result.workflow ? {} : { ...result, error: result?.error || (result?.workflow || result?.status === "running" ? undefined : "The action could not be confirmed. Check its saved result."), status: result?.status || "unknown" } }));
+        if (result?.workflow && result.canResume && !result.awaitingAction && result.workflow.completed > (actionResults[actionId]?.workflow?.completed ?? -1)) setTimeout(() => void applyAction(proposal, "resume", "manual"), 0);
         router.refresh();
         return false;
       }
       setActionResults((current) => ({ ...current, [actionId]: result }));
-      if (decision === "approve") {
-        router.refresh();
-        window.dispatchEvent(new CustomEvent("filazoo:agent-action", { detail: { draftId: result.draft ? actionId : undefined, draftMessage: result.draftMessage, flowId: result.flowId, flowEditorBefore: proposalContexts.current.get(actionId)?.flowDraft } }));
-        if (result.draft && !document.querySelector(".email-workspace")) router.push(`/email?agentDraft=${actionId}`);
+      if (result.status === "declined") continueParentWorkflow(actionId);
+      if (decision !== "decline") {
+        openActionResult(proposal, result);
+        continueParentWorkflow(actionId);
       }
       return true;
-    } catch (reason) {
-      setActionResults((current) => ({ ...current, [actionId]: { error: `${reason instanceof Error ? reason.message : "The action could not be confirmed."} Check Invoices and Sent before starting another task.`, status: "unknown" } }));
-      return false;
+    } catch {
+      const result = await recoverAgentAction(actionId);
+      setActionResults(current => ({ ...current, [actionId]: result.status === "pending" && !result.workflow ? {} : result }));
+      if (result.status === "completed") { openActionResult(proposal, result); continueParentWorkflow(actionId); }
+      return result.status === "completed" || result.status === "declined";
     } finally {
       setApplying(null);
       actionLock.current = false;
@@ -355,16 +418,17 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest }: { op
   // Keep history hooks alive while closed without mounting animated visuals.
   if (!open) return null;
 
-  return <aside data-ai-workspace aria-label="Filazoo AI workspace" aria-hidden={!open} inert={!open ? true : undefined} className={`fixed inset-y-0 right-0 z-[60] flex h-dvh min-h-0 w-full flex-col overflow-hidden border-l bg-background transition-transform duration-300 ease-out lg:w-[var(--workspace-ai-width)] ${open ? "translate-x-0" : "translate-x-full"}`}>
-        <ColumnResizeHandle label="AI sidebar width" variable="--workspace-ai-preferred-width" container="[data-workspace-shell]" panel="[data-ai-workspace]" min={320} max={720} reverse className="ai-sidebar-resize" />
-        <AiHistoryMenu key={history.scope} cache={historyCache.current} history={history} disabled={busy} onNew={newChat} onRetry={() => setError(null)} onClose={() => onOpenChange(false)} onSettings={() => router.push("/settings/ai")} />
+  const Container = presentation === "page" ? "main" : "aside";
+  return <Container id={presentation === "page" ? "workspace-ai-content" : undefined} tabIndex={-1} data-ai-workspace data-ai-presentation={presentation} aria-label="Filazoo AI workspace" className={presentation === "page" ? "workspace-ai-page fixed inset-y-0 right-0 left-0 z-40 flex h-dvh min-h-0 flex-col overflow-hidden bg-background outline-none lg:left-[var(--workspace-sidebar-width)]" : "fixed inset-y-0 right-0 z-[60] flex h-dvh min-h-0 w-full flex-col overflow-hidden border-l bg-background lg:w-[var(--workspace-ai-width)]"}>
+        {presentation === "sidebar" ? <ColumnResizeHandle label="AI sidebar width" variable="--workspace-ai-preferred-width" container="[data-workspace-shell]" panel="[data-ai-workspace]" min={320} max={720} reverse className="ai-sidebar-resize" /> : null}
+        <div className={presentation === "page" ? "workspace-ai-page-header" : undefined}><AiHistoryMenu key={history.scope} cache={historyCache.current} history={history} disabled={busy} onNew={newChat} onRetry={() => setError(null)} onClose={() => onOpenChange(false)} closeLabel={presentation === "page" ? "Back to overview" : "Close AI workspace"} onSettings={() => router.push("/settings/ai")} /></div>
         <div className="relative isolate min-h-0 flex-1">
-          <div className="workspace-ai-mode-tabs absolute top-2 left-1/2 z-10 inline-flex -translate-x-1/2 gap-0.5 rounded-lg bg-muted/85 p-0.5" role="tablist" aria-label="AI mode">
+          {presentation === "sidebar" ? <div className="workspace-ai-mode-tabs absolute top-2 left-1/2 z-10 inline-flex -translate-x-1/2 gap-0.5 rounded-lg bg-muted/85 p-0.5" role="tablist" aria-label="AI mode">
             {(["chat", "agent"] as const).map((value) => <button key={value} type="button" role="tab" aria-selected={activeMode === value} disabled={busy} onClick={() => changeMode(value)} className={`flex min-h-8 items-center gap-2 rounded-md px-3 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 ${activeMode === value ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"}`}>
               {value === "chat" ? <AiIcon aria-hidden="true" className="size-4" /> : <AgentIcon aria-hidden="true" className="size-5" />}{value === "chat" ? "Chat" : "Agent"}
             </button>)}
-          </div>
-        <div ref={log} role="log" aria-live="polite" aria-busy={busy} className="relative h-full min-h-0 overflow-y-auto overscroll-y-contain px-5 pt-16 pb-6">
+          </div> : null}
+        <div ref={log} role="log" aria-live="polite" aria-busy={busy} className={`relative h-full min-h-0 overflow-y-auto overscroll-y-contain px-5 pb-6 ${presentation === "page" ? "workspace-ai-page-log pt-8" : "pt-16"}`}>
           {history.loading && history.openingId ? <p role="status" className="text-sm text-muted-foreground">Loading conversation…</p> : !messages.length ? activeMode === "agent" ? <div className="flex min-h-full flex-col items-center justify-center py-4 text-center">
             <div className="w-full max-w-sm"><OrbitingCirclesGlobe active={open} /></div>
             <h2 className="mt-5 text-lg font-semibold tracking-tight text-balance">What should I take care of?</h2>
@@ -394,24 +458,26 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest }: { op
               {animation?.id === message.id ? <Button type="button" variant="ghost" size="xs" className="mt-2" onClick={() => setAnimation(null)}>Show full reply</Button> : <>
               <div className="mt-2 flex gap-1"><Button type="button" variant="ghost" size="xs" className="text-muted-foreground" disabled={busy} onClick={() => setAnimation({ id: message.id, run: performance.now() })}><RotateCcw />Replay</Button><Button type="button" variant="ghost" size="xs" className="text-muted-foreground" onClick={() => void copy(message)}><Copy />{copiedId === message.id ? "Copied" : "Copy"}</Button></div>
               </>}
-              {message.actions?.length ? <div className="mt-4 space-y-3">{message.actions.map((proposal) => <AgentActionCard key={proposal.id} proposal={proposal} result={actionResults[proposal.id]} executing={applying === proposal.id} progress={applying === proposal.id ? activeWork ?? undefined : undefined} disabled={pending || Boolean(applying)} onApprove={() => void applyAction(proposal)} onDecline={() => void applyAction(proposal, "decline")} />)}</div> : null}
+              {message.actions?.length ? <div className="mt-4 space-y-3">{message.actions.map((proposal) => <AgentActionCard key={proposal.id} proposal={proposal} result={currentActionResult(proposal.id)} executing={applying === proposal.id} progress={applying === proposal.id ? activeWork ?? undefined : undefined} disabled={pending || Boolean(applying)} onApprove={() => void applyAction(proposal)} onDecline={() => void applyAction(proposal, "decline")} onCheck={() => void checkAction(proposal)} onResume={() => void applyAction(proposal, "resume")} onChildApprove={child => void applyAction(child)} onChildDecline={child => void applyAction(child, "decline")} onChildCheck={child => void checkAction(child)} onChildResume={child => void applyAction(child, "resume")} />)}</div> : null}
             </>}
           </div>)}</div>}
           {pending && activeMode === "chat" ? <div className="mt-5"><ThinkingState working scope={t(pageLabel)} /></div> : null}
           {pending && activeResearch?.chatKey === chatKey ? <ResearchSearching progress={activeResearch.progress} /> : null}
-          {error && error !== history.error ? <div role="alert" className="mt-4 rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-sm leading-6 text-destructive">{error}</div> : null}
+          {error && error !== history.error ? <div role="status" className="mt-4 rounded-xl border bg-muted/30 p-3 text-sm leading-6 text-muted-foreground">{error}</div> : null}
         </div>
         </div>
 
-        <div className="shrink-0 bg-background px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <div className={presentation === "page" ? "workspace-ai-page-composer home-ai !mt-0 !shrink-0 px-5 sm:px-6" : "shrink-0 bg-background px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]"}>
           {activeMode === "agent" && (pending || applying) && activeWork ? <div role="status" aria-live="polite" className="mb-3 rounded-xl border border-violet-500/15 bg-violet-500/[0.04] px-3 py-2"><ThinkingState key={applying || "preparing"} working scope={t(workPage)} activity={activeWork} /></div> : null}
-          <div className="mb-2.5 flex min-h-7 min-w-0 items-center justify-between gap-3 px-1">
+          {presentation === "sidebar" ? <div className="mb-2.5 flex min-h-7 min-w-0 items-center justify-between gap-3 px-1">
             <div id={`${composerId}-context`} className="flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
               <AgentWorkIcon area={pageWorkArea(pageLabel)} className="size-3.5 shrink-0" />
               <span className="truncate font-medium">{pageLabel}</span>
             </div>
-          </div>
-          {activeMode === "agent" ? <AiMascotInput key={`${chatKey}:${open}`} id={composerId} value={question} onChange={setQuestion} onSend={() => void send()} onCancel={() => { abort.current?.abort(); setAnimation(null); }} inputRef={input} attachments={attachments} webSearch={webSearch} onWebSearchChange={setWebSearch} busy={busy} loadingHistory={loadingHistory} canStop={!applying && (pending || Boolean(animation))} active={open} language={language} label="Instructions for Filazoo agent" placeholder="Tell the agent what to do…">
+          </div> : null}
+          {presentation === "page" ? <HomeAiInput id={composerId} inputRef={input} mode={activeMode} onModeChange={changeMode} value={question} onChange={setQuestion} onSend={value => void send(value)} busy={busy || Boolean(queuedLaunch)} canSend={!busy && !loadingHistory && !attachments.processing && Boolean(question.trim() || attachments.images.length)} canStop={!applying && (pending || Boolean(animation))} onStop={() => { abort.current?.abort(); setAnimation(null); }} onPaste={busy ? undefined : attachments.onPaste} tools={<>{activeMode === "agent" ? <AgentApprovalMenu value={approvalMode} onChange={setApprovalMode} disabled={busy} iconOnly /> : null}<AiImagePicker attachments={attachments} disabled={busy} /><WebSearchOption enabled={webSearch} onChange={setWebSearch} disabled={busy} /></>}>
+            <AiImagePreviews images={attachments.images} onRemove={attachments.remove} disabled={busy || attachments.processing} /><AiImageFeedback attachments={attachments} />
+          </HomeAiInput> : activeMode === "agent" ? <AiMascotInput key={`${chatKey}:${open}`} id={composerId} value={question} onChange={setQuestion} onSend={() => void send()} onCancel={() => { abort.current?.abort(); setAnimation(null); }} inputRef={input} attachments={attachments} webSearch={webSearch} onWebSearchChange={setWebSearch} busy={busy} loadingHistory={loadingHistory} canStop={!applying && (pending || Boolean(animation))} active={open} language={language} label="Instructions for Filazoo agent" placeholder="Tell the agent what to do…">
             <AgentApprovalMenu value={approvalMode} onChange={setApprovalMode} disabled={busy} iconOnly />
           </AiMascotInput> : <form onSubmit={(event) => { event.preventDefault(); void send(); }} className="ai-composer min-w-0 rounded-2xl border border-border/80 bg-card p-3 shadow-[0_2px_8px_rgba(15,23,42,.03)] transition-[border-color,box-shadow] focus-within:border-ring/60 focus-within:ring-2 focus-within:ring-ring/10 motion-reduce:transition-none">
             <label htmlFor={composerId} className="sr-only">Message Filazoo AI</label>
@@ -425,8 +491,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest }: { op
               <Button type="submit" size="icon" className="size-9 shrink-0 rounded-xl bg-foreground text-background shadow-none hover:bg-foreground/85 disabled:bg-muted disabled:text-muted-foreground disabled:opacity-60" disabled={busy || loadingHistory || attachments.processing || (!question.trim() && !attachments.images.length)} aria-label="Send to Filazoo AI" title="Send message (Enter)"><ArrowUp aria-hidden="true" className="size-4" /></Button>
             </div>
           </form>}
-          <p id={`${composerId}-hint`} className="mt-2 text-center text-[10px] leading-4 text-muted-foreground">Enter to send · Shift + Enter for a new line</p>
-          <p className="mt-1 text-center text-[10px] leading-4 text-muted-foreground">AI can make mistakes. Review suggestions before using them.</p>
+          {presentation === "sidebar" ? <><p id={`${composerId}-hint`} className="mt-2 text-center text-[10px] leading-4 text-muted-foreground">Enter to send · Shift + Enter for a new line</p><p className="mt-1 text-center text-[10px] leading-4 text-muted-foreground">AI can make mistakes. Review suggestions before using them.</p></> : null}
         </div>
-  </aside>;
+  </Container>;
 }

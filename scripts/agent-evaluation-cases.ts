@@ -12,10 +12,12 @@ const item = { productSku: "PLA-BASIC", variantId: "black", quantity: 500 };
 const reply = { companyId: id, needed: ["approval"], task: { title: "Review customer approval", notes: "Review the customer's actual artwork approval before continuing." } };
 type Seed = [name: string, request: string, fields: Record<string, unknown>];
 const seeds: Seed[] = [
+  ["run_workflow", "Create a personal task, then set its priority to high.", { steps: [{ id: "task", tool: "create_task", input: { op: "create_task", title: "Review samples" } }, { id: "priority", tool: "update_task", input: { op: "update_task", changes: { priority: "high" } }, bindings: [{ path: ["taskId"], step: "task", result: "taskId" }] }] }],
   ["create_company", "Create this new customer company.", { company: { name: "Synthetic New Customer", country: "United States", segment: "3D printing", contactName: "New Buyer", contactEmail: "new-buyer@example.com" } }],
   ["update_company", "Change only this customer's city.", { companyId: id, changes: { city: "Boston" } }],
   ["add_company_note", "Append this note to the customer, keeping the existing summary.", { companyId: id, note: "Requested black PLA samples." }],
   ["create_invoice", "Create a draft invoice with these actual saved product quantities.", { companyId: id, items: [item] }],
+  ["create_order", "Create an order for this customer with these product quantities and send the draft invoice email with its PDF attached.", { companyId: id, items: [item], email: { ...email, delivery: "send" } }],
   ["update_invoice", "Change only shipping on the existing draft invoice; keep its agreed item prices.", { companyId: id, invoiceId: id, details: { shippingMinor: 3950 } }],
   ["send_invoice", "Prepare an email draft of the saved invoice, without sending it.", { invoiceId: id, email }],
   ["write_email", "Draft this exact email; do not send it.", { email }],

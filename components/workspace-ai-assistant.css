@@ -16,3 +16,16 @@
   -webkit-mask-image: radial-gradient(ellipse closest-side, #000 54%, #0009 82%, transparent 100%);
   mask-image: radial-gradient(ellipse closest-side, #000 54%, #0009 82%, transparent 100%);
 }
+
+.workspace-ai-page-header { flex-shrink: 0; width: 100%; max-width: 1000px; margin-inline: auto; padding: 12px 20px 0; }
+.workspace-ai-page-header > div { border-bottom-color: transparent; }
+.workspace-ai-page-header header { min-height: 36px; }
+.workspace-ai-page-header h2 { font-size: 14px; }
+.workspace-ai-page-log > * { width: 100%; max-width: 760px; margin-inline: auto; }
+.workspace-ai-page-composer > [role=status] { max-width: 640px; margin-inline: auto; }
+.home-composer-tools .ai-composer-action-label { display: none; }
+.home-composer-tools > button { display: inline-flex; justify-content: center; width: 32px; height: 32px; min-height: 32px; padding: 0; border-radius: 8px; }
+.home-composer-tools .ai-composer-action:not([aria-pressed=true]) { border-color: transparent; }
+.workspace-ai-page button:focus-visible, .workspace-ai-page a:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+.workspace-ai-page .home-composer-input:disabled { opacity: .65; }
+@media (max-width: 640px) { .workspace-ai-page-header { padding: 8px 12px 0; } }

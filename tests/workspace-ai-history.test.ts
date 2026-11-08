@@ -7,6 +7,7 @@ import ts from "typescript";
 import * as history from "../lib/ai/chat-history.ts";
 import * as intent from "../lib/ai/assistant-intent.ts";
 import * as researchRequest from "../lib/ai/research-request.ts";
+import * as researchProgress from "../lib/ai/research-progress.ts";
 
 const require = createRequire(import.meta.url);
 
@@ -108,7 +109,7 @@ test("continuing history from the inbox sends the saved page, record, AI mode an
     "@/components/use-ai-conversation": { useAiConversation: () => controller },
     "@/components/ui/ai-mascot-input": { AiMascotInput: Composer },
     "@/components/ui/ai-image-attachments": { useAiImageAttachments: () => ({ images: [], processing: false, clear: () => {} }) },
-    "@/lib/ai/chat-history": history, "@/lib/ai/research-request": researchRequest,
+    "@/lib/ai/chat-history": history, "@/lib/ai/research-request": researchRequest, "@/lib/ai/research-progress": researchProgress,
     "@/lib/ai/image-input": { chatImageLimitError: () => null },
     "@/lib/ai/agent-progress": { requestedWorkProgress: () => undefined, pageWorkArea: () => "email" },
     "@/lib/ai/page-context": { readAssistantPageContext: () => { throw new Error("Visible inbox must not replace saved context"); } },

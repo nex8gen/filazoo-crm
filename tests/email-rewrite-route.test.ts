@@ -12,7 +12,7 @@ const code = ts.transpileModule(readFileSync(new URL("../app/api/email/assist/ro
   compilerOptions: { module: ts.ModuleKind.CommonJS },
 }).outputText;
 
-for (const provider of ["gemini", "gateway", "regional-fallback", "budget-gateway"] as const) {
+for (const provider of ["gateway", "oidc", "legacy-budget"] as const) {
   for (const language of ["en", "zh-CN"] as const) {
     for (const text of ["Please send the catalog for 500 spools of PLA.", "请发送500卷PLA的产品目录。", "请发送 catalog for 500 spools of PLA."]) {
       test(`${provider} rewrites ${language} drafts in English: ${text}`, async () => {
@@ -23,13 +23,10 @@ for (const provider of ["gemini", "gateway", "regional-fallback", "budget-gatewa
         };
         const dependencies: Record<string, unknown> = {
           "@/lib/auth": { requireWorkspaceMember: async () => ({ id: "trusted-member", displayName: "Unassigned" }) },
-          "@/lib/ai/gemini": { generateGeminiText: provider === "budget-gateway"
-            ? async () => { throw new Error("Budgeted requests must not call direct Gemini"); } : provider === "regional-fallback"
-            ? async () => { throw new Error("region unavailable"); } : generate },
           "@/lib/ai/gateway": { generateGatewayText: async (input: Parameters<typeof generate>[0] & { usageUserId?: string }) => {
             assert.equal(input.usageUserId, "trusted-member");
             return generate(input);
-          }, isGeminiRegionError: () => true },
+          }, },
           "@/lib/ai/email-rewrite": rewrite,
           "@/lib/email-translation": {},
           "@/lib/ai/language": { aiLanguageSchema },
@@ -45,10 +42,7 @@ for (const provider of ["gemini", "gateway", "regional-fallback", "budget-gatewa
             return dependencies[name];
           },
           Response,
-          process: { env: provider === "budget-gateway" ? { AI_BUDGET_ENFORCEMENT: "true", GEMINI_API_KEY: "test-key", AI_GATEWAY_API_KEY: "test-token" }
-            : provider === "gemini" ? { GEMINI_API_KEY: "test-key" }
-            : provider === "gateway" ? { AI_GATEWAY_API_KEY: "test-token" }
-            : { GEMINI_API_KEY: "test-key", AI_GATEWAY_API_KEY: "test-token" } },
+          process: { env: provider === "oidc" ? { VERCEL_OIDC_TOKEN: "test-oidc" } : { AI_GATEWAY_API_KEY: "test", ...(provider === "legacy-budget" ? { AI_BUDGET_ENFORCEMENT: "true" } : {}) } },
         });
         const response = await exports.POST(new Request("http://localhost/api/email/assist", {
           method: "POST",
@@ -57,7 +51,7 @@ for (const provider of ["gemini", "gateway", "regional-fallback", "budget-gatewa
         }));
         assert.equal(response.status, 200);
         const result = await response.json();
-        assert.equal(result.provider, provider === "gemini" ? "gemini" : "vercel-ai-gateway");
+        assert.equal(result.provider, "vercel-ai-gateway");
         assert.equal(result.output, "Hi Isaac,\n\nHere is our catalog for 500 spools of PLA.\n\nBest regards,\n\nFilazoo Sales Team\nBD Sales Manager\nFilazoo");
         assert.equal(calls.length, 1);
         assert.match(calls[0].systemInstruction, /Always write the entire finished email in professional English/);

@@ -20,8 +20,7 @@ import { invoiceProduct } from "../invoice-links";
 import { replyInvoiceLines } from "../ai/email-reply";
 import { userProductRows } from "./product-personalization";
 import { getInvoiceDefaults } from "./invoice-defaults";
-import { generateGeminiText } from "../ai/gemini";
-import { generateGatewayText, isGeminiRegionError } from "../ai/gateway";
+import { generateGatewayText } from "../ai/gateway";
 import { canEditInvoice } from "../invoice-permissions";
 import { taskWorkflowInputSchema, groundedReplyChanges, workflowAddress, replyWorkInstruction, replyWorkPlanSchema, type ReplyWorkPlan, type TaskWorkflow, type WorkflowPayload } from "../task-workflows";
 
@@ -59,7 +58,6 @@ export async function latestWorkflowEvidence(viewer: WorkspaceViewer, request: R
 
 async function planWork(prompt: string, usageUserId: string) {
   const policy = await requireAiAutomation([], ["emails", "customers", "billing", "products", "tasks"]);
-  const apiKey = process.env.AI_PROVIDER === "gateway" || process.env.AI_BUDGET_ENFORCEMENT === "true" ? undefined : process.env.GEMINI_API_KEY?.trim();
   const token = resolveGatewayToken(process.env);
   const responseJsonSchema = z.toJSONSchema(replyWorkPlanSchema.extend({ changes: replyWorkPlanSchema.shape.changes.required() }), { unrepresentable: "any", target: "draft-7" });
   delete responseJsonSchema.$schema;
@@ -69,9 +67,7 @@ async function planWork(prompt: string, usageUserId: string) {
     if (!token) throw new Error("AI preparation is unavailable. Add a provider or prepare this task manually.");
     return generateGatewayText({ usageUserId, ...options, token, model: process.env.AI_GATEWAY_AGENT_MODEL?.trim(), task: "workflow" });
   };
-  let output: string;
-  try { output = apiKey ? await generateGeminiText({ ...options, apiKey, model: process.env.GEMINI_AGENT_MODEL?.trim() || process.env.GEMINI_EMAIL_MODEL?.trim() }) : await gateway(); }
-  catch (error) { if (!apiKey || !token || !isGeminiRegionError(error)) throw error; output = await gateway(); }
+  const output = await gateway();
   try { return replyWorkPlanSchema.parse(JSON.parse(output.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""))); }
   catch { throw new Error("The AI returned incomplete preparation details. Prepare again or review the customer's information."); }
 }

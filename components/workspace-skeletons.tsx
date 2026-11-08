@@ -14,13 +14,13 @@ export function FieldSkeleton() {
 
 function RowsSkeleton({ columns = 5, rows = 6, image = false }: { columns?: number; rows?: number; image?: boolean }) {
   return <div className="min-h-0 flex-1 overflow-hidden">
-    <div className="flex h-12 items-center gap-6 border-b bg-muted/30 px-4">{Array.from({ length: columns }, (_, index) => <Skeleton key={index} className="h-3 min-w-0 flex-1" />)}</div>
-    <div className="divide-y">{Array.from({ length: rows }, (_, index) => <div key={index} className="flex items-center gap-6 px-4 py-4">{Array.from({ length: columns }, (_, column) => column === 0 && image ? <div key={column} className="flex min-w-0 flex-1 items-center gap-3"><Skeleton className="size-10 shrink-0 rounded-lg" /><Skeleton className="h-4 min-w-0 flex-1" /></div> : <Skeleton key={column} className="h-4 min-w-0 flex-1" />)}</div>)}</div>
+    <div className="flex h-9 items-center gap-6 rounded-lg bg-muted/30 px-3">{Array.from({ length: columns }, (_, index) => <Skeleton key={index} className="h-3 min-w-0 flex-1" />)}</div>
+    <div className="divide-y">{Array.from({ length: rows }, (_, index) => <div key={index} className="flex min-h-10 items-center gap-6 px-3 py-2">{Array.from({ length: columns }, (_, column) => column === 0 && image ? <div key={column} className="flex min-w-0 flex-1 items-center gap-3"><Skeleton className="size-9 shrink-0 rounded-md" /><Skeleton className="h-3 min-w-0 flex-1" /></div> : <Skeleton key={column} className="h-3 min-w-0 flex-1" />)}</div>)}</div>
   </div>;
 }
 
 function PaginationSkeleton() {
-  return <div className="crm-table-pagination"><Skeleton className="h-4 w-32" /><Skeleton className="h-8 w-36" /></div>;
+  return <div className="crm-table-pagination"><Skeleton className="h-8 w-28 rounded-full" /><Skeleton className="h-4 w-24" /></div>;
 }
 
 export function DashboardSkeleton() {

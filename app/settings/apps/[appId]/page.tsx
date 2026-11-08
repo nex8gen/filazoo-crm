@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, CheckCircle2, LockKeyhole } from "lucide-react";
 import { requireWorkspaceMember } from "@/lib/auth";
 import { connectionApps } from "@/lib/connection-apps";
@@ -24,6 +24,10 @@ async function AppConnectionWorkspace({ params, searchParams }: Props) {
   const app = connectionApps.find(item => item.id === appId);
   if (!app) notFound();
   const viewer = await requireWorkspaceMember();
+  if (appId === "lingxing") {
+    if (viewer.role !== "admin") notFound();
+    redirect("/settings/erp");
+  }
   const scope = (await searchParams).scope === "team" ? "workspace" : "personal";
   const isEmailApp = ["gmail", "outlook", "netease-mail"].includes(app.id);
   const [summaries, overview] = await Promise.all([

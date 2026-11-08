@@ -3,6 +3,8 @@ export const zhCNWorkspaces: Record<string, string> = {
   "Verify your email": "验证您的邮箱",
   "Enter the 6-digit code from your email to finish setting up your account.": "输入邮件中的 6 位验证码以完成账户设置。",
   "We sent a verification code to": "我们已发送验证码至",
+  "If your account needs verification, check for a code at": "如果您的账户需要验证，请在以下邮箱查收验证码：",
+  "Already verified this email? Signing up again does not send a new code. Sign in with your existing password, or reset it below.": "此邮箱已验证？再次注册不会发送新的验证码。请使用现有密码登录，或在下方重置密码。",
   "Verification code": "验证码",
   "Check your inbox and spam folder. Use the most recent code we sent you.": "请检查收件箱和垃圾邮件文件夹，并使用最新收到的验证码。",
   "Didn't receive a code?": "没有收到验证码？",

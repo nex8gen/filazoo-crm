@@ -15,19 +15,19 @@ type MailboxSummary = {
   isActive: boolean;
 };
 
-export function MailboxManager({ mailbox }: { mailbox: MailboxSummary }) {
+export function MailboxManager({ mailbox, controlsOnly = false }: { mailbox: MailboxSummary; controlsOnly?: boolean }) {
   const [state, action, pending] = useActionState(manageMailbox, undefined);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   return (
-    <div className="space-y-3 rounded-md border px-3 py-3 text-xs">
+    <div className={controlsOnly ? "space-y-3 text-xs" : "space-y-3 rounded-md border px-3 py-3 text-xs"}>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0">
+        {!controlsOnly ? <div className="min-w-0">
           <p className="break-all font-medium text-foreground">{mailbox.email}</p>
           <p className="mt-1 text-muted-foreground">{mailbox.type === "workspace" ? "Common mailbox" : "Personal mailbox"}{mailbox.isDefault ? " · default" : ""}</p>
-        </div>
+        </div> : null}
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline">{mailbox.type}</Badge>
+          {!controlsOnly ? <Badge variant="outline">{mailbox.type}</Badge> : null}
           <Badge variant={mailbox.isActive ? "secondary" : "outline"}>{mailbox.isActive ? "Active" : "Stopped"}</Badge>
           <div className="flex items-center gap-2">{pending ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin text-muted-foreground" /> : null}<Switch checked={mailbox.isActive} disabled={pending} aria-label={`Sending and syncing: ${mailbox.email}`} onCheckedChange={enabled => { const data = new FormData(); data.set("mailboxId", mailbox.id); data.set("operation", enabled ? "resume" : "stop"); startTransition(() => action(data)); }} /></div>
           <Button type="button" variant="outline" size="sm" disabled={pending} onClick={() => setConfirmDelete(true)} aria-label={`Delete ${mailbox.email}`}><Trash2 />Delete</Button>

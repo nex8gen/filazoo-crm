@@ -16,6 +16,7 @@ const surfaces = crmMutationSurfaces(process.cwd()).map(surface => {
   if (file === "app/api/email/scheduled/route.ts" && action === "DELETE") tools = ["cancel_scheduled_email"];
   if (file === "app/api/email/drafts/route.ts" && action === "DELETE") tools = ["discard_email_draft"];
   if (file === "app/api/email/drafts/route.ts" && action === "PUT") tools = ["write_email"];
+  if (file === "app/api/flows/check/route.ts") return { surface, mode: "read", tools: [], explanation: "Authenticated, read-only workflow connection and resource checks. Uses live dependencies without generating content, sending messages or changing CRM records." };
   if (tools) return { surface, mode: "direct", tools, explanation: "Typed proposals use the same validated business service; role/policy and review still apply." };
   if (action === "updateAiUsageSettings") return { surface, mode: "internal", tools: [], explanation: "Retained legacy budget settings helper. Application usage limits and their Settings controls have been removed." };
   if (internal.test(file)) return { surface, mode: "internal", tools: [], explanation: "Agent/history infrastructure, inbound integration, customer-only identity or background worker; not an employee feature to invoke arbitrarily." };
@@ -23,5 +24,5 @@ const surfaces = crmMutationSurfaces(process.cwd()).map(surface => {
   return { surface, mode: "guided", tools: [], explanation: /auth|login|signup|password|invitation|join|workspaces|team-actions|signOut/.test(file + action) ? "Identity, workspace or ownership flow uses the authenticated account controls." : /image|avatar|Mailbox|Connection|erp/i.test(file + action) ? "Connection credentials, uploads or connection testing use the relevant settings/file form." : "Specialized UI test, composition or analysis flow; use its page controls. The agent must provide a handoff and must not claim it executed this feature." };
 });
 const capabilities = agentCapabilities().map(({ name, domain, description }) => ({ name, domain, description }));
-writeFileSync("docs/agent-capability-audit.json", JSON.stringify({ contractVersion: AGENT_CONTRACT_VERSION, generatedOn: "2026-11-06", capabilities, guidedFeatures: guidedAgentFeatures, surfaces }, null, 2) + "\n");
+writeFileSync("docs/agent-capability-audit.json", JSON.stringify({ contractVersion: AGENT_CONTRACT_VERSION, generatedOn: "2026-11-08", capabilities, guidedFeatures: guidedAgentFeatures, surfaces }, null, 2) + "\n");
 console.log(JSON.stringify({ capabilities: capabilities.length, surfaces: surfaces.length, modes: Object.fromEntries(["direct", "guided", "read", "internal"].map(mode => [mode, surfaces.filter(surface => surface.mode === mode).length])) }));

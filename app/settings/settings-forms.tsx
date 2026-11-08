@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { useWorkspaceState } from "@/components/workspace-memory";
 import { Mail, Send, ShieldCheck, UserRound } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -43,7 +44,7 @@ export function InviteMemberForm() {
       <div className="space-y-2"><Label htmlFor="inviteEmail">Email</Label><Input id="inviteEmail" name="email" type="email" autoComplete="off" required /></div>
       <div className="space-y-2"><Label htmlFor="inviteRole">Role</Label><Select name="role" defaultValue="bd_manager"><SelectTrigger id="inviteRole"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="admin">Admin</SelectItem><SelectItem value="operator">Operator</SelectItem><SelectItem value="bd_manager">BD Sales Manager</SelectItem><SelectItem value="viewer">Viewer</SelectItem></SelectContent></Select><p className="text-xs text-muted-foreground">BD Sales Managers join the automatic round-robin lead pool.</p></div>
       <div className="flex items-end"><Button type="submit" disabled={pending}><Send />{pending ? "Creating…" : "Invite member"}</Button></div>
-      <div className="space-y-3 md:col-span-2"><FormMessage error={state?.error} success={state?.success} />{state?.invitationUrl ? <div className="space-y-2"><Label htmlFor="invitation-link">Secure invitation link</Label><Input id="invitation-link" readOnly value={state.invitationUrl} onFocus={event => event.target.select()} /><Button type="button" variant="outline" size="sm" onClick={() => navigator.clipboard.writeText(state.invitationUrl!)}>Copy link</Button></div> : null}</div>
+      <div className="space-y-3 md:col-span-2"><FormMessage error={state?.error} success={state?.success} />{state?.invitationUrl ? <div className="space-y-2"><Label htmlFor="invitation-link">Secure invitation link</Label><Input id="invitation-link" readOnly value={state.invitationUrl} onFocus={event => event.target.select()} /><Button type="button" variant="outline" size="sm" onClick={async () => { try { await navigator.clipboard.writeText(state.invitationUrl!); toast.success("Invitation link copied."); } catch { toast.error("Unable to copy. Select the invitation link and copy it manually."); } }}>Copy link</Button></div> : null}</div>
     </form>
   );
 }
@@ -73,6 +74,9 @@ type MailboxFormProps = {
   defaultImapHost?: string;
   defaultImapPort?: number;
   defaultImapUsername?: string;
+  defaultIsDefault?: boolean;
+  defaultProvider?: string;
+  defaultNotes?: string;
 };
 
 function MailboxFields({
@@ -86,6 +90,9 @@ function MailboxFields({
   defaultImapHost,
   defaultImapPort,
   defaultImapUsername,
+  defaultIsDefault,
+  defaultProvider,
+  defaultNotes,
 }: Required<MailboxFormProps> & { prefix: "workspace" | "personal" }) {
   const titlePrefix = prefix === "workspace" ? "Workspace" : "Personal";
   return (
@@ -93,24 +100,13 @@ function MailboxFields({
       <input type="hidden" name="mailboxId" value={mailboxId} />
       <div className="space-y-2">
         <Label htmlFor={`${prefix}MailboxEmail`}>{prefix === "workspace" ? "Common workspace email" : "Your email address"}</Label>
-        <Input id={`${prefix}MailboxEmail`} name="email" type="email" defaultValue={defaultEmail} placeholder={prefix === "workspace" ? "hello@company.com" : "bd.manager@company.com"} required />
+        <Input id={`${prefix}MailboxEmail`} name="email" type="email" readOnly={Boolean(mailboxId)} defaultValue={defaultEmail} placeholder={prefix === "workspace" ? "hello@company.com" : "bd.manager@company.com"} required />
       </div>
       <div className="space-y-2">
         <Label htmlFor={`${prefix}MailboxLabel`}>Mailbox label</Label>
         <Input id={`${prefix}MailboxLabel`} name="displayName" defaultValue={defaultDisplayName} placeholder={`${titlePrefix} mailbox`} />
       </div>
-      <div className="space-y-2">
-        <Label htmlFor={`${prefix}MailboxProvider`}>Provider</Label>
-        <Select name="provider" defaultValue="smtp">
-          <SelectTrigger id={`${prefix}MailboxProvider`}><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="smtp">SMTP / IMAP</SelectItem>
-            <SelectItem value="google">Google Workspace</SelectItem>
-            <SelectItem value="microsoft">Microsoft 365</SelectItem>
-            <SelectItem value="other">Other</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      <input type="hidden" name="provider" value={defaultProvider} />
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-2"><Label htmlFor={`${prefix}SmtpHost`}>SMTP host</Label><Input id={`${prefix}SmtpHost`} name="smtpHost" defaultValue={defaultSmtpHost} placeholder="smtp.gmail.com" required /></div>
         <div className="space-y-2"><Label htmlFor={`${prefix}SmtpPort`}>SMTP port</Label><Input id={`${prefix}SmtpPort`} name="smtpPort" type="number" defaultValue={defaultSmtpPort} required /></div>
@@ -122,15 +118,15 @@ function MailboxFields({
         <div className="space-y-2"><Label htmlFor={`${prefix}ImapPassword`}>IMAP password / app password</Label><Input id={`${prefix}ImapPassword`} name="imapPassword" type="password" autoComplete="new-password" placeholder={mailboxId ? "Leave blank to keep the saved password" : "Required"} /></div>
       </div>
       <p className="text-xs leading-5 text-muted-foreground">
-        Gmail: use your full Gmail address for both usernames and the same 16-character app password for both passwords. SMTP uses port 587 (STARTTLS); try port 465 if your network blocks 587. IMAP uses port 993.
+        Use the server addresses, ports, and app passwords provided by your email service. Saving checks both sending and receiving.
       </p>
       <div className="space-y-2">
         <Label htmlFor={`${prefix}MailboxNotes`}>Notes</Label>
-        <Input id={`${prefix}MailboxNotes`} name="notes" defaultValue={prefix === "workspace" ? "Primary workspace mailbox" : "Personal manager mailbox"} />
+        <Input id={`${prefix}MailboxNotes`} name="notes" defaultValue={defaultNotes} />
       </div>
       <div className="flex items-center justify-between gap-5 rounded-xl border bg-muted/20 p-4">
         <Label htmlFor={`${prefix}-default-mailbox`} className="cursor-pointer text-sm">{prefix === "workspace" ? "Use this as the default workspace mailbox" : "Make this my default personal mailbox"}</Label>
-        <Switch id={`${prefix}-default-mailbox`} name="isDefault" defaultChecked />
+        <Switch id={`${prefix}-default-mailbox`} name="isDefault" defaultChecked={defaultIsDefault} />
       </div>
     </>
   );
@@ -146,6 +142,9 @@ const mailboxDefaults = {
   defaultImapHost: "",
   defaultImapPort: 993,
   defaultImapUsername: "",
+  defaultIsDefault: false,
+  defaultProvider: "smtp",
+  defaultNotes: "",
 };
 
 export function WorkspaceMailboxForm(props: MailboxFormProps) {
@@ -153,12 +152,12 @@ export function WorkspaceMailboxForm(props: MailboxFormProps) {
   const values = { ...mailboxDefaults, defaultDisplayName: "Workspace mailbox", ...props };
   return (
     <form action={action} className="space-y-4">
-      <MailboxFields prefix="workspace" {...values} />
+      <fieldset disabled={pending} className="space-y-4"><MailboxFields prefix="workspace" {...values} /></fieldset>
       <FormMessage error={state?.error} success={state?.success} />
       <div className="rounded-lg border border-blue-200 bg-blue-50/70 p-3 text-xs leading-5 text-blue-900 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-200">
         After saving, open <strong>Email</strong> and choose <strong>Import history</strong>. Shopify form enquiries appear automatically; IMAP collects past and new customer replies.
       </div>
-      <Button type="submit" disabled={pending}><ShieldCheck />{pending ? "Testing connection..." : "Connect mailbox and enable inbox"}</Button>
+      <Button type="submit" disabled={pending}><ShieldCheck />{pending ? "Testing connection..." : props.mailboxId ? "Test and save connection" : "Test and connect mailbox"}</Button>
     </form>
   );
 }
@@ -168,7 +167,7 @@ export function PersonalMailboxForm(props: MailboxFormProps) {
   const values = { ...mailboxDefaults, defaultDisplayName: "Personal mailbox", ...props };
   return (
     <form action={action} className="space-y-4">
-      <MailboxFields prefix="personal" {...values} />
+      <fieldset disabled={pending} className="space-y-4"><MailboxFields prefix="personal" {...values} /></fieldset>
       <FormMessage error={state?.error} success={state?.success} />
       <Button type="submit" disabled={pending}><Mail />{pending ? "Testing connection..." : "Test and save my email"}</Button>
     </form>

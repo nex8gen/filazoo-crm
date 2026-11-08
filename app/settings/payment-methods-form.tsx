@@ -13,9 +13,12 @@ import { invoiceRequest } from "@/lib/invoice-client";
 import { invoiceCurrencies } from "@/lib/invoices";
 import { PaymentMethodIcon } from "@/components/payment-method-icon";
 import { invoicePaymentMethodsSchema, paymentMethodLabels, type InvoicePaymentMethod } from "@/lib/invoice-payment-methods";
+import { useUnsavedSettings } from "./use-unsaved-settings";
 
 export function PaymentMethodsForm({ initial, canManage }: { initial: InvoicePaymentMethod[]; canManage: boolean }) {
   const [methods, setMethods] = useState(initial);
+  const [savedMethods, setSavedMethods] = useState(initial);
+  useUnsavedSettings(canManage && JSON.stringify(methods) !== JSON.stringify(savedMethods));
   const [editingId, setEditingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -26,6 +29,7 @@ export function PaymentMethodsForm({ initial, canManage }: { initial: InvoicePay
   }
   async function save(event: FormEvent) {
     event.preventDefault();
+    if (!canManage || busy) return;
     setError(""); setNotice("");
     const parsed = invoicePaymentMethodsSchema.safeParse(methods);
     if (!parsed.success) {
@@ -38,6 +42,7 @@ export function PaymentMethodsForm({ initial, canManage }: { initial: InvoicePay
     try {
       await invoiceRequest("/api/invoices/billing", { kind: "payments", paymentMethods: parsed.data }, "PUT");
       setMethods(parsed.data);
+      setSavedMethods(parsed.data);
       setEditingId(null);
       setNotice("Payment methods saved. Select them when creating or editing an invoice.");
     } catch (err) { setError(err instanceof Error ? err.message : "Unable to save payment methods."); }

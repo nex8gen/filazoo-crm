@@ -20,7 +20,7 @@ function HistoryFailure({ message, signIn, disabled, onRetry, retryLabel = "Retr
     <button type="button" className="underline disabled:opacity-50" disabled={disabled} onClick={onRetry}>{retryLabel}</button>
   </div>;
 }
-export function AiHistoryMenu({ history, disabled, onNew, onRetry, onClose, onSettings, cache }: { history: AiConversationController; disabled: boolean; onNew: () => void; onRetry?: () => void; onClose?: () => void; onSettings?: () => void; cache?: HistoryListCache }) {
+export function AiHistoryMenu({ history, disabled, onNew, onRetry, onClose, onSettings, cache, closeLabel = "Close AI workspace" }: { history: AiConversationController; disabled: boolean; onNew: () => void; onRetry?: () => void; onClose?: () => void; onSettings?: () => void; cache?: HistoryListCache; closeLabel?: string }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [archived, setArchived] = useState(false);
@@ -51,7 +51,7 @@ export function AiHistoryMenu({ history, disabled, onNew, onRetry, onClose, onSe
 
   return <div className="shrink-0 border-b px-2 py-1.5">
     <header className="flex min-h-8 min-w-0 items-center gap-1">
-      {onClose ? <Button type="button" variant="ghost" size="icon-xs" className="shrink-0 text-muted-foreground" aria-label={open ? "Back to conversation" : "Close AI workspace"} title={open ? "Back to conversation" : "Close AI workspace"} onClick={() => { if (open) setOpen(false); else onClose(); }}><ArrowLeft aria-hidden="true" /></Button> : null}
+      {onClose ? <Button type="button" variant="ghost" size="icon-xs" className="shrink-0 text-muted-foreground" aria-label={open ? "Back to conversation" : closeLabel} title={open ? "Back to conversation" : closeLabel} onClick={() => { if (open) setOpen(false); else onClose(); }}><ArrowLeft aria-hidden="true" /></Button> : null}
       <h2 className="min-w-0 flex-1 truncate px-1 text-xs font-medium" title={history.conversation?.title || "New conversation"}>{history.loading ? "Loading history…" : history.conversation ? <span data-no-translate>{history.conversation.title}</span> : "New conversation"}</h2>
       <div role="group" aria-label="Conversation actions" className="flex shrink-0 items-center gap-0.5 text-muted-foreground">
         <DropdownMenu>

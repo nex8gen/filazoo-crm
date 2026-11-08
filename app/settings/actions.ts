@@ -159,9 +159,11 @@ export async function saveWorkspaceMailbox(_state: SettingsActionState, formData
 
   try {
     const existing = parsed.data.mailboxId
-      ? await admin.from("workspace_mailboxes").select("id,smtp_password,imap_password").eq("id", parsed.data.mailboxId).eq("type", "workspace").maybeSingle()
+      ? await admin.from("workspace_mailboxes").select("id,email,smtp_password,imap_password").eq("id", parsed.data.mailboxId).eq("type", "workspace").maybeSingle()
       : { data: null, error: null };
     if (existing.error) throw new Error(existing.error.message);
+    if (parsed.data.mailboxId && !existing.data) return { error: "Mailbox not found or access denied. Refresh your connections." };
+    if (existing.data && existing.data.email !== parsed.data.email) return { error: "Add a separate connection to use a different email address." };
     const smtpPassword = parsed.data.smtpPassword || existing.data?.smtp_password || "";
     const imapPassword = parsed.data.imapPassword || existing.data?.imap_password || "";
     if (!parsed.data.smtpHost || !parsed.data.smtpUsername || !smtpPassword || !parsed.data.imapHost || !parsed.data.imapUsername || !imapPassword) {
@@ -186,8 +188,7 @@ export async function saveWorkspaceMailbox(_state: SettingsActionState, formData
       if (resetError) throw new Error(resetError.message);
     }
 
-    const { error: upsertError } = await admin.from("workspace_mailboxes").upsert({
-      ...(parsed.data.mailboxId ? { id: parsed.data.mailboxId } : {}),
+    const record = {
       email,
       user_id: null,
       type: "workspace",
@@ -204,8 +205,13 @@ export async function saveWorkspaceMailbox(_state: SettingsActionState, formData
       imap_username: parsed.data.imapUsername || null,
       imap_password: imapPassword,
       updated_at: new Date().toISOString(),
-    }, { onConflict: parsed.data.mailboxId ? "id" : "email" });
-    if (upsertError) throw new Error(upsertError.message);
+    };
+    const mutation = parsed.data.mailboxId
+      ? admin.from("workspace_mailboxes").update(record).eq("id", parsed.data.mailboxId).eq("type", "workspace")
+      : admin.from("workspace_mailboxes").insert(record);
+    const { data: saved, error: saveError } = await mutation.select("id").maybeSingle();
+    if (saveError?.code === "23505") return { error: "This email address is already connected. Manage the existing connection instead." };
+    if (saveError || !saved) return { error: "The mailbox could not be saved. Refresh and check your access." };
 
     revalidatePath("/settings", "layout");
     revalidatePath("/email");
@@ -241,9 +247,11 @@ export async function savePersonalMailbox(_state: SettingsActionState, formData:
 
   try {
     const existing = parsed.data.mailboxId
-      ? await admin.from("workspace_mailboxes").select("id,smtp_password,imap_password").eq("id", parsed.data.mailboxId).eq("user_id", viewer.id).eq("type", "personal").maybeSingle()
+      ? await admin.from("workspace_mailboxes").select("id,email,smtp_password,imap_password").eq("id", parsed.data.mailboxId).eq("user_id", viewer.id).eq("type", "personal").maybeSingle()
       : { data: null, error: null };
     if (existing.error) throw new Error(existing.error.message);
+    if (parsed.data.mailboxId && !existing.data) return { error: "Mailbox not found or access denied. Refresh your connections." };
+    if (existing.data && existing.data.email !== parsed.data.email) return { error: "Add a separate connection to use a different email address." };
     const smtpPassword = parsed.data.smtpPassword || existing.data?.smtp_password || "";
     const imapPassword = parsed.data.imapPassword || existing.data?.imap_password || "";
     if (!parsed.data.smtpHost || !parsed.data.smtpUsername || !smtpPassword || !parsed.data.imapHost || !parsed.data.imapUsername || !imapPassword) {
@@ -270,8 +278,7 @@ export async function savePersonalMailbox(_state: SettingsActionState, formData:
       if (resetError) throw new Error(resetError.message);
     }
 
-    const { error: upsertError } = await admin.from("workspace_mailboxes").upsert({
-      ...(parsed.data.mailboxId ? { id: parsed.data.mailboxId } : {}),
+    const record = {
       email: parsed.data.email,
       user_id: viewer.id,
       type: "personal",
@@ -288,8 +295,13 @@ export async function savePersonalMailbox(_state: SettingsActionState, formData:
       imap_username: parsed.data.imapUsername || null,
       imap_password: imapPassword,
       updated_at: new Date().toISOString(),
-    }, { onConflict: parsed.data.mailboxId ? "id" : "email" });
-    if (upsertError) throw new Error(upsertError.message);
+    };
+    const mutation = parsed.data.mailboxId
+      ? admin.from("workspace_mailboxes").update(record).eq("id", parsed.data.mailboxId).eq("type", "personal").eq("user_id", viewer.id)
+      : admin.from("workspace_mailboxes").insert(record);
+    const { data: saved, error: saveError } = await mutation.select("id").maybeSingle();
+    if (saveError?.code === "23505") return { error: "This email address is already connected. Manage the existing connection instead." };
+    if (saveError || !saved) return { error: "The mailbox could not be saved. Refresh and check your access." };
 
     revalidatePath("/settings", "layout");
     revalidatePath("/email");

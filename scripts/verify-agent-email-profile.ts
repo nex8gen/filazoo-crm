@@ -1,8 +1,7 @@
 // Synthetic, read-only provider check. Never reads real email, saves CRM data or sends mail.
 // node --env-file=.env.local --experimental-strip-types scripts/verify-agent-email-profile.ts
 import assert from "node:assert/strict";
-import { generateGeminiText } from "../lib/ai/gemini.ts";
-import { generateGatewayText, isGeminiRegionError } from "../lib/ai/gateway.ts";
+import { generateGatewayText } from "../lib/ai/gateway.ts";
 import { buildWorkspaceAssistantPrompt, extractAgentEmailSearch, extractWorkspaceActions, workspaceAssistantInstruction, workspaceAssistantSchema } from "../lib/ai/workspace-assistant.ts";
 
 const companyId = "ad9cb9f8-e098-44f0-a078-20eed16ef1bd";
@@ -12,10 +11,6 @@ const systemInstruction = workspaceAssistantInstruction("work", new Date().toISO
 async function generate(prompt: string) {
   const token = process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN;
   const options = { prompt, systemInstruction, maxOutputTokens: 3000, fetcher: ((url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(45000) })) as typeof fetch };
-  if (process.env.GEMINI_API_KEY) {
-    try { return await generateGeminiText({ ...options, apiKey: process.env.GEMINI_API_KEY, model: process.env.GEMINI_AGENT_MODEL || process.env.GEMINI_EMAIL_MODEL }); }
-    catch (error) { if (!token || !isGeminiRegionError(error)) throw error; }
-  }
   if (!token) throw new Error("An AI provider is required for this read-only verification.");
   return generateGatewayText({ ...options, token, model: process.env.AI_GATEWAY_AGENT_MODEL || process.env.AI_GATEWAY_EMAIL_MODEL });
 }

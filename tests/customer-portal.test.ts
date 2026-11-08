@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { invoicePortalKey, validPortalKey, hashPortalPassword, verifyPortalPassword, portalHash, portalToken } from "../lib/customer-portal-crypto.ts";
-import { customerInvoice, shipmentSchema } from "../lib/customer-portal.ts";
+import { customerInvoice, shipmentSchema, shipmentStatuses } from "../lib/customer-portal.ts";
 import { blankInvoiceDocument, type Invoice } from "../lib/invoices.ts";
 import { canReadInvoices, canCreateInvoices, canManageBilling } from "../lib/invoice-permissions.ts";
 
@@ -31,10 +31,30 @@ test("customer invoice DTO excludes CRM identifiers and payment internals", () =
   for (const secret of ["secret-company", "secret-contact", "secret-order", "secret-thread", "secret-key", "internal-ref", "secret-bank"]) assert.equal(text.includes(secret), false);
   assert.equal(customerInvoice(invoice).paid_minor, 50);
 });
-test("tracking links reject executable and insecure URLs", () => {
+test("tracking links accept blanks or HTTPS and reject malformed, executable and insecure URLs without throwing", () => {
   const shipment = { status: "in_transit", location: "Shenzhen", carrier: "DHL", tracking_number: "123", expected_delivery: "2026-11-01" };
-  assert.equal(shipmentSchema.safeParse({ ...shipment, tracking_url: "https://example.com/track" }).success, true);
-  for (const tracking_url of ["javascript:alert(1)", "http://example.com", "data:text/html,test"]) assert.equal(shipmentSchema.safeParse({ ...shipment, tracking_url }).success, false);
+  for (const tracking_url of ["", "https://example.com/track", "HTTPS://example.com/track?number=123#delivery"]) {
+    assert.equal(shipmentSchema.safeParse({ ...shipment, tracking_url }).success, true, tracking_url);
+  }
+  for (const tracking_url of ["not a URL", "/tracking/123", "https://", "https://[invalid", "javascript:alert(1)", "http://example.com", "ftp://example.com/track", "data:text/html,test"]) {
+    assert.equal(shipmentSchema.safeParse({ ...shipment, tracking_url }).success, false, tracking_url);
+  }
+});
+test("shipment validation retains statuses, date checks, text limits and trimmed fields with optional tracking", () => {
+  const shipment = { status: "preparing", location: " Shenzhen ", carrier: " DHL ", tracking_number: " 123 ", tracking_url: "", expected_delivery: "" };
+  const parsed = shipmentSchema.parse(shipment);
+  assert.deepEqual([parsed.location, parsed.carrier, parsed.tracking_number], ["Shenzhen", "DHL", "123"]);
+  for (const status of shipmentStatuses) assert.equal(shipmentSchema.safeParse({ ...shipment, status }).success, true);
+  assert.equal(shipmentSchema.safeParse({ ...shipment, status: "shipped" }).success, false);
+  assert.equal(shipmentSchema.safeParse({ ...shipment, expected_delivery: "2026-11-07" }).success, true);
+  for (const expected_delivery of ["2026-02-30", "tomorrow", "2026-11-07T12:00:00Z"]) assert.equal(shipmentSchema.safeParse({ ...shipment, expected_delivery }).success, false);
+  for (const [field, limit] of [["location", 200], ["carrier", 100], ["tracking_number", 200]] as const) {
+    assert.equal(shipmentSchema.safeParse({ ...shipment, [field]: "x".repeat(limit) }).success, true);
+    assert.equal(shipmentSchema.safeParse({ ...shipment, [field]: "x".repeat(limit + 1) }).success, false);
+  }
+  const trackingUrl = "https://example.com/";
+  assert.equal(shipmentSchema.safeParse({ ...shipment, tracking_url: trackingUrl + "x".repeat(2000 - trackingUrl.length) }).success, true);
+  assert.equal(shipmentSchema.safeParse({ ...shipment, tracking_url: trackingUrl + "x".repeat(2001 - trackingUrl.length) }).success, false);
 });
 test("customer role has no staff invoice permissions and every customer route uses scoped access", () => {
   assert.equal(canReadInvoices("customer"), false);

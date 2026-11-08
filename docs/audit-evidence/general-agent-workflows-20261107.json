@@ -1,0 +1,182 @@
+{
+  "syntheticOnly": true,
+  "businessWrites": false,
+  "provider": "vercel-ai-gateway",
+  "results": [
+    {
+      "name": "new-customer-and-task",
+      "passed": true,
+      "providerCalls": 1,
+      "contractVersion": "2026-11-07.2",
+      "workflow": {
+        "type": "run_workflow",
+        "steps": [
+          {
+            "id": "create-company",
+            "tool": "create_company",
+            "input": {
+              "type": "create_company",
+              "company": {
+                "name": "Synthetic Aster Printing",
+                "country": "United States",
+                "segment": "3D printing",
+                "contactEmail": "buyer@example.com"
+              }
+            },
+            "dependsOn": [],
+            "bindings": []
+          },
+          {
+            "id": "create-follow-up-task",
+            "tool": "create_task",
+            "input": {
+              "op": "create_task",
+              "companyId": "00000000-0000-0000-0000-000000000000",
+              "title": "Review samples",
+              "priority": "high",
+              "notes": "Follow up with Synthetic Aster Printing to review samples."
+            },
+            "dependsOn": [
+              "create-company"
+            ],
+            "bindings": [
+              {
+                "path": [
+                  "companyId"
+                ],
+                "step": "create-company",
+                "result": "companyId"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "existing-customer-task-and-note",
+      "passed": true,
+      "providerCalls": 2,
+      "contractVersion": "2026-11-07.2",
+      "workflow": {
+        "type": "run_workflow",
+        "steps": [
+          {
+            "id": "create-sample-review-task",
+            "tool": "create_task",
+            "input": {
+              "op": "create_task",
+              "companyId": "15693adc-0bdf-4617-b214-71b1861764a9",
+              "title": "Review Black PLA samples",
+              "notes": "Review the Black PLA samples requested by this customer.",
+              "priority": "normal"
+            },
+            "dependsOn": [],
+            "bindings": []
+          },
+          {
+            "id": "add-sample-review-note",
+            "tool": "add_company_note",
+            "input": {
+              "type": "add_company_note",
+              "companyId": "15693adc-0bdf-4617-b214-71b1861764a9",
+              "note": "Requested sample review"
+            },
+            "dependsOn": [],
+            "bindings": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "new-flow-and-status",
+      "passed": true,
+      "providerCalls": 1,
+      "contractVersion": "2026-11-07.2",
+      "workflow": {
+        "type": "run_workflow",
+        "steps": [
+          {
+            "id": "create_flow",
+            "tool": "create_flow",
+            "input": {
+              "type": "create_flow",
+              "flow": {
+                "name": "Synthetic Sample Follow-up",
+                "triggerType": "no_reply",
+                "triggerConfig": {
+                  "amount": 2,
+                  "unit": "days",
+                  "businessDays": true
+                },
+                "status": "draft",
+                "steps": [
+                  {
+                    "id": "wait-2d",
+                    "type": "wait",
+                    "config": {
+                      "amount": 2,
+                      "unit": "days",
+                      "businessDays": true,
+                      "resumeAt": "09:00"
+                    }
+                  },
+                  {
+                    "id": "send-reminder",
+                    "type": "send_email",
+                    "config": {
+                      "templateId": "helpful_reminder",
+                      "mailboxId": "default",
+                      "replyInThread": true,
+                      "subject": "Just checking in",
+                      "preheader": "A quick follow-up from Filazoo",
+                      "trackOpens": true,
+                      "trackClicks": true,
+                      "utmTracking": true,
+                      "stopOnReply": true,
+                      "sendWindow": "business_hours"
+                    }
+                  },
+                  {
+                    "id": "create-task",
+                    "type": "create_task",
+                    "config": {
+                      "assigneeType": "owner",
+                      "assigneeId": null,
+                      "dueInDays": 0,
+                      "title": "Follow up with customer",
+                      "priority": "high",
+                      "notes": "Review the thread and call if the customer has not replied."
+                    }
+                  }
+                ]
+              }
+            },
+            "dependsOn": [],
+            "bindings": []
+          },
+          {
+            "id": "pause_new_flow",
+            "tool": "flow_status",
+            "input": {
+              "op": "flow_status",
+              "flowId": "00000000-0000-0000-0000-000000000000",
+              "status": "paused"
+            },
+            "dependsOn": [
+              "create_flow"
+            ],
+            "bindings": [
+              {
+                "path": [
+                  "flowId"
+                ],
+                "step": "create_flow",
+                "result": "flowId"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

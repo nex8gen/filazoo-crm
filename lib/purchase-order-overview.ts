@@ -2,7 +2,7 @@ import { poStatuses, type PurchaseOrderDocument } from "./purchase-orders.ts";
 
 export const purchaseOrderPageSize = 25;
 export const activeOrderStatuses = ["confirmed", "in_production", "shipped"] as const;
-export type PurchaseOrderFilters = { search: string; status: string; overdue: boolean; page: number };
+export type PurchaseOrderFilters = { search: string; status: string; overdue: boolean; page: number; sort?: "oldest" };
 
 export function purchaseOrderFilters(params: Record<string, string | string[] | undefined>): PurchaseOrderFilters {
   const value = (key: string) => typeof params[key] === "string" ? params[key] as string : "";
@@ -12,16 +12,23 @@ export function purchaseOrderFilters(params: Record<string, string | string[] | 
     status: poStatuses.find(status => status === value("status")) ?? "",
     overdue: value("overdue") === "1",
     page: Number.isSafeInteger(page) && page > 0 && page <= 100000 ? page : 1,
+    ...(value("sort") === "oldest" ? { sort: "oldest" as const } : {}),
   };
 }
 
-export function purchaseOrdersHref(filters: Partial<PurchaseOrderFilters> = {}) {
+export function purchaseOrdersHref(filters: Partial<PurchaseOrderFilters> = {}, drafts = false, companyId?: string) {
   const params = new URLSearchParams();
+  if (companyId !== undefined) {
+    params.set("tab", "purchase-orders");
+    if (drafts) params.set("view", "drafts");
+  }
   if (filters.search) params.set("q", filters.search);
-  if (filters.status) params.set("status", filters.status);
+  if (filters.status && !(drafts && filters.status === "draft")) params.set("status", filters.status);
   if (filters.overdue) params.set("overdue", "1");
   if (filters.page && filters.page > 1) params.set("page", String(filters.page));
-  return `/purchase-orders${params.size ? `?${params}` : ""}`;
+  if (filters.sort) params.set("sort", filters.sort);
+  const path = companyId !== undefined ? `/companies/${encodeURIComponent(companyId)}` : `/purchase-orders${drafts ? "/drafts" : ""}`;
+  return `${path}${params.size ? `?${params}` : ""}`;
 }
 
 export function orderIsOverdue(document: Pick<PurchaseOrderDocument, "status" | "deliveryDate">, today: string) {

@@ -22,7 +22,7 @@ function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
   return (
     <thead
       data-slot="table-header"
-      className={cn("bg-muted/40", className)}
+      className={cn(className)}
       {...props}
     />
   )
@@ -70,7 +70,7 @@ function TableHead({ className, ...props }: React.ComponentProps<"th">) {
       data-slot="table-head"
       scope="col"
       className={cn(
-        "px-4 py-4 text-left align-middle text-xs font-bold whitespace-nowrap text-muted-foreground",
+        "px-3 py-2 text-left align-middle text-xs font-medium whitespace-nowrap text-muted-foreground",
         className
       )}
       {...props}
@@ -83,7 +83,7 @@ function TableCell({ className, ...props }: React.ComponentProps<"td">) {
     <td
       data-slot="table-cell"
       className={cn(
-        "px-4 py-4 align-middle whitespace-nowrap",
+        "px-3 py-2 align-middle whitespace-nowrap",
         className
       )}
       {...props}

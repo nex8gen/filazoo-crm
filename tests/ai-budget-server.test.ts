@@ -7,7 +7,6 @@ import ts from "typescript";
 import * as budget from "../lib/ai/budget.ts";
 import * as budgetFetch from "../lib/ai/budget-fetch.ts";
 import { generateGatewayText } from "../lib/ai/gateway.ts";
-import { generateGeminiText } from "../lib/ai/gemini.ts";
 import { policyTestDependency } from "./helpers/ai-policy.ts";
 const require = createRequire(import.meta.url);
 function load(file: string, deps: Record<string, unknown>, fetcher: typeof fetch = fetch) {
@@ -79,10 +78,7 @@ test("generation ignores the legacy budget flag and still reports token usage", 
     assert.equal(await generateGatewayText({ ...common, token: "synthetic", onUsage: value => usage.push(value), fetcher: async () => {
       calls++; return Response.json({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: "Gateway response" }] }], usage: { input_tokens: 10, output_tokens: 5 } });
     } }), "Gateway response");
-    assert.equal(await generateGeminiText({ ...common, apiKey: "synthetic", onUsage: value => usage.push(value), fetcher: async () => {
-      calls++; return Response.json({ candidates: [{ content: { parts: [{ text: "Gemini response" }] } }], usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5, totalTokenCount: 15 } });
-    } }), "Gemini response");
-    assert.equal(calls, 2); assert.equal(usage.length, 2);
+    assert.equal(calls, 1); assert.equal(usage.length, 1);
   } finally { if (previous === undefined) delete process.env.AI_BUDGET_ENFORCEMENT; else process.env.AI_BUDGET_ENFORCEMENT = previous; }
 });
 test("usage bars render accessible 0-100 values and daily reset information", () => {
@@ -127,4 +123,3 @@ test("a denied reservation reads the trusted member's balance to distinguish ins
   await assert.rejects(guarded("https://ai-gateway.vercel.sh/v1/responses", { body: JSON.stringify({ model: "openai/gpt-5-nano", input: "Hello", max_output_tokens: 100 }) }), /remaining daily AI allowance is too low/);
   assert.deepEqual(calls, ["reserve_ai_budget", "read_ai_budget"]);
 });
-

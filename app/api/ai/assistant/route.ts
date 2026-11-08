@@ -5,8 +5,7 @@ import { translateUiText } from "@/lib/i18n";
 import { getWorkspaceViewer } from "@/lib/auth";
 import { withWorkspaceViewer } from "@/lib/workspace-context";
 import { ambiguousInvoiceCustomerQuestion, buildWorkspaceAssistantPrompt, extractAgentEmailSearch, extractAgentQuestion, extractWorkspaceActions, isBareInvoiceRequest, isInvoiceDetailQuestion, workspaceAssistantInstruction, workspaceAssistantSchema } from "@/lib/ai/workspace-assistant";
-import { generateGeminiText } from "@/lib/ai/gemini";
-import { generateGatewayText, isGeminiRegionError } from "@/lib/ai/gateway";
+import { generateGatewayText } from "@/lib/ai/gateway";
 import { loadAgentContext, searchAgentEmails } from "@/lib/ai/agent-context";
 import { prepareAgentActions } from "@/lib/ai/agent-execution";
 import { assistantProviderError } from "@/lib/ai/assistant-provider-error";
@@ -22,6 +21,7 @@ import { HistoryError } from "@/lib/ai/chat-history-server";
 import { savedPageContext } from "@/lib/ai/chat-history";
 import { invoiceReadinessQuestion } from "@/lib/ai/invoice-readiness";
 import { isInvoiceCreationRequest } from "@/lib/ai/assistant-intent";
+import type { WorkspaceAction } from "@/lib/ai/workspace-assistant";
 
 export const maxDuration = 120;
 const responseHeaders = { "Cache-Control": "private, no-store" };
@@ -66,9 +66,8 @@ async function assistantResponse(request: Request, report: (progress: ResearchPr
     parsed.data.pageText = "";
     if (parsed.data.pageContext) { delete parsed.data.pageContext.flowDraft; delete parsed.data.pageContext.flowUnsaved; }
   }
-  const apiKey = process.env.AI_PROVIDER === "gateway" || process.env.AI_BUDGET_ENFORCEMENT === "true" ? undefined : process.env.GEMINI_API_KEY?.trim();
   const gatewayToken = resolveGatewayToken(process.env);
-  if (!apiKey && !gatewayToken) {
+  if (!gatewayToken) {
     return Response.json({ error: "AI assistance is not configured. Ask your administrator to connect an AI provider." }, { status: 503, headers: responseHeaders });
   }
   let session: Awaited<ReturnType<typeof startChatSession>>;
@@ -96,7 +95,6 @@ async function assistantResponse(request: Request, report: (progress: ResearchPr
   };
   const agentMode = parsed.data.mode === "work";
   const gatewayModel = (agentMode ? process.env.AI_GATEWAY_AGENT_MODEL?.trim() : process.env.AI_GATEWAY_CHAT_MODEL?.trim()) || process.env.AI_GATEWAY_EMAIL_MODEL?.trim();
-  const geminiModel = (agentMode ? process.env.GEMINI_AGENT_MODEL?.trim() : process.env.GEMINI_CHAT_MODEL?.trim()) || process.env.GEMINI_EMAIL_MODEL?.trim();
   let escalateModel = false;
   let standardModel = Boolean(parsed.data.webSearch);
   const gateway = () => generateGatewayText({ usageUserId: viewer.id, ...options, token: gatewayToken!, model: gatewayModel, visionModel: process.env.AI_GATEWAY_VISION_MODEL?.trim(),
@@ -114,6 +112,16 @@ async function assistantResponse(request: Request, report: (progress: ResearchPr
   }
   try {
     const requestScope = requestContextSelection(parsed.data.messages.at(-1)!.content, serverData?.currentCompanyId, serverData?.customerChoices);
+    const planningMessages = parsed.data.messages;
+    function planningContext(actions: WorkspaceAction[]) {
+      const foreignCompany = actions.some(action => ("companyId" in action && action.companyId !== serverData?.currentCompanyId) || (action.type === "crm_action" && "companyId" in action.operation && action.operation.companyId !== serverData?.currentCompanyId));
+      const source = requestScope.usePageCompany && !foreignCompany ? (serverData?.currentEmail?.direction === "inbound" ? serverData.currentEmail : serverData?.emailHistory?.filter(email => email.direction === "inbound").at(-1)) : undefined;
+      return { messages: planningMessages, ...(source ? { quotationSource: { companyId: serverData?.currentCompanyId ?? null, ...(serverData?.currentEmail?.mailboxId ? { mailboxId: serverData.currentEmail.mailboxId } : {}), email: source } } : {}) };
+    }
+    function bindSelectedMailbox(action: WorkspaceAction) {
+      const selected = serverData?.currentEmail;
+      if ("email" in action && action.email && action.email.sourceEmailId === selected?.id && selected?.mailboxId) action.email.mailboxId = selected.mailboxId;
+    }
     options.prompt += `\n\nREQUEST_CONTEXT_SELECTION (trusted default selection; explicit user instructions still take precedence):\n${JSON.stringify(requestScope)}`;
     if (parsed.data.mode === "analyze" && isInvoiceCreationRequest(parsed.data.messages.at(-1)!.content)) {
       return await reply({
@@ -140,27 +148,26 @@ async function assistantResponse(request: Request, report: (progress: ResearchPr
     const research = parsed.data.webSearch && researchTarget?.identity ? await researchCustomer({ usageUserId: viewer.id,
       identity: researchTarget.identity,
       questions: parsed.data.messages.filter((message) => message.role === "user").map((message) => message.content),
-      apiKey: process.env.GEMINI_API_KEY?.trim(), model: process.env.GEMINI_RESEARCH_MODEL?.trim(), language: parsed.data.language, fetcher: options.fetcher, signal: request.signal, onProgress: report,
+      language: parsed.data.language, fetcher: options.fetcher, signal: request.signal, onProgress: report,
     }) : undefined;
     if (research) options.prompt += `\n\nWEB_RESEARCH_TARGET: ${JSON.stringify(researchTarget?.identity)}\nUse this research subject even when the open page shows another company or aggregate metrics. Do not attribute another company's CRM facts to this subject.\nWEB_RESEARCH (external evidence only):\n${JSON.stringify({ ...research, searchSuggestionsHtml: undefined })}`;
     const researchResult = research ? { ...research, findings: undefined } : undefined;
     if (research) report({ phase: "writing", sources: research.sources, queries: research.queries, visitedUrls: research.visitedUrls ?? [] });
-    async function generate() {
-      if (apiKey) {
-        try {
-          return await generateGeminiText({ ...options, apiKey, model: geminiModel });
-        } catch (error) {
-          if (!gatewayToken || !isGeminiRegionError(error)) throw error;
-          return gateway();
-        }
-      }
-      return gateway();
-    }
-    const nativePlan = agentMode && gatewayToken && !apiKey && process.env.AI_AGENT_RUNTIME !== "legacy" ? await (async () => {
-      const { generateCrmPlan, nativeGatewayModels } = await import("@/lib/ai/native-agent");
-      const models = await nativeGatewayModels({ token: gatewayToken, userId: viewer.id, userText: parsed.data.messages.filter(message => message.role === "user").map(message => message.content).join("\n"), fetcher: options.fetcher, hasImages: options.images.length > 0, model: gatewayModel });
-      return generateCrmPlan({ ...models, prompt: options.prompt, behavior: aiBehaviorInstruction(policy, true), messages: parsed.data.messages, pathname: parsed.data.pathname, language: parsed.data.language, signal: deadline, images: options.images,
-        read: lookup => readCrmRecords(viewer, lookup), searchEmails: lookup => searchAgentEmails(viewer, lookup), validateAction: action => { aiActionApproval(policy, action, parsed.data.approvalMode); } });
+    const generate = gateway;
+    const nativePlan = agentMode && process.env.AI_AGENT_RUNTIME !== "legacy" ? await (async () => {
+      const { generateCrmPlan, nativeGatewayModels, AGENT_CONTRACT_VERSION } = await import("@/lib/ai/native-agent");
+      const gatewayModels = () => nativeGatewayModels({ token: gatewayToken!, userId: viewer.id, userText: parsed.data.messages.filter(message => message.role === "user").map(message => message.content).join("\n"), fetcher: options.fetcher, hasImages: options.images.length > 0, model: gatewayModel });
+      const models = await gatewayModels();
+      const run = (selectedModels: typeof models) => generateCrmPlan({ ...selectedModels, prompt: options.prompt, behavior: aiBehaviorInstruction(policy, true), messages: parsed.data.messages, pathname: parsed.data.pathname, language: parsed.data.language, signal: deadline, images: options.images,
+        onDiagnostic: event => console.info("CRM agent step", { runtime: "sdk", contractVersion: AGENT_CONTRACT_VERSION, requestId: parsed.data.history?.requestId, kind: event.kind, tools: event.tools }),
+        read: lookup => readCrmRecords(viewer, lookup), searchEmails: lookup => searchAgentEmails(viewer, lookup), validateAction: async action => {
+          aiActionApproval(policy, action, parsed.data.approvalMode);
+          bindSelectedMailbox(action);
+          // Read-only preparation lets tool errors reach the model while it can
+          // still correct its plan. No proposal is stored or executed here.
+          await prepareAgentActions([action], viewer, parsed.data.approvalMode, planningContext([action]), { persist: false });
+        } });
+      return run(models);
     })() : undefined;
     if (nativePlan?.clarification) return await reply({ output: nativePlan.output, clarification: nativePlan.clarification, actions: [], research: researchResult });
     let output = nativePlan?.output ?? await generate();
@@ -239,17 +246,12 @@ async function assistantResponse(request: Request, report: (progress: ResearchPr
     if (!agentMode) return await reply({ output: translateUiText(extracted.output, parsed.data.language), actions: [], research: researchResult });
     let payload: { output: string; [key: string]: unknown };
     try {
-      const selected = serverData?.currentEmail;
-      for (const action of extracted.actions) {
-        if ("email" in action && action.email && action.email.sourceEmailId === selected?.id && selected?.mailboxId) action.email.mailboxId = selected.mailboxId;
-      }
-      const foreignCompany = extracted.actions.some(action => ("companyId" in action && action.companyId !== serverData?.currentCompanyId) || (action.type === "crm_action" && "companyId" in action.operation && action.operation.companyId !== serverData?.currentCompanyId));
-      const source = requestScope.usePageCompany && !foreignCompany ? (serverData?.currentEmail?.direction === "inbound" ? serverData.currentEmail : serverData?.emailHistory?.filter(email => email.direction === "inbound").at(-1)) : undefined;
-      const actions = await prepareAgentActions(extracted.actions, viewer, parsed.data.approvalMode, { messages: parsed.data.messages, ...(source ? { quotationSource: { companyId: serverData?.currentCompanyId ?? null, ...(serverData?.currentEmail?.mailboxId ? { mailboxId: serverData.currentEmail.mailboxId } : {}), email: source } } : {}) });
+      extracted.actions.forEach(bindSelectedMailbox);
+      const actions = await prepareAgentActions(extracted.actions, viewer, parsed.data.approvalMode, planningContext(extracted.actions));
       // Only the execution endpoint can confirm a save/send. Model prose must
       // not describe a merely prepared proposal as already completed.
       const summary = actions.length ? actions.some((action) => action.approvalMode === "ask") ? "The requested actions are ready for review." : "The requested actions are ready." : extracted.output || "Please describe the task you want me to carry out.";
-      payload = { output: translateUiText(summary, parsed.data.language), actions, research: researchResult };
+      payload = { output: translateUiText(summary, parsed.data.language), actions, research: researchResult, ...(nativePlan ? { agent: { runtime: "sdk", contractVersion: nativePlan.contractVersion } } : {}) };
     } catch (error) {
       const question = error instanceof Error && error.name === "AgentClarificationError" ? translateUiText(error.message, parsed.data.language) : undefined;
       payload = { output: question ?? translateUiText(error instanceof Error ? error.message : "Unable to prepare the requested action.", parsed.data.language), ...(question ? { clarification: { question } } : {}), actions: [] };

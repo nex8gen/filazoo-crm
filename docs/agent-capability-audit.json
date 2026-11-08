@@ -1,6 +1,6 @@
 {
-  "contractVersion": "2026-11-05.2",
-  "generatedOn": "2026-11-06",
+  "contractVersion": "2026-11-07.2",
+  "generatedOn": "2026-11-08",
   "capabilities": [
     {
       "name": "create_company",
@@ -10,7 +10,7 @@
     {
       "name": "create_invoice",
       "domain": "invoices",
-      "description": "Prepare a draft invoice from actual product/variant quantities and saved prices. This is NOT a quotation. Stages a proposal only; execution is separate."
+      "description": "Create an order-backed draft invoice from actual product/variant quantities and saved prices. The server creates its required order and resolves the generated invoice ID. Include requested email in this action to attach its actual PDF. This is NOT a quotation. Prefer create_order for an order plus invoice/email request. Stages a proposal only; execution is separate."
     },
     {
       "name": "update_invoice",
@@ -41,6 +41,16 @@
       "name": "create_flow",
       "domain": "workflows",
       "description": "Create a new automation workflow; do not activate unless requested. Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "create_order",
+      "domain": "orders",
+      "description": "Create a new customer order and its automatically linked draft invoice as ONE workflow. Use saved companyId, productSku, variantId and quantity; no future order/invoice ID or external PO number is required. Optional email is part of this same workflow: it attaches the actual generated invoice PDF after saving the order. delivery:send only when explicitly requested; delivery:draft opens an email draft. Do not propose separate invoice_order or write_email actions for this new order. Stages a proposal only; execution is separate."
+    },
+    {
+      "name": "run_workflow",
+      "domain": "workflows",
+      "description": "Compose 2–20 registered CRM actions into one ordered task. Use this for multi-action requests across ANY domains or when a later action needs a new record ID. Each step has id, tool (registered capability name), input (the same typed input as that tool), optional dependsOn:['earlier_step'] for ordering, and optional bindings:[{path:['companyId'],step:'create_customer',result:'companyId'}]. Omit a bound ID from input; the server fills the confirmed result. Only earlier steps and matching public result IDs are allowed. Never nest workflows, change tool names/permissions through bindings, or invent future IDs. Known actions are reviewed together; unresolved dependent actions receive their actual review when ready. Use create_order inside a step for an order with its invoice/email. Stages a proposal only; execution is separate."
     },
     {
       "name": "create_task",
@@ -551,6 +561,12 @@
       "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
     },
     {
+      "surface": "app/api/flows/check/route.ts#POST",
+      "mode": "read",
+      "tools": [],
+      "explanation": "Authenticated, read-only workflow connection and resource checks. Uses live dependencies without generating content, sending messages or changing CRM records."
+    },
+    {
       "surface": "app/api/flows/preview/route.ts#POST",
       "mode": "guided",
       "tools": [],
@@ -703,6 +719,12 @@
     },
     {
       "surface": "app/company-analysis-actions.ts#loadCompanyAnalysis",
+      "mode": "read",
+      "tools": [],
+      "explanation": "Read-only UI helper; agent uses permission-scoped read_records/search_customer_emails instead."
+    },
+    {
+      "surface": "app/company-purchase-order-actions.ts#loadCompanyPurchaseOrderDraft",
       "mode": "read",
       "tools": [],
       "explanation": "Read-only UI helper; agent uses permission-scoped read_records/search_customer_emails instead."

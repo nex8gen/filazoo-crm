@@ -2,8 +2,7 @@ import { resolveGatewayToken } from "@/lib/ai/provider-credentials";
 import { requireAiFeature } from "@/lib/data/ai-settings";
 import { aiBehaviorInstruction, restrictedAiContext, AiPolicyError } from "@/lib/ai-policy";
 import { requireWorkspaceMember } from "@/lib/auth";
-import { generateGeminiText } from "@/lib/ai/gemini";
-import { generateGatewayText, isGeminiRegionError } from "@/lib/ai/gateway";
+import { generateGatewayText } from "@/lib/ai/gateway";
 import {
   applyEmailSignature,
   buildEmailRewriteInstruction,
@@ -89,7 +88,6 @@ export async function POST(request: Request) {
     }
   }
 
-  const apiKey = process.env.AI_PROVIDER === "gateway" || process.env.AI_BUDGET_ENFORCEMENT === "true" ? undefined : process.env.GEMINI_API_KEY?.trim();
   const gatewayToken = resolveGatewayToken(process.env);
 
   const signature = {
@@ -131,37 +129,14 @@ export async function POST(request: Request) {
     prompt: correction ? `${userContent}\n\nVALIDATION CORRECTION:\n${correction}` : userContent,
   });
 
-  if (!apiKey && !gatewayToken) {
+  if (!gatewayToken) {
     return Response.json({ ok: false, error: "AI assistance is not configured." }, { status: 503 });
   }
 
-  if (!apiKey && gatewayToken) {
-    try {
-      const output = await finalizeOutput(generateWithGateway);
-      return Response.json({ ok: true, output, provider: "vercel-ai-gateway" }, { headers: { "Cache-Control": "no-store" } });
-    } catch (error) {
-      return Response.json({ ok: false, error: error instanceof Error ? error.message : "AI assistance is temporarily unavailable." }, { status: error instanceof Error && error.name === "AiBudgetError" ? (error as Error & { status?: number }).status || 429 : 502 });
-    }
-  }
-
   try {
-    const output = await finalizeOutput((correction) => generateGeminiText({
-      apiKey: apiKey!,
-      model: process.env.GEMINI_EMAIL_MODEL?.trim(),
-      systemInstruction: governedSystem,
-      prompt: correction ? `${userContent}\n\nVALIDATION CORRECTION:\n${correction}` : userContent,
-    }));
-    return Response.json({ ok: true, output, provider: "gemini" }, { headers: { "Cache-Control": "no-store" } });
+    const output = await finalizeOutput(generateWithGateway);
+    return Response.json({ ok: true, output, provider: "vercel-ai-gateway" }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    if (gatewayToken && isGeminiRegionError(error)) {
-      try {
-        const output = await finalizeOutput(generateWithGateway);
-        return Response.json({ ok: true, output, provider: "vercel-ai-gateway" }, { headers: { "Cache-Control": "no-store" } });
-      } catch (fallbackError) {
-        const detail = fallbackError instanceof Error ? fallbackError.message : "AI assistance is temporarily unavailable.";
-        return Response.json({ ok: false, error: `Gemini is unavailable in this server's region. The AI Gateway fallback also failed: ${detail}` }, { status: error instanceof Error && error.name === "AiBudgetError" ? (error as Error & { status?: number }).status || 429 : 502 });
-      }
-    }
     return Response.json({ ok: false, error: error instanceof Error ? error.message : "AI assistance is temporarily unavailable." }, { status: error instanceof Error && error.name === "AiBudgetError" ? (error as Error & { status?: number }).status || 429 : 502 });
   }
 }

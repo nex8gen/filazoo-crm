@@ -19,7 +19,7 @@ const examples = [
 ] as const;
 const blankEmail = () => ({ id: crypto.randomUUID(), from: "customer@example.com", subject: "", body: "" });
 
-export function FlowEmailTestDialog({ flow, open, onOpenChange, messageStepPath, sample }: { flow: FlowInput; open: boolean; onOpenChange: (open: boolean) => void; messageStepPath?: number[]; sample?: { facts: FlowFacts; customerName?: string | null; companyName?: string | null; email?: string | null } }) {
+export function FlowEmailTestDialog({ flow, open, onOpenChange, messageStepPath, sample, initialSendReal = false, defaultRecipient }: { flow: FlowInput; open: boolean; onOpenChange: (open: boolean) => void; messageStepPath?: number[]; initialSendReal?: boolean; defaultRecipient?: string | null; sample?: { facts: FlowFacts; customerName?: string | null; companyName?: string | null; email?: string | null } }) {
   const [emails, setEmails] = useState<Array<ReturnType<typeof blankEmail>>>(() => [{ ...blankEmail(), from: sample?.email || "customer@example.com", subject: examples[0].subject, body: examples[0].body }]);
   const [customerName, setCustomerName] = useState(sample?.customerName || "Alex");
   const [companyName, setCompanyName] = useState(sample?.companyName || "Sample company");
@@ -27,25 +27,29 @@ export function FlowEmailTestDialog({ flow, open, onOpenChange, messageStepPath,
   const [result, setResult] = useState<FlowEmailTestResult | null>(null);
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false);
-  const [sendReal, setSendReal] = useState(false);
+  const [sendReal, setSendReal] = useState(initialSendReal);
+  const [timing, setTiming] = useState<"fast" | "scheduled">("fast");
   const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
   const [facts, setFacts] = useState(() => flowScenarioSchema.parse(sample?.facts ?? {
     ...Object.fromEntries(["category", "segment", "country", "companyStatus", "pipelineStage"].map((key) => [key, typeof flow.triggerConfig[key] === "string" ? flow.triggerConfig[key] : null])),
     fitScore: typeof flow.triggerConfig.minFitScore === "number" ? flow.triggerConfig.minFitScore : null,
   }));
-  const [recipient, setRecipient] = useState("");
+  const [recipient, setRecipient] = useState(defaultRecipient || "");
   const [delivery, setDelivery] = useState<FlowEmailDeliveryTestRun | null>(null);
+  const [processingDelivery, setProcessingDelivery] = useState(false);
   const requestId = useRef<string | null>(null);
   const busy = useRef(false);
   const pending = delivery?.status === "waiting";
   const deliveryId = delivery?.id;
   const deliveryStatus = delivery?.status;
+  const nextDeliveryAt = delivery?.next_run_at;
 
   useEffect(() => {
     if (!open || !deliveryId || deliveryStatus !== "waiting") return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
     async function poll() {
+      setProcessingDelivery(!nextDeliveryAt || Date.parse(nextDeliveryAt) <= Date.now());
       try {
         const response = await fetch(`/api/flows/test-email/send/${deliveryId}`, { method: "POST" });
         const data = await response.json();
@@ -56,11 +60,12 @@ export function FlowEmailTestDialog({ flow, open, onOpenChange, messageStepPath,
       } catch (cause) {
         if (!stopped) setError(cause instanceof Error ? cause.message : "Unable to check test delivery.");
       }
-      if (!stopped) timer = setTimeout(() => void poll(), 3000);
+      finally { if (!stopped) setProcessingDelivery(false); }
+      if (!stopped) timer = setTimeout(() => void poll(), 500);
     }
     void poll();
     return () => { stopped = true; clearTimeout(timer); };
-  }, [open, deliveryId, deliveryStatus]);
+  }, [open, deliveryId, deliveryStatus, nextDeliveryAt]);
 
   function updateEmail(id: string, field: "from" | "subject" | "body", value: string) {
     setEmails((current) => current.map((email) => email.id === id ? { ...email, [field]: value } : email));
@@ -71,7 +76,7 @@ export function FlowEmailTestDialog({ flow, open, onOpenChange, messageStepPath,
     if (busy.current) return;
     if (sendReal) {
       requestId.current ??= crypto.randomUUID();
-      const parsed = flowEmailDeliveryTestSchema.safeParse({ flow, customerName, companyName, firstMessage, facts, messageStepPath, emails: emails.slice(0, 1), recipient, requestId: requestId.current });
+      const parsed = flowEmailDeliveryTestSchema.safeParse({ flow, customerName, companyName, firstMessage, facts, messageStepPath, emails: emails.slice(0, 1), recipient, timing, requestId: requestId.current });
       if (!parsed.success) { setError(parsed.error.issues[0]?.message || "Enter a test recipient and one sample email."); return; }
       busy.current = true; setRunning(true); setError(""); setResult(null);
       try {
@@ -116,8 +121,9 @@ export function FlowEmailTestDialog({ flow, open, onOpenChange, messageStepPath,
       </DialogHeader>
       <div className="space-y-5">
         <label className="flex items-center gap-2 text-sm"><Checkbox checked={sendReal} disabled={running || pending} onCheckedChange={(value) => { setSendReal(value === true); setResult(null); setDelivery(null); requestId.current = null; }} /><span>Send real test emails</span></label>
-        <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 text-xs leading-5 text-violet-900 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-200">{messageStepPath ? sendReal ? "This test sends only the selected message to your test recipient immediately. It does not run the surrounding journey." : "Preview only the selected message with your sample customer and email data." : sendReal ? "Real tests follow the configured waits and send only to your test recipient. Keep this dialog open until delivery finishes. CRM tasks, alerts and category changes are simulated; the workflow stays unchanged." : "Preview simulates waits immediately using your scenario facts. Journey entry is assumed; use Preview workflow to check saved customer eligibility. No email or CRM action is executed."}</div>
+        <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 text-xs leading-5 text-violet-900 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-200">{messageStepPath ? sendReal ? "This test sends only the selected message to your test recipient immediately. It does not run the surrounding journey." : "Preview only the selected message with your sample customer and email data." : sendReal ? timing === "fast" ? "Fast test: waits are skipped and real messages go only to your test inbox. The saved workflow is unchanged. Tasks, alerts and customer updates are not executed. AI and mail servers determine how quickly delivery finishes." : "Scheduled test: follows the configured waits and sends only to your test inbox. Keep this dialog open. Tasks, alerts and customer updates are not executed." : "Preview simulates waits immediately using your scenario facts. Journey entry is assumed; use Quick test to check real connections and resources. No email or CRM action is executed."}</div>
         <fieldset disabled={running || pending || Boolean(delivery)} className="space-y-4">
+          {sendReal && !messageStepPath ? <label className="block space-y-1.5 text-xs font-medium"><span>Test timing</span><select value={timing} onChange={event => setTiming(event.target.value as "fast" | "scheduled")} className="h-9 w-full rounded-md border bg-background px-3"><option value="fast">Fast — skip waits</option><option value="scheduled">Scheduled — follow real waits</option></select></label> : null}
           {sendReal ? <label className="block space-y-1.5 text-xs font-medium"><span>Test recipient email</span><Input type="email" value={recipient} maxLength={300} placeholder="Your test inbox" onChange={(event) => setRecipient(event.target.value)} /><span className="block font-normal text-muted-foreground">Actual emails and catalog attachments will be sent to this address.</span></label> : null}
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="space-y-1.5 text-xs font-medium"><span>Customer name</span><Input value={customerName} maxLength={200} onChange={(event) => { setCustomerName(event.target.value); setResult(null); }} /></label>
@@ -137,7 +143,7 @@ export function FlowEmailTestDialog({ flow, open, onOpenChange, messageStepPath,
         {delivery ? <div aria-live="polite" className="space-y-3 rounded-xl border p-4">
           <h3 className="text-sm font-semibold">Real delivery test</h3>
           <p className="text-sm" data-no-translate>{delivery.recipient} · {delivery.status}</p>
-          {pending && delivery.next_run_at ? <p className="text-xs text-muted-foreground">Next email: <time data-no-translate>{new Date(delivery.next_run_at).toLocaleString()}</time></p> : null}
+          {pending && processingDelivery ? <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground"><LoaderCircle className="size-3 animate-spin" />Preparing the reply, attachments and mail-server submission. Keep this dialog open.</p> : pending && delivery.next_run_at ? <p className="text-xs text-muted-foreground">Next email: <time data-no-translate>{new Date(delivery.next_run_at).toLocaleString()}</time></p> : null}
           {delivery.result.map((reply) => <div key={reply.step} className="space-y-2 rounded-lg bg-muted/40 p-3 text-sm"><p className="font-medium" data-no-translate>{reply.subject}</p><p className="whitespace-pre-wrap" data-no-translate>{reply.body}</p><p className="text-xs text-muted-foreground">Accepted by mail server: <time data-no-translate>{new Date(reply.sentAt).toLocaleString()}</time></p>{reply.attachments.map((attachment) => <p key={attachment.filename} className="text-xs" data-no-translate>{attachment.filename} · {Math.ceil(attachment.size / 1024)} KB</p>)}</div>)}
           {delivery.error ? <p role="alert" className="text-sm text-destructive">{delivery.error}</p> : null}
           {pending ? <Button variant="outline" size="sm" disabled={running} onClick={() => void cancelDelivery()}>Cancel delivery test</Button> : <Button variant="outline" size="sm" onClick={() => { setDelivery(null); requestId.current = null; setError(""); }}>Start another test</Button>}

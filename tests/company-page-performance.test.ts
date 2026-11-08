@@ -116,8 +116,8 @@ test("BD company history checks assignment before reading contacts, events, or b
   await assert.rejects(profileFixture({ role: "bd_manager", failure: "pipeline" }).api.getCompanyDetails(id), /Unable to verify company assignment/);
 });
 
-const sectionNames = { analyse: "CompanyAnalysis", invoices: "CompanyInvoices", "customer-portal": "CompanyCustomerPortal", email: "CompanyEmails", "purchase-orders": "CompanyPurchaseOrders", history: "CompanyTimeline" };
-async function renderPage(tab?: string, role = "admin", compose?: string, invoiceId?: string) {
+const sectionNames = { analyse: "CompanyAnalysis", invoices: "CompanyPurchaseOrders", "customer-portal": "CompanyCustomerPortal", email: "CompanyEmails", "purchase-orders": "CompanyPurchaseOrders", history: "CompanyTimeline" };
+async function renderPage(tab?: string, role = "admin", compose?: string, invoiceId?: string, query: Record<string, string | string[] | undefined> = {}) {
   const rendered: Array<{ name: string; props: Record<string, unknown> }> = [];
   const reads: string[] = [];
   const details = { company: { ...baseRow, name: "Acme", nextFollowupAt: null, currency: "USD", ownerId: "owner-1", email: contact.email }, commerce: { currency: "EUR" }, contacts: [contact], activity: [] };
@@ -147,7 +147,7 @@ async function renderPage(tab?: string, role = "admin", compose?: string, invoic
     if (typeof element.type === "function") await visit(await element.type(element.props));
     else await visit(element.props?.children);
   }
-  await visit(await page.default({ params: Promise.resolve({ id }), searchParams: Promise.resolve({ tab, compose, invoiceId }) }));
+  await visit(await page.default({ params: Promise.resolve({ id }), searchParams: Promise.resolve({ ...query, tab, compose, invoiceId }) }));
   return { rendered, reads };
 }
 
@@ -165,6 +165,28 @@ for (const [tab, name] of Object.entries(sectionNames)) test(`company tab ${tab}
   const { rendered, reads } = await renderPage(tab);
   assert.deepEqual(rendered.filter(item => Object.values(sectionNames).includes(item.name)).map(item => item.name), [name]);
   assert.deepEqual(reads, tab === "history" ? ["profile", "history"] : ["profile"]);
+});
+
+test("old invoice tabs resolve to the single purchase-order billing workspace", async () => {
+  assert.equal(companyTab("invoices"), "purchase-orders");
+  const { rendered } = await renderPage("invoices");
+  assert.equal(rendered.find(item => item.name === "CompanyWorkspace")?.props.initialTab, "purchase-orders");
+  assert.equal(rendered.filter(item => item.name === "CompanyPurchaseOrders").length, 1);
+  assert.ok(!rendered.some(item => item.name === "CompanyInvoices"));
+});
+
+test("company PO tabs forward draft, filter, sort, page and selected-order query context to their shared register", async () => {
+  const orderId = "083bb9b2-a99d-461e-aba2-c3d571598174";
+  const query = { view: "drafts", q: "CUSTOMER-PO", status: "draft", overdue: "1", page: "2", sort: "oldest", orderId };
+  const { rendered, reads } = await renderPage("purchase-orders", "viewer", undefined, undefined, query);
+  const props = rendered.find(item => item.name === "CompanyPurchaseOrders")!.props;
+  assert.equal(props.companyId, id);
+  assert.equal(props.canWrite, false);
+  assert.equal(props.orderId, orderId);
+  for (const [key, value] of Object.entries(query)) assert.equal((props.params as Record<string, unknown>)[key], value);
+  assert.deepEqual(reads, ["profile"]);
+  const invalid = await renderPage("purchase-orders", "admin", undefined, undefined, { orderId: "invalid" });
+  assert.equal(invalid.rendered.find(item => item.name === "CompanyPurchaseOrders")!.props.orderId, undefined);
 });
 
 test("email compose and selected-invoice links preserve inputs and viewer restrictions", async () => {

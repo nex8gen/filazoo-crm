@@ -72,6 +72,7 @@ export function InvoiceWorkspace({
   const [appliedFilters, setAppliedFilters] = useWorkspaceState(`${memoryKey}.filters`, { search: "", status: initialStatus });
   const [page, setPage] = useWorkspaceState(`${memoryKey}.page`, 0);
   const [busy, setBusy] = useState(false);
+  const running = useRef(false);
   const [error, setError] = useState(initialError);
   const [notice, setNotice] = useState("");
   const serverSnapshot = useRef(initial);
@@ -101,6 +102,8 @@ export function InvoiceWorkspace({
     null,
   );
   async function run(task: () => Promise<void>) {
+    if (running.current) return;
+    running.current = true;
     setBusy(true);
     setError("");
     setNotice("");
@@ -109,13 +112,17 @@ export function InvoiceWorkspace({
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
+      running.current = false;
       setBusy(false);
     }
   }
   async function load(nextPage = page, filters = appliedFilters) {
+    nextPage = Math.max(0, nextPage);
     const result = await api(
       `/api/invoices?page=${nextPage}&search=${encodeURIComponent(filters.search)}&status=${filters.status}${companyId ? `&companyId=${companyId}` : ""}`,
     );
+    const lastPage = Math.max(0, Math.ceil(result.count / 25) - 1);
+    if (nextPage > lastPage) return load(lastPage, filters);
     setListing(result);
     setPage(nextPage);
     setAppliedFilters(filters);
@@ -459,7 +466,7 @@ export function InvoiceWorkspace({
               value={
                 summary
                   .map((row) =>
-                    formatMoney(row.outstanding_minor, row.currency),
+                    `${formatMoney(row.outstanding_minor, row.currency)} ${row.currency}`,
                   )
                   .join(" · ") || "—"
               }
@@ -469,7 +476,7 @@ export function InvoiceWorkspace({
               label="Overdue balance"
               value={
                 summary
-                  .map((row) => formatMoney(row.overdue_minor, row.currency))
+                  .map((row) => `${formatMoney(row.overdue_minor, row.currency)} ${row.currency}`)
                   .join(" · ") || "—"
               }
               detail="All matching unpaid invoices past their due date"
@@ -479,8 +486,9 @@ export function InvoiceWorkspace({
             <TableFilter label="Search customer" search><input value={search} maxLength={200} placeholder="Customer or company name" onChange={(event) => setSearch(event.target.value)} /></TableFilter>
             <TableFilter label="Status"><Select value={status} onValueChange={(value) => { if (value !== null) setStatus(value); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="">All invoices</SelectItem><SelectItem value="draft">Drafts</SelectItem><SelectItem value="issued">Issued / partial / overdue / paid</SelectItem><SelectItem value="void">Void</SelectItem></SelectContent></Select></TableFilter>
           </TableFilters>
-          <div className="crm-table-frame overflow-x-auto">
+          <div className="crm-table-frame"><div className="crm-table-viewport">
             <table className="crm-table min-w-[840px]">
+              <caption className="sr-only">Customer invoices, due dates, status, totals and outstanding balances</caption>
               <thead className="border-b bg-muted/40 text-xs text-muted-foreground">
                 <tr>
                   {[
@@ -492,7 +500,7 @@ export function InvoiceWorkspace({
                     "Total",
                     "Balance",
                   ].map((label) => (
-                    <th key={label} className="p-4">
+                    <th key={label} scope="col" className={label === "Total" || label === "Balance" ? "text-right" : ""}>
                       {label}
                     </th>
                   ))}
@@ -513,7 +521,7 @@ export function InvoiceWorkspace({
                       </Link>
                     </td>
                     <td className="max-w-64 break-words p-4">
-                      {invoice.document.customerName}
+                      {invoice.company_id ? <Link href={`/companies/${invoice.company_id}`} className="hover:underline">{invoice.document.customerName}</Link> : invoice.document.customerName}
                     </td>
                     <td className="p-4">
                       <InvoiceCreator invoice={invoice} />
@@ -524,28 +532,28 @@ export function InvoiceWorkspace({
                     <td className="p-4">
                       <Status value={invoiceStatus(invoice, today)} />
                     </td>
-                    <td className="whitespace-nowrap p-4">
+                    <td className="whitespace-nowrap text-right tabular-nums">
                       {formatMoney(
                         invoice.total_minor,
                         invoice.document.currency,
-                      )}
+                      )} <span className="text-xs text-muted-foreground">{invoice.document.currency}</span>
                     </td>
-                    <td className="whitespace-nowrap p-4">
+                    <td className="whitespace-nowrap text-right tabular-nums">
                       {formatMoney(
                         invoice.status === "void"
                           ? 0
                           : invoice.total_minor - invoice.paid_minor,
                         invoice.document.currency,
-                      )}
+                      )} <span className="text-xs text-muted-foreground">{invoice.document.currency}</span>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
             {!listing.invoices.length ? (
-              <EmptyState icon={ReceiptText} className="m-5" title={search || status ? "No matching invoices" : "Your invoices will appear here"} description={search || status ? "Try another search or adjust your filters." : canWrite ? "Create a draft to start billing your customers." : "Invoices created by your team will appear here."} />
+              <EmptyState icon={ReceiptText} className="m-5" title={appliedFilters.search || appliedFilters.status ? "No matching invoices" : "Your invoices will appear here"} description={appliedFilters.search || appliedFilters.status ? "Try another search or adjust your filters." : canWrite ? "Create a draft to start billing your customers." : "Invoices created by your team will appear here."} />
             ) : null}
-          </div>
+          </div></div>
           <TablePagination page={page + 1} pageCount={Math.ceil(listing.count / 25)} total={listing.count} itemLabel="invoices" disabled={busy} onPrevious={() => void run(() => load(page - 1))} onNext={() => void run(() => load(page + 1))} />
         </>
       )}
@@ -556,7 +564,7 @@ export function InvoiceWorkspace({
 function Status({ value }: { value: string }) {
   return (
     <span
-      className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium capitalize ${value === "overdue" ? "border-red-400/30 bg-red-400/10 text-red-600 dark:text-red-300" : value === "paid" ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-700 dark:text-emerald-300" : "bg-muted/50 text-muted-foreground"}`}
+      className={`crm-table-status inline-flex rounded-md px-2 py-0.5 text-xs font-medium capitalize ${value === "overdue" ? "bg-red-400/10 text-red-600 dark:text-red-300" : value === "paid" ? "bg-emerald-400/10 text-emerald-700 dark:text-emerald-300" : "bg-muted/50 text-muted-foreground"}`}
     >
       {value}
     </span>

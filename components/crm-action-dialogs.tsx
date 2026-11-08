@@ -2,10 +2,11 @@
 
 import { EmptyState } from "@/components/data-state";
 import { PackageSearch } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useActionState, useState } from "react";
 import { Download, FileText, MailPlus, Plus } from "lucide-react";
 import { toast } from "sonner";
-import { createCatalog, createCompany, createEmailDraft, type CrmActionState } from "@/app/crm-actions";
+import { createCatalog, createEmailDraft, type CrmActionState } from "@/app/crm-actions";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -14,7 +15,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { type Company, type ContactOption, type Product } from "@/lib/types";
 import { companyExportCsv } from "@/lib/company-export";
-import { CompanyLocationFields, CompanySegmentField, ContactRoleField } from "@/components/company-form-fields";
+
+const AddCompanyForm = dynamic(() => import("@/components/add-company-form").then(module => module.AddCompanyForm), {
+  loading: () => <p role="status" className="py-8 text-sm text-muted-foreground">Loading company form…</p>,
+});
 
 function ActionMessage({ state }: { state: CrmActionState }) {
   if (state?.error) return <p role="alert" className="text-xs text-destructive">{state.error}</p>;
@@ -42,28 +46,15 @@ function useActionDialog(actionHandler: (state: CrmActionState, formData: FormDa
 }
 
 export function AddCompanyButton({ canWrite, compact = false, existingSegments, label, onCreated }: { canWrite: boolean; compact?: boolean; existingSegments?: string[]; label?: string; onCreated?: (id: string) => void }) {
-  const dialog = useActionDialog(createCompany, result => { if (result?.companyId) onCreated?.(result.companyId); });
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState(false);
   return (
     <>
-      <Button size="sm" disabled={!canWrite} title={canWrite ? "Add a company" : "Viewer access is read-only"} onClick={() => dialog.setOpen(true)}><Plus />{label ?? (compact ? "Add" : "Add company")}</Button>
-      <Dialog open={dialog.open} onOpenChange={dialog.setOpen}>
+      <Button size="sm" disabled={!canWrite} title={canWrite ? "Add a company" : "Viewer access is read-only"} onClick={() => setOpen(true)}><Plus />{label ?? (compact ? "Add" : "Add company")}</Button>
+      <Dialog open={open} onOpenChange={next => { if (!pending) setOpen(next); }}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader><DialogTitle>Add company</DialogTitle><DialogDescription>Create a company profile, optional contact, and audit event.</DialogDescription></DialogHeader>
-          <form action={dialog.action} className="grid gap-4 sm:grid-cols-2">
-            <Field label="Company name" id="company-name"><Input id="company-name" name="name" autoComplete="organization" required autoFocus /></Field>
-            <Field label="Website" id="company-website"><Input id="company-website" name="website" inputMode="url" autoComplete="url" placeholder="https://example.com" /></Field>
-            <CompanyLocationFields disabled={dialog.pending} />
-            <div className="sm:col-span-2"><CompanySegmentField disabled={dialog.pending} existingSegments={existingSegments} /></div>
-            <div className="sm:col-span-2 border-t pt-4"><p className="text-sm font-medium">Primary contact <span className="font-normal text-muted-foreground">(optional)</span></p></div>
-            <Field label="Contact name" id="contact-name"><Input id="contact-name" name="contactName" autoComplete="name" /></Field>
-            <ContactRoleField disabled={dialog.pending} />
-            <div className="sm:col-span-2"><Field label="Business email" id="contact-email"><Input id="contact-email" name="contactEmail" type="email" autoComplete="email" /></Field></div>
-            <div className="sm:col-span-2"><ActionMessage state={dialog.state} /></div>
-            <DialogFooter className="sm:col-span-2">
-              <Button type="button" variant="outline" onClick={() => dialog.setOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={dialog.pending}>{dialog.pending ? "Adding…" : "Add company"}</Button>
-            </DialogFooter>
-          </form>
+          {open ? <AddCompanyForm existingSegments={existingSegments} onCreated={onCreated} onPendingChange={setPending} onClose={() => { setOpen(false); setPending(false); }} /> : null}
         </DialogContent>
       </Dialog>
     </>

@@ -5,6 +5,8 @@ import { productInvoiceLine, productUnitPrice, type InvoiceProduct } from "../in
 import type { InvoiceBankAccount } from "../invoice-banks.ts";
 import type { InvoicePaymentMethod } from "../invoice-payment-methods.ts";
 import { preparedCrmActionSchema } from "./crm-tools.ts";
+import { purchaseOrderCreateSchema } from "../purchase-orders.ts";
+import { preparedWorkflowSchema } from "./workflow-schema.ts";
 
 export const preparedAgentEmailSchema = agentEmailSchema.extend({
   quotationSnapshot: z.object({ id: z.uuid(), revision: z.number().int().min(0), fingerprint: z.string().regex(/^[a-f0-9]{64}$/) }).strict().optional(),
@@ -19,7 +21,7 @@ export const preparedAgentEmailSchema = agentEmailSchema.extend({
 }).strict();
 export const preparedAgentActionSchema = z.discriminatedUnion("type", [
   workspaceActionSchema.options[0],
-  z.object({ type: z.literal("create_invoice"), document: invoiceDocumentSchema, email: preparedAgentEmailSchema.optional() }).strict(),
+  z.object({ type: z.literal("create_invoice"), document: invoiceDocumentSchema, order: purchaseOrderCreateSchema.optional(), email: preparedAgentEmailSchema.optional() }).strict(),
   z.object({ type: z.literal("update_invoice"), invoiceId: z.uuid(), revision: z.number().int().positive(), document: invoiceDocumentSchema, email: preparedAgentEmailSchema.optional() }).strict(),
   z.object({ type: z.literal("send_invoice"), invoiceId: z.uuid(), revision: z.number().int().positive(), document: invoiceDocumentSchema, email: preparedAgentEmailSchema }).strict(),
   workspaceActionSchema.options[4].extend({ companyName: z.string(), fingerprint: z.string().length(64) }).strict(),
@@ -27,10 +29,11 @@ export const preparedAgentActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("write_email"), email: preparedAgentEmailSchema }).strict(),
   workspaceActionSchema.options[7],
   preparedCrmActionSchema,
+  preparedWorkflowSchema,
 ]);
 export type PreparedAgentAction = z.infer<typeof preparedAgentActionSchema>;
 export type AgentProposal = { id: string; action: PreparedAgentAction; approvalMode: "ask" | "auto"; expiresAt: string };
-export type AgentActionResult = { success?: string; error?: string; href?: string; status?: string; approval?: string; finishedAt?: string; draftMessage?: { conversationId: string; text: string } };
+export type AgentActionResult = { success?: string; error?: string; href?: string; status?: string; approval?: string; finishedAt?: string; draft?: unknown; flowId?: string; canResume?: boolean; workflow?: { completed: number; total: number; steps: Array<{ id: string; tool: string; status: string; href?: string }> }; awaitingAction?: AgentProposal; awaitingResult?: AgentActionResult; draftMessage?: { conversationId: string; text: string } };
 
 type AgentInvoiceSelection = Pick<Extract<WorkspaceAction, { type: "update_invoice" }>, "items" | "bankAccountId" | "paymentMethodIds" | "details">;
 
@@ -39,14 +42,22 @@ export type AgentPlanningContext = { messages: readonly { role: string; content:
 
 /** An invoice request cannot authorize an extra email invented by the provider. */
 export function groundInvoiceEmailIntent(action: WorkspaceAction, context?: AgentPlanningContext): WorkspaceAction {
-  if (!context || (action.type !== "create_invoice" && action.type !== "update_invoice" && action.type !== "send_invoice" && action.type !== "write_email") || !action.email) return action;
+  if (!context || (action.type !== "create_order" && action.type !== "create_invoice" && action.type !== "update_invoice" && action.type !== "send_invoice" && action.type !== "write_email") || !action.email) return action;
   let intent: "draft" | "send" | null = null;
   for (const message of [...context.messages].reverse()) {
     if (message.role !== "user") continue;
     const text = message.content;
+    const draft = /\b(?:draft|write|prepare)\b.{0,35}\b(?:email|message|reply)\b|(?:草拟|起草|准备).*邮件/i.exec(text);
     if (/\b(?:don['’]?t|do not|never|not yet)\s+(?:send|email|mail)\b|\b(?:draft|review)\s+only\b|\bfor review only\b|\bonly\s+(?:a\s+)?draft\b|不要发送|仅供审核|(?:只|仅).*草稿/i.test(text)
-      || /\b(?:when|once|after|if|until)\b.{0,100}\b(?:repl(?:y|ies)|respond|confirm|approv|address)/i.test(text)) break;
-    if (/\b(?:draft|write|prepare)\b.{0,35}\b(?:email|message|reply)\b|(?:草拟|起草|准备).*邮件/i.test(text)) { intent = "draft"; break; }
+      || /\b(?:when|once|after|if|until)\b.{0,100}\b(?:repl(?:y|ies)|respond|confirm|approv|address)/i.test(text)) {
+      intent = draft && !/\b(?:no|without)\s+(?:email|mail)\b/i.test(text) ? "draft" : null;
+      break;
+    }
+    const send = /\b(?:send|email|mail)\s+(?:(?:the|this|that|an?|it|them|invoice|to|customer)\b)|发送.*(?:发票|邮件)|把.*发票.*发/i.exec(text);
+    // "Send the draft invoice email" requests delivery of a draft document;
+    // the adjective draft does not turn an explicit send into an email draft.
+    if (send && !/^(?:did|have|has)\s+you\b/i.test(text.trim()) && (!draft || send.index < draft.index || /\b(?:and|then|also)\s+(?:please\s+)?send\b/i.test(text))) { intent = "send"; break; }
+    if (draft) { intent = "draft"; break; }
     if (!/^(?:did|have|has)\s+you\b/i.test(text.trim()) && /\b(?:send|email|mail)\s+(?:(?:the|this|that|an?|it|them|invoice|to|customer)\b)|发送.*(?:发票|邮件)|把.*发票.*发/i.test(text)) { intent = "send"; break; }
     if (/\b(?:create|make|prepare|draft|update|change|edit)\b.{0,40}\b(?:invoice|invioce|inovice)\b|(?:创建|准备|更新|修改).*发票/i.test(text)) break;
   }

@@ -1,8 +1,7 @@
 // Synthetic provider evaluation. Does not access CRM records, store proposals, or execute actions.
 // node --env-file=.env.local --experimental-strip-types scripts/verify-agent-crm-tools.ts
 import assert from "node:assert/strict";
-import { generateGeminiText } from "../lib/ai/gemini.ts";
-import { generateGatewayText, isGeminiRegionError } from "../lib/ai/gateway.ts";
+import { generateGatewayText } from "../lib/ai/gateway.ts";
 import { buildWorkspaceAssistantPrompt, extractWorkspaceActions, workspaceAssistantInstruction, workspaceAssistantSchema } from "../lib/ai/workspace-assistant.ts";
 import { extractCrmRead, extractCrmReadBatch } from "../lib/ai/crm-tools.ts";
 import { defaultFlowInput, flowAgentCapabilities } from "../lib/flows.ts";
@@ -55,12 +54,8 @@ const token = process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN;
 async function evaluate(item: Evaluation) {
   const input = workspaceAssistantSchema.parse({ mode: "work", pathname: "/companies", pageLabel: "Companies", pageText: "Synthetic test records", messages: [{ role: "user", content: item.text }] });
   const options = { task: "agent" as const, userText: item.text, systemInstruction: workspaceAssistantInstruction("work", now), prompt: buildWorkspaceAssistantPrompt(input, { ...data, ...item.context }), maxOutputTokens: 4000, fetcher: ((url, init) => fetch(url, { ...init, signal: AbortSignal.any([...(init?.signal ? [init.signal] : []), AbortSignal.timeout(45_000)]) })) as typeof fetch };
-  let output: string;
-  if (process.env.GEMINI_API_KEY && process.env.AI_PROVIDER !== "gateway") {
-    try { output = await generateGeminiText({ ...options, apiKey: process.env.GEMINI_API_KEY, model: process.env.GEMINI_AGENT_MODEL || process.env.GEMINI_EMAIL_MODEL }); }
-    catch (error) { if (!token || !isGeminiRegionError(error)) throw error; output = await generateGatewayText({ ...options, token, model: process.env.AI_GATEWAY_AGENT_MODEL || process.env.AI_GATEWAY_EMAIL_MODEL }); }
-  } else if (token) output = await generateGatewayText({ ...options, token, model: process.env.AI_GATEWAY_AGENT_MODEL || process.env.AI_GATEWAY_EMAIL_MODEL });
-  else throw new Error("No AI provider is configured.");
+  if (!token) throw new Error("Vercel AI Gateway authentication is required.");
+  const output = await generateGatewayText({ ...options, token, model: process.env.AI_GATEWAY_AGENT_MODEL || process.env.AI_GATEWAY_EMAIL_MODEL });
   if (item.resources) assert.deepEqual(extractCrmReadBatch(output)?.map((read) => read.resource).sort(), [...item.resources].sort());
   else if (item.resource) assert.equal(extractCrmRead(output)?.resource, item.resource, "Expected an authorized CRM record lookup.");
   else if (item.noAction) assert.equal(extractWorkspaceActions(output).actions.length, 0, "This request must not prepare a mutation.");

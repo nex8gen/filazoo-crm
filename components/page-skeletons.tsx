@@ -28,9 +28,9 @@ function SummarySkeleton({ flow = false }: { flow?: boolean }) {
 
 export function TableSkeleton({ className = "", flow = false }: { className?: string; flow?: boolean }) {
   return <div className={className}>
-    {flow ? null : <div className="mb-6 flex flex-wrap items-end gap-3"><div className="flex-1 space-y-2"><Skeleton className="h-4 w-28" /><Skeleton className="h-10 w-full" /></div><div className="space-y-2"><Skeleton className="h-4 w-16" /><Skeleton className="h-10 w-32" /></div><Skeleton className="h-10 w-24" /></div>}
-    <div className="crm-table-frame"><div className="flex h-13 items-center gap-6 border-b bg-muted/40 px-4">{Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-3 flex-1" />)}</div><div className="divide-y">{Array.from({ length: 6 }, (_, index) => <div key={index} className="flex items-center gap-6 p-4"><Skeleton className="h-7 w-1/3" /><Skeleton className="h-4 flex-1" /><Skeleton className="h-7 w-20 rounded-full" /><Skeleton className="h-4 flex-1" /></div>)}</div></div>
-    <div className="crm-table-pagination"><Skeleton className="h-4 w-32" /><div className="flex gap-2"><Skeleton className="h-10 w-20" /><Skeleton className="h-10 w-16" /></div></div>
+    {flow ? null : <div className="crm-table-toolbar mb-3"><Skeleton className="h-8 min-w-32 flex-1" /><Skeleton className="h-8 w-28" /><Skeleton className="h-8 w-24" /></div>}
+    <div className="crm-table-frame"><div className="flex h-9 items-center gap-6 rounded-lg bg-muted/30 px-3">{Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-3 flex-1" />)}</div><div className="divide-y">{Array.from({ length: 6 }, (_, index) => <div key={index} className="flex min-h-10 items-center gap-6 px-3 py-2"><Skeleton className="h-4 w-1/3" /><Skeleton className="h-3 flex-1" /><Skeleton className="h-5 w-20 rounded-md" /><Skeleton className="h-3 flex-1" /></div>)}</div></div>
+    <div className="crm-table-pagination"><Skeleton className="h-8 w-28 rounded-full" /><Skeleton className="h-4 w-24" /></div>
   </div>;
 }
 
@@ -65,9 +65,7 @@ export function SegmentsSkeleton() {
     <HeaderSkeleton />
     <div className="mb-6 grid grid-cols-2 gap-3 xl:grid-cols-4">{Array.from({ length: 4 }, (_, index) => <SummarySkeleton key={index} />)}</div>
     <div className="mb-6 flex gap-3"><Skeleton className="h-9 w-80 max-w-full" /><Skeleton className="h-9 w-32" /></div>
-    <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
-      {Array.from({ length: 6 }, (_, index) => <div key={index} className="space-y-5 rounded-xl border bg-card p-5"><div className="flex gap-3"><Skeleton className="size-9 shrink-0 rounded-lg" /><div className="flex-1"><Skeleton className="h-5 w-32 max-w-full" /><Skeleton className="mt-1 h-4 w-20" /></div></div><Skeleton className="h-10 w-full" /><div className="flex gap-6">{Array.from({ length: 3 }, (_, metric) => <Skeleton key={metric} className="h-10 flex-1" />)}</div><Skeleton className="h-1.5 w-full" /><Skeleton className="h-4 w-full" /></div>)}
-    </div>
+    <TableSkeleton />
   </LoadingRegion>;
 }
 
