@@ -1,0 +1,56 @@
+// Authenticated HTTP smoke test. Sends no outreach; its disposable plan is removed.
+// node --env-file=.env.local --conditions=react-server --experimental-strip-types scripts/verify-marketing-assets.ts
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { createServerClient } from "@supabase/ssr";
+import { createSupabaseControl } from "../lib/supabase/control.ts";
+import { newMarketingAsset } from "../lib/marketing-assets.ts";
+
+const origin = process.env.MARKETING_TEST_ORIGIN || "http://localhost:3000";
+const control = createSupabaseControl();
+const { data: workspace } = await control.from("workspaces").select("id,owner_id").eq("is_legacy", true).single().throwOnError();
+assert.ok(workspace);
+const { data: user, error: userError } = await control.auth.admin.getUserById(workspace.owner_id);
+assert.ifError(userError); assert.ok(user.user?.email);
+const { data: link, error: linkError } = await control.auth.admin.generateLink({ type: "magiclink", email: user.user.email });
+assert.ifError(linkError); assert.ok(link.properties?.hashed_token);
+const cookies = new Map<string, string>();
+const client = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, (process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)!, { cookies: { getAll: () => [...cookies].map(([name, value]) => ({ name, value })), setAll: values => values.forEach(({ name, value }) => cookies.set(name, value)) } });
+const { error: sessionError } = await client.auth.verifyOtp({ token_hash: link.properties.hashed_token, type: "magiclink" });
+assert.ifError(sessionError);
+cookies.set("crm_workspace", workspace.id);
+const cookie = [...cookies].map(([name, value]) => `${name}=${value}`).join("; ");
+const headers = { Cookie: cookie, Origin: origin, "Content-Type": "application/json" };
+const endpoint = `${origin}/api/marketing-assets`;
+let saved: ReturnType<typeof newMarketingAsset> | undefined;
+try {
+  const anonymous = await fetch(`${endpoint}?year=2098`, { redirect: "manual" });
+  assert.ok([401, 307].includes(anonymous.status), `Anonymous request: ${anonymous.status}`);
+  const crossSite = await fetch(endpoint, { method: "POST", headers: { ...headers, Origin: "https://attacker.invalid" }, body: "{}" });
+  assert.equal(crossSite.status, 403);
+  const draft = { ...newMarketingAsset("factory_sale", 2098), title: `Disposable verification ${randomUUID()}`, audience: "Test only", offer: "Ask for bulk pricing", message: "Subject: Partner offer\nContact your account manager for a quote.", status: "ready" };
+  const create = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(draft) });
+  const created = await create.json(); assert.equal(create.status, 200, JSON.stringify(created)); saved = created.asset;
+  assert.ok(saved?.updatedAt); assert.equal(saved.title, draft.title);
+  const list = await fetch(`${endpoint}?year=2098`, { headers });
+  const listed = await list.json(); assert.equal(list.status, 200); assert.ok(listed.assets.some((asset: { id: string }) => asset.id === saved!.id));
+  const update = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify({ ...saved, title: `${draft.title} updated` }) });
+  const updated = await update.json(); assert.equal(update.status, 200, JSON.stringify(updated));
+  const stale = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify({ ...saved, title: "Stale update" }) });
+  assert.equal(stale.status, 409);
+  saved = updated.asset;
+  const page = await fetch(`${origin}/workflow/marketing-assets?year=2098`, { headers });
+  const html = await page.text(); assert.equal(page.status, 200); assert.match(html, /Make every promotion count/); assert.doesNotMatch(html, /Your saved promotions could not be loaded/);
+  const invalidAi = await fetch(`${endpoint}/draft`, { method: "POST", headers, body: JSON.stringify({ ...saved, offer: "" }) });
+  assert.equal(invalidAi.status, 400);
+  console.log("PASS authenticated create, reload, update, stale-write conflict, rendered page, origin protection and AI input validation");
+} finally {
+  if (saved) {
+    const remove = await fetch(endpoint, { method: "DELETE", headers, body: JSON.stringify({ id: saved.id, updatedAt: saved.updatedAt }) });
+    assert.equal(remove.status, 200, await remove.text());
+    const list = await fetch(`${endpoint}?year=2098`, { headers });
+    const body = await list.json(); assert.ok(!body.assets.some((asset: { id: string }) => asset.id === saved!.id));
+    console.log("PASS delete and reload; disposable plan removed");
+  }
+  await client.auth.signOut();
+}

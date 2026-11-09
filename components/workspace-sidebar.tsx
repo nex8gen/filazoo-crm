@@ -55,6 +55,15 @@ export function itemIsActive(pathname: string, item: NavigationItem) {
   return pathname === item.href || pathname.startsWith(`${item.href}/`);
 }
 
+function SidebarItemLabel({ item }: { item: NavigationItem }) {
+  return (
+    <span className="flex items-center gap-2">
+      <span>{item.label}</span>
+      {item.badge ? <span className="shrink-0 rounded border border-[#4dd396]/25 bg-[#4dd396]/10 px-1.5 py-0.5 text-[10px] font-medium leading-none text-[#4dd396]">{item.badge}</span> : null}
+    </span>
+  );
+}
+
 function SidebarGroup({ group, pathname, expanded }: { group: NavigationGroup; pathname: string; expanded: boolean }) {
   const [open, setOpen] = useState(false);
   const active = group.items.some(item => itemIsActive(pathname, item));
@@ -74,7 +83,7 @@ function SidebarGroup({ group, pathname, expanded }: { group: NavigationGroup; p
             <nav aria-label={`${group.label} navigation`}>
               {group.items.map(item => (
                 <Link key={item.href} href={item.href} onClick={() => setOpen(false)} aria-current={itemIsActive(pathname, item) ? "page" : undefined} className={`workspace-sidebar-subitem ${itemIsActive(pathname, item) ? "is-active" : ""}`}>
-                  {item.label}
+                  <SidebarItemLabel item={item} />
                 </Link>
               ))}
             </nav>
@@ -99,7 +108,7 @@ function SidebarGroup({ group, pathname, expanded }: { group: NavigationGroup; p
           {group.items.filter(item => item.href !== group.items[0].href).map(item => (
             <li key={item.href}>
               <Link href={item.href} aria-current={itemIsActive(pathname, item) ? "page" : undefined} className={`workspace-sidebar-subitem ${itemIsActive(pathname, item) ? "is-active" : ""}`}>
-                {item.label}
+                <SidebarItemLabel item={item} />
               </Link>
             </li>
           ))}

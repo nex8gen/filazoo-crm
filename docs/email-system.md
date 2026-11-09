@@ -195,6 +195,18 @@ The isolated release passed 1,276 tests, TypeScript, targeted lint and the hoste
 
 Classification remains limited by the existing USD 0.20 daily user allowances. Enphany had USD 0.001195 remaining and the shared-mailbox operator USD 0.001141, insufficient to reserve the failed tag requests. These allowances reset on November 7 at midnight China time; existing automatic retry backoff remains active. The historical tagging backfill is not complete, and no customer email was sent by this verification. See `docs/audit-evidence/customer-email-linking-20261106.json` for the recorded checks.
 
+## Saved email sales briefs — November 9, 2026
+
+The email sidebar reuses a durable `email_summary_cache` record for unchanged conversation content, customer details, language and AI policy. Cache keys exclude the clock and saved follow-up date, so opening a conversation or saving its reminder does not trigger another AI or research request. User and workspace boundaries are checked on each API request; changes to policy, role or the configured email model invalidate the saved brief. The refresh button explicitly requests a new analysis.
+
+The browser shares in-flight requests across sidebar remounts. Database leases prevent concurrent server instances from generating the same brief. Navigation does not cancel an already paid-for analysis before it can be saved. Failures release their leases, and failed refreshes preserve the previous saved result. Reading a saved brief does not reschedule its follow-up.
+
+“Products to offer” displays image, name and saved catalog price only. Cached analyses reload current product metadata without repeating AI or web research; absent prices display “Price on request.” Product evidence and source checks remain in the server pipeline.
+
+Explicit customer product requests are matched against the active catalog before displaying cards. Every unambiguous request is retained, rather than reducing the list to two opportunities. Material and finish remain distinct (PLA, silk PLA and PLA-CF are separate); TPU hardness and finish must agree with the saved listing. Unknown names such as PLA+ are not substituted with PLA Pro, and broad TPU requests require clarification when multiple grades exist. The sidebar lists those unresolved requests separately from the compact product cards. Matching uses the current customer message, excluding quoted old mail and outbound offers. Existing cached briefs receive the same correction without regeneration or new research.
+
+Verification: `tests/email-summary-cache.test.ts`, `tests/email-summary-route.test.ts`, and `node scripts/verify-email-summary-cache.mjs` cover reuse, refresh, duplicate requests, live prices, leases and workspace isolation. Migration: `20261109030916_email_summary_cache.sql`.
+
 ## Sources
 
 - [RFC 5322, sections 3.6.2 and 3.6.4](https://www.rfc-editor.org/rfc/rfc5322.html): Reply-To and conversation headers.

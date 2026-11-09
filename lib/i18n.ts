@@ -2,7 +2,6 @@ import { zhCNApps } from "./i18n-apps.ts";
 import { zhCNCustomerTags } from "./i18n-customer-tags.ts";
 import { zhCNCustomerPortal } from "./i18n-customer-portal.ts";
 import { zhCNAnalytics } from "./i18n-analytics.ts";
-import { zhCNMyDay } from "./i18n-my-day.ts";
 import { zhCNWorkspaceSearch } from "./i18n-workspace-search.ts";
 import { zhCNQuotations } from "./i18n-quotations.ts";
 import { zhCNFlowScenarios } from "./i18n-flow-scenarios.ts";
@@ -19,6 +18,7 @@ import { zhCNPurchaseOrders } from "./i18n-purchase-orders.ts";
 import { zhCNWorkspaces } from "./i18n-workspaces.ts";
 import { zhCNTables } from "./i18n-tables.ts";
 import { zhCNHome } from "./i18n-home.ts";
+import { zhCNAiLeads } from "./i18n-ai-leads.ts";
 
 import type { AppLanguage } from "./app-language.ts";
 export type { AppLanguage } from "./app-language.ts";
@@ -27,6 +27,7 @@ export { LANGUAGE_STORAGE_KEY } from "./app-language.ts";
 // Product terminology is centralized so sales, catalog, mailbox, and
 // automation screens use consistent professional Chinese wording.
 const zhCN: Record<string, string> = {
+  ...zhCNAiLeads,
   ...zhCNHome,
   ...zhCNTables,
   "Custom": "自定义",
@@ -41,7 +42,12 @@ const zhCN: Record<string, string> = {
   ...zhCNCustomerTags,
   ...zhCNCustomerPortal,
   ...zhCNAnalytics,
-  ...zhCNMyDay,
+  "Show more": "显示更多",
+  "Overdue": "已逾期",
+  "Follow-ups": "客户跟进",
+  "All work": "全部工作",
+  "Review task": "查看任务",
+  "Review invoice": "查看发票",
   ...zhCNWorkspaceSearch,
   ...zhCNQuotations,
   "= Yes": "= 是",

@@ -16,13 +16,24 @@ import { z } from "zod";
 import { aiLanguageSchema } from "@/lib/ai/language";
 import { buildEmailSummaryInstruction, generateEmailSummary } from "@/lib/ai/email-summary";
 import { attachSummaryProducts, loadSummaryCatalog, summaryProductContext } from "@/lib/ai/email-summary-products";
+import { researchCustomer } from "@/lib/ai/customer-research";
+import { attachSummaryResearch, loadSummaryResearch } from "@/lib/ai/email-summary-research";
+import { emailSummaryCacheKey, EmailSummaryPendingError } from "@/lib/ai/email-summary-cache";
+import { savedEmailSummary } from "@/lib/data/email-summary-cache";
+import { matchSummaryProducts } from "@/lib/ai/email-summary-matching";
+
+export const maxDuration = 120;
 
 const requestSchema = z.object({
   language: aiLanguageSchema,
   mode: z.enum(["rewrite", "translate", "summary"]),
+  refreshSummary: z.boolean().optional(),
+  messageId: z.string().max(500).optional(),
+  mailboxId: z.string().max(500).nullable().optional(),
   text: z.string().trim().min(1).max(20_000),
   subject: z.string().max(500).optional(),
   messageSource: z.enum(["mailbox", "shopify", "crm"]).optional(),
+  messageDirection: z.enum(["inbound", "outbound"]).optional(),
   segments: z.array(z.string().trim().min(1).max(20_000)).min(1).max(500)
     .refine((segments) => segments.reduce((length, text) => length + text.length, 0) <= 20_000, "Email is too long to translate.").optional(),
   context: z.string().max(8_000).optional(),
@@ -89,54 +100,80 @@ export async function POST(request: Request) {
   }
 
   const gatewayToken = resolveGatewayToken(process.env);
-
-  const signature = {
-    name: normalizeSignatureName(assignedManagerName, normalizeSignatureName(viewer.displayName)),
-    title: DEFAULT_EMAIL_TITLE,
-    company: DEFAULT_EMAIL_COMPANY,
-  };
-  const system = mode === "summary" ? `${buildEmailSummaryInstruction(language)}\nCURRENT TIME: ${new Date().toISOString()}\nWORKSPACE TIMEZONE: Asia/Shanghai` : buildEmailRewriteInstruction(signature);
-  const governedSystem = system + aiBehaviorInstruction(policy, true);
-  const catalog = mode === "summary" ? await loadSummaryCatalog(policy.data.products, async () => {
-    const { listProducts } = await import("@/lib/data/crm");
-    return listProducts(undefined, { requireComplete: true });
-  }) : null;
-  const userContent = mode === "summary" ? JSON.stringify({
-    subject: parsed.data.subject,
-    messageSource: parsed.data.messageSource,
-    contact: recipient,
-    customerProfile,
-    conversationHistory,
-    latestMessage: text,
-    currentFollowUpAt: parsed.data.currentFollowUpAt,
-    productCatalog: catalog ? summaryProductContext(catalog) : undefined,
-  }) : buildEmailRewritePrompt({
-    recipient,
-    managerInput: text,
-    customerProfile,
-    conversationHistory,
-    legacyContext: context,
-  });
-  const finalizeOutput = async (generate: (correction: string) => Promise<string>) => mode === "summary"
-    ? attachSummaryProducts(await generateEmailSummary(generate, undefined, language), catalog!)
-    : applyEmailSignature(await generate(""), signature);
-
-  const generateWithGateway = (correction: string) => generateGatewayText({ usageUserId: viewer.id,
-    task: "email", userText: text, complex: Boolean(correction), signal: request.signal,
-    token: gatewayToken!,
-    model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim(),
-    systemInstruction: governedSystem,
-    prompt: correction ? `${userContent}\n\nVALIDATION CORRECTION:\n${correction}` : userContent,
-  });
-
   if (!gatewayToken) {
     return Response.json({ ok: false, error: "AI assistance is not configured." }, { status: 503 });
   }
 
+  const generateOutput = async (signal: AbortSignal) => {
+    const signature = {
+      name: normalizeSignatureName(assignedManagerName, normalizeSignatureName(viewer.displayName)),
+      title: DEFAULT_EMAIL_TITLE,
+      company: DEFAULT_EMAIL_COMPANY,
+    };
+    const system = mode === "summary" ? `${buildEmailSummaryInstruction(language)}\nCURRENT TIME: ${new Date().toISOString()}\nWORKSPACE TIMEZONE: Asia/Shanghai` : buildEmailRewriteInstruction(signature);
+    const governedSystem = system + aiBehaviorInstruction(policy, true);
+    const [catalog, research] = mode === "summary" ? await Promise.all([loadSummaryCatalog(policy.data.products, async () => {
+      const { listProducts } = await import("@/lib/data/crm");
+      return listProducts(undefined, { requireComplete: true });
+    }), loadSummaryResearch({
+      allowed: policy.features.webSearch && policy.data.customers,
+      identity: { name: customerProfile?.companyName, website: customerProfile?.website,
+        country: customerProfile?.country, city: customerProfile?.city },
+      research: async identity => researchCustomer({ identity, language, usageUserId: viewer.id,
+        signal: AbortSignal.any([signal, AbortSignal.timeout(35_000)]),
+        questions: ["Verify the exact business identity, products/services, channels and location. Exclude unrelated namesakes.",
+          "Find the two strongest filament material opportunities supported by actual activities; distinguish facts from inference. Include dated scale evidence only when available."],
+      }),
+    })]) : [null, null];
+    const userContent = mode === "summary" ? JSON.stringify({
+      subject: parsed.data.subject,
+      messageSource: parsed.data.messageSource,
+      contact: recipient,
+      customerProfile,
+      conversationHistory,
+      latestMessage: text,
+      currentFollowUpAt: parsed.data.currentFollowUpAt,
+      productCatalog: catalog ? summaryProductContext(catalog) : undefined,
+      requestedProducts: catalog?.status === "available" ? matchSummaryProducts(parsed.data, catalog.products) : undefined,
+      WEB_RESEARCH: research,
+    }) : buildEmailRewritePrompt({
+      recipient,
+      managerInput: text,
+      customerProfile,
+      conversationHistory,
+      legacyContext: context,
+    });
+    const finalizeOutput = async (generate: (correction: string) => Promise<string>) => mode === "summary"
+      ? attachSummaryResearch(attachSummaryProducts(await generateEmailSummary(generate, undefined, language), catalog!, parsed.data), research!)
+      : applyEmailSignature(await generate(""), signature);
+
+    const generateWithGateway = (correction: string) => generateGatewayText({ usageUserId: viewer.id,
+      task: "email", userText: text, complex: Boolean(correction), signal,
+      token: gatewayToken!,
+      model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim(),
+      systemInstruction: governedSystem,
+      prompt: correction ? `${userContent}\n\nVALIDATION CORRECTION:\n${correction}` : userContent,
+    });
+
+    return finalizeOutput(generateWithGateway);
+  };
+
   try {
-    const output = await finalizeOutput(generateWithGateway);
+    if (mode === "summary") {
+      const key = emailSummaryCacheKey(parsed.data, policy, viewer.role, process.env.AI_GATEWAY_EMAIL_MODEL?.trim());
+      // Continue to save an already paid-for result when the reader navigates away.
+      const result = await savedEmailSummary(viewer, key, () => generateOutput(AbortSignal.timeout(100_000)), parsed.data.refreshSummary);
+      // Catalog display metadata stays current without repeating research or AI.
+      const output = result.cached ? attachSummaryProducts(result.output, await loadSummaryCatalog(policy.data.products, async () => {
+        const { listProducts } = await import("@/lib/data/crm");
+        return listProducts(undefined, { requireComplete: true });
+      }), parsed.data) : result.output;
+      return Response.json({ ok: true, ...result, output, provider: "vercel-ai-gateway" }, { headers: { "Cache-Control": "no-store" } });
+    }
+    const output = await generateOutput(request.signal);
     return Response.json({ ok: true, output, provider: "vercel-ai-gateway" }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
+    if (error instanceof EmailSummaryPendingError) return Response.json({ ok: false, pending: true }, { status: 202, headers: { "Cache-Control": "no-store", "Retry-After": "2" } });
     return Response.json({ ok: false, error: error instanceof Error ? error.message : "AI assistance is temporarily unavailable." }, { status: error instanceof Error && error.name === "AiBudgetError" ? (error as Error & { status?: number }).status || 429 : 502 });
   }
 }

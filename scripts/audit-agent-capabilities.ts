@@ -17,6 +17,7 @@ const surfaces = crmMutationSurfaces(process.cwd()).map(surface => {
   if (file === "app/api/email/drafts/route.ts" && action === "DELETE") tools = ["discard_email_draft"];
   if (file === "app/api/email/drafts/route.ts" && action === "PUT") tools = ["write_email"];
   if (file === "app/api/flows/check/route.ts") return { surface, mode: "read", tools: [], explanation: "Authenticated, read-only workflow connection and resource checks. Uses live dependencies without generating content, sending messages or changing CRM records." };
+  if (file.startsWith("app/api/ai/leads/")) return { surface, mode: "guided", tools: [], explanation: "Use AI Leads to review the product category and buyer profile, select target groups and locations, run bounded research, inspect qualification evidence and save selected prospects. General chat must hand off to this page." };
   if (tools) return { surface, mode: "direct", tools, explanation: "Typed proposals use the same validated business service; role/policy and review still apply." };
   if (action === "updateAiUsageSettings") return { surface, mode: "internal", tools: [], explanation: "Retained legacy budget settings helper. Application usage limits and their Settings controls have been removed." };
   if (internal.test(file)) return { surface, mode: "internal", tools: [], explanation: "Agent/history infrastructure, inbound integration, customer-only identity or background worker; not an employee feature to invoke arbitrarily." };

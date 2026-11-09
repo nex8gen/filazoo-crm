@@ -1,0 +1,2 @@
+import { Skeleton } from "@/components/ui/skeleton";
+export default function Loading() { return <div className="space-y-6" aria-label="Loading AI Leads"><div className="flex justify-between"><Skeleton className="h-9 w-72"/><Skeleton className="h-9 w-36"/></div><div className="grid grid-cols-3 gap-6 border-b pb-5">{[0, 1, 2].map(value => <Skeleton key={value} className="h-10" />)}</div><Skeleton className="h-11 rounded-xl"/><Skeleton className="h-9 rounded-lg"/>{[0, 1, 2].map(value => <Skeleton key={value} className="h-12" />)}</div>; }

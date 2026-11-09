@@ -21,5 +21,5 @@ export function WorkspacePageHeader({ pathname }: { pathname: string }) {
   }
 
   const page = pages.find(page => pathname === page.href || pathname.startsWith(`${page.href}/`));
-  return <PageHeader title={page?.label ?? "Overview"} icon={page?.icon ?? LayoutDashboard} />;
+  return <PageHeader title={page?.label ?? "Analytics"} icon={page?.icon ?? LayoutDashboard} />;
 }

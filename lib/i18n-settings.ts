@@ -201,7 +201,6 @@ export const zhCNSettings: Record<string, string> = {
   "This email address is already connected. Manage the existing connection instead.": "此邮件地址已连接。请管理现有连接。",
   "The mailbox could not be saved. Refresh and check your access.": "无法保存邮箱。请刷新并检查访问权限。",
   "Connect Gmail, Lingxi Mail, or another provider that supports SMTP and IMAP.": "连接 Gmail、灵犀邮箱或其他支持 SMTP 与 IMAP 的邮件服务商。",
-  "My day": "我的一天",
   "Use the server addresses, ports, and app passwords provided by your email service. Saving checks both sending and receiving.": "使用邮件服务商提供的服务器地址、端口与应用密码。保存时会测试发件与收件连接。",
   "Test and save connection": "测试并保存连接",
   "Test and connect mailbox": "测试并连接邮箱",

@@ -14,17 +14,22 @@ const starters = [
   { icon: ClipboardList, label: "Review my orders", prompt: "Review the purchase orders for my assigned customers. Highlight outstanding items and suggest the next steps." },
 ];
 
-export function HomeAiComposer() {
+export function HomeAiComposer({ name, asOf }: { name: string; asOf: string }) {
   const [mode, setMode] = useState<"chat" | "agent">("chat");
   const [question, setQuestion] = useState("");
   const input = useRef<HTMLTextAreaElement>(null);
+  const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Shanghai", hour: "2-digit", hourCycle: "h23" }).format(new Date(asOf)));
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const openAi = (prompt = "") => {
     launchWorkspaceAi({ mode, ...(prompt.trim() ? { prompt: prompt.trim(), submit: true } : {}) });
     if (prompt.trim()) setQuestion("");
   };
 
   return <section aria-labelledby="home-ai-heading" className="home-ai">
-    <h2 id="home-ai-heading" className="sr-only">Ask Filazoo AI</h2>
+    <header className="home-ai-welcome">
+      <h2 id="home-ai-heading">{greeting}, <span data-no-translate>{name}</span>!</h2>
+      <p>Let’s keep your business moving.</p>
+    </header>
     <HomeAiInput id="home-ai-question" inputRef={input} mode={mode} onModeChange={setMode} value={question} onChange={setQuestion} onSend={openAi} onOpen={() => launchWorkspaceAi({ mode, ...(question.trim() ? { prompt: question.trim() } : {}) })} canSend={Boolean(question.trim())} />
   </section>;
 }

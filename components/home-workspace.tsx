@@ -22,8 +22,8 @@ export function HomeWorkspace({ data }: { data: HomeData }) {
 
     {data.unavailable.length ? <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/25 bg-amber-500/5 px-4 py-3 text-xs"><p>Some data could not be loaded: {data.unavailable.join(", ")}. Affected totals are unavailable.</p><button type="button" onClick={() => startRefresh(() => router.refresh())} disabled={refreshing} className="font-medium underline">Try again</button></div> : null}
 
-    {data.isAdmin ? <HomeTeamPerformance data={data} refreshing={refreshing} /> : null}
+    <HomeAiComposer name={data.name} asOf={data.asOf} />
 
-    <HomeAiComposer />
+    {data.isAdmin ? <HomeTeamPerformance data={data} refreshing={refreshing} /> : null}
   </div>;
 }

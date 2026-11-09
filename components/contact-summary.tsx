@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ArrowUpRight, Building2, ReceiptText } from "lucide-react";
 import { AssignedOwner } from "@/components/assigned-owner";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { companyPortrait } from "@/lib/company-avatar";
 
 type ContactSummaryProps = {
   name: string;
@@ -19,7 +21,10 @@ export function ContactSummary({ name, email, company, companyId, ownerName, own
   const companyLabel = company && company !== "Unknown company" ? company : "No linked company";
   return <section className="px-5 py-6" aria-label="Contact">
     <div className="flex items-center gap-3">
-      <div aria-hidden="true" className="grid size-12 shrink-0 place-items-center rounded-2xl bg-brand-soft text-sm font-semibold text-primary ring-1 ring-primary/5">{initials}</div>
+      <Avatar className="size-12 shrink-0">
+        <AvatarImage src={companyPortrait(companyId || email)} alt={`${companyLabel} profile`} />
+        <AvatarFallback className="bg-brand-soft text-sm font-semibold text-primary">{initials}</AvatarFallback>
+      </Avatar>
       <div className="min-w-0">
         <p className="break-words text-[15px] font-semibold leading-5 tracking-tight [overflow-wrap:anywhere]">{name}</p>
         {name !== email && <p className="mt-1 break-words text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">{email}</p>}

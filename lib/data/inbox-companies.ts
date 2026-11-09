@@ -15,7 +15,7 @@ const first = <T>(value: Relation<T>) => Array.isArray(value) ? value[0] : value
 const literalPattern = (value: string) => JSON.stringify(value.replace(/[\\%_]/g, "\\$&"));
 
 /** Caller has authorized and filtered the inbox. Enrich only its correspondents;
- * never scan all companies or fetch Auth profiles/Storage avatars for a list. */
+ * never scan all companies. Resolve only the distinct visible owners' cached avatars. */
 export async function listInboxCompanies(messages: InboxEmailItem[], assigned: AssignedEmailContacts) {
   const admin = createSupabaseAdmin();
   const addresses = [...new Set(messages.map((item) => item.contact.trim().toLowerCase()).filter((email) => email.includes("@") && !assigned?.has(email)))];
@@ -55,9 +55,11 @@ export async function listInboxCompanies(messages: InboxEmailItem[], assigned: A
     })(),
   ]);
   const ownerIds = [...new Set([...rows.values()].map((row) => first(row.pipeline)?.owner_id).filter((id): id is string => Boolean(id)))];
-  const { data: owners, error } = ownerIds.length
-    ? await admin.from("workspace_members").select("user_id,display_name").in("user_id", ownerIds)
-    : { data: [], error: null };
+  const [{ data: owners, error }, ownerAvatars] = await Promise.all([ownerIds.length
+    ? admin.from("workspace_members").select("user_id,display_name").in("user_id", ownerIds)
+    : { data: [], error: null },
+    ownerIds.length ? import("./cached-member-avatars.ts").then(({ resolveMemberAvatars }) => resolveMemberAvatars(ownerIds)) : new Map<string, string>(),
+  ]);
   if (error) throw new Error(`Unable to load email owners: ${error.message}`);
   const ownerNames = new Map((owners ?? []).map((owner) => [owner.user_id, owner.display_name || "BD Sales Manager"]));
   return { companies: [...rows.values()].flatMap((row) => {
@@ -69,7 +71,7 @@ export async function listInboxCompanies(messages: InboxEmailItem[], assigned: A
       website: row.website || "", country: row.country || "Unknown", city: row.city || "", segment: row.segment || "Unclassified",
       summary: profile?.summary || "This company has not been profiled yet.", tags: profile?.interest_tags ?? [], fitScore: profile?.fit_score ?? 0,
       currency: pipeline?.currency || "USD",
-      ownerId, ownerName, ownerInitials: ownerId ? getInitials(ownerName) : "—", ownerAvatarUrl: undefined as string | undefined,
+      ownerId, ownerName, ownerInitials: ownerId ? getInitials(ownerName) : "—", ownerAvatarUrl: ownerId ? ownerAvatars.get(ownerId) : undefined,
     }));
   }) };
 }

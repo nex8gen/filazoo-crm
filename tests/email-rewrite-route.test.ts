@@ -31,7 +31,12 @@ for (const provider of ["gateway", "oidc", "legacy-budget"] as const) {
           "@/lib/email-translation": {},
           "@/lib/ai/language": { aiLanguageSchema },
           "@/lib/ai/email-summary": {},
+          "@/lib/ai/email-summary-cache": {},
+          "@/lib/ai/email-summary-matching": {},
+          "@/lib/data/email-summary-cache": {},
           "@/lib/ai/email-summary-products": {},
+          "@/lib/ai/email-summary-research": {},
+          "@/lib/ai/customer-research": {},
           zod: { z },
         };
         const exports = {} as { POST: (request: Request) => Promise<Response> };

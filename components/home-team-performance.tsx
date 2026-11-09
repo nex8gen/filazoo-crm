@@ -12,6 +12,7 @@ const roles: Record<string, string> = { bd_manager: "BD sales manager", admin: "
 
 export function HomeTeamPerformance({ data, refreshing }: { data: HomeData; refreshing: boolean }) {
   const [view, setView] = useState<"bd" | "all">("bd");
+  const [openedMember, setOpenedMember] = useState<string | null>(null);
   const preferences = useHomeMetrics(data.preferenceKey);
   const { report } = data;
   const currency = preferences.currency && report.sales.currencies.includes(preferences.currency) ? preferences.currency : report.sales.defaultCurrency;
@@ -33,7 +34,7 @@ export function HomeTeamPerformance({ data, refreshing }: { data: HomeData; refr
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <div role="group" aria-label="Team performance members" className="flex gap-1 rounded-lg bg-muted/60 p-1">
-          {([{ value: "bd", label: "BD managers" }, { value: "all", label: "All members" }] as const).map(item => <button key={item.value} type="button" aria-pressed={view === item.value} onClick={() => setView(item.value)} className={`rounded-md px-2.5 py-1 text-[11px] ${view === item.value ? "bg-background font-medium shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>{item.label}</button>)}
+          {([{ value: "bd", label: "BD managers" }, { value: "all", label: "All members" }] as const).map(item => <button key={item.value} type="button" aria-pressed={view === item.value} onClick={() => { setView(item.value); setOpenedMember(null); }} className={`rounded-md px-2.5 py-1 text-[11px] ${view === item.value ? "bg-background font-medium shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>{item.label}</button>)}
         </div>
         {report.sales.currencies.length > 1 ? <><label className="sr-only" htmlFor="home-team-currency">Performance currency</label>
         <select id="home-team-currency" value={currency} onChange={event => preferences.save({ metrics: preferences.metrics, currency: event.target.value })} className="h-8 rounded-md border bg-card px-2 text-[11px] focus-visible:outline-2 focus-visible:outline-ring">
@@ -43,14 +44,21 @@ export function HomeTeamPerformance({ data, refreshing }: { data: HomeData; refr
       </div>
     </div>
 
-    {members.length ? <div className="home-performance-grid">{members.map(member => {
+    {members.length ? <div className="home-team-tabs" role="group" aria-label="Team member performance">{members.map(member => {
       const sales = salesFor(member);
       const share = totalSales > 0 ? Math.max(0, Math.min(100, sales / totalSales * 100)) : 0;
       const shareLabel = `${Number(share.toFixed(1))}%`;
-      return <article key={member.id} aria-label={member.name} className="home-performance-card rounded-xl border bg-card p-5">
+      const initials = member.name.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join("").toUpperCase();
+      return <Popover key={member.id} open={openedMember === member.id} onOpenChange={open => setOpenedMember(current => open ? member.id : current === member.id ? null : current)}>
+        <PopoverTrigger openOnHover delay={150} closeDelay={180} className="home-team-tab" aria-label={`${member.name}, sales ${ordersReady ? `${money.format(sales / 100)} ${currency}` : "unavailable"}. View performance details.`}>
+          <Avatar size="sm"><AvatarImage src={member.avatarUrl} alt="" /><AvatarFallback className="bg-brand-soft font-semibold text-primary">{initials}</AvatarFallback></Avatar>
+          <span className="home-team-tab-name" data-no-translate>{member.name}</span>
+          <span className="home-team-tab-sales" data-no-translate>{ordersReady ? money.format(sales / 100) : "—"}</span>
+        </PopoverTrigger>
+        <PopoverContent align="start" side="bottom" sideOffset={8} className="home-team-details !w-[min(320px,calc(100vw-2rem))] !gap-0 !rounded-2xl !p-5">
         <div className="flex items-center gap-3">
-          <Avatar className="size-10"><AvatarImage src={member.avatarUrl} alt="" /><AvatarFallback className="bg-brand-soft font-semibold text-primary">{member.name.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join("").toUpperCase()}</AvatarFallback></Avatar>
-          <div className="min-w-0"><h3 className="truncate text-sm font-semibold" title={member.name} data-no-translate>{member.name}</h3><p className="mt-0.5 text-[11px] text-muted-foreground">{roles[member.role] ?? "Workspace member"}</p></div>
+          <Avatar className="size-10"><AvatarImage src={member.avatarUrl} alt="" /><AvatarFallback className="bg-brand-soft font-semibold text-primary">{initials}</AvatarFallback></Avatar>
+          <div className="min-w-0"><PopoverTitle className="break-words text-sm font-semibold" data-no-translate>{member.name}</PopoverTitle><PopoverDescription className="mt-0.5 text-[11px]">{roles[member.role] ?? "Workspace member"}</PopoverDescription></div>
         </div>
 
         <div className="mt-5"><div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground"><span>Sales</span><span className="text-[10px]" data-no-translate>{currency}</span></div><p className="mt-1 break-words text-[26px] font-semibold leading-tight tracking-tight tabular-nums">{ordersReady ? money.format(sales / 100) : "—"}</p></div>
@@ -67,7 +75,8 @@ export function HomeTeamPerformance({ data, refreshing }: { data: HomeData; refr
             { label: "Emails sent", value: member.emailsSent, ready: emailsReady },
           ].map(metric => <div key={metric.label}><dt className="text-[11px] text-muted-foreground">{metric.label}</dt><dd className="mt-0.5 text-base font-semibold tabular-nums">{metric.ready ? metric.value.toLocaleString() : "—"}</dd></div>)}
         </dl>
-      </article>;
+        </PopoverContent>
+      </Popover>;
     })}</div> : <div className="rounded-xl border border-dashed bg-card px-5 py-10 text-center"><Users aria-hidden="true" className="mx-auto size-6 text-muted-foreground" /><p className="mt-3 text-xs text-muted-foreground">{data.unavailable.includes("Team members") ? "Team members could not be loaded. Try refreshing." : view === "bd" ? "No active BD managers yet. Add your team in workspace settings." : "Active team members will appear here."}</p></div>}
   </section>;
 }

@@ -1582,8 +1582,11 @@ export function EmailInboxWorkspace({
               onAnalyzed={applyAiFollowUp}
               context={JSON.stringify({
                 mode: "summary",
+                messageId: selected.id,
+                mailboxId: selectedMailboxId,
                 subject: selected.subject.slice(0, 500),
                 messageSource: selected.source,
+                messageDirection: selected.direction,
                 text: selected.body.slice(0, 20_000),
                 recipient: selected.contact.slice(0, 200),
                 customerProfile: selected.customerProfile || { companyName: selected.company.slice(0, 300), contactName: selected.contactName?.slice(0, 300) },

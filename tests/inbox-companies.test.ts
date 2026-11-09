@@ -21,16 +21,19 @@ function setup(fail = false) {
     return query;
   } };
   const exports = {} as { listInboxCompanies: (messages: InboxEmailItem[], assigned: Map<string, string> | null) => Promise<{ companies: Array<Record<string, unknown>> }> };
-  const dependencies: Record<string, unknown> = { "../supabase/admin.ts": { createSupabaseAdmin: () => db }, "../crm-model.ts": model };
+  const avatarReads: string[][] = [];
+  const dependencies: Record<string, unknown> = { "../supabase/admin.ts": { createSupabaseAdmin: () => db }, "../crm-model.ts": model,
+    "./cached-member-avatars.ts": { resolveMemberAvatars: async (ids: string[]) => { avatarReads.push([...ids]); return new Map([["owner", "/saved-manager.webp"]]); } },
+  };
   vm.runInNewContext(ts.transpileModule(readFileSync(new URL("../lib/data/inbox-companies.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, {
     exports, require: (name: string) => dependencies[name] ?? require(name),
   });
-  return { ...exports, calls };
+  return { ...exports, calls, avatarReads };
 }
 const message = (contact: string) => ({ id: contact, contact, company: "Unknown company" } as InboxEmailItem);
 
 test("inbox context queries only actual correspondents and preserves secondary-address matches", async () => {
-  const { listInboxCompanies, calls } = setup();
+  const { listInboxCompanies, calls, avatarReads } = setup();
   const result = await listInboxCompanies([message("SECONDARY@BUYER.TEST")], null);
   const filters = calls.filter((call) => call.method === "or");
   assert.equal(filters.length, 1);
@@ -38,6 +41,8 @@ test("inbox context queries only actual correspondents and preserves secondary-a
   assert.equal(calls.some((call) => call.table === "companies"), false, "No global company scan");
   assert.ok(result.companies.some((item) => item.email === "secondary@buyer.test"));
   assert.equal(result.companies[0].ownerName, "Jane Sales");
+  assert.equal(result.companies[0].ownerAvatarUrl, "/saved-manager.webp");
+  assert.deepEqual(avatarReads, [["owner"]], "Only distinct owners in the authorized inbox are resolved");
   assert.equal(result.companies[0].summary, "Needs PETG");
   for (const select of calls.filter((call) => call.method === "select")) {
     assert.equal(String(select.args[0]).includes("meta_leads"), false);
@@ -53,6 +58,7 @@ test("assigned customer IDs avoid redundant address lookups and empty inboxes ne
   const empty = setup();
   assert.equal((await empty.listInboxCompanies([], null)).companies.length, 0);
   assert.equal(empty.calls.length, 0);
+  assert.equal(empty.avatarReads.length, 0);
 });
 
 test("email filter values quote delimiters and escape wildcard characters", async () => {

@@ -305,6 +305,12 @@
   ],
   "guidedFeatures": [
     {
+      "domain": "customers",
+      "name": "Find new business leads and review public contacts",
+      "href": "/lead-channel/ai-leads",
+      "reason": "Choose workspace products, target locations and a bounded research search on AI Leads; review evidence and select which prospects to save."
+    },
+    {
       "domain": "settings",
       "name": "Connect mailboxes, OAuth or ERP",
       "href": "/settings/apps",
@@ -365,6 +371,24 @@
       "mode": "internal",
       "tools": [],
       "explanation": "Agent/history infrastructure, inbound integration, customer-only identity or background worker; not an employee feature to invoke arbitrarily."
+    },
+    {
+      "surface": "app/api/ai/leads/profile/route.ts#POST",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Use AI Leads to review the product category and buyer profile, select target groups and locations, run bounded research, inspect qualification evidence and save selected prospects. General chat must hand off to this page."
+    },
+    {
+      "surface": "app/api/ai/leads/route.ts#PATCH",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Use AI Leads to review the product category and buyer profile, select target groups and locations, run bounded research, inspect qualification evidence and save selected prospects. General chat must hand off to this page."
+    },
+    {
+      "surface": "app/api/ai/leads/route.ts#POST",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Use AI Leads to review the product category and buyer profile, select target groups and locations, run bounded research, inspect qualification evidence and save selected prospects. General chat must hand off to this page."
     },
     {
       "surface": "app/api/ai/reply-requests/route.ts#PATCH",

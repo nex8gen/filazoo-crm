@@ -28,12 +28,30 @@ export function allQuotationProductsRequested(messages: readonly { role: string;
  * material. Never expand PLA to CF/matte/silk or TPU to every hardness silently.
  */
 export function matchQuotationProducts(text: string, products: readonly Product[]) {
-  const source = normalize(text);
+  // Preserve list/sentence boundaries: "PETG-CF, ABS" must never form the
+  // reversed alias "CF ABS", nor "ABS, ASA" become the blend ABS-ASA.
+  const source = text.normalize("NFKC").split(/[,;:!?\r\n。；、，]|\.(?!\d)/).map(normalize).join(" | ");
   const materialNames = [...new Set(products.map(product => normalize(product.material ?? "")).filter(value => /^[a-z][a-z0-9]{1,19}$/.test(value)))];
   const families = [...materialNames].sort((a, b) => b.length - a.length).map(escape).join("|") || "(?!)";
   const matches: Array<{ start: number; end: number; sku: string }> = [];
   for (const product of products) {
     const aliases = new Set([normalize(product.sku), normalize(product.name)]);
+    // A family request such as "silk PLA" selects its actual base listing,
+    // without expanding to two-tone, rainbow or every other specialty variant.
+    if (/\bbasic\b/.test(normalize(product.sku))) {
+      for (const value of [product.sku, product.name]) {
+        const base = normalize(value).replace(/\bbasic(?:\s+colou?r)?\b/g, "").replace(/\s+/g, " ").trim();
+        if (!base || base === normalize(product.material ?? "")) continue;
+        aliases.add(base);
+        if (base.split(" ").length === 2) aliases.add(base.split(" ").reverse().join(" "));
+      }
+    }
+    for (const value of [product.sku, product.name]) {
+      const normalized = normalize(value);
+      const hardness = [...normalized.matchAll(/\b\d{2,3}[ad]\b/g)].map(match => match[0]);
+      if (hardness.length < 2) continue;
+      for (const grade of hardness) aliases.add(normalized.replace(/\b\d{2,3}[ad]\b/g, "").replace(/\s+/g, " ").trim().replace(/\btpu\b/, `tpu ${grade}`));
+    }
     const words = normalize(product.name).split(" ");
     if (words.length === 2) aliases.add([...words].reverse().join(" "));
     for (const alias of aliases) {
@@ -42,19 +60,53 @@ export function matchQuotationProducts(text: string, products: readonly Product[
       for (const match of source.matchAll(pattern)) matches.push({ start: match.index, end: match.index + match[0].length, sku: product.sku });
     }
   }
-  const exact = matches.filter(match => !matches.some(other => other.start <= match.start && other.end >= match.end && other.end - other.start > match.end - match.start));
   const negated = (start: number) => /\b(?:not|no|without|exclude|except|remove)\s+(?:any\s+)?$/.test(source.slice(Math.max(0, start - 35), start));
   const excludedSkus = new Set<string>();
   const excludedTerms = new Set<string>();
+  const ambiguous: Array<{ term: string; options: string[] }> = [];
+  const qualified: Array<{ start: number; end: number }> = [];
+  const modifier = "plus|pro|silk|matte|cf|gf|wood|glow|marble|rainbow|transparent|crystal|metal|[0-9]{2,3}[ad]";
+  for (const match of source.matchAll(new RegExp(`\\b(?:(${modifier})\\s+(${families})|(${families})\\s*(${modifier}))\\b`, "g"))) {
+    const start = match.index, end = start + match[0].length;
+    if (matches.some(value => value.start <= start && value.end >= end)) continue;
+    const family = match[2] || match[3], grade = match[1] || match[4];
+    qualified.push({ start, end });
+    const term = `${family.toUpperCase()} ${grade === "plus" ? "Plus" : grade.toUpperCase()}`;
+    const candidates = products.filter(product => normalize(product.material ?? "") === family
+      && normalize(`${product.sku} ${product.name}`).split(" ").includes(grade));
+    if (negated(start)) {
+      excludedTerms.add(normalize(term));
+      for (const product of candidates) excludedSkus.add(product.sku);
+    } else if (!ambiguous.some(value => value.term === term)) ambiguous.push({ term, options: candidates.map(product => product.name) });
+  }
+  let exact = matches.filter(match => !qualified.some(value => value.start <= match.start && value.end >= match.end)
+    && !matches.some(other => other.start <= match.start && other.end >= match.end && other.end - other.start > match.end - match.start));
+  const spans = new Map<string, { start: number; end: number; skus: Set<string> }>();
+  for (const match of exact) {
+    const key = `${match.start}:${match.end}`;
+    const span = spans.get(key) ?? { start: match.start, end: match.end, skus: new Set<string>() };
+    span.skus.add(match.sku);
+    spans.set(key, span);
+  }
+  for (const span of spans.values()) {
+    if (span.skus.size < 2) continue;
+    qualified.push(span);
+    const term = source.slice(span.start, span.end).toUpperCase();
+    if (negated(span.start)) {
+      excludedTerms.add(normalize(term));
+      for (const sku of span.skus) excludedSkus.add(sku);
+    } else if (!ambiguous.some(value => value.term === term)) ambiguous.push({ term, options: products.filter(product => span.skus.has(product.sku)).map(product => product.name) });
+  }
+  exact = exact.filter(match => !qualified.some(value => value.start <= match.start && value.end >= match.end));
   for (const match of exact.filter(match => negated(match.start))) {
     excludedSkus.add(match.sku); excludedTerms.add(normalize(match.sku));
     const family = normalize(match.sku);
     if (new RegExp(`^(?:${families})$`).test(family)) for (const product of products) if (normalize(product.material ?? "") === family || normalize(product.sku).startsWith(`${family} `)) excludedSkus.add(product.sku);
   }
   const skus = new Set(exact.filter(match => !negated(match.start)).map(match => match.sku));
-  const ambiguous: Array<{ term: string; options: string[] }> = [];
   for (const match of source.matchAll(new RegExp(`\\b(${families})\\b`, "g"))) {
     if (exact.some(exact => match.index >= exact.start && match.index < exact.end)) continue;
+    if (qualified.some(value => match.index >= value.start && match.index < value.end)) continue;
     const family = match[1];
     if (negated(match.index)) {
       excludedTerms.add(family);
@@ -67,12 +119,11 @@ export function matchQuotationProducts(text: string, products: readonly Product[
     if (choices.length === 1) skus.add(choices[0].sku);
     else if (!ambiguous.some(value => value.term === family.toUpperCase())) ambiguous.push({ term: family.toUpperCase(), options: choices.map(product => product.name) });
   }
-  // Common commercial names must not silently become a different saved grade.
-  for (const alias of ["PLA Plus", "ABS Plus", "PETG Plus"]) {
-    const pattern = new RegExp(`\\b${normalize(alias).split(" ").join("\\s*")}\\b`, "g");
-    for (const match of source.matchAll(pattern)) if (!exact.some(value => match.index >= value.start && match.index < value.end)) {
-      if (!ambiguous.some(value => value.term === alias)) ambiguous.push({ term: alias, options: [] });
-    }
+  // The compact spelling "plaplus" is common in customer inquiries.
+  for (const match of source.matchAll(new RegExp(`\\b(${families})plus\\b`, "g"))) {
+    if (exact.some(value => match.index >= value.start && match.index < value.end) || negated(match.index)) continue;
+    const term = `${match[1].toUpperCase()} Plus`;
+    if (!ambiguous.some(value => value.term === term)) ambiguous.push({ term, options: [] });
   }
   const knownWords = new Set(products.flatMap(product => [product.sku, product.name, product.material ?? ""].flatMap(value => normalize(value).split(" "))));
   const filler = new Set("please quote quotation for and or filament filaments spool spools color colors black white red blue green silk qty kg mm plus basic need want interested in products product material materials".split(" "));

@@ -7,6 +7,7 @@ export const AGENT_CONTRACT_VERSION = "2026-11-07.2";
 export const agentDomains = ["customers", "quotations", "invoices", "orders", "products", "email", "tasks", "workflows", "settings"] as const;
 export type AgentDomain = (typeof agentDomains)[number];
 export const guidedAgentFeatures = [
+  { domain: "customers", name: "Find new business leads and review public contacts", href: "/lead-channel/ai-leads", reason: "Choose workspace products, target locations and a bounded research search on AI Leads; review evidence and select which prospects to save." },
   { domain: "settings", name: "Connect mailboxes, OAuth or ERP", href: "/settings/apps", reason: "Credentials and account authorization stay in the connection form." },
   { domain: "settings", name: "Password, sessions, avatar, workspace membership and ownership", href: "/settings", reason: "Use the account/team security controls for identity or ownership changes and binary uploads." },
   { domain: "products", name: "Upload product images", href: "/products", reason: "Select the actual image file in the product editor." },

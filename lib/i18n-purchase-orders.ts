@@ -1,4 +1,5 @@
 export const zhCNPurchaseOrders: Record<string, string> = {
+  "Purchase Order": "采购订单",
   "Attach invoice": "添加发票附件",
   "Saving this order automatically creates or updates its invoice with the same order number.": "保存订单会自动生成或更新使用相同订单编号的发票。",
   "Issued order billing details are locked.": "已开具订单的账单信息已锁定。",

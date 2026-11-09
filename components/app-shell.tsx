@@ -32,7 +32,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
   const isPurchaseOrders = pathname === "/purchase-orders" || pathname.startsWith("/purchase-orders/");
   const { expanded: sidebarExpanded, toggle: toggleSidebar, isDesktop } = useWorkspaceSidebar(isPurchaseOrders ? "filazoo:po-sidebar-expanded:v1" : undefined);
   const isMessenger = pathname === "/messenger" || pathname.startsWith("/messenger/");
-  const isFlowBuilder = pathname === "/workflow" || pathname.startsWith("/workflow/");
+  const isFlowBuilder = pathname === "/workflow" || pathname === "/workflow/qa" || pathname.startsWith("/workflow/qa/");
   const isEmails = pathname === "/email" || pathname.startsWith("/email/workflows");
   const isSettings = pathname === "/settings" || pathname.startsWith("/settings/");
   const [settingsSidebarExpanded, setSettingsSidebarExpanded] = useState(false);
@@ -52,8 +52,8 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
   const navigationTriggerRef = useRef<HTMLButtonElement>(null);
   const isPublicPage = isStandaloneRoute(pathname);
   useCustomerTagRefresh(!isPublicPage);
-  // Inbox, My Day and automation already refresh their own data in place.
-  useVisitedPageRefresh(pathname, !isPublicPage && !usesViewportCanvas && pathname !== "/my-day");
+  // Inbox and automation already refresh their own data in place.
+  useVisitedPageRefresh(pathname, !isPublicPage && !usesViewportCanvas);
 
   useEffect(() => {
     if (isPublicPage) return;

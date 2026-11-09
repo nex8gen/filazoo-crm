@@ -1,11 +1,12 @@
 import type { ComponentType } from "react";
-import { BookOpen, Building2, ChartNoAxesCombined, ClipboardList, FilePenLine, House, LayoutDashboard, ListTodo, Mail, MessageSquareText, Package2, Settings, Tags, Workflow } from "lucide-react";
+import { BookOpen, Building2, ChartNoAxesCombined, ClipboardList, FilePenLine, House, ListTodo, Mail, Megaphone, MessageSquareText, Package2, Settings, Sparkles, Tags, Workflow } from "lucide-react";
 
 export type NavigationItem = {
   label: string;
   href: string;
   icon: ComponentType<{ className?: string }>;
   description: string;
+  badge?: string;
   exact?: boolean;
   activePrefix?: string;
   excludePrefixes?: string[];
@@ -29,31 +30,22 @@ export const navigation: NavigationGroup[] = [
     items: [{ label: "Home", href: "/", icon: House, description: "Your AI workspace and sales priorities", exact: true }],
   },
   {
-    label: "Overview",
-    eyebrow: "CRM",
-    icon: LayoutDashboard,
-    items: [
-      { label: "Analytics", href: "/analytics", icon: ChartNoAxesCombined, description: "Performance at a glance" },
-      { label: "My Day", href: "/my-day", icon: ListTodo, description: "Your daily priorities and next actions" },
-      { label: "Tasks and notifications", href: "/tasks", icon: ListTodo, description: "Assigned work, reminders and alerts" },
-    ],
-  },
-  {
     label: "Companies",
     eyebrow: "Accounts",
     icon: Building2,
     items: [
       { label: "Companies", href: "/companies", icon: Building2, description: "Accounts and prospects" },
+      { label: "AI Leads", href: "/lead-channel/ai-leads", icon: Sparkles, badge: "Beta", description: "Find business buyers and public contact details for your products" },
       { label: "Segments", href: "/segments", icon: Tags, description: "Companies grouped by business segment" },
     ],
   },
   {
-    label: "PO",
+    label: "Purchase Order",
     eyebrow: "Orders",
     icon: ClipboardList,
     nested: true,
     items: [
-      { label: "PO", href: "/purchase-orders", icon: ClipboardList, description: "Customer orders, delivery and fulfillment", excludePrefixes: ["/purchase-orders/drafts"] },
+      { label: "Purchase Order", href: "/purchase-orders", icon: ClipboardList, description: "Customer orders, delivery and fulfillment", excludePrefixes: ["/purchase-orders/drafts"] },
       { label: "Drafts", href: "/purchase-orders/drafts", icon: FilePenLine, description: "Purchase orders awaiting confirmation" },
     ],
   },
@@ -75,8 +67,11 @@ export const navigation: NavigationGroup[] = [
     label: "Workflow",
     eyebrow: "Workflow",
     icon: Workflow,
-    direct: true,
-    items: [{ label: "Workflow", href: "/workflow", icon: Workflow, description: "Email follow-up workflows and automation rules" }],
+    nested: true,
+    items: [
+      { label: "Workflow", href: "/workflow", icon: Workflow, description: "Email follow-up workflows and automation rules", excludePrefixes: ["/workflow/marketing-assets"] },
+      { label: "Marketing Assets", href: "/workflow/marketing-assets", icon: Megaphone, description: "Promotion plans, product offers and reusable marketing messages" },
+    ],
   },
   {
     label: "Products",
@@ -85,6 +80,15 @@ export const navigation: NavigationGroup[] = [
     items: [
       { label: "Products", href: "/products", icon: Package2, description: "Products, pricing and availability" },
       { label: "Company Quotations", href: "/company-quotations", icon: BookOpen, description: "Customer offers, versions and draft orders" },
+    ],
+  },
+  {
+    label: "Analytics",
+    eyebrow: "CRM",
+    icon: ChartNoAxesCombined,
+    items: [
+      { label: "Analytics", href: "/analytics", icon: ChartNoAxesCombined, description: "Performance at a glance" },
+      { label: "Tasks and notifications", href: "/tasks", icon: ListTodo, description: "Assigned work, reminders and alerts" },
     ],
   },
   {

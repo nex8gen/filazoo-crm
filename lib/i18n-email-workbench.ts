@@ -1,4 +1,6 @@
 export const zhCNEmailWorkbench: Record<string, string> = {
+  "Key buying signals, company research and products to offer.": "关键采购信号、公司调研与推荐产品。",
+  "Researching company and checking product fit…": "正在调研公司并核对产品匹配度…",
   "Refresh unavailable": "暂时无法刷新", "Mailbox sign-in required": "邮箱需要登录", "Sync delayed": "同步延迟",
   "Reconnecting…": "正在重新连接…", "Syncing…": "正在同步…", "Synced": "已同步",
   "Loading older mail…": "正在加载较早邮件…", "Older mail will retry": "较早邮件将重试", "Older mail queued": "较早邮件已排队",

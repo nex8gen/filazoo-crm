@@ -38,10 +38,10 @@ test("workspace membership is resolved after login and does not revoke a valid s
 });
 
 test("sign-in uses a validated start page and preserves explicit record links", async () => {
-  for (const page of ["/", "/analytics", "/my-day", "/companies", "/email"]) {
+  for (const page of ["/", "/analytics", "/companies", "/email"]) {
     await assert.rejects(fixture(null, null, null, { startPage: page }).run(), new RegExp(`redirect:${page}$`));
   }
-  for (const page of ["https://example.com", "//example.com", "/settings/team", "constructor"]) {
+  for (const page of ["https://example.com", "//example.com", "/settings/team", "/my-day", "constructor"]) {
     await assert.rejects(fixture(null, null, null, { startPage: page }).run(), /redirect:\/$/);
   }
   await assert.rejects(fixture(null, null, null, { startPage: "/email" }, "/companies/record?tab=email").run(), /redirect:\/companies\/record\?tab=email$/);
