@@ -7,7 +7,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { type SortingState, flexRender } from "@tanstack/react-table";
 import { type LegacyColumnDef as ColumnDef, getCoreRowModel, getPaginationRowModel, getSortedRowModel, useLegacyTable as useReactTable } from "@tanstack/react-table/legacy";
-import { Building2, ChevronsUpDown, CircleAlert, Columns3, Globe2, Mail, PackageCheck, Trash2 } from "lucide-react";
+import { Building2, ChevronsUpDown, Columns3, Globe2, Mail, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { bulkUpdateCompanies } from "@/app/crm-actions";
 import { AssignedOwner } from "@/components/assigned-owner";
@@ -81,9 +81,6 @@ export function CompaniesTable({ companies, mode, canDelete, viewKey = "all" }: 
     const matchesQuery = `${company.name} ${company.domain} ${company.email} ${company.segment} ${company.ownerName} ${(company.customerTags ?? []).join(" ")}`.toLowerCase().includes(query.toLowerCase());
     return matchesQuery && (country === "all" || company.country === country) && (tag === "all" || (company.customerTags ?? []).some(value => value === tag));
   }), [companies, country, query, tag]);
-  const shopifyCount = useMemo(() => companies.filter((company) => company.source.includes("shopify")).length, [companies]);
-  const needsReviewCount = useMemo(() => companies.filter((company) => !company.country.trim() || /^unknown$/i.test(company.country.trim()) || !company.email).length, [companies]);
-  const knownCountryCount = useMemo(() => new Set(companies.map((company) => company.country.trim()).filter((item) => item && !/^unknown$/i.test(item))).size, [companies]);
 
   const toggleOne = (id: string, checked: boolean) => setSelectedIds((current) => {
     const next = new Set(current);
@@ -128,16 +125,6 @@ export function CompaniesTable({ companies, mode, canDelete, viewKey = "all" }: 
       setSelectedIds(new Set());
       router.refresh();
     }} />
-    <div className="crm-company-summary grid shrink-0 grid-cols-2 gap-3 xl:grid-cols-4">
-      {[
-        { label: "Total companies", value: companies.length, detail: "Accounts and prospects", icon: Building2, tone: "bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300" },
-        { label: "Shopify leads", value: shopifyCount, detail: "Captured from your store", icon: PackageCheck, tone: "bg-[#95bf47]/12 text-[#5c7f18] dark:text-[#b5d66e]" },
-        { label: "Markets", value: knownCountryCount, detail: "Countries identified", icon: Globe2, tone: "bg-violet-50 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300" },
-        { label: "Needs review", value: needsReviewCount, detail: "Missing country or email", icon: CircleAlert, tone: "bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300" },
-      ].map((metric) => <Card key={metric.label} className="gap-0 border-border/70 p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-medium text-muted-foreground">{metric.label}</p><p className="mt-1 text-2xl font-semibold tracking-tight">{metric.value.toLocaleString()}</p><p className="mt-1 text-xs text-muted-foreground">{metric.detail}</p></div><span className={`grid size-9 place-items-center rounded-xl ${metric.tone}`}><metric.icon className="size-4" /></span></div></Card>)}
-    </div>
-
-    
     <TableFilters onApply={() => { setCountry(draft.country); table.setPageIndex(0); }} actions={
       <DropdownMenu>
         <DropdownMenuTrigger render={<Button variant="outline" />}><Columns3 />Columns</DropdownMenuTrigger>

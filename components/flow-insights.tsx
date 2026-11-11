@@ -12,6 +12,11 @@ type Run = {
   next_run_at: string | null;
   started_at: string;
   retry?: { reason: string; category: string; attempt: number } | null;
+  retryable?: boolean;
+  uncertain?: boolean;
+  canCancel?: boolean;
+  sentCount?: number;
+  skippedCount?: number;
   flow_run_logs: Array<{ id: string; result: Record<string, unknown> | null; error: string | null; created_at: string }>;
 };
 
@@ -23,6 +28,19 @@ export function FlowInsights({ flowId }: { flowId: string | null }) {
   const [status, setStatus] = useState("all");
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  async function recover(runId: string, action: "retry" | "cancel") {
+    setBusy(runId);
+    setError("");
+    try {
+      const response = await fetch(`/api/flows/${flowId}/runs/${runId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
+      const result = await response.json();
+      if (!response.ok || !result.ok) throw new Error(result.error || "Unable to update this run.");
+      setLoading(true);
+      setRevision(value => value + 1);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to update this run."); }
+    finally { setBusy(null); }
+  }
   useEffect(() => {
     if (!flowId) return;
     const controller = new AbortController();
@@ -52,6 +70,9 @@ export function FlowInsights({ flowId }: { flowId: string | null }) {
       {run.status === "active" && run.retry ? <p className="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-400">{run.retry.reason}</p> : null}
       {run.status === "failed" ? <p className="mt-2 break-words text-xs leading-5 text-destructive">{[...run.flow_run_logs].sort((a, b) => b.created_at.localeCompare(a.created_at)).find(log => log.error)?.error || "Review the run events for the failed action."}</p> : null}
       {run.next_run_at ? <p className="mt-3 text-xs">Scheduled: {new Date(run.next_run_at).toLocaleString()}</p> : null}
+      <p className="mt-2 text-xs font-medium">{run.sentCount ?? 0} emails sent · {run.skippedCount ?? 0} messages skipped{run.status === "done" && !run.sentCount ? " · Journey ended without sending an email" : ""}</p>
+      {run.uncertain ? <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">Delivery may have started. Check the sender&apos;s Sent folder before taking further action. Retry is disabled to prevent duplicate email.</p> : null}
+      {run.retryable || run.canCancel ? <div className="mt-3 flex flex-wrap gap-2">{run.retryable ? <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => void recover(run.id, "retry")}>Recheck and retry this action</Button> : null}{run.canCancel ? <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => void recover(run.id, "cancel")}>Stop this run</Button> : null}</div> : null}
       <ol className="mt-3 space-y-2">{[...run.flow_run_logs].sort((a, b) => a.created_at.localeCompare(b.created_at)).map((log) => <li key={log.id} className={`rounded bg-muted/40 p-2 text-xs ${log.error ? "text-destructive" : "text-muted-foreground"}`}>
         {log.error || String(log.result?.action || "Run event").replaceAll("_", " ")}
         {log.result?.reason ? <span className="mt-1 block">{String(log.result.reason)}</span> : null}

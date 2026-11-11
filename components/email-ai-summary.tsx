@@ -4,9 +4,9 @@ import { useLanguage } from "@/components/language-provider";
 
 import { AiIcon } from "@/components/ai-icon";
 
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import Link from "next/link";
-import { Check, Package2, RefreshCw } from "lucide-react";
+import { Check, Package2 } from "lucide-react";
 import type { EmailSummary } from "@/lib/ai/email-summary";
 import { requestEmailSummary } from "@/lib/email-summary-client";
 
@@ -93,22 +93,18 @@ export function EmailAiSummary({ context, configured, ready, currentFollowUpAt, 
   const [loading, setLoading] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [cached, setCached] = useState(false);
-  const refreshRequested = useRef(false);
   const getRequest = useEffectEvent(() => JSON.stringify({ ...JSON.parse(context), currentFollowUpAt, language }));
   const saveAnalysis = useEffectEvent((output: EmailSummary) => onAnalyzed(output));
 
   useEffect(() => {
     if (!configured || !ready) return;
-    const refresh = refreshRequested.current;
-    refreshRequested.current = false;
     let active = true;
     async function generate() {
       setLoading(true);
       setError(null);
       setSaveError(null);
-      setSummary(null);
       try {
-        const result = await requestEmailSummary(getRequest(), refresh);
+        const result = await requestEmailSummary(getRequest());
         const output = result.summary;
         if (active) {
           setSummary(output);
@@ -147,7 +143,6 @@ export function EmailAiSummary({ context, configured, ready, currentFollowUpAt, 
   return <section className="mx-6 mb-6" aria-labelledby="email-ai-summary">
     <div className="mb-3 flex items-center justify-between gap-2">
       <h3 id="email-ai-summary" className="flex items-center gap-2 text-sm font-semibold text-primary"><AiIcon state={loading ? "thinking" : "idle"} />AI summary</h3>
-      <button type="button" disabled={loading || !configured || !ready} onClick={() => { refreshRequested.current = true; setAttempt((value) => value + 1); }} aria-label="Regenerate AI summary" title="Generate a fresh analysis" className="rounded-md p-2 text-muted-foreground hover:bg-muted disabled:opacity-40"><RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} /></button>
     </div>
     <p className="mb-3 text-xs leading-5 text-muted-foreground">Key buying signals, company research and products to offer.</p>
     {summary && !loading && !error ? <p className="mb-3 flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-300"><Check className="size-3.5" />{saveError ? "Summary ready · Follow-up not saved" : cached ? "Saved analysis" : "Analysis complete"}</p> : null}
@@ -156,11 +151,12 @@ export function EmailAiSummary({ context, configured, ready, currentFollowUpAt, 
         {!configured ? <p className="text-xs leading-5 text-muted-foreground">Connect an AI provider in Settings to generate conversation summaries.</p>
           : !ready ? <p className="text-xs leading-5 text-muted-foreground">Waiting for the message to load before analysis.</p>
           : loading && !summary ? <p className="flex items-center gap-2 text-xs text-violet-700 dark:text-violet-300"><AiIcon state="thinking" />Researching company and checking product fit…</p>
-          : error ? <div><p className="text-xs leading-5 text-muted-foreground">{error}</p><button type="button" onClick={() => setAttempt((value) => value + 1)} className="mt-2 text-xs font-semibold text-primary hover:underline">Try again</button></div>
+          : error && !summary ? <div><p className="text-xs leading-5 text-muted-foreground">{error}</p><button type="button" onClick={() => setAttempt((value) => value + 1)} className="mt-2 text-xs font-semibold text-primary hover:underline">Try again</button></div>
           : summary ? <><h4 className="flex items-start gap-2 text-sm font-semibold"><AiIcon className="mt-0.5 size-4 shrink-0 text-violet-600 dark:text-violet-300" />{summary.title}</h4><p className="mt-3 text-xs leading-5">{summary.summary}</p>{summary.keyPoints?.length ? <ul className="mt-2 list-disc space-y-1.5 pl-4 text-xs leading-5">{summary.keyPoints.map((point, index) => <li key={index}>{point}</li>)}</ul> : null}<SummaryCompanyResearch summary={summary} language={language} /><SummaryProducts summary={summary} language={language} /><div className="mt-4 border-t border-violet-200/70 pt-3 dark:border-violet-500/20"><p className="text-xs font-semibold text-violet-700 dark:text-violet-300">Suggested next step</p><p className="mt-1 text-xs leading-5">{summary.nextStep}</p></div></> : null}
       </div>
+      {summary && error ? <div role="status" className="mt-3 text-xs leading-5 text-destructive">{error}<button type="button" onClick={() => setAttempt(value => value + 1)} className="ml-2 font-semibold text-primary hover:underline">Retry next step</button></div> : null}
       {saveError ? <div role="status" className="mt-3 border-t border-violet-200/70 pt-3"><p className="text-xs leading-5 text-destructive">The summary is ready, but the follow-up could not be saved: {saveError}</p><button type="button" disabled={loading} onClick={() => void retrySaving()} className="mt-2 text-xs font-semibold text-primary hover:underline disabled:opacity-40">Retry saving follow-up</button></div> : null}
-      {loading && summary ? <p role="status" className="mt-3 text-xs text-muted-foreground">Saving follow-up…</p> : null}
+      {loading && summary ? <p role="status" className="mt-3 text-xs text-muted-foreground">Updating suggested next step…</p> : null}
       <p className="mt-4 text-[11px] leading-4 text-muted-foreground">AI generated · Follow-up scheduled automatically when needed</p>
     </div>
   </section>;

@@ -14,12 +14,17 @@ export const hasLegacyIntegrations = cache(async () => {
 });
 
 /** Invoke only after authenticating the scheduler. Each callback gets independent tenant RLS. */
-export async function forEachWorkspace<T>(work: (workspaceId: string, count: number) => Promise<T>) {
+export async function forEachWorkspace<T>(work: (workspaceId: string, count: number) => Promise<T>, options: { rotate?: boolean; deadline?: number } = {}) {
   const { data, error } = await createSupabaseControl().from("workspaces").select("id").order("created_at");
   if (error?.code === "PGRST205" || error?.code === "42P01") return [await work("legacy", 1)];
   if (error) throw new Error("Unable to load scheduled workspaces.");
   const results: T[] = [];
+  if (options.rotate && data?.length) {
+    const offset = Math.floor(Date.now() / 60_000) % data.length;
+    data.push(...data.splice(0, offset));
+  }
   for (let offset = 0; offset < (data?.length ?? 0); offset += 4) {
+    if (options.deadline && Date.now() > options.deadline - 120_000) break;
     const batch = await Promise.allSettled(data!.slice(offset, offset + 4).map(w => withWorkspaceContext(w.id, () => work(w.id, data!.length))));
     for (const result of batch) {
       if (result.status === "fulfilled") results.push(result.value);

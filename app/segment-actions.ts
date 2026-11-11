@@ -30,7 +30,7 @@ export async function deleteSegment(_state: SegmentActionState, formData: FormDa
   const admin = createSupabaseAdmin();
   if (target.data.kind === "saved") {
     const { data, error } = await admin.from("company_segments").delete().eq("id", target.data.value).select("id").maybeSingle();
-    if (error) return { error: "Unable to delete the segment. Please try again." };
+    if (error) return { error: error.message?.includes("workflow") ? error.message : "Unable to delete the segment. Please try again." };
     if (!data) return { error: "This segment could not be found. Refresh the page and try again." };
   } else {
     // Business segments are labels on companies, not separate records.

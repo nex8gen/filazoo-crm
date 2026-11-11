@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import * as flowTree from "../lib/flow-tree.ts";
 import * as flowMailboxes from "../lib/flow-mailboxes.ts";
+import * as recovery from "../lib/flow-recovery.ts";
 import vm from "node:vm";
 import ts from "typescript";
 import { flowInputSchema } from "../lib/flows.ts";
@@ -68,7 +69,7 @@ function fixture(role: string | null = "operator") {
   };
   const dependencies = { "../auth.ts": auth, "../supabase/admin.ts": { createSupabaseAdmin: () => admin }, "../flows.ts": flowModel };
   const flows = loadModule("../lib/data/flows.ts", { ...dependencies, "./flow-runtime.ts": { validateFlowResources: async (userId: string) => { validations.push(userId); } } });
-  const runtime = loadModule("../lib/data/flow-runtime.ts", dependencies);
+  const runtime = loadModule("../lib/data/flow-runtime.ts", { ...dependencies, "../flow-recovery.ts": recovery });
   return { flows, runtime, calls, rows, auth, validations, fail: (message: string) => { failure = message; } };
 }
 

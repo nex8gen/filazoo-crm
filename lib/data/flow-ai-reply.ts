@@ -12,6 +12,8 @@ import { applyEmailSignature, DEFAULT_EMAIL_COMPANY, DEFAULT_EMAIL_TITLE } from 
 import type { JsonConfig } from "../flows.ts";
 import { userProductRows } from "./product-personalization.ts";
 import { requireWorkspaceMember } from "../auth.ts";
+import { loadFlowInquiry, type FlowInquiry } from "./flow-inquiry.ts";
+import { hydrateFlowMessages } from "./flow-mail-context.ts";
 
 export function hasFlowReplyProvider() {
   return hasAiProvider(process.env);
@@ -33,34 +35,37 @@ export async function prepareFlowTemplateCatalog(userId?: string) {
   return [{ filename: "Filazoo-product-catalog.pdf", contentType: "application/pdf", content }];
 }
 
-export async function prepareFlowAiReply({ userId, contactId, companyId, conversationId, config }: {
+export async function prepareFlowAiReply({ userId, contactId, companyId, conversationId, config, inquiryBefore, inquiryOrigin }: {
   userId: string; contactId: string; companyId: string; conversationId: string; config: JsonConfig;
+  inquiryBefore?: string; inquiryOrigin?: { source: string; id: string };
 }) {
   await requireAiAutomation(["sending", ...(config.attachCatalog === true ? ["catalogs"] as const : [])], ["emails", "customers", "team", ...(config.useProducts || config.attachCatalog ? ["products"] as const : [])]);
   if (!await resolveGatewayTokenAsync(process.env)) throw new Error("AI auto-reply is not configured. Add an AI provider in the server settings.");
   const admin = createSupabaseAdmin();
   const leadConversation = /^(company:|shopify:|lead:)/.test(conversationId);
-  let messagesQuery = admin.from("emails").select("subject,body,direction,message_id,thread_id,created_at")
+  let messagesQuery = admin.from("emails").select("id,subject,body,direction,message_id,thread_id,created_at,body_loaded,mailbox_id,mailbox_uid,mailbox_uid_validity")
     .eq("contact_id", contactId).or(`owner_id.is.null,owner_id.eq.${userId}`).order("created_at", { ascending: false }).limit(12);
   if (!leadConversation) messagesQuery = messagesQuery.eq("thread_id", conversationId);
-  const [messages, contact, company, manager, previousRuns, products] = await Promise.all([
+  const [messages, contact, company, manager, previousRuns, products, inquiry] = await Promise.all([
     messagesQuery.throwOnError(),
     admin.from("contacts").select("name,email").eq("id", contactId).single().throwOnError(),
     admin.from("companies").select("name,country,segment").eq("id", companyId).single().throwOnError(),
     admin.from("workspace_members").select("display_name").eq("user_id", userId).maybeSingle().throwOnError(),
     admin.from("flow_runs").select("id").eq("contact_id", contactId).throwOnError(),
     loadFlowReplyProducts(config, userId),
+    inquiryBefore ? loadFlowInquiry(contactId, inquiryBefore, inquiryOrigin) : Promise.resolve(null),
   ]);
   const runIds = (previousRuns.data ?? []).map((run) => run.id);
   const { count: sentBefore } = runIds.length ? await admin.from("flow_run_logs").select("id", { count: "exact", head: true })
     .in("run_id", runIds).eq("result->>action", "email_sent").throwOnError() : { count: 0 };
   return generateFlowAiReply({ usageUserId: userId, config, contact: contact.data, company: company.data, managerName: manager.data?.display_name || null,
-    messages: messages.data ?? [], productRows: products, previousAutomatedMessages: sentBefore ?? 0 });
+    messages: await hydrateFlowMessages(messages.data ?? [], userId), productRows: products, previousAutomatedMessages: sentBefore ?? 0, inquiry });
 }
 
-export async function generateFlowAiReply({ usageUserId, config, contact, company, managerName, messages, productRows, previousAutomatedMessages }: {
+export async function generateFlowAiReply({ usageUserId, config, contact, company, managerName, messages, productRows, previousAutomatedMessages, inquiry }: {
   usageUserId?: string; config: JsonConfig; contact: { name: string | null; email: string }; company: { name: string; country?: string | null; segment?: string | null };
   managerName: string | null; messages: FlowReplyMessage[]; productRows: CrmProductRow[]; previousAutomatedMessages: number;
+  inquiry?: FlowInquiry | null;
 }) {
   const token = await resolveGatewayTokenAsync(process.env);
   if (!token) throw new Error("AI auto-reply is not configured. Add an AI provider in the server settings.");
@@ -69,13 +74,14 @@ export async function generateFlowAiReply({ usageUserId, config, contact, compan
   const catalogProducts = productRows.map(crmProduct);
   const orderedMessages = [...messages].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
   const history = [...orderedMessages].reverse().map((message) => ({ ...message, body: (message.body || "").slice(0, 6000) }));
+  const signal = AbortSignal.timeout(90_000);
   const generate = async (systemInstruction: string, prompt: string) => {
     const options = { systemInstruction: systemInstruction + aiBehaviorInstruction(policy, true), prompt, maxOutputTokens: 8192 };
-    return generateGatewayText({ usageUserId, ...options, token: token!, model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim(), task: "email", complex: config.usePrices === true, userText: config.instructions as string | undefined });
+    return generateGatewayText({ usageUserId, ...options, signal, token: token!, model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim(), task: "email", complex: config.usePrices === true, userText: config.instructions as string | undefined });
   };
   // Resolve the attachment before drafting so the email describes exactly what will be sent.
   const selectedSkus = config.attachCatalog === true ? resolveFlowCatalog(await generate(flowCatalogInstruction, JSON.stringify({
-    task: "select_catalog_products", conversation: history,
+    task: "select_catalog_products", conversation: history, inquiry: inquiry ?? null,
     firstAutomatedMessage: previousAutomatedMessages === 0 && config.catalogFirstMessageOnly !== false,
     products: catalogProducts.map((product) => ({ sku: product.sku, name: product.name, material: product.material,
       color: product.color, diameter: product.diameter, weight: product.weight })),
@@ -84,7 +90,7 @@ export async function generateFlowAiReply({ usageUserId, config, contact, compan
   const attachCatalog = selectedProducts.length > 0;
   const prompt = JSON.stringify({
     recipient: contact, company,
-    conversation: history, managerGuidance: config.instructions || "", catalogAttached: attachCatalog,
+    conversation: history, inquiry: inquiry ?? null, managerGuidance: config.instructions || "", catalogAttached: attachCatalog,
     attachedCatalogProducts: selectedProducts.map((product) => ({ sku: product.sku, name: product.name, material: product.material })),
     products: config.useProducts ? catalogProducts.map((product, index) => ({
       sku: product.sku, name: product.name, material: product.material, diameter: product.diameter,
@@ -105,5 +111,5 @@ export async function generateFlowAiReply({ usageUserId, config, contact, compan
   const attachments = attachCatalog ? [{ filename: "Filazoo-product-catalog.pdf", contentType: "application/pdf", content: Buffer.from(await buildServerCatalogPdf(selectedProducts, { title: "Product catalog", customer: company.name })) }] : [];
   if (attachments.some((attachment) => attachment.content.length > 7_500_000)) throw new Error("The generated catalog exceeds the 7.5 MB attachment limit.");
   const replySubject = config.replyInThread !== false && latestInbound?.subject && !/\p{Script=Han}/u.test(latestInbound.subject) ? `Re: ${latestInbound.subject.replace(/^re:\s*/i, "")}`.replace(/[\r\n]/g, " ").slice(0, 300) : plan.subject;
-  return { ...plan, subject: replySubject, body, attachments, inReplyTo: config.replyInThread !== false ? latestInbound?.message_id : null, threadId: config.replyInThread !== false ? latestInbound?.thread_id : null };
+  return { ...plan, subject: replySubject, body, attachments, contextMessageId: latestInbound?.message_id ?? null, inReplyTo: config.replyInThread !== false ? latestInbound?.message_id : null, threadId: config.replyInThread !== false ? latestInbound?.thread_id : null };
 }

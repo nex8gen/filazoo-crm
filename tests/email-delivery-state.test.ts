@@ -7,6 +7,7 @@ import { emailSendSchema } from "../lib/email-workbench.ts";
 import * as threading from "../lib/email-threading.ts";
 import * as content from "../lib/email-content.ts";
 import { createHash } from "node:crypto";
+import * as sendFailure from "../lib/email-send-failure.ts";
 
 type Row = Record<string, unknown>;
 function setup() {
@@ -39,20 +40,21 @@ function setup() {
     return query;
   } };
   let sends = 0;
-  let failure = false;
+  let failure: Error | undefined;
   let release: (() => void) | undefined;
   let entered: (() => void) | undefined;
   let block = false;
   const dependencies: Record<string, unknown> = {
     "../workspace-context.ts": { currentWorkspaceContext: () => undefined },
     "node:crypto": { createHash }, "../email-workbench": { emailSendSchema },
+    "../email-send-failure.ts": sendFailure,
     "../supabase/admin": { createSupabaseAdmin: () => db },
     "@/lib/auth": { requireWorkspaceMember: async () => ({ id: "actor", role: "operator" }) },
     "@/lib/data/mailboxes": { getViewerMailbox: async () => ({ id: "mailbox", email: "sender@example.test" }), mailboxHasSmtp: () => true },
     "@/lib/supabase/admin": { createSupabaseAdmin: () => db },
     "@/lib/email-threading": threading, "@/lib/email-content": content,
     "@/lib/data/email-footers": { prepareUserEmail: async (_id: string, message: unknown) => message },
-    "@/lib/mailer": { sendMailboxEmail: async (_config: unknown, message: { messageId: string }) => { sends++; entered?.(); if (block) await new Promise<void>((resolve) => { release = resolve; }); if (failure) throw new Error("Connection closed after DATA"); return { messageId: message.messageId }; } },
+    "@/lib/mailer": { sendMailboxEmail: async (_config: unknown, message: { messageId: string }) => { sends++; entered?.(); if (block) await new Promise<void>((resolve) => { release = resolve; }); if (failure) throw failure; return { messageId: message.messageId }; } },
   };
   function load(path: string) {
     const exports = {};
@@ -65,7 +67,7 @@ function setup() {
   const { deliverEmail } = load("../lib/data/manual-email-send.ts");
   const input = { to: "buyer@example.test", text: "Hello", subject: "Order", requestId: crypto.randomUUID() };
   const viewer = { id: "actor", role: "operator" };
-  return { input, viewer, send: (message = input, actor = viewer) => deliverEmail(actor, message), process: () => delivery.processScheduledEmails(deliverEmail), tables, sends: () => sends, fail: () => { failure = true; }, block: () => { block = true; return new Promise<void>((resolve) => { entered = resolve; }); }, release: () => release?.() };
+  return { input, viewer, send: (message = input, actor = viewer) => deliverEmail(actor, message), process: () => delivery.processScheduledEmails(deliverEmail), tables, sends: () => sends, fail: (error = new Error("Connection closed after DATA")) => { failure = error; }, recover: () => { failure = undefined; }, block: () => { block = true; return new Promise<void>((resolve) => { entered = resolve; }); }, release: () => release?.() };
 }
 
 test("concurrent clicks and retries after a lost success response send exactly once", async () => {
@@ -89,6 +91,38 @@ test("reusing a request ID for changed content cannot corrupt a completed send",
   const mock = setup(); assert.equal((await mock.send()).status, 200);
   assert.equal((await mock.send({ ...mock.input, text: "Different message" })).status, 500);
   assert.equal(mock.tables.email_send_operations[0].status, "sent"); assert.equal(mock.sends(), 1);
+});
+
+test("a TLS failure before connection is retryable with the edited saved draft", async () => {
+  const mock = setup();
+  mock.fail(Object.assign(new Error("Client network socket disconnected before secure TLS connection was established"), { code: "ESOCKET", command: "CONN" }));
+  assert.equal((await mock.send()).status, 500);
+  assert.equal(mock.tables.email_send_operations[0].status, "failed");
+  mock.recover();
+  const edited = { ...mock.input, text: "Here is our quotation" };
+  assert.equal((await mock.send(edited)).status, 200);
+  assert.equal(mock.tables.mailbox_sent_messages[0].body, edited.text);
+  assert.equal((await mock.send(edited)).status, 200);
+  assert.equal(mock.sends(), 2, "one failed connection and one successful SMTP send");
+});
+
+test("legacy uncertain TLS failures recover atomically without sending twice", async () => {
+  const mock = setup();
+  mock.fail(); await mock.send(); mock.recover();
+  mock.tables.email_send_operations[0].error = "Client network socket disconnected before secure TLS connection was established";
+  const entered = mock.block();
+  const edited = { ...mock.input, text: "Edited after reopening" };
+  const first = mock.send(edited); await entered;
+  assert.equal((await mock.send(edited)).status, 409);
+  mock.release(); assert.equal((await first).status, 200);
+  assert.equal(mock.sends(), 2);
+});
+
+test("editing an uncertain SMTP submission cannot bypass duplicate protection", async () => {
+  const mock = setup(); mock.fail(); await mock.send(); mock.recover();
+  assert.equal((await mock.send({ ...mock.input, text: "Edited after interruption" })).status, 500);
+  assert.equal(mock.tables.email_send_operations[0].status, "uncertain");
+  assert.equal(mock.sends(), 1);
 });
 
 test("scheduling reserves a delivery without contacting SMTP", async () => {

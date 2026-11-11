@@ -105,12 +105,26 @@ async function loadFlows(userId?: string, flowIds?: string[], scope?: JsonConfig
   if (error) throw new Error(`Unable to load workflows: ${error.message}`);
   const ids = (rows ?? []).map((row) => row.id);
   if (!ids.length) return [];
-  const [steps, { data: runs, error: runError }] = await Promise.all([
+  const [steps, runs] = await Promise.all([
     loadFlowSteps(ids),
-    admin.from("flow_runs").select("flow_id,status").in("flow_id", ids),
+    (async () => {
+      const runs: RunRow[] = [];
+      for (let offset = 0; ; offset += 1000) {
+        const { data, error } = await admin.from("flow_runs").select("id,flow_id,status").in("flow_id", ids).order("id").range(offset, offset + 999);
+        if (error) throw new Error(`Unable to load workflow runs: ${error.message}`);
+        runs.push(...data ?? []);
+        if (!data || data.length < 1000) return runs;
+      }
+    })(),
   ]);
-  if (runError) throw new Error(`Unable to load workflow runs: ${runError.message}`);
-  return mapFlows((rows ?? []) as FlowRow[], steps, (runs ?? []) as RunRow[]);
+  const mapped = mapFlows((rows ?? []) as FlowRow[], steps, runs);
+  const segmentIds = [...new Set(mapped.flatMap(flow => typeof flow.triggerConfig.savedSegmentId === "string" ? [flow.triggerConfig.savedSegmentId] : []))];
+  if (segmentIds.length) {
+    const { data } = await admin.from("company_segments").select("id").in("id", segmentIds).throwOnError();
+    const available = new Set((data ?? []).map(segment => segment.id));
+    for (const flow of mapped) if (flow.triggerConfig.savedSegmentId && !available.has(String(flow.triggerConfig.savedSegmentId))) flow.dependencyIssue = "The saved audience was deleted. Choose an existing segment before resuming this workflow.";
+  }
+  return mapped;
 }
 
 export async function createFlow(userId: string, input: FlowInput) {

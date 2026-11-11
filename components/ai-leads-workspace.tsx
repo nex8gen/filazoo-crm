@@ -17,7 +17,8 @@ import { PageActions } from "@/components/page-header";
 import { usePreferences } from "@/components/preferences-provider";
 import { AiLeadsSearchDialog } from "@/components/ai-leads-search-dialog";
 import { AiLeadDetail } from "@/components/ai-leads-detail";
-import { leadApi, leadSearchActive, leadStatus, searchLabel } from "@/lib/lead-client";
+import { leadApi, leadSearchActive, leadSearchFailureState, leadStatus, searchLabel } from "@/lib/lead-client";
+import { leadResetTime, leadUsd, type LeadAllowance } from "@/lib/lead-allowance";
 import { qualificationLabels } from "@/lib/lead-prospecting";
 import { isQualifiedLead } from "@/lib/lead-discovery-policy";
 import type { LeadProduct, LeadResult, LeadSearch, LeadSearchInput } from "@/lib/ai-leads";
@@ -27,10 +28,11 @@ type FilterTab = "all" | "qualified" | "review" | "rejected" | "saved";
 type SaveResponse = { companyId: string; existing: boolean; emailConflict: boolean };
 const filterNames: Array<[FilterTab, string]> = [["all", "All companies"], ["qualified", "Qualified"], ["review", "Needs review"], ["rejected", "Not a fit"], ["saved", "In CRM"]];
 
-export function AiLeadsWorkspace({ products, countries, initialSearches, canWrite, initialError }: {
-  workspaceName: string; products: LeadProduct[]; countries: string[]; initialSearches: LeadSearch[]; canWrite: boolean; initialError: string;
+export function AiLeadsWorkspace({ products, countries, initialSearches, initialAllowance, canWrite, initialError }: {
+  workspaceName: string; products: LeadProduct[]; countries: string[]; initialSearches: LeadSearch[]; initialAllowance: LeadAllowance | null; canWrite: boolean; initialError: string;
 }) {
   const [searches, setSearches] = useState(initialSearches);
+  const [allowance, setAllowance] = useState(initialAllowance);
   const [selectedId, setSelectedId] = useState(initialSearches[0]?.id ?? "");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [seed, setSeed] = useState<LeadSearchInput | undefined>();
@@ -52,15 +54,18 @@ export function AiLeadsWorkspace({ products, countries, initialSearches, canWrit
   const current = searches.find(search => search.id === selectedId);
   const running = searches.find(leadSearchActive);
   const detail = current?.results.find(lead => lead.id === detailId) ?? null;
+  const issue = current ? leadSearchFailureState(current) : null;
+  const showResultControls = current?.status === "complete" || Boolean(current?.results.length);
 
   const refresh = useCallback(async () => {
     if (pendingRefresh.current) return;
     const controller = new AbortController(); pendingRefresh.current = controller;
     setRefreshing(true);
     try {
-      const data = await leadApi<{ searches: LeadSearch[] }>("/api/ai/leads", "GET", undefined, controller.signal);
+      const data = await leadApi<{ searches: LeadSearch[]; allowance: LeadAllowance | null }>("/api/ai/leads", "GET", undefined, controller.signal);
       if (mounted.current) {
         setSearches(data.searches);
+        setAllowance(data.allowance);
         setSelectedId(previous => data.searches.some(search => search.id === previous) ? previous : data.searches[0]?.id ?? "");
       }
     } finally {
@@ -163,16 +168,15 @@ export function AiLeadsWorkspace({ products, countries, initialSearches, canWrit
       </dl>
       {!current.researchSummary && current.status === "complete" ? <div className="ld-legacy-note"><CircleHelp size={16} /><p>Earlier search. Run a new search for fresh, qualified companies.</p><Button variant="ghost" size="sm" disabled={!canWrite || Boolean(running)} onClick={() => openSearch(current.criteria)}>Update targeting<ArrowRight /></Button></div> : null}
       {leadSearchActive(current) ? <div className="ld-progress" role="status" aria-live="polite"><div className="ld-progress-heading"><span><Loader2 size={16} className="animate-spin" /><strong>{current.phase}</strong></span><Button variant="ghost" size="sm" onClick={() => void cancel()} disabled={!canWrite}>Cancel search</Button></div><div className="ld-progress-steps">{["Discover companies", "Read websites & contacts", "Qualify against your profile"].map((label, index) => <div key={label} className={index <= phaseIndex ? "is-current" : ""}><span>{index < phaseIndex ? <Check size={12} /> : index + 1}</span>{label}</div>)}</div></div> : null}
-      {current.status === "failed" ? <div role="alert" className="ld-alert"><CircleHelp size={16} /><span>{current.error || "Research could not be completed. Refine your targeting and try again."}</span></div> : null}
-      {current.status === "cancelled" ? <div className="ld-legacy-note"><CircleHelp size={16} /><p>Search cancelled. A provider request already in progress may still consume credits.</p></div> : null}
+      {current.status === "failed"&&counts.all ? <div role="alert" className="ld-alert"><CircleHelp size={16} /><span>{current.error || "Research could not be completed."}</span></div> : null}
       <section className="flex min-w-0 flex-col gap-6" aria-label="Company search results">
         {current.researchSummary ? <div className="space-y-2" role="status"><div className="flex flex-wrap gap-x-6 gap-y-2 text-xs text-muted-foreground"><span>Qualified: {current.researchSummary.qualified}</span><span>Duplicates skipped: {current.researchSummary.duplicates}</span><span>Did not qualify: {current.researchSummary.rejected + current.researchSummary.needsReview}</span><span>Unreadable websites: {current.researchSummary.unreadable}</span><span>No public contact: {current.researchSummary.noContact}</span></div>{current.researchSummary.qualified < current.criteria.limit ? <p className="text-sm text-muted-foreground">Fewer matches found. Only new companies with verified fit and a public contact route are included.</p> : null}</div> : null}
-        <TableFilters onApply={() => { setQuery(draft.query); setTab(draft.tab); setGroup(draft.group); setContacts(draft.contacts); setPage(1); }}>
+        {showResultControls ? <TableFilters onApply={() => { setQuery(draft.query); setTab(draft.tab); setGroup(draft.group); setContacts(draft.contacts); setPage(1); }}>
           <TableFilter label="Search company results" search><Input placeholder="Search company or website" value={draft.query} onChange={event => setDraft(previous => ({ ...previous, query: event.target.value }))} /></TableFilter>
           <TableFilter label="Qualification"><Select value={draft.tab} onValueChange={value => setDraft(previous => ({ ...previous, tab: (value ?? "all") as FilterTab }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{filterNames.map(([value, label]) => <SelectItem key={value} value={value}>{label} ({counts[value]})</SelectItem>)}</SelectContent></Select></TableFilter>
           <TableFilter label="Buyer group"><Select value={draft.group} onValueChange={value => setDraft(previous => ({ ...previous, group: value ?? "" }))}><SelectTrigger className="max-w-56"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="">All buyer groups</SelectItem>{groups.map(value => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select></TableFilter>
           <TableFilter label="Contact information"><Select value={draft.contacts} onValueChange={value => setDraft(previous => ({ ...previous, contacts: value ?? "" }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="">Any contact status</SelectItem><SelectItem value="email">With public email</SelectItem><SelectItem value="phone">With public phone</SelectItem></SelectContent></Select></TableFilter>
-        </TableFilters>
+        </TableFilters> : null}
         <Card className="crm-table-frame gap-0 py-0">
           {picked.length ? <div className="flex flex-wrap items-center gap-2 border-b bg-brand-soft px-4 py-2"><p className="mr-auto text-sm font-semibold text-primary" aria-live="polite">{picked.length} selected</p><Button variant="ghost" size="sm" onClick={() => setSelected([])}>Clear selection</Button><Button size="sm" disabled={busy} onClick={() => void save(picked)}>{busy ? <Loader2 className="animate-spin" /> : <Building2 />}Add selected to CRM</Button></div> : null}
           {visible.length ? <div className="crm-table-flex-body"><Table>
@@ -194,13 +198,12 @@ export function AiLeadsWorkspace({ products, countries, initialSearches, canWrit
                 <TableCell><div className="flex items-center justify-end gap-1">{companyId ? <Button variant="ghost" size="icon-sm" render={<Link href={"/companies/" + companyId} />} aria-label={"Open " + lead.name + " in CRM"}><Building2 /></Button> : <Button variant="ghost" size="icon-sm" aria-label={"Add " + lead.name + " to CRM"} title={!lead.researchVersion ? "Update targeting to review this earlier search" : status === "rejected" ? "Ruled out by your target profile" : "Add to CRM"} disabled={!canWrite || busy || !canSelect(lead)} onClick={() => void save([lead])}><Plus /></Button>}<Button variant="ghost" size="icon-sm" aria-label={"View research for " + lead.name} onClick={() => setDetailId(lead.id)}><ChevronRight /></Button></div></TableCell>
               </TableRow>;
             })}</TableBody>
-          </Table></div> : leadSearchActive(current) ? <EmptyState icon={Loader2} title="Research in progress" description="Companies will appear after their websites and qualification checks are reviewed." /> : counts.all ? <EmptyState icon={Search} title="No companies match these filters" description="Try changing your search or filters to see more results."><Button variant="outline" size="sm" onClick={resetFilters}>Clear filters</Button></EmptyState> : <EmptyState icon={Building2} title="No companies found in this search" description="Review the product category, choose another buyer group, or broaden the target location."><Button variant="outline" size="sm" disabled={!canWrite || Boolean(running)} onClick={() => openSearch(current.criteria)}>Refine targeting<ArrowRight /></Button></EmptyState>}
+          </Table></div> : leadSearchActive(current) ? <EmptyState icon={Loader2} title="Research in progress" description="Companies will appear after their websites and qualification checks are reviewed." /> : issue ? <div role={issue.kind==="cancelled" ? "status" : "alert"}><EmptyState icon={CircleHelp} title={issue.title} description={issue.description}>{issue.kind==="allowance"&&allowance ? <div className="space-y-1 text-xs text-muted-foreground"><p><span>Available CRM allowance:</span> <strong className="font-medium text-foreground">{leadUsd(allowance.availableMicros)}</strong></p>{allowance.enabled ? <p><span>Allowance resets:</span> <time dateTime={allowance.resetsAt}>{leadResetTime(allowance.resetsAt)}</time> <span>China time</span></p> : <p>AI spending is paused. Ask a workspace administrator to review your AI access.</p>}</div> : null}<Button variant="outline" size="sm" disabled={refreshing} onClick={()=>void refresh().catch(cause=>setError(cause.message))}><RefreshCw className={refreshing ? "animate-spin" : ""} />Refresh status</Button>{issue.kind!=="allowance" ? <Button variant="outline" size="sm" disabled={!canWrite || Boolean(running)} onClick={()=>openSearch(current.criteria)}>Review search</Button> : null}</EmptyState></div> : counts.all ? <EmptyState icon={Search} title="No companies match these filters" description="Try changing your search or filters to see more results."><Button variant="outline" size="sm" onClick={resetFilters}>Clear filters</Button></EmptyState> : <EmptyState icon={Building2} title="No companies found in this search" description="Review the product category, choose another buyer group, or broaden the target location."><Button variant="outline" size="sm" disabled={!canWrite || Boolean(running)} onClick={() => openSearch(current.criteria)}>Refine targeting<ArrowRight /></Button></EmptyState>}
         </Card>
-        <TablePagination className="mt-0" page={currentPage} pageCount={pageCount} start={rows.length ? (currentPage - 1) * pageSize + 1 : 0} end={Math.min(currentPage * pageSize, visible.length)} total={visible.length} itemLabel="companies" onPrevious={() => setPage(currentPage - 1)} onNext={() => setPage(currentPage + 1)} onPageChange={setPage} />
-        <p className="text-xs text-muted-foreground">Public contacts are unverified. Qualification does not confirm buying intent.</p>
+        {showResultControls ? <><TablePagination className="mt-0" page={currentPage} pageCount={pageCount} start={rows.length ? (currentPage - 1) * pageSize + 1 : 0} end={Math.min(currentPage * pageSize, visible.length)} total={visible.length} itemLabel="companies" onPrevious={() => setPage(currentPage - 1)} onNext={() => setPage(currentPage + 1)} onPageChange={setPage} /><p className="text-xs text-muted-foreground">Public contacts are unverified. Qualification does not confirm buying intent.</p></> : null}
       </section>
     </> : <EmptyState icon={Building2} title="No searches yet" description="Choose your products and target location to find potential business customers."><Button disabled={!canWrite} onClick={() => openSearch()}><Plus />New search</Button></EmptyState>}
-    <AiLeadsSearchDialog open={dialogOpen} onOpenChange={setDialogOpen} products={products} countries={countries} seed={seed} onCreated={created} />
+    <AiLeadsSearchDialog open={dialogOpen} onOpenChange={setDialogOpen} products={products} countries={countries} seed={seed} onCreated={created} onAllowanceBlocked={setAllowance} />
     <AiLeadDetail lead={detail} canWrite={canWrite} busy={busy} onClose={() => setDetailId(null)} onSave={lead => void save([lead])} onFeedback={(lead, reason) => void feedback(lead, reason)} onNotice={setNotice} />
   </div>;
 }

@@ -35,6 +35,7 @@ export function flowSenderOptions(mailboxes: FlowMailboxOption[], ownerId: strin
     { id: "default", label: preferred ? `My default email · ${preferred.email} (${preferred.type === "personal" ? "personal" : "team"})` : "My default email · No email connected", disabled: !preferred?.isActive || !preferred.sendConfigured },
     defaultOption("owner", "personal"),
     defaultOption("workspace", "workspace"),
+    { id: "assigned_owner", label: "Assigned salesperson · Personal mailbox", disabled: false },
     ...available.map((mailbox) => ({ id: mailbox.id, label: label(mailbox), disabled: !mailbox.isActive || !mailbox.sendConfigured })),
   ];
 }

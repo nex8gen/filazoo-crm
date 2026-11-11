@@ -66,6 +66,9 @@ CRM saves atomically enforce qualification, check duplicates, create the company
 
 ## Cost and execution
 
+- Search creation performs a read-only preflight using the same discovery request and live price quote as execution. Insufficient personal, workspace or monthly allowance returns HTTP 429 before inserting a job; paused allowance returns HTTP 403. The response carries only the caller's available amount, required reservation, limiting scope and reset time. It does not change any limit or make a paid provider request.
+- The preflight checks the opening discovery reservation. Per-call atomic reservations still enforce the allowance during execution, including concurrent usage and qualification. A preflight is not a reserved guarantee for the complete search.
+- Failed, allowance-blocked and cancelled searches have distinct UI states. They do not display a completed empty-results message, result filters, zero-company pagination or targeting advice for an allowance problem. Allowance information is separate from Vercel Gateway credit balance. Reset times are shown in Asia/Shanghai.
 - Profile preparation: one call, at most **USD 0.02** reserved.
 - Company research: two calls, one native search and at most **USD 0.18** reserved.
 - One new profile plus one search is bounded by **USD 0.20** using existing credits. Cached profiles avoid another interpretation call. Explicit retries are separate attempts.
@@ -77,7 +80,7 @@ CRM saves atomically enforce qualification, check duplicates, create the company
 
 ## Verification
 
-Run `node --experimental-strip-types --test tests/ai-leads.test.ts tests/ai-leads-data.test.ts tests/ai-leads-route.test.ts tests/agent-capability-audit.test.ts` and `npx tsc --noEmit --pretty false`.
+Run `node --experimental-strip-types --test tests/ai-lead-allowance.test.ts tests/ai-leads.test.ts tests/ai-leads-data.test.ts tests/ai-leads-route.test.ts tests/ai-budget.test.ts tests/ai-budget-server.test.ts` and `npx tsc --noEmit --pretty false`.
 
 Execute `tests/ai-leads-database.sql` as one transaction. It rolls back fixtures and verifies workspace isolation including candidate memory, duplicate saves, qualification enforcement, and contact/phone/address persistence. Regression fixtures cover repeated searches, legal-name/URL variants, unqualified/contactless candidates, pagination beyond 500 identities, and companies added while research runs.
 

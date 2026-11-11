@@ -2,12 +2,12 @@ import { randomUUID } from "node:crypto";
 import type { WorkspaceViewer } from "../auth.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 import { withWorkspaceViewer } from "../workspace-context.ts";
-import { reuseEmailSummary, type SavedEmailSummary, type EmailSummaryStore } from "../ai/email-summary-cache.ts";
+import { reuseEmailSummary, type SavedEmailSummary, type EmailSummaryStore, type EmailSummaryUpdate } from "../ai/email-summary-cache.ts";
 
 const pending = new Map<string, Promise<SavedEmailSummary>>();
 
-export function savedEmailSummary(viewer: WorkspaceViewer, key: string, generate: () => Promise<string>, refresh = false) {
-  const scope = `${viewer.workspaceId}:${viewer.id}:${key}`;
+export function savedEmailSummary(viewer: WorkspaceViewer, key: string, generate: () => Promise<string>, refresh = false, update?: EmailSummaryUpdate) {
+  const scope = `${viewer.workspaceId}:${viewer.id}:${key}:${update?.messageId ?? ""}`;
   const existing = pending.get(scope);
   if (existing) return existing.then(result => ({ ...result, cached: true }));
   const work = withWorkspaceViewer(viewer, async () => {
@@ -17,6 +17,11 @@ export function savedEmailSummary(viewer: WorkspaceViewer, key: string, generate
       read: async () => {
         const { data, error } = await row().select("output,generated_at").eq("user_id", viewer.id).eq("input_hash", key).maybeSingle();
         if (error) throw new Error("Unable to load saved email analysis. Check the email summary cache migration before retrying.");
+        if (!data?.output && update?.legacyKey) {
+          const { data: legacy, error: legacyError } = await row().select("output,generated_at").eq("user_id", viewer.id).eq("input_hash", update.legacyKey).maybeSingle();
+          if (legacyError) throw new Error("Unable to load the previous email analysis.");
+          if (legacy?.output) return { output: legacy.output as string, generatedAt: legacy.generated_at as string };
+        }
         return data ? { output: data.output as string | null, generatedAt: data.generated_at as string | null } : null;
       },
       claim: async token => {
@@ -34,7 +39,7 @@ export function savedEmailSummary(viewer: WorkspaceViewer, key: string, generate
         await row().update({ lease_token: null, lease_until: null }).eq("user_id", viewer.id).eq("input_hash", key).eq("lease_token", token).throwOnError();
       },
     };
-    return reuseEmailSummary(store, randomUUID(), generate, refresh);
+    return reuseEmailSummary(store, randomUUID(), generate, refresh, update);
   });
   pending.set(scope, work);
   void work.finally(() => { if (pending.get(scope) === work) pending.delete(scope); }).catch(() => {});

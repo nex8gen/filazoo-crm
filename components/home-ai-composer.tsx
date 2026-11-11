@@ -27,6 +27,7 @@ export function HomeAiComposer({ name, asOf }: { name: string; asOf: string }) {
 
   return <section aria-labelledby="home-ai-heading" className="home-ai">
     <header className="home-ai-welcome">
+      <div className="mb-4 flex justify-center">{mode === "agent" ? <AgentIcon className="size-12" /> : <AiIcon className="size-12" />}</div>
       <h2 id="home-ai-heading">{greeting}, <span data-no-translate>{name}</span>!</h2>
       <p>Let’s keep your business moving.</p>
     </header>

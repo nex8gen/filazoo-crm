@@ -388,8 +388,8 @@ export async function saveShopifyLead(lead: ShopifyLead, webhookId: string, shop
     // soon as the CRM contact and its pipeline have both been saved.
     try {
       const { enrollMatchingFlows, enrollNewLeadFlows } = await import("./data/flow-runtime.ts");
-      if (contactId) await enrollNewLeadFlows(contactId);
-      if (createdCompany) await enrollMatchingFlows({ type: "company_segment_changed", conversationId: `company:${company.id}`, contactId, companyId: company.id, segment: "Shopify B2B lead", eventKey: `shopify-company:${company.id}` });
+      if (contactId) await enrollNewLeadFlows(contactId, { source: "shopify", id: webhookId }, { deferExecution: true });
+      if (createdCompany) await enrollMatchingFlows({ type: "company_segment_changed", conversationId: `company:${company.id}`, contactId, companyId: company.id, segment: "Shopify B2B lead", eventKey: `shopify-company:${company.id}` }, { deferExecution: true });
     } catch (automationError) {
       console.error("Shopify lead saved, but flow enrollment failed:", automationError);
     }

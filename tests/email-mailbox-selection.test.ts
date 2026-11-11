@@ -13,6 +13,7 @@ import { canViewEmail } from "../lib/email-access.ts";
 import { synchronizeMailbox } from "../lib/mailbox-sync.ts";
 import * as emailContent from "../lib/email-content.ts";
 import * as workbench from "../lib/email-workbench.ts";
+import * as sendFailure from "../lib/email-send-failure.ts";
 import * as provider from "../lib/email-provider.ts";
 import * as emailFiles from "../lib/email-files.ts";
 import * as emailMime from "../lib/email-mime.ts";
@@ -28,6 +29,7 @@ function loadModule<T>(path: string, dependencies: Record<string, unknown>): T {
   dependencies["./company-email.ts"] = companyEmail;
   dependencies["./ai/provider-credentials.ts"] = credentials;
   dependencies["../email-workbench"] = workbench;
+  dependencies["../email-send-failure.ts"] = sendFailure;
   dependencies["./customer-tags.ts"] = customerTags;
   dependencies["./lead-inquiries.ts"] = leadInquiries;
   dependencies["./data/lead-inquiries.ts"] = { listMetaLeadInquiries: async () => [] };

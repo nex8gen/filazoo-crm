@@ -2,8 +2,9 @@ import { createHash } from "node:crypto";
 import type { WorkspaceViewer } from "../auth";
 import { createSupabaseAdmin } from "../supabase/admin";
 import { emailSendSchema, type EmailSendInput } from "../email-workbench";
+import { emailFailedBeforeSubmission } from "../email-send-failure.ts";
 
-export type SendOperation = { id: string; user_id: string; payload: EmailSendInput; status: string; request_hash: string; result: Record<string, unknown> | null; updated_at: string };
+export type SendOperation = { id: string; user_id: string; payload: EmailSendInput; status: string; request_hash: string; result: Record<string, unknown> | null; error?: string; updated_at: string };
 
 export async function reserveEmailSend(viewer: WorkspaceViewer, input: EmailSendInput) {
   const db = createSupabaseAdmin();
@@ -16,11 +17,14 @@ export async function reserveEmailSend(viewer: WorkspaceViewer, input: EmailSend
   if (!error) return { reserved: !scheduled, scheduled, operation: null };
   const { data } = await db.from("email_send_operations").select("*").eq("user_id", viewer.id).eq("id", requestId).single().throwOnError();
   const operation = data as SendOperation;
-  if (operation.request_hash !== hash) throw new Error("This send ID belongs to another version of this message. Reopen the saved draft before sending.");
-  if (operation.status === "failed" && !scheduled) {
-    const { data: claimed } = await db.from("email_send_operations").update({ status: "preparing", error: null, updated_at: new Date().toISOString() }).eq("user_id", viewer.id).eq("id", requestId).eq("status", "failed").select("id").maybeSingle().throwOnError();
-    if (claimed) return { reserved: true, scheduled: false, operation: null };
+  const retryable = operation.status === "failed" || (operation.status === "uncertain" && emailFailedBeforeSubmission(operation.error));
+  if (retryable) {
+    // A failed preparation/connection sent no message. Claim its latest edited
+    // payload atomically, including when another tab retries at the same time.
+    const { data: claimed } = await db.from("email_send_operations").update({ status: scheduled ? "scheduled" : "preparing", request_hash: hash, payload: input, scheduled_at: scheduleAt || null, error: null, updated_at: new Date().toISOString() }).eq("user_id", viewer.id).eq("id", requestId).eq("status", operation.status).eq("request_hash", operation.request_hash).select("id").maybeSingle().throwOnError();
+    if (claimed) return { reserved: !scheduled, scheduled, operation: null };
   }
+  if (operation.request_hash !== hash) throw new Error("An earlier version of this draft was already submitted. Check Sent and its delivery status before creating another email.");
   return { reserved: false, scheduled: operation.status === "scheduled", operation };
 }
 

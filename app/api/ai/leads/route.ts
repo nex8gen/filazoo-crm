@@ -1,18 +1,18 @@
 import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { getWorkspaceViewer } from "@/lib/auth";
-import { LeadError, listLeadSearches, mutateLeadSearch, runLeadSearch, startLeadSearch } from "@/lib/data/ai-leads";
+import { LeadError, getLeadAllowance, listLeadSearches, mutateLeadSearch, runLeadSearch, startLeadSearch } from "@/lib/data/ai-leads";
 
 export const maxDuration = 180;
 const headers = { "Cache-Control":"private, no-store" };
 function failure(error: unknown) {
-  return Response.json({error:error instanceof LeadError ? error.message : "AI Leads is temporarily unavailable. Please try again."},{status:error instanceof LeadError ? error.status : 503,headers});
+  return Response.json({error:error instanceof LeadError ? error.message : "AI Leads is temporarily unavailable. Please try again.",...(error instanceof LeadError&&error.allowance ? {code:"AI_ALLOWANCE_BLOCKED",allowance:error.allowance} : {})},{status:error instanceof LeadError ? error.status : 503,headers});
 }
 function sameOrigin(request: Request) { return request.headers.get("origin") === new URL(request.url).origin; }
 export async function GET() {
   const viewer = await getWorkspaceViewer();
   if (!viewer) return Response.json({error:"Sign in to an active workspace."},{status:401,headers});
-  try { return Response.json({searches:await listLeadSearches(viewer)},{headers}); }
+  try { const [searches,allowance]=await Promise.all([listLeadSearches(viewer),getLeadAllowance(viewer).catch(()=>null)]);return Response.json({searches,allowance},{headers}); }
   catch(error) { return failure(error); }
 }
 export async function POST(request: Request) {

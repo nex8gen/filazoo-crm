@@ -1,8 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { emailSummaryInstruction, generateEmailSummary, parseEmailSummary, resolveOverdueEmailFollowUp, validateEmailFollowUp, validateEmailSummaryBrief } from "../lib/ai/email-summary.ts";
+import { emailSummaryInstruction, generateEmailSummary, parseEmailSummary, resolveOverdueEmailFollowUp, validateEmailFollowUp, validateEmailSummaryBrief, updateEmailSummaryNextStep } from "../lib/ai/email-summary.ts";
 
 const analysis = { title: "Pricing inquiry", summary: "The buyer asked for a wholesale quote.", nextStep: "Confirm quantity before quoting.", followUpAt: "2026-10-23T09:00:00+08:00", followUpReason: "Answer the buyer's pricing question on the next business day." };
+
+test("reply updates cannot rewrite company research, buying signals or product selections", async () => {
+  const original = { ...analysis, keyPoints: ["Under 50 kg monthly."], companyFindings: [{ text: "Print studio.", sourceIds: ["W1"] }], productSkus: ["PLA-BASIC"], research: { status: "complete", sources: [{ id: "W1", label: "Website", url: "https://example.com" }] } };
+  const next = { nextStep: "Send the confirmed quote.", followUpAt: null, followUpReason: "The buyer has replied." };
+  const updated = parseEmailSummary(await updateEmailSummaryNextStep(JSON.stringify(original), async () => JSON.stringify({ ...next, title: "Unwanted rewrite", summary: "Changed", companyFindings: [], productSkus: [] })));
+  assert.deepEqual(updated, { ...original, ...next });
+  let calls = 0;
+  await updateEmailSummaryNextStep(JSON.stringify(original), async () => ++calls === 1 ? "invalid" : JSON.stringify(next));
+  assert.equal(calls, 2, "Only malformed next-step output is repaired");
+});
 
 test("repairs Gemini's out-of-range follow-up using current time with the same provider", async () => {
   const prompts: string[] = [];

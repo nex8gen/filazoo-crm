@@ -314,6 +314,8 @@ const zhCN: Record<string, string> = {
   "Your account is not a Filazoo workspace member": "您的账户尚未加入 Filazoo 工作区",
   "Something went wrong": "出现错误", "We could not load this view. Try again in a moment.": "无法加载此页面，请稍后重试。",
   "Try again": "重试",
+  "Workspace temporarily unavailable": "工作空间暂时不可用",
+  "We could not load your workspace. Check your connection and try again.": "无法加载工作空间。请检查网络连接后重试。",
 
   "Search": "搜索", "Filter": "筛选", "Filters": "筛选器", "Active filters": "已启用筛选", "Sort": "排序",
   "Clear": "清除", "Clear all": "全部清除", "All": "全部", "None": "无", "Select all": "全选",

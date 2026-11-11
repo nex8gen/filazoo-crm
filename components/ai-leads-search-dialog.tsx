@@ -9,14 +9,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { leadApi } from "@/lib/lead-client";
+import { LeadApiError, leadApi } from "@/lib/lead-client";
+import type { LeadAllowance } from "@/lib/lead-allowance";
 import { leadSearchSchema, type LeadProduct, type LeadSearch, type LeadSearchInput } from "@/lib/ai-leads";
 import { buyerRoleLabels, type BuyerProfile } from "@/lib/lead-prospecting";
 
-type Props = { open: boolean; onOpenChange: (open: boolean) => void; products: LeadProduct[]; countries: string[]; seed?: LeadSearchInput; onCreated: (search: LeadSearch) => void };
+type Props = { open: boolean; onOpenChange: (open: boolean) => void; products: LeadProduct[]; countries: string[]; seed?: LeadSearchInput; onCreated: (search: LeadSearch) => void; onAllowanceBlocked: (allowance: LeadAllowance) => void };
 const stepNames = ["Products", "Buyer profile", "Review"];
 
-export function AiLeadsSearchDialog({ open, onOpenChange, products, countries, seed, onCreated }: Props) {
+export function AiLeadsSearchDialog({ open, onOpenChange, products, countries, seed, onCreated, onAllowanceBlocked }: Props) {
   const [step, setStep] = useState(0);
   const [mode, setMode] = useState<"catalog" | "custom">("catalog");
   const [skus, setSkus] = useState<string[]>([]);
@@ -97,7 +98,7 @@ export function AiLeadsSearchDialog({ open, onOpenChange, products, countries, s
     try {
       const data = await leadApi<{ search: LeadSearch }>("/api/ai/leads", "POST", parsed.data);
       onCreated(data.search); onOpenChange(false); lastRequest.current = null;
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "The search could not be started."); }
+    } catch (cause) { if(cause instanceof LeadApiError&&cause.allowance)onAllowanceBlocked(cause.allowance);setError(cause instanceof Error ? cause.message : "The search could not be started."); }
     finally { setBusy(null); }
   }
   const picked = profile?.segments.filter(segment => segments.includes(segment.id)) ?? [];

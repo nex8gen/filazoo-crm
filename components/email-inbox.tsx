@@ -383,8 +383,6 @@ export function EmailInboxWorkspace({
   const composeFileInput = useRef<HTMLInputElement>(null);
   const replyInput = useRef<EmailBodyEditorHandle>(null);
   const composeInput = useRef<EmailBodyEditorHandle>(null);
-  const replyPayload = useRef<{ fingerprint: string; id: string } | null>(null);
-  const composePayload = useRef<{ fingerprint: string; id: string } | null>(null);
   const replySession = useRef(0);
   const stateRevision = useRef(0);
   const pendingStateWrites = useRef(0);
@@ -1187,9 +1185,10 @@ export function EmailInboxWorkspace({
     }
 
     try {
-      const fingerprint = JSON.stringify([replySenderId, recipient, effectiveReplyCc, replyBcc, trimmedDraft, draftHtml, replyAttachments, parent.messageId]);
-      const requestId = replyPayload.current?.fingerprint === fingerprint ? replyPayload.current.id : replyPayload.current ? crypto.randomUUID() : replyRequestId || crypto.randomUUID();
-      replyPayload.current = { fingerprint, id: requestId }; setReplyRequestId(requestId);
+      // Keep one durable send identity per draft, across edits, reloads and
+      // conversation switches. Only the server can decide whether retry is safe.
+      const requestId = replyRequestId || crypto.randomUUID();
+      setReplyRequestId(requestId);
       const message = prepareComposerMessage(trimmedDraft, useAiDraft ? "" : draftHtml, preferences.emailSignature, replyInput.current?.currentFooter() || personalFooter, requestId);
       if (message.attachments.length + replyAttachments.length > 10) throw new Error("An email supports up to 10 images and attachments combined.");
       setSending(true);
@@ -1219,7 +1218,7 @@ export function EmailInboxWorkspace({
       }
       window.dispatchEvent(new Event("email-auto-reply-updated"));
       const saved = savedDrafts.get(replyDraftId); if (saved) savedDrafts.remove(saved);
-      setReplyDraftId(crypto.randomUUID()); setReplyRequestId(crypto.randomUUID()); replyPayload.current = null;
+      setReplyDraftId(crypto.randomUUID()); setReplyRequestId(crypto.randomUUID());
       if (result.scheduled) { setDraft(""); setReplyAttachments([]); setScheduleAt(""); setReplyScheduleOpen(false); setNotice(`Email scheduled for ${new Date(result.scheduleAt).toLocaleString()}.`); return; }
 
       const reply: EmailWorkspaceItem = {
@@ -1283,7 +1282,7 @@ export function EmailInboxWorkspace({
       }
       if (files.length > 10) throw new Error("This forwarded email has more than 10 attachments. Forward it from your provider's app.");
       if (session !== replySession.current) return;
-      setComposeDraftId(crypto.randomUUID()); setComposeRequestId(crypto.randomUUID()); composePayload.current = null;
+      setComposeDraftId(crypto.randomUUID()); setComposeRequestId(crypto.randomUUID());
       const to = editingDraft ? (original.to || []).map((item) => item.address).join(", ") : "";
       setComposeTo(to); setComposeCc(editingDraft ? (original.cc || []).map((item) => item.address).join(", ") : ""); setComposeBcc(editingDraft ? (original.bcc || []).map((item) => item.address).join(", ") : "");
       setComposeThread(editingDraft && original.inReplyTo ? { to, threadId: original.threadId || undefined, inReplyTo: original.inReplyTo, references: original.references } : null);
@@ -1326,9 +1325,8 @@ export function EmailInboxWorkspace({
     }
 
     try {
-      const fingerprint = JSON.stringify([composeSenderId, to, composeCc, composeBcc, subject, text, composeHtml, composeAttachments]);
-      const requestId = composePayload.current?.fingerprint === fingerprint ? composePayload.current.id : composePayload.current ? crypto.randomUUID() : composeRequestId || crypto.randomUUID();
-      composePayload.current = { fingerprint, id: requestId }; setComposeRequestId(requestId);
+      const requestId = composeRequestId || crypto.randomUUID();
+      setComposeRequestId(requestId);
       const message = prepareComposerMessage(text, composeHtml, preferences.emailSignature, personalFooter, requestId);
       if (message.attachments.length + composeAttachments.length > 10) throw new Error("An email supports up to 10 images and attachments combined.");
       setComposeSending(true);
@@ -1359,7 +1357,7 @@ export function EmailInboxWorkspace({
       setComposeAttachments([]);
       setComposeOpen(false);
       setComposeScheduleAt(""); setComposeScheduleOpen(false);
-      setComposeCc(""); setComposeBcc(""); setComposeDraftId(""); setComposeRequestId(""); composePayload.current = null;
+      setComposeCc(""); setComposeBcc(""); setComposeDraftId(""); setComposeRequestId("");
       setNotice(result.providerWarning || (result.saved ? `Email sent successfully from ${result.sentVia}.` : "Email sent, but its CRM history could not be saved. Check the recipient's mailbox for the attachment."));
     } catch (error) {
       setComposeError(error instanceof Error ? error.message : "The CRM could not send this email.");
@@ -1545,7 +1543,7 @@ export function EmailInboxWorkspace({
                           {canCreateInvoices ? <button type="button" disabled={attachmentBusy || sending} onClick={() => setInvoiceContext({companyId:selected.companyId,email:replyRecipient,threadId:selectedConversation?.id,customerName:selected.company,target:"reply"})} className="flex h-9 items-center gap-2 rounded-md px-2 text-left text-xs hover:bg-muted disabled:opacity-40"><ReceiptText className="size-4" />Customer invoices</button> : null}
                           <div className="flex items-center gap-2"><button type="button" disabled={replyEditorDisabled} onMouseDown={(event) => event.preventDefault()} onClick={() => replyInput.current?.insertText(String.fromCodePoint(0x1f60a))} className="flex h-9 flex-1 items-center gap-2 rounded-md px-2 text-xs hover:bg-muted disabled:opacity-40"><Smile className="size-4" />Add emoji</button><InboxCalculator /></div>
                         </div>
-                        <button type="button" disabled={sending || aiReplyBusy} onClick={() => { const saved = savedDrafts.get(replyDraftId); if (saved) savedDrafts.remove(saved); clearReplyComposer(); setReplyDraftId(crypto.randomUUID()); setReplyRequestId(crypto.randomUUID()); replyPayload.current = null; }} className="flex h-9 items-center gap-2 rounded-md border-t px-2 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-40"><Trash2 className="size-4" />Discard draft</button>
+                        <button type="button" disabled={sending || aiReplyBusy} onClick={() => { const saved = savedDrafts.get(replyDraftId); if (saved) savedDrafts.remove(saved); clearReplyComposer(); setReplyDraftId(crypto.randomUUID()); setReplyRequestId(crypto.randomUUID()); }} className="flex h-9 items-center gap-2 rounded-md border-t px-2 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-40"><Trash2 className="size-4" />Discard draft</button>
                       </PopoverContent>
                     </Popover>
                     {!replyDraftNeedsRetry ? <div className="mail-reply-save-status min-w-0 flex-1"><EmailDraftStatus status={savedDrafts.status} onRetry={() => void savedDrafts.retry()} disabled={sending} /></div> : <span className="flex-1" />}
@@ -1575,7 +1573,7 @@ export function EmailInboxWorkspace({
           <div className="min-h-0 flex-1 overflow-y-auto">
             <ContactSummary name={selected.contactName || selected.contact} email={selected.contact} company={selected.company} companyId={selected.companyId} ownerName={selected.ownerName} ownerInitials={selected.ownerInitials} ownerAvatarUrl={selected.ownerAvatarUrl} ownerId={selected.ownerId} canCreateInvoices={canCreateInvoices} />
             <EmailAiSummary
-              key={JSON.stringify([selected.id, selected.body, conversationContext, selected.customerProfile])}
+              key={selectedConversation?.id}
               configured={aiConfigured}
               ready={reading && selected.bodyLoaded !== false && Boolean(selected.body.trim())}
               currentFollowUpAt={selectedFollowUp || null}
@@ -1583,6 +1581,8 @@ export function EmailInboxWorkspace({
               context={JSON.stringify({
                 mode: "summary",
                 messageId: selected.id,
+                conversationId: selectedConversation?.id,
+                messageTimestamp: selected.timestamp,
                 mailboxId: selectedMailboxId,
                 subject: selected.subject.slice(0, 500),
                 messageSource: selected.source,

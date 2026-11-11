@@ -75,12 +75,10 @@ export async function createLeadAiCall(userId: string, options: { maximumCalls?:
   };
 }
 
-export async function discoverLeads({ input, products, feedback = [], excludedCompanies = [], attempt = 0, remember, report, call, signal, progress, readWebsite = readBusinessWebsite }: {
-  input: LeadSearchInput; products: LeadProduct[]; feedback?: LeadFeedback[]; call: LeadAiCall; signal: AbortSignal;
+export function leadDiscoveryPlan({ input, products, feedback = [], excludedCompanies = [], attempt = 0 }: {
+  input: LeadSearchInput; products: LeadProduct[]; feedback?: LeadFeedback[];
   excludedCompanies?: LeadCompanyIdentity[]; attempt?: number;
-  remember?: (candidates: LeadCandidate[]) => Promise<void>; report?: (summary: LeadResearchSummary) => Promise<void>;
-  progress: (phase: string) => Promise<void>; readWebsite?: (website: string, signal: AbortSignal, keywords?: string[]) => Promise<BusinessPage[]>;
-}): Promise<LeadResult[]> {
+}) {
   const audience = input.audience;
   const location = [input.city, input.country].filter(Boolean).join(" ");
   const exclusions = leadCompanyExclusions(excludedCompanies);
@@ -95,8 +93,7 @@ export async function discoverLeads({ input, products, feedback = [], excludedCo
     location, requirements: input.requirements, exclusions: input.exclusions,
     previousFeedback: feedback,
   };
-  await progress("Searching for relevant businesses");
-  const found = await call({
+  const request = {
     model: RESEARCH_AI_MODEL, store: false, max_output_tokens: 2600,
     instructions: safety + " You are the COMPANY DISCOVERY stage. The user has already confirmed the product category; do not reinterpret it. Search by the customer's business activity, not by our product's supplier names, product codes or acronyms. A company selling TO our buyer group is not itself that buyer group. Only include a product reseller, distributor or competing manufacturer if that exact channel role is explicitly selected. Find NEW accounts: skip excluded domains and their subsidiaries/subdomains. Avoid repeating famous suppliers. Prefer operational evidence and official company contact pages. Return fewer results rather than substitute unrelated sellers.",
     input: "Use this ranked buyer-activity search plan within the single search-tool allowance: " + JSON.stringify(queries) +
@@ -106,7 +103,19 @@ export async function discoverLeads({ input, products, feedback = [], excludedCo
       type: "object", additionalProperties: false, required: ["candidates"],
       properties: { candidates: { type: "array", items: { type: "object", additionalProperties: false, required: ["name", "website", "sourceUrl"], properties: { name: { type: "string" }, website: { type: "string" }, sourceUrl: { type: "string" } } } } },
     }),
-  }, signal);
+  };
+  return { request, audience, exclusions, queries, candidateLimit, summary, targeting };
+}
+
+export async function discoverLeads({ input, products, feedback = [], excludedCompanies = [], attempt = 0, remember, report, call, signal, progress, readWebsite = readBusinessWebsite }: {
+  input: LeadSearchInput; products: LeadProduct[]; feedback?: LeadFeedback[]; call: LeadAiCall; signal: AbortSignal;
+  excludedCompanies?: LeadCompanyIdentity[]; attempt?: number;
+  remember?: (candidates: LeadCandidate[]) => Promise<void>; report?: (summary: LeadResearchSummary) => Promise<void>;
+  progress: (phase: string) => Promise<void>; readWebsite?: (website: string, signal: AbortSignal, keywords?: string[]) => Promise<BusinessPage[]>;
+}): Promise<LeadResult[]> {
+  const { request, audience, exclusions, queries, candidateLimit, summary, targeting } = leadDiscoveryPlan({input,products,feedback,excludedCompanies,attempt});
+  await progress("Searching for relevant businesses");
+  const found = await call(request, signal);
   if (process.env.AI_LEAD_DEBUG === "1") {
     const tools = (found.output as Array<{ type?: string; action?: unknown }> | undefined)?.filter(item => item.type === "web_search_call").map(item => item.action);
     console.info("Lead discovery public search", { plannedQueries: queries, actions: tools });

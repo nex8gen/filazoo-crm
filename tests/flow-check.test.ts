@@ -11,6 +11,7 @@ import * as senders from "../lib/flow-mailboxes.ts";
 import * as segments from "../lib/segments.ts";
 import * as model from "../lib/flows.ts";
 import * as errors from "../lib/flow-execution-errors.ts";
+import * as outreach from "../lib/outreach-policy.ts";
 import type { WorkspaceViewer } from "../lib/auth.ts";
 
 type Row = Record<string, unknown>;
@@ -19,6 +20,7 @@ const viewer = { id: "owner", role: "admin", workspaceId: "legacy" } as Workspac
 function fixture(options: { smtpFailure?: Error; providerStatus?: number; missingEmail?: boolean } = {}) {
   const calls: string[] = [];
   const db: Record<string, Row[]> = {
+    contacts: options.missingEmail ? [] : [{ id: "contact", company_id: "company", email: "customer@example.com", verification_status: "valid", unsubscribed: false }],
     flows: [{ id, user_id: "owner", trigger_config: {} }],
     workspace_mailboxes: [{ id: "sender", user_id: "owner", type: "personal", is_default: true, is_active: true, email: "owner@example.com", smtp_host: "smtp.example.com", smtp_port: 465, smtp_username: "owner", smtp_password: "private-password" }],
     workspace_members: [{ user_id: "specific-user", role: "operator", activated_at: "2026-01-01" }],
@@ -35,7 +37,9 @@ function fixture(options: { smtpFailure?: Error; providerStatus?: number; missin
     return query;
   } };
   const dependencies: Record<string, unknown> = {
-    "server-only": {}, "../supabase/admin.ts": { createSupabaseAdmin: () => admin }, "../env.ts": { env: { dryRun: true } },
+    "./flow-sender.ts": { assignedFlowCandidates: async () => ["owner"], assignedFlowActor: async () => "owner" },
+    "../outreach-policy.ts": outreach,
+    "server-only": {}, "../supabase/admin.ts": { createSupabaseAdmin: () => admin }, "../env.ts": { env: { dryRun: true, DAILY_SEND_LIMIT: 20, BOUNCE_PAUSE_PERCENT: 3 } },
     "../flow-tree.ts": tree, "../flow-engine.ts": engine, "../mailbox-utils.ts": mailboxes, "../flow-mailboxes.ts": senders,
     "../mailer.ts": { verifyMailboxSmtp: async () => { calls.push("smtp:verify"); if (options.smtpFailure) throw options.smtpFailure; } },
     "../ai/gateway-health.ts": { verifyGatewayAccess: async () => { calls.push("ai:access"); if (options.providerStatus && options.providerStatus !== 200) throw new Error(`AI Gateway access check failed (HTTP ${options.providerStatus})`); } },

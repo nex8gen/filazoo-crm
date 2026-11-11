@@ -7,12 +7,15 @@ import { leadMutationSchema, leadSearchSchema, leadProfileRequestSchema, type Le
 import { buyerProfileSchema, legacyQualification, type BuyerProfile } from "../lead-prospecting.ts";
 import { generateBuyerProfile } from "../ai/lead-buyer-profile.ts";
 import { withPersonalProducts } from "./product-personalization.ts";
-import { createLeadAiCall, discoverLeads } from "../ai/lead-discovery.ts";
+import { createLeadAiCall, discoverLeads, leadDiscoveryPlan } from "../ai/lead-discovery.ts";
 import { requireAiFeature } from "./ai-settings.ts";
 import { isQualifiedLead, leadCompanyExclusions, type LeadCompanyIdentity, type LeadResearchSummary } from "../lead-discovery-policy.ts";
 import { leadDomain } from "../ai-leads.ts";
+import { readLeadAllowance } from "../ai/lead-allowance.ts";
+import { leadAllowanceBlocked, leadResetTime, leadUsd, type LeadAllowance } from "../lead-allowance.ts";
 
-export class LeadError extends Error { status: number; constructor(message: string, status = 400) { super(message); this.status = status; } }
+export class LeadError extends Error { status: number; allowance?: LeadAllowance; constructor(message: string, status = 400, allowance?: LeadAllowance) { super(message); this.status = status; this.allowance = allowance; } }
+export async function getLeadAllowance(viewer: WorkspaceViewer) { return withWorkspaceViewer(viewer,()=>readLeadAllowance(viewer.id)); }
 type SearchRow = { id: string; context_key: string; status: LeadSearch["status"]; phase: string; criteria: LeadSearchInput; products: LeadProduct[]; results: LeadResult[]; research_summary?: LeadResearchSummary | null; error: string | null; created_at: string; updated_at: string };
 const selection = "id,context_key,status,phase,criteria,products,results,research_summary,error,created_at,updated_at";
 const mapSearch = (row: SearchRow): LeadSearch => ({ id: row.id, status: row.status, phase: row.phase, criteria: row.criteria, products: row.products, results: row.results.map(lead=>({...lead,qualification:legacyQualification(lead),...(!lead.matchedProducts.length||!lead.fitEvidence ? {fitScore:Math.min(49,lead.fitScore),confidence:"needs_review" as const,fitEvidence:null} : {})})), researchSummary: row.research_summary, error: row.error, createdAt: row.created_at, updatedAt: row.updated_at });
@@ -126,6 +129,16 @@ export async function startLeadSearch(viewer: WorkspaceViewer, value: unknown) {
     const contextKey = createHash("sha256").update(JSON.stringify({ products: [...products].sort((a,b)=>a.sku.localeCompare(b.sku)), productContext:input.productContext,country:input.country.toLowerCase(), city:input.city.toLowerCase(), buyerTypes:input.buyerTypes, requirements:input.requirements, exclusions:input.exclusions })).digest("hex");
     const feedback = await db.from("ai_lead_feedback").select("domain,reason").eq("context_key",contextKey).order("updated_at",{ascending:false}).limit(30);
     if (feedback.error) throw databaseError(feedback.error);
+    const [crm,history,attempts] = await Promise.all([
+      leadCrmIdentities(),leadHistoryIdentities(),
+      db.from("ai_lead_searches").select("id",{count:"exact",head:true}).eq("context_key",contextKey),
+    ]);
+    if(attempts.error)throw databaseError(attempts.error);
+    const plan=leadDiscoveryPlan({input,products,feedback:feedback.data ?? [],excludedCompanies:[...crm,...history],attempt:attempts.count ?? 0});
+    const allowance=await readLeadAllowance(viewer.id,plan.request);
+    if(leadAllowanceBlocked(allowance))throw new LeadError(allowance.enabled
+      ? "CRM AI allowance is too low to start this search. Available: "+leadUsd(allowance.availableMicros)+". Required reservation: "+leadUsd(allowance.requiredMicros!)+". Resets "+leadResetTime(allowance.resetsAt)+" China time. Gateway credits are separate. No search was started."
+      : "AI spending is paused by the CRM allowance settings. Ask a workspace administrator to review your AI access. No search was started.",allowance.enabled ? 429 : 403,allowance);
     const { data, error } = await db.from("ai_lead_searches").insert({ request_id:input.requestId,created_by:viewer.id,criteria:input,products,context_key:contextKey,feedback_context:feedback.data ?? [] }).select(selection).single();
     if (error?.code === "23505") throw new LeadError("A search is already running in this workspace. Wait for it or cancel it before starting another.",409);
     if (error || !data) throw databaseError(error ?? {});
@@ -144,10 +157,12 @@ async function leadCrmIdentities(): Promise<LeadCompanyIdentity[]> {
     if (!data || data.length < 500) return identities;
   }
 }
-async function leadHistoryIdentities(searchId: string): Promise<LeadCompanyIdentity[]> {
+async function leadHistoryIdentities(searchId?: string): Promise<LeadCompanyIdentity[]> {
   const db = createSupabaseAdmin(), identities: LeadCompanyIdentity[] = [];
   for (let offset = 0; ; offset += 500) {
-    const {data,error} = await db.from("ai_lead_company_history").select("domain,company_name").neq("search_id",searchId).order("domain").range(offset,offset+499);
+    let query = db.from("ai_lead_company_history").select("domain,company_name");
+    if(searchId)query=query.neq("search_id",searchId);
+    const {data,error} = await query.order("domain").range(offset,offset+499);
     if (error) throw databaseError(error);
     identities.push(...(data ?? []).map(company => ({name:company.company_name,domain:company.domain})));
     if (!data || data.length < 500) return identities;
@@ -191,7 +206,7 @@ export async function runLeadSearch(viewer: WorkspaceViewer, id: string) {
       if (saved.error) throw databaseError(saved.error);
     } catch (error) {
       const message = error instanceof Error && (error.name === "AiBudgetError" || error instanceof LeadError || /^(AI |This |Search |The company|The search|Public|Lead records)/.test(error.message)) ? error.message : "Research could not finish. Try fewer leads or a different location. No leads were automatically added.";
-      const failed = await db.from("ai_lead_searches").update({status:"failed",phase:"Search stopped",error:message,updated_at:now()}).eq("id",id).eq("status","running");
+      const failed = await db.from("ai_lead_searches").update({status:"failed",phase:error instanceof Error&&error.name==="AiBudgetError" ? "AI allowance blocked" : "Search stopped",error:message,updated_at:now()}).eq("id",id).eq("status","running");
       if (failed.error) console.error("Lead search failure could not be recorded",{code:failed.error.code});
     }
   });

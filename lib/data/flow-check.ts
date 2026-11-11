@@ -16,6 +16,8 @@ import { validateEmailFlowScope } from "./email-flows.ts";
 import { stepLabels } from "../flows.ts";
 import { workflowErrorMessage } from "../flow-execution-errors.ts";
 import { flowCheckStatus, type FlowCheck, type FlowCheckInput, type FlowCheckResult } from "../flow-check.ts";
+import { assignedFlowCandidates, assignedFlowActor } from "./flow-sender.ts";
+import { evaluateSend } from "../outreach-policy.ts";
 
 /** Real, bounded, read-only probes; no generation, SMTP submission, or CRM writes. */
 export async function checkFlow(input: FlowCheckInput, viewer: WorkspaceViewer): Promise<FlowCheckResult> {
@@ -59,13 +61,17 @@ export async function checkFlow(input: FlowCheckInput, viewer: WorkspaceViewer):
     return { status: "passed", detail: "The workflow and every action's required tables are reachable. No records were changed." };
   })];
   if (senderActions.length) jobs.push(add("senders", "Sender authentication", async () => {
-    const { data } = await admin.from("workspace_mailboxes").select("*").or(`type.eq.workspace,user_id.eq.${ownerId}`).abortSignal(signal).throwOnError();
+    const hasAssigned = senderActions.some(step => step.config.mailboxId === "assigned_owner");
+    const actors = hasAssigned ? await assignedFlowCandidates(ownerId, typeof input.flow.triggerConfig.scopeCompanyId === "string" ? input.flow.triggerConfig.scopeCompanyId : undefined) : [];
+    const { data } = await admin.from("workspace_mailboxes").select("*").or(`type.eq.workspace,user_id.in.(${[ownerId, ...actors].join(",")})`).abortSignal(signal).throwOnError();
     const mailboxes = normalizeMailboxRows(data);
     const senders = new Map<string, (typeof mailboxes)[number]>();
     for (const step of senderActions) {
-      const mailbox = resolveFlowSender(mailboxes, ownerId, step.config.mailboxId);
+      for (const actor of step.config.mailboxId === "assigned_owner" ? actors : [ownerId]) {
+      const mailbox = resolveFlowSender(mailboxes, actor, step.config.mailboxId === "assigned_owner" ? "owner" : step.config.mailboxId);
       if (!mailbox?.isActive || !mailbox.smtpHost || !mailbox.smtpUsername || !mailbox.smtpPassword) throw new Error("An action's selected sender is unavailable or has incomplete SMTP settings.");
       senders.set(mailbox.id, mailbox);
+      }
     }
     await Promise.all([...senders.values()].map(mailbox => verifyMailboxSmtp({ host: mailbox.smtpHost, port: mailbox.smtpPort, user: mailbox.smtpUsername, pass: mailbox.smtpPassword, from: mailbox.email }, { timeoutMs: 3_500 })));
     return { status: "passed", detail: `${senders.size} sender connections authenticated with their mail servers. No email was sent.` };
@@ -97,8 +103,29 @@ export async function checkFlow(input: FlowCheckInput, viewer: WorkspaceViewer):
     if (config.savedSegmentId && !segment.data) throw new Error("The workflow's saved segment no longer exists.");
     const rules = segmentRulesSchema.parse(segment.data?.rules ?? { businessSegment: config.segment });
     const audience = companies.filter(company => matchesSegment(company, rules));
-    const missing = audience.filter(company => !company.hasEmail);
-    return { status: missing.length ? "blocked" : audience.length ? "passed" : "warning", detail: missing.length ? `${missing.length} of ${audience.length} companies have no contact email. Their email action will wait for a contact.` : audience.length ? `${audience.length} companies have contact email addresses. Consent and delivery restrictions are checked again before sending.` : "No companies match this segment yet. Future matches will be checked on entry.", links: missing.slice(0, 10).map(company => ({ label: company.name, href: `/companies/${company.id}` })) };
+    if (!audience.length) return { status: "warning", detail: "No companies match this segment yet. Future matches will be checked on entry." };
+    if (audience.length > 500) return { status: "unverified", detail: "This audience exceeds the bounded recipient check. Review recipients in batches before releasing this workflow." };
+    const blocked: typeof audience = [];
+    for (let offset = 0; offset < audience.length; offset += 50) {
+      const batch = audience.slice(offset, offset + 50);
+      const { data: contacts } = await admin.from("contacts").select("id,company_id,email,verification_status,consent_source,unsubscribed")
+        .in("company_id", batch.map(company => company.id)).abortSignal(signal).throwOnError();
+      for (const company of batch) {
+        const recipients = (contacts ?? []).filter(contact => contact.company_id === company.id && contact.email
+          && (!Array.isArray(config.contactIds) || config.contactIds.includes(contact.id)) && (!config.scopeContactId || config.scopeContactId === contact.id));
+        if (recipients.length !== 1) { blocked.push(company); continue; }
+        const recipient = recipients[0];
+        const actor = actions.some(step => step.config.mailboxId === "assigned_owner") ? await assignedFlowActor(ownerId, company.id) : ownerId;
+        const [{ count: suppressed }, { count: inquiries }] = await Promise.all([
+          admin.from("suppression").select("email", { count: "exact", head: true }).eq("email", recipient.email).abortSignal(signal).throwOnError(),
+          admin.from("emails").select("id", { count: "exact", head: true }).eq("contact_id", recipient.id).eq("direction", "received").or(`owner_id.is.null,owner_id.eq.${actor}`).abortSignal(signal).throwOnError(),
+        ]);
+        const inquiryResponse = ["unverified", "unknown"].includes(recipient.verification_status) && (Boolean(inquiries) || ["shopify_b2b_form", "shopify_b2b_form_opt_in", "meta_lead_ads"].includes(recipient.consent_source));
+        if (!evaluateSend({ email: recipient.email, verified: recipient.verification_status === "valid", inquiryResponse,
+          unsubscribed: recipient.unsubscribed, suppressed: Boolean(suppressed), sentToday: 0, dailyLimit: env.DAILY_SEND_LIMIT, bounceRate: 0, bouncePausePercent: env.BOUNCE_PAUSE_PERCENT, dryRun: false }).allowed) blocked.push(company);
+      }
+    }
+    return { status: blocked.length ? "blocked" : "passed", detail: blocked.length ? `${blocked.length} of ${audience.length} companies need a single eligible contact. Check address verification, consent, unsubscribe and suppression. Blocked actions remain visible in Insights.` : `${audience.length} companies each have an eligible contact. Live restrictions and mailbox capacity are checked again before each send.`, links: blocked.slice(0, 10).map(company => ({ label: company.name, href: `/companies/${company.id}` })) };
   }));
   if (hasMessages && env.dryRun) checks.push({ id: "sending", label: "Live sending", status: "warning", detail: "This server is in dry-run mode. Live workflows record previews; explicit delivery tests can still send to your test inbox." });
   if (input.flowId) jobs.push(add("queue", "Saved workflow progress", async () => {

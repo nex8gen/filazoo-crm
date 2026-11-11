@@ -13,6 +13,7 @@ import { initialComposerHtml, prepareComposerMessage } from "../lib/email-compos
 import * as emailContent from "../lib/email-content.ts";
 import * as threading from "../lib/email-threading.ts";
 import * as workbench from "../lib/email-workbench.ts";
+import * as sendFailure from "../lib/email-send-failure.ts";
 
 const require = createRequire(import.meta.url);
 // Two frames, 100 ms each, with a repeat loop: animation must survive MIME encoding.
@@ -22,6 +23,7 @@ const gifHtml = `<img src="data:image/gif;base64,${gif.toString("base64")}" alt=
 
 function load<T>(path: string, dependencies: Record<string, unknown>): T {
   dependencies["../email-workbench"] = workbench;
+  dependencies["../email-send-failure.ts"] = sendFailure;
   dependencies["../customer-tags.ts"] = customerTags;
   dependencies["../company-email.ts"] = companyEmail;
   dependencies["./customer-tags.ts"] = {};

@@ -34,39 +34,39 @@ test("workflow cron rejects invalid credentials and health checks execute no wor
   assert.equal((await app.GET(app.request("", "wrong"))).status, 401);
   const health = await app.GET(app.request("health"));
   assert.equal(health.status, 200);
-  assert.equal((await health.json()).version, "flow-background-v3");
+  assert.equal((await health.json()).version, "flow-reliable-v4");
   await app.flush();
   assert.deepEqual(app.calls, []);
 });
 
-test("cron acknowledges without waiting for providers and runs all independent phases without a viewer session", async () => {
+test("intake acknowledges promptly and only projects receipts and enrolls saved work", async () => {
   const app = fixture();
   const response = await app.GET(app.request());
   assert.equal(response.status, 202);
   assert.deepEqual(await response.json(), { ok: true, queued: true });
   assert.deepEqual(app.calls, []);
   await app.flush();
-  assert.deepEqual([...app.calls].sort(), ["automatic-replies", "conversation-tags", "scheduled-email", "workflows"]);
+  assert.deepEqual(app.calls, ["workflows"]);
   assert.equal(app.flowOptions()?.syncMailbox, true);
-  assert.equal(app.flowOptions()?.budgetMs, 180000);
+  assert.equal(app.flowOptions()?.budgetMs, 60000);
 });
 
-test("failure in any background phase leaves the other phases running", async () => {
-  for (const phase of ["workflows", "scheduled-email", "automatic-replies", "conversation-tags"]) {
+test("provider workers run in separate invocations and retain attribution for failures", async () => {
+  for (const phase of ["workflows", "scheduled-email", "automatic-replies"]) {
     const app = fixture(phase);
-    assert.equal((await app.GET(app.request())).status, 202);
+    assert.equal((await app.GET(app.request(phase === "workflows" ? "resume" : phase))).status, 202);
     await app.flush();
-    assert.equal(app.calls.length, 4);
+    assert.deepEqual(app.calls, [phase]);
     assert.equal(app.failures.length, 1);
     assert.equal(app.failures[0].phase, phase);
   }
 });
 
-test("the minute resume tick skips mailbox sync while still processing saved work", async () => {
+test("the minute resume tick verifies receipts before processing saved work", async () => {
   const app = fixture();
   await app.GET(app.request("resume"));
   await app.flush();
-  assert.equal(app.flowOptions()?.syncMailbox, false);
+  assert.equal(app.flowOptions()?.syncMailbox, true);
 });
 
 test("multiple workspaces share scheduling time without shrinking the action deadline below one email", async () => {

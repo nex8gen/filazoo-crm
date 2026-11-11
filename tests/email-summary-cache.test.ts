@@ -41,6 +41,55 @@ test("message, history, customer, language, policy, role and model changes inval
   assert.notEqual(emailSummaryCacheKey(first, { allowed: true }, "admin", "different-model"), key);
 });
 
+test("conversation identity survives replies, profile edits, language and model changes", () => {
+  const input = { conversationId: "thread:buyer", mailboxId: "sales", messageId: "first", text: "PLA", language: "en" };
+  const key = emailSummaryCacheKey(input, {}, "admin", "first-model");
+  assert.equal(emailSummaryCacheKey({ ...input, messageId: "reply", text: "PETG instead", language: "zh-CN", customerProfile: { companyName: "Updated name" }, conversationHistory: [{ body: "New reply" }] }, {}, "admin", "new-model"), key);
+  assert.notEqual(emailSummaryCacheKey({ ...input, conversationId: "other" }, {}, "admin"), key);
+  assert.notEqual(emailSummaryCacheKey({ ...input, mailboxId: "private" }, {}, "admin"), key);
+  assert.notEqual(emailSummaryCacheKey(input, { data: { customers: false } }, "admin"), key);
+});
+
+test("a conversation is researched once and only a new message updates its next step", async () => {
+  const store = memoryStore();
+  let generations = 0, updates = 0;
+  const generate = async () => { generations++; return output; };
+  const update = async (saved: string) => { updates++; return JSON.stringify({ ...JSON.parse(saved), nextStep: "Send the requested quote." }); };
+  const first = { messageId: "inquiry", messageTimestamp: "2026-11-09T01:00:00Z", update };
+  await reuseEmailSummary(store, "initial", generate, false, first);
+  assert.equal((await reuseEmailSummary(store, "reload", generate, true, first)).cached, true, "Refresh cannot replace a conversation assessment");
+  const reply = { ...first, messageId: "outbound", messageTimestamp: "2026-11-09T02:00:00Z" };
+  const updated = await reuseEmailSummary(store, "reply", generate, false, reply);
+  assert.equal(updated.cached, false);
+  assert.equal(JSON.parse(updated.output).nextStep, "Send the requested quote.");
+  assert.equal((await reuseEmailSummary(store, "reply-reload", generate, false, reply)).cached, true);
+  assert.equal((await reuseEmailSummary(store, "stale-request", generate, false, first)).output, updated.output, "Older requests cannot undo the next step");
+  assert.equal(generations, 1);
+  assert.equal(updates, 1);
+  const customerReply = { ...reply, messageId: "customer-reply", messageTimestamp: "2026-11-09T03:00:00Z" };
+  await assert.rejects(reuseEmailSummary(store, "failed-reply", generate, false, { ...customerReply, update: async () => { throw Error("Provider offline"); } }), /Provider offline/);
+  assert.equal((await store.read())?.output, updated.output, "Failed updates preserve the saved assessment and next step");
+  await reuseEmailSummary(store, "retry-reply", generate, false, customerReply);
+  assert.equal(generations, 1);
+  assert.equal(updates, 2);
+});
+
+test("legacy briefs are adopted without generation and replies share the database lease", async () => {
+  const store = memoryStore();
+  await reuseEmailSummary(store, "legacy", async () => output);
+  const unexpected = async () => { throw Error("Must not buy AI"); };
+  const adopted = await reuseEmailSummary(store, "adopt", unexpected, false, { messageId: "first", update: unexpected });
+  assert.equal(adopted.cached, true);
+  let finish!: (result: string) => void;
+  const options = { messageId: "reply", update: () => new Promise<string>(resolve => { finish = resolve; }) };
+  const work = reuseEmailSummary(store, "reply-owner", unexpected, false, options);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  await assert.rejects(reuseEmailSummary(store, "duplicate", unexpected, false, options), EmailSummaryPendingError);
+  finish(output);
+  await work;
+  assert.equal((await reuseEmailSummary(store, "reopen", unexpected, false, options)).cached, true);
+});
+
 test("explicit refresh replaces the stored brief; failed refresh preserves it", async () => {
   const store = memoryStore();
   await reuseEmailSummary(store, "first", async () => output);

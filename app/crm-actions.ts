@@ -123,7 +123,7 @@ function refreshCompany(companyId: string) {
 }
 
 async function enrollCompanyEvent(event: Parameters<typeof enrollMatchingFlows>[0]) {
-  try { await enrollMatchingFlows(event); }
+  try { await enrollMatchingFlows(event, { deferExecution: true }); }
   catch (error) { console.error("Company change saved, but flow enrollment failed:", error); }
 }
 
@@ -182,7 +182,7 @@ export async function createCompany(_state: CrmActionState, formData: FormData):
   }
 
   const { data: createdContact } = await admin.from("contacts").select("id").eq("company_id", company.id).order("created_at").limit(1).maybeSingle();
-  if (createdContact) await enrollNewLeadFlows(createdContact.id);
+  if (createdContact) await enrollNewLeadFlows(createdContact.id, undefined, { deferExecution: true });
   await enrollCompanyEvent({ type: "company_segment_changed", conversationId: `company:${company.id}`, companyId: company.id, contactId: createdContact?.id ?? null, segment: parsed.data.segment });
 
   refreshCrm();
@@ -204,7 +204,7 @@ export async function updateCompanyFields(companyId: string, input: unknown): Pr
   if (error) return { error: error.code === "23505" ? "This website or contact email already belongs to another profile." : error.code === "P0001" ? error.message : "The requested profile fields could not be saved. Please retry." };
   if (!data?.companyName) return { error: "The profile update could not be confirmed. Refresh before retrying." };
   if (data.contactCreated && data.contactId) {
-    try { await enrollNewLeadFlows(data.contactId); }
+    try { await enrollNewLeadFlows(data.contactId, undefined, { deferExecution: true }); }
     catch (reason) { console.error("Contact saved, but flow enrollment failed:", reason); }
   }
   if (data.segmentChanged) await enrollCompanyEvent({ type: "company_segment_changed", conversationId: `company:${companyId}`, companyId, contactId: data.contactId, segment: changes.segment! });
@@ -264,7 +264,7 @@ export async function updateCompany(companyId: string, _state: CrmActionState, f
   await admin.from("events").insert({ company_id: id.data, actor_id: viewer.id, type: "company_updated", data: { summary: `${parsed.data.name} details were updated.` } });
   if (followupDueAt && followupDueAt !== previousPipeline?.next_followup_at) await admin.from("events").insert({ company_id: id.data, actor_id: viewer.id, type: "followup_scheduled", data: { summary: `Next follow-up scheduled for ${new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Shanghai" }).format(new Date(followupDueAt))}.` } });
   const { data: automationContact } = await admin.from("contacts").select("id").eq("company_id", id.data).order("created_at").limit(1).maybeSingle();
-  if (!primaryContact && parsed.data.contactEmail && automationContact) await enrollNewLeadFlows(automationContact.id);
+  if (!primaryContact && parsed.data.contactEmail && automationContact) await enrollNewLeadFlows(automationContact.id, undefined, { deferExecution: true });
   if (company.segment !== parsed.data.segment) await enrollCompanyEvent({ type: "company_segment_changed", conversationId: `company:${id.data}`, companyId: id.data, contactId: automationContact?.id ?? null, segment: parsed.data.segment });
   refreshCompany(id.data);
   return { success: `${parsed.data.name} was updated.` };

@@ -553,6 +553,12 @@
       "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
     },
     {
+      "surface": "app/api/flows/[id]/runs/[runId]/route.ts#POST",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Use workflow Insights to review delivery evidence, retry a proven preparation failure at its saved action, or stop a waiting run. SMTP submission uncertainty must be reviewed in Sent and cannot be automatically replayed."
+    },
+    {
       "surface": "app/api/flows/[id]/test/route.ts#POST",
       "mode": "guided",
       "tools": [],
@@ -676,6 +682,24 @@
         "create_invoice"
       ],
       "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/api/marketing-assets/draft/route.ts#POST",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Specialized UI test, composition or analysis flow; use its page controls. The agent must provide a handoff and must not claim it executed this feature."
+    },
+    {
+      "surface": "app/api/marketing-assets/route.ts#DELETE",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Specialized UI test, composition or analysis flow; use its page controls. The agent must provide a handoff and must not claim it executed this feature."
+    },
+    {
+      "surface": "app/api/marketing-assets/route.ts#POST",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Specialized UI test, composition or analysis flow; use its page controls. The agent must provide a handoff and must not claim it executed this feature."
     },
     {
       "surface": "app/api/meta/lead-bridge/route.ts#POST",

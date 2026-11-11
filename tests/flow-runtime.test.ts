@@ -20,6 +20,8 @@ import * as flowSmtp from "../lib/flow-smtp.ts";
 import * as executionErrors from "../lib/flow-execution-errors.ts";
 import * as mailboxUtils from "../lib/mailbox-utils.ts";
 import * as flowMailboxes from "../lib/flow-mailboxes.ts";
+import * as recovery from "../lib/flow-recovery.ts";
+import * as threading from "../lib/email-threading.ts";
 import { createFlowRecipe } from "../lib/flow-recipes.ts";
 
 type Row = Record<string, unknown>;
@@ -30,14 +32,14 @@ const code = ts.transpileModule(readFileSync(new URL("../lib/data/flow-runtime.t
 
 // Execute the real enrollment and email runtime against an in-memory database.
 // SMTP is intercepted even when testing live-send mode.
-function runtime(options: { businessWindow?: Date | null; beforeQuery?: (table: string, operation: string) => Promise<void>; aiReplyError?: unknown; smtpError?: unknown } = {}) {
+function runtime(options: { businessWindow?: Date | null; beforeQuery?: (table: string, operation: string) => Promise<void>; aiReplyError?: unknown; smtpError?: unknown; onAiPrepare?: () => Promise<void>; projectionError?: Error } = {}) {
   const contactId = randomUUID(), companyId = randomUUID(), flowId = randomUUID();
   const createdAt = new Date().toISOString();
   const db: Record<string, Row[]> = {
     contacts: [{ id: contactId, company_id: companyId, created_at: createdAt, name: "Test", email: "lead@example.com", verification_status: "valid", unsubscribed: false }],
     companies: [{ id: companyId, segment: "Shopify B2B lead", country: "US", status: "new" }],
     pipeline: [{ company_id: companyId, stage: "new", owner_id: "sales-owner" }],
-    workspace_members: [{ user_id: "owner", activated_at: createdAt }, { user_id: "sales-owner", activated_at: createdAt }, { user_id: "specific-user", activated_at: createdAt }],
+    workspace_members: [{ user_id: "owner", role: "admin", activated_at: createdAt }, { user_id: "sales-owner", role: "bd_manager", activated_at: createdAt }, { user_id: "specific-user", role: "bd_manager", activated_at: createdAt }],
     flows: [{ id: flowId, user_id: "owner", status: "live", trigger_type: "new_lead", trigger_config: {}, lead_enrollment_started_at: new Date(Date.now() - 60_000).toISOString() }],
     flow_steps: [{ ...flows.blankStep("send_email"), id: randomUUID(), flow_id: flowId, position: 0, config: { ...flows.blankStep("send_email").config, templateId: "welcome_intro", sendWindow: "anytime" } }],
     workspace_mailboxes: [{ id: "sender", type: "workspace", is_default: true, is_active: true, email: "sales@example.com", smtpHost: "smtp.example.com", smtpPort: 465, smtpUsername: "sales", smtpPassword: "test" }],
@@ -77,6 +79,7 @@ function runtime(options: { businessWindow?: Date | null; beforeQuery?: (table: 
       insert(value: Row | Row[]) { operation = "insert"; payload = value; return query; },
       upsert(value: Row, options: { onConflict: string }) { operation = "upsert"; payload = value; conflict = options.onConflict; return query; },
       update(value: Row) { operation = "update"; payload = value; return query; },
+      delete() { operation = "delete"; return query; },
       single() { single = true; return query; }, maybeSingle() { single = true; return query; }, throwOnError() { return query; },
       async then(resolve: (result: unknown) => unknown) {
         await options.beforeQuery?.(table, operation);
@@ -93,7 +96,8 @@ function runtime(options: { businessWindow?: Date | null; beforeQuery?: (table: 
           }
           selected = inputs.map((input) => ({ id: randomUUID(), created_at: new Date().toISOString(), started_at: new Date().toISOString(), locked_at: null, ...input }));
           rows.push(...selected);
-        } else if (operation === "update") selected.forEach((row) => Object.assign(row, payload));
+        } else if (operation === "delete") { db[table] = rows.filter(row => !selected.includes(row)); }
+        else if (operation === "update") selected.forEach((row) => Object.assign(row, payload));
         else if (operation === "upsert") {
           for (const input of Array.isArray(payload) ? payload : [payload]) {
             const existing = rows.find(row => conflict.split(",").every(key => row[key] === input[key]));
@@ -107,6 +111,8 @@ function runtime(options: { businessWindow?: Date | null; beforeQuery?: (table: 
     return query;
   }
   const dependencies: Record<string, unknown> = {
+    "../flow-recovery.ts": recovery,
+    "../email-threading.ts": threading,
     "../segments.ts": segments,
     "../customer-tags.ts": customerTags,
     "./customer-tags.ts": customerTagDataFixture(() => ({ from })),
@@ -131,8 +137,18 @@ function runtime(options: { businessWindow?: Date | null; beforeQuery?: (table: 
     "./email-footers.ts": { getUserEmailFooter: async () => null, prepareUserEmail: async (_id: string, mail: unknown) => mail },
     "../email-footer.ts": { removeStandardSignoff: (text: string) => text },
     "../mailer.ts": { verifyMailboxSmtp: async () => { if (failures.smtp) throw failures.smtp; }, sendMailboxEmail: async (mailbox: Row, mail: Row) => { if (failures.smtp) throw failures.smtp; delivered++; deliveries.push({ mailbox, mail }); return { messageId: `<test-${delivered}@example.com>` }; } },
-    "./flow-mail-sync.ts": { syncFlowMailboxMessages: async () => { throw new Error("Resume worker must not wait for IMAP"); } },
-    "./flow-ai-reply.ts": { hasFlowReplyProvider: () => true, prepareFlowAiReply: async (input: Row) => { aiCalls.push(input); if (failures.ai) throw failures.ai; return { subject: "AI reply", body: "Synthetic provider reply", attachments: [] }; }, prepareFlowTemplateCatalog: async () => [{ filename: "Filazoo-product-catalog.pdf", content: Buffer.from("test catalog"), contentType: "application/pdf" }] },
+    "./flow-mail-sync.ts": { syncFlowMailboxMessages: async () => { if (options.projectionError) throw options.projectionError; return { complete: true, projected: 0 }; } },
+    "./flow-mail-context.ts": { requireFreshFlowMailbox: async () => {} },
+    "./flow-sender.ts": { assignedFlowActor: async (_author: string, company: string, pinned?: string) => {
+      const owner = db.pipeline.find(row => row.company_id === company)?.owner_id;
+      if (!owner || pinned && pinned !== owner) throw new executionErrors.FlowPreparationRetry("Assigned salesperson changed or missing", 60_000, "data");
+      return owner;
+    }, assignedFlowCandidates: async () => ["sales-owner"] },
+    "./flow-ai-reply.ts": { hasFlowReplyProvider: () => true, prepareFlowAiReply: async (input: Row) => {
+      const inbound = (db.emails ?? []).filter(row => row.contact_id === input.contactId && row.direction === "received" && (/^(company:|shopify:|lead:)/.test(String(input.conversationId)) || row.thread_id === input.conversationId)).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0];
+      aiCalls.push(input); if (options.onAiPrepare) await options.onAiPrepare(); if (failures.ai) throw failures.ai;
+      return { subject: "AI reply", body: "Synthetic provider reply", attachments: [], contextMessageId: inbound?.message_id ?? null };
+    }, prepareFlowTemplateCatalog: async () => [{ filename: "Filazoo-product-catalog.pdf", content: Buffer.from("test catalog"), contentType: "application/pdf" }] },
   };
   const exports = {} as {
     enrollNewLeadFlows: (id: string) => Promise<Array<{ enrolled: boolean; reason: string }>>;
@@ -586,6 +602,8 @@ test("property updates emit segment events once and start downstream segment wor
   steps(app, [{ type: "update_company", config: { segment: "Wholesale" } }, { type: "update_company", config: { segment: "Wholesale" } }]);
   app.db.flow_steps.push({ ...flows.blankStep("create_task"), flow_id: downstream, position: 0 });
   assert.equal((await app.exports.enrollNewLeadFlows(app.contactId))[0].reason, "done");
+  assert.equal(app.db.crm_tasks?.length ?? 0, 0, "Downstream work is persisted without nesting provider lifetimes");
+  await app.exports.processDueFlowRuns(50, { syncMailbox: false });
   assert.equal(app.db.crm_tasks?.length ?? 0, 1);
 });
 
@@ -600,11 +618,15 @@ test("one invalid matching definition does not prevent other workflows from enro
   assert.equal(app.db.crm_tasks?.length ?? 0, 1);
 });
 
-test("mail synchronization failures do not prevent intake recovery or due workflow execution", async () => {
-  const app = runtime();
+test("mail synchronization failures block sending until receipt data can be trusted", async () => {
+  const options = { projectionError: new Error("cache unavailable") as Error | undefined };
+  const app = runtime(options);
   const result = await app.exports.processDueFlowRuns(50, { syncMailbox: true }) as Array<{ phase?: string; status: string }>;
-  assert.equal(app.delivered(), 1);
+  assert.equal(app.delivered(), 0);
   assert.ok(result.some(row => row.phase === "mailbox_sync" && row.status === "error"));
+  options.projectionError = undefined;
+  await app.exports.processDueFlowRuns(50, { syncMailbox: true });
+  assert.equal(app.delivered(), 1);
 });
 
 test("a malformed saved audience cannot block recovery of an unrelated new-lead workflow", async () => {
@@ -633,7 +655,7 @@ test("near-deadline runs checkpoint and unlock without losing work, then resume 
   steps(app, [{ type: "wait", config: { amount: 1, unit: "minutes" } }, flows.blankStep("create_task"), flows.blankStep("internal_alert")]);
   await app.exports.enrollNewLeadFlows(app.contactId);
   const run = app.db.flow_runs[0]; run.next_run_at = null;
-  assert.equal((await app.exports.processFlowRun(String(run.id), { deadline: Date.now() + 100000 })).status, "deferred");
+  assert.equal((await app.exports.processFlowRun(String(run.id), { deadline: Date.now() + 1000 })).status, "deferred");
   assert.equal(run.status, "active");
   assert.equal(run.locked_at, null);
   assert.equal(run.current_step, 1);
@@ -847,6 +869,8 @@ test("category actions trigger matching category flows and subsequent conditions
   app.db.flow_steps.push({ id: randomUUID(), flow_id: categoryFlowId, position: 0, type: "create_task", config: { assigneeType: "owner", title: "Category flow", dueInDays: 0 } });
   await app.exports.enrollNewLeadFlows(app.contactId);
   assert.equal(app.db.email_inbox_state[0].category, "Interested");
+  assert.equal(app.db.crm_tasks.length, 1);
+  await app.exports.processDueFlowRuns(50, { syncMailbox: false });
   assert.equal(app.db.crm_tasks.length, 2);
   assert.ok(app.db.crm_tasks.some(task => task.title === "Category flow"));
 });
@@ -1006,9 +1030,16 @@ test("unverified, unsubscribed, and suppressed contacts record the delivery bloc
     if (reason === "Address is not verified") app.db.contacts[0].verification_status = "unverified";
     if (reason === "Contact unsubscribed") app.db.contacts[0].unsubscribed = true;
     if (reason === "Address is on the suppression list") app.db.suppression = [{ email: "lead@example.com" }];
-    assert.equal((await app.exports.enrollNewLeadFlows(app.contactId))[0]?.reason, "failed");
-    assert.ok(app.db.flow_run_logs.some((log) => log.error === reason));
+    assert.equal((await app.exports.enrollNewLeadFlows(app.contactId))[0]?.reason, reason === "Address is not verified" ? "retrying" : "done");
+    assert.ok(app.db.flow_run_logs.some((log) => String((log.result as Row)?.reason).includes(reason)));
     assert.equal(app.delivered(), 0);
+    if (reason === "Address is not verified") {
+      app.db.contacts[0].verification_status = "valid";
+      app.db.flow_runs[0].next_run_at = new Date(Date.now() - 1).toISOString();
+      await app.exports.processFlowRun(String(app.db.flow_runs[0].id));
+      assert.equal(app.delivered(), 1, "Correcting verification recovers the same saved action");
+      assert.equal(app.db.flow_runs.length, 1);
+    }
   }
 });
 
@@ -1050,7 +1081,7 @@ test("received inquiries can be answered; risky and invalid form addresses stay 
   for (const status of ["invalid", "risky"]) {
     const blocked = runtime();
     Object.assign(blocked.db.contacts[0], { verification_status: status, consent_source: "shopify_b2b_form" });
-    assert.equal((await blocked.exports.enrollNewLeadFlows(blocked.contactId))[0]?.reason, "failed");
+    assert.equal((await blocked.exports.enrollNewLeadFlows(blocked.contactId))[0]?.reason, "done");
     assert.equal(blocked.delivered(), 0);
   }
 });
@@ -1232,6 +1263,65 @@ test("interrupted preparation resumes while a possibly submitted email is held f
     assert.equal(app.delivered(), phase === "preparing" ? 1 : 0);
     assert.equal(run.status, phase === "preparing" ? "done" : "failed");
   }
+});
+
+test("pause, unsubscribe, suppression and teammate replies during AI preparation prevent submission", async () => {
+  for (const change of ["pause", "unsubscribe", "suppress", "teammate"]) {
+    const app = runtime({ onAiPrepare: async () => {
+      if (change === "pause") app.db.flows[0].status = "paused";
+      if (change === "unsubscribe") app.db.contacts[0].unsubscribed = true;
+      if (change === "suppress") app.db.suppression = [{ email: "lead@example.com" }];
+      if (change === "teammate") app.db.mailbox_sent_messages.push({ user_id: "another-teammate", to_email: "lead@example.com", status: "sent", message_id: "manual@test", sent_at: new Date(Date.now() + 1).toISOString() });
+    } });
+    steps(app, [flows.blankStep("ai_auto_reply")]);
+    await app.exports.enrollNewLeadFlows(app.contactId);
+    assert.equal(app.delivered(), 0, change);
+    assert.equal(app.db.flow_runs[0].status, change === "pause" ? "active" : "cancelled", change);
+  }
+});
+
+test("a reply arriving after a no-reply branch but during AI preparation stops the reminder", async () => {
+  const app = runtime({ onAiPrepare: async () => {
+    app.db.emails.push({ id: randomUUID(), message_id: "new-reply@test", contact_id: app.contactId, direction: "received", owner_id: "owner", created_at: new Date(Date.now() + 5).toISOString(), thread_id: `company:${app.companyId}` });
+  } });
+  steps(app, [{ type: "if_condition", config: { field: "customer_replied", action: "stop_flow", unmatchedAction: "continue" } }, flows.blankStep("ai_auto_reply")]);
+  await app.exports.enrollNewLeadFlows(app.contactId);
+  assert.equal(app.delivered(), 0);
+  assert.equal(app.db.flow_runs[0].status, "cancelled");
+});
+
+test("a newer inquiry during generation queues regeneration instead of submitting a stale answer", async () => {
+  const app = runtime({ onAiPrepare: async () => {
+    app.db.emails.push({ id: randomUUID(), message_id: "new-message@test", contact_id: app.contactId, direction: "received", created_at: new Date(Date.now() + 5).toISOString(), thread_id: `company:${app.companyId}` });
+  } });
+  steps(app, [flows.blankStep("ai_auto_reply")]);
+  const result = await app.exports.enrollNewLeadFlows(app.contactId);
+  assert.equal(app.delivered(), 0);
+  assert.equal(result[0].reason, "retrying");
+});
+
+test("assigned-salesperson sending uses the assignee's mailbox and AI identity", async () => {
+  const app = runtime();
+  const original = app.db.workspace_mailboxes[0];
+  app.db.workspace_mailboxes.push({ ...original, id: randomUUID(), type: "personal", user_id: "sales-owner", email: "sales-owner@example.com" });
+  steps(app, [{ type: "ai_auto_reply", config: { ...flows.blankStep("ai_auto_reply").config, mailboxId: "assigned_owner" } }]);
+  await app.exports.enrollNewLeadFlows(app.contactId);
+  assert.equal(app.delivered(), 1);
+  assert.equal(app.deliveries[0].mailbox.from, "sales-owner@example.com");
+  assert.equal(app.aiCalls[0].userId, "sales-owner");
+});
+
+test("two workflows matching one receipt can submit only one response", async () => {
+  const app = runtime();
+  const occurredAt = new Date().toISOString(), mailboxId = randomUUID();
+  Object.assign(app.db.flows[0], { trigger_type: "email_received", email_enrollment_started_at: new Date(Date.now() - 60_000).toISOString() });
+  const second = randomUUID();
+  app.db.flows.push({ ...app.db.flows[0], id: second });
+  app.db.flow_steps.push({ ...app.db.flow_steps[0], id: randomUUID(), flow_id: second });
+  app.db.emails = [{ id: randomUUID(), message_id: "shared-receipt@test", contact_id: app.contactId, direction: "received", thread_id: "thread", created_at: occurredAt, mailbox_id: mailboxId }];
+  await app.exports.enrollMatchingFlows({ type: "email_received", contactId: app.contactId, companyId: app.companyId, conversationId: "thread", occurredAt, mailboxId });
+  assert.equal(app.delivered(), 1);
+  assert.equal(app.db.flow_runs.length, 2);
 });
 
 test("activation refuses a sender or AI identity that fails real connection checks", async () => {

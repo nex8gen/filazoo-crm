@@ -6,6 +6,7 @@ import { referenceHeaderIds, threadKeyForEmail } from "@/lib/email-threading";
 import { resolveEmailContentIds } from "@/lib/email-content";
 import { prepareUserEmail } from "@/lib/data/email-footers";
 import { emailSendSchema } from "../email-workbench";
+import { emailFailedBeforeSubmission } from "../email-send-failure.ts";
 
 const attachmentBucket = "mailbox-attachments";
 
@@ -120,6 +121,7 @@ export async function deliverEmail(viewer: WorkspaceViewer, input: unknown, alre
     );
     smtpAccepted = true;
     } catch (error) {
+      if (emailFailedBeforeSubmission(error)) smtpStarted = false;
       if (storedAttachments.length) await admin.storage.from(attachmentBucket).remove(storedAttachments.map((attachment) => attachment.path));
       throw error;
     }
@@ -213,7 +215,7 @@ export async function deliverEmail(viewer: WorkspaceViewer, input: unknown, alre
     }
     return Response.json({
       ok: false,
-      error: smtpAccepted ? "SMTP accepted this email, but saving its delivery result failed. Check Sent before sending again." : smtpStarted ? "Delivery could not be confirmed. Check Sent before sending again." : error instanceof Error ? error.message : "Unable to send the email.",
+      error: smtpAccepted ? "SMTP accepted this email, but saving its delivery result failed. Check Sent before sending again." : smtpStarted ? "Delivery could not be confirmed. Check Sent before sending again." : emailFailedBeforeSubmission(error) ? "Email was not sent. The sender's SMTP connection failed before submission. Your draft is retained; check the mailbox connection in Settings and try again." : error instanceof Error ? error.message : "Unable to send the email.",
     }, { status: 500 });
   }
 }

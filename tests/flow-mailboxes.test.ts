@@ -14,7 +14,7 @@ function inventory() {
 test("flow sender choices distinguish personal and team addresses and follow the flow owner", () => {
   const mailboxes = inventory();
   const options = flowSenderOptions(mailboxes, "owner");
-  assert.deepEqual(options.map((item) => item.id), ["default", "owner", "workspace", "team", "mine"]);
+  assert.deepEqual(options.map((item) => item.id), ["default", "owner", "workspace", "assigned_owner", "team", "mine"]);
   assert.match(options[0].label, /My default email.*me@example.com/);
   assert.match(options[1].label, /Personal email.*me@example.com/);
   assert.match(options[2].label, /Team email.*team@example.com/);
@@ -30,10 +30,10 @@ test("stopped and incomplete accounts are visible but cannot be chosen; missing 
   mailboxes[0].isActive = false;
   mailboxes[1].sendConfigured = false;
   const options = flowSenderOptions(mailboxes, "owner");
-  for (const option of options) assert.equal(option.disabled, true);
+  for (const option of options.filter(option => option.id !== "assigned_owner")) assert.equal(option.disabled, true);
   assert.match(options.find((item) => item.id === "mine")!.label, /setup required/);
   assert.match(options.find((item) => item.id === "team")!.label, /stopped/);
-  assert.deepEqual(flowSenderOptions([], "owner").map((item) => item.disabled), [true, true, true]);
+  assert.deepEqual(flowSenderOptions([], "owner").map((item) => item.disabled), [true, true, true, false]);
 });
 
 test("workflow defaults follow personal settings and keep explicit team choices", () => {

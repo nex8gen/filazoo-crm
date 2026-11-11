@@ -25,6 +25,8 @@ function fixture() {
   const query = { select: () => query, eq: () => query, order: () => query, range: () => query, throwOnError: async () => ({ data: productRows }) };
   const dependencies: Record<string, unknown> = {
     "server-only": {}, "../supabase/admin.ts": { createSupabaseAdmin: () => ({ from: () => query }) },
+    "./flow-inquiry.ts": { loadFlowInquiry: async () => null },
+    "./flow-mail-context.ts": { hydrateFlowMessages: async (messages: unknown) => messages },
     "./product-personalization.ts": { userProductRows: async (userId: string) => { assert.equal(userId, "synthetic-owner"); return productRows; } },
     "../auth.ts": { requireWorkspaceMember: async () => ({ id: "synthetic-owner" }) },
     "../product-utils.ts": { crmProduct },
@@ -41,7 +43,7 @@ function fixture() {
     "../ai/email-rewrite.ts": signatures,
   };
   const code = ts.transpileModule(readFileSync(new URL("../lib/data/flow-ai-reply.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (dependencies[name] ?? require(name)), process: { env }, Buffer, Error });
+  vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (dependencies[name] ?? require(name)), process: { env }, Buffer, Error, AbortSignal });
   return { calls, catalogRequests, exports, env, setProviderError: (message: string) => { gatewayError = message; }, setCatalog: (plan: typeof catalogPlan) => { catalogPlan = plan; }, setBodies: (bodies: string[]) => { replyBodies = [...bodies]; } };
 }
 
@@ -59,6 +61,14 @@ test("AI flow readiness requires Gateway credentials and supports local OIDC", (
   assert.equal(app.exports.hasFlowReplyProvider(), false);
   app.env.VERCEL_OIDC_TOKEN = "synthetic-oidc";
   assert.equal(app.exports.hasFlowReplyProvider(), true);
+});
+
+test("original form requirements reach both catalog planning and the email draft", async () => {
+  const app = fixture();
+  const inquiry = { source: "shopify", id: "original-form", receivedAt: "2026-11-10T07:00:00Z", fields: { "contact[Materials]": "PLA, PETG", "contact[Monthly volume]": "500–999 kg/month", "contact[Colors]": "black, white" } };
+  await app.exports.generateFlowAiReply({ ...baseInput(), inquiry, config: { ...blankStep("ai_auto_reply").config, attachCatalog: true } });
+  assert.equal(app.calls.length, 2);
+  for (const call of app.calls) assert.deepEqual(JSON.parse(call.prompt).inquiry, inquiry);
 });
 
 test("Gateway authentication errors reach the caller without a direct-provider retry", async () => {

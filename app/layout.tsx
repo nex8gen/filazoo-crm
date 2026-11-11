@@ -9,6 +9,7 @@ import { LanguageProvider } from "@/components/language-provider";
 import { UserMenu } from "@/components/user-menu";
 import { AccountPreferences } from "@/components/account-preferences";
 import { SiteMonitoring } from "@/components/site-monitoring";
+import { WorkspaceErrorBoundary } from "@/components/workspace-error-boundary";
 import "./globals.css";
 import "./responsive.css";
 import "./tables.css";
@@ -24,7 +25,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body>
         <LanguageProvider>
           <ThemeProvider>
-            <TooltipProvider><Suspense fallback={<div className="min-h-svh bg-background" />}><AccountPreferences><AppShell userMenu={<Suspense fallback={<span className="size-7 rounded-full bg-muted" />}><UserMenu /></Suspense>}>{children}</AppShell></AccountPreferences></Suspense></TooltipProvider>
+            <TooltipProvider><WorkspaceErrorBoundary><Suspense fallback={<div className="min-h-svh bg-background" />}><AccountPreferences><AppShell userMenu={<Suspense fallback={<span className="size-7 rounded-full bg-muted" />}><UserMenu /></Suspense>}>{children}</AppShell></AccountPreferences></Suspense></WorkspaceErrorBoundary></TooltipProvider>
             <Toaster position="bottom-right" />
           </ThemeProvider>
         </LanguageProvider>

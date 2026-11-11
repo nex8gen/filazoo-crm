@@ -84,6 +84,80 @@ const code = ts.transpileModule(readFileSync(new URL("../app/api/email/assist/ro
 const product = { ...b2bProducts.find(product => product.sku === "PETG-CF")!, imageUrl: "https://cdn.example.com/petg-cf.jpg" };
 const brief = { title: "Shopify lead — material inquiry", summary: "Wilson requests PETG-CF in volumes under 50 kg monthly.", nextStep: "Confirm colors and quantity before quoting.", followUpAt: null, followUpReason: "No explicit commitment.", productSkus: ["PETG-CF", "INVENTED"] };
 
+test("saved conversation analyses survive reloads and replies only update the next step", async () => {
+  const policy = defaultAiPolicy();
+  const records = new Map<string, { output: string; generatedAt: string }>();
+  let aiCalls = 0, researchCalls = 0, catalogReads = 0;
+  const nextSteps = ["Wait for the buyer to confirm colors.", "Send the quote for black PETG-CF."];
+  const dependencies: Record<string, unknown> = {
+    "@/lib/auth": { requireWorkspaceMember: async () => ({ id: "member", role: "admin", workspaceId: "workspace" }) },
+    "@/lib/data/ai-settings": { requireAiFeature: async () => policy },
+    "@/lib/ai/gateway": { generateGatewayText: async (input: { prompt: string; systemInstruction: string }) => {
+      aiCalls++;
+      const prompt = JSON.parse(input.prompt);
+      if (!prompt.savedAnalysis) return JSON.stringify(brief);
+      assert.match(input.systemInstruction, /only the suggested next sales step/);
+      assert.equal(prompt.WEB_RESEARCH, undefined);
+      assert.equal(prompt.productCatalog, undefined);
+      assert.equal(prompt.savedAnalysis.summary, brief.summary);
+      return JSON.stringify({ nextStep: nextSteps[aiCalls - 2], followUpAt: null, followUpReason: "Conversation changed.", summary: "Must not replace the analysis" });
+    } },
+    "@/lib/ai/email-rewrite": { normalizeSignatureName: () => "Sales" },
+    "@/lib/ai/email-summary": summaries,
+    "@/lib/ai/email-summary-cache": summaryCache,
+    "@/lib/ai/email-summary-products": catalog,
+    "@/lib/ai/email-summary-research": summaryResearch,
+    "@/lib/ai/email-summary-matching": summaryMatching,
+    "@/lib/data/email-summary-cache": { savedEmailSummary: async (_viewer: unknown, key: string, generate: () => Promise<string>, refresh: boolean, update: summaryCache.EmailSummaryUpdate) => {
+      const store: summaryCache.EmailSummaryStore = {
+        read: async () => records.get(key) ?? null,
+        claim: async () => true,
+        complete: async (_token, output, generatedAt) => { records.set(key, { output, generatedAt }); },
+        release: async () => {},
+      };
+      return summaryCache.reuseEmailSummary(store, "test-lease", generate, refresh, update);
+    } },
+    "@/lib/ai/customer-research": { researchCustomer: async () => { researchCalls++; return { status: "no_results", sources: [], findings: "", queries: [] }; } },
+    "@/lib/data/crm": { listProducts: async () => { catalogReads++; return { mode: "live", products: [product] }; } },
+    "@/lib/email-translation": {},
+    "@/lib/ai/language": { aiLanguageSchema },
+    zod: { z },
+  };
+  const exports = {} as { POST(request: Request): Promise<Response> };
+  vm.runInNewContext(code, { exports, Response, AbortSignal, process: { env: { AI_GATEWAY_API_KEY: "test" } }, require: (name: string) => {
+    if (name in dependencies) return dependencies[name];
+    const dependency = policyTestDependency(name);
+    assert.ok(dependency, `Unexpected dependency: ${name}`);
+    return dependency;
+  } });
+  const request = async (extra = {}) => {
+    const response = await exports.POST(new Request("http://localhost/api/email/assist", { method: "POST", body: JSON.stringify({
+      mode: "summary", conversationId: "root-message", mailboxId: "sales", messageId: "inquiry", messageTimestamp: "2026-11-09T01:00:00Z",
+      text: "Interested in PETG-CF", customerProfile: { companyName: "Print Studio" }, ...extra,
+    }) }));
+    assert.equal(response.status, 200);
+    return response.json();
+  };
+  const first = await request();
+  const original = summaries.parseEmailSummary(first.output);
+  assert.equal(first.cached, false);
+  const reopened = await request({ customerProfile: { companyName: "Edited profile" }, language: "zh-CN", currentFollowUpAt: "2026-11-12T01:00:00Z", refreshSummary: true });
+  assert.equal(reopened.cached, true);
+  assert.deepEqual(summaries.parseEmailSummary(reopened.output), original);
+  assert.equal(aiCalls, 1);
+  const outbound = { messageId: "sales-reply", messageTimestamp: "2026-11-09T02:00:00Z", messageDirection: "outbound", text: "Please confirm colors." };
+  const sent = await request(outbound);
+  assert.equal(sent.cached, false);
+  assert.deepEqual(summaries.parseEmailSummary(sent.output), { ...original, nextStep: nextSteps[0], followUpReason: "Conversation changed." });
+  assert.equal((await request(outbound)).cached, true);
+  const inbound = await request({ messageId: "buyer-reply", messageTimestamp: "2026-11-09T03:00:00Z", messageDirection: "inbound", text: "Please quote 20 kg black PETG-CF." });
+  assert.deepEqual(summaries.parseEmailSummary(inbound.output), { ...original, nextStep: nextSteps[1], followUpReason: "Conversation changed." });
+  assert.equal(aiCalls, 3);
+  assert.equal(researchCalls, 1);
+  assert.equal(catalogReads, 1);
+  assert.equal(records.size, 1, "Replies update the same saved conversation record");
+});
+
 for (const provider of ["gateway", "oidc", "legacy-budget"] as const) {
   for (const catalogState of ["available", "disabled", "failed"] as const) {
     test(`${provider} summary resolves verified product cards with ${catalogState} catalog`, async () => {

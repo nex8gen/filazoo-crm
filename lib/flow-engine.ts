@@ -26,6 +26,9 @@ export type TriggerEvent = {
   eventKey?: string | null;
   flowId?: string | null;
   occurredAt?: string;
+  inquirySource?: "shopify" | "meta";
+  inquiryId?: string;
+  mailboxId?: string;
 };
 
 export type SimulationEntry = {
@@ -77,6 +80,7 @@ export function matchesFlowScope(config: JsonConfig, companyId?: string | null, 
 
 export function triggerMatches(type: TriggerType, config: JsonConfig, event: TriggerEvent, facts: FlowFacts) {
   if (event.type !== type || !matchesFlowScope(config, event.companyId, event.contactId) || !matchesFlowCustomer(config, event.contactId) || !matchesProfileFilters(config, facts)) return false;
+  if (type === "email_received" && config.receivingMailboxId && config.receivingMailboxId !== event.mailboxId) return false;
   if (type === "category_changed") return normalized(config.category) === normalized(event.category);
   if (type === "lead_added_to_list") return normalized(config.listId) === normalized(event.listId);
   if (type === "company_segment_changed") return Boolean(config.savedSegmentId) || normalized(config.segment) === normalized(event.segment ?? facts.segment);

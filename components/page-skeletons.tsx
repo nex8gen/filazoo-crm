@@ -38,9 +38,6 @@ export function CompaniesSkeleton() {
   return <LoadingRegion label="Loading companies" className="flex min-w-0 flex-col pb-8">
     <HeaderSkeleton />
     <div className="flex min-w-0 flex-col gap-6">
-      <div className="crm-company-summary grid shrink-0 grid-cols-2 gap-3 xl:grid-cols-4">
-        {Array.from({ length: 4 }, (_, index) => <SummarySkeleton key={index} />)}
-      </div>
       <TableSkeleton  />
     </div>
   </LoadingRegion>;

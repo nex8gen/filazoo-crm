@@ -14,7 +14,7 @@ import {
 import { getEmailTranslationProvider, looksLikeEnglish, translateEmailSegments, translateEnglishEmail } from "@/lib/email-translation";
 import { z } from "zod";
 import { aiLanguageSchema } from "@/lib/ai/language";
-import { buildEmailSummaryInstruction, generateEmailSummary } from "@/lib/ai/email-summary";
+import { buildEmailSummaryInstruction, generateEmailSummary, buildEmailNextStepInstruction, updateEmailSummaryNextStep, parseEmailSummary } from "@/lib/ai/email-summary";
 import { attachSummaryProducts, loadSummaryCatalog, summaryProductContext } from "@/lib/ai/email-summary-products";
 import { researchCustomer } from "@/lib/ai/customer-research";
 import { attachSummaryResearch, loadSummaryResearch } from "@/lib/ai/email-summary-research";
@@ -29,6 +29,8 @@ const requestSchema = z.object({
   mode: z.enum(["rewrite", "translate", "summary"]),
   refreshSummary: z.boolean().optional(),
   messageId: z.string().max(500).optional(),
+  conversationId: z.string().trim().min(1).max(1000).optional(),
+  messageTimestamp: z.string().datetime({ offset: true }).optional(),
   mailboxId: z.string().max(500).nullable().optional(),
   text: z.string().trim().min(1).max(20_000),
   subject: z.string().max(500).optional(),
@@ -67,6 +69,9 @@ export async function POST(request: Request) {
   const parsed = requestSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return Response.json({ ok: false, error: "Invalid AI request. Check the message and conversation details." }, { status: 400 });
+  }
+  if (parsed.data.mode === "summary" && parsed.data.conversationId && !parsed.data.messageId) {
+    return Response.json({ ok: false, error: "A message ID is required for saved conversation analysis." }, { status: 400 });
   }
 
   let policy;
@@ -161,13 +166,32 @@ export async function POST(request: Request) {
   try {
     if (mode === "summary") {
       const key = emailSummaryCacheKey(parsed.data, policy, viewer.role, process.env.AI_GATEWAY_EMAIL_MODEL?.trim());
+      const { conversationId, ...legacyInput } = parsed.data;
+      const update = conversationId ? {
+        messageId: parsed.data.messageId!,
+        messageTimestamp: parsed.data.messageTimestamp,
+        legacyKey: emailSummaryCacheKey(legacyInput, policy, viewer.role, process.env.AI_GATEWAY_EMAIL_MODEL?.trim()),
+        update: (saved: string) => {
+          const signal = AbortSignal.timeout(100_000);
+          return updateEmailSummaryNextStep(saved, correction => generateGatewayText({
+            usageUserId: viewer.id, task: "email", userText: text, complex: Boolean(correction), signal,
+            token: gatewayToken!, model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim(),
+            systemInstruction: `${buildEmailNextStepInstruction(language)}\nCURRENT TIME: ${new Date().toISOString()}\nWORKSPACE TIMEZONE: Asia/Shanghai${aiBehaviorInstruction(policy, true)}`,
+            prompt: JSON.stringify({ savedAnalysis: parseEmailSummary(saved), conversationHistory,
+              latestMessage: { direction: parsed.data.messageDirection, subject: parsed.data.subject, body: text, timestamp: parsed.data.messageTimestamp },
+              currentFollowUpAt: parsed.data.currentFollowUpAt, ...(correction ? { validationCorrection: correction } : {}),
+            }),
+          }), undefined, language);
+        },
+      } : undefined;
       // Continue to save an already paid-for result when the reader navigates away.
-      const result = await savedEmailSummary(viewer, key, () => generateOutput(AbortSignal.timeout(100_000)), parsed.data.refreshSummary);
+      const result = await savedEmailSummary(viewer, key, () => generateOutput(AbortSignal.timeout(100_000)), update ? false : parsed.data.refreshSummary, update);
       // Catalog display metadata stays current without repeating research or AI.
-      const output = result.cached ? attachSummaryProducts(result.output, await loadSummaryCatalog(policy.data.products, async () => {
+      // Conversation assessments retain their original product selections too.
+      const output = result.cached && !conversationId ? attachSummaryProducts(result.output, await loadSummaryCatalog(policy.data.products, async () => {
         const { listProducts } = await import("@/lib/data/crm");
         return listProducts(undefined, { requireComplete: true });
-      }), parsed.data) : result.output;
+      }), parsed.data) : JSON.stringify(parseEmailSummary(result.output));
       return Response.json({ ok: true, ...result, output, provider: "vercel-ai-gateway" }, { headers: { "Cache-Control": "no-store" } });
     }
     const output = await generateOutput(request.signal);

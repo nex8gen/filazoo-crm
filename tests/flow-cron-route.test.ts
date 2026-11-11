@@ -41,6 +41,6 @@ test("cron acknowledges before starting work and isolates failed phases", async 
   assert.deepEqual(await response.json(), { ok: true, queued: true });
   assert.deepEqual(app.calls, []);
   await app.background[0]();
-  assert.deepEqual(app.calls.sort(), ["flows", "replies", "scheduled", "tags"]);
+  assert.deepEqual(app.calls, ["flows"]);
   assert.equal(app.errors.length, 1);
 });

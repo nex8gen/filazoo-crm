@@ -1,0 +1,237 @@
+{
+  "checkedAt": "2026-11-11T02:09:05.448Z",
+  "baseCommit": "dcbeb1521171da56616e8e1bdf4b79d5386c1a94",
+  "deploymentId": "dpl_4Cn18w9hDAeqhxYTEku5TvqJGpdD",
+  "productionOrigin": "https://crm.filazoosupply.com",
+  "files": [
+    {
+      "path": "app/api/cron/flows/route.ts",
+      "sha256": "e1ce70ff5c1e8fc946cd33de0d5f3176d9ce5ae2101c7daba10be1a97a2c8c73",
+      "bytes": 3181
+    },
+    {
+      "path": "app/api/flows/process/route.ts",
+      "sha256": "a2f921973c8fd3f34e49dbe3120dd9c47908a4fdea28c5aea283b008f84cb7c4",
+      "bytes": 479
+    },
+    {
+      "path": "app/api/flows/[id]/runs/[runId]/route.ts",
+      "sha256": "3ffe6f1f66c4ca24e5c6abc837df92dcaba9ae29ef0f113f64c83942f0d90c79",
+      "bytes": 683
+    },
+    {
+      "path": "app/api/meta/lead-bridge/route.ts",
+      "sha256": "84983172e4d8c3640f1d08c19ad73d46658c84b02367aa31e16d18034dc65c1c",
+      "bytes": 2966
+    },
+    {
+      "path": "app/crm-actions.ts",
+      "sha256": "0bd3710cda5ffa18d195d91c83ddc45198d0cea2c479f1f5c283655f79d6cacd",
+      "bytes": 31945
+    },
+    {
+      "path": "app/segment-actions.ts",
+      "sha256": "f2dd5c0a492eadc79e8532e3251237e17b69f49e6889d1935f7fa33b98e3a161",
+      "bytes": 5054
+    },
+    {
+      "path": "components/flow-builder.tsx",
+      "sha256": "85fadb08cee71dc8fb51e9c90404550d7d4580520b2ee09bd1e3002d72d802a2",
+      "bytes": 121351
+    },
+    {
+      "path": "components/flow-insights.tsx",
+      "sha256": "c8af421ae9ed85f8e4dff9adaa2219f7f762bab524fd329229f2f2a96497b82a",
+      "bytes": 7004
+    },
+    {
+      "path": "docs/agent-capability-audit.json",
+      "sha256": "d48972182bff3ca5a3f07d25850b7c7244b28200e5173c96fdadfb3e597184e5",
+      "bytes": 47381
+    },
+    {
+      "path": "lib/ai/flow-reply.ts",
+      "sha256": "be29e8e3e2b0e44dd149f6f1fe296e89a4027db329eb391d94cd923e7b0ef398",
+      "bytes": 9314
+    },
+    {
+      "path": "lib/data/flow-ai-reply.ts",
+      "sha256": "da9c2c1652e929975ddca6613ddec3975e7df4585603001a48d415d12e08b9b2",
+      "bytes": 10095
+    },
+    {
+      "path": "lib/data/flow-check.ts",
+      "sha256": "053373840fc97df39f6dfa65adebd21aeaaaefef7668ca4011a480a653319ab9",
+      "bytes": 13957
+    },
+    {
+      "path": "lib/data/flow-health.ts",
+      "sha256": "b5b1a064a05b99fea6ede94e55d92c540472ab2b3a183ea9c383a8a8d5727c52",
+      "bytes": 2080
+    },
+    {
+      "path": "lib/data/flow-inquiry.ts",
+      "sha256": "6bcf494da1a5e12aeb1459fde2fd32f65567536841db0083f695fa918ebcc414",
+      "bytes": 2595
+    },
+    {
+      "path": "lib/data/flow-mail-context.ts",
+      "sha256": "9899033f83a3d51886ec4327ae0a0bd58574c6e2d9a9ba55440a243fed7554c6",
+      "bytes": 3303
+    },
+    {
+      "path": "lib/data/flow-mail-projection.ts",
+      "sha256": "79f29659488a2daf139e21f01d31e7d300105d3bbc0708f4ce88005e81b645b2",
+      "bytes": 8746
+    },
+    {
+      "path": "lib/data/flow-mail-sync.ts",
+      "sha256": "278ea36001972e0f6c7d5e1417bf834bf66b930dc0f7f9adefc207f02d478c4f",
+      "bytes": 73
+    },
+    {
+      "path": "lib/data/flow-recovery.ts",
+      "sha256": "6fa8c060b3be4af994a587145b3078ff246d77925d574ff8f21e38fbb6d943a3",
+      "bytes": 2935
+    },
+    {
+      "path": "lib/data/flow-runtime.ts",
+      "sha256": "986821d7c0486fb21cc7a11f51ab95b8862b473eed2964f2a2f90bdd983b98e5",
+      "bytes": 79304
+    },
+    {
+      "path": "lib/data/flow-sender.ts",
+      "sha256": "02e8691faa14dab005e0bb62875e963535a6681cddf516299ed56164bfccf979",
+      "bytes": 2468
+    },
+    {
+      "path": "lib/data/flows.ts",
+      "sha256": "2215593f4b1eb9569acb33724322a3ca41f6af2553fda8972c6f4a9cf03189a5",
+      "bytes": 12544
+    },
+    {
+      "path": "lib/data/workspace-runtime.ts",
+      "sha256": "bddc9a0150f605aa89e8b768cb6ba253c12437b52649212348dd556e858f9d4c",
+      "bytes": 2067
+    },
+    {
+      "path": "lib/flow-engine.ts",
+      "sha256": "862eafb1dc21776da8d6f705d002df0fe86a737c99bae074921ff52e7ec99739",
+      "bytes": 16326
+    },
+    {
+      "path": "lib/flow-mailboxes.ts",
+      "sha256": "40b99868f4ea1556e03ce6a01c32de217c72e1c55b2a12614662c9fb8dc6affe",
+      "bytes": 2877
+    },
+    {
+      "path": "lib/flow-recovery.ts",
+      "sha256": "0876bc5f907026aa14fb980d7eb9a0a5bd68e5152f34aba627db5c158af6b840",
+      "bytes": 1208
+    },
+    {
+      "path": "lib/flows.ts",
+      "sha256": "81dc42d45a061e47b38cff10296719f016a30b1effe559cc6541616509c7ce08",
+      "bytes": 23159
+    },
+    {
+      "path": "lib/i18n-flow-scenarios.ts",
+      "sha256": "d34f29f5dc507df511372b6e8a9bd0c762c69983d68acbef790bc73c0d46b9e6",
+      "bytes": 7316
+    },
+    {
+      "path": "lib/shopify-leads.ts",
+      "sha256": "654ac60dedcb0a4e171cb713d6cbf63769ebbb7c0d01f295872c2e1c8fae3a02",
+      "bytes": 17933
+    },
+    {
+      "path": "scripts/audit-agent-capabilities.ts",
+      "sha256": "6afae6d9cce90f600b45602609fdd7ba80029cef87b021a86ce18bdd24e695f2",
+      "bytes": 6011
+    },
+    {
+      "path": "supabase/migrations/20261111012746_workflow_reliability.sql",
+      "sha256": "1246294f19cbdc678cc509aa254da0383f2fc08cc33295be3811a5a15cf8f394",
+      "bytes": 4584
+    },
+    {
+      "path": "tests/flow-ai-options.test.ts",
+      "sha256": "05772b97e027373f8462fb62e1f40e1d66070928bb7a8768ba5e446ed87ea371",
+      "bytes": 12013
+    },
+    {
+      "path": "tests/flow-check.test.ts",
+      "sha256": "3a3b8eb04f8ae5c6207042f2302b98970dcff4869fe1ed5f54ba551a38583933",
+      "bytes": 7018
+    },
+    {
+      "path": "tests/flow-cron-route.test.ts",
+      "sha256": "436b6290262cec86f1276b491ccaf6ace9c48c703b8679055639c81ec278e479",
+      "bytes": 2861
+    },
+    {
+      "path": "tests/flow-cron.test.ts",
+      "sha256": "115788a04842d587493950c5869c46160e25018333fa161d55f238ac0625793d",
+      "bytes": 4820
+    },
+    {
+      "path": "tests/flow-inquiry.test.ts",
+      "sha256": "0fbb3bbf559c8ad750679eaf9798da029cb31e9732ec2520f21b0aea5d5b4024",
+      "bytes": 5630
+    },
+    {
+      "path": "tests/flow-mail-sync.test.ts",
+      "sha256": "de92fa8a7ac37f491772d932c51eac53919cacd083345a50a6f814b647dcb069",
+      "bytes": 7226
+    },
+    {
+      "path": "tests/flow-mailboxes.test.ts",
+      "sha256": "371c6d43fe012b4d093278afe5c106274462c12ae493d2744a9dec21ac59eb3f",
+      "bytes": 3579
+    },
+    {
+      "path": "tests/flow-recovery-route.test.ts",
+      "sha256": "378b0da51a3cc6eee8f84bfc92af742a646aee5b2e7553916f48b508f3f415a1",
+      "bytes": 3704
+    },
+    {
+      "path": "tests/flow-recovery.test.ts",
+      "sha256": "64bdc28a0055cc54983684788fe53c0427149508cb843d766cc93abbbd715415",
+      "bytes": 980
+    },
+    {
+      "path": "tests/flow-runtime.test.ts",
+      "sha256": "c3f6b448073cd2c0f7b5f59636c08e10e5390e7a0fa18876d171feb07a395d31",
+      "bytes": 89076
+    },
+    {
+      "path": "tests/flow-visibility.test.ts",
+      "sha256": "95f42972d4f1952201ab3740e1cfbaf7c5efae2e26b30793d4b21f02e37eb55e",
+      "bytes": 44134
+    }
+  ],
+  "validation": {
+    "workflowRegressionTests": 277,
+    "workflowRegressionPassed": 277,
+    "fullSuite": {
+      "tests": 1797,
+      "passed": 1795,
+      "knownBaselineFailures": 2
+    },
+    "typescript": "passed",
+    "lint": "passed",
+    "productionBuild": "passed",
+    "hostedPreflight": "ready",
+    "internalEmailReceipt": "verified",
+    "browser": "blocked by computer-use URL identification"
+  },
+  "internalTest": {
+    "runId": "e0b95f32-089b-47d7-bfd1-324418c586b4",
+    "sender": "enphany@filazoo.com",
+    "recipient": "terrianne@filazoo.com",
+    "messageId": "<b542e48c-a7ff-62ba-325e-13cdaa58e1c4@filazoo.com>",
+    "sentCount": 1,
+    "completed": true,
+    "catalogReceived": true
+  }
+}

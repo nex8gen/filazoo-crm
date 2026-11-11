@@ -6,6 +6,10 @@ import { readFileSync } from "node:fs";
 import * as leadTypes from "../lib/ai-leads.ts";
 import * as prospecting from "../lib/lead-prospecting.ts";
 import * as policy from "../lib/lead-discovery-policy.ts";
+import * as allowancePolicy from "../lib/lead-allowance.ts";
+import { createHash } from "node:crypto";
+import { leadDiscoveryPlan } from "../lib/ai/lead-discovery.ts";
+import { quoteAiBudget } from "../lib/ai/budget.ts";
 
 function workerFixture(historyFails=false) {
   const viewer={id:"actor",workspaceId:"tenant",role:"operator"};
@@ -42,6 +46,7 @@ function workerFixture(historyFails=false) {
     "server-only":{},"node:crypto":{},"../supabase/admin.ts":{createSupabaseAdmin:()=>db},
     "../workspace-context.ts":{withWorkspaceViewer:async(actual:typeof viewer,work:()=>Promise<unknown>)=>{assert.equal(actual.workspaceId,"tenant");return work();}},
     "../ai-leads.ts":leadTypes,"../lead-prospecting.ts":prospecting,"../lead-discovery-policy.ts":policy,
+    "../lead-allowance.ts":allowancePolicy,"../ai/lead-allowance.ts":{},
     "../ai/lead-buyer-profile.ts":{},"./product-personalization.ts":{},"./ai-settings.ts":{requireAiFeature:async()=>({})},
     "../ai/lead-discovery.ts":{
       createLeadAiCall:async()=>{aiCalls++;return()=>{};},
@@ -74,4 +79,43 @@ test("worker loads every CRM/history page before AI and excludes companies added
 test("worker fails closed before paid AI when the duplicate registry cannot be loaded",async()=>{
   const fixture=workerFixture(true);await fixture.run();
   assert.equal(fixture.aiCalls(),0);assert.equal(fixture.state.status,"failed");assert.deepEqual(fixture.state.results,[]);
+});
+
+function startFixture(availableMicros:number){
+  const viewer={id:"actor",workspaceId:"tenant",role:"operator"};
+  const profileId="a0d679de-66de-4cb9-836a-1aa1b1958175";
+  const product={sku:"CHAIR",name:"Chairs",description:"Seating",moq:null,catalogContext:["Chairs"],businessContext:""};
+  const profile={category:"Commercial furniture",definition:"Durable seating for hotels and restaurants",clarity:"clear",clarification:"",segments:[{id:"hotels",label:"Hotels",role:"end_user",reason:"Operate restaurants using dining chairs",searchTerms:["hotel restaurants"]}],excludeHints:[],contactRoles:["Purchasing"]};
+  const key=createHash("sha256").update(JSON.stringify({version:2,products:[product],productContext:""})).digest("hex");
+  const inserts:unknown[]=[];let preflights=0;
+  const input={requestId:"b0d679de-66de-4cb9-836a-1aa1b1958175",profileId,productSkus:["CHAIR"],segmentIds:["hotels"],country:"Germany",limit:3};
+  const db={from(table:string){
+    let head=false,insert:Record<string,unknown>|undefined;
+    const result=()=>({data:table==="products"?[{...product,active:true}]:table==="ai_lead_feedback"?[]:null,error:null,...(head?{count:0}:{})});
+    const query={select(_fields:string,options?:{head?:boolean}){head=Boolean(options?.head);return query;},eq(){return query;},order(){return query;},limit(){return query;},in(){return query;},lt(){return query;},update(){return query;},
+      insert(value:Record<string,unknown>){insert=value;inserts.push(value);return query;},
+      async maybeSingle(){return{data:table==="ai_lead_buyer_profiles"?{context_key:key,status:"complete",profile}:null,error:null};},
+      async single(){return{data:{...insert,id:"new-search",status:"queued",phase:"Queued",results:[],error:null,created_at:"now",updated_at:"now"},error:null};},
+      async range(){return{data:[],error:null};},then(resolve:(value:unknown)=>unknown,reject:(cause:unknown)=>unknown){return Promise.resolve(result()).then(resolve,reject);},
+    };return query;
+  }};
+  const deps:Record<string,unknown>={
+    "server-only":{},"node:crypto":{createHash},"../supabase/admin.ts":{createSupabaseAdmin:()=>db},"../workspace-context.ts":{withWorkspaceViewer:async(_viewer:unknown,work:()=>Promise<unknown>)=>work()},
+    "../ai-leads.ts":leadTypes,"../lead-prospecting.ts":prospecting,"../lead-discovery-policy.ts":policy,"../lead-allowance.ts":allowancePolicy,
+    "../ai/lead-buyer-profile.ts":{},"./product-personalization.ts":{withPersonalProducts:async(rows:unknown)=>rows},"./ai-settings.ts":{requireAiFeature:async()=>({businessContext:""})},
+    "../ai/lead-discovery.ts":{leadDiscoveryPlan,createLeadAiCall:()=>{throw new Error("Preflight must not call AI");}},
+    "../ai/lead-allowance.ts":{readLeadAllowance:async(userId:string,request:Record<string,unknown>)=>{assert.equal(userId,"actor");assert.equal(request.max_tool_calls,1);preflights++;return{availableMicros,requiredMicros:quoteAiBudget(request,{input:0.0000004,output:0.0000016,context:1047576,webSearch:0.01}).reservedMicros,resetsAt:"2026-11-09T16:00:00Z",enabled:true,scope:"daily"};}},
+  };
+  const api={} as {startLeadSearch:(viewer:unknown,input:unknown)=>Promise<{created:boolean;search:{status:string}}>};
+  vm.runInNewContext(ts.transpileModule(readFileSync(new URL("../lib/data/ai-leads.ts",import.meta.url),"utf8"),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:api,require:(name:string)=>deps[name],AbortSignal,Date,console});
+  return{start:()=>api.startLeadSearch(viewer,input),inserts,preflights:()=>preflights};
+}
+test("an unaffordable search is rejected before creating a job or reserving paid work",async()=>{
+  const fixture=startFixture(64648);
+  await assert.rejects(fixture.start(),(error:Error&{status?:number;allowance?:{availableMicros:number}})=>{assert.equal(error.status,429);assert.equal(error.allowance?.availableMicros,64648);assert.match(error.message,/No search was started/);return true;});
+  assert.equal(fixture.inserts.length,0);assert.equal(fixture.preflights(),1);
+});
+test("an affordable search can still queue after allowance recovery",async()=>{
+  const fixture=startFixture(200000),result=await fixture.start();
+  assert.equal(result.created,true);assert.equal(result.search.status,"queued");assert.equal(fixture.inserts.length,1);
 });

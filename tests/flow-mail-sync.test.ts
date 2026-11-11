@@ -10,7 +10,7 @@ type Row = Record<string, unknown>;
 const require = createRequire(import.meta.url);
 function setup({ messages = [] as Row[], contacts = [] as Row[], emails = [] as Row[], sent = [] as Row[], personalOwner = "owner", live = true } = {}) {
   const mailbox = { id: "mailbox", userId: personalOwner, type: "personal", email: "sales@example.com", is_active: true, imapHost: "imap.test", imapUsername: "sales", imapPassword: "fixture" };
-  const tables: Record<string, Row[]> = { flows: live ? [{ user_id: "owner", status: "live" }] : [], contacts, emails, mailbox_sent_messages: sent, workspace_mailboxes: [mailbox] };
+  const tables: Record<string, Row[]> = { flows: live ? [{ user_id: "owner", status: "live" }] : [], contacts, emails, mailbox_message_content: [{ mailbox_key: "fixture", uid_validity: 1, uid: 2, content: { body: "Full customer message" } }], mailbox_sent_messages: sent, workspace_mailboxes: [mailbox] };
   const lookups: Array<{ table: string; column: string; values: unknown[] }> = [];
   const bodyReads: number[] = [];
   function from(table: string) {
@@ -25,8 +25,9 @@ function setup({ messages = [] as Row[], contacts = [] as Row[], emails = [] as 
         return query;
       },
       order() { return query; }, limit() { return query; },
+      or() { return query; },
       maybeSingle() { single = true; return query; }, throwOnError() { return query; },
-      upsert(row: Row) { if (!tables[table].some(existing => existing.id === row.id)) tables[table].push(row); return query; },
+      upsert(input: Row | Row[]) { for (const row of Array.isArray(input) ? input : [input]) { const old = tables[table].find(existing => existing.id === row.id); if (old) Object.assign(old, row); else tables[table].push(row); } return query; },
       then(resolve: (value: unknown) => unknown) {
         const rows = tables[table].filter(row => filters.every(filter => filter(row)));
         return Promise.resolve({ data: single ? rows[0] ?? null : rows, error: null }).then(resolve);
@@ -34,8 +35,8 @@ function setup({ messages = [] as Row[], contacts = [] as Row[], emails = [] as 
     };
     return query;
   }
-  const exports = {} as { syncFlowMailboxMessages: () => Promise<void> };
-  const code = ts.transpileModule(readFileSync(new URL("../lib/data/flow-mail-sync.ts", import.meta.url), "utf8"), {
+  const exports = {} as { syncFlowMailboxMessages: (options?: { mailboxId?: string; contactId?: string }) => Promise<void> };
+  const code = ts.transpileModule(readFileSync(new URL("../lib/data/flow-mail-projection.ts", import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   const dependencies: Record<string, unknown> = {
@@ -44,6 +45,7 @@ function setup({ messages = [] as Row[], contacts = [] as Row[], emails = [] as 
     "../mailbox-utils.ts": { normalizeMailboxRow: (row: Row) => row },
     "../email-threading.ts": threading,
     "./mailbox-sync.ts": {
+      mailboxSyncKey: () => "fixture",
       loadSyncedMailbox: async (_mailbox: Row, options: { includeContent: boolean }) => {
         assert.equal(options.includeContent, false, "background scans must read headers only");
         return { messages, error: null };
@@ -69,14 +71,14 @@ test("large inboxes batch unknown senders and never download their bodies", asyn
   assert.equal(app.tables.emails.length, 0);
 });
 
-test("only new CRM mail loads content, preserves case-insensitive matches and thread ownership", async () => {
+test("CRM receipts preserve case-insensitive matches, cached content and personal ownership without downloading", async () => {
   const app = setup({
     contacts: [{ id: "contact", email: "BUYER@example.com" }],
-    emails: [{ id: "old", message_id: "<mail-1@test>", thread_id: "existing-thread" }],
-    messages: [message(1, "buyer@example.com"), { ...message(2, "Buyer@example.com"), inReplyTo: "<mail-1@test>" }, message(2, "Buyer@example.com"), message(3, "sales@example.com")],
+    emails: [{ id: "old", message_id: "<mail-1@test>", thread_id: "existing-thread", body_loaded: true }],
+    messages: [message(1, "buyer@example.com"), { ...message(2, "Buyer@example.com"), inReplyTo: "<mail-1@test>" }, message(3, "sales@example.com")],
   });
   await app.run();
-  assert.deepEqual(app.bodyReads, [2]);
+  assert.deepEqual(app.bodyReads, []);
   assert.equal(app.tables.emails.length, 2);
   const saved = app.tables.emails[1];
   assert.equal(saved.contact_id, "contact");
@@ -86,7 +88,7 @@ test("only new CRM mail loads content, preserves case-insensitive matches and th
   assert.equal(app.lookups.filter(read => read.table === "contacts").length, 1);
   await app.run();
   assert.equal(app.tables.emails.length, 2, "rescans must not duplicate saved messages");
-  assert.deepEqual(app.bodyReads, [2]);
+  assert.deepEqual(app.bodyReads, []);
 });
 
 test("sent mail uses the same batched matching and excludes unaccepted deliveries", async () => {
@@ -101,12 +103,20 @@ test("sent mail uses the same batched matching and excludes unaccepted deliverie
   assert.equal(app.tables.emails[0].thread_id, "thread");
 });
 
-test("other members' personal mail and mail with no live flow stay outside automation", async () => {
+test("targeted final checks exclude every internal mailbox address, including other personal mailboxes", async () => {
+  const app = setup({ contacts: [{ id: "internal-contact", email: "teammate@example.com" }], messages: [message(1, "teammate@example.com")] });
+  app.tables.workspace_mailboxes.push({ ...app.tables.workspace_mailboxes[0], id: "teammate-mailbox", userId: "teammate", email: "teammate@example.com" });
+  await app.run({ mailboxId: "mailbox" });
+  assert.equal(app.tables.emails.length, 0);
+});
+
+test("personal receipts are ingested even without an authored live flow and retain access ownership", async () => {
   for (const options of [{ personalOwner: "other" }, { live: false }]) {
     const app = setup({ ...options, contacts: [{ id: "contact", email: "buyer@example.com" }], messages: [message(1, "buyer@example.com")] });
     await app.run();
-    assert.equal(app.tables.emails.length, 0);
-    assert.equal(app.lookups.filter(read => read.table === "contacts").length, 0);
+    assert.equal(app.tables.emails.length, 1);
+    assert.equal(app.tables.emails[0].owner_id, options.personalOwner ?? "owner");
+    assert.equal(app.tables.emails[0].body_loaded, false);
     assert.equal(app.bodyReads.length, 0);
   }
 });

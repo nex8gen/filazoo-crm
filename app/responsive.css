@@ -116,10 +116,6 @@
 
 
 @media (max-width: 47.999rem) {
-  .crm-company-summary [data-slot="card"] { padding: 0.875rem; }
-  .crm-company-summary [data-slot="card"] > div { flex-direction: column-reverse; gap: 0.5rem; }
-  .crm-company-summary [data-slot="card"] > div > span { display: none; }
-  .crm-company-summary [data-slot="card"] p:last-child { display: none; }
   .crm-table-toolbar { align-items: stretch; }
   .crm-table-toolbar > :where(div) { width: 100%; }
   .crm-table-toolbar :where([data-slot="select-trigger"]) {

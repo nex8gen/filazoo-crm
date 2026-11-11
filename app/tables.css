@@ -140,7 +140,8 @@ html[data-density="compact"] .crm-table :is(tbody td, tfoot td) { height: 33px; 
 .crm-table-filter [data-slot="select-trigger"] { min-width: 7.5rem; }
 .crm-table-filter input:focus-visible { box-shadow: none; }
 .crm-table-filters > [data-slot="button"] { min-height: 30px; height: 30px; padding-inline: 10px; font-size: 12px; }
-.crm-table-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 15px; color: var(--muted-foreground); font-size: 12px; }
+/* Keep page controls visible within the table's scrolling page or panel. */
+.crm-table-pagination { position: sticky; bottom: 0; z-index: 30; display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 15px; padding-block: 12px max(12px, env(safe-area-inset-bottom)); background: var(--background); color: var(--muted-foreground); font-size: 12px; }
 .crm-table-pagination p { margin: 0; }
 .crm-table-page-controls { display: inline-flex; align-items: center; gap: 14px; border: 1px solid color-mix(in oklch, var(--foreground) 7%, var(--background)); border-radius: 999px; padding: 4px 8px; }
 .crm-table-page-controls :is(a, button) { display: grid; width: 26px; min-width: 26px; height: 26px; min-height: 26px; place-items: center; border-radius: 5px; padding: 0; }
@@ -149,6 +150,7 @@ html[data-density="compact"] .crm-table :is(tbody td, tfoot td) { height: 33px; 
 @media (max-width: 639px) { .crm-table-filters { flex-basis: 100%; } .crm-table-filter-search { flex-basis: 100%; } }
 @media (max-width: 639px) and (pointer: coarse) { .crm-table-page-controls :is(a, button) { width: 44px; min-width: 44px; height: 44px; min-height: 44px; } }
 @media print {
+  .crm-table-pagination { position: static; }
   :is(.crm-table, [data-sticky-table]) thead[data-crm-sticky-header] { position: static; animation: none; transform: none; box-shadow: none; }
   :is(.crm-table, [data-sticky-table]) thead[data-crm-sticky-header]::before { display: none; }
 }

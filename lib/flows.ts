@@ -47,6 +47,7 @@ export type AutomationFlow = {
   updatedAt: string;
   activeRuns: number;
   completedRuns: number;
+  dependencyIssue?: string;
   steps: FlowStep[];
 };
 
@@ -96,7 +97,7 @@ const profileFilters = {
 
 const triggerConfigSchemas: Record<TriggerType, z.ZodType<JsonConfig>> = {
   new_lead: z.object({ ...profileFilters }),
-  email_received: z.object({ ...profileFilters }),
+  email_received: z.object({ ...profileFilters, receivingMailboxId: z.uuid().optional() }),
   category_changed: z.object({ category: z.enum(compatibleEmailCategories), ...profileFilters }),
   no_reply: z.object({ amount: z.number().int().min(1).max(365), unit: z.enum(["hours", "days"]), businessDays: z.boolean().optional(), ...profileFilters }),
   lead_added_to_list: z.object({ listId: z.enum(flowLeadLists), ...profileFilters }),
@@ -128,6 +129,7 @@ export const flowConditionCriteriaSchema = z.union([
 
 const stepConfigSchemas: Record<FlowStepType, z.ZodType<JsonConfig>> = {
   ai_auto_reply: z.object({
+    stopOnReply: z.boolean().optional(),
     filters: flowConditionCriteriaSchema.optional(),
     smartSendingHours: z.number().int().min(0).max(720).optional(),
     mailboxId: z.string().trim().min(1),
