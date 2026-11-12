@@ -7,7 +7,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { type SortingState, flexRender } from "@tanstack/react-table";
 import { type LegacyColumnDef as ColumnDef, getCoreRowModel, getPaginationRowModel, getSortedRowModel, useLegacyTable as useReactTable } from "@tanstack/react-table/legacy";
-import { Building2, ChevronsUpDown, Columns3, Globe2, Mail, Trash2 } from "lucide-react";
+import { Building2, ChevronsUpDown, Globe2, Mail, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { bulkUpdateCompanies } from "@/app/crm-actions";
 import { AssignedOwner } from "@/components/assigned-owner";
@@ -21,7 +21,9 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import { TableColumnsTrigger } from "@/components/ui/table-columns-trigger";
+import { useTableColumns } from "@/components/table-columns-provider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableFilters, TableFilter } from "@/components/ui/table-filters";
@@ -69,9 +71,8 @@ export function CompaniesTable({ companies, mode, canDelete, viewKey = "all" }: 
   const [query, setQuery] = useWorkspaceState(`${memoryKey}.query`, "");
   const [country, setCountry] = useWorkspaceState(`${memoryKey}.country`, "all");
   const [tag, setTag] = useWorkspaceState(`${memoryKey}.tag`, "all");
-  const [draft, setDraft] = useWorkspaceState(`${memoryKey}.filters`, { country: "all" });
   const [sorting, setSorting] = useWorkspaceState<SortingState>(`${memoryKey}.sorting`, []);
-  const [columnVisibility, setColumnVisibility] = useWorkspaceState<Record<string, boolean>>(`${memoryKey}.columns`, { addedAt: false });
+  const [columnVisibility, setColumnVisibility] = useTableColumns("companies");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleteOpen, setDeleteOpen] = useState(false);
   const selectedCompanyIds = useMemo(() => companies.filter(company => selectedIds.has(company.id)).map(company => company.id), [companies, selectedIds]);
@@ -125,9 +126,9 @@ export function CompaniesTable({ companies, mode, canDelete, viewKey = "all" }: 
       setSelectedIds(new Set());
       router.refresh();
     }} />
-    <TableFilters onApply={() => { setCountry(draft.country); table.setPageIndex(0); }} actions={
+    <TableFilters actions={
       <DropdownMenu>
-        <DropdownMenuTrigger render={<Button variant="outline" />}><Columns3 />Columns</DropdownMenuTrigger>
+        <TableColumnsTrigger />
         <DropdownMenuContent align="end" className="w-56">
           <DropdownMenuGroup>
             <DropdownMenuLabel>Show columns</DropdownMenuLabel>
@@ -140,7 +141,7 @@ export function CompaniesTable({ companies, mode, canDelete, viewKey = "all" }: 
     }>
       <TableFilter label="Search company" search><Input value={query} onChange={(event) => { setQuery(event.target.value); table.setPageIndex(0); }} placeholder="Company, email, domain, segment, or tag" /></TableFilter>
       <TableFilter label="Customer tag"><Select value={tag} onValueChange={value => { setTag(value ?? "all"); table.setPageIndex(0); }}><SelectTrigger className="min-w-64"><SelectValue /></SelectTrigger><SelectContent className="min-w-72"><SelectItem value="all">All tags</SelectItem>{customerTagValues.map(value => <SelectItem key={value} value={value}><CustomerTagBadge tag={value} /></SelectItem>)}</SelectContent></Select></TableFilter>
-      <TableFilter label="Country"><Select value={draft.country} onValueChange={(value) => setDraft({ ...draft, country: value ?? "all" })}><SelectTrigger><SelectValue>{draft.country === "all" ? "All countries" : draft.country}</SelectValue></SelectTrigger><SelectContent><SelectItem value="all">All countries</SelectItem>{countries.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></TableFilter>
+      <TableFilter label="Country"><Select value={country} onValueChange={(value) => { setCountry(value ?? "all"); table.setPageIndex(0); }}><SelectTrigger><SelectValue>{country === "all" ? "All countries" : country}</SelectValue></SelectTrigger><SelectContent><SelectItem value="all">All countries</SelectItem>{countries.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></TableFilter>
     </TableFilters>
     <Card className="crm-table-frame gap-0 py-0">
     {selectedCompanyIds.length > 0 && <div className="flex flex-wrap items-center gap-2 border-b bg-brand-soft px-4 py-2"><p className="mr-auto text-sm font-semibold text-primary" aria-live="polite">{selectedCompanyIds.length} selected</p><Button size="sm" variant="destructive" disabled={!canDelete} title={canDelete ? "Delete selected companies" : "Only admins can delete companies"} onClick={() => setDeleteOpen(true)}><Trash2 />Delete</Button></div>}

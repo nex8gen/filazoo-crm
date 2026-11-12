@@ -54,7 +54,7 @@ test("sidebar history stays enabled across close and reopen while drafts remain 
     return element.type === Composer ? element : findComposer(element.props?.children);
   }
   function render(open = true) { cursor = 0; return exports.WorkspaceAiAssistant({ open, onOpenChange: () => {} }); }
-  assert.equal(render(false), null, "background preparation must not mount hidden animations");
+  assert.equal((render(false) as Element).props?.children, null, "background preparation must not mount hidden animations");
   assert.deepEqual(preparedModes, ["chat", "agent"], "both modes prepare before the sidebar is opened");
   const composer = findComposer(render())!;
   assert.equal(composer.props!.busy, false, "history loading must not simulate a working agent or disable typing");

@@ -26,6 +26,8 @@ export default async function EmailsPage({ searchParams }: PageProps<"/email">) 
       invoiceViewer={{ id: viewer.id, role: viewer.role }}
       initialThreadId={typeof params.thread === "string" ? params.thread : undefined}
       initialAgentDraft={typeof params.agentDraft === "string" ? params.agentDraft : undefined}
+      initialLibraryItem={typeof params.libraryItem === "string" ? params.libraryItem : undefined}
+      initialLibraryRequest={typeof params.libraryRequest === "string" ? params.libraryRequest : undefined}
       products={productResult.products}
       catalogs={catalogResult.catalogs}
     />

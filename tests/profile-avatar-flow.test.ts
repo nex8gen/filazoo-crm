@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 import test from "node:test";
+import { defaultTableColumns } from "../lib/table-column-preferences.ts";
 
 const userId = "c0c0c0c0-1111-2222-3333-444444444444";
 const oldPath = `${userId}/12345678-1111-2222-3333-444444444444.webp`;
@@ -95,7 +96,7 @@ function form(upload = false) {
 
 test("profile readers use fresh Auth metadata without requiring token rotation", async () => {
   const viewer = await getViewer();
-  assert.deepEqual(viewer, { id: userId, email: "member@example.com", avatarPath: oldPath, avatarPreset: "female", preferences: { startPage: "/", tablePageSize: 25, density: "comfortable", reduceMotion: false, emailTranslate: true, emailMarkRead: true, emailSyncSeconds: 15, emailAiSuggestions: true, emailSignature: "" } });
+  assert.deepEqual(viewer, { id: userId, email: "member@example.com", avatarPath: oldPath, avatarPreset: "female", tableColumns: defaultTableColumns, preferences: { startPage: "/", tablePageSize: 25, density: "comfortable", reduceMotion: false, emailTranslate: true, emailMarkRead: true, emailSyncSeconds: 15, emailAiSuggestions: true, emailSignature: "" } });
 });
 test("preset selection removes the photo and refreshes every avatar surface", async () => {
   assert.ok((await saveProfileAvatar(form())).success);

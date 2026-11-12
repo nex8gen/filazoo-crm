@@ -40,6 +40,8 @@ export async function sendMailboxEmail(
     cc?: string | string[];
     bcc?: string | string[];
     subject: string;
+    fromName?: string;
+    replyTo?: string;
     messageId?: string;
     text?: string;
     html?: string;
@@ -61,7 +63,8 @@ export async function sendMailboxEmail(
   const transport = nodemailer.createTransport(config);
   try {
     return await transport.sendMail({
-      from: config.from,
+      from: mail.fromName ? { address: config.from, name: mail.fromName } : config.from,
+      replyTo: mail.replyTo,
       to: mail.to,
       cc: mail.cc,
       bcc: mail.bcc,
@@ -104,7 +107,7 @@ export async function verifyMailboxSmtp(mailbox: MailboxTransportInput, options:
 export async function buildMailboxMime(from: string, mail: Parameters<typeof sendMailboxEmail>[1]) {
   const transport = nodemailer.createTransport({ streamTransport: true, buffer: true });
   try {
-    const result = await transport.sendMail({ from, ...mail });
+    const result = await transport.sendMail({ from: mail.fromName ? { address: from, name: mail.fromName } : from, ...mail });
     return result.message as Buffer;
   } finally { transport.close(); }
 }

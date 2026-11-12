@@ -1,6 +1,6 @@
 {
   "contractVersion": "2026-11-07.2",
-  "generatedOn": "2026-11-08",
+  "generatedOn": "2026-11-12",
   "capabilities": [
     {
       "name": "create_company",
@@ -305,6 +305,12 @@
   ],
   "guidedFeatures": [
     {
+      "domain": "email",
+      "name": "Create, review and schedule an email campaign",
+      "href": "/email/campaigns",
+      "reason": "Use Campaigns to set the name and date, choose included and excluded audiences, select a connected sender and saved template, then review recipients and content before confirming sending or scheduling."
+    },
+    {
       "domain": "customers",
       "name": "Find new business leads and review public contacts",
       "href": "/lead-channel/ai-leads",
@@ -333,6 +339,12 @@
       "name": "Upload attachments or schedule a new email",
       "href": "/email",
       "reason": "Use the composer for file selection and scheduling. Agent can draft the message and cancel an existing scheduled send."
+    },
+    {
+      "domain": "email",
+      "name": "Schedule a mailbox reminder or one-time AI follow-up",
+      "href": "/email",
+      "reason": "Select the conversation, open Contact & follow-up, choose Remind me or AI follow-up, and review the time and message before confirming. Edit or cancel from its follow-up status card."
     },
     {
       "domain": "workflows",
@@ -444,6 +456,18 @@
       "explanation": "Agent/history infrastructure, inbound integration, customer-only identity or background worker; not an employee feature to invoke arbitrarily."
     },
     {
+      "surface": "app/api/documents/quotation/route.ts#POST",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Specialized UI test, composition or analysis flow; use its page controls. The agent must provide a handoff and must not claim it executed this feature."
+    },
+    {
+      "surface": "app/api/documents/route.ts#POST",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Specialized UI test, composition or analysis flow; use its page controls. The agent must provide a handoff and must not claim it executed this feature."
+    },
+    {
       "surface": "app/api/email/assist/route.ts#POST",
       "mode": "internal",
       "tools": [],
@@ -483,6 +507,12 @@
       "explanation": "Specialized UI test, composition or analysis flow; use its page controls. The agent must provide a handoff and must not claim it executed this feature."
     },
     {
+      "surface": "app/api/email/campaigns/route.ts#POST",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Use Marketing campaigns to create and save a campaign, select audiences and exclusions, configure a connected sender and template, and review its content and recipient estimate before explicitly submitting a send or schedule. General chat must link to /email/campaigns and must not claim it sent a campaign."
+    },
+    {
       "surface": "app/api/email/drafts/route.ts#DELETE",
       "mode": "direct",
       "tools": [
@@ -497,6 +527,12 @@
         "write_email"
       ],
       "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/api/email/follow-up/route.ts#POST",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Use Contact & follow-up in Email to create, preview, reschedule or cancel a conversation reminder or one-time AI follow-up. A person reviews the content and time before confirming; general chat must link to Email and must not claim it scheduled the action."
     },
     {
       "surface": "app/api/email/footer/import-image/route.ts#POST",
@@ -693,13 +729,13 @@
       "surface": "app/api/marketing-assets/route.ts#DELETE",
       "mode": "guided",
       "tools": [],
-      "explanation": "Specialized UI test, composition or analysis flow; use its page controls. The agent must provide a handoff and must not claim it executed this feature."
+      "explanation": "Use Marketing campaigns to create and save a campaign, select audiences and exclusions, configure a connected sender and template, and review its content and recipient estimate before explicitly submitting a send or schedule. General chat must link to /email/campaigns and must not claim it sent a campaign."
     },
     {
       "surface": "app/api/marketing-assets/route.ts#POST",
       "mode": "guided",
       "tools": [],
-      "explanation": "Specialized UI test, composition or analysis flow; use its page controls. The agent must provide a handoff and must not claim it executed this feature."
+      "explanation": "Use Marketing campaigns to create and save a campaign, select audiences and exclusions, configure a connected sender and template, and review its content and recipient estimate before explicitly submitting a send or schedule. General chat must link to /email/campaigns and must not claim it sent a campaign."
     },
     {
       "surface": "app/api/meta/lead-bridge/route.ts#POST",
@@ -1154,6 +1190,12 @@
       "mode": "guided",
       "tools": [],
       "explanation": "Identity, workspace or ownership flow uses the authenticated account controls."
+    },
+    {
+      "surface": "app/table-column-actions.ts#saveTableColumns",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Specialized UI test, composition or analysis flow; use its page controls. The agent must provide a handoff and must not claim it executed this feature."
     },
     {
       "surface": "app/update-password/actions.ts#updatePassword",

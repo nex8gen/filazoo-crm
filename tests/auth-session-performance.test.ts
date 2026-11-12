@@ -5,6 +5,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import { isAvatarPreset } from "../lib/profile-avatar.ts";
 import { readUserPreferences } from "../lib/user-preferences.ts";
+import { readTableColumnPreferences } from "../lib/table-column-preferences.ts";
 import { workspaceIdSchema, workspaceCookie } from "../lib/workspaces.ts";
 
 const id = "aaaaaaaa-1111-2222-3333-444444444444";
@@ -21,6 +22,7 @@ function load(options: Options = {}) {
     react: { cache: (fn: () => unknown) => { let value: unknown; let called = false; return () => { if (!options.cache) return fn(); if (!called) { value = fn(); called = true; } return value; }; } },
     "./env.ts": { env: { NEXT_PUBLIC_SUPABASE_URL: "https://test.supabase.co" }, hasSupabaseAuthConfig: () => true, hasSupabaseConfig: () => true },
     "./profile-avatar.ts": { isAvatarPreset }, "./user-preferences.ts": { readUserPreferences },
+    "./table-column-preferences.ts": { readTableColumnPreferences },
     "next/server": { connection: async () => {} }, "next/navigation": { redirect: (path: string) => { throw new Error(path); } },
     "next/headers": { cookies: async () => ({ get: () => undefined }) },
     "./workspaces.ts": { workspaceIdSchema, workspaceCookie },
@@ -47,6 +49,13 @@ test("valid signed identity and live membership require one backend snapshot and
   const viewer = await api.requireWorkspaceMember(["operator"]) as { role: string; avatarPreset: string };
   assert.equal(viewer.role, "operator");
   assert.equal(viewer.avatarPreset, "female"); // Fresh DB metadata, not stale JWT metadata.
+  assert.deepEqual(calls, { claims: 1, rpc: 1, getUser: 0, membership: 0 });
+});
+
+test("table preferences come from current account metadata without another backend call", async () => {
+  const { api, calls } = load({ row: { ...member, user_metadata: { crm_table_columns_companies: { email: false } } } });
+  const viewer = await api.getViewer() as { tableColumns: ReturnType<typeof readTableColumnPreferences> };
+  assert.deepEqual(viewer.tableColumns.companies, { email: false });
   assert.deepEqual(calls, { claims: 1, rpc: 1, getUser: 0, membership: 0 });
 });
 

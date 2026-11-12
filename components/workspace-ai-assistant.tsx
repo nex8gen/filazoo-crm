@@ -4,9 +4,9 @@ import "./workspace-ai-assistant.css";
 
 import { useLanguage } from "@/components/language-provider";
 
-import { useEffect, useEffectEvent, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useId, useMemo, useRef, useState, type ComponentProps } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { motion } from "motion/react";
+import { AnimatePresence, motion, useIsPresent, useReducedMotion } from "motion/react";
 import { ArrowUp, ChartNoAxesCombined, ChevronDown, Copy, FileText, Lightbulb, ListChecks, Map as MapIcon, PenLine, RotateCcw, Search, Sparkles, TriangleAlert, Users } from "lucide-react";
 import { AiIcon } from "@/components/ai-icon";
 import { AgentIcon } from "@/components/agent-icon";
@@ -76,6 +76,15 @@ function visiblePageText() {
   const main = document.querySelector<HTMLElement>("#workspace-content");
   if (!main) return "";
   return (main.innerText || "").replace(/\n{3,}/g, "\n\n").trim().slice(0, 14_000);
+}
+
+function AnimatedAiSidebar(props: ComponentProps<typeof motion.aside>) {
+  const present = useIsPresent();
+  const reducedMotion = useReducedMotion();
+  return <motion.aside {...props} inert={!present} aria-hidden={!present || undefined}
+    initial={{ x: reducedMotion ? 0 : "100%", opacity: reducedMotion ? 1 : 0 }}
+    animate={{ x: 0, opacity: 1 }} exit={{ x: reducedMotion ? 0 : "100%", opacity: 0 }}
+    transition={{ duration: reducedMotion ? 0 : 0.28, ease: [0.22, 1, 0.36, 1] }} />;
 }
 
 export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presentation = "sidebar" }: { open: boolean; onOpenChange: (open: boolean) => void; launchRequest?: WorkspaceAiLaunchRequest; presentation?: "sidebar" | "page" }) {
@@ -415,11 +424,9 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
     }
   }
 
-  // Keep history hooks alive while closed without mounting animated visuals.
-  if (!open) return null;
-
-  const Container = presentation === "page" ? "main" : "aside";
-  return <Container id={presentation === "page" ? "workspace-ai-content" : undefined} tabIndex={-1} data-ai-workspace data-ai-presentation={presentation} aria-label="Filazoo AI workspace" className={presentation === "page" ? "workspace-ai-page fixed inset-y-0 right-0 left-0 z-40 flex h-dvh min-h-0 flex-col overflow-hidden bg-background outline-none lg:left-[var(--workspace-sidebar-width)]" : "fixed inset-y-0 right-0 z-[60] flex h-dvh min-h-0 w-full flex-col overflow-hidden border-l bg-background lg:w-[var(--workspace-ai-width)]"}>
+  // Keep history hooks alive; presence unmounts visuals after the closing motion.
+  const Container = presentation === "page" ? "main" : AnimatedAiSidebar;
+  return <AnimatePresence>{open ? <Container key={presentation} id={presentation === "page" ? "workspace-ai-content" : undefined} tabIndex={-1} data-ai-workspace data-ai-presentation={presentation} aria-label="Filazoo AI workspace" className={presentation === "page" ? "workspace-ai-page fixed inset-y-0 right-0 left-0 z-40 flex h-dvh min-h-0 flex-col overflow-hidden bg-background outline-none lg:left-[var(--workspace-sidebar-width)]" : "fixed inset-y-0 right-0 z-[60] flex h-dvh min-h-0 w-full flex-col overflow-hidden border-l bg-background lg:w-[var(--workspace-ai-width)]"}>
         {presentation === "sidebar" ? <ColumnResizeHandle label="AI sidebar width" variable="--workspace-ai-preferred-width" container="[data-workspace-shell]" panel="[data-ai-workspace]" min={320} max={720} reverse className="ai-sidebar-resize" /> : null}
         <div className={presentation === "page" ? "workspace-ai-page-header" : undefined}><AiHistoryMenu key={history.scope} cache={historyCache.current} history={history} disabled={busy} onNew={newChat} onRetry={() => setError(null)} onClose={() => onOpenChange(false)} closeLabel={presentation === "page" ? "Back to overview" : "Close AI workspace"} onSettings={() => router.push("/settings/ai")} /></div>
         <div className="relative isolate min-h-0 flex-1">
@@ -493,5 +500,5 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
           </form>}
           {presentation === "sidebar" ? <><p id={`${composerId}-hint`} className="mt-2 text-center text-[10px] leading-4 text-muted-foreground">Enter to send · Shift + Enter for a new line</p><p className="mt-1 text-center text-[10px] leading-4 text-muted-foreground">AI can make mistakes. Review suggestions before using them.</p></> : null}
         </div>
-  </Container>;
+  </Container> : null}</AnimatePresence>;
 }

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { attachmentMimeType } from "@/lib/email-files";
 import { DatePicker } from "@/components/ui/date-picker";
 import { EmailSyncStatus } from "@/components/email-sync-status";
+import { PageActions, PageHeaderDetails } from "@/components/page-header";
 import type { MailSyncHealth } from "@/lib/mail-sync-jobs";
 import { usePreferences } from "@/components/preferences-provider";
 import { useBackgroundRefresh } from "@/components/use-background-refresh";
@@ -30,6 +31,7 @@ import { useLanguage } from "@/components/language-provider";
 import { AiIcon } from "@/components/ai-icon";
 import { ColumnResizeHandle } from "@/components/column-resize-handle";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem, SelectGroup, SelectLabel } from "@/components/ui/select";
 
 import Link from "next/link";
@@ -40,7 +42,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive, ArrowLeft, ChevronLeft, ChevronRight, PanelRight, MailOpen, CalendarClock, Check,
   Clock3, FileText, Filter, Forward, Inbox, Languages, Mail, MoreHorizontal,
-  LoaderCircle, Library, Paperclip, Plus, RefreshCw, Reply, ReplyAll, Search, Send,
+  LoaderCircle, Library, Plus, RefreshCw, Reply, ReplyAll, Search, Send,
   Smile, Star, Trash2, Workflow, X, ReceiptText, Settings2, UserRound, UsersRound,
 } from "lucide-react";
 import {
@@ -52,8 +54,16 @@ import {
 } from "@/components/ui/dialog";
 import { InboxCalculator } from "@/components/inbox-calculator";
 import { EmailCatalogDialog } from "@/components/email-catalog-dialog";
+import { EmailAttachmentMenu } from "@/components/email-attachment-menu";
+import { fillLibraryTemplate, loadLibraryEmailItem } from "@/lib/document-email";
+import type { LibraryDocument } from "@/lib/documents";
 import { EmailMessageList } from "@/components/email-message-list";
 import { EmailAiSummary } from "@/components/email-ai-summary";
+import { EmailFollowupPanel } from "@/components/email-followup-panel";
+import { EmailFollowupFilters } from "@/components/email-followup-filters";
+import { conversationFollowupActions, followupConversationFilters, followupView, indexFollowupActions, updateFollowupActions, type FollowupActionRecord, type FollowupFilter } from "@/lib/email-followup-filters";
+import { requestFollowup } from "@/lib/email-followup-request";
+import { followupTarget, followupAnchors, followupMessageKey } from "@/lib/email-followup";
 import { EmailAutoReplyControl } from "@/components/email-auto-reply-control";
 import { EmailAiTypewriter } from "@/components/email-ai-typewriter";
 import "./email-workspace.css";
@@ -73,6 +83,7 @@ import { filterCompanyEmails, type CompanyEmailScope } from "@/lib/company-email
 import type { MailboxOption } from "@/lib/mailbox-utils";
 
 const InvoiceCreateDialog = dynamic(()=>import("@/components/invoice-create-dialog").then(module=>module.InvoiceCreateDialog));
+const DocumentLibraryPicker = dynamic(() => import("@/components/document-library-picker").then(module => module.DocumentLibraryPicker));
 
 export type EmailWorkspaceItem = {
   id: string;
@@ -200,14 +211,12 @@ function emailMatchesFolder(
   folderStates: Record<string, "inbox" | "archive" | "trash">,
   starred: Set<string>,
   readMessages: Set<string>,
-  followUps: Record<string, string>,
 ) {
   const state = folderStates[email.id] ?? "inbox";
   if (folder.startsWith("provider:")) return email.providerFolder === folder.slice(9) || Boolean(email.providerLocations?.some((item) => item.folder === folder.slice(9)));
   if (folder === "spam") return email.providerKind === "spam" && state !== "trash";
   if (email.providerKind === "spam" && folder !== "trash") return false;
   if (folder === "unread") return state === "inbox" && email.direction === "inbound" && !readMessages.has(email.id);
-  if (folder === "followup") return state !== "trash" && Boolean(followUps[email.id]);
   if (folder === "all") return state !== "trash";
   if (folder === "inbox") return state === "inbox" && email.direction === "inbound" && (!email.providerKind || email.providerKind === "inbox");
   if (folder === "drafts") return state !== "trash" && email.status.toLowerCase().includes("draft");
@@ -243,6 +252,8 @@ export function EmailInboxWorkspace({
   invoiceViewer,
   companyScope,
   initialAgentDraft,
+  initialLibraryItem,
+  initialLibraryRequest,
   assignedCustomersOnly = false,
   onMailboxChange,
   onMailboxSnapshot,
@@ -254,6 +265,8 @@ export function EmailInboxWorkspace({
   initialThreadId?: string;
   initialComposeTo?: string;
   initialAgentDraft?: string;
+  initialLibraryItem?: string;
+  initialLibraryRequest?: string;
   mailboxConfigured: boolean;
   sendConfigured: boolean;
   inboxConfigured: boolean;
@@ -323,6 +336,47 @@ export function EmailInboxWorkspace({
   const [searchStatus, setSearchStatus] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<Category | null>(null);
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
+  const [followupFilter, setFollowupFilter] = useState<FollowupFilter>("all");
+  const [followupActions, setFollowupActions] = useState<{ mailboxId: string; actions: FollowupActionRecord[] } | null>(null);
+  const followupActionRevision = useRef(0);
+  const [followupFiltersLoading, setFollowupFiltersLoading] = useState(false);
+  const [followupFiltersError, setFollowupFiltersError] = useState("");
+  const [followupFiltersRetry, setFollowupFiltersRetry] = useState(0);
+  useEffect(() => {
+    if (!selectedMailboxId || companyScope) return;
+    const controller = new AbortController();
+    let pending = false;
+    let refreshQueued = false;
+    async function refresh(initial = false) {
+      if (pending) { refreshQueued = true; return; }
+      if (!initial && document.visibilityState === "hidden") return;
+      pending = true; setFollowupFiltersLoading(true);
+      const revision = followupActionRevision.current;
+      try {
+        const params = new URLSearchParams({ view: "list", mailboxId: selectedMailboxId! });
+        const result = await requestFollowup(`/api/email/follow-up?${params}`, { signal: controller.signal });
+        if (!Array.isArray(result.actions)) throw new Error("The follow-up list was incomplete. Please retry.");
+        if (!controller.signal.aborted) {
+          if (revision === followupActionRevision.current) {
+            setFollowupActions({ mailboxId: selectedMailboxId!, actions: result.actions }); setFollowupFiltersError("");
+          } else refreshQueued = true;
+        }
+      } catch (cause) { if (!controller.signal.aborted) setFollowupFiltersError(cause instanceof Error ? cause.message : "Unable to load follow-up filters."); }
+      finally {
+        pending = false;
+        if (!controller.signal.aborted) {
+          setFollowupFiltersLoading(false);
+          if (refreshQueued) { refreshQueued = false; void refresh(); }
+        }
+      }
+    }
+    void refresh(true);
+    const resume = () => { void refresh(); };
+    const timer = setInterval(resume, 30_000);
+    window.addEventListener("focus", resume); window.addEventListener("flow-activity-updated", resume); window.addEventListener("email-auto-reply-updated", resume);
+    document.addEventListener("visibilitychange", resume);
+    return () => { controller.abort(); clearInterval(timer); window.removeEventListener("focus", resume); window.removeEventListener("flow-activity-updated", resume); window.removeEventListener("email-auto-reply-updated", resume); document.removeEventListener("visibilitychange", resume); };
+  }, [selectedMailboxId, companyScope, followupFiltersRetry]);
   const { text: draft, html: draftHtml, bodyText: replyBodyText, hasImages: replyHasImages, setText: setDraft, onChange: editReply } = useEmailEditorValue();
   const [replyMediaBusy, setReplyMediaBusy] = useState(false);
   const [composeMediaBusy, setComposeMediaBusy] = useState(false);
@@ -344,6 +398,9 @@ export function EmailInboxWorkspace({
   const [composeSending, setComposeSending] = useState(false);
   const [replyAttachments, setReplyAttachments] = useState<ComposerAttachment[]>([]);
   const [composeAttachments, setComposeAttachments] = useState<ComposerAttachment[]>([]);
+  const [libraryTarget, setLibraryTarget] = useState<"reply" | "compose" | null>(null);
+  const [libraryTab, setLibraryTab] = useState<"files" | "templates">("templates");
+  const loadedLibraryItem = useRef<string | null>(null);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [invoiceContext,setInvoiceContext]=useState<InvoiceEmailContext|null>(null);
   const [catalogTarget, setCatalogTarget] = useState<"reply" | "compose">("reply");
@@ -452,6 +509,30 @@ export function EmailInboxWorkspace({
     return () => { controller.abort(); window.removeEventListener("filazoo:agent-action", onAction); };
   }, [initialAgentDraft, setComposeBody]);
 
+  useEffect(() => {
+    const requestKey = `${initialLibraryItem}:${initialLibraryRequest ?? ""}`;
+    if (!initialLibraryItem || loadedLibraryItem.current === requestKey) return;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        if (unsentDraft.current) throw new Error("Finish or save your current draft before opening a library item.");
+        setAttachmentBusy(true);
+        const result = await loadLibraryEmailItem(initialLibraryItem, controller.signal);
+        const attachments = await Promise.all(result.files.map(fileToAttachment));
+        if (controller.signal.aborted) return;
+        if (unsentDraft.current) throw new Error("Your draft changed while the library item was loading. Save it before trying again.");
+        loadedLibraryItem.current = requestKey;
+        setComposeSubject(result.document.kind === "template" ? result.document.subject : "");
+        setComposeBody(result.document.kind === "template" ? result.document.body : "");
+        setComposeAttachments(attachments);
+        setComposeError(null); setComposeOpen(true);
+        setNotice("Library item added to a new email. Review the recipient, message, and any placeholders before sending.");
+      } catch (reason) { if (!controller.signal.aborted) setNotice(reason instanceof Error ? reason.message : "Unable to open the library item."); }
+      finally { if (!controller.signal.aborted) setAttachmentBusy(false); }
+    })();
+    return () => controller.abort();
+  }, [initialLibraryItem, initialLibraryRequest, setComposeBody]);
+
   const applyMailboxSnapshot = useCallback((nextEmails: EmailWorkspaceItem[]) => {
     if (companyScope) nextEmails = filterCompanyEmails(nextEmails, companyScope);
     savedStates.current = new Map([...savedStates.current, ...nextEmails.map((email): [string, MessageState] => [email.id, messageState(email)])]);
@@ -541,20 +622,32 @@ export function EmailInboxWorkspace({
     }
     return next;
   }, [categories, searchResults]);
-  const visible = useMemo(() => {
+  const followupActionIndex = useMemo(() => indexFollowupActions(followupActions?.mailboxId === selectedMailboxId ? followupActions.actions : []), [followupActions, selectedMailboxId]);
+  const followupGroups = useMemo(() => new Map(conversations.map(item => {
+    const available = item.messages.filter(message => (folderStates[message.id] || message.folder || "inbox") !== "trash");
+    return [item.id, followupConversationFilters(available, followupActionIndex)] as const;
+  })), [conversations, folderStates, followupActionIndex]);
+  const conversationActions = useMemo(() => new Map(conversations.map(item => [item.id, conversationFollowupActions(item.messages, followupActionIndex)])), [conversations, followupActionIndex]);
+  const scopedConversations = useMemo(() => {
     const query = search.trim().toLowerCase();
     return conversations.filter((conversation) => {
-      const matchesFolder = conversation.messages.some((email) => emailMatchesFolder(email, folder, folderStates, starred, readMessages, followUps))
-        || (folder === "unread" && mobileReading && conversation.messages.some((email) => email.id === selectedId && emailMatchesFolder(email, "inbox", folderStates, starred, readMessages, followUps)));
       const matchesCategory = !categoryFilter || conversationCustomerTag(conversation.messages, visibleCategories) === categoryFilter;
       const matchesSource = sourceFilter === "all"
         || (sourceFilter === "shopify" && conversation.messages.some((email) => email.source === "shopify"))
         || (sourceFilter === "replies" && conversation.messages.some((email) => email.direction === "inbound" && email.source !== "shopify"))
         || (sourceFilter === "unread" && conversation.messages.some((email) => email.id === selectedId || (email.direction === "inbound" && !readMessages.has(email.id))));
       const searchable = conversation.messages.map((email) => `${email.subject} ${email.contactName || ""} ${email.contact} ${email.company} ${email.preview} ${email.body} ${(email.to || []).map((item) => item.address).join(" ")} ${(email.attachments || []).map((item) => item.filename).join(" ")}`).join(" ").toLowerCase();
-      return matchesFolder && matchesCategory && matchesSource && (!query || searchable.includes(query) || searchResults.some((message) => conversation.messages.some((item) => item.id === message.id)));
+      return matchesCategory && matchesSource && (!query || searchable.includes(query) || searchResults.some((message) => conversation.messages.some((item) => item.id === message.id)));
     }).sort((a, b) => new Date(b.latest.timestamp).getTime() - new Date(a.latest.timestamp).getTime());
-  }, [visibleCategories, categoryFilter, conversations, folder, folderStates, mobileReading, readMessages, search, selectedId, sourceFilter, starred, searchResults, followUps]);
+  }, [visibleCategories, categoryFilter, conversations, readMessages, search, selectedId, sourceFilter, searchResults]);
+  const folderConversations = useMemo(() => scopedConversations.filter(conversation =>
+    conversation.messages.some(email => emailMatchesFolder(email, folder, folderStates, starred, readMessages))
+      || (folder === "unread" && mobileReading && conversation.messages.some(email => email.id === selectedId && emailMatchesFolder(email, "inbox", folderStates, starred, readMessages))),
+  ), [scopedConversations, folder, folderStates, starred, readMessages, mobileReading, selectedId]);
+  const showFollowupFilters = !companyScope && !["drafts", "scheduled"].includes(folder);
+  const actionView = useMemo(() => followupView(scopedConversations, followupGroups, followupFilter), [scopedConversations, followupGroups, followupFilter]);
+  const followupFilterCounts = actionView.counts;
+  const visible = folder === "followup" ? actionView.conversations : folderConversations;
   const selectedConversation = visible.find((item) => item.messages.some((email) => email.id === selectedId));
   const selected = selectedConversation?.latest;
   const reading = mobileReading && Boolean(selected);
@@ -564,7 +657,7 @@ export function EmailInboxWorkspace({
   const pageItems = visible.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const checkedVisible = visible.filter((item) => checkedIds.has(item.id));
   const allPageChecked = pageItems.length > 0 && pageItems.every((item) => checkedIds.has(item.id));
-  const selectionScope = [folder, search, sourceFilter, categoryFilter].join("|");
+  const selectionScope = [folder, search, sourceFilter, categoryFilter, followupFilter].join("|");
   const [previousScope, setPreviousScope] = useState(selectionScope);
   if (selectionScope !== previousScope) {
     setPreviousScope(selectionScope);
@@ -573,6 +666,7 @@ export function EmailInboxWorkspace({
   }
   function changeFolder(next: Folder) {
     setFolder(next);
+    setFollowupFilter("all");
     setSelectedId("");
     setMobileReading(false);
   }
@@ -622,6 +716,7 @@ export function EmailInboxWorkspace({
   }
   const conversation = useMemo(() => selectedConversation?.messages ?? [], [selectedConversation]);
   const target = replyTarget(conversation);
+  const followupIdentity = selected ? followupTarget(conversation, selected, selectedMailboxId, replySenderId) : null;
   const explicitParent = conversation.find((message) => message.id === replyParentId);
   const replyParent = explicitParent || target?.parent;
   const automaticRecipients = replyParent ? replyRecipients(replyParent, mailboxes.map((mailbox) => mailbox.email || ""), replyAll) : { to: [], cc: [] };
@@ -795,14 +890,14 @@ export function EmailInboxWorkspace({
     const folders = Object.keys(counts) as Folder[];
     for (const item of conversations) {
       for (const targetFolder of folders) {
-        if (item.messages.some((email) => emailMatchesFolder(email, targetFolder, folderStates, starred, readMessages, followUps))) {
+        if (targetFolder === "followup" ? Boolean(followupGroups.get(item.id)?.size) : item.messages.some((email) => emailMatchesFolder(email, targetFolder, folderStates, starred, readMessages))) {
           counts[targetFolder] += 1;
         }
       }
     }
     counts.drafts += Object.values(savedDrafts.drafts).length;
     return counts;
-  }, [followUps, conversations, folderStates, starred, readMessages, savedDrafts.drafts, providerFolders, scheduledEmails.length]);
+  }, [conversations, folderStates, starred, readMessages, savedDrafts.drafts, providerFolders, scheduledEmails.length, followupGroups]);
 
   async function persistState(id: string, override: Partial<MessageState>) {
     stateRevision.current += 1;
@@ -1015,6 +1110,30 @@ export function EmailInboxWorkspace({
   function openCatalogPicker(target: "reply" | "compose") {
     setCatalogTarget(target);
     setCatalogOpen(true);
+  }
+
+  async function insertLibraryItem(document: LibraryDocument) {
+    if (!libraryTarget || attachmentBusy) return;
+    const target = libraryTarget;
+    const session = replySession.current;
+    setAttachmentBusy(true);
+    try {
+      const result = await loadLibraryEmailItem(document.id);
+      const attachments = await Promise.all(result.files.map(fileToAttachment));
+      if (target === "reply" && session !== replySession.current) throw new Error("The conversation changed. Choose the file again for this reply.");
+      const current = target === "reply" ? replyAttachments : composeAttachments;
+      if (current.length + attachments.length > 10) throw new Error("Remove some attachments first. An email supports up to 10 files.");
+      if (target === "reply") setReplyAttachments(items => [...items, ...attachments]);
+      else setComposeAttachments(items => [...items, ...attachments]);
+      if (result.document.kind === "template") {
+        const context = target === "reply" ? { name: selected?.contactName, company: selected?.company } : {};
+        const text = fillLibraryTemplate(result.document.body, context);
+        if (target === "reply") { setReplyExpanded(true); replyInput.current?.insertText(text); }
+        else { composeInput.current?.insertText(text); if (!composeSubject.trim() && result.document.subject) setComposeSubject(result.document.subject); }
+      }
+      setNotice(document.kind === "template" ? "Template inserted. Review placeholders and linked attachments before sending." : "Library file attached.");
+      setLibraryTarget(null);
+    } finally { setAttachmentBusy(false); }
   }
 
   async function attachCatalog(title: string, bytes: Uint8Array) {
@@ -1384,10 +1503,10 @@ export function EmailInboxWorkspace({
 
   for (const item of providerFolders.filter((item) => item.kind === "custom")) folderItems.push({ id: `provider:${item.path}`, label: item.name, icon: Inbox });
   return (
-    <div data-ai-mailbox-id={selectedMailboxId || undefined} data-ai-email-id={reading ? selected?.id : undefined} data-ai-company-id={reading ? selected?.companyId || undefined : companyScope?.id} className={`email-workspace flex min-w-0 flex-col overflow-hidden bg-background ${companyScope ? "company-email-workspace h-[clamp(520px,calc(100dvh-14rem),900px)] rounded-xl border" : "h-full min-h-0"}`}>
+    <div data-ai-mailbox-id={selectedMailboxId || undefined} data-ai-email-id={reading ? selected?.id : undefined} data-ai-company-id={reading ? selected?.companyId || undefined : companyScope?.id} className={`email-workspace flex min-w-0 flex-col overflow-hidden bg-background ${companyScope ? "company-email-workspace h-[clamp(520px,calc(100dvh-14rem),900px)] rounded-xl border" : "h-full min-h-0 border-t"}`}>
       {companyScope ? <h3 className="sr-only">Customer mailbox</h3> : null}
-      {!companyScope ? <nav aria-label="Email accounts" className="flex shrink-0 flex-wrap items-center gap-3 border-b p-3 sm:flex-nowrap">
-        <div className="flex min-w-0 flex-1 gap-5 overflow-x-auto">
+      {!companyScope ? <><PageHeaderDetails>
+        <nav aria-label="Email accounts" className="flex min-w-0 items-center gap-5 overflow-x-auto">
         {(["personal", "workspace"] as const).map(type => mailboxes.some(mailbox => mailbox.type === type) ? <div key={type} className="flex shrink-0 items-center gap-2.5"><span className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">{type === "personal" ? <UserRound className="size-3.5" /> : <UsersRound className="size-3.5" />}{type === "personal" ? "My email" : "Team email"}</span><div className="flex gap-1">
         {mailboxes.filter(mailbox => mailbox.type === type).map((mailbox) => <Link key={mailbox.id} href={`/email?mailbox=${encodeURIComponent(mailbox.id)}`} prefetch={false} aria-label={`${type === "personal" ? "My email" : "Team email"}: ${mailbox.email}`} aria-current={selectedMailboxId === mailbox.id ? "page" : undefined} aria-busy={switchingMailboxId === mailbox.id} onNavigate={(event) => {
           if (sending || composeSending || attachmentBusy || aiReplyBusy || pendingStateWrites.current || savedDrafts.status === "Saving draft…") { event.preventDefault(); setNotice("Wait for the current operation or draft save before switching mailboxes."); return; }
@@ -1398,27 +1517,35 @@ export function EmailInboxWorkspace({
         </Link>)}
         </div></div> : null)}
         {!mailboxes.length ? <span className="text-sm text-muted-foreground">Connect an email account to get started.</span> : null}
-        </div>
+        </nav>
+      </PageHeaderDetails>
+      <PageActions>
         <Link href={`/settings/apps?view=${mailboxes.find(mailbox => mailbox.id === selectedMailboxId)?.type === "workspace" ? "team" : "personal"}`} onNavigate={event => { if (sending || composeSending || attachmentBusy || aiReplyBusy || pendingStateWrites.current || savedDrafts.status === "Saving draft…") { event.preventDefault(); setNotice("Wait for the current operation or draft save before managing connections."); } }} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted"><Settings2 className="size-3.5" />{mailboxes.length ? "Manage connections" : "Connect email"}</Link>
-      </nav> : null}
+      </PageActions></> : null}
       {switchingMailboxId ? <p role="status" className="border-b px-4 py-2 text-xs text-muted-foreground">Switching mailbox…</p> : null}
       {mailboxSwitchError ? <p role="alert" className="border-b px-4 py-2 text-xs text-destructive">{mailboxSwitchError}</p> : null}
       {assignedCustomersOnly && !companyScope ? <p className="border-b px-4 py-2 text-xs text-muted-foreground">Your team inbox shows emails from customers assigned to you. My email shows all senders in your personal accounts.</p> : null}
 
-      <div className="mail-layout" data-reading={reading} data-details={detailsOpen} inert={Boolean(switchingMailboxId)} aria-busy={Boolean(switchingMailboxId)}>
+      <div className="mail-layout" data-reading={reading} data-details={detailsOpen} data-folders={!companyScope} inert={Boolean(switchingMailboxId)} aria-busy={Boolean(switchingMailboxId)}>
         {!companyScope ? <ColumnResizeHandle label="Email folders width" variable="--mail-folder-width" container=".mail-layout" panel=".mail-folders" min={160} max={360} className="mail-folder-resize" /> : null}
         <ColumnResizeHandle label="Conversation list width" variable="--mail-list-width" container=".mail-layout" panel=".mail-list" min={220} max={600} storageKey={companyScope ? "company-mail-list" : "mail-list"} className="mail-list-resize" />
         {selected && !companyScope ? <ColumnResizeHandle label="Contact details width" variable="--mail-details-width" container=".mail-layout" panel=".mail-details" min={280} max={560} reverse className="mail-details-resize" /> : null}
         {!companyScope ? <aside className="mail-folders min-h-0 flex-col border-r bg-muted/20" aria-label="Email folders">
-          <div className="p-3"><button type="button" onClick={openComposer} className="flex h-10 w-full items-center justify-center gap-2 rounded-md bg-foreground text-xs font-semibold text-background hover:bg-foreground/90"><Plus className="size-4" />New email</button></div>
+          <div className="p-3"><Tooltip><TooltipTrigger render={<button type="button" aria-label="New email" onClick={openComposer} className="mail-folder-compose flex h-10 w-full items-center gap-2 rounded-md bg-foreground text-xs font-semibold text-background hover:bg-foreground/90"><Plus aria-hidden="true" className="size-4" /><span className="mail-folder-label">New email</span></button>} /><TooltipContent side="right" sideOffset={12}>New email</TooltipContent></Tooltip></div>
           <nav className="space-y-1 px-2 py-1">
-            {folderItems.map((item) => <button key={item.id} type="button" onClick={() => changeFolder(item.id)} aria-current={folder === item.id ? "page" : undefined} className={`flex h-10 w-full items-center gap-3 rounded-md px-3 text-xs font-medium ${folder === item.id ? "bg-primary/10 text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}><item.icon className={`size-4 ${folder === item.id ? "text-primary" : ""}`} /><span className="flex-1 text-left">{item.label}</span><span className="text-xs">{folderCounts[item.id]}</span></button>)}
+            {folderItems.map((item) => <Tooltip key={item.id}><TooltipTrigger render={<button type="button" aria-label={`${item.label} (${folderCounts[item.id]})`} onClick={() => changeFolder(item.id)} aria-current={folder === item.id ? "page" : undefined} className={`flex h-10 w-full items-center gap-3 rounded-md px-3 text-xs font-medium ${folder === item.id ? "bg-primary/10 text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}><item.icon aria-hidden="true" className={`size-4 ${folder === item.id ? "text-primary" : ""}`} /><span className="mail-folder-label flex-1 text-left">{item.label}</span><span className="mail-folder-count text-xs">{folderCounts[item.id]}</span></button>} /><TooltipContent side="right" sideOffset={12}><span>{item.label}</span><span className="text-background/60 tabular-nums">{folderCounts[item.id]}</span></TooltipContent></Tooltip>)}
           </nav>
           <div className="mx-4 my-4 h-px bg-border" />
-          <div className="px-5"><p className="text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">Workflow</p><div className="mt-3 rounded-lg border bg-background p-3"><p className="flex items-center gap-2 text-xs font-semibold"><Workflow className="size-4 text-violet-600" />Follow-up workflow</p><p className="mt-1.5 text-xs leading-5 text-muted-foreground">Automatically continue conversations that need attention.</p><Link href="/workflow?flow=default" className="mt-3 inline-flex text-xs font-semibold text-primary hover:underline">Open builder →</Link></div></div>
+          <div className="mail-folder-workflow px-5"><p className="text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">Workflow</p><div className="mt-3 rounded-lg border bg-background p-3"><p className="flex items-center gap-2 text-xs font-semibold"><Workflow className="size-4 text-violet-600" />Follow-up workflow</p><p className="mt-1.5 text-xs leading-5 text-muted-foreground">Automatically continue conversations that need attention.</p><Link href="/workflow?flow=default" className="mt-3 inline-flex text-xs font-semibold text-primary hover:underline">Open builder →</Link></div></div>
+          <Tooltip><TooltipTrigger render={<Link href="/workflow?flow=default" aria-label="Follow-up workflow" className="mail-folder-workflow-shortcut mx-auto size-10 shrink-0 items-center justify-center rounded-md text-violet-600 hover:bg-muted dark:text-violet-300"><Workflow aria-hidden="true" className="size-4" /></Link>} /><TooltipContent side="right" sideOffset={12}>Follow-up workflow</TooltipContent></Tooltip>
         </aside> : null}
 
         <section className="mail-list" aria-label="Email list">
+          {showFollowupFilters ? <>
+            <EmailFollowupFilters value={folder === "followup" ? followupFilter : null} counts={followupFilterCounts} loading={followupFiltersLoading} onChange={value => { changeFolder("followup"); setFollowupFilter(value); }} />
+            {folder === "followup" && followupFilter === "nurture" ? <div className="border-b bg-violet-50/70 px-4 py-3 text-xs leading-5 text-violet-800 dark:bg-violet-500/10 dark:text-violet-200"><p className="font-semibold">Dormant customer nurture</p><p>Only conversations explicitly enrolled through AI follow-up. Stops when the customer replies.</p></div> : null}
+            {followupFiltersError ? <p role="alert" className="border-b px-4 py-2 text-xs text-destructive">{followupFiltersError} <button type="button" onClick={() => setFollowupFiltersRetry(value => value + 1)} className="font-medium underline">Retry</button></p> : null}
+          </> : null}
 {companyScope ? <div className="space-y-3 border-b p-4">
   <div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold">Conversations <span className="ml-1 font-normal text-muted-foreground">{conversations.length}</span></h3><div className="flex items-center gap-1"><button type="button" aria-label="Refresh customer emails" title="Refresh" disabled={syncing || !inboxConfigured} onClick={() => void syncInbox(false, true)} className="rounded-md p-2 text-muted-foreground hover:bg-muted disabled:opacity-40"><RefreshCw className={syncing ? "size-4 animate-spin" : "size-4"} /></button><button type="button" onClick={openComposer} className="inline-flex h-8 items-center gap-1.5 rounded-md bg-foreground px-2.5 text-xs font-medium text-background"><Plus className="size-3.5" />New email</button></div></div>
   <div className="mail-search" role="search"><Search className="size-4 shrink-0 text-muted-foreground" /><input aria-label="Search customer emails" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search conversations" />{search ? <button type="button" aria-label="Clear search" onClick={() => setSearch("")}><X className="size-3.5" /></button> : null}</div>
@@ -1442,7 +1569,7 @@ export function EmailInboxWorkspace({
           {notice ? <p role="status" className="border-b bg-muted/30 px-3 py-2 text-xs">{notice}</p> : null}
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
 {folder === "drafts" ? <div className="divide-y">{Object.values(savedDrafts.drafts).length ? Object.values(savedDrafts.drafts).map((value) => <div key={value.id} className="flex items-center gap-3 px-4 py-4"><button type="button" onClick={() => resumeDraft(value)} className="min-w-0 flex-1 text-left"><span className="block truncate text-sm font-medium">{value.subject || "(No subject)"}</span><span className="block truncate text-xs text-muted-foreground">{value.to || "No recipient"} · {value.bodyText.slice(0, 100)}</span></button><button type="button" onClick={() => { savedDrafts.remove(value); if (value.id === composeDraftId) { setComposeDraftId(""); setComposeTo(""); setComposeCc(""); setComposeBcc(""); setComposeBody(""); setComposeSubject(""); setComposeAttachments([]); setComposeProviderDraft(undefined); } }} aria-label={"Discard draft " + value.subject} className="rounded p-2 text-muted-foreground"><Trash2 className="size-4" /></button></div>) : <p className="p-5 text-sm text-muted-foreground">No saved drafts.</p>}<EmailMessageList emptyIcon={FileText} conversations={pageItems} categories={visibleCategories} compact={reading} activeId={selectedConversation?.id} checked={checkedIds} readMessages={readMessages} starred={starred} onCheck={() => undefined} onOpen={openConversation} onStar={toggleStar} /></div> : folder === "scheduled" ? <div className="divide-y">{scheduledError ? <p role="alert" className="p-4 text-xs text-red-600">{scheduledError}</p> : null}{scheduledEmails.map((value) => <div key={value.id} className="p-4"><p className="font-medium">{value.payload.subject || "(No subject)"}</p><p className="mt-1 text-xs text-muted-foreground">{value.payload.to?.join(", ")} · {new Date(value.scheduled_at).toLocaleString()} · {value.status}</p>{value.error ? <p className="mt-2 text-xs text-red-600">{value.error}</p> : null}{value.status === "scheduled" ? <button type="button" className="mt-2 text-xs underline" onClick={async () => { const response = await fetch("/api/email/scheduled", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: value.id }) }); const result = await response.json(); if (response.ok) setScheduledEmails((current) => current.filter((item) => item.id !== value.id)); else setScheduledError(result.error); }}>Cancel scheduled send</button> : null}{["scheduled", "failed"].includes(value.status) ? <button type="button" className="ml-4 mt-2 text-xs underline" onClick={() => void editScheduledEmail(value)}>Edit scheduled email</button> : null}</div>)}{!scheduledEmails.length && !scheduledError ? <p className="p-5 text-sm text-muted-foreground">No scheduled emails.</p> : null}</div> : <>
-            <EmailMessageList emptyIcon={folderItems.find((item) => item.id === folder)?.icon} conversations={pageItems} categories={visibleCategories} compact={Boolean(companyScope) || reading} simple={Boolean(companyScope)} activeId={reading ? selectedConversation?.id : undefined} checked={checkedIds} readMessages={readMessages} starred={starred} onCheck={(id) => setCheckedIds((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; })} onOpen={openConversation} onStar={toggleStar} /></>}
+            <EmailMessageList followups={selectedMailboxId && followupActions?.mailboxId === selectedMailboxId ? conversationActions : undefined} emptyIcon={folderItems.find((item) => item.id === folder)?.icon} conversations={pageItems} categories={visibleCategories} compact={Boolean(companyScope) || reading} simple={Boolean(companyScope)} activeId={reading ? selectedConversation?.id : undefined} checked={checkedIds} readMessages={readMessages} starred={starred} onCheck={(id) => setCheckedIds((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; })} onOpen={openConversation} onStar={toggleStar} /></>}
 
           </div>
           <div className="flex min-h-12 items-center justify-end gap-3 border-t px-3 text-xs text-muted-foreground">
@@ -1451,7 +1578,7 @@ export function EmailInboxWorkspace({
           </div>
         </section>
 
-        <main className="mail-reader" aria-label="Email reader">
+        <main className="mail-reader" aria-label="Email reader" aria-hidden={!reading && !companyScope ? true : undefined} inert={!reading && !companyScope}>
           <div className="flex h-11 shrink-0 items-center gap-1 border-b px-3">
             <button type="button" onClick={() => { setMobileReading(false); setDetailsOpen(false); }} className="mr-auto inline-flex items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-muted"><ArrowLeft className="size-4" />{companyScope ? "Conversations" : "Mailbox"}</button>
 {companyScope ? <button type="button" aria-pressed={translationOn} onClick={() => setTranslationOn((value) => !value)} className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted"><Languages className="size-3.5" />{translationOn ? "Show original" : "Translate"}</button> : <>
@@ -1531,7 +1658,8 @@ export function EmailInboxWorkspace({
                   {notice ? <div role="status" className="mb-2 flex items-start gap-2 rounded-md bg-muted px-2.5 py-2 text-xs leading-5"><span className="min-w-0 flex-1 break-words">{/Unable to load saved mailbox:|column .* does not exist/i.test(notice) ? "Mailbox sync is temporarily unavailable. Your reply is still open." : notice}</span><button type="button" aria-label="Dismiss reply notice" title="Dismiss notice" onClick={() => setNotice(null)} className="shrink-0 rounded p-0.5 hover:bg-background"><X className="size-3.5" /></button></div> : null}
                   <div className="mail-reply-actions flex items-center gap-1.5">
                     <input ref={replyFileInput} type="file" multiple disabled={sending || attachmentBusy} className="hidden" onChange={(event) => { void addFiles(event.target.files, "reply"); event.target.value = ""; }} />
-                    <button type="button" disabled={attachmentBusy || sending} title="Attach files" aria-label="Attach files" onClick={() => replyFileInput.current?.click()} className="flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted disabled:opacity-40"><Paperclip className="size-4" /></button>
+                    <EmailAttachmentMenu compact disabled={attachmentBusy || sending} onUpload={() => replyFileInput.current?.click()} onLibrary={() => { setLibraryTab("files"); setLibraryTarget("reply"); }} />
+                    <button type="button" disabled={attachmentBusy || sending} title="Files & templates" aria-label="Insert from file library" onClick={() => { setLibraryTab("templates"); setLibraryTarget("reply"); }} className="flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted disabled:opacity-40"><Library className="size-4" /></button>
                     <Popover>
                       <PopoverTrigger aria-label="More reply options" title="Formatting and more options" disabled={sending} onMouseDown={(event) => event.preventDefault()} className="flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted disabled:opacity-40"><MoreHorizontal className="size-4" /></PopoverTrigger>
                       <PopoverContent align="start" side="top" className="w-64 max-w-[calc(100vw-2rem)] max-h-[min(28rem,var(--available-height))] overflow-y-auto p-3">
@@ -1568,16 +1696,17 @@ export function EmailInboxWorkspace({
           </> : <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">{companyScope ? <div className="max-w-xs px-5 text-center"><Mail className="mx-auto mb-4 size-8 text-muted-foreground/50" /><p className="font-medium text-foreground">Select a conversation</p><p className="mt-2 text-sm leading-6">Read messages and reply to this customer here.</p></div> : "Select an email to read it."}</div>}
         </main>
 
-        {selected && !companyScope ? <aside key={`details-${selectedConversation?.id}`} className="mail-details border-l bg-background" aria-label="Email follow-up details">
+        {selected && !companyScope ? <aside key={`details-${selectedConversation?.id}`} className="mail-details border-l bg-background" aria-label="Email follow-up details" aria-hidden={!reading || !detailsOpen ? true : undefined} inert={!reading || !detailsOpen}>
           <div className="flex h-16 items-center justify-between border-b px-5"><h2 className="text-sm font-semibold">Contact & follow-up</h2><button type="button" aria-label="Close contact details" onClick={() => setDetailsOpen(false)} className="rounded p-1 hover:bg-muted"><X className="size-4" /></button></div>
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <ContactSummary name={selected.contactName || selected.contact} email={selected.contact} company={selected.company} companyId={selected.companyId} ownerName={selected.ownerName} ownerInitials={selected.ownerInitials} ownerAvatarUrl={selected.ownerAvatarUrl} ownerId={selected.ownerId} canCreateInvoices={canCreateInvoices} />
+            <ContactSummary name={selected.contactName || selected.contact} email={selected.contact} company={selected.company} companyId={selected.companyId} canCreateInvoices={canCreateInvoices} />
             <EmailAiSummary
               key={selectedConversation?.id}
               configured={aiConfigured}
               ready={reading && selected.bodyLoaded !== false && Boolean(selected.body.trim())}
               currentFollowUpAt={selectedFollowUp || null}
               onAnalyzed={applyAiFollowUp}
+              scheduleFollowUp={false}
               context={JSON.stringify({
                 mode: "summary",
                 messageId: selected.id,
@@ -1592,6 +1721,35 @@ export function EmailInboxWorkspace({
                 customerProfile: selected.customerProfile || { companyName: selected.company.slice(0, 300), contactName: selected.contactName?.slice(0, 300) },
                 conversationHistory: conversationContext,
               })}
+            />
+            <EmailFollowupPanel
+              key={`${followupIdentity?.mailboxId}:${selectedConversation?.id}:${followupIdentity?.messageId}`}
+              mailboxId={followupIdentity?.mailboxId}
+              messageId={followupIdentity?.messageId}
+              anchors={followupAnchors(conversation)}
+              baseline={conversation.map(followupMessageKey)}
+              subject={selected.subject}
+              recipient={selected.contact}
+              canManage={invoiceViewer?.role !== "viewer"}
+              aiConfigured={aiConfigured}
+              onUpdated={(followup, mutation) => {
+                if (!followup) return;
+                if (mutation && followupIdentity?.mailboxId) {
+                  const mailboxId = followupIdentity.mailboxId;
+                  followupActionRevision.current++;
+                  setFollowupActions(current => ({
+                    mailboxId,
+                    actions: updateFollowupActions(current?.mailboxId === mailboxId ? current.actions : [], followup, conversation),
+                  }));
+                }
+                setFollowUps(current => {
+                  const next = { ...current };
+                  for (const message of conversation) delete next[message.id];
+                  if (["scheduled", "processing", "reminded"].includes(followup.status)) next[selected.id] = followup.due_at;
+                  if (JSON.stringify(current) === JSON.stringify(next)) return current;
+                  return next;
+                });
+              }}
             />
             <section className="mx-6 mb-6 rounded-xl border p-4" aria-labelledby="contact-flow">
               <h3 id="contact-flow" className="flex items-center gap-2 text-sm font-semibold"><Workflow className="size-4 text-primary" />Automation workflow</h3>
@@ -1618,7 +1776,8 @@ export function EmailInboxWorkspace({
               <AttachmentChips attachments={composeAttachments} onRemove={(id) => setComposeAttachments((current) => current.filter((item) => item.id !== id))} />
               <div className="mail-compose-tools flex flex-wrap items-center gap-2 border-t py-3">
                 <input ref={composeFileInput} type="file" multiple className="hidden" disabled={composeSending || attachmentBusy} onChange={(event) => { void addFiles(event.target.files, "compose"); event.target.value = ""; }} />
-                <button type="button" onClick={() => composeFileInput.current?.click()} disabled={attachmentBusy || composeSending} className="inline-flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-md border px-3 text-xs font-medium hover:bg-muted disabled:opacity-40"><Paperclip className="size-4 shrink-0" />Attach files</button>
+                <EmailAttachmentMenu disabled={attachmentBusy || composeSending} onUpload={() => composeFileInput.current?.click()} onLibrary={() => { setLibraryTab("files"); setLibraryTarget("compose"); }} />
+                <button type="button" onClick={() => { setLibraryTab("templates"); setLibraryTarget("compose"); }} disabled={attachmentBusy || composeSending} className="inline-flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-md border px-3 text-xs font-medium hover:bg-muted disabled:opacity-40"><Library className="size-4 shrink-0" />Files & templates</button>
                 <button type="button" onClick={() => openCatalogPicker("compose")} disabled={attachmentBusy || composeSending} className="inline-flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-md border px-3 text-xs font-medium hover:bg-muted disabled:opacity-40"><Library className="size-4 shrink-0" />Add catalog PDF</button>
                 {canCreateInvoices ? <button type="button" disabled={attachmentBusy || composeSending} onClick={()=>{if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(composeTo.trim())){setComposeError("Enter one customer email to choose an order invoice.");return;}setInvoiceContext({email:composeTo.trim(),target:"compose"});}} className="inline-flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-md border px-3 text-xs font-medium hover:bg-muted disabled:opacity-40"><ReceiptText className="size-4 shrink-0" />Attach invoice</button> : null}
               </div>
@@ -1642,6 +1801,7 @@ export function EmailInboxWorkspace({
         </DialogContent>
       </Dialog>
       {invoiceContext ? <InvoiceCreateDialog context={invoiceContext} invoiceViewer={invoiceViewer} onClose={()=>setInvoiceContext(null)} onAttach={attachInvoicePdf} /> : null}
+      {libraryTarget ? <DocumentLibraryPicker key={`${libraryTarget}-${libraryTab}`} initialTab={libraryTab} onClose={() => setLibraryTarget(null)} onSelect={insertLibraryItem} /> : null}
       {catalogOpen ? <EmailCatalogDialog products={products} catalogs={catalogs} customer={catalogTarget === "reply" ? (selected?.company && !["Direct email", "Unknown company"].includes(selected.company) ? selected.company : "") : composeTo} busy={attachmentBusy} onClose={() => setCatalogOpen(false)} onAttach={attachCatalog} /> : null}
     </div>
   );

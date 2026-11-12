@@ -117,6 +117,8 @@ export function EmailAccountsWorkspace({ initialData, ...props }: Props) {
     {...props}
     initialThreadId={hasSwitched ? undefined : props.initialThreadId}
     initialAgentDraft={hasSwitched ? undefined : props.initialAgentDraft}
+    initialLibraryItem={hasSwitched ? undefined : props.initialLibraryItem}
+    initialLibraryRequest={hasSwitched ? undefined : props.initialLibraryRequest}
     key={data.selectedMailboxId ?? "no-mailbox"}
     mailboxes={data.mailboxes}
     selectedMailboxId={data.selectedMailboxId}

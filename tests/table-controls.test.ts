@@ -50,17 +50,12 @@ test("pagination preserves server-backed next handlers and blocks pending contro
   assert.equal(children(children(pending)[0])[2].props.disabled, true);
 });
 
-test("disabled filter forms cannot commit through Enter while an action is pending", () => {
+test("live filter forms never submit or render an Apply action", () => {
   const render = control("../components/ui/table-filters.tsx", "TableFilters");
-  let applied = 0;
   let prevented = 0;
-  const submit = (disabled: boolean) => {
-    const form = children(render({ children: null, disabled, onApply: () => applied++ }))[0];
-    (form.props.onSubmit as (event: { preventDefault: () => void }) => void)({ preventDefault: () => prevented++ });
-  };
-  submit(true);
-  assert.equal(applied, 0);
-  submit(false);
-  assert.equal(applied, 1);
-  assert.equal(prevented, 2);
+  const input = { props: { value: "PLA" } };
+  const form = children(render({ children: input }))[0];
+  assert.equal(form.props.children, input);
+  (form.props.onSubmit as (event: { preventDefault: () => void }) => void)({ preventDefault: () => prevented++ });
+  assert.equal(prevented, 1);
 });

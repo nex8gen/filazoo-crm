@@ -6,7 +6,7 @@ import { AiIcon } from "@/components/ai-icon";
 
 import { useEffect, useEffectEvent, useState } from "react";
 import Link from "next/link";
-import { Check, Package2 } from "lucide-react";
+import { Package2 } from "lucide-react";
 import type { EmailSummary } from "@/lib/ai/email-summary";
 import { requestEmailSummary } from "@/lib/email-summary-client";
 
@@ -79,12 +79,13 @@ function SummaryProducts({ summary, language }: { summary: EmailSummary; languag
   </div>;
 }
 
-export function EmailAiSummary({ context, configured, ready, currentFollowUpAt, onAnalyzed }: {
+export function EmailAiSummary({ context, configured, ready, currentFollowUpAt, onAnalyzed, scheduleFollowUp = true }: {
   context: string;
   configured: boolean;
   ready: boolean;
   currentFollowUpAt: string | null;
   onAnalyzed: (summary: EmailSummary) => Promise<void>;
+  scheduleFollowUp?: boolean;
 }) {
   const { language } = useLanguage();
   const [summary, setSummary] = useState<EmailSummary | null>(null);
@@ -92,7 +93,6 @@ export function EmailAiSummary({ context, configured, ready, currentFollowUpAt, 
   const [saveError, setSaveError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const [cached, setCached] = useState(false);
   const getRequest = useEffectEvent(() => JSON.stringify({ ...JSON.parse(context), currentFollowUpAt, language }));
   const saveAnalysis = useEffectEvent((output: EmailSummary) => onAnalyzed(output));
 
@@ -108,9 +108,8 @@ export function EmailAiSummary({ context, configured, ready, currentFollowUpAt, 
         const output = result.summary;
         if (active) {
           setSummary(output);
-          setCached(result.cached);
           try {
-            if (!result.cached) await saveAnalysis(output);
+            if (!result.cached && scheduleFollowUp) await saveAnalysis(output);
           } catch (error) {
             if (active) setSaveError(error instanceof Error ? error.message : "Unable to save the AI follow-up.");
           }
@@ -125,7 +124,7 @@ export function EmailAiSummary({ context, configured, ready, currentFollowUpAt, 
     }
     void generate();
     return () => { active = false; };
-  }, [context, configured, ready, attempt, language]);
+  }, [context, configured, ready, attempt, language, scheduleFollowUp]);
 
   async function retrySaving() {
     if (!summary) return;
@@ -141,12 +140,10 @@ export function EmailAiSummary({ context, configured, ready, currentFollowUpAt, 
   }
 
   return <section className="mx-6 mb-6" aria-labelledby="email-ai-summary">
-    <div className="mb-3 flex items-center justify-between gap-2">
+    <div className="mb-2 flex items-center justify-between gap-2">
       <h3 id="email-ai-summary" className="flex items-center gap-2 text-sm font-semibold text-primary"><AiIcon state={loading ? "thinking" : "idle"} />AI summary</h3>
     </div>
-    <p className="mb-3 text-xs leading-5 text-muted-foreground">Key buying signals, company research and products to offer.</p>
-    {summary && !loading && !error ? <p className="mb-3 flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-300"><Check className="size-3.5" />{saveError ? "Summary ready · Follow-up not saved" : cached ? "Saved analysis" : "Analysis complete"}</p> : null}
-    <div className="rounded-2xl border border-violet-300/80 bg-gradient-to-br from-sky-50 via-violet-50/70 to-background p-4 dark:border-violet-500/40 dark:from-sky-500/10 dark:via-violet-500/10">
+    <div className="rounded-xl border border-border/70 bg-background p-4">
       <div aria-live="polite" aria-busy={loading}>
         {!configured ? <p className="text-xs leading-5 text-muted-foreground">Connect an AI provider in Settings to generate conversation summaries.</p>
           : !ready ? <p className="text-xs leading-5 text-muted-foreground">Waiting for the message to load before analysis.</p>
@@ -157,7 +154,7 @@ export function EmailAiSummary({ context, configured, ready, currentFollowUpAt, 
       {summary && error ? <div role="status" className="mt-3 text-xs leading-5 text-destructive">{error}<button type="button" onClick={() => setAttempt(value => value + 1)} className="ml-2 font-semibold text-primary hover:underline">Retry next step</button></div> : null}
       {saveError ? <div role="status" className="mt-3 border-t border-violet-200/70 pt-3"><p className="text-xs leading-5 text-destructive">The summary is ready, but the follow-up could not be saved: {saveError}</p><button type="button" disabled={loading} onClick={() => void retrySaving()} className="mt-2 text-xs font-semibold text-primary hover:underline disabled:opacity-40">Retry saving follow-up</button></div> : null}
       {loading && summary ? <p role="status" className="mt-3 text-xs text-muted-foreground">Updating suggested next step…</p> : null}
-      <p className="mt-4 text-[11px] leading-4 text-muted-foreground">AI generated · Follow-up scheduled automatically when needed</p>
+      {scheduleFollowUp ? <p className="mt-4 text-[11px] leading-4 text-muted-foreground">Follow-up scheduled automatically when needed</p> : null}
     </div>
   </section>;
 }

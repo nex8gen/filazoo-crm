@@ -17,6 +17,7 @@ function load(options: { anonymous?: boolean; viewer?: boolean; failure?: boolea
     "@/lib/marketing-assets": { marketingYearSchema },
     "@/lib/data/marketing-assets": { MarketingAssetError,
       listMarketingAssets: async (viewer: { workspaceId: string }, year: number) => { assert.equal(viewer.workspaceId, "workspace"); assert.equal(year, 2026); await service("list"); return []; },
+      listMarketingProducts: async (viewer: { workspaceId: string }) => { assert.equal(viewer.workspaceId, "workspace"); await service("products"); return [{ sku: "PLA", name: "PLA filament", material: "PLA" }]; },
       saveMarketingAsset: async () => { await service("save"); return { id: "saved" }; },
       deleteMarketingAsset: async () => { await service("delete"); },
     },
@@ -40,6 +41,17 @@ test("marketing APIs deny anonymous access, cross-site writes and read-only muta
   assert.deepEqual(editor.calls, []);
 });
 
+test("the campaign planner no longer loads a product catalog, including for older clients", async () => {
+  const { api, calls } = load({ viewer: true });
+  const response = await api.GET(new Request("https://crm.test/api/marketing-assets?year=2026&catalog=1"));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { assets: [] });
+  assert.deepEqual(calls, ["list"]);
+  const anonymous = load({ anonymous: true });
+  assert.equal((await anonymous.api.GET(new Request("https://crm.test/api/marketing-assets?year=2026&catalog=1"))).status, 401);
+  assert.deepEqual(anonymous.calls, []);
+});
+
 test("marketing APIs validate requests, protect private data, and refresh the saved page", async () => {
   const { api, calls } = load();
   assert.equal((await api.GET(new Request("https://crm.test/api/marketing-assets?year=invalid"))).status, 400);
@@ -48,7 +60,7 @@ test("marketing APIs validate requests, protect private data, and refresh the sa
   assert.deepEqual(calls, []);
   const result = await api.POST(request("POST"));
   assert.equal(result.status, 200); assert.equal(result.headers.get("Cache-Control"), "private, no-store");
-  assert.deepEqual(calls, ["save", "/workflow/marketing-assets"]);
+  assert.deepEqual(calls, ["save", "/email/campaigns"]);
   const failed = await load({ failure: true }).api.GET(request("GET"));
   assert.equal(failed.status, 503); assert.doesNotMatch(await failed.text(), /credentials/);
 });

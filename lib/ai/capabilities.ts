@@ -7,11 +7,13 @@ export const AGENT_CONTRACT_VERSION = "2026-11-07.2";
 export const agentDomains = ["customers", "quotations", "invoices", "orders", "products", "email", "tasks", "workflows", "settings"] as const;
 export type AgentDomain = (typeof agentDomains)[number];
 export const guidedAgentFeatures = [
+  { domain: "email", name: "Create, review and schedule an email campaign", href: "/email/campaigns", reason: "Use Campaigns to set the name and date, choose included and excluded audiences, select a connected sender and saved template, then review recipients and content before confirming sending or scheduling." },
   { domain: "customers", name: "Find new business leads and review public contacts", href: "/lead-channel/ai-leads", reason: "Choose workspace products, target locations and a bounded research search on AI Leads; review evidence and select which prospects to save." },
   { domain: "settings", name: "Connect mailboxes, OAuth or ERP", href: "/settings/apps", reason: "Credentials and account authorization stay in the connection form." },
   { domain: "settings", name: "Password, sessions, avatar, workspace membership and ownership", href: "/settings", reason: "Use the account/team security controls for identity or ownership changes and binary uploads." },
   { domain: "products", name: "Upload product images", href: "/products", reason: "Select the actual image file in the product editor." },
   { domain: "email", name: "Upload attachments or schedule a new email", href: "/email", reason: "Use the composer for file selection and scheduling. Agent can draft the message and cancel an existing scheduled send." },
+  { domain: "email", name: "Schedule a mailbox reminder or one-time AI follow-up", href: "/email", reason: "Select the conversation, open Contact & follow-up, choose Remind me or AI follow-up, and review the time and message before confirming. Edit or cancel from its follow-up status card." },
   { domain: "workflows", name: "Preview/test workflow and send test email", href: "/flows", reason: "Use the workflow's test controls to inspect the preview or explicitly send a test." },
 ] as const;
 const groups: Record<AgentDomain, string> = {

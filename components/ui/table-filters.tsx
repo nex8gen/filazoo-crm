@@ -2,19 +2,15 @@
 
 import type { ReactNode } from "react";
 import { Search } from "lucide-react";
-import { Button } from "@/components/ui/button";
 
-/** Draft filters are committed together, including when the user presses Enter. */
-export function TableFilters({ children, onApply, disabled = false, actions }: {
+/** Filter controls update their state directly; Enter never navigates or submits a write. */
+export function TableFilters({ children, actions }: {
   children: ReactNode;
-  onApply: () => void;
-  disabled?: boolean;
   actions?: ReactNode;
 }) {
   return <div className="crm-table-filter-bar">
-    <form className="crm-table-filters" onSubmit={(event) => { event.preventDefault(); if (!disabled) onApply(); }}>
+    <form className="crm-table-filters" onSubmit={(event) => event.preventDefault()}>
       {children}
-      <Button type="submit" variant="outline" size="sm" disabled={disabled}>Apply filters</Button>
     </form>
     {actions ? <div className="flex flex-wrap items-end gap-2">{actions}</div> : null}
   </div>;

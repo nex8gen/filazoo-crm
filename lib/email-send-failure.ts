@@ -1,3 +1,6 @@
+/** A queued campaign recipient became ineligible before SMTP submission. */
+export class CampaignDeliveryBlocked extends Error {}
+
 /** Only positive evidence that SMTP never reached message submission permits a retry. */
 export function emailFailedBeforeSubmission(error: unknown) {
   const value = typeof error === "object" && error !== null ? error as { message?: unknown; command?: unknown } : null;

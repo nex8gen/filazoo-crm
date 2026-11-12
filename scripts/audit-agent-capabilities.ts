@@ -12,6 +12,8 @@ const routes: Record<string, string[]> = {
 const internal = /app\/api\/(?:ai\/(?:assistant|history|usage)|companies\/\[id\]\/chat|email\/(?:assist|reply)|agent\/demo|automation\/diagnose|cron\/|shopify\/|meta\/(?:webhook|lead-bridge)|twilio\/|customer\/|invoices\/\[id\]\/customer|flows\/(?:process|track))/;
 const surfaces = crmMutationSurfaces(process.cwd()).map(surface => {
   const [file, action] = surface.split("#");
+  if (file === "app/api/email/campaigns/route.ts" || file === "app/api/marketing-assets/route.ts") return { surface, mode: "guided", tools: [], explanation: "Use Marketing campaigns to create and save a campaign, select audiences and exclusions, configure a connected sender and template, and review its content and recipient estimate before explicitly submitting a send or schedule. General chat must link to /email/campaigns and must not claim it sent a campaign." };
+  if (file === "app/api/email/follow-up/route.ts") return { surface, mode: "guided", tools: [], explanation: "Use Contact & follow-up in Email to create, preview, reschedule or cancel a conversation reminder or one-time AI follow-up. A person reviews the content and time before confirming; general chat must link to Email and must not claim it scheduled the action." };
   let tools = actions[action] ?? routes[file];
   if (file === "app/api/email/scheduled/route.ts" && action === "DELETE") tools = ["cancel_scheduled_email"];
   if (file === "app/api/email/drafts/route.ts" && action === "DELETE") tools = ["discard_email_draft"];
@@ -26,5 +28,5 @@ const surfaces = crmMutationSurfaces(process.cwd()).map(surface => {
   return { surface, mode: "guided", tools: [], explanation: /auth|login|signup|password|invitation|join|workspaces|team-actions|signOut/.test(file + action) ? "Identity, workspace or ownership flow uses the authenticated account controls." : /image|avatar|Mailbox|Connection|erp/i.test(file + action) ? "Connection credentials, uploads or connection testing use the relevant settings/file form." : "Specialized UI test, composition or analysis flow; use its page controls. The agent must provide a handoff and must not claim it executed this feature." };
 });
 const capabilities = agentCapabilities().map(({ name, domain, description }) => ({ name, domain, description }));
-writeFileSync("docs/agent-capability-audit.json", JSON.stringify({ contractVersion: AGENT_CONTRACT_VERSION, generatedOn: "2026-11-08", capabilities, guidedFeatures: guidedAgentFeatures, surfaces }, null, 2) + "\n");
+writeFileSync("docs/agent-capability-audit.json", JSON.stringify({ contractVersion: AGENT_CONTRACT_VERSION, generatedOn: "2026-11-12", capabilities, guidedFeatures: guidedAgentFeatures, surfaces }, null, 2) + "\n");
 console.log(JSON.stringify({ capabilities: capabilities.length, surfaces: surfaces.length, modes: Object.fromEntries(["direct", "guided", "read", "internal"].map(mode => [mode, surfaces.filter(surface => surface.mode === mode).length])) }));

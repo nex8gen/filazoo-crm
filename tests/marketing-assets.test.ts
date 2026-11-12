@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { holidaySlots, marketingAssetInputSchema, marketingAssetText, monthEndSlots, newMarketingAsset } from "../lib/marketing-assets.ts";
+import { holidaySlots, marketingAssetInputSchema, marketingAssetText, marketingCategories, marketingCategoryLabels, monthEndSlots, newMarketingAsset } from "../lib/marketing-assets.ts";
 
 test("month-end campaigns include the final seven days, including leap years", () => {
   const slots = monthEndSlots(2028);
@@ -30,9 +30,13 @@ test("plans reject impossible dates, reversed ranges, year mismatches and incomp
   assert.deepEqual(ready.productSkus, ["PLA"]);
 });
 
-test("new factory sales have independent slots and exports include all reusable content", () => {
+test("custom campaigns have independent slots, editable dates, and reusable exports", () => {
   const first = newMarketingAsset("factory_sale", 2026), second = newMarketingAsset("factory_sale", 2026);
+  assert.equal(marketingCategories[0], first.category);
+  assert.equal(marketingCategoryLabels[first.category], "Campaigns");
+  assert.equal(first.title, "New campaign");
   assert.notEqual(first.slot, second.slot);
-  const text = marketingAssetText({ ...first, title: "Partner sale", audience: "Distributors", productSkus: ["PLA", "OLD"], offer: "Bulk orders", message: "Request pricing" }, [{ sku: "PLA", name: "PLA filament", material: "PLA" }]);
-  assert.match(text, /Partner sale/); assert.match(text, /Distributors/); assert.match(text, /PLA filament, OLD/); assert.match(text, /Bulk orders/); assert.match(text, /Request pricing/);
+  assert.equal(marketingAssetInputSchema.safeParse({ ...first, title: "Product launch", startDate: "2026-06-12", endDate: "2026-06-23" }).success, true);
+  const text = marketingAssetText({ ...first, title: "Partner sale", audience: "Distributors", productSkus: ["PLA", "OLD"], offer: "Bulk orders", message: "Request pricing" });
+  assert.match(text, /Partner sale/); assert.match(text, /Distributors/); assert.doesNotMatch(text, /Products:|PLA|OLD|Not selected/); assert.match(text, /Bulk orders/); assert.match(text, /Request pricing/);
 });

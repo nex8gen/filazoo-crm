@@ -71,6 +71,9 @@ export function InvoiceWorkspace({
   const [status, setStatus] = useWorkspaceState(`${memoryKey}.status`, initialStatus);
   const [appliedFilters, setAppliedFilters] = useWorkspaceState(`${memoryKey}.filters`, { search: "", status: initialStatus });
   const [page, setPage] = useWorkspaceState(`${memoryKey}.page`, 0);
+  const [filtersPending, setFiltering] = useState(false);
+  const filtering = filtersPending && !selected && !editor && (search !== appliedFilters.search || status !== appliedFilters.status);
+  const listingSequence = useRef(0);
   const [busy, setBusy] = useState(false);
   const running = useRef(false);
   const [error, setError] = useState(initialError);
@@ -79,6 +82,7 @@ export function InvoiceWorkspace({
   useEffect(() => {
     if (serverSnapshot.current === initial) return;
     serverSnapshot.current = initial;
+    if (search !== appliedFilters.search || status !== appliedFilters.status) return;
     if (page === 0 && !appliedFilters.search && appliedFilters.status === initialStatus) {
       setListing(initial);
       return;
@@ -86,18 +90,38 @@ export function InvoiceWorkspace({
     // A background server refresh must update the remembered filtered page,
     // rather than replacing it with the server's unfiltered first page.
     const controller = new AbortController();
-    void api(`/api/invoices?page=${page}&search=${encodeURIComponent(appliedFilters.search)}&status=${appliedFilters.status}${companyId ? `&companyId=${companyId}` : ""}`, undefined, "GET", controller.signal).then(setListing).catch(() => {});
+    const sequence = ++listingSequence.current;
+    void api(`/api/invoices?page=${page}&search=${encodeURIComponent(appliedFilters.search)}&status=${appliedFilters.status}${companyId ? `&companyId=${companyId}` : ""}`, undefined, "GET", controller.signal).then(result => { if (!controller.signal.aborted && sequence === listingSequence.current) setListing(result); }).catch(() => {});
     return () => controller.abort();
-  }, [initial, page, appliedFilters, companyId, initialStatus, setListing]);
+  }, [initial, page, appliedFilters, companyId, initialStatus, setListing, search, status]);
   useEffect(() => {
     const controller = new AbortController();
     const refresh = () => {
-      void api(`/api/invoices?page=${page}&search=${encodeURIComponent(appliedFilters.search)}&status=${appliedFilters.status}${companyId ? `&companyId=${companyId}` : ""}`, undefined, "GET", controller.signal).then(setListing).catch(() => {});
+      if (search !== appliedFilters.search || status !== appliedFilters.status) return;
+      const sequence = ++listingSequence.current;
+      void api(`/api/invoices?page=${page}&search=${encodeURIComponent(appliedFilters.search)}&status=${appliedFilters.status}${companyId ? `&companyId=${companyId}` : ""}`, undefined, "GET", controller.signal).then(result => { if (!controller.signal.aborted && sequence === listingSequence.current) setListing(result); }).catch(() => {});
       if (selected?.id) void api(`/api/invoices/${selected.id}`, undefined, "GET", controller.signal).then((result) => setSelected(result.invoice)).catch(() => {});
     };
     window.addEventListener("filazoo:agent-action", refresh);
     return () => { controller.abort(); window.removeEventListener("filazoo:agent-action", refresh); };
-  }, [page, appliedFilters, companyId, selected?.id, setListing]);
+  }, [page, appliedFilters, companyId, selected?.id, setListing, search, status]);
+  useEffect(() => {
+    if (selected || editor || (search === appliedFilters.search && status === appliedFilters.status)) return;
+    const sequence = ++listingSequence.current;
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      setFiltering(true);
+      setError("");
+      try {
+        const result = await api(`/api/invoices?page=0&search=${encodeURIComponent(search)}&status=${status}${companyId ? `&companyId=${companyId}` : ""}`, undefined, "GET", controller.signal);
+        if (controller.signal.aborted || sequence !== listingSequence.current) return;
+        setListing(result); setPage(0); setAppliedFilters({ search, status });
+      } catch (cause) {
+        if (!controller.signal.aborted && sequence === listingSequence.current) setError(cause instanceof Error ? cause.message : "Unable to search invoices.");
+      } finally { if (!controller.signal.aborted && sequence === listingSequence.current) setFiltering(false); }
+    }, status !== appliedFilters.status ? 0 : 200);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [search, status, appliedFilters.search, appliedFilters.status, selected, editor, companyId, setListing, setPage, setAppliedFilters]);
   const [confirm, setConfirm] = useState<"issue" | "void" | "delete" | null>(
     null,
   );
@@ -116,12 +140,14 @@ export function InvoiceWorkspace({
       setBusy(false);
     }
   }
-  async function load(nextPage = page, filters = appliedFilters) {
+  async function load(nextPage = page, filters = { search, status }) {
+    const sequence = ++listingSequence.current;
     nextPage = Math.max(0, nextPage);
     const result = await api(
       `/api/invoices?page=${nextPage}&search=${encodeURIComponent(filters.search)}&status=${filters.status}${companyId ? `&companyId=${companyId}` : ""}`,
     );
     const lastPage = Math.max(0, Math.ceil(result.count / 25) - 1);
+    if (sequence !== listingSequence.current) return;
     if (nextPage > lastPage) return load(lastPage, filters);
     setListing(result);
     setPage(nextPage);
@@ -482,11 +508,11 @@ export function InvoiceWorkspace({
               detail="All matching unpaid invoices past their due date"
             />
           </div>
-          <TableFilters disabled={busy} onApply={() => void run(() => load(0, { search, status }))}>
+          <TableFilters>
             <TableFilter label="Search customer" search><input value={search} maxLength={200} placeholder="Customer or company name" onChange={(event) => setSearch(event.target.value)} /></TableFilter>
             <TableFilter label="Status"><Select value={status} onValueChange={(value) => { if (value !== null) setStatus(value); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="">All invoices</SelectItem><SelectItem value="draft">Drafts</SelectItem><SelectItem value="issued">Issued / partial / overdue / paid</SelectItem><SelectItem value="void">Void</SelectItem></SelectContent></Select></TableFilter>
           </TableFilters>
-          <div className="crm-table-frame"><div className="crm-table-viewport">
+          <div className="crm-table-frame" aria-busy={filtering}><div className="crm-table-viewport">
             <table className="crm-table min-w-[840px]">
               <caption className="sr-only">Customer invoices, due dates, status, totals and outstanding balances</caption>
               <thead className="border-b bg-muted/40 text-xs text-muted-foreground">
@@ -554,7 +580,7 @@ export function InvoiceWorkspace({
               <EmptyState icon={ReceiptText} className="m-5" title={appliedFilters.search || appliedFilters.status ? "No matching invoices" : "Your invoices will appear here"} description={appliedFilters.search || appliedFilters.status ? "Try another search or adjust your filters." : canWrite ? "Create a draft to start billing your customers." : "Invoices created by your team will appear here."} />
             ) : null}
           </div></div>
-          <TablePagination page={page + 1} pageCount={Math.ceil(listing.count / 25)} total={listing.count} itemLabel="invoices" disabled={busy} onPrevious={() => void run(() => load(page - 1))} onNext={() => void run(() => load(page + 1))} />
+          <TablePagination page={page + 1} pageCount={Math.ceil(listing.count / 25)} total={listing.count} itemLabel="invoices" disabled={busy || filtering || search !== appliedFilters.search || status !== appliedFilters.status} onPrevious={() => void run(() => load(page - 1))} onNext={() => void run(() => load(page + 1))} />
         </>
       )}
     </div>

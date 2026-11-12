@@ -16,6 +16,7 @@ import * as register from "../lib/purchase-order-register.ts";
 import * as orders from "../lib/purchase-orders.ts";
 import { formatMoney } from "../lib/invoices.ts";
 import type { OrderProfile, PurchaseOrder } from "../lib/purchase-orders.ts";
+import { defaultTableColumns, type TableId } from "../lib/table-column-preferences.ts";
 
 const require = createRequire(import.meta.url);
 const companyId = "4913b683-bcec-4079-b424-6fd559ed0c2a";
@@ -205,6 +206,9 @@ function registerElements(drafts = false, canWrite = true, empty = false, compan
     "@/components/ui/button": { Button: "button", buttonVariants: () => "" },
     "@/components/ui/checkbox": ui,
     "@/components/ui/table-status-badge": ui,
+    "@/components/ui/live-search-form": { LiveSearchForm: (props: Record<string, unknown>) => ({ type: "form", props: { ...props, method: "get" } }) },
+    "@/components/ui/table-columns-trigger": ui,
+    "@/components/table-columns-provider": { useTableColumns: (tableId: TableId) => [defaultTableColumns[tableId], () => {}] },
     "@/components/ui/dropdown-menu": ui,
     "@/components/company-purchase-order-create": { CompanyPurchaseOrderCreate: "CompanyPurchaseOrderCreate" },
     "@/lib/purchase-order-overview": overview,

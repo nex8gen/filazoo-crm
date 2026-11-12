@@ -69,7 +69,7 @@ function SidebarGroup({ group, pathname, expanded }: { group: NavigationGroup; p
   const active = group.items.some(item => itemIsActive(pathname, item));
   const rowActive = expanded && group.nested ? itemIsActive(pathname, group.items[0]) : active;
   const rowClass = `workspace-sidebar-row ${rowActive ? "is-active" : ""}`;
-  const icon = <group.icon aria-hidden="true" className="size-[18px] shrink-0" />;
+  const icon = <group.icon aria-hidden="true" className="size-4 shrink-0" />;
 
   if (!expanded && !group.direct) {
     return (
@@ -104,7 +104,7 @@ function SidebarGroup({ group, pathname, expanded }: { group: NavigationGroup; p
     <li>
       {expanded ? link : <Tooltip><TooltipTrigger render={link} /><TooltipContent side="right" sideOffset={20}>{group.label}</TooltipContent></Tooltip>}
       {expanded && active && !group.direct ? (
-        <ul className="mb-2 mt-1 space-y-0.5 pl-8">
+        <ul className="workspace-sidebar-submenu">
           {group.items.filter(item => item.href !== group.items[0].href).map(item => (
             <li key={item.href}>
               <Link href={item.href} aria-current={itemIsActive(pathname, item) ? "page" : undefined} className={`workspace-sidebar-subitem ${itemIsActive(pathname, item) ? "is-active" : ""}`}>
@@ -153,8 +153,8 @@ export function WorkspaceSidebar({ pathname, expanded, onToggle, onSearch, userM
           {expanded ? <><span>Search</span><kbd className="ml-auto whitespace-nowrap text-xs font-normal text-[#c4c4c4]">Ctrl K</kbd></> : null}
         </button>
       </div>
-      <nav aria-label="Primary navigation" className="scrollbar-hidden min-h-0 flex-1 overflow-y-auto px-2 pb-4">
-        <ul className="space-y-1">
+      <nav aria-label="Primary navigation" className="scrollbar-hidden min-h-0 flex-1 overflow-y-auto px-1.5 pb-4">
+        <ul className="space-y-0.5">
           {navigation.filter(group => group.label !== "Settings").map(group => <SidebarGroup key={`${group.label}:${pathname}:${expanded}`} group={group} pathname={pathname} expanded={expanded} />)}
         </ul>
       </nav>

@@ -6,16 +6,18 @@ import { referenceHeaderIds, threadKeyForEmail } from "@/lib/email-threading";
 import { resolveEmailContentIds } from "@/lib/email-content";
 import { prepareUserEmail } from "@/lib/data/email-footers";
 import { emailSendSchema } from "../email-workbench";
-import { emailFailedBeforeSubmission } from "../email-send-failure.ts";
+import { emailFailedBeforeSubmission, CampaignDeliveryBlocked } from "../email-send-failure.ts";
 
 const attachmentBucket = "mailbox-attachments";
 
 export async function sendEmailRequest(request: Request) {
   const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
-  return deliverEmail(viewer, await request.json().catch(() => null));
+  const input = await request.json().catch(() => null);
+  if (input?.campaign) return Response.json({ ok: false, error: "Submit campaigns from their review screen." }, { status: 400 });
+  return deliverEmail(viewer, input);
 }
 
-export async function deliverEmail(viewer: WorkspaceViewer, input: unknown, alreadyReserved = false) {
+export async function deliverEmail(viewer: WorkspaceViewer, input: unknown, alreadyReserved = false, beforeSubmit?: () => Promise<void>) {
   let operationId: string | undefined;
   let smtpStarted = false, smtpAccepted = false;
   try {
@@ -24,6 +26,7 @@ export async function deliverEmail(viewer: WorkspaceViewer, input: unknown, alre
       return Response.json({ ok: false, error: "Enter a valid recipient, subject, and message." }, { status: 400 });
     }
     const { to, cc, bcc, subject, attachments } = parsed.data;
+    if (parsed.data.campaign) { operationId = parsed.data.requestId; const { assertCampaignDelivery } = await import("./campaign-send-guard.ts"); await assertCampaignDelivery(viewer, parsed.data); }
     const inReplyTo = parsed.data.inReplyTo;
     const references = referenceHeaderIds(parsed.data.references);
     const threadId = parsed.data.threadId;
@@ -88,6 +91,8 @@ export async function deliverEmail(viewer: WorkspaceViewer, input: unknown, alre
 
     let sendResult;
     try {
+      await beforeSubmit?.();
+      if (parsed.data.campaign) { const { assertCampaignDelivery } = await import("./campaign-send-guard.ts"); await assertCampaignDelivery(viewer, parsed.data); }
       if (inReplyTo || references.length) {
         const { stopAutoReplyForManualSend } = await import("@/lib/data/email-auto-reply");
         for (const recipient of to) await stopAutoReplyForManualSend(viewer, [...references, ...(inReplyTo ? [inReplyTo] : [])], recipient);
@@ -112,6 +117,8 @@ export async function deliverEmail(viewer: WorkspaceViewer, input: unknown, alre
         bcc,
         ...(operationId ? { messageId: `<${viewer.id}.${operationId}@filazoo.com>` } : {}),
         subject,
+        fromName: parsed.data.senderName,
+        replyTo: parsed.data.replyTo,
         text: text || "",
         html,
         inReplyTo,
@@ -192,7 +199,7 @@ export async function deliverEmail(viewer: WorkspaceViewer, input: unknown, alre
     if (mailbox.imapHost && mailbox.imapUsername && mailbox.imapPassword && sendResult.messageId) {
       try {
         const [{ buildMailboxMime }, { appendMailboxSent }] = await Promise.all([import("@/lib/mailer"), import("@/lib/mailbox-imap")]);
-        const raw = await buildMailboxMime(mailbox.email!, { to, cc, bcc, subject, text, html, messageId: sendResult.messageId, inReplyTo, references, attachments: decodedAttachments });
+        const raw = await buildMailboxMime(mailbox.email!, { to, cc, bcc, subject, text, html, fromName: parsed.data.senderName, replyTo: parsed.data.replyTo, messageId: sendResult.messageId, inReplyTo, references, attachments: decodedAttachments });
         await appendMailboxSent(mailbox, raw, sendResult.messageId);
       } catch (error) { result.providerWarning = "Email sent and saved in the CRM. Its provider Sent copy could not be saved; check your provider before sending again."; console.warn("Email sent; provider Sent copy failed:", error instanceof Error ? error.message : "Unknown error"); }
     }
@@ -207,6 +214,10 @@ export async function deliverEmail(viewer: WorkspaceViewer, input: unknown, alre
     if (operationId && result.providerWarning) { const { updateEmailSend } = await import("@/lib/data/email-delivery"); await updateEmailSend(viewer.id, operationId, "sent", result); }
     return Response.json(result, { status: 200 });
   } catch (error) {
+    if (error instanceof CampaignDeliveryBlocked && !smtpStarted) {
+      if (operationId) { const { updateEmailSend } = await import("@/lib/data/email-delivery"); await updateEmailSend(viewer.id, operationId, "cancelled", { ok: true, skipped: true, reason: error.message }); }
+      return Response.json({ ok: true, skipped: true, reason: error.message });
+    }
     if (operationId) {
       try {
         const { updateEmailSend } = await import("@/lib/data/email-delivery");

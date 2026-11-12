@@ -74,7 +74,6 @@ export function ProductsCatalog({ products, canWrite }: { products: Product[]; c
   const [query, setQuery] = useState("");
   const [material, setMaterial] = useState("all");
   const [status, setStatus] = useState("all");
-  const [draft, setDraft] = useState({ query: "", material: "all", status: "all" });
   const [page, setPage] = useState(1);
   const [downloading, setDownloading] = useState(false);
   const materials = useMemo(() => [...new Set(products.map((product) => product.material))].sort(), [products]);
@@ -118,10 +117,10 @@ export function ProductsCatalog({ products, canWrite }: { products: Product[]; c
 
   return (
     <div className="space-y-6">
-    <TableFilters onApply={() => { setQuery(draft.query); setMaterial(draft.material); setStatus(draft.status); setPage(1); }} actions={<><Button type="button" variant="outline" onClick={exportCsv} disabled={!filtered.length}><Download />CSV</Button><Button type="button" variant="outline" onClick={exportCatalog} disabled={downloading || !filtered.length}><FileDown />{downloading ? "Preparing PDF…" : "Catalog PDF"}</Button><AddProductDialog canWrite={canWrite} /></>}>
-      <TableFilter label="Search product" search><Input value={draft.query} onChange={(event) => setDraft({ ...draft, query: event.target.value })} placeholder="Name, SKU, material, or variant" /></TableFilter>
-      <TableFilter label="Material"><Select value={draft.material} onValueChange={(value) => setDraft({ ...draft, material: value ?? "all" })}><SelectTrigger><SelectValue>{draft.material === "all" ? "All materials" : draft.material}</SelectValue></SelectTrigger><SelectContent><SelectItem value="all">All materials</SelectItem>{materials.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select></TableFilter>
-      <TableFilter label="Status"><Select value={draft.status} onValueChange={(value) => setDraft({ ...draft, status: value ?? "all" })}><SelectTrigger><SelectValue>{draft.status === "all" ? "All statuses" : draft.status}</SelectValue></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem><SelectItem value="Active">Active</SelectItem><SelectItem value="Inactive">Inactive</SelectItem></SelectContent></Select></TableFilter>
+    <TableFilters actions={<><Button type="button" variant="outline" onClick={exportCsv} disabled={!filtered.length}><Download />CSV</Button><Button type="button" variant="outline" onClick={exportCatalog} disabled={downloading || !filtered.length}><FileDown />{downloading ? "Preparing PDF…" : "Catalog PDF"}</Button><AddProductDialog canWrite={canWrite} /></>}>
+      <TableFilter label="Search product" search><Input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Name, SKU, material, or variant" /></TableFilter>
+      <TableFilter label="Material"><Select value={material} onValueChange={(value) => { setMaterial(value ?? "all"); setPage(1); }}><SelectTrigger><SelectValue>{material === "all" ? "All materials" : material}</SelectValue></SelectTrigger><SelectContent><SelectItem value="all">All materials</SelectItem>{materials.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select></TableFilter>
+      <TableFilter label="Status"><Select value={status} onValueChange={(value) => { setStatus(value ?? "all"); setPage(1); }}><SelectTrigger><SelectValue>{status === "all" ? "All statuses" : status}</SelectValue></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem><SelectItem value="Active">Active</SelectItem><SelectItem value="Inactive">Inactive</SelectItem></SelectContent></Select></TableFilter>
     </TableFilters>
       <Card className="crm-table-frame crm-table-page-wide gap-0 py-0 shadow-none">
         <Table>

@@ -5,6 +5,9 @@ import { randomUUID } from "node:crypto";
 import { createServerClient } from "@supabase/ssr";
 import { createSupabaseControl } from "../lib/supabase/control.ts";
 import { newMarketingAsset } from "../lib/marketing-assets.ts";
+import { promotionEmailTemplate } from "../lib/document-promotions.ts";
+import { createSupabaseAdmin } from "../lib/supabase/admin.ts";
+import { withWorkspaceContext } from "../lib/workspace-context.ts";
 
 const origin = process.env.MARKETING_TEST_ORIGIN || "http://localhost:3000";
 const control = createSupabaseControl();
@@ -23,6 +26,7 @@ const cookie = [...cookies].map(([name, value]) => `${name}=${value}`).join("; "
 const headers = { Cookie: cookie, Origin: origin, "Content-Type": "application/json" };
 const endpoint = `${origin}/api/marketing-assets`;
 let saved: ReturnType<typeof newMarketingAsset> | undefined;
+let templateId: string | undefined;
 try {
   const anonymous = await fetch(`${endpoint}?year=2098`, { redirect: "manual" });
   assert.ok([401, 307].includes(anonymous.status), `Anonymous request: ${anonymous.status}`);
@@ -39,12 +43,38 @@ try {
   const stale = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify({ ...saved, title: "Stale update" }) });
   assert.equal(stale.status, 409);
   saved = updated.asset;
-  const page = await fetch(`${origin}/workflow/marketing-assets?year=2098`, { headers });
-  const html = await page.text(); assert.equal(page.status, 200); assert.match(html, /Make every promotion count/); assert.doesNotMatch(html, /Your saved promotions could not be loaded/);
+  const oldPage = await fetch(`${origin}/workflow/marketing-assets?year=2098`, { headers, redirect: "manual" });
+  const destination = "/email/campaigns?year=2098";
+  if (oldPage.status === 307) assert.equal(oldPage.headers.get("location"), destination);
+  else {
+    // Next streams a client redirect when the shared layout has already flushed.
+    assert.equal(oldPage.status, 200);
+    const redirected = await oldPage.text();
+    assert.match(redirected, /__next-page-redirect/);
+    assert.ok(redirected.includes(destination.replaceAll("&", "&amp;")) || redirected.includes(destination));
+  }
+  const page = await fetch(origin + destination, { headers });
+  const html = await page.text(); assert.equal(page.status, 200); assert.match(html, /Marketing campaigns/); assert.match(html, /Month-end promotions/); assert.doesNotMatch(html, /Make every promotion count/);
+  const planner = await fetch(`${endpoint}?year=2098`, { headers });
+  const plannerData = await planner.json(); assert.equal(planner.status, 200); assert.equal("products" in plannerData, false); assert.ok(plannerData.assets.some((asset: { id: string }) => asset.id === saved!.id));
+  templateId = randomUUID();
+  const template = promotionEmailTemplate(saved!);
+  const saveTemplate = await fetch(`${origin}/api/documents`, { method: "POST", headers, body: JSON.stringify({ ...template, id: templateId, action: "create" }) });
+  const templateResult = await saveTemplate.json(); assert.equal(saveTemplate.status, 200, JSON.stringify(templateResult));
+  assert.equal(templateResult.document.subject, "Partner offer"); assert.equal(templateResult.document.body, "Contact your account manager for a quote.");
+  const templates = await fetch(`${origin}/api/documents?view=templates&category=promotion&q=${encodeURIComponent(saved!.title)}`, { headers });
+  const templateList = await templates.json(); assert.equal(templates.status, 200); assert.ok(templateList.documents.some((item: { id: string }) => item.id === templateId));
   const invalidAi = await fetch(`${endpoint}/draft`, { method: "POST", headers, body: JSON.stringify({ ...saved, offer: "" }) });
   assert.equal(invalidAi.status, 400);
-  console.log("PASS authenticated create, reload, update, stale-write conflict, rendered page, origin protection and AI input validation");
+  console.log("PASS saved campaign planning, campaign loading without a product catalog, old-page redirect, campaign page rendering, promotion-to-template conversion, subject/body separation, library search, stale-write protection and AI input validation");
 } finally {
+  if (templateId) {
+    await withWorkspaceContext(workspace.id, async () => {
+      const result = await createSupabaseAdmin().from("library_documents").delete().eq("id", templateId!);
+      assert.ifError(result.error);
+    });
+    console.log("PASS disposable email template removed");
+  }
   if (saved) {
     const remove = await fetch(endpoint, { method: "DELETE", headers, body: JSON.stringify({ id: saved.id, updatedAt: saved.updatedAt }) });
     assert.equal(remove.status, 200, await remove.text());
@@ -52,5 +82,6 @@ try {
     const body = await list.json(); assert.ok(!body.assets.some((asset: { id: string }) => asset.id === saved!.id));
     console.log("PASS delete and reload; disposable plan removed");
   }
-  await client.auth.signOut();
+  // End only this disposable test session, preserving the user's open browsers.
+  await client.auth.signOut({ scope: "local" });
 }

@@ -31,6 +31,8 @@ const nextConfig: NextConfig = {
     staleTimes: { dynamic: 1800, static: 1800 },
   },
   outputFileTracingIncludes: {
+    "/api/documents/pdf-worker": ["./node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs"],
+    "/api/documents/pdf-assets/*": ["./node_modules/pdfjs-dist/cmaps/*", "./node_modules/pdfjs-dist/standard_fonts/*", "./node_modules/pdfjs-dist/wasm/*"],
     "/api/catalogs/*/quotation/pdf": ["./public/fonts/*.woff", "./public/fonts/noto-sans-sc-regular.otf"],
     "/api/customer/invoices/*/pdf": ["./public/fonts/*.woff", "./public/fonts/allison-regular.ttf", "./public/fonts/noto-sans-sc-regular.otf", "./public/paid-stamp.png", "./public/catalog-default-product.jpg"],
     "/api/catalogs/*/pdf": ["./public/catalog-default-product.jpg"],

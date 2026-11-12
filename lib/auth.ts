@@ -5,6 +5,7 @@ import { workspaceCookie, workspaceIdSchema } from "./workspaces.ts";
 import { createClient } from "./supabase/server.ts";
 import { isAvatarPreset, type AvatarPreset } from "./profile-avatar.ts";
 import { readUserPreferences, type UserPreferences } from "./user-preferences.ts";
+import { readTableColumnPreferences, type TableColumnPreferences } from "./table-column-preferences.ts";
 
 async function getRedirect() {
   const mod = await import("next/navigation");
@@ -16,7 +17,7 @@ async function getConnection() {
   return mod.connection;
 }
 
-export type AuthViewer = { id: string; email: string | null; avatarPath?: string; avatarPreset?: AvatarPreset; preferences?: UserPreferences };
+export type AuthViewer = { id: string; email: string | null; avatarPath?: string; avatarPreset?: AvatarPreset; preferences?: UserPreferences; tableColumns?: TableColumnPreferences };
 export type WorkspaceRole = "admin" | "operator" | "bd_manager" | "viewer";
 export type WorkspaceViewer = AuthViewer & { role: WorkspaceRole; displayName: string | null; workspaceId: string; workspaceName: string; ownerId: string };
 
@@ -32,6 +33,7 @@ function toViewer(user: { id: string; email?: string | null; user_metadata?: Rec
     id: user.id,
     email: user.email ?? null,
     preferences: readUserPreferences(metadata?.crm_preferences),
+    tableColumns: readTableColumnPreferences(metadata),
     avatarPath: typeof metadata?.avatar_path === "string" ? metadata.avatar_path : undefined,
     avatarPreset: isAvatarPreset(metadata?.avatar_preset) ? metadata.avatar_preset : "male",
   };

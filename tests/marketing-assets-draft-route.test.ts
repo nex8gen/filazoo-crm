@@ -35,12 +35,12 @@ test("AI drafting rejects unauthorized, cross-site, disabled-policy and invalid 
   assert.equal((await route.api.POST(request({ ...asset, offer: "" }))).status, 400); assert.equal(route.state().generated, 0);
 });
 
-test("AI drafting enforces data permissions and reads allowed products inside the trusted workspace", async () => {
+test("AI drafting respects audience permissions and ignores legacy product selections", async () => {
   const restricted = load(); const response = await restricted.api.POST(request()); assert.equal(response.status, 200);
   assert.equal(response.headers.get("Cache-Control"), "private, no-store"); assert.equal(restricted.state().catalogReads, 0);
   assert.doesNotMatch(restricted.state().prompt, /Private audience|Verified catalog product/);
   const allowed = load({ productsAllowed: true }); assert.equal((await allowed.api.POST(request())).status, 200);
-  assert.equal(allowed.state().catalogReads, 1); assert.match(allowed.state().prompt, /Verified catalog product/);
+  assert.equal(allowed.state().catalogReads, 0); assert.doesNotMatch(allowed.state().prompt, /products|PLA|Verified catalog product/);
 });
 
 test("AI errors keep provider details private", async () => {

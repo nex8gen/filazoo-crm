@@ -13,7 +13,10 @@ export async function GET(request: Request) {
   if (!viewer) return Response.json({ error: "Sign in to an active workspace." }, { status: 401, headers });
   const year = marketingYearSchema.safeParse(new URL(request.url).searchParams.get("year"));
   if (!year.success) return Response.json({ error: "Choose a valid year." }, { status: 400, headers });
-  try { return Response.json({ assets: await listMarketingAssets(viewer, year.data) }, { headers }); }
+  try {
+    const assets = await listMarketingAssets(viewer, year.data);
+    return Response.json({ assets }, { headers });
+  }
   catch (error) { return failure(error); }
 }
 async function write(request: Request, remove: boolean) {
@@ -28,11 +31,11 @@ async function write(request: Request, remove: boolean) {
       const parsed = z.object({ id: z.uuid(), updatedAt: z.iso.datetime({ offset: true }) }).safeParse(body);
       if (!parsed.success) return Response.json({ error: "Choose a saved marketing asset." }, { status: 400, headers });
       await deleteMarketingAsset(viewer, parsed.data.id, parsed.data.updatedAt);
-      revalidatePath("/workflow/marketing-assets");
+      revalidatePath("/email/campaigns");
       return Response.json({ ok: true }, { headers });
     }
     const asset = await saveMarketingAsset(viewer, body);
-    revalidatePath("/workflow/marketing-assets");
+    revalidatePath("/email/campaigns");
     return Response.json({ asset }, { headers });
   } catch (error) { return failure(error); }
 }

@@ -11,6 +11,7 @@ import * as threading from "../lib/email-threading.ts";
 import * as customerTags from "../lib/customer-tags.ts";
 import * as leadInquiries from "../lib/lead-inquiries.ts";
 import { workspaceIdSchema, workspaceCookie } from "../lib/workspaces.ts";
+import { readTableColumnPreferences } from "../lib/table-column-preferences.ts";
 
 const require = createRequire(import.meta.url);
 function load(file: string, deps: Record<string, unknown>) {
@@ -139,6 +140,7 @@ test("workspace authorization validates the session once even where React.cache 
       "./workspaces.ts": { workspaceIdSchema, workspaceCookie },
       "next/headers": { cookies: async () => ({ get: () => undefined }) },
       "./profile-avatar.ts": { isAvatarPreset: () => false }, "./user-preferences.ts": { readUserPreferences: () => ({}) },
+      "./table-column-preferences.ts": { readTableColumnPreferences },
       "next/server": { connection: async () => {} },
       "next/navigation": { redirect: (path: string) => { throw new Error(path); } },
     });

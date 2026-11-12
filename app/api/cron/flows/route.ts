@@ -23,6 +23,10 @@ export async function GET(request: Request) {
     await forEachWorkspace(async (workspaceId, count) => {
     const phases = task === "scheduled-email" ? [
       { name: "scheduled-email", run: async () => {
+        try {
+          const { processEmailFollowups } = await import("@/lib/data/email-followups");
+          await processEmailFollowups({ deadline });
+        } catch (error) { console.error("Mailbox follow-up phase failed; scheduled emails continue.", { workspaceId, phase: "mailbox-followups", error: error instanceof Error ? error.message : "Unknown error" }); }
         const [{ processScheduledEmails }, { deliverEmail }] = await Promise.all([import("@/lib/data/email-delivery"), import("@/lib/data/manual-email-send")]);
         return processScheduledEmails(deliverEmail, { deadline });
       } },

@@ -1,9 +1,11 @@
 import { z } from "zod";
+import { campaignConfigSchema, type CampaignDispatch } from "./email-campaigns.ts";
 
-export const marketingCategories = ["month_end", "holiday", "factory_sale"] as const;
+// Keep the stored category key so existing plans remain available as custom campaigns.
+export const marketingCategories = ["factory_sale", "month_end", "holiday"] as const;
 export type MarketingCategory = typeof marketingCategories[number];
 export const marketingCategoryLabels: Record<MarketingCategory, string> = {
-  month_end: "Month-end promotions", holiday: "Holiday promotions", factory_sale: "Factory sales",
+  factory_sale: "Campaigns", month_end: "Month-end promotions", holiday: "Holiday promotions",
 };
 export const marketingYearSchema = z.coerce.number().int().min(2020).max(2100);
 export const marketingAssetInputSchema = z.object({
@@ -11,23 +13,24 @@ export const marketingAssetInputSchema = z.object({
   category: z.enum(marketingCategories),
   slot: z.string().trim().min(1).max(80),
   year: marketingYearSchema,
-  title: z.string().trim().min(1, "Give this promotion a name.").max(160),
+  title: z.string().trim().min(1, "Give this campaign a name.").max(160),
   startDate: z.iso.date(),
   endDate: z.iso.date(),
-  productSkus: z.array(z.string().trim().min(1).max(160)).max(100).transform(values => [...new Set(values)]),
+  // Retain legacy selections for stored-plan compatibility; campaigns no longer use them.
+  productSkus: z.array(z.string().trim().min(1).max(160)).max(100).transform(values => [...new Set(values)]).default([]),
   audience: z.string().trim().max(2000),
   offer: z.string().trim().max(8000),
   message: z.string().trim().max(12000),
   status: z.enum(["draft", "ready"]),
   updatedAt: z.iso.datetime({ offset: true }).nullable(),
+  campaignConfig: campaignConfigSchema.optional(),
 }).superRefine((asset, ctx) => {
   if (asset.endDate < asset.startDate) ctx.addIssue({ code: "custom", path: ["endDate"], message: "End date must be on or after the start date." });
   if (Number(asset.startDate.slice(0, 4)) !== asset.year) ctx.addIssue({ code: "custom", path: ["startDate"], message: "Start date must be in the selected year." });
   if (asset.category === "month_end" && !/^month-(?:[1-9]|1[0-2])$/.test(asset.slot)) ctx.addIssue({ code: "custom", path: ["slot"], message: "Choose a valid month." });
   if (asset.status === "ready" && (!asset.offer || !asset.message)) ctx.addIssue({ code: "custom", path: ["status"], message: "Add an offer and a message before marking this plan ready." });
 });
-export type MarketingAsset = z.infer<typeof marketingAssetInputSchema>;
-export type MarketingProduct = { sku: string; name: string; material: string };
+export type MarketingAsset = z.infer<typeof marketingAssetInputSchema> & { dispatch?: CampaignDispatch | null };
 export type MarketingSlot = { key: string; title: string; startDate: string; endDate: string; month: number };
 
 export const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -61,7 +64,7 @@ export function holidaySlots(year: number): MarketingSlot[] {
 
 export function newMarketingAsset(category: MarketingCategory, year: number, slot?: MarketingSlot): MarketingAsset {
   const id = crypto.randomUUID();
-  return { id, category, year, slot: slot?.key ?? id, title: slot?.title ?? "New factory sale", startDate: slot?.startDate ?? dateString(year, 1, 1), endDate: slot?.endDate ?? dateString(year, 1, 7), productSkus: [], audience: "", offer: "", message: "", status: "draft", updatedAt: null };
+  return { id, category, year, slot: slot?.key ?? id, title: slot?.title ?? "New campaign", startDate: slot?.startDate ?? dateString(year, 1, 1), endDate: slot?.endDate ?? dateString(year, 1, 7), productSkus: [], audience: "", offer: "", message: "", status: "draft", updatedAt: null };
 }
 
 export function marketingDateRange(start: string, end: string) {
@@ -69,6 +72,6 @@ export function marketingDateRange(start: string, end: string) {
   return start === end ? format(start) : `${format(start)} – ${format(end)}`;
 }
 
-export function marketingAssetText(asset: MarketingAsset, products: MarketingProduct[]) {
-  return [asset.title, `Dates: ${asset.startDate} – ${asset.endDate}`, `Audience: ${asset.audience || "Not specified"}`, `Products: ${asset.productSkus.map(sku => products.find(product => product.sku === sku)?.name ?? sku).join(", ") || "Not selected"}`, "", "OFFER", asset.offer, "", "MESSAGE", asset.message].join("\n");
+export function marketingAssetText(asset: MarketingAsset) {
+  return [asset.title, `Dates: ${asset.startDate} – ${asset.endDate}`, `Audience: ${asset.audience || "Not specified"}`, "", "OFFER", asset.offer, "", "MESSAGE", asset.message].join("\n");
 }

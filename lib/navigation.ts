@@ -1,5 +1,5 @@
 import type { ComponentType } from "react";
-import { BookOpen, Building2, ChartNoAxesCombined, ClipboardList, FilePenLine, House, ListTodo, Mail, Megaphone, MessageSquareText, Package2, Settings, Sparkles, Tags, Workflow } from "lucide-react";
+import { BookOpen, Building2, ChartNoAxesCombined, ClipboardList, FilePenLine, FolderOpen, House, ListTodo, Mail, Megaphone, MessageSquareText, Package2, Settings, Sparkles, Tags, Workflow } from "lucide-react";
 
 export type NavigationItem = {
   label: string;
@@ -30,6 +30,16 @@ export const navigation: NavigationGroup[] = [
     items: [{ label: "Home", href: "/", icon: House, description: "Your AI workspace and sales priorities", exact: true }],
   },
   {
+    label: "Email",
+    eyebrow: "Mailbox",
+    icon: Mail,
+    nested: true,
+    items: [
+      { label: "Email", href: "/email", icon: Mail, description: "Mailbox and email conversations", excludePrefixes: ["/email/campaigns"] },
+      { label: "Marketing campaigns", href: "/email/campaigns", icon: Megaphone, description: "Plan promotional emails, offers and campaign dates" },
+    ],
+  },
+  {
     label: "Companies",
     eyebrow: "Accounts",
     icon: Building2,
@@ -38,6 +48,22 @@ export const navigation: NavigationGroup[] = [
       { label: "AI Leads", href: "/lead-channel/ai-leads", icon: Sparkles, badge: "Beta", description: "Find business buyers and public contact details for your products" },
       { label: "Segments", href: "/segments", icon: Tags, description: "Companies grouped by business segment" },
     ],
+  },
+  {
+    label: "Products",
+    eyebrow: "Product management",
+    icon: Package2,
+    items: [
+      { label: "Products", href: "/products", icon: Package2, description: "Products, pricing and availability" },
+      { label: "Company Quotations", href: "/company-quotations", icon: BookOpen, description: "Customer offers, versions and draft orders" },
+    ],
+  },
+  {
+    label: "Files & templates",
+    eyebrow: "Library",
+    icon: FolderOpen,
+    direct: true,
+    items: [{ label: "Files & templates", href: "/documents", icon: FolderOpen, description: "Find files, organize folders and reuse text templates" }],
   },
   {
     label: "Purchase Order",
@@ -50,13 +76,6 @@ export const navigation: NavigationGroup[] = [
     ],
   },
   {
-    label: "Email",
-    eyebrow: "Mailbox",
-    icon: Mail,
-    direct: true,
-    items: [{ label: "Email", href: "/email", icon: Mail, description: "Mailbox and email conversations" }],
-  },
-  {
     label: "Messenger",
     eyebrow: "Engagement",
     icon: MessageSquareText,
@@ -67,20 +86,8 @@ export const navigation: NavigationGroup[] = [
     label: "Workflow",
     eyebrow: "Workflow",
     icon: Workflow,
-    nested: true,
-    items: [
-      { label: "Workflow", href: "/workflow", icon: Workflow, description: "Email follow-up workflows and automation rules", excludePrefixes: ["/workflow/marketing-assets"] },
-      { label: "Marketing Assets", href: "/workflow/marketing-assets", icon: Megaphone, description: "Promotion plans, product offers and reusable marketing messages" },
-    ],
-  },
-  {
-    label: "Products",
-    eyebrow: "Product management",
-    icon: Package2,
-    items: [
-      { label: "Products", href: "/products", icon: Package2, description: "Products, pricing and availability" },
-      { label: "Company Quotations", href: "/company-quotations", icon: BookOpen, description: "Customer offers, versions and draft orders" },
-    ],
+    direct: true,
+    items: [{ label: "Workflow", href: "/workflow", icon: Workflow, description: "Email follow-up workflows and automation rules" }],
   },
   {
     label: "Analytics",

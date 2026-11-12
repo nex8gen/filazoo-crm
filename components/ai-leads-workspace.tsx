@@ -46,7 +46,6 @@ export function AiLeadsWorkspace({ products, countries, initialSearches, initial
   const [query, setQuery] = useState("");
   const [group, setGroup] = useState("");
   const [contacts, setContacts] = useState("");
-  const [draft, setDraft] = useState({ query: "", tab: "all" as FilterTab, group: "", contacts: "" });
   const [page, setPage] = useState(1);
   const { preferences } = usePreferences();
   const pendingRefresh = useRef<AbortController | null>(null);
@@ -82,7 +81,7 @@ export function AiLeadsWorkspace({ products, countries, initialSearches, initial
   }, [runningId, refresh]);
 
   function openSearch(criteria?: LeadSearchInput) { setSeed(criteria); setDialogOpen(true); }
-  function resetFilters() { setTab("all"); setQuery(""); setGroup(""); setContacts(""); setDraft({ query: "", tab: "all", group: "", contacts: "" }); setPage(1); }
+  function resetFilters() { setTab("all"); setQuery(""); setGroup(""); setContacts(""); setPage(1); }
   function selectSearch(id: string) { setSelectedId(id); setSelected([]); setDetailId(null); resetFilters(); }
   function created(search: LeadSearch) {
     setSearches(previous => [search, ...previous.filter(item => item.id !== search.id)].slice(0, 20));
@@ -171,11 +170,11 @@ export function AiLeadsWorkspace({ products, countries, initialSearches, initial
       {current.status === "failed"&&counts.all ? <div role="alert" className="ld-alert"><CircleHelp size={16} /><span>{current.error || "Research could not be completed."}</span></div> : null}
       <section className="flex min-w-0 flex-col gap-6" aria-label="Company search results">
         {current.researchSummary ? <div className="space-y-2" role="status"><div className="flex flex-wrap gap-x-6 gap-y-2 text-xs text-muted-foreground"><span>Qualified: {current.researchSummary.qualified}</span><span>Duplicates skipped: {current.researchSummary.duplicates}</span><span>Did not qualify: {current.researchSummary.rejected + current.researchSummary.needsReview}</span><span>Unreadable websites: {current.researchSummary.unreadable}</span><span>No public contact: {current.researchSummary.noContact}</span></div>{current.researchSummary.qualified < current.criteria.limit ? <p className="text-sm text-muted-foreground">Fewer matches found. Only new companies with verified fit and a public contact route are included.</p> : null}</div> : null}
-        {showResultControls ? <TableFilters onApply={() => { setQuery(draft.query); setTab(draft.tab); setGroup(draft.group); setContacts(draft.contacts); setPage(1); }}>
-          <TableFilter label="Search company results" search><Input placeholder="Search company or website" value={draft.query} onChange={event => setDraft(previous => ({ ...previous, query: event.target.value }))} /></TableFilter>
-          <TableFilter label="Qualification"><Select value={draft.tab} onValueChange={value => setDraft(previous => ({ ...previous, tab: (value ?? "all") as FilterTab }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{filterNames.map(([value, label]) => <SelectItem key={value} value={value}>{label} ({counts[value]})</SelectItem>)}</SelectContent></Select></TableFilter>
-          <TableFilter label="Buyer group"><Select value={draft.group} onValueChange={value => setDraft(previous => ({ ...previous, group: value ?? "" }))}><SelectTrigger className="max-w-56"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="">All buyer groups</SelectItem>{groups.map(value => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select></TableFilter>
-          <TableFilter label="Contact information"><Select value={draft.contacts} onValueChange={value => setDraft(previous => ({ ...previous, contacts: value ?? "" }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="">Any contact status</SelectItem><SelectItem value="email">With public email</SelectItem><SelectItem value="phone">With public phone</SelectItem></SelectContent></Select></TableFilter>
+        {showResultControls ? <TableFilters>
+          <TableFilter label="Search company results" search><Input placeholder="Search company or website" value={query} onChange={event => { setQuery(event.target.value); setPage(1); }} /></TableFilter>
+          <TableFilter label="Qualification"><Select value={tab} onValueChange={value => { setTab((value ?? "all") as FilterTab); setPage(1); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{filterNames.map(([value, label]) => <SelectItem key={value} value={value}>{label} ({counts[value]})</SelectItem>)}</SelectContent></Select></TableFilter>
+          <TableFilter label="Buyer group"><Select value={group} onValueChange={value => { setGroup(value ?? ""); setPage(1); }}><SelectTrigger className="max-w-56"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="">All buyer groups</SelectItem>{groups.map(value => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select></TableFilter>
+          <TableFilter label="Contact information"><Select value={contacts} onValueChange={value => { setContacts(value ?? ""); setPage(1); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="">Any contact status</SelectItem><SelectItem value="email">With public email</SelectItem><SelectItem value="phone">With public phone</SelectItem></SelectContent></Select></TableFilter>
         </TableFilters> : null}
         <Card className="crm-table-frame gap-0 py-0">
           {picked.length ? <div className="flex flex-wrap items-center gap-2 border-b bg-brand-soft px-4 py-2"><p className="mr-auto text-sm font-semibold text-primary" aria-live="polite">{picked.length} selected</p><Button variant="ghost" size="sm" onClick={() => setSelected([])}>Clear selection</Button><Button size="sm" disabled={busy} onClick={() => void save(picked)}>{busy ? <Loader2 className="animate-spin" /> : <Building2 />}Add selected to CRM</Button></div> : null}

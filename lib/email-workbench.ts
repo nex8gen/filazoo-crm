@@ -11,6 +11,9 @@ export const emailFileSchema = z.object({
 });
 
 export const emailSendSchema = z.object({
+  senderName: z.string().trim().max(160).regex(/^[^\r\n]*$/).optional(),
+  replyTo: z.email().optional(),
+  campaign: z.object({ id: z.uuid(), contactId: z.uuid(), smartSending: z.boolean() }).optional(),
   mailboxId: z.string().trim().min(1).max(200).optional(),
   to: recipientListSchema.refine((value) => value.length > 0, "Enter at least one recipient."),
   cc: recipientListSchema.default([]), bcc: recipientListSchema.default([]),

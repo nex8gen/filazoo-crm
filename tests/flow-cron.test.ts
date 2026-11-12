@@ -16,6 +16,7 @@ function fixture(failedPhase?: string, workspaceCount = 1) {
     "@/lib/env": { env: { dryRun: true } },
     "@/lib/data/flow-runtime": { processDueFlowRuns: async (_limit: number, options: typeof flowOptions) => { flowOptions = options; return run("workflows"); } },
     "@/lib/data/email-delivery": { processScheduledEmails: async (_deliver: unknown, options: { deadline: number }) => { assert.ok(options.deadline > Date.now()); return run("scheduled-email"); } },
+    "@/lib/data/email-followups": { processEmailFollowups: async (options: { deadline: number }) => { assert.ok(options.deadline > Date.now()); return run("mailbox-followups"); } },
     "@/lib/data/manual-email-send": { deliverEmail: async () => { throw new Error("No direct delivery is permitted in this fixture"); } },
     "@/lib/data/email-auto-reply-worker": { processEmailAutoReplies: async (_mailbox: unknown, options: { deadline: number }) => { assert.ok(options.deadline > Date.now()); return run("automatic-replies"); } },
     "@/lib/data/conversation-tagging": { processAutomaticConversationTags: () => run("conversation-tags") },
@@ -56,10 +57,17 @@ test("provider workers run in separate invocations and retain attribution for fa
     const app = fixture(phase);
     assert.equal((await app.GET(app.request(phase === "workflows" ? "resume" : phase))).status, 202);
     await app.flush();
-    assert.deepEqual(app.calls, [phase]);
+    assert.deepEqual(app.calls, phase === "scheduled-email" ? ["mailbox-followups", phase] : [phase]);
     assert.equal(app.failures.length, 1);
     assert.equal(app.failures[0].phase, phase);
   }
+});
+
+test("a mailbox follow-up failure does not prevent other scheduled emails", async () => {
+  const app = fixture("mailbox-followups");
+  await app.GET(app.request("scheduled-email")); await app.flush();
+  assert.deepEqual(app.calls, ["mailbox-followups", "scheduled-email"]);
+  assert.equal(app.failures[0].phase, "mailbox-followups");
 });
 
 test("the minute resume tick verifies receipts before processing saved work", async () => {

@@ -29,7 +29,6 @@ export function CompanyCatalogsTable({ catalogs }: { catalogs: Catalog[] }) {
   const { language } = useLanguage();
   const [query, setQuery] = useWorkspaceState("catalogs.query", "");
   const [currency, setCurrency] = useWorkspaceState("catalogs.currency", "all");
-  const [draft, setDraft] = useWorkspaceState("catalogs.filters", { query: "", currency: "all" });
   const [page, setPage] = useWorkspaceState("catalogs.page", 1);
 
   const currencies = useMemo(
@@ -47,9 +46,9 @@ export function CompanyCatalogsTable({ catalogs }: { catalogs: Catalog[] }) {
 
   return (
     <div className="space-y-6">
-      <TableFilters onApply={() => { setQuery(draft.query); setCurrency(draft.currency); setPage(1); }}>
-        <TableFilter label="Search quotations" search><Input value={draft.query} onChange={(event) => setDraft({ ...draft, query: event.target.value })} placeholder="Company, SKU, or quotation reference" /></TableFilter>
-        <TableFilter label="Currency"><Select value={draft.currency} onValueChange={(value) => setDraft({ ...draft, currency: value ?? "all" })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All currencies</SelectItem>{currencies.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select></TableFilter>
+      <TableFilters>
+        <TableFilter label="Search quotations" search><Input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Company, SKU, or quotation reference" /></TableFilter>
+        <TableFilter label="Currency"><Select value={currency} onValueChange={(value) => { setCurrency(value ?? "all"); setPage(1); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All currencies</SelectItem>{currencies.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select></TableFilter>
       </TableFilters>
 
       <div className="crm-table-frame crm-table-page-wide">

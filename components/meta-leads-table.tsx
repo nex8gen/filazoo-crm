@@ -1,12 +1,13 @@
 "use client";
-import { Columns3, Users } from "lucide-react";
+import { Users } from "lucide-react";
 
 import { EmptyState } from "@/components/data-state";
 import { useWorkspaceState } from "@/components/workspace-memory";
 import Link from "next/link";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
+import { TableColumnsTrigger } from "@/components/ui/table-columns-trigger";
+import { useTableColumns } from "@/components/table-columns-provider";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableFilters, TableFilter } from "@/components/ui/table-filters";
 import { TablePagination } from "@/components/ui/table-pagination";
@@ -29,16 +30,16 @@ const submittedFormatter = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Sh
 export function MetaLeadsTable({ leads }: { leads: Lead[] }) {
   const { preferences } = usePreferences();
   const pageSize = preferences.tablePageSize;
-  const [search, setSearch] = useWorkspaceState("meta-leads.search", "");
   const [query, setQuery] = useWorkspaceState("meta-leads.query", "");
   const [page, setPage] = useWorkspaceState("meta-leads.page", 1);
-  const [showSourceIds, setShowSourceIds] = useWorkspaceState("meta-leads.source-ids", false);
+  const [columnVisibility, setColumnVisibility] = useTableColumns("meta-leads");
+  const showSourceIds = columnVisibility.sourceIds !== false;
   const filtered = leads.filter((lead) => [lead.full_name, lead.email, lead.phone, lead.owner, lead.form_id, lead.ad_id].some((value) => value?.toLowerCase().includes(query.trim().toLowerCase())));
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const rows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   return <div className="space-y-6">
-    <TableFilters onApply={() => { setQuery(search); setPage(1); }} actions={<DropdownMenu><DropdownMenuTrigger render={<Button variant="outline" />}><Columns3 />Columns</DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuGroup><DropdownMenuLabel>Source details</DropdownMenuLabel><DropdownMenuCheckboxItem checked={showSourceIds} onCheckedChange={setShowSourceIds}>Form / ad IDs</DropdownMenuCheckboxItem></DropdownMenuGroup></DropdownMenuContent></DropdownMenu>}><TableFilter label="Search submission" search><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Name, email, phone, owner, form, or ad" /></TableFilter></TableFilters>
+    <TableFilters actions={<DropdownMenu><TableColumnsTrigger /><DropdownMenuContent align="end"><DropdownMenuGroup><DropdownMenuLabel>Source details</DropdownMenuLabel><DropdownMenuCheckboxItem checked={showSourceIds} onCheckedChange={checked => setColumnVisibility(current => ({ ...current, sourceIds: checked }))} closeOnClick={false}>Form / ad IDs</DropdownMenuCheckboxItem></DropdownMenuGroup></DropdownMenuContent></DropdownMenu>}><TableFilter label="Search submission" search><Input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Name, email, phone, owner, form, or ad" /></TableFilter></TableFilters>
     <div className="crm-table-frame"><Table>
       <caption className="sr-only">Latest 100 Meta form submissions</caption>
       <TableHeader><TableRow>{["Name", "Email", "Phone", "Assigned manager", ...(showSourceIds ? ["Form / ad IDs"] : []), "Submitted"].map((label) => <TableHead key={label} scope="col" title={label === "Submitted" ? "Asia/Shanghai" : undefined}>{label}</TableHead>)}</TableRow></TableHeader>

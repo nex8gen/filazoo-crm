@@ -3,11 +3,14 @@
 import { useRef, useState, type MouseEvent } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, ChevronsUpDown, Columns3, Plus, Search, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, ChevronsUpDown, Plus, Search, X } from "lucide-react";
 import { PageActions } from "@/components/page-header";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { TableStatusBadge } from "@/components/ui/table-status-badge";
+import { LiveSearchForm } from "@/components/ui/live-search-form";
+import { TableColumnsTrigger } from "@/components/ui/table-columns-trigger";
+import { useTableColumns } from "@/components/table-columns-provider";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { purchaseOrdersHref, type PurchaseOrderFilters } from "@/lib/purchase-order-overview";
 import { poStatusLabels, poStatuses } from "@/lib/purchase-orders";
@@ -62,11 +65,11 @@ export function PurchaseOrderRegister({ rows, filters, count, pageSize, today, d
   const exportColumns = drafts ? draftColumns : [orderColumns[0], { key: "reference", label: "Customer PO" }, ...orderColumns.slice(1)];
   const columns = (drafts ? draftColumns : orderColumns).filter(column => !company || column.key !== "customer");
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
-  const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(() => new Set(drafts ? [] : ["delivery"]));
+  const [columnVisibility, setColumnVisibility] = useTableColumns(drafts ? "purchase-order-drafts" : "purchase-orders");
   const [createOpen, setCreateOpen] = useState(false);
   const [draftSaved, setDraftSaved] = useState(false);
   const createTriggerRef = useRef<HTMLButtonElement>(null);
-  const visibleColumns = columns.filter(column => !hiddenColumns.has(column.key));
+  const visibleColumns = columns.filter(column => column.key === "order" || columnVisibility[column.key] !== false);
   const selectedRows = rows.filter(row => selected.has(row.id));
   const allSelected = rows.length > 0 && selectedRows.length === rows.length;
   const pages = Math.max(1, Math.ceil(count / pageSize));
@@ -137,17 +140,16 @@ export function PurchaseOrderRegister({ rows, filters, count, pageSize, today, d
         </DropdownMenuGroup>
         <DropdownMenuSeparator /><DropdownMenuItem render={<Link href={href({ search: filters.search, overdue: true, sort: filters.sort })} />}>Overdue delivery</DropdownMenuItem>
       </DropdownMenuContent></DropdownMenu> : <span className="po-register-view-label">Drafts</span>}
-      <form action={company ? `/companies/${encodeURIComponent(company.id)}` : baseHref} method="get" className="po-register-search">
+      <LiveSearchForm action={company ? `/companies/${encodeURIComponent(company.id)}` : baseHref} searchValue={filters.search} className="po-register-search">
         {company ? <><input type="hidden" name="tab" value="purchase-orders" />{drafts ? <input type="hidden" name="view" value="drafts" /> : null}</> : null}
         {!drafts && filters.status ? <input type="hidden" name="status" value={filters.status} /> : null}
         {filters.overdue ? <input type="hidden" name="overdue" value="1" /> : null}
         {filters.sort ? <input type="hidden" name="sort" value={filters.sort} /> : null}
-        <Search className="size-4 shrink-0" aria-hidden /><input key={filters.search} type="search" name="q" defaultValue={filters.search} maxLength={100} aria-label={company ? "Search PO number or reference" : "Search PO number or customer"} placeholder={company ? "Search PO number or reference" : "Search PO number or customer"} />
-        <button type="submit" className="sr-only">Search</button>
-      </form>
+        <Search className="size-4 shrink-0" aria-hidden /><input type="search" name="q" defaultValue={filters.search} maxLength={100} aria-label={company ? "Search PO number or reference" : "Search PO number or customer"} placeholder={company ? "Search PO number or reference" : "Search PO number or customer"} />
+      </LiveSearchForm>
       {filtered ? <Link href={baseHref} className="po-register-clear" aria-label="Clear filters"><X className="size-3.5" /></Link> : null}
       {selectedRows.length ? <span className="po-register-selected" role="status">{selectedRows.length} selected</span> : null}
-      <DropdownMenu><DropdownMenuTrigger className="po-register-columns" aria-label="Customize columns"><Columns3 className="size-4" /></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuGroup><DropdownMenuLabel>Columns</DropdownMenuLabel>{columns.map(column => <DropdownMenuCheckboxItem key={column.key} checked={!hiddenColumns.has(column.key)} disabled={column.key === "order"} onCheckedChange={checked => setHiddenColumns(current => { const next = new Set(current); if (checked) next.delete(column.key); else next.add(column.key); return next; })}>{column.label}</DropdownMenuCheckboxItem>)}</DropdownMenuGroup></DropdownMenuContent></DropdownMenu>
+      <DropdownMenu><TableColumnsTrigger className="po-register-columns" /><DropdownMenuContent align="end"><DropdownMenuGroup><DropdownMenuLabel>Columns</DropdownMenuLabel>{columns.map(column => <DropdownMenuCheckboxItem key={column.key} checked={column.key === "order" || columnVisibility[column.key] !== false} disabled={column.key === "order"} closeOnClick={false} onCheckedChange={checked => setColumnVisibility(current => ({ ...current, [column.key]: checked }))}>{column.label}</DropdownMenuCheckboxItem>)}</DropdownMenuGroup></DropdownMenuContent></DropdownMenu>
     </div>
     <div className="crm-table-viewport" tabIndex={0} role="region" aria-label={drafts ? "Draft purchase orders" : "Purchase orders"}>
       <table className="crm-table po-register-table">
