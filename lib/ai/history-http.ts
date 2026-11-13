@@ -1,8 +1,12 @@
+import { isWorkspaceSessionRetry } from "../workspace-session-response.ts";
+import { AssistantSessionError } from "./session-recovery-fetch.ts";
+
 export class HistoryHttpError extends Error {
   status: number;
   constructor(message: string, status: number) { super(message); this.status = status; }
 }
-/** Retry reads once, but never replay a save, rename, deletion or AI request. */
+/** Retry reads once, or an explicitly confirmed failure before any work began.
+ * Never replay an unknown save, rename, deletion or AI execution outcome. */
 export async function requestHistoryJson(url: string, init?: RequestInit, fetcher: typeof fetch = fetch) {
   const usage = url.split("?")[0] === "/api/ai/usage";
   const unavailable = usage ? "AI usage is temporarily unavailable. Retry loading it." : "Saved conversations are temporarily unavailable. Retry loading them.";
@@ -25,7 +29,8 @@ export async function requestHistoryJson(url: string, init?: RequestInit, fetche
     const result = await response.json().catch(() => null);
     if (deadline.aborted) throw new Error(timedOut);
     if (response.ok && result) return result;
-    if (read && attempt === 0 && [500, 502, 503, 504].includes(response.status) && !init?.signal?.aborted) continue;
+    if (attempt === 0 && !init?.signal?.aborted && ((read && [500, 502, 503, 504].includes(response.status)) || isWorkspaceSessionRetry(response, result))) continue;
+    if (isWorkspaceSessionRetry(response, result)) throw new AssistantSessionError(503);
     if (response.status === 401) throw new HistoryHttpError("Your session has expired. Sign in again to continue.", 401);
     throw new HistoryHttpError(result?.error || unavailable, response.status);
   }

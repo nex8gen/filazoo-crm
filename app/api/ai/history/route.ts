@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { workspaceSessionUnavailableResponse } from "@/lib/workspace-session-response";
 import { getWorkspaceViewer } from "@/lib/auth";
 import { withWorkspaceViewer } from "@/lib/workspace-context";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
@@ -9,7 +10,7 @@ const headers = { "Cache-Control": "private, no-store" };
 export async function GET(request: Request) {
   let viewer;
   try { viewer = await getWorkspaceViewer(); }
-  catch { return Response.json({ error: "Unable to verify your workspace session. Please retry." }, { status: 503, headers }); }
+  catch { return workspaceSessionUnavailableResponse(); }
   if (!viewer) return Response.json({ error: "Sign in to view saved conversations." }, { status: 401, headers });
   return withWorkspaceViewer(viewer, async () => {
   const params = new URL(request.url).searchParams;
@@ -91,7 +92,7 @@ export async function POST(request: Request) {
   if (origin && origin !== new URL(request.url).origin) return Response.json({ error: "Invalid request origin." }, { status: 403, headers });
   let viewer;
   try { viewer = await getWorkspaceViewer(); }
-  catch { return Response.json({ error: "Unable to verify your workspace session. Please retry." }, { status: 503, headers }); }
+  catch { return workspaceSessionUnavailableResponse(); }
   if (!viewer) return Response.json({ error: "Sign in to save conversations." }, { status: 401, headers });
   return withWorkspaceViewer(viewer, async () => {
   const text = await request.text();

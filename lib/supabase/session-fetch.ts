@@ -18,7 +18,7 @@ export function sessionFetch(fetcher: typeof fetch = fetch): typeof fetch {
       const options = { ...init, cache: "no-store" as const, signal };
       try {
         const response = await fetcher(input, options);
-        if (attempt === 0 && [502, 503, 504, 520].includes(response.status) && !deadline.aborted) {
+        if (attempt === 0 && [408, 500, 502, 503, 504, 520, 521, 522, 524].includes(response.status) && !deadline.aborted) {
           await response.body?.cancel().catch(() => {});
         } else {
           // fetch resolves at the headers. Read the small session response here

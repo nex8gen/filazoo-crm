@@ -1,6 +1,6 @@
 {
   "contractVersion": "2026-11-07.2",
-  "generatedOn": "2026-11-12",
+  "generatedOn": "2026-11-13",
   "capabilities": [
     {
       "name": "create_company",
@@ -371,6 +371,12 @@
       "mode": "internal",
       "tools": [],
       "explanation": "Agent/history infrastructure, inbound integration, customer-only identity or background worker; not an employee feature to invoke arbitrarily."
+    },
+    {
+      "surface": "app/api/ai/assistant/presentation/route.ts#POST",
+      "mode": "read",
+      "tools": [],
+      "explanation": "Authenticated, bounded record previews for saved AI replies. Rechecks AI data permissions and each linked record through the existing CRM reader; returns display cards only, without model calls, mutations, sends or approvals."
     },
     {
       "surface": "app/api/ai/assistant/route.ts#POST",

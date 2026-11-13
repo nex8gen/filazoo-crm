@@ -24,6 +24,22 @@ import { agentOrderFromInvoice } from "../lib/ai/order-actions.ts";
 
 const require = createRequire(import.meta.url);
 class TestHistoryError extends Error { status = 503; }
+
+test("temporary workspace-session failures explicitly reject before saved turns, models or actions start", async () => {
+  const post = route("../app/api/ai/assistant/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => { throw new Error("Temporary database connection failure"); } },
+    "@/lib/ai/workspace-assistant": assistant,
+    "@/lib/ai/chat-session": { startChatSession: async () => assert.fail("must not create a saved turn") },
+    "@/lib/ai/gateway": { generateGatewayText: async () => assert.fail("must not call a model") },
+    "@/lib/ai/agent-execution": { prepareAgentActions: async () => assert.fail("must not stage actions") },
+    "@/lib/ai/agent-context": {},
+  }, { AI_GATEWAY_API_KEY: "synthetic" });
+  const response = await post(request({ mode: "work", pathname: "/", pageLabel: "Home", pageText: "", messages: [{ role: "user", content: "Plan a campaign" }] }));
+  assert.equal(response.status, 503); assert.equal(response.headers.get("Retry-After"), "1");
+  const body = await response.json();
+  assert.equal(body.code, "WORKSPACE_SESSION_UNAVAILABLE"); assert.equal(body.executionStarted, false); assert.equal(body.retryable, true);
+  assert.doesNotMatch(JSON.stringify(body), /Temporary database connection failure/);
+});
 // Run the actual route handlers with isolated auth/provider/database boundaries.
 // No test signs in to the real workspace, saves an invoice, or sends an email.
 function route(file: string, dependencies: Record<string, unknown>, env: Record<string, string> = {}, method: "POST" | "GET" = "POST") {
@@ -1026,4 +1042,29 @@ test("email context failures are reported separately from provider failures and 
   assert.equal(body.error, i18n.translateUiText("Unable to load the selected email or CRM records. Refresh the page and try again.", "zh-CN"));
   assert.equal(generated, 0);
   assert.equal(prepared, 0);
+});
+
+test("CRM analysis attaches verified presentation data before saving the response", async () => {
+  let generated = 0;
+  let saved: Record<string, unknown> | undefined;
+  const messages = [{ role: "user", content: "Review my invoices" }];
+  const post = route("../app/api/ai/assistant/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
+    "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
+    "@/lib/ai/chat-session": { startChatSession: async () => ({ messages, completedActionIds: [], complete: async (payload: Record<string, unknown>) => { saved = payload; return payload; }, flush: async () => {} }) },
+    "@/lib/ai/gateway": { generateGatewayText: async () => ++generated === 1 ? 'FILAZOO_CRM_READ_JSON: {"resource":"invoices"}' : "These invoices are drafts. Review the cards below." },
+    "@/lib/ai/crm-records": { readCrmRecords: async (actor: unknown) => {
+      assert.equal(actor, viewer);
+      return { records: [{ id, number: 1017, status: "draft", total_minor: 4963, paid_minor: 0, document: { customerName: "Saved buyer", currency: "USD", dueDate: "2026-11-12" } }], coverage: { matching: 1, nextOffset: null } };
+    } },
+    "@/lib/ai/agent-execution": { prepareAgentActions: async () => { throw new Error("Read-only analysis must not create actions"); } },
+  }, { AI_GATEWAY_API_KEY: "synthetic" });
+  const response = await post(request({ mode: "analyze", pathname: "/", pageLabel: "Home", pageText: "", messages }));
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.presentation.sections[0].rows[0].cells.balance, "USD 49.63");
+  assert.equal(body.presentation.sections[0].rows[0].status, "Draft");
+  assert.equal(body.presentation.sections[0].metrics.find((metric: { label: string }) => metric.label === "Overdue").value, "0");
+  assert.deepEqual(body.actions, []);
+  assert.deepEqual(JSON.parse(JSON.stringify(saved?.presentation)), body.presentation, "history receives the same validated snapshot as the visible response");
 });

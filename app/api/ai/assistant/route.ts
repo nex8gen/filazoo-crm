@@ -16,12 +16,15 @@ import { withResearchProgress, type ResearchProgress } from "@/lib/ai/research-p
 import { ChatBodyTooLargeError, collectChatImages, readChatRequestBody } from "@/lib/ai/image-input";
 import { extractCrmRead, extractCrmReadBatch } from "@/lib/ai/crm-tools";
 import { readCrmRecords } from "@/lib/ai/crm-records";
+import { buildRecordPresentation, type RecordEvidence } from "@/lib/ai/record-presentation";
+import type { CrmRead } from "@/lib/ai/crm-tools";
 import { startChatSession } from "@/lib/ai/chat-session";
 import { HistoryError } from "@/lib/ai/chat-history-server";
 import { savedPageContext } from "@/lib/ai/chat-history";
 import { invoiceReadinessQuestion } from "@/lib/ai/invoice-readiness";
 import { isInvoiceCreationRequest } from "@/lib/ai/assistant-intent";
 import type { WorkspaceAction } from "@/lib/ai/workspace-assistant";
+import { workspaceSessionUnavailableResponse } from "@/lib/workspace-session-response";
 
 export const maxDuration = 120;
 const responseHeaders = { "Cache-Control": "private, no-store" };
@@ -37,8 +40,9 @@ async function assistantResponse(request: Request, report: (progress: ResearchPr
   }
   let viewer;
   try { viewer = await getWorkspaceViewer(); }
-  catch { return Response.json({ error: "Unable to verify your workspace session. Please retry." }, { status: 503, headers: responseHeaders }); }
+  catch { return workspaceSessionUnavailableResponse(); }
   if (!viewer) return Response.json({ error: "Sign in with an active workspace account." }, { status: 401, headers: responseHeaders });
+  const recordViewer = viewer;
   return withWorkspaceViewer(viewer, async () => {
   let body: unknown;
   try { body = await readChatRequestBody(request); }
@@ -93,6 +97,12 @@ async function assistantResponse(request: Request, report: (progress: ResearchPr
       signal: AbortSignal.any([deadline, ...(init?.signal ? [init.signal] : []), AbortSignal.timeout(45_000)]),
     })) as typeof fetch,
   };
+  const evidence: RecordEvidence[] = [];
+  async function readRecords(lookup: CrmRead) {
+    const result = await readCrmRecords(recordViewer, lookup);
+    evidence.push({ resource: lookup.resource, records: result.records, coverage: result.coverage, query: lookup.query });
+    return result;
+  }
   const agentMode = parsed.data.mode === "work";
   const gatewayModel = (agentMode ? process.env.AI_GATEWAY_AGENT_MODEL?.trim() : process.env.AI_GATEWAY_CHAT_MODEL?.trim()) || process.env.AI_GATEWAY_EMAIL_MODEL?.trim();
   let escalateModel = false;
@@ -104,6 +114,9 @@ async function assistantResponse(request: Request, report: (progress: ResearchPr
     try {
       serverData = await loadAgentContext(parsed.data, viewer);
     options.prompt = buildWorkspaceAssistantPrompt(parsed.data, serverData) + (session?.summaryPrompt ?? "");
+    if (serverData.currentInvoice && /invoice|发票/i.test(parsed.data.messages.at(-1)!.content)) {
+      evidence.push({ resource: "invoices", records: [serverData.currentInvoice], coverage: { matching: 1, nextOffset: null } });
+    }
     } catch (error) {
       await session?.fail();
       console.error("Unable to load assistant context:", error instanceof Error ? error.message : "Unknown context error");
@@ -160,7 +173,7 @@ async function assistantResponse(request: Request, report: (progress: ResearchPr
       const models = await gatewayModels();
       const run = (selectedModels: typeof models) => generateCrmPlan({ ...selectedModels, prompt: options.prompt, behavior: aiBehaviorInstruction(policy, true), messages: parsed.data.messages, pathname: parsed.data.pathname, language: parsed.data.language, signal: deadline, images: options.images,
         onDiagnostic: event => console.info("CRM agent step", { runtime: "sdk", contractVersion: AGENT_CONTRACT_VERSION, requestId: parsed.data.history?.requestId, kind: event.kind, tools: event.tools }),
-        read: lookup => readCrmRecords(viewer, lookup), searchEmails: lookup => searchAgentEmails(viewer, lookup), validateAction: async action => {
+        read: readRecords, searchEmails: lookup => searchAgentEmails(viewer, lookup), validateAction: async action => {
           aiActionApproval(policy, action, parsed.data.approvalMode);
           bindSelectedMailbox(action);
           // Read-only preparation lets tool errors reach the model while it can
@@ -220,7 +233,7 @@ async function assistantResponse(request: Request, report: (progress: ResearchPr
         if (round >= 2) standardModel = true;
         try {
           if (lookups.length) {
-            const results = await Promise.allSettled(lookups.map((lookup) => readCrmRecords(viewer, lookup)));
+            const results = await Promise.allSettled(lookups.map(readRecords));
             if (results.some((result) => result.status === "rejected")) throw new Error("A CRM lookup failed.");
             const records = results.map((result, index) => ({ lookup: lookups[index], ...(result as PromiseFulfilledResult<Awaited<ReturnType<typeof readCrmRecords>>>).value }));
             for (const result of records) {
@@ -243,7 +256,9 @@ async function assistantResponse(request: Request, report: (progress: ResearchPr
       return await reply({ output: translateUiText("Switch to Agent mode to look up customer emails and update their profiles.", parsed.data.language), actions: [], research: researchResult });
     }
     const extracted = nativePlan ?? extractWorkspaceActions(output);
-    if (!agentMode) return await reply({ output: translateUiText(extracted.output, parsed.data.language), actions: [], research: researchResult });
+    const presentation = !extracted.actions.length && !nativePlan?.clarification
+      ? buildRecordPresentation(evidence, parsed.data.messages.at(-1)!.content) : undefined;
+    if (!agentMode) return await reply({ output: translateUiText(extracted.output, parsed.data.language), actions: [], research: researchResult, ...(presentation ? { presentation } : {}) });
     let payload: { output: string; [key: string]: unknown };
     try {
       extracted.actions.forEach(bindSelectedMailbox);
@@ -251,7 +266,7 @@ async function assistantResponse(request: Request, report: (progress: ResearchPr
       // Only the execution endpoint can confirm a save/send. Model prose must
       // not describe a merely prepared proposal as already completed.
       const summary = actions.length ? actions.some((action) => action.approvalMode === "ask") ? "The requested actions are ready for review." : "The requested actions are ready." : extracted.output || "Please describe the task you want me to carry out.";
-      payload = { output: translateUiText(summary, parsed.data.language), actions, research: researchResult, ...(nativePlan ? { agent: { runtime: "sdk", contractVersion: nativePlan.contractVersion } } : {}) };
+      payload = { output: translateUiText(summary, parsed.data.language), actions, research: researchResult, ...(presentation ? { presentation } : {}), ...(nativePlan ? { agent: { runtime: "sdk", contractVersion: nativePlan.contractVersion } } : {}) };
     } catch (error) {
       const question = error instanceof Error && error.name === "AgentClarificationError" ? translateUiText(error.message, parsed.data.language) : undefined;
       payload = { output: question ?? translateUiText(error instanceof Error ? error.message : "Unable to prepare the requested action.", parsed.data.language), ...(question ? { clarification: { question } } : {}), actions: [] };

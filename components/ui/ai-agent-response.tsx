@@ -7,7 +7,7 @@ import { ThinkingGlyph } from "@/components/ui/thinking-indicator";
 import { AgentWorkIcon } from "@/components/agent-work-icon";
 import { agentWorkAreaLabels, type AgentWorkProgress } from "@/lib/ai/agent-progress";
 import "./ai-agent-response.css";
-import { SourceCitedText } from "@/components/ui/customer-research";
+import { AiMarkdown } from "@/components/ui/ai-markdown";
 import type { CitationSource } from "@/lib/ai/source-citations";
 
 // Adapted from the supplied response design. Progress follows real request
@@ -109,7 +109,7 @@ export function StreamingText({ text, animate = true, onComplete, onProgress, cl
     return () => window.cancelAnimationFrame(frame);
   }, [text, animate, reducedMotion]);
 
-  return <div data-no-translate aria-busy={!finished} className={cn("agent-streaming-text whitespace-pre-wrap break-words text-sm leading-7 text-foreground/90 [overflow-wrap:anywhere]", className)}>
-    <span>{sources.length ? <SourceCitedText text={finished ? text : characters.slice(0, visibleCount).join("")} sources={sources} /> : finished ? text : characters.slice(0, visibleCount).join("")}{!finished ? <span aria-hidden="true" className="agent-writing-cursor" /> : null}</span>
+  return <div data-no-translate aria-busy={!finished} className={cn("agent-streaming-text break-words text-sm leading-7 text-foreground/90 [overflow-wrap:anywhere]", className)}>
+    <AiMarkdown text={finished ? text : characters.slice(0, visibleCount).join("")} sources={sources} streaming={!finished} />{!finished ? <span aria-hidden="true" className="agent-writing-cursor" /> : null}
   </div>;
 }

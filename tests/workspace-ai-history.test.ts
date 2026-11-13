@@ -8,9 +8,12 @@ import * as history from "../lib/ai/chat-history.ts";
 import * as intent from "../lib/ai/assistant-intent.ts";
 import * as researchRequest from "../lib/ai/research-request.ts";
 import * as researchProgress from "../lib/ai/research-progress.ts";
+import * as sessionRecovery from "../lib/ai/session-recovery-fetch.ts";
+import * as sessionResponse from "../lib/workspace-session-response.ts";
 import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 const require = createRequire(import.meta.url);
+const sessionDependencies = { "@/lib/ai/session-recovery-fetch": sessionRecovery, "@/lib/workspace-session-response": sessionResponse };
 
 test("sidebar history stays enabled across close and reopen while drafts remain editable and survive automatic restore", () => {
   const slots: unknown[] = [];
@@ -36,6 +39,7 @@ test("sidebar history stays enabled across close and reopen while drafts remain 
     ensure: () => { throw new Error("Do not send before the saved conversation is ready"); },
   };
   const dependencies: Record<string, unknown> = {
+    ...sessionDependencies,
     react, "next/navigation": { usePathname: () => "/email", useRouter: () => ({}) }, "motion/react": { motion: ui },
     "@/components/language-provider": { useLanguage: () => ({ language: "en", t: (value: string) => value }) },
     "@/components/use-ai-conversation": { useAiConversation: (input: { mode: string }, callback: typeof restore, enabled: boolean, _browseAll: boolean, autoResume: boolean) => { assert.equal(autoResume, false, "messages must not load until a history title is selected"); if (input.mode === "chat") restore = callback; preparedModes.push(input.mode); enabledValues.push(enabled); return controller; } },
@@ -103,6 +107,7 @@ test("continuing history from the inbox sends the saved page, record, AI mode an
     accept: () => finish(),
   };
   const dependencies: Record<string, unknown> = {
+    ...sessionDependencies,
     react,
     "next/navigation": { usePathname: () => "/email", useRouter: () => ({}) },
     "motion/react": { motion: ui },

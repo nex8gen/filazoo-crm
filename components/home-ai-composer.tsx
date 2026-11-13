@@ -1,18 +1,14 @@
 "use client";
 
 import { useRef, useState, type ReactNode, type RefObject, type ClipboardEventHandler } from "react";
-import { ArrowUp, ArrowUpRight, ClipboardList, Mail, Plus, Square, Target } from "lucide-react";
+import { ArrowUp, ArrowUpRight, Plus, Square } from "lucide-react";
 import { AiIcon } from "@/components/ai-icon";
 import { AgentIcon } from "@/components/agent-icon";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { launchWorkspaceAi } from "@/lib/ai/launch";
-
-const starters = [
-  { icon: Target, label: "Find sales opportunities", prompt: "Review my assigned customers and identify the strongest sales opportunities. Explain the evidence and suggest the next action for each." },
-  { icon: Mail, label: "Draft a follow-up", prompt: "Help me draft a customer follow-up. First ask which customer and what I want to achieve, then prepare a draft for review." },
-  { icon: ClipboardList, label: "Review my orders", prompt: "Review the purchase orders for my assigned customers. Highlight outstanding items and suggest the next steps." },
-];
+import { homePrompts } from "@/lib/home-prompts";
+import { HomePromptIcon } from "@/components/home-prompt-icon";
 
 export function HomeAiComposer({ name, asOf }: { name: string; asOf: string }) {
   const [mode, setMode] = useState<"chat" | "agent">("chat");
@@ -32,6 +28,22 @@ export function HomeAiComposer({ name, asOf }: { name: string; asOf: string }) {
       <p>Let’s keep your business moving.</p>
     </header>
     <HomeAiInput id="home-ai-question" inputRef={input} mode={mode} onModeChange={setMode} value={question} onChange={setQuestion} onSend={openAi} onOpen={() => launchWorkspaceAi({ mode, ...(question.trim() ? { prompt: question.trim() } : {}) })} canSend={Boolean(question.trim())} />
+    <div className="home-ai-suggestions" role="group" aria-label="Suggested CRM prompts">
+      <div className="home-ai-prompt-grid">
+        {homePrompts.filter(item => item.placement === "card").map(item => {
+          return <button key={item.id} type="button" className="home-ai-prompt-card" data-tone={item.tone} aria-label={item.label} aria-describedby={`home-prompt-${item.id}-description`} onClick={() => openAi(item.prompt)}>
+            <span className="home-ai-prompt-icon" aria-hidden="true"><HomePromptIcon name={item.icon} /></span>
+            <span className="home-ai-prompt-title">{item.label}</span>
+            <span id={`home-prompt-${item.id}-description`} className="home-ai-prompt-description">{item.description}</span>
+          </button>;
+        })}
+      </div>
+      <div className="home-ai-prompt-chips">
+        {homePrompts.filter(item => item.placement === "chip").map(item => {
+          return <button key={item.id} type="button" className="home-ai-prompt-chip" onClick={() => openAi(item.prompt)}><HomePromptIcon name={item.icon} size={18} />{item.label}</button>;
+        })}
+      </div>
+    </div>
   </section>;
 }
 
@@ -61,9 +73,11 @@ export function HomeAiInput({ id, inputRef, mode, onModeChange, value, onChange,
           {tools ? <div className="home-composer-tools flex items-center gap-1">{tools}</div> : null}
           <Popover open={promptsOpen} onOpenChange={setPromptsOpen}>
             <PopoverTrigger disabled={busy} aria-label="Quick prompts" title="Quick prompts" className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"><Plus className="size-4" /></PopoverTrigger>
-            <PopoverContent side="top" align="end" sideOffset={12} className="!w-64 !gap-1 !rounded-xl !p-2">
+            <PopoverContent side="top" align="end" sideOffset={12} className="home-ai-prompts-menu !w-64 !gap-1 !rounded-xl !p-2">
               <PopoverTitle className="px-2 py-1.5 text-xs">Quick prompts</PopoverTitle>
-              {starters.map(({ icon: Icon, label, prompt }) => <button key={label} type="button" disabled={busy} onClick={() => { setPromptsOpen(false); onChange(prompt); inputRef.current?.focus(); }} className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2.5 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"><Icon className="size-3.5 shrink-0" aria-hidden="true" />{label}</button>)}
+              {homePrompts.map(({ id, icon, label, prompt }) => {
+                return <button key={id} type="button" disabled={busy} onClick={() => { setPromptsOpen(false); onChange(prompt); inputRef.current?.focus(); }} className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2.5 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"><HomePromptIcon name={icon} size={18} />{label}</button>;
+              })}
             </PopoverContent>
           </Popover>
           {onOpen ? <button type="button" onClick={onOpen} aria-label="Open conversation" title="Open conversation" className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"><ArrowUpRight className="size-4" /></button> : null}

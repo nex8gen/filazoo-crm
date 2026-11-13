@@ -157,9 +157,8 @@ body:has(.mail-reply-resize[data-dragging]) { cursor: row-resize; }
 @media (max-width: 767px) { .mail-folder-resize { display: none; } }
 @media (min-width: 901px) { .company-email-workspace .mail-layout .mail-list-resize { display: block; left: min(var(--mail-list-width), 45%); } }
 @media (max-width: 900px) { .company-email-workspace .mail-layout .mail-list-resize { display: none; } }
-/* Respond to the actual mail canvas, including space taken by the AI sidebar. */
+/* Keep folders compact whenever a message is open on desktop. */
 @media (min-width: 768px) {
-  @container email-workspace (max-width: 1480px) {
     .mail-layout[data-folders="true"][data-reading="true"] { --mail-folder-track: 64px; grid-template-columns: var(--mail-folder-track) min(var(--mail-list-width), 32%) minmax(0, 1fr); }
     .mail-layout[data-folders="true"][data-reading="true"] .mail-folders { display: flex; }
     .mail-layout[data-folders="true"][data-reading="true"] .mail-folder-label,
@@ -172,7 +171,6 @@ body:has(.mail-reply-resize[data-dragging]) { cursor: row-resize; }
     .mail-layout[data-folders="true"][data-reading="true"] .mail-folder-workflow-shortcut { max-height: 40px; margin-bottom: 12px; opacity: 1; visibility: visible; pointer-events: auto; transition-delay: 0s; }
     .mail-layout[data-folders="true"][data-reading="true"] .mail-folders > .h-px { margin-inline: 12px; }
     .mail-layout[data-folders="true"][data-reading="true"] .mail-list-resize { display: block; left: calc(var(--mail-folder-track) + min(var(--mail-list-width), 32%)); }
-  }
   @container email-workspace (min-width: 1101px) and (max-width: 1480px) {
     .mail-layout[data-folders="true"][data-reading="true"][data-details="true"] { grid-template-columns: var(--mail-folder-track) min(var(--mail-list-width), 32%) minmax(0, 1fr) min(var(--mail-details-width), 30%); }
     .mail-layout[data-folders="true"][data-reading="true"][data-details="true"] .mail-details { position: static; width: auto; box-shadow: none; }

@@ -80,7 +80,7 @@ export function companyChatInstruction(now: string, language: AppLanguage = "en"
     "Help with customer briefs, buying intent, objections, follow-up plans, questions to ask, and draft replies. For draft replies, use only known facts and the recorded account manager. Never claim to send an email, schedule a task, edit the CRM or take external actions: this chat only provides advice and drafts.",
     aiLanguageInstruction(language),
     webSearch ? customerReportInstruction : "Web search is off. Do not claim to have searched Google or visited websites. For external company research, suggest enabling Web search.",
-    `Use clear plain text, short paragraphs and simple lists, without markdown headings or tables. Keep answers under ${webSearch ? "5,500" : "4,000"} characters.`,
+    `Use readable Markdown, short paragraphs, bold key findings and compact lists. Use a table when it makes a comparison easier to read, and small relevant emoji when useful. Never emit raw HTML or invented chart data. Keep answers under ${webSearch ? "5,500" : "4,000"} characters.`,
     `Current time: ${now}. Workspace timezone: Asia/Shanghai.`,
   ].join("\n");
 }

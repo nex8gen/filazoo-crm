@@ -16,6 +16,8 @@ import { ColumnResizeHandle } from "@/components/column-resize-handle";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { StreamingText, ThinkingState } from "@/components/ui/ai-agent-response";
+import { AiResponsePresentation } from "@/components/ui/ai-response-presentation";
+import { parseResponsePresentation, type ResponsePresentation } from "@/lib/ai/response-presentation";
 import { AiMascotInput } from "@/components/ui/ai-mascot-input";
 import OrbitingCirclesGlobe from "@/components/ui/orbiting-circles-02";
 import { AgentActionCard } from "@/components/agent-action-card";
@@ -36,11 +38,13 @@ import { createHistoryListCache, type HistoryListCache } from "@/lib/ai/history-
 import { isInvoiceCreationRequest } from "@/lib/ai/assistant-intent";
 import { webSearchForRequest, type WebSearchPreference } from "@/lib/ai/research-request";
 import { readResearchResponse, researchStreamType, type ResearchProgress } from "@/lib/ai/research-progress";
+import { fetchWithSessionRecovery, AssistantSessionError } from "@/lib/ai/session-recovery-fetch";
+import { isWorkspaceSessionRetry } from "@/lib/workspace-session-response";
 
 type Mode = "chat" | "agent";
 export type WorkspaceAiLaunchRequest = { id: number; mode: Mode; prompt?: string; submit?: boolean };
-type Message = { id: string; role: "user" | "assistant"; content: string; images?: ChatImage[]; attachmentNames?: string[]; actions?: AgentProposal[]; durationMs?: number; work?: AgentWorkProgress; research?: ResearchResult };
-type AssistantReply = { output: string; error?: string; actions?: AgentProposal[]; research?: ResearchResult; history?: Parameters<ReturnType<typeof useAiConversation>["accept"]>[0] };
+type Message = { id: string; role: "user" | "assistant"; content: string; images?: ChatImage[]; attachmentNames?: string[]; actions?: AgentProposal[]; durationMs?: number; work?: AgentWorkProgress; research?: ResearchResult; presentation?: ResponsePresentation };
+type AssistantReply = { output: string; error?: string; actions?: AgentProposal[]; research?: ResearchResult; presentation?: ResponsePresentation; history?: Parameters<ReturnType<typeof useAiConversation>["accept"]>[0] };
 
 const pageNames: Array<[RegExp, string]> = [
   [/^\/$/, "Home"],
@@ -110,6 +114,8 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
   const [pending, setPending] = useState(false);
   const [activeResearch, setActiveResearch] = useState<{ chatKey: string; progress?: ResearchProgress } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [sessionProblem, setSessionProblem] = useState<number | null>(null);
+  const [reconnecting, setReconnecting] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [applying, setApplying] = useState<string | null>(null);
   const [actionResults, setActionResults] = useState<Record<string, AgentActionResult>>({});
@@ -244,6 +250,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
     attachments.clear();
     setError(null);
     const work = activeMode === "agent" ? requestedWorkProgress(content, requestPageLabel) : undefined;
+    setSessionProblem(null);
     setActiveWork(work ?? null);
     setWorkPage(requestPageLabel);
     setPending(true);
@@ -254,7 +261,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
     try {
       const reference = await history.ensure(next.at(-1)!.id);
       if (controller.signal.aborted) return;
-      const response = await fetch("/api/ai/assistant", {
+      const response = await fetchWithSessionRecovery("/api/ai/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: researchStreamType },
         body: JSON.stringify({
@@ -271,18 +278,20 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
           messages: [{ role: "user", content, images: sentImages }],
         }),
         signal: controller.signal,
-      });
+      }, { fetcher: fetch, onRetry: () => setReconnecting(true) });
+      setReconnecting(false);
       const result = await readResearchResponse<AssistantReply>(response, progress => {
         if (!controller.signal.aborted) setActiveResearch({ chatKey: requestChatKey, progress });
       });
       if (controller.signal.aborted) return;
+      if (response.status === 401 || isWorkspaceSessionRetry(response, result)) throw new AssistantSessionError(response.status);
       if (!response.ok || typeof result?.output !== "string") throw new Error(result?.error || "Unable to reach Filazoo AI.");
       history.accept(result.history);
       const id = crypto.randomUUID();
       for (const proposal of (result.actions ?? []) as AgentProposal[]) proposalContexts.current.set(proposal.id, pageContext);
       setChats((current) => ({
         ...current,
-        [requestChatKey]: [...(current[requestChatKey] ?? next), { id, role: "assistant", content: result.output, actions: result.actions, durationMs: performance.now() - started, work, research: result.research }],
+        [requestChatKey]: [...(current[requestChatKey] ?? next), { id, role: "assistant", content: result.output, actions: result.actions, durationMs: performance.now() - started, work, research: result.research, presentation: parseResponsePresentation(result.presentation) }],
       }));
       if (visibleChatKey.current === requestChatKey) setAnimation({ id, run: 1 });
       // Auto approval applies only to proposals created by this request. Changing
@@ -296,7 +305,10 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
       }
     } catch (reason) {
       if (!controller.signal.aborted) {
-        setError(reason instanceof Error ? reason.message : "Unable to reach Filazoo AI.");
+        const sessionFailure = reason instanceof AssistantSessionError ? reason
+          : reason && typeof reason === "object" && "status" in reason && reason.status === 401 ? new AssistantSessionError(401) : null;
+        setError(sessionFailure?.message ?? (reason instanceof Error ? reason.message : "Unable to reach Filazoo AI."));
+        setSessionProblem(sessionFailure?.status ?? null);
         setChats((current) => ({ ...current, [requestChatKey]: (current[requestChatKey] ?? []).filter((message) => message.id !== next.at(-1)?.id) }));
         setQuestion(content);
         attachments.setImages(sentImages);
@@ -304,6 +316,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
     } finally {
       if (abort.current === controller) abort.current = null;
       setPending(false);
+      setReconnecting(false);
       setActiveResearch(current => current?.chatKey === requestChatKey ? null : current);
     }
   }
@@ -463,6 +476,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
               <ThinkingState working={false} writing={animation?.id === message.id} durationMs={message.durationMs} scope={t(pageLabel)} activity={message.work} className="mb-2" />
               <StreamingText key={`${message.id}-${animation?.id === message.id ? animation.run : 0}`} text={message.content} sources={message.research?.sources} animate={animation?.id === message.id} onProgress={() => { const viewport = log.current; if (viewport && viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 120) viewport.scrollTop = viewport.scrollHeight; }} onComplete={() => setAnimation((current) => current?.id === message.id ? null : current)} />
               <CustomerResearchSources research={message.research} />
+              <AiResponsePresentation presentation={message.presentation} legacyText={message.content} />
               {activeMode === "chat" && !restoredElsewhere && messages[index - 1]?.role === "user" && isInvoiceCreationRequest(messages[index - 1].content) ? <Button type="button" variant="outline" size="sm" className="mt-3" disabled={busy} onClick={() => openInAgent(message.id)}><AgentIcon className="size-5" />{language === "zh-CN" ? "转到 Agent" : "Open in Agent"}</Button> : null}
               {animation?.id === message.id ? <Button type="button" variant="ghost" size="xs" className="mt-2" onClick={() => setAnimation(null)}>Show full reply</Button> : <>
               <div className="mt-2 flex gap-1"><Button type="button" variant="ghost" size="xs" className="text-muted-foreground" disabled={busy} onClick={() => setAnimation({ id: message.id, run: performance.now() })}><RotateCcw />Replay</Button><Button type="button" variant="ghost" size="xs" className="text-muted-foreground" onClick={() => void copy(message)}><Copy />{copiedId === message.id ? "Copied" : "Copy"}</Button></div>
@@ -471,8 +485,10 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
             </>}
           </div>)}</div>}
           {pending && activeMode === "chat" ? <div className="mt-5"><ThinkingState working scope={t(pageLabel)} /></div> : null}
+          {reconnecting ? <p role="status" className="mt-3 text-sm text-muted-foreground">Reconnecting to your workspace… Your request will continue automatically.</p> : null}
           {pending && activeResearch?.chatKey === chatKey ? <ResearchSearching progress={activeResearch.progress} /> : null}
           {error && error !== history.error ? <NotificationToast>{error}</NotificationToast> : null}
+          {sessionProblem && error ? <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-border bg-muted/40 p-3"><p className="text-xs text-muted-foreground">Your prompt is preserved in the message box.</p>{sessionProblem === 401 ? <a className="text-xs font-medium text-primary underline" href={`/login?next=${encodeURIComponent(pathname)}`} target="_blank" rel="noopener noreferrer">Sign in to continue</a> : null}<Button type="button" variant="outline" size="sm" disabled={busy || loadingHistory} onClick={() => void send()}>Retry request</Button></div> : null}
         </div>
         </div>
 

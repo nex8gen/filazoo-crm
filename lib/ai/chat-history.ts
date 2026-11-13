@@ -2,6 +2,7 @@ import { z } from "zod";
 import { assistantPageContextSchema } from "./page-context.ts";
 import type { AgentProposal, AgentActionResult } from "./agent-actions.ts";
 import type { ChatImage } from "./image-input.ts";
+import type { ResponsePresentation } from "./response-presentation.ts";
 
 export const historyReferenceSchema = z.object({ conversationId: z.uuid(), requestId: z.uuid(), version: z.number().int().min(0) }).strict();
 export const conversationInputSchema = z.object({
@@ -18,6 +19,7 @@ export type HistoryMessage = {
   id: string; role: "user" | "assistant"; content: string; images?: ChatImage[]; attachmentNames?: string[];
   actions?: AgentProposal[]; sources?: Array<{ id: string; label: string; recordedAt?: string; url?: string }>;
   durationMs?: number; research?: unknown;
+  presentation?: ResponsePresentation;
 };
 export type Conversation = ConversationInput & { id: string; title: string; pinned: boolean; archived: boolean; updated_at: string; version: number; summary: string; pending?: boolean };
 export type HistoryDetail = { conversation: Conversation; messages: HistoryMessage[]; actionResults: Record<string, AgentActionResult>; hasMore: boolean; before?: number };

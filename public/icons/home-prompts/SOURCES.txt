@@ -1,0 +1,16 @@
+Original prompt artwork from the user-supplied Klaviyo homepage reference.
+Reference page: https://www.klaviyo.com/dashboard
+Retrieved on 2026-11-13. These assets are not Microsoft Fluent Emoji.
+
+Source base URL:
+https://www.klaviyo.com/application-assets/klaviyo/production/static-assets/
+
+Local file -> original asset
+reference-megaphone.png -> d5b65ca8346153d3.png (draftCampaign)
+reference-calendar.png -> 95e9ff3e3579cf3b.png (campaignCalendar)
+reference-package.png -> d7910cbb6bcbc247.png (flowAudit)
+reference-coins.png -> 9f505b10585936a9.png (revenueBreakdown)
+reference-welcome.png -> 26d035ea29cfa3ad.png (welcomeSeries)
+reference-tag.png -> 032a6500474331fa.png (saleCampaign)
+
+Artwork is served locally with its original colors and transparency.

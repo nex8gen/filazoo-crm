@@ -1,4 +1,14 @@
+import { zhCNAiResponses } from "./i18n-ai-responses.ts";
+
 export const zhCNHome: Record<string, string> = {
+  ...zhCNAiResponses,
+  "Suggested CRM prompts": "推荐 CRM 提示",
+  "Plan a campaign": "策划营销活动", "Get an audience, email draft, and suggested timing.": "获取受众建议、邮件草稿和发送时间建议。",
+  "Prioritize follow-ups": "安排跟进优先级", "See which customers need your attention next.": "了解接下来需要关注哪些客户。",
+  "Review open orders": "查看未完成订单", "Check order status and spot the next steps.": "查看订单状态，明确下一步行动。",
+  "Find overdue invoices": "查找逾期发票", "Find unpaid balances that may need a reminder.": "查找可能需要催款的未付余额。",
+  "Draft a customer reply": "起草客户回复", "Follow up on quotations": "跟进报价",
+  "Check product stock": "查看产品库存",
   "Back to overview": "返回概览", "Open conversation": "打开对话",
   "Ask Filazoo anything…": "向 Filazoo 提问……", "What would you like to get done?": "您希望完成什么？", "Quick prompts": "快捷提示",
   "Team overview": "团队概览", "About team metrics": "关于团队指标", "Team metrics": "团队指标",

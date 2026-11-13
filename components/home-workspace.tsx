@@ -18,14 +18,16 @@ export function HomeWorkspace({ data }: { data: HomeData }) {
     startRefresh(() => router.push(`/?${query}`, { scroll: false }));
   };
 
-  return <div className="home-workspace mx-auto flex w-full max-w-[1440px] flex-col gap-6">
-    <h1 className="sr-only">Home</h1>
-    <HomeOverview data={data} refreshing={refreshing} onRangeChange={changeRange} onRefresh={() => startRefresh(() => router.refresh())} />
+  return <div className="home-workspace w-full">
+    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6">
+      <h1 className="sr-only">Home</h1>
+      <HomeOverview data={data} refreshing={refreshing} onRangeChange={changeRange} onRefresh={() => startRefresh(() => router.refresh())} />
 
-    {data.unavailable.length ? <NotificationToast tone="warning"><p>Some data could not be loaded: {data.unavailable.join(", ")}. Affected totals are unavailable.</p><button type="button" onClick={() => startRefresh(() => router.refresh())} disabled={refreshing} className="font-medium underline">Try again</button></NotificationToast> : null}
+      {data.unavailable.length ? <NotificationToast tone="warning"><p>Some data could not be loaded: {data.unavailable.join(", ")}. Affected totals are unavailable.</p><button type="button" onClick={() => startRefresh(() => router.refresh())} disabled={refreshing} className="font-medium underline">Try again</button></NotificationToast> : null}
 
-    <HomeAiComposer name={data.name} asOf={data.asOf} />
+      <HomeAiComposer name={data.name} asOf={data.asOf} />
 
-    {data.isAdmin ? <HomeTeamPerformance data={data} refreshing={refreshing} /> : null}
+      {data.isAdmin ? <HomeTeamPerformance data={data} refreshing={refreshing} /> : null}
+    </div>
   </div>;
 }

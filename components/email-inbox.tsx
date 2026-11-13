@@ -1705,6 +1705,7 @@ export function EmailInboxWorkspace({
             <EmailAiSummary
               key={selectedConversation?.id}
               configured={aiConfigured}
+              autoAnalyze={Boolean(selected.companyId)}
               ready={reading && selected.bodyLoaded !== false && Boolean(selected.body.trim())}
               currentFollowUpAt={selectedFollowUp || null}
               onAnalyzed={applyAiFollowUp}

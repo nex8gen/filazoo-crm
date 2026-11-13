@@ -81,10 +81,11 @@ function SummaryProducts({ summary, language }: { summary: EmailSummary; languag
   </div>;
 }
 
-export function EmailAiSummary({ context, configured, ready, currentFollowUpAt, onAnalyzed, scheduleFollowUp = true }: {
+export function EmailAiSummary({ context, configured, ready, autoAnalyze, currentFollowUpAt, onAnalyzed, scheduleFollowUp = true }: {
   context: string;
   configured: boolean;
   ready: boolean;
+  autoAnalyze: boolean;
   currentFollowUpAt: string | null;
   onAnalyzed: (summary: EmailSummary) => Promise<void>;
   scheduleFollowUp?: boolean;
@@ -99,7 +100,7 @@ export function EmailAiSummary({ context, configured, ready, currentFollowUpAt, 
   const saveAnalysis = useEffectEvent((output: EmailSummary) => onAnalyzed(output));
 
   useEffect(() => {
-    if (!configured || !ready) return;
+    if (!configured || !ready || (!autoAnalyze && attempt === 0)) return;
     let active = true;
     async function generate() {
       setLoading(true);
@@ -126,7 +127,7 @@ export function EmailAiSummary({ context, configured, ready, currentFollowUpAt, 
     }
     void generate();
     return () => { active = false; };
-  }, [context, configured, ready, attempt, language, scheduleFollowUp]);
+  }, [context, configured, ready, autoAnalyze, attempt, language, scheduleFollowUp]);
 
   async function retrySaving() {
     if (!summary) return;
@@ -148,6 +149,11 @@ export function EmailAiSummary({ context, configured, ready, currentFollowUpAt, 
     <div className="rounded-xl border border-border/70 bg-background p-4">
       <div aria-live="polite" aria-busy={loading}>
         {!configured ? <p className="text-xs leading-5 text-muted-foreground">Connect an AI provider in Settings to generate conversation summaries.</p>
+          : !autoAnalyze && attempt === 0 ? <div className="space-y-3">
+            <p className="text-xs leading-5 text-muted-foreground">This sender is not linked to a company in your Companies list. Analyze this conversation when needed.</p>
+            <button type="button" disabled={!ready} onClick={() => setAttempt(value => value + 1)} className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold text-primary hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"><AiIcon aria-hidden="true" />Analyze with AI</button>
+            {!ready ? <p className="text-xs leading-5 text-muted-foreground">Waiting for the message to load before analysis.</p> : null}
+          </div>
           : !ready ? <p className="text-xs leading-5 text-muted-foreground">Waiting for the message to load before analysis.</p>
           : loading && !summary ? <p className="flex items-center gap-2 text-xs text-violet-700 dark:text-violet-300"><AiIcon state="thinking" />Researching company and checking product fit…</p>
           : error && !summary ? <NotificationToast tone="error"><p className="text-xs leading-5 text-muted-foreground">{error}</p><button type="button" onClick={() => setAttempt((value) => value + 1)} className="mt-2 text-xs font-semibold text-primary hover:underline">Try again</button></NotificationToast>
@@ -156,7 +162,7 @@ export function EmailAiSummary({ context, configured, ready, currentFollowUpAt, 
       {summary && error ? <NotificationToast>{error}<button type="button" onClick={() => setAttempt(value => value + 1)} className="ml-2 font-semibold text-primary hover:underline">Retry next step</button></NotificationToast> : null}
       {saveError ? <NotificationToast tone="error"><p className="text-xs leading-5 text-destructive">The summary is ready, but the follow-up could not be saved: {saveError}</p><button type="button" disabled={loading} onClick={() => void retrySaving()} className="mt-2 text-xs font-semibold text-primary hover:underline disabled:opacity-40">Retry saving follow-up</button></NotificationToast> : null}
       {loading && summary ? <p role="status" className="mt-3 text-xs text-muted-foreground">Updating suggested next step…</p> : null}
-      {scheduleFollowUp ? <p className="mt-4 text-xs leading-4 text-muted-foreground">Follow-up scheduled automatically when needed</p> : null}
+      {scheduleFollowUp && (autoAnalyze || attempt > 0) ? <p className="mt-4 text-xs leading-4 text-muted-foreground">Follow-up scheduled automatically when needed</p> : null}
     </div>
   </section>;
 }

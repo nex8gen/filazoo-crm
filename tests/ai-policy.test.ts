@@ -27,6 +27,8 @@ function load<T>(file: string, dependencies: Record<string, unknown>, extra = {}
     if (name === "@/lib/ai/provider-credentials") return credentials;
     if (name === "@/lib/workspace-context") return policyTestDependency(name);
     if (name === "@/lib/ai/research-progress") return policyTestDependency(name);
+    if (name === "@/lib/ai/record-presentation") return policyTestDependency(name);
+    if (name === "@/lib/workspace-session-response") return policyTestDependency(name);
     if (name in dependencies) return dependencies[name];
     if (name.replace(/\.ts$/, "") in dependencies) return dependencies[name.replace(/\.ts$/, "")];
     throw new Error(`Unexpected dependency: ${name}`);

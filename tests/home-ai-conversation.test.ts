@@ -7,6 +7,9 @@ import ts from "typescript";
 import * as history from "../lib/ai/chat-history.ts";
 import * as researchRequest from "../lib/ai/research-request.ts";
 import * as researchProgress from "../lib/ai/research-progress.ts";
+import * as responsePresentation from "../lib/ai/response-presentation.ts";
+import * as sessionRecovery from "../lib/ai/session-recovery-fetch.ts";
+import * as sessionResponse from "../lib/workspace-session-response.ts";
 import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 const require = createRequire(import.meta.url);
@@ -18,8 +21,9 @@ function find(value: unknown, type: unknown): Element | undefined {
   return element.type === type ? element : find(element.props?.children, type);
 }
 
-for (const mode of ["chat", "agent"] as const) for (const fail of [false, true]) {
-  test(`Home ${mode} sends once after context is ready and ${fail ? "preserves a failed prompt" : "keeps the reply on the page"}`, async () => {
+for (const mode of ["chat", "agent"] as const) for (const outcome of ["success", "failure", "reconnect"] as const) {
+  const fail = outcome === "failure";
+  test(`Home ${mode} sends once after context is ready and ${fail ? "preserves a failed prompt" : outcome === "reconnect" ? "recovers a temporary session interruption" : "keeps the reply on the page"}`, async () => {
     const slots: unknown[] = [];
     let cursor = 0, ready = false;
     let effects: (() => unknown)[] = [];
@@ -40,6 +44,7 @@ for (const mode of ["chat", "agent"] as const) for (const fail of [false, true])
     const ui = new Proxy({}, { get: () => () => null });
     const requests: Record<string, unknown>[] = [];
     let creates = 0;
+    let sessionInterruptions = 0;
     const controller = {
       scope: history.conversationScope({ pathname: "/", mode }), conversation: null,
       get loading() { return !ready; },
@@ -56,6 +61,8 @@ for (const mode of ["chat", "agent"] as const) for (const fail of [false, true])
       "@/components/ui/ai-agent-response": { StreamingText, ThinkingState: () => null },
       "@/components/ui/ai-image-attachments": { useAiImageAttachments: () => ({ images: [], processing: false, clear() {}, setImages() {} }) },
       "@/lib/ai/chat-history": history, "@/lib/ai/research-request": researchRequest, "@/lib/ai/research-progress": researchProgress,
+      "@/lib/ai/response-presentation": responsePresentation,
+      "@/lib/ai/session-recovery-fetch": { ...sessionRecovery, fetchWithSessionRecovery: (url: string, init: RequestInit, options: Parameters<typeof sessionRecovery.fetchWithSessionRecovery>[2]) => sessionRecovery.fetchWithSessionRecovery(url, init, { ...options, wait: async () => {} }) }, "@/lib/workspace-session-response": sessionResponse,
       "@/lib/ai/page-context": { readAssistantPageContext: () => ({}), assistantRecordScope: () => "" },
       "@/lib/ai/image-input": { chatImageLimitError: () => null },
       "@/lib/ai/agent-progress": { requestedWorkProgress: () => undefined, pageWorkArea: () => "home" },
@@ -69,6 +76,7 @@ for (const mode of ["chat", "agent"] as const) for (const fail of [false, true])
       MutationObserver: class { observe() {} disconnect() {} },
       fetch: async (url: string, init: RequestInit) => {
         assert.equal(url, "/api/ai/assistant", "opening Home must never execute an agent action");
+        if (outcome === "reconnect" && sessionInterruptions === 0) { sessionInterruptions++; return sessionResponse.workspaceSessionUnavailableResponse(); }
         requests.push(JSON.parse(init.body as string));
         return Response.json(fail ? { error: "Temporarily unavailable" } : { output: "Here is your sales summary." }, { status: fail ? 503 : 200 });
       },
@@ -81,8 +89,8 @@ for (const mode of ["chat", "agent"] as const) for (const fail of [false, true])
       for (const effect of effects) effect();
       return tree;
     }
-    const page = render();
-    assert.equal(page.type, "main");
+    const page = find(render(), "main");
+    assert.ok(page, "page conversations render a main landmark inside the animation wrapper");
     assert.equal(page.props?.id, "workspace-ai-content");
     assert.equal(find(page, ResizeHandle), undefined, "page conversations do not resize or use a sidebar");
     assert.equal(find(page, Composer)?.props?.busy, true, "queue waits for context and history readiness");
@@ -93,6 +101,7 @@ for (const mode of ["chat", "agent"] as const) for (const fail of [false, true])
     assert.equal(requests.length, 0, "a delayed Home launch must not send after leaving the page view");
     for (let i = 0; i < 6; i++) { render(); await new Promise(resolve => setImmediate(resolve)); }
     assert.equal(creates, 1);
+    assert.equal(sessionInterruptions, outcome === "reconnect" ? 1 : 0);
     assert.equal(requests.length, 1, "rerenders must not submit the initial prompt again");
     assert.equal(requests[0].pathname, "/");
     assert.equal(requests[0].mode, mode === "agent" ? "work" : "analyze");

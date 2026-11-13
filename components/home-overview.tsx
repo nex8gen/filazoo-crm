@@ -47,7 +47,7 @@ export function HomeOverview({ data, refreshing, onRangeChange, onRefresh }: { d
   };
 
   return <section className="home-overview" aria-label="Sales at a glance" aria-busy={refreshing}>
-    <div className="home-overview-date"><HomeDateRange range={report.range} minDate={report.minDate} asOf={data.asOf} disabled={refreshing} onChange={onRangeChange} /><span aria-hidden="true" className="text-muted-foreground">·</span><span className="text-[13px] text-muted-foreground">{data.isAdmin ? "All activity" : "Your activity"}</span></div>
+    <div className="home-overview-date"><HomeDateRange range={report.range} minDate={report.minDate} asOf={data.asOf} disabled={refreshing} onChange={onRangeChange} /><span className="px-2.5 py-1 text-xs text-muted-foreground">{data.isAdmin ? "All activity" : "Your activity"}</span></div>
     <div className="home-overview-metrics">{preferences.metrics.map((id, index) => {
       const metric = definitions[id], snapshot = id === "wonCustomers";
       const ready = metric.sources.every(source => !data.unavailable.includes(source));
