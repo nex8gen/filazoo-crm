@@ -7,7 +7,6 @@
     "../node_modules",
     "../tests",
     "../tmp",
-    "../.next-crm",
-    "../temu-support"
+    "../.next-crm"
   ]
 }

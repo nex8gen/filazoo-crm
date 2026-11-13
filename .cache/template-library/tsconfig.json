@@ -4,8 +4,7 @@
     "../../node_modules",
     "../../tests",
     "../../tmp",
-    "../../.next-crm",
-    "../../temu-support"
+    "../../.next-crm"
   ],
   "compilerOptions": {
     "incremental": false
