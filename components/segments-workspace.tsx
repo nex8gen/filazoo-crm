@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
@@ -34,11 +36,11 @@ function RunProgress({ counts, hasWorkflows }: { counts: WorkflowCounts; hasWork
       <span className={counts.completed ? "font-medium" : "text-muted-foreground"}>{total ? `${Math.round(counts.completed / total * 100)}% completed` : hasWorkflows ? "No runs yet" : "No workflow yet"}</span>
       {total ? <span className="tabular-nums text-muted-foreground">{total.toLocaleString()} runs</span> : null}
     </div>
-    {counts.blocked ? <p className="mt-1.5 text-[11px] font-medium text-amber-700 dark:text-amber-400">{counts.blocked.toLocaleString()} blocked · waiting for a fix</p> : null}
+    {counts.blocked ? <p className="mt-1.5 text-xs font-medium text-amber-700 dark:text-amber-400">{counts.blocked.toLocaleString()} blocked · waiting for a fix</p> : null}
     <div role="img" aria-label={total ? description : hasWorkflows ? "No runs yet" : "No workflow yet"} title={total ? description : undefined} className="flex h-1.5 w-full overflow-hidden rounded-full bg-muted">
       {total ? runStates.map(state => counts[state.key] ? <span key={state.key} className={state.color} style={{ width: `${counts[state.key] / total * 100}%` }} /> : null) : null}
     </div>
-    {counts.failed || counts.cancelled ? <p className="mt-1.5 text-[11px] text-muted-foreground">{counts.failed ? <span className="font-medium text-destructive">{counts.failed.toLocaleString()} failed</span> : null}{counts.failed && counts.cancelled ? " · " : ""}{counts.cancelled ? `${counts.cancelled.toLocaleString()} stopped` : null}</p> : null}
+    {counts.failed || counts.cancelled ? <p className="mt-1.5 text-xs text-muted-foreground">{counts.failed ? <span className="font-medium text-destructive">{counts.failed.toLocaleString()} failed</span> : null}{counts.failed && counts.cancelled ? " · " : ""}{counts.cancelled ? `${counts.cancelled.toLocaleString()} stopped` : null}</p> : null}
   </div>;
 }
 
@@ -84,9 +86,9 @@ export function SegmentsWorkspace({ companies, savedSegments, workflows, canWrit
     <PageActions>{createButton}</PageActions>
     <div className="flex flex-wrap items-start justify-between gap-2">
       <p className="max-w-2xl text-sm leading-6 text-muted-foreground">Organize customers into segments and track the workflows moving them forward.</p>
-      <span className="rounded-md border bg-muted/30 px-2 py-1 text-[11px] text-muted-foreground">Workflow activity · All time</span>
+      <span className="rounded-md border bg-muted/30 px-2 py-1 text-xs text-muted-foreground">Workflow activity · All time</span>
     </div>
-    {workflows === null ? <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm"><AlertCircle className="size-4 shrink-0 text-amber-600" /><span className="flex-1">Workflow activity is unavailable. Your segments are still accessible.</span><Button variant="outline" size="sm" onClick={() => window.location.reload()}>Retry</Button></div> : null}
+    {workflows === null ? <NotificationToast tone="warning"><AlertCircle className="size-4 shrink-0 text-amber-600" /><span className="flex-1">Workflow activity is unavailable. Your segments are still accessible.</span><Button variant="outline" size="sm" onClick={() => window.location.reload()}>Retry</Button></NotificationToast> : null}
     <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
       {[
         { label: "Live workflows", value: linkedWorkflows.filter(flow => flow.status === "live").length, detail: `${segments.length.toLocaleString()} segments`, icon: Workflow, tone: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
@@ -119,7 +121,7 @@ export function SegmentsWorkspace({ companies, savedSegments, workflows, canWrit
               {segment.description ? <p className="mt-1 max-w-64 truncate text-xs text-muted-foreground" title={segment.description}>{segment.description}</p> : null}
               {segment.kind === "saved" ? <details className="mt-1 text-xs text-muted-foreground"><summary className="cursor-pointer">{segment.manual ? "Selected companies" : "Segment rules"}</summary><ul className="mt-1 space-y-1 pl-3">{(segment.rules.length ? segment.rules : ["All companies"]).map((rule, index) => <li key={`${rule}:${index}`} className="list-disc">{rule}</li>)}</ul></details> : null}
             </TableCell>
-            <TableCell className="min-w-40 max-w-52 whitespace-normal">{workflows === null ? <span className="text-muted-foreground">—</span> : segment.workflows.length ? <div className="space-y-1.5">{segment.workflows.length === 1 ? <Link href={`/workflow?flow=${encodeURIComponent(segment.workflows[0].id)}`} data-no-translate className="block truncate text-xs font-medium hover:underline" title={segment.workflows[0].name}>{segment.workflows[0].name}</Link> : <details className="text-xs"><summary className="cursor-pointer font-medium">{segment.workflows.length} workflows</summary><ul className="mt-2 space-y-2">{segment.workflows.map(flow => <li key={flow.id}><Link data-no-translate href={`/workflow?flow=${encodeURIComponent(flow.id)}`} className="hover:underline">{flow.name}</Link><span className="ml-1 text-muted-foreground">({flow.status})</span></li>)}</ul></details>}<div className="flex flex-wrap gap-1">{(["live", "paused", "draft"] as const).map(status => { const count = segment.workflows.filter(flow => flow.status === status).length; return count ? <Badge key={status} variant="secondary" className={`gap-1.5 text-[10px] ${status === "live" ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : status === "paused" ? "bg-amber-500/10 text-amber-700 dark:text-amber-400" : ""}`}><span aria-hidden="true" className={`size-1 rounded-full ${status === "live" ? "bg-emerald-500" : status === "paused" ? "bg-amber-500" : "bg-muted-foreground"}`} />{count} {status}</Badge> : null; })}</div></div> : <span className="text-xs text-muted-foreground">No workflow yet</span>}</TableCell>
+            <TableCell className="min-w-40 max-w-52 whitespace-normal">{workflows === null ? <span className="text-muted-foreground">—</span> : segment.workflows.length ? <div className="space-y-1.5">{segment.workflows.length === 1 ? <Link href={`/workflow?flow=${encodeURIComponent(segment.workflows[0].id)}`} data-no-translate className="block truncate text-xs font-medium hover:underline" title={segment.workflows[0].name}>{segment.workflows[0].name}</Link> : <details className="text-xs"><summary className="cursor-pointer font-medium">{segment.workflows.length} workflows</summary><ul className="mt-2 space-y-2">{segment.workflows.map(flow => <li key={flow.id}><Link data-no-translate href={`/workflow?flow=${encodeURIComponent(flow.id)}`} className="hover:underline">{flow.name}</Link><span className="ml-1 text-muted-foreground">({flow.status})</span></li>)}</ul></details>}<div className="flex flex-wrap gap-1">{(["live", "paused", "draft"] as const).map(status => { const count = segment.workflows.filter(flow => flow.status === status).length; return count ? <Badge key={status} variant="secondary" className={`gap-1.5 text-xs ${status === "live" ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : status === "paused" ? "bg-amber-500/10 text-amber-700 dark:text-amber-400" : ""}`}><span aria-hidden="true" className={`size-1 rounded-full ${status === "live" ? "bg-emerald-500" : status === "paused" ? "bg-amber-500" : "bg-muted-foreground"}`} />{count} {status}</Badge> : null; })}</div></div> : <span className="text-xs text-muted-foreground">No workflow yet</span>}</TableCell>
             <TableCell className="text-right tabular-nums"><Link href={segment.href} aria-label={`View ${segment.count} companies in ${segment.name}`} className="hover:underline">{segment.count.toLocaleString()}</Link></TableCell>
             <TableCell className="text-right font-medium tabular-nums">{workflows === null ? "—" : segment.counts.emailsSent.toLocaleString()}</TableCell>
             <TableCell className="text-right tabular-nums"><span className={segment.counts.active ? "font-medium text-blue-600 dark:text-blue-400" : "text-muted-foreground"}>{workflows === null ? "—" : segment.counts.active.toLocaleString()}</span></TableCell>

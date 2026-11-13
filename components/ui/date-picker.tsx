@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useEffect, useId, useRef, useState } from "react";
 import dynamic from "next/dynamic";
@@ -69,7 +71,7 @@ export function DatePicker({ value, onValueChange, includeTime = false, id, name
             <label htmlFor={timeId} className="text-sm">{copy("Time (local)", "时间（本地）")}</label>
             <Input id={timeId} type="time" step={value.split("T")[1]?.length > 5 ? "any" : 60} aria-label={copy("Time (local)", "时间（本地）")} className="w-36" value={value.split("T")[1] ?? ""} min={min?.slice(0, 10) === value.slice(0, 10) ? min.split("T")[1] : undefined} max={max?.slice(0, 10) === value.slice(0, 10) ? max.split("T")[1] : undefined} onChange={event => onValueChange(event.target.value ? (selected ? pickerDateValue(selected) : pickerDateValue(new Date())) + "T" + event.target.value : "")} />
           </div> : null}
-          {!valid ? <p role="alert" className="text-xs text-destructive">{invalidMessage}</p> : null}
+          {!valid ? <NotificationToast>{invalidMessage}</NotificationToast> : null}
           <div className="flex justify-end gap-2 border-t pt-2">
             {!required ? <Button type="button" variant="ghost" size="sm" onClick={() => { onValueChange(""); setOpen(false); }}>{copy("Clear", "清除")}</Button> : null}
             <Button type="button" size="sm" onClick={() => setOpen(false)}>{copy("Done", "完成")}</Button>

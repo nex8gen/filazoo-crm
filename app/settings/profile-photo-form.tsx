@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -50,6 +52,6 @@ export function ProfilePhotoForm({ userId, name, imageUrl, preset }: { userId: s
       <input ref={input} type="file" accept="image/jpeg,image/png,image/webp" aria-label="Upload profile photo" className="sr-only" disabled={pending} onChange={(event) => { const file = event.target.files?.[0]; if (file) void save(preset, file); }} />
     </div>
     <fieldset disabled={pending} className="space-y-3"><legend className="text-sm font-medium">Default avatar</legend><p className="text-xs text-muted-foreground">Choose a character to use instead of a photo. Your selection saves automatically.</p><div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">{AVATAR_PRESETS.map((option) => <button key={option.id} type="button" aria-label={`Use ${option.label} avatar`} aria-pressed={!imageUrl && preset === option.id} onClick={() => void save(option.id, undefined, true)} className={`relative flex min-w-0 flex-col items-center gap-3 rounded-xl border p-3 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60 ${!imageUrl && preset === option.id ? "border-primary bg-primary/5" : "hover:bg-muted"}`}><UserAvatar userId={userId} name={option.label} preset={option.id} className="size-16 sm:size-20" /><span>{option.label}</span>{!imageUrl && preset === option.id ? <Check className="absolute right-1.5 top-1.5 size-3.5 text-primary" /> : null}</button>)}</div></fieldset>
-    {message.error ? <p role="alert" className="text-xs text-destructive">{message.error}</p> : message.success ? <p role="status" className="text-xs text-primary">{message.success}</p> : null}
+    {message.error ? <NotificationToast>{message.error}</NotificationToast> : message.success ? <p role="status" className="text-xs text-primary">{message.success}</p> : null}
   </div>;
 }

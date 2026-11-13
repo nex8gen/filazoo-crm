@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react";
@@ -95,12 +97,12 @@ export function AiMascotInput({ id, value, onChange, onSend, onCancel, inputRef,
           <WebSearchOption enabled={webSearch} onChange={onWebSearchChange} disabled={busy} />
         </div>
         <div className="ai-composer-submit-actions">
-          <button type="button" disabled={busy} onClick={toggleListening} aria-label={listening && active && !busy ? "Stop voice input" : "Dictate with voice"} aria-pressed={listening && active && !busy} title="Voice input" className={`grid size-9 place-items-center rounded-xl transition-colors focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50 ${listening && active && !busy ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}><Mic aria-hidden="true" className="size-4" /></button>
+          <button type="button" disabled={busy} onClick={toggleListening} aria-label={listening && active && !busy ? "Stop voice input" : "Dictate with voice"} aria-pressed={listening && active && !busy} title="Voice input" className={`grid size-9 place-items-center rounded-xl transition-colors focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50 ${listening && active && !busy ? "bg-action text-action-foreground" : "text-muted-foreground hover:bg-muted"}`}><Mic aria-hidden="true" className="size-4" /></button>
           <button type={busy ? "button" : "submit"} onClick={busy && canStop ? onCancel : undefined} disabled={busy ? !canStop : !canSend} aria-label={busy ? canStop ? "Stop AI response" : "Agent action in progress" : "Send to Filazoo AI"} title={busy ? canStop ? "Stop response" : "Agent action in progress" : "Send message (Enter)"} className={`grid size-9 shrink-0 place-items-center rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:bg-muted disabled:text-muted-foreground ${busy ? "bg-amber-400/20 text-amber-600" : "bg-foreground text-background hover:bg-foreground/85"}`}>{busy ? <Square aria-hidden="true" className="size-3.5 fill-current" /> : <ArrowUp aria-hidden="true" className="size-4" />}</button>
         </div>
       </div>
       {listening && active && !busy ? <p role="status" className="mt-2 text-xs text-muted-foreground">Listening…</p> : null}
-      {voiceError ? <p role="status" className="mt-2 text-xs text-muted-foreground">{voiceError}</p> : null}
+      {voiceError ? <NotificationToast>{voiceError}</NotificationToast> : null}
     </form>
     </motion.div>
   </div></LayoutGroup>;

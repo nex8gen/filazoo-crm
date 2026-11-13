@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 
 import { useCallback, useRef, useState } from "react";
@@ -429,9 +431,9 @@ export function InvoiceEditor({
         </div>
       </fieldset>
       {error ? (
-        <p role="alert" className="text-sm text-destructive">
+        <NotificationToast>
           {error}
-        </p>
+        </NotificationToast>
       ) : null}
       <div className="flex justify-end gap-3">
         <Button

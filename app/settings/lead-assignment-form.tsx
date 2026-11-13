@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
@@ -63,7 +65,7 @@ export function LeadAssignmentForm({ initial }: { initial: LeadAssignmentView })
         <Button variant="ghost" nativeButton={false} render={<Link href="/settings/team" />}>Manage team members<ArrowRight className="size-4" /></Button>
       </CardContent></Card>
     </fieldset>
-    {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+    {error ? <NotificationToast>{error}</NotificationToast> : null}
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-background p-4"><p role="status" aria-live="polite" className="text-xs text-muted-foreground">{pending ? "Saving assignment rules..." : dirty ? "You have unsaved assignment rules." : success ? "Assignment rules saved." : "Changes apply to future assignments after saving."}</p><div className="flex gap-2"><Button type="button" variant="outline" disabled={pending || !dirty} onClick={() => change(draftOf(saved))}>Discard changes</Button><Button type="submit" disabled={pending || !dirty}>{pending ? <LoaderCircle className="size-4 animate-spin" /> : null}Save assignment rules</Button></div></div>
   </form>;
 }

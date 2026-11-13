@@ -4,6 +4,7 @@ import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
 import * as emailConnections from "../lib/email-connections.ts";
+import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 type Element = { type: unknown; props: Record<string, unknown> };
 function elements(value: unknown): Element[] {
@@ -26,7 +27,7 @@ function dashboard() {
   }, { get: (target, name) => Reflect.get(target, name) ?? components });
   const exports: { DeliverabilityDashboard?: (props: { overview: emailConnections.EmailConnectionsOverview; canManageTeam: boolean }) => Element } = {};
   const code = ts.transpileModule(readFileSync(new URL("../components/emails-dashboard.tsx", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => Reflect.get(dependencies, name) });
+  vm.runInNewContext(code, { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => Reflect.get(dependencies, name))(name) });
   return { render: exports.DeliverabilityDashboard!, refreshes: () => refreshes };
 }
 
@@ -42,7 +43,7 @@ test("connection checks show supplied account configuration without inventing DN
   const emptyText = JSON.stringify(empty);
   for (const invented of ["noreply@filazoo.com", "Draft #PL-741", "Three contacts", "SPF or DKIM records are missing"]) assert.equal(emptyText.includes(invented), false);
   const error = ui.render({ overview: { accounts: [], error: "Could not load account settings." }, canManageTeam: false });
-  assert.ok(elements(error).some(element => element.props.role === "alert" && element.props.children === "Could not load account settings."));
+  assert.ok(elements(error).some(element => element.type === notificationToastModule.NotificationToast && element.props.children === "Could not load account settings."));
   assert.equal(elements(error).some(element => element.props.title === "No mailboxes connected"), false);
 });
 

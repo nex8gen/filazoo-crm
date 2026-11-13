@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useEffect, useRef, useState, type RefObject } from "react";
 import dynamic from "next/dynamic";
@@ -54,7 +56,7 @@ export function CompanyPurchaseOrderCreate({ company, finalFocus, onClose, onSav
         panel={{ onClose, onSaved: orderId => { onSaved(orderId); router.refresh(); } }} /> : <>
         <header className="flex items-center justify-between gap-4 border-b px-6 py-4"><div><h2 className="font-semibold">New purchase order</h2><p data-no-translate className="mt-1 text-sm text-muted-foreground">{company.name}</p></div><Button type="button" variant="ghost" size="icon-sm" aria-label="Close" onClick={requestClose}><X className="size-4" /></Button></header>
         <div className="flex min-h-64 flex-col items-center justify-center gap-4 p-6 text-center">
-          {error ? <><p role="alert" className="text-sm text-destructive">Customer details could not be loaded. Please try again.</p><Button type="button" variant="outline" onClick={() => { setError(false); setAttempt(value => value + 1); }}>Retry</Button></> : <><Loader2 className="size-5 animate-spin text-muted-foreground" aria-hidden /><p role="status" className="text-sm text-muted-foreground">Loading customer details…</p></>}
+          {error ? <><NotificationToast>Customer details could not be loaded. Please try again.</NotificationToast><Button type="button" variant="outline" onClick={() => { setError(false); setAttempt(value => value + 1); }}>Retry</Button></> : <><Loader2 className="size-5 animate-spin text-muted-foreground" aria-hidden /><p role="status" className="text-sm text-muted-foreground">Loading customer details…</p></>}
         </div>
       </>}
     </SheetContent>

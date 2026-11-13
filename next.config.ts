@@ -3,6 +3,8 @@ import type { NextConfig } from "next";
 const stableLocalRuntime = process.env.FILAZOO_STABLE_RUNTIME === "1";
 
 const nextConfig: NextConfig = {
+  // Keep development controls from covering drawer footer actions.
+  devIndicators: false,
   // Normal local CRM use must not share build assets with next dev or CI builds.
   distDir: stableLocalRuntime ? ".next-crm" : ".next",
   ...(stableLocalRuntime ? { typescript: { tsconfigPath: "tsconfig.crm.json" } } : {}),
@@ -31,6 +33,7 @@ const nextConfig: NextConfig = {
     staleTimes: { dynamic: 1800, static: 1800 },
   },
   outputFileTracingIncludes: {
+    "/api/email/campaigns": ["./public/catalog-default-product.*", "./public/quotation-2610/**/*"],
     "/api/documents/pdf-worker": ["./node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs"],
     "/api/documents/pdf-assets/*": ["./node_modules/pdfjs-dist/cmaps/*", "./node_modules/pdfjs-dist/standard_fonts/*", "./node_modules/pdfjs-dist/wasm/*"],
     "/api/catalogs/*/quotation/pdf": ["./public/fonts/*.woff", "./public/fonts/noto-sans-sc-regular.otf"],

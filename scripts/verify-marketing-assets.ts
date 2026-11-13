@@ -32,10 +32,15 @@ try {
   assert.ok([401, 307].includes(anonymous.status), `Anonymous request: ${anonymous.status}`);
   const crossSite = await fetch(endpoint, { method: "POST", headers: { ...headers, Origin: "https://attacker.invalid" }, body: "{}" });
   assert.equal(crossSite.status, 403);
-  const draft = { ...newMarketingAsset("factory_sale", 2098), title: `Disposable verification ${randomUUID()}`, audience: "Test only", offer: "Ask for bulk pricing", message: "Subject: Partner offer\nContact your account manager for a quote.", status: "ready" };
+  const draft = { ...newMarketingAsset("factory_sale", 2098), title: `Disposable verification ${randomUUID()}`, audience: "Test only", offer: "Ask for bulk pricing", message: "Subject: Partner offer\nContact your account manager for a quote.", status: "ready", campaignConfig: { subject: "Partner offer A", subjectTest: { subjectB: "Partner offer B" }, plainText: "Partner plain-text alternative" } };
   const create = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(draft) });
   const created = await create.json(); assert.equal(create.status, 200, JSON.stringify(created)); saved = created.asset;
   assert.ok(saved?.updatedAt); assert.equal(saved.title, draft.title);
+  assert.equal(saved.campaignConfig?.subjectTest?.subjectB, "Partner offer B");
+  assert.equal(saved.campaignConfig?.plainText, "Partner plain-text alternative");
+  const deliveryResponse = await fetch(`${origin}/api/email/campaigns`, { method: "POST", headers, body: JSON.stringify({ action: "delivery", id: saved.id }) });
+  const deliverySummary = await deliveryResponse.json(); assert.equal(deliveryResponse.status, 200, JSON.stringify(deliverySummary)); assert.equal(deliverySummary.total, 0);
+  console.log("PASS A/B and plain-text settings round-trip; delivery query returns without sending");
   const list = await fetch(`${endpoint}?year=2098`, { headers });
   const listed = await list.json(); assert.equal(list.status, 200); assert.ok(listed.assets.some((asset: { id: string }) => asset.id === saved!.id));
   const update = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify({ ...saved, title: `${draft.title} updated` }) });
@@ -62,7 +67,7 @@ try {
   const saveTemplate = await fetch(`${origin}/api/documents`, { method: "POST", headers, body: JSON.stringify({ ...template, id: templateId, action: "create" }) });
   const templateResult = await saveTemplate.json(); assert.equal(saveTemplate.status, 200, JSON.stringify(templateResult));
   assert.equal(templateResult.document.subject, "Partner offer"); assert.equal(templateResult.document.body, "Contact your account manager for a quote.");
-  const templates = await fetch(`${origin}/api/documents?view=templates&category=promotion&q=${encodeURIComponent(saved!.title)}`, { headers });
+  const templates = await fetch(`${origin}/api/documents?view=templates&category=everyday&q=${encodeURIComponent(saved!.title)}`, { headers });
   const templateList = await templates.json(); assert.equal(templates.status, 200); assert.ok(templateList.documents.some((item: { id: string }) => item.id === templateId));
   const invalidAi = await fetch(`${endpoint}/draft`, { method: "POST", headers, body: JSON.stringify({ ...saved, offer: "" }) });
   assert.equal(invalidAi.status, 400);

@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useActionState, useState } from "react";
 import { Mail } from "lucide-react";
@@ -28,8 +30,8 @@ export function NeteaseConnectionForm({ account, scope = "personal" }: { account
         <div className="space-y-2"><Label htmlFor={`${prefix}-port`}>SMTP port (SSL/TLS)</Label><select id={`${prefix}-port`} name="smtpPort" value={smtpPort} onChange={event => setSmtpPort(event.target.value)} disabled={pending} className="h-10 w-full rounded-lg border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"><option value="994">994</option><option value="465">465</option></select></div>
         <p className="break-all text-xs leading-6 text-muted-foreground">SMTP: {neteaseServerProfiles[profile].smtpHost}:{smtpPort}<br />IMAP: {neteaseServerProfiles[profile].imapHost}:993</p><p className="text-xs text-muted-foreground">Use the server profile and port shown in your NetEase client settings. Both connections use SSL/TLS.</p>
       </div></details>
-      {state?.error ? <p role="alert" className="text-sm text-destructive">{state.error}</p> : null}
-      {state?.success ? <p role="status" className="text-sm text-primary">{state.success}</p> : null}
+      {state?.error ? <NotificationToast>{state.error}</NotificationToast> : null}
+      {state?.success ? <NotificationToast tone="success">{state.success}</NotificationToast> : null}
       <Button type="submit" disabled={pending}><Mail />{pending ? "Checking connection..." : account ? "Test and save connection" : "Connect Lingxi Mail"}</Button>
       <p className="text-xs leading-5 text-muted-foreground">Sending and receiving authentication are checked before saving. Your existing default sending account is kept.</p>
     </form>

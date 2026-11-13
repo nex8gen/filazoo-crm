@@ -1,3 +1,4 @@
+import { NotificationToast } from "@/components/ui/notification-toast";
 import { CheckCircle2, ExternalLink, Mail, Plus } from "lucide-react";
 import type { ConnectionApp } from "@/lib/connection-apps";
 import { mailboxAppId } from "@/lib/app-connection-status";
@@ -20,7 +21,7 @@ import { neteaseProfileForHosts } from "@/lib/netease-mail";
 async function EmailAccounts({ appId, scope }: { appId: "gmail" | "outlook" | "netease-mail"; scope: EmailConnectionScope }) {
   let result;
   try { result = await (scope === "workspace" ? getTeamAppMailboxes() : getPersonalAppMailboxes()); }
-  catch { return <p role="alert" className="rounded-xl border p-5 text-sm text-destructive">Your saved connections could not be loaded. Refresh before adding or updating an account.</p>; }
+  catch { return <NotificationToast>Your saved connections could not be loaded. Refresh before adding or updating an account.</NotificationToast>; }
   const accounts = result.mailboxes.filter(mailbox => mailboxAppId({ smtp_host: mailbox.smtpHost, imap_host: mailbox.imapHost, provider: mailbox.provider }) === appId);
 
   return (
@@ -59,7 +60,7 @@ function MakeSetup() {
   return <Card className="shadow-none"><CardHeader><CardTitle>Connect Meta leads through Make</CardTitle><CardDescription>Receive Facebook and Instagram Instant Form submissions in Filazoo.</CardDescription></CardHeader><CardContent className="space-y-5 text-sm leading-6">
     <ol className="list-decimal space-y-3 pl-5"><li>In Make, add Facebook Lead Ads → New Lead. Sign in and choose your Page and Instant Form.</li><li>Add an HTTP request: POST to the receiver below with a JSON body.</li><li>Add an Authorization header with <code>Bearer YOUR_CONNECTION_SECRET</code>, then map the original lead ID and form answers.</li><li>Run the scenario once and submit a test lead. Enable the scenario after confirming the lead arrived.</li></ol>
     <div><p className="mb-2 font-medium">Receiver URL</p><code className="block break-all rounded-lg bg-muted p-3">{receiver}</code><p className="mt-2 text-xs text-muted-foreground">Use your deployed public CRM domain so Make can reach the receiver.</p></div>
-    {secret ? <details><summary className="cursor-pointer font-medium">Show connection secret</summary><code className="mt-2 block break-all rounded-lg bg-muted p-3">{secret}</code></details> : <p role="alert" className="text-destructive">The CRM receiver needs server configuration before it can accept leads.</p>}
+    {secret ? <details><summary className="cursor-pointer font-medium">Show connection secret</summary><code className="mt-2 block break-all rounded-lg bg-muted p-3">{secret}</code></details> : <NotificationToast>The CRM receiver needs server configuration before it can accept leads.</NotificationToast>}
     <details><summary className="cursor-pointer font-medium">JSON field mapping</summary><pre className="mt-2 overflow-x-auto rounded-lg bg-muted p-3 text-xs">{example}</pre></details>
     <p className="text-muted-foreground">Receiver configuration is checked automatically. A successful test submission is needed to verify delivery from your Make scenario.</p>
   </CardContent></Card>;

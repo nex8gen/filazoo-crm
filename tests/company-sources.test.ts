@@ -6,6 +6,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import * as model from "../lib/crm-model.ts";
 import * as portraits from "../lib/company-avatar.ts";
+import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 test("mixed lead sources preserve acquisition order and expose both channels", () => {
   assert.deepEqual(model.companySourcePresentation("meta_lead_ads+shopify_b2b_form"), { label: "Meta + Shopify B2B", icon: "meta", count: 2 });
@@ -27,7 +28,7 @@ test("company avatars render the original source icon and complete accessible hi
   const require = createRequire(import.meta.url);
   const exports: Record<string, (props: Record<string, unknown>) => unknown> = {};
   const code = ts.transpileModule(readFileSync(new URL("../components/company-avatar.tsx", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-  vm.runInNewContext(code, { exports, require: (id: string) => id === "@/lib/crm-model" ? model : id === "@/lib/company-avatar" ? portraits : require(id) });
+  vm.runInNewContext(code, { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((id: string) => id === "@/lib/crm-model" ? model : id === "@/lib/company-avatar" ? portraits : require(id))(name) });
   const { renderToStaticMarkup } = require("react-dom/server");
   const company = { id: "4bed93d7-8534-4af3-bf19-f8810171808d", name: "Campgirl Clothing Co.", source: "meta_lead_ads+shopify_b2b_form", sourceLabel: "Shopify B2B" };
   for (const [source, icon, title] of [

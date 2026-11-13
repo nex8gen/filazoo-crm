@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { emailDesignSchema, emailDesignUrl } from "./email-design.ts";
+import { emailProductIssues } from "./email-products.ts";
 const campaignAudienceIdSchema = z.union([z.uuid(), z.string().regex(/^business:.+/).max(160), z.string().regex(/^contact:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)]);
 
 export const campaignConfigSchema = z.object({
@@ -11,6 +12,8 @@ export const campaignConfigSchema = z.object({
   smartSending: z.boolean().default(true),
   utmTracking: z.boolean().default(false),
   subject: z.string().trim().max(300).default(""),
+  subjectTest: z.object({ subjectB: z.string().trim().max(300) }).optional(),
+  plainText: z.string().max(12000).optional(),
   preheader: z.string().trim().max(300).default(""),
   mailboxId: z.string().max(200).default(""),
   senderName: z.string().trim().max(160).regex(/^[^\r\n]*$/).default("Filazoo"),
@@ -29,7 +32,8 @@ export type CampaignContactOption = { id: string; name: string; email: string; c
 export type CampaignOptions = { mailboxes: CampaignMailbox[]; audiences: CampaignAudience[]; contacts?: CampaignContactOption[]; sendingEnabled: boolean };
 export type CampaignRecipient = { id: string; email: string; name: string; companyName: string };
 export type CampaignAudiencePreview = { count: number; excluded: number; recent: number; selected?: number; unverified?: number; unavailable?: number; recipients: CampaignRecipient[] };
-export type CampaignDeliverySummary = { total: number; scheduled: number; sent: number; failed: number; skipped: number; pending: number };
+export type CampaignDeliveryCounts = { total: number; scheduled: number; sent: number; failed: number; skipped: number; pending: number };
+export type CampaignDeliverySummary = CampaignDeliveryCounts & { variants?: Record<"A" | "B", CampaignDeliveryCounts> };
 
 export function campaignLocalDate(now = new Date()) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
@@ -38,13 +42,22 @@ export function campaignLocalDate(now = new Date()) {
 export function campaignMessageIssues(config: CampaignConfig, body: string, mailbox?: CampaignMailbox) {
   return [
     !config.subject.trim() ? "Add a subject line." : "",
+    config.subjectTest && !config.subjectTest.subjectB.trim() ? "Add a subject for variant B." : "",
+    config.subjectTest && config.subjectTest.subjectB.trim() === config.subject.trim() ? "Use different subjects for variants A and B." : "",
+    config.emailDesign && config.plainText !== undefined && !config.plainText.trim() ? "Write a plain text version or use the automatic version." : "",
     !config.senderName.trim() ? "Add a sender name." : "",
     !body.trim() ? "Add an email message or choose a template." : "",
     !mailbox?.available ? "Choose a connected sender account." : "",
     !config.useSenderReplyTo && !config.replyTo ? "Enter a reply-to email address." : "",
-    config.emailDesign?.blocks.some(block => ["button", "video"].includes(block.type) && !emailDesignUrl(block.href)) ? "Add a valid link to each button and video block." : "",
-    config.emailDesign?.blocks.some(block => ["image", "product"].includes(block.type) && block.src && !emailDesignUrl(block.src, true)) ? "Check the image URLs in your email design." : "",
-    /\{\{\s*(?!(?:first_name|name|company|email)\s*\}\})[^}]+\}\}/.test(`${config.subject}\n${config.preheader}\n${body}\n${config.emailDesign ? JSON.stringify(config.emailDesign) : ""}`) ? "Replace unsupported template variables. Use first_name, name, company, or email." : "",
+    ...(config.emailDesign ? emailProductIssues(config.emailDesign) : []),
+    config.emailDesign?.blocks.some(block => ["image", "product"].includes(block.type) && block.src && !emailDesignUrl(block.src, true, true)) ? "Check the image URLs in your email design." : "",
+    /\{\{\s*(?!(?:first_name|name|company|email)\s*\}\})[^}]+\}\}/.test(`${config.subject}\n${config.subjectTest?.subjectB ?? ""}\n${config.plainText ?? ""}\n${config.preheader}\n${body}\n${config.emailDesign ? JSON.stringify(config.emailDesign) : ""}`) ? "Replace unsupported template variables. Use first_name, name, company, or email." : "",
+  ].filter(Boolean);
+}
+
+export function campaignMessageWarnings(config: CampaignConfig) {
+  return [
+    config.emailDesign?.blocks.some(block => ["button", "video"].includes(block.type) && !emailDesignUrl(block.href)) ? "Some buttons or videos have missing or invalid links. You can continue, but these links will not work in the email." : "",
   ].filter(Boolean);
 }
 

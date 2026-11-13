@@ -9,6 +9,7 @@ import { z } from "zod";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { blankInvoiceDocument, type Invoice } from "../lib/invoices.ts";
+import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 const require = createRequire(import.meta.url);
 const invoiceId = "c58b80f9-b3c5-4c85-bb80-9c88a38a04dd";
@@ -30,7 +31,7 @@ function fixture(file: string, options: { role?: string; orderId?: string; missi
   };
   const exports: { default?: (props: unknown) => Promise<{ type: unknown; props: { invoice: Invoice; today: string } }> } = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => deps[name] ?? require(name), Date, Intl });
+  vm.runInNewContext(code, { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => deps[name] ?? require(name))(name), Date, Intl });
   return { page: exports.default!, invoice, reads };
 }
 
@@ -89,7 +90,7 @@ test("historical detail offers the selected invoice PDF and print without billin
   };
   const exports = {} as { LegacyInvoiceDetails: (props: { invoice: Invoice; today: string }) => import("react").ReactElement };
   const code = ts.transpileModule(readFileSync(new URL("../components/legacy-invoice-details.tsx", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => deps[name] ?? require(name), window: { print: () => prints++ } });
+  vm.runInNewContext(code, { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => deps[name] ?? require(name))(name), window: { print: () => prints++ } });
   const { invoice } = fixture("../app/invoices/[id]/page.tsx");
   const tree = exports.LegacyInvoiceDetails({ invoice, today: "2026-11-07" });
   const html = renderToStaticMarkup(tree);

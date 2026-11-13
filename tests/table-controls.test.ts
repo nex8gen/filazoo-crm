@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import vm from "node:vm";
 import ts from "typescript";
 import { tablePaginationState } from "../lib/table-pagination.ts";
+import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 const require = createRequire(import.meta.url);
 type Element = { props: Record<string, unknown> };
@@ -20,7 +21,7 @@ function control(file: string, name: string) {
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
-  vm.runInNewContext(code, { exports, require: (module: string) => dependencies[module] ?? require(module) });
+  vm.runInNewContext(code, { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((module: string) => dependencies[module] ?? require(module))(name) });
   return exports[name];
 }
 

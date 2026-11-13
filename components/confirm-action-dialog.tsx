@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -32,7 +34,7 @@ export function ConfirmActionDialog({ open, onOpenChange, title, description, on
   return <Dialog open={open} onOpenChange={(value) => { if (!busy.current) { setError(""); onOpenChange(value); } }}>
     <DialogContent showCloseButton={!pending}>
       <DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription>{description}</DialogDescription></DialogHeader>
-      {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+      {error ? <NotificationToast>{error}</NotificationToast> : null}
       <DialogFooter><Button type="button" variant="outline" disabled={pending} onClick={() => onOpenChange(false)}>Cancel</Button><Button type="button" variant="destructive" disabled={pending} onClick={() => void confirm()}>{pending ? "Deleting…" : "Delete"}</Button></DialogFooter>
     </DialogContent>
   </Dialog>;

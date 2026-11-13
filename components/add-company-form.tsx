@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useActionState, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -43,7 +45,7 @@ export function AddCompanyForm({ existingSegments, onCreated, onClose, onPending
     <Field label="Contact name" id="contact-name"><Input id="contact-name" name="contactName" autoComplete="name" /></Field>
     <ContactRoleField disabled={pending} />
     <div className="sm:col-span-2"><Field label="Business email" id="contact-email"><Input id="contact-email" name="contactEmail" type="email" autoComplete="email" /></Field></div>
-    {state?.error ? <p role="alert" className="text-xs text-destructive sm:col-span-2">{state.error}</p> : null}
+    {state?.error ? <NotificationToast>{state.error}</NotificationToast> : null}
     <DialogFooter className="sm:col-span-2">
       <Button type="button" variant="outline" disabled={pending} onClick={onClose}>Cancel</Button>
       <Button type="submit" disabled={pending}>{pending ? "Adding…" : "Add company"}</Button>

@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 import { useEffect, useState } from "react";
 import { Loader2, Package2, RefreshCw, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -27,7 +29,7 @@ export function DocumentRecordLinks({ category, value, onChange, disabled = fals
   const products = context?.products.filter(product => `${product.name} ${product.sku}`.toLowerCase().includes(query.toLowerCase())) ?? [];
   return <div className="library-record-links">
     <div className="library-links-title"><Package2 /><strong>{category === "quotation" ? "Quotation connections" : ordersNeeded ? "Order connections" : "Related CRM records"}</strong></div>
-    {error ? <div role="alert" className="text-xs text-destructive">{error}<Button type="button" variant="ghost" size="xs" onClick={() => setAttempt(value => value + 1)}><RefreshCw />Retry</Button></div> : !context ? <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />Loading CRM records…</p> : null}
+    {error ? <NotificationToast>{error}<Button type="button" variant="ghost" size="xs" onClick={() => setAttempt(value => value + 1)}><RefreshCw />Retry</Button></NotificationToast> : !context ? <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />Loading CRM records…</p> : null}
     <div className="library-form-row"><label>Customer {category === "quotation" || category === "purchase_order" ? "*" : ""}<RecordSelect label="Linked customer" disabled={disabled || !context} value={value.company_id} placeholder={ordersNeeded ? "Select customer or choose an order" : "Choose a customer"} options={(context?.companies ?? []).map(company => ({ value: company.id, label: company.name }))} onChange={company_id => onChange({ ...value, company_id, purchase_order_id: null, invoice_id: null })} /></label>
     {ordersNeeded ? <label>Purchase order {category !== "purchase_order" ? "*" : ""}<RecordSelect label="Linked purchase order" disabled={disabled || !context} value={value.purchase_order_id} placeholder="Choose a purchase order" options={(context?.orders ?? []).filter(order => !value.company_id || order.company_id === value.company_id).map(order => ({ value: order.id, label: '#' + order.number + ' - ' + order.company + (order.reference ? ' - ' + order.reference : '') }))} onChange={id => { const order = context?.orders.find(item => item.id === id); onChange({ ...value, purchase_order_id: order?.id ?? null, company_id: order?.company_id ?? value.company_id, invoice_id: null }); }} /></label> : null}</div>
     {ordersNeeded && category !== "purchase_order" && value.purchase_order_id ? <label>Linked invoice<RecordSelect label="Linked invoice" disabled={disabled || !context} value={value.invoice_id} placeholder="Order document / no specific invoice" options={invoices.map(invoice => ({ value: invoice.id, label: '#' + invoice.number + ' - ' + invoice.status }))} onChange={invoice_id => onChange({ ...value, invoice_id })} /></label> : null}

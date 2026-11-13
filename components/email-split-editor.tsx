@@ -1,0 +1,20 @@
+"use client";
+
+import { useRef, useState } from "react";
+import { Image as ImageIcon, Type, Code, Upload } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { BlockSection } from "@/components/email-block-controls";
+import { EmailImageMaker } from "@/components/email-image-maker";
+import type { EmailBlock, EmailBlockType, EmailDesign } from "@/lib/email-design";
+
+export function EmailSplitEditor({ block, design, onChangeChild, onChooseType, onUpload, uploading }: { block: EmailBlock; design: EmailDesign; onChangeChild: (id: string, values: Partial<EmailBlock>) => void; onChooseType: (column: number, type: EmailBlockType) => void; onUpload: (file: File, id: string) => void; uploading: boolean }) {
+  const [column, setColumn] = useState(0);
+  const currentColumn = Math.min(column, block.columnCount - 1);
+  const child = design.blocks.find(item => item.parentId === block.id && item.column === currentColumn);
+  const input = useRef<HTMLInputElement>(null);
+  return <><BlockSection title="Column selector"><div className="email-designer-format">{Array.from({ length: block.columnCount }, (_, i) => <Button key={i} variant="ghost" aria-label={`Edit column ${i + 1}`} aria-pressed={currentColumn === i} onClick={() => setColumn(i)}>{i + 1}</Button>)}</div></BlockSection><BlockSection title="Column content"><div className="email-block-choiceList">{[{ type: "text", label: "Text", icon: Type }, { type: "image", label: "Image", icon: ImageIcon }, { type: "html", label: "HTML", icon: Code }].map(item => <button key={item.type} type="button" aria-label={`Column content ${item.label}`} aria-pressed={child?.type === item.type} onClick={() => onChooseType(currentColumn, item.type as EmailBlockType)}><item.icon style={{ width: 16, height: 16, display: "inline", marginRight: 8 }} />{item.label}</button>)}</div>
+    {child?.type === "text" ? <label className="email-designer-field">Column text<Textarea aria-label="Column text" value={child.text} maxLength={12000} onChange={event => onChangeChild(child.id, { text: event.target.value })} /></label> : child?.type === "html" ? <label className="email-designer-field">Column HTML<Textarea aria-label="Column HTML" value={child.html} maxLength={30000} onChange={event => onChangeChild(child.id, { html: event.target.value })} /></label> : child?.type === "image" ? <><div className="email-designer-uploadDrop" onDragOver={event => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.stopPropagation(); } }} onDrop={event => { if (event.dataTransfer.files.length) { event.preventDefault(); event.stopPropagation(); onUpload(event.dataTransfer.files[0], child.id); } }}><ImageIcon /><strong>Drag and drop or select an image</strong><p>PNG, JPG, GIF, and WebP. Static images up to 10 MB are optimized for email.</p><Button variant="outline" size="sm" disabled={uploading} onClick={() => input.current?.click()}><Upload />Select column image</Button><EmailImageMaker disabled={uploading} onCreate={(src, alt) => onChangeChild(child.id, { src, alt })} /><input ref={input} type="file" hidden accept="image/png,image/jpeg,image/gif,image/webp" onChange={event => { if (event.target.files?.[0]) onUpload(event.target.files[0], child.id); event.target.value = ""; }} /></div><label className="email-designer-field">Column image URL<Input aria-label="Column image URL" value={child.src.startsWith("data:") ? "Uploaded image" : child.src} readOnly={child.src.startsWith("data:")} maxLength={2000} onChange={event => onChangeChild(child.id, { src: event.target.value })} /></label><label className="email-designer-field">Alt text<Input aria-label="Column image alt text" value={child.alt} maxLength={300} onChange={event => onChangeChild(child.id, { alt: event.target.value })} /></label></> : <p className="email-block-note">Choose a content type for this column. You can also drop additional blocks into it on the canvas.</p>}
+  </BlockSection></>;
+}

@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import Link from "next/link";
 import { useActionState } from "react";
@@ -13,8 +15,8 @@ export function ForgotPasswordForm() {
     <><AuthHeading title="Forgot your password?">Enter your account email and we will send you a secure recovery link.</AuthHeading><div className="space-y-4">
         <form action={action} className="space-y-4">
           <AuthField label="Email" id="email" name="email" type="email" autoComplete="email" defaultValue={state?.email} placeholder="you@company.com" required />
-          {state?.error ? <p role="alert" className="text-xs text-destructive">{state.error}</p> : null}
-          {state?.success ? <p role="status" className="text-xs text-primary">{state.success}</p> : null}
+          {state?.error ? <NotificationToast>{state.error}</NotificationToast> : null}
+          {state?.success ? <NotificationToast tone="success">{state.success}</NotificationToast> : null}
           <button className={authButtonClass} type="submit" disabled={pending}><Mail className="size-4" />{pending ? "Sending…" : "Send recovery link"}</button>
         </form>
         <Button nativeButton={false} variant="ghost" className="w-full" render={<Link href="/login" />}><ArrowLeft />Back to sign in</Button>

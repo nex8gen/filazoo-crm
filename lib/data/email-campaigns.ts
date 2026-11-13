@@ -4,7 +4,7 @@ import type { WorkspaceViewer } from "../auth.ts";
 import { withWorkspaceViewer } from "../workspace-context.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 import { env } from "../env.ts";
-import { listSegmentCompanies } from "./crm.ts";
+import { listSegmentCompanies, listProducts } from "./crm.ts";
 import { listSavedSegments } from "./segments.ts";
 import { getViewerMailboxes, mailboxHasSmtp } from "./mailboxes.ts";
 import { matchesSegment } from "../segments.ts";
@@ -13,7 +13,10 @@ import { campaignConfigSchema, campaignMessageIssues, personalizeCampaign, selec
 import { emailSendSchema } from "../email-workbench.ts";
 import { buildFlowEmail } from "../flow-tracking.ts";
 import { renderEmailDesign } from "../email-design.ts";
+import { assignCampaignSubjects, embeddedCampaignPreheader } from "../campaign-message-tools.ts";
 import { prepareComposerMessage } from "../email-composer.ts";
+import { resolveEmailProductFeeds } from "../email-products.ts";
+import { embedPrivateProductImages } from "./email-product-images.ts";
 import { listMarketingAssets, MarketingAssetError } from "./marketing-assets.ts";
 
 type Contact = { id: string; company_id: string; email: string; name: string | null; unsubscribed: boolean; verification_status: string; consent_source: string | null };
@@ -81,16 +84,18 @@ export async function resolveCampaignAudience(viewer: WorkspaceViewer, config: C
 
 export async function getCampaignDeliverySummary(viewer: WorkspaceViewer, id: string): Promise<CampaignDeliverySummary> {
   return withWorkspaceViewer(viewer, async () => {
-    const result = { total: 0, scheduled: 0, sent: 0, failed: 0, skipped: 0, pending: 0 };
+    const empty = () => ({ total: 0, scheduled: 0, sent: 0, failed: 0, skipped: 0, pending: 0 });
+    const result: CampaignDeliverySummary = empty();
     for (let offset = 0; ; offset += 1000) {
-      const { data } = await createSupabaseAdmin().from("email_send_operations").select("id,status").eq("campaign_id", id).order("id").range(offset, offset + 999).throwOnError();
+      const { data } = await createSupabaseAdmin().from("email_send_operations").select("id,status,payload->campaign").eq("campaign_id", id).order("id").range(offset, offset + 999).throwOnError();
       for (const operation of data ?? []) {
-        result.total++;
-        if (operation.status === "sent") result.sent++;
-        else if (operation.status === "scheduled") result.scheduled++;
-        else if (operation.status === "cancelled") result.skipped++;
-        else if (["failed", "uncertain"].includes(operation.status)) result.failed++;
-        else result.pending++;
+        const status = operation.status === "sent" ? "sent" : operation.status === "scheduled" ? "scheduled" : operation.status === "cancelled" ? "skipped" : ["failed", "uncertain"].includes(operation.status) ? "failed" : "pending";
+        result.total++; result[status]++;
+        const variant = (operation.campaign as { variant?: string } | null)?.variant;
+        if (variant === "A" || variant === "B") {
+          result.variants ??= { A: empty(), B: empty() };
+          result.variants[variant].total++; result.variants[variant][status]++;
+        }
       }
       if ((data?.length ?? 0) < 1000) return result;
     }
@@ -106,18 +111,26 @@ export async function queueCampaign(viewer: WorkspaceViewer, id: string, year: n
     if (asset.updatedAt !== updatedAt) throw new MarketingAssetError("This campaign changed. Reload before sending.", 409);
     const config = campaignConfigSchema.parse(asset.campaignConfig ?? {});
     const { recipients, options } = await resolveCampaignAudience(viewer, config);
-    const issues = campaignMessageIssues(config, asset.message, options.mailboxes.find(mailbox => mailbox.id === config.mailboxId));
+    let emailDesign = config.emailDesign;
+    if (emailDesign?.blocks.some(block => block.type === "product" && block.product?.mode === "dynamic")) emailDesign = resolveEmailProductFeeds(emailDesign, (await listProducts()).products);
+    const issues = campaignMessageIssues({ ...config, emailDesign }, asset.message, options.mailboxes.find(mailbox => mailbox.id === config.mailboxId));
     if (!options.sendingEnabled) issues.push("Live email sending is disabled for this workspace.");
+    if (config.subjectTest && recipients.length < 2) issues.push("A/B testing needs at least two eligible recipients.");
     if (!recipients.length) issues.push("Choose an audience with eligible recipients.");
     if (recipients.length > 5000) issues.push("Choose an audience with at most 5,000 recipients.");
     if (issues.length) throw new MarketingAssetError(issues[0]);
+    if (emailDesign) {
+      try { emailDesign = await embedPrivateProductImages(emailDesign, viewer.id); }
+      catch { throw new MarketingAssetError("A selected product image could not be prepared. Replace the image and try again."); }
+    }
     const scheduledAt = config.sendMode === "scheduled" ? config.scheduledAt : new Date(Date.now() + 90_000).toISOString();
     if (!scheduledAt || Date.parse(scheduledAt) < Date.now() + 60_000 || Date.parse(scheduledAt) > Date.now() + 365 * 86400_000) throw new MarketingAssetError("Choose a send time between one minute and one year from now.");
-    const operations = recipients.map(recipient => {
+    const operations = assignCampaignSubjects(config, recipients, asset.id).map(({ recipient, variant, subject }) => {
       const requestId = randomUUID();
-      const rendered = config.emailDesign ? renderEmailDesign(config.emailDesign, { personalize: value => personalizeCampaign(value, recipient), utmCampaign: config.utmTracking ? asset.id : undefined, preheader: config.preheader }) : null;
+      const rendered = emailDesign ? renderEmailDesign(emailDesign, { personalize: value => personalizeCampaign(value, recipient), utmCampaign: config.utmTracking ? asset.id : undefined, preheader: embeddedCampaignPreheader(emailDesign) ? undefined : config.preheader }) : null;
       const content = rendered ? prepareComposerMessage(rendered.text, rendered.html, "", undefined, requestId) : buildFlowEmail({ body: personalizeCampaign(asset.message, recipient), config: { trackOpens: false, trackClicks: false, utmTracking: config.utmTracking, preheader: personalizeCampaign(config.preheader, recipient) }, runId: requestId, stepId: asset.id, flowId: asset.id, appUrl: env.NEXT_PUBLIC_APP_URL, secret: "" });
-      const input = emailSendSchema.parse({ to: [recipient.email], subject: personalizeCampaign(config.subject, recipient), ...content, footerIncluded: Boolean(config.emailDesign), mailboxId: config.mailboxId, senderName: config.senderName, replyTo: config.useSenderReplyTo ? undefined : config.replyTo, requestId, scheduleAt: scheduledAt, campaign: { id: asset.id, contactId: recipient.id, smartSending: config.smartSending } });
+      if (config.plainText !== undefined && rendered) content.text = personalizeCampaign(config.plainText, recipient);
+      const input = emailSendSchema.parse({ to: [recipient.email], subject: personalizeCampaign(subject, recipient), ...content, footerIncluded: Boolean(config.emailDesign), mailboxId: config.mailboxId, senderName: config.senderName, replyTo: config.useSenderReplyTo ? undefined : config.replyTo, requestId, scheduleAt: scheduledAt, campaign: { id: asset.id, contactId: recipient.id, smartSending: config.smartSending, ...(variant ? { variant } : {}) } });
       const message = { ...input }; delete message.requestId; delete message.scheduleAt;
       return { id: requestId, scheduledAt, hash: createHash("sha256").update(JSON.stringify(message)).digest("hex"), payload: input };
     });

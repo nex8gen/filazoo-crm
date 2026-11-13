@@ -1,3 +1,4 @@
+import { NotificationToast } from "@/components/ui/notification-toast";
 import type { WorkspaceViewer } from "@/lib/auth";
 import { getAiSettings } from "@/lib/data/ai-settings";
 import { withWorkspaceViewer } from "@/lib/workspace-context";
@@ -8,7 +9,7 @@ import { AiUsageSettingsForm } from "../ai-usage-settings-form";
 
 async function UsageLimits({ viewer }: { viewer: WorkspaceViewer }) {
   const result = await withWorkspaceViewer(viewer, () => getAiUsageSettings(viewer.id).then(data => ({ data, error: "" })).catch(() => ({ data: null, error: "AI usage controls are unavailable. Refresh or ask your administrator to check the usage configuration." })));
-  return result.data ? <AiUsageSettingsForm initial={result.data} viewerId={viewer.id} /> : <p role="alert">{result.error}</p>;
+  return result.data ? <AiUsageSettingsForm initial={result.data} viewerId={viewer.id} /> : <NotificationToast>{result.error}</NotificationToast>;
 }
 
 export async function AiSection({ viewer }: { viewer: WorkspaceViewer }) {

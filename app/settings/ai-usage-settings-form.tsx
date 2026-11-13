@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useRef, useState, useTransition } from "react";
 import { LoaderCircle } from "lucide-react";
@@ -56,7 +58,7 @@ export function AiUsageSettingsForm({ initial, viewerId }: { initial: AiUsageSet
           <div className="flex flex-wrap items-end gap-4"><label htmlFor={`ai-limit-${member.userId}`} className="w-44 space-y-1.5 text-xs"><span>Daily limit (USD)</span><Input id={`ai-limit-${member.userId}`} aria-label={`Daily AI limit for ${member.name}`} type="number" min="0" max="1000000" step="0.000001" placeholder="Automatic share" value={member.daily} onChange={event => change({ ...draft, members: draft.members.map((value, position) => position === index ? { ...value, daily: event.target.value } : value) })} /></label><div className="flex h-9 items-center gap-2"><Switch id={`ai-enabled-${member.userId}`} aria-label={`Enable AI for ${member.name}`} disabled={pending} checked={member.enabled} onCheckedChange={enabled => change({ ...draft, members: draft.members.map((value, position) => position === index ? { ...value, enabled } : value) })} /><label htmlFor={`ai-enabled-${member.userId}`} className="text-xs">{member.enabled ? "Enabled" : "Paused"}</label></div></div>
         </div>)}</div>
       </fieldset>
-      {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+      {error ? <NotificationToast>{error}</NotificationToast> : null}
       <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4"><p role="status" aria-live="polite" className="text-xs text-muted-foreground">{pending ? "Saving usage limits…" : dirty ? "Unsaved usage limits" : success ? "AI usage limits saved." : "Only administrators can change usage limits."}</p><div className="flex gap-2">{dirty ? <Button type="button" variant="outline" disabled={pending} onClick={() => change(draftOf(saved))}>Discard</Button> : null}<Button type="submit" disabled={pending || !dirty}>{pending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}Save usage limits</Button></div></div>
     </form>
   </section>;

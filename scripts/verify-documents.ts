@@ -40,7 +40,37 @@ async function get(path: string) {
   const result = await response.json(); assert.equal(response.status, 200, JSON.stringify(result)); return result;
 }
 try {
-  if (process.argv.includes("--connected")) {
+  if (process.argv.includes("--email-templates")) {
+    const shared = await get("/api/documents?view=templates&category=promotion");
+    assert.ok(shared.documents.length >= 6);
+    assert.ok(shared.documents.every((item: { origin: string; category: string }) => item.origin === "builtin" && item.category === "promotion"));
+    const builtin = shared.documents[0];
+    const details = await get(`/api/documents/${builtin.id}?details=1`);
+    assert.ok(details.document.email_design); assert.deepEqual(details.related, []);
+    for (const action of ["update", "trash", "restore", "star"]) await post({ ...builtin, action, starred: true }, 403);
+    const id = crypto.randomUUID(); ids.push(id);
+    const copy = (await post({ ...details.document, id, action: "create", name: fixture, category: "promotion" })).document;
+    assert.equal(copy.category, "everyday"); assert.equal(copy.created_by, workspace.owner_id);
+    assert.deepEqual(copy.email_design, details.document.email_design);
+    assert.ok(builtin.preview_url, "Original template preview must use the bundled upstream HTML");
+    const original = await fetch(origin + builtin.preview_url, { signal: AbortSignal.timeout(90000) });
+    assert.equal(original.status, 200); assert.match(await original.text(), /<html/i);
+    const custom = await get(`/api/documents?view=templates&category=everyday&q=${encodeURIComponent(fixture)}`);
+    assert.deepEqual(custom.documents.map((item: { id: string }) => item.id), [id]);
+    assert.equal((await get(`/api/documents?view=templates&category=promotion&q=${encodeURIComponent(fixture)}`)).total, 0);
+    const snapshot = await get("/api/documents?bootstrap=1&view=templates&category=promotion");
+    assert.deepEqual(snapshot.documents.map((item: { id: string }) => item.id).sort(), shared.documents.map((item: { id: string }) => item.id).sort());
+    for (const category of ["promotion", "everyday"]) {
+      const response = await fetch(`${origin}/documents?category=${category}`, { headers, signal: AbortSignal.timeout(90000) });
+      assert.equal(response.status, 200);
+      const html = await response.text(); assert.ok(html.includes(category === "promotion" ? builtin.name : fixture));
+    }
+    await withWorkspaceContext(crypto.randomUUID(), async () => {
+      const result = await createSupabaseAdmin().from("library_documents").select("id").eq("id", id);
+      assert.ok(result.error || !result.data?.length, "Custom templates must remain private to their workspace");
+    });
+    console.log("PASS: shared prebuilt catalog, read-only API protection, editable workspace copies, Custom emails filtering, bootstrap parity, page rendering and live workspace isolation.");
+  } else if (process.argv.includes("--connected")) {
     const context = await get("/api/documents/context");
     assert.ok(context.companies.length && context.products.length, "Need real CRM customer and product options");
     await post({ action: "create", id: crypto.randomUUID(), kind: "file", name: "Unlinked quotation.pdf", category: "quotation" }, 400);
@@ -134,7 +164,7 @@ try {
   document = (await post({ ...input, action: "update", updated_at: document.updated_at, related_ids: [file.id], category: "promotion" })).document;
   const linked = await get(`/api/documents/${id}?details=1`);
   assert.equal(linked.related[0].id, file.id);
-  assert.ok((await get(`/api/documents?category=promotion&q=${encodeURIComponent(fixture)}`)).documents.some((item: { id: string }) => item.id === id));
+  assert.ok((await get(`/api/documents?category=everyday&q=${encodeURIComponent(fixture)}`)).documents.some((item: { id: string }) => item.id === id));
   assert.equal((await get(`/api/documents?category=datasheet&q=${encodeURIComponent(fixture)}`)).total, 0);
   assert.equal((await get(`/api/documents?company=Verification&q=${encodeURIComponent(fixture)}`)).total, 1);
   await post({ ...input, action: "update", updated_at: document.updated_at, related_ids: [crypto.randomUUID()] }, 400);

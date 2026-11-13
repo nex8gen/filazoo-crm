@@ -13,6 +13,7 @@ import * as draft from "../lib/purchase-order-draft.ts";
 import * as summary from "../lib/purchase-order-summary.ts";
 import * as invoices from "../lib/invoices.ts";
 import * as orderBilling from "../lib/purchase-order-billing.ts";
+import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 const order: purchaseOrders.PurchaseOrder = {
   id: "order-a", company_id: "company-a", number: 1006, version: 1, created_at: "2026-11-06T07:00:00Z", total_minor: 1418,
@@ -50,7 +51,7 @@ function summaryComponent() {
     "@/lib/purchase-orders": purchaseOrders, "@/lib/purchase-order-draft": draft, "@/lib/purchase-order-summary": summary, "@/lib/invoices": invoices, "@/lib/purchase-order-billing": orderBilling,
   };
   const code = ts.transpileModule(readFileSync(new URL("../components/purchase-order-summary.tsx", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => deps[name] ?? require(name), Set });
+  vm.runInNewContext(code, { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => deps[name] ?? require(name))(name), Set });
   return exports.PurchaseOrderSummary!;
 }
 

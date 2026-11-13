@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import vm from "node:vm";
 import ts from "typescript";
 import * as settings from "../lib/ai/usage-settings.ts";
+import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 const require = createRequire(import.meta.url);
 const userId = "a1111111-1111-4111-8111-111111111111";
@@ -52,7 +53,7 @@ function formHarness(save: (input: settings.AiUsageSettingsInput) => Promise<unk
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
   const exports: { AiUsageSettingsForm?: (props: unknown) => unknown } = {};
-  vm.runInNewContext(code, { exports, require: (name: string) => dependencies[name] ?? require(name), Error, Number, JSON });
+  vm.runInNewContext(code, { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => dependencies[name] ?? require(name))(name), Error, Number, JSON });
   const render = () => { cursor = 0; return exports.AiUsageSettingsForm!({ initial, viewerId: userId }); };
   const control = (id: string) => find(render(), element => element.props?.id === id)!;
   return {
@@ -115,7 +116,7 @@ test("invalid, fractional-share, oversized and sub-microdollar inputs never save
     const form = formHarness(async () => { writes++; return {}; });
     form.input(id, value); form.submit(); await form.done();
     assert.equal(writes, 0, `${id}=${value}`);
-    assert.match(String(find(form.render(), element => element.props?.role === "alert")!.props.children), /valid spending limits/);
+    assert.match(String(find(form.render(), element => element.type === notificationToastModule.NotificationToast)!.props.children), /valid spending limits/);
   }
 });
 
@@ -125,13 +126,13 @@ test("save failures preserve edits, release controls, and allow an explicit retr
     const form = formHarness(async input => ++attempts === 1 ? failure() : { saved: savedView(input) });
     form.input("ai-monthly-budget", "40"); form.toggle(`ai-enabled-${otherId}`, false);
     form.submit(); await form.done();
-    assert.ok(find(form.render(), element => element.props?.role === "alert"));
+    assert.ok(find(form.render(), element => element.type === notificationToastModule.NotificationToast));
     assert.equal(form.control("ai-monthly-budget").props.value, "40");
     assert.equal(form.control(`ai-enabled-${otherId}`).props.checked, false);
     assert.equal(form.control(`ai-enabled-${otherId}`).props.disabled, false);
     form.submit(); await form.done();
     assert.equal(attempts, 2);
-    assert.equal(find(form.render(), element => element.props?.role === "alert"), undefined);
+    assert.equal(find(form.render(), element => element.type === notificationToastModule.NotificationToast), undefined);
   }
 });
 
@@ -139,7 +140,7 @@ test("a revision conflict preserves the draft and requires reload rather than ov
   const message = "AI usage settings changed in another session. Reload this page before saving again.";
   const form = formHarness(async input => { assert.equal(input.revision, 4); return { error: message }; });
   form.input("ai-monthly-budget", "40"); form.submit(); await form.done();
-  assert.equal(find(form.render(), element => element.props?.role === "alert")!.props.children, message);
+  assert.equal(find(form.render(), element => element.type === notificationToastModule.NotificationToast)!.props.children, message);
   assert.equal(form.control("ai-monthly-budget").props.value, "40");
   assert.equal(find(form.render(), element => element.props?.role === "status")!.props.children, "Unsaved usage limits");
 });

@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 import { EmptyState } from "@/components/data-state";
 import { Wallet } from "lucide-react";
 
@@ -77,8 +79,8 @@ export function PaymentMethodsForm({ initial, canManage }: { initial: InvoicePay
         setMethods((old) => [...old, { id, type: "bank_transfer", label: "Bank transfer", currency: "", details: "", paymentUrl: "", bankDetails: { beneficiaryName: "", accountNumber: "", swift: "", bankName: "" } }]); setEditingId(id); setNotice("");
       }}><Plus />Add payment method</Button><Button type="submit">{busy ? "Saving…" : "Save payment methods"}</Button></div> : null}
     </fieldset>
-    {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
-    {notice ? <p role="status" className="text-sm text-primary">{notice}</p> : null}
+    {error ? <NotificationToast>{error}</NotificationToast> : null}
+    {notice ? <NotificationToast tone="message">{notice}</NotificationToast> : null}
     <p className="text-xs leading-5 text-muted-foreground">Select one or more saved methods on each invoice. Customers see those details and payment links on their invoice. Record payments after confirming receipt.</p>
   </form>;
 }

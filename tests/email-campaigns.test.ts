@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { campaignConfigSchema, campaignLocalDate, campaignMessageIssues, personalizeCampaign, selectCampaignRecipients } from "../lib/email-campaigns.ts";
+import { campaignConfigSchema, campaignLocalDate, campaignMessageIssues, campaignMessageWarnings, personalizeCampaign, selectCampaignRecipients } from "../lib/email-campaigns.ts";
+import { newEmailBlock, newEmailDesign } from "../lib/email-design.ts";
 import { marketingAssetInputSchema, newMarketingAsset } from "../lib/marketing-assets.ts";
 
 test("campaign drafts preserve setup, audience, message, and scheduling settings", () => {
@@ -34,4 +35,22 @@ test("review blocks incomplete senders and unsupported template placeholders", (
   assert.match(campaignMessageIssues(config, "Hello", { ...mailbox, available: false }).join(), /connected sender/);
   assert.match(campaignMessageIssues({ ...config, useSenderReplyTo: false }, "Hello", mailbox).join(), /reply-to/);
   assert.equal(personalizeCampaign("Hello {{first_name}} from {{company}}", { id: "one", name: "Jane Doe", companyName: "Acme", email: "jane@example.test" }), "Hello Jane from Acme");
+});
+
+test("missing or invalid button and video links are advisory and clear when corrected", () => {
+  const mailbox = { id: "sender", name: "Sender", email: "sender@example.test", available: true };
+  for (const type of ["button", "video"] as const) {
+    for (const href of ["", "not-a-url", "javascript:alert(1)"]) {
+      const emailDesign = newEmailDesign("Hello");
+      const block = newEmailBlock(type, { href });
+      emailDesign.blocks.push(block);
+      const config = campaignConfigSchema.parse({ subject: "Hello", mailboxId: mailbox.id, emailDesign });
+      assert.deepEqual(campaignMessageIssues(config, "Hello", mailbox), []);
+      assert.equal(campaignMessageWarnings(config).length, 1);
+      assert.match(campaignMessageWarnings(config)[0], /You can continue/);
+      config.emailDesign!.blocks.find(item => item.id === block.id)!.href = "https://example.test/shop";
+      assert.deepEqual(campaignMessageWarnings(config), []);
+    }
+  }
+  assert.deepEqual(campaignMessageWarnings(campaignConfigSchema.parse({})), []);
 });

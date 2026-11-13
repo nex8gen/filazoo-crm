@@ -6,6 +6,7 @@ import ts from "typescript";
 import * as dates from "../lib/company-followup.ts";
 import type { ActivityTask } from "../lib/task-activity.ts";
 import { setImmediate } from "node:timers/promises";
+import { notificationToastModule } from "./helpers/notification-toast.ts";
 const actorId = "a1111111-1111-4111-8111-111111111111";
 const teammateId = "b2222222-2222-4222-8222-222222222222";
 
@@ -36,7 +37,7 @@ function editor(task?: ActivityTask) {
   const exports = {} as { TaskEditor: (props: unknown) => Element };
   vm.runInNewContext(ts.transpileModule(readFileSync(new URL("../components/task-editor.tsx", import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
-  }).outputText, { exports, require: (name: string) => dependencies[name], crypto, AbortController,
+  }).outputText, { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => dependencies[name])(name), crypto, AbortController,
     fetch: async (_url: unknown, init: RequestInit) => {
       if (!init.method) return Response.json({ ok: true, viewerId: actorId, members: [{ id: actorId, name: "Current user", role: "admin" }, { id: teammateId, name: "Teammate", role: "operator" }] });
       const body = JSON.parse(String(init.body)); requests.push({ method: init.method!, body }); return Response.json(fail ? { error: "Task changed. Refresh before retrying." } : { ok: true, version: replyMode === "old" ? 1 : 2, task: { assigned_to: replyMode === "wrong" ? actorId : body.assignedTo ?? task?.assigned_to ?? actorId } }, { status: fail ? 409 : 200 });
@@ -73,7 +74,7 @@ test("an older API or wrong saved recipient cannot be reported as a successful a
     (tree.find(element => element.type === "assignee-picker")!.props.onChange as (id: string) => void)(teammateId);
     (tree.find(element => element.type === "input" && element.props.maxLength === 200)!.props.onChange as (event: unknown) => void)({ target: { value: "Team task" } });
     await app.submit();
-    assert.equal(app.saved(), 0); assert.ok(elements(app.render()).some(element => element.props.role === "alert"));
+    assert.equal(app.saved(), 0); assert.ok(elements(app.render()).some(element => element.type === notificationToastModule.NotificationToast));
   }
 });
 
@@ -108,5 +109,5 @@ test("company linkage remains protected and a failed save stays visible with the
   await app.submit(); await app.submit();
   assert.equal(app.saved(), 0);
   assert.equal(app.requests[0].body.requestId, app.requests[1].body.requestId);
-  assert.ok(elements(app.render()).some(element => element.props.role === "alert"));
+  assert.ok(elements(app.render()).some(element => element.type === notificationToastModule.NotificationToast));
 });

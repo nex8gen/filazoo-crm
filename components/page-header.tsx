@@ -23,10 +23,10 @@ export function PageHeader({ title, icon: Icon }: {
 }) {
   const header = useContext(PageHeaderContext);
   return (
-    <header className="workspace-page-header flex min-h-13 shrink-0 flex-wrap items-center gap-x-4 gap-y-2 bg-background px-5 py-2 sm:px-6">
+    <header className="workspace-page-header flex min-h-14 shrink-0 flex-wrap items-center gap-x-4 gap-y-2 bg-background px-5 py-2 sm:px-6">
       <div className="flex min-w-0 items-center gap-2.5">
-        <Icon aria-hidden className="size-4 shrink-0" />
-        <h1 className="truncate text-sm font-medium leading-5">{title}</h1>
+        <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+        <h1 className="truncate text-[length:var(--ui-text-heading)] font-medium leading-6 tracking-[-0.01em]">{title}</h1>
       </div>
       <div ref={header?.setDetailsHost} className="order-last min-w-0 max-w-full flex-1 basis-full empty:hidden sm:order-none sm:basis-0" />
       <div ref={header?.setActionsHost} className="ml-auto min-w-0 max-w-full empty:hidden" />

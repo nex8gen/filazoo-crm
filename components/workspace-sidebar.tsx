@@ -59,7 +59,7 @@ function SidebarItemLabel({ item }: { item: NavigationItem }) {
   return (
     <span className="flex items-center gap-2">
       <span>{item.label}</span>
-      {item.badge ? <span className="shrink-0 rounded border border-[#4dd396]/25 bg-[#4dd396]/10 px-1.5 py-0.5 text-[10px] font-medium leading-none text-[#4dd396]">{item.badge}</span> : null}
+      {item.badge ? <span className="shrink-0 rounded-md bg-brand-soft px-1.5 py-0.5 text-xs font-medium leading-4 text-primary">{item.badge}</span> : null}
     </span>
   );
 }
@@ -69,11 +69,11 @@ function SidebarGroup({ group, pathname, expanded }: { group: NavigationGroup; p
   const active = group.items.some(item => itemIsActive(pathname, item));
   const rowActive = expanded && group.nested ? itemIsActive(pathname, group.items[0]) : active;
   const rowClass = `workspace-sidebar-row ${rowActive ? "is-active" : ""}`;
-  const icon = <group.icon aria-hidden="true" className="size-4 shrink-0" />;
+  const icon = <group.icon aria-hidden="true" className="size-[18px] shrink-0" />;
 
   if (!expanded && !group.direct) {
     return (
-      <li>
+      <li data-sidebar-section-start={group.sectionStart || undefined}>
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger aria-label={group.label} openOnHover delay={100} closeDelay={180} className={rowClass}>
             {icon}
@@ -89,6 +89,9 @@ function SidebarGroup({ group, pathname, expanded }: { group: NavigationGroup; p
             </nav>
           </PopoverContent>
         </Popover>
+        {active ? <div aria-hidden="true" className="workspace-sidebar-submenu workspace-sidebar-submenu-collapsed">
+          {group.items.filter(item => item.href !== group.items[0].href).map(item => <span key={item.href} data-active={itemIsActive(pathname, item) || undefined} />)}
+        </div> : null}
       </li>
     );
   }
@@ -101,7 +104,7 @@ function SidebarGroup({ group, pathname, expanded }: { group: NavigationGroup; p
   );
 
   return (
-    <li>
+    <li data-sidebar-section-start={group.sectionStart || undefined}>
       {expanded ? link : <Tooltip><TooltipTrigger render={link} /><TooltipContent side="right" sideOffset={20}>{group.label}</TooltipContent></Tooltip>}
       {expanded && active && !group.direct ? (
         <ul className="workspace-sidebar-submenu">
@@ -129,11 +132,11 @@ export function WorkspaceSidebar({ pathname, expanded, onToggle, onSearch, userM
   const settings = navigation.find(group => group.label === "Settings");
   return (
     <aside id="workspace-sidebar" aria-label="Workspace sidebar" data-expanded={expanded} className="workspace-sidebar fixed inset-y-0 left-0 z-40 hidden flex-col lg:flex">
-      <div className="flex h-14 shrink-0 items-center gap-2 px-2">
+      <div className="workspace-sidebar-header flex h-14 shrink-0 items-center gap-2 px-2">
         {expanded ? <>
-          <Link href="/analytics" aria-label="Filazoo home" className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 outline-none focus-visible:ring-2 focus-visible:ring-[#4dd396]">
-            <BrandMarkIcon aria-hidden="true" className="size-7 shrink-0 text-[#4dd396]" />
-            <span className="truncate text-base font-semibold tracking-tight text-[#efefef]">Filazoo</span>
+          <Link href="/analytics" aria-label="Filazoo home" className="flex min-w-0 flex-1 items-center gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-[#4dd396]">
+            <BrandMarkIcon aria-hidden="true" className="size-6 shrink-0 text-[#4dd396]" />
+            <span className="truncate text-sm font-medium tracking-tight text-foreground">Filazoo</span>
           </Link>
           <Tooltip>
             <TooltipTrigger render={<button type="button" aria-label="Collapse sidebar" aria-expanded={true} aria-controls="workspace-sidebar" aria-keyshortcuts="Control+B Meta+B" onClick={onToggle} className="workspace-sidebar-collapse"><PanelLeftClose aria-hidden="true" className="size-4" /></button>} />
@@ -147,21 +150,21 @@ export function WorkspaceSidebar({ pathname, expanded, onToggle, onSearch, userM
           <TooltipContent side="right" sideOffset={20}>Expand sidebar (Ctrl+B)</TooltipContent>
         </Tooltip>}
       </div>
-      <div className="mb-3 px-2">
+      <div className="workspace-sidebar-search-frame mb-4 px-2">
         <button type="button" aria-label="Search workspace" onClick={onSearch} className="workspace-sidebar-row workspace-sidebar-search">
-          <Search aria-hidden="true" className="size-[18px] shrink-0" />
-          {expanded ? <><span>Search</span><kbd className="ml-auto whitespace-nowrap text-xs font-normal text-[#c4c4c4]">Ctrl K</kbd></> : null}
+          <Search aria-hidden="true" className="size-3.5 shrink-0" />
+          {expanded ? <><span>Search</span><kbd className="ml-auto whitespace-nowrap font-sans text-[length:var(--ui-text-meta)] font-normal text-muted-foreground">ctrl+k</kbd></> : null}
         </button>
       </div>
-      <nav aria-label="Primary navigation" className="scrollbar-hidden min-h-0 flex-1 overflow-y-auto px-1.5 pb-4">
+      <nav aria-label="Primary navigation" className="workspace-sidebar-navigation scrollbar-hidden min-h-0 flex-1 overflow-y-auto px-1.5 pb-4">
         <ul className="space-y-0.5">
           {navigation.filter(group => group.label !== "Settings").map(group => <SidebarGroup key={`${group.label}:${pathname}:${expanded}`} group={group} pathname={pathname} expanded={expanded} />)}
         </ul>
       </nav>
-      <div className="shrink-0 space-y-1 border-t border-white/10 px-2 pb-2 pt-2">
+      <div className="workspace-sidebar-footer shrink-0 space-y-1 border-t border-[var(--workspace-frame-border)] px-2 pb-2 pt-2">
         {settings ? <nav aria-label="Settings navigation"><ul><SidebarGroup group={settings} pathname={pathname} expanded={expanded} /></ul></nav> : null}
         {activity}
-        <div className="flex min-h-11 items-center gap-2 overflow-hidden rounded-lg text-[#d4d4d4] [&_button]:size-10 [&_button]:shrink-0 [&_button]:p-1 [&_button]:text-[#d4d4d4] [&_button:hover]:bg-white/10 [&_button[data-popup-open]]:bg-white/10">
+        <div className="flex min-h-11 items-center gap-2 overflow-hidden rounded-lg text-[var(--workspace-rail-text)] [&_button]:size-10 [&_button]:shrink-0 [&_button]:p-1 [&_button]:text-[var(--workspace-rail-text)] [&_button:hover]:bg-[var(--workspace-rail-hover)] [&_button[data-popup-open]]:bg-[var(--workspace-rail-hover)]">
           {userMenu}
           {expanded ? <span className="truncate text-sm">Filazoo workspace</span> : null}
         </div>

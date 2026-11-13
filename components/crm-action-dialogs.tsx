@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { EmptyState } from "@/components/data-state";
 import { PackageSearch } from "lucide-react";
@@ -21,8 +23,8 @@ const AddCompanyForm = dynamic(() => import("@/components/add-company-form").the
 });
 
 function ActionMessage({ state }: { state: CrmActionState }) {
-  if (state?.error) return <p role="alert" className="text-xs text-destructive">{state.error}</p>;
-  if (state?.success) return <p role="status" className="text-xs text-primary">{state.success}</p>;
+  if (state?.error) return <NotificationToast>{state.error}</NotificationToast>;
+  if (state?.success) return <NotificationToast tone="success">{state.success}</NotificationToast>;
   return null;
 }
 

@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
@@ -42,7 +44,7 @@ export function PurchaseOrderDetails({ order, companyName, country, customer, ac
       {order.document.status === "draft" ? <Button size="sm" disabled={pending} onClick={() => setStatus("confirmed")}>Confirm order</Button> : null}
       {actions.statuses.length ? <DropdownMenu><DropdownMenuTrigger render={<Button size="sm" variant="outline" disabled={pending} />}>More actions<ChevronDown className="size-3.5" /></DropdownMenuTrigger><DropdownMenuContent align="end" className="min-w-44"><DropdownMenuGroup><DropdownMenuLabel>Order status</DropdownMenuLabel>{actions.statuses.map(status => <DropdownMenuItem key={status} variant={status === "cancelled" ? "destructive" : "default"} onClick={() => setStatus(status)}>{poStatusLabels[status]}</DropdownMenuItem>)}</DropdownMenuGroup></DropdownMenuContent></DropdownMenu> : null}
     </> : null}</PageActions>
-    {error ? <p role="alert" className="mx-auto mt-3 max-w-[1100px] rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">{error}</p> : null}
+    {error ? <NotificationToast>{error}</NotificationToast> : null}
     <PurchaseOrderSummary order={order} companyName={companyName} country={country} customer={customer} activity={activity} activityError={activityError}
       paymentDetails={<><PurchaseOrderPaymentDetails billing={order.document.billing} /><PurchaseOrderPayments order={order} canWrite={canWrite} /></>}
       invoiceSection={<PurchaseOrderInvoices order={order} canWrite={canWrite} />} />

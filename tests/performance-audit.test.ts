@@ -12,12 +12,13 @@ import * as customerTags from "../lib/customer-tags.ts";
 import * as leadInquiries from "../lib/lead-inquiries.ts";
 import { workspaceIdSchema, workspaceCookie } from "../lib/workspaces.ts";
 import { readTableColumnPreferences } from "../lib/table-column-preferences.ts";
+import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 const require = createRequire(import.meta.url);
 function load(file: string, deps: Record<string, unknown>) {
   const exports: Record<string, (...args: unknown[]) => Promise<unknown>> = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { fileName: file, compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => name === "./ai/provider-credentials.ts" ? credentials : name in deps ? deps[name] : name === "zod" ? require(name) : {}, Date, Intl, Map, Set, console, process: { env: { NODE_ENV: "test" } } });
+  vm.runInNewContext(code, { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => name === "./ai/provider-credentials.ts" ? credentials : name in deps ? deps[name] : name === "zod" ? require(name) : {})(name), Date, Intl, Map, Set, console, process: { env: { NODE_ENV: "test" } } });
   return exports;
 }
 function chain(result: unknown, record: (method: string, args: unknown[]) => void = () => {}) {

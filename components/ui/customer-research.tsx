@@ -1,5 +1,6 @@
 "use client";
 
+
 import { BookOpen, ChevronDown, Database, ExternalLink, Globe, LoaderCircle } from "lucide-react";
 import { useState } from "react";
 import { useLanguage } from "@/components/language-provider";
@@ -27,7 +28,7 @@ export function SourceCitedText({ text, sources }: { text: string; sources: Cita
     if (!part.source) return <span key={index}>{part.text}</span>;
     const source = part.source, domain = sourceDomain(source), url = citationUrl(source.url);
     const content = <><SourceIcon source={source} /><span className="max-w-36 truncate">{domain || source.label}</span><span className="text-[9px] opacity-65">{source.id.replace(/^W/, "")}</span></>;
-    const className = "mx-0.5 inline-flex max-w-full items-center gap-1 rounded-md border border-border/50 bg-muted/60 px-1.5 py-0.5 align-baseline text-[10px] font-medium leading-4 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
+    const className = "mx-0.5 inline-flex max-w-full items-center gap-1 rounded-md border border-border/50 bg-muted/60 px-1.5 py-0.5 align-baseline text-xs font-medium leading-4 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
     return url ? <a key={index} href={url} target="_blank" rel="noopener noreferrer" title={`${source.label} [${source.id}]`} aria-label={`${t("Source")}: ${source.label} [${source.id}]`} className={className}>{content}</a> : <span key={index} title={source.label} className={className}>{content}</span>;
   })}</>;
 }
@@ -41,13 +42,13 @@ export function SourceList({ sources, live = false }: { sources: CitationSource[
     <summary className="flex min-h-8 w-fit cursor-pointer list-none items-center gap-2 rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
       <BookOpen aria-hidden="true" className="size-3.5" />
       <span className="flex -space-x-1">{icons.map(source => <span key={source.id} className="rounded-full ring-2 ring-background"><SourceIcon source={source} /></span>)}</span>
-      <span>{t("Sources")}</span><span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] tabular-nums">{safeSources.length}</span>
+      <span>{t("Sources")}</span><span className="rounded-full bg-muted px-1.5 py-0.5 text-xs tabular-nums">{safeSources.length}</span>
       <ChevronDown aria-hidden="true" className="size-3 transition-transform motion-reduce:transition-none group-open/source-list:rotate-180" />
     </summary>
     <ul aria-label={t(live ? "Sources found so far" : "Sources")} className="mt-1 space-y-1">
       {safeSources.map(source => {
         const domain = sourceDomain(source), url = citationUrl(source.url);
-        const content = <><SourceIcon source={source} /><span className="min-w-0 flex-1"><span className="break-words font-medium text-foreground" data-no-translate>{source.label}</span>{domain ? <span className="ml-2 inline-block text-[10px] text-muted-foreground" data-no-translate>{domain}</span> : null}</span><span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{source.id.replace(/^W/, "")}</span>{url ? <ExternalLink aria-hidden="true" className="size-3 shrink-0 text-muted-foreground/60" /> : null}</>;
+        const content = <><SourceIcon source={source} /><span className="min-w-0 flex-1"><span className="break-words font-medium text-foreground" data-no-translate>{source.label}</span>{domain ? <span className="ml-2 inline-block text-xs text-muted-foreground" data-no-translate>{domain}</span> : null}</span><span className="rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{source.id.replace(/^W/, "")}</span>{url ? <ExternalLink aria-hidden="true" className="size-3 shrink-0 text-muted-foreground/60" /> : null}</>;
         return <li key={source.id} className="min-w-0">{url ? <a href={url} target="_blank" rel="noopener noreferrer" className="flex min-h-9 items-center gap-2 rounded-md px-2 py-1 transition-colors hover:bg-muted/60 focus-visible:outline-2 focus-visible:outline-ring">{content}</a> : <div className="flex min-h-9 items-center gap-2 px-2 py-1">{content}</div>}</li>;
       })}
     </ul>
@@ -59,7 +60,7 @@ export function ResearchSearching({ progress }: { progress?: ResearchProgress | 
   const label = !progress ? "Preparing web research" : progress.phase === "reading" ? "Reading company websites" : progress.phase === "writing" ? progress.sources.length ? "Preparing answer with sources" : "Preparing answer" : "Searching Google";
   return <div className="mt-3 space-y-1 rounded-xl border border-border/60 bg-muted/20 px-3 py-2" aria-busy="true">
     <p role="status" aria-live="polite" className="flex items-center gap-2 text-xs text-muted-foreground"><SourceIcon source={{ id: "google", label: "Google", url: "https://google.com/" }} /><span>{t(label)}</span><LoaderCircle aria-hidden="true" className="ml-auto size-3.5 motion-safe:animate-spin" /></p>
-    {progress?.queries.length ? <p className="truncate pl-6 text-[11px] text-muted-foreground" data-no-translate title={progress.queries.at(-1)}>{progress.queries.at(-1)}</p> : null}
+    {progress?.queries.length ? <p className="truncate pl-6 text-xs text-muted-foreground" data-no-translate title={progress.queries.at(-1)}>{progress.queries.at(-1)}</p> : null}
     <SourceList sources={progress?.sources ?? []} live />
   </div>;
 }

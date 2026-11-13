@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useLanguage } from "@/components/language-provider";
 
@@ -150,18 +152,18 @@ export function CompanyAi({ company }: { company: Company }) {
               <StreamingText key={`${entry.id}-${animation?.id === entry.id ? animation.run : 0}`} text={entry.content} sources={[...(entry.sources ?? []), ...(entry.research?.sources ?? [])]} animate={animation?.id === entry.id} onProgress={followReply} onComplete={() => setAnimation((current) => current?.id === entry.id ? null : current)} />
               <CustomerResearchSources research={entry.research} />
               {animation?.id === entry.id ? <Button type="button" variant="ghost" size="xs" className="mt-2" onClick={() => setAnimation(null)}>Show full reply</Button> : <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                <div className="min-w-0 flex-1 text-xs text-muted-foreground"><SourceList sources={(entry.sources ?? []).filter(source => !entry.research?.sources.some(web => web.id === source.id))} />{entry.omittedActivity ? <p className="mt-2 text-[11px]">Based on recent records; some older activity was outside this answer&apos;s context.</p> : null}</div>
+                <div className="min-w-0 flex-1 text-xs text-muted-foreground"><SourceList sources={(entry.sources ?? []).filter(source => !entry.research?.sources.some(web => web.id === source.id))} />{entry.omittedActivity ? <p className="mt-2 text-xs">Based on recent records; some older activity was outside this answer&apos;s context.</p> : null}</div>
                 <div className="flex gap-1"><Button type="button" variant="ghost" size="xs" disabled={busy} onClick={() => setAnimation({ id: entry.id, run: performance.now() })} aria-label="Replay reply animation"><RotateCcw />Replay</Button><Button type="button" variant="ghost" size="xs" onClick={() => void copy(entry)} aria-label="Copy AI answer"><Copy />{copiedId === entry.id ? "Copied" : "Copy"}</Button></div>
               </div>}
             </> : <><p className="mb-2 text-xs font-medium text-muted-foreground">You</p><AiImagePreviews images={entry.images} />{entry.attachmentNames?.length ? <p className="mb-2 text-xs text-muted-foreground">Attached: {entry.attachmentNames.join(", ")}. Images are not retained; reattach to inspect them again.</p> : null}<p data-no-translate className="whitespace-pre-wrap break-words text-sm leading-7 [overflow-wrap:anywhere]">{entry.content}</p></>}
           </div>)}</div>}
           {pending ? <div className="mt-6"><ThinkingState working scope={company.name} />{webSearch ? <ResearchSearching progress={researchProgress} /> : null}</div> : null}
-          {error ? <div role="alert" className="mt-5 rounded-xl border border-destructive/20 bg-destructive/5 p-4"><p className="text-sm leading-6">{error}</p>{retryMessages ? <div className="mt-3 flex gap-2"><Button type="button" variant="outline" size="sm" disabled={pending} onClick={() => void generate(retryMessages)}>Try again</Button><Button type="button" variant="ghost" size="sm" disabled={pending} onClick={() => { const last = retryMessages.at(-1); setQuestion(last?.content || ""); attachments.setImages(last?.images ?? []); setMessages((current) => current.slice(0, -1)); setRetryMessages(null); setError(null); input.current?.focus(); }}>Edit question</Button></div> : null}</div> : null}
+          {error ? <NotificationToast><p className="text-sm leading-6">{error}</p>{retryMessages ? <div className="mt-3 flex gap-2"><Button type="button" variant="outline" size="sm" disabled={pending} onClick={() => void generate(retryMessages)}>Try again</Button><Button type="button" variant="ghost" size="sm" disabled={pending} onClick={() => { const last = retryMessages.at(-1); setQuestion(last?.content || ""); attachments.setImages(last?.images ?? []); setMessages((current) => current.slice(0, -1)); setRetryMessages(null); setError(null); input.current?.focus(); }}>Edit question</Button></div> : null}</NotificationToast> : null}
         </div>
         <div className="sticky bottom-0 z-10 shrink-0 border-t bg-card px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-5 sm:px-6">
           {messages.length ? <div className="mb-3 flex flex-wrap items-center gap-2">{shortcuts.map(({ label, prompt }) => <button key={label} type="button" disabled={busy || Boolean(retryMessages)} onClick={() => send(t(prompt))} className="rounded-full border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50">{label}</button>)}</div> : null}
           <AiChatInput attachments={attachments} contextLabel={company.name} value={question} onChange={setQuestion} onSend={() => send()} inputRef={input} disabled={busy || Boolean(retryMessages)} busy={busy} shortcuts={shortcuts} webSearch={webSearch} onWebSearchChange={setWebSearch} />
-          <p className="mt-3 text-center text-[11px] leading-5 text-muted-foreground">AI provides advice and drafts. Review before using. This chat lasts until you leave or refresh this page.</p>
+          <p className="mt-3 text-center text-xs leading-5 text-muted-foreground">AI provides advice and drafts. Review before using. This chat lasts until you leave or refresh this page.</p>
         </div>
       </CardContent>
     </Card>

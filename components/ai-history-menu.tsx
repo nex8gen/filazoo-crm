@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useState } from "react";
 import { usePathname } from "next/navigation";
@@ -14,11 +16,11 @@ import type { HistoryListCache } from "@/lib/ai/history-list-cache";
 
 function HistoryFailure({ message, signIn, disabled, onRetry, retryLabel = "Retry loading conversations" }: { message: string; signIn: boolean; disabled: boolean; onRetry: () => void; retryLabel?: string }) {
   const pathname = usePathname();
-  return <div role="alert" className="mt-2 space-y-1 text-xs text-destructive">
+  return <NotificationToast>
     <p>{message}</p>
     {signIn ? <><a className="underline" href={`/login?${new URLSearchParams({ next: pathname || "/" })}`} target="_blank" rel="noopener noreferrer" onClick={(event) => { event.currentTarget.href = `/login?${new URLSearchParams({ next: window.location.pathname + window.location.search + window.location.hash })}`; }}>Sign in in a new tab</a><p className="text-muted-foreground">Keep this tab open to preserve your edits. After signing in, return here and retry.</p></> : null}
     <button type="button" className="underline disabled:opacity-50" disabled={disabled} onClick={onRetry}>{retryLabel}</button>
-  </div>;
+  </NotificationToast>;
 }
 export function AiHistoryMenu({ history, disabled, onNew, onRetry, onClose, onSettings, cache, closeLabel = "Close AI workspace" }: { history: AiConversationController; disabled: boolean; onNew: () => void; onRetry?: () => void; onClose?: () => void; onSettings?: () => void; cache?: HistoryListCache; closeLabel?: string }) {
   const [open, setOpen] = useState(false);

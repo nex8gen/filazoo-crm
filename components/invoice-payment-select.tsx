@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 import { EmptyState } from "@/components/data-state";
 import { Wallet } from "lucide-react";
 
@@ -39,8 +41,8 @@ export function InvoicePaymentSelect({ doc, onChange }: { doc: InvoiceDocument; 
       </label>;
     })}
     {!loading && !options.length && !error ? <EmptyState compact icon={Wallet} title="No saved payment methods" description="Add them in Settings, or use the manual instructions below." /> : null}
-    {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
-    {selected.some((method) => method.currency && method.currency !== doc.currency) ? <p role="alert" className="text-sm text-destructive">Remove payment methods that do not support {doc.currency}.</p> : null}
+    {error ? <NotificationToast>{error}</NotificationToast> : null}
+    {selected.some((method) => method.currency && method.currency !== doc.currency) ? <NotificationToast>Remove payment methods that do not support {doc.currency}.</NotificationToast> : null}
     <Link href="/settings/invoices#payment-methods" target="_blank" rel="noreferrer" className="inline-block text-xs text-primary underline">Manage payment methods in Settings</Link>
   </fieldset>;
 }

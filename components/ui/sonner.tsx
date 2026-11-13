@@ -1,49 +1,47 @@
-"use client"
+"use client";
 
-import { useTheme } from "next-themes"
-import { Toaster as Sonner, type ToasterProps } from "sonner"
-import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
+import type { CSSProperties } from "react";
+import { useTheme } from "next-themes";
+import { Toaster as Sonner, type ToasterProps } from "sonner";
+import { Loader2Icon, XIcon } from "lucide-react";
+import "./sonner.css";
 
-const Toaster = ({ ...props }: ToasterProps) => {
-  const { theme = "system" } = useTheme()
+// Keep one shared notification host so every toast uses the same appearance,
+// stacking, keyboard controls and pause-on-hover behavior throughout the app.
+const Toaster = ({ className, style, toastOptions, icons, ...props }: ToasterProps) => {
+  const { resolvedTheme } = useTheme();
 
   return (
     <Sonner
-      theme={theme as ToasterProps["theme"]}
-      className="toaster group"
+      theme={resolvedTheme === "dark" ? "dark" : "light"}
+      position="bottom-right"
+      duration={3000}
+      visibleToasts={3}
+      gap={10}
+      offset={16}
+      mobileOffset={16}
+      closeButton
+      className={`toaster${className ? ` ${className}` : ""}`}
       icons={{
-        success: (
-          <CircleCheckIcon className="size-4" />
-        ),
-        info: (
-          <InfoIcon className="size-4" />
-        ),
-        warning: (
-          <TriangleAlertIcon className="size-4" />
-        ),
-        error: (
-          <OctagonXIcon className="size-4" />
-        ),
-        loading: (
-          <Loader2Icon className="size-4 animate-spin" />
-        ),
+        loading: <Loader2Icon aria-hidden="true" className="size-4 animate-spin" />,
+        close: <XIcon aria-hidden="true" className="size-4" />,
+        ...icons,
       }}
-      style={
-        {
-          "--normal-bg": "var(--popover)",
-          "--normal-text": "var(--popover-foreground)",
-          "--normal-border": "var(--border)",
-          "--border-radius": "var(--radius)",
-        } as React.CSSProperties
-      }
+      style={{
+        "--width": "420px",
+        "--normal-bg": "var(--popover)",
+        "--normal-text": "var(--popover-foreground)",
+        "--normal-border": "var(--border)",
+        "--border-radius": "12px",
+        ...style,
+      } as CSSProperties}
       toastOptions={{
-        classNames: {
-          toast: "cn-toast",
-        },
+        ...toastOptions,
+        classNames: { ...toastOptions?.classNames, toast: `cn-toast${toastOptions?.classNames?.toast ? ` ${toastOptions.classNames.toast}` : ""}` },
       }}
       {...props}
     />
-  )
-}
+  );
+};
 
-export { Toaster }
+export { Toaster };

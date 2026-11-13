@@ -1,3 +1,4 @@
+import { NotificationToast } from "@/components/ui/notification-toast";
 import Link from "next/link";
 import { FlowBuilder } from "@/components/flow-builder";
 import { requireWorkspaceMember } from "@/lib/auth";
@@ -16,7 +17,7 @@ export default async function EmailFlowsPage({ searchParams }: { searchParams: P
   try {
     scope = await resolveEmailFlowScope(params);
   } catch (error) {
-    return <div className="mx-auto max-w-lg space-y-4 p-8"><h2 className="text-xl font-semibold">Email workflows</h2><p role="alert" className="text-sm text-muted-foreground">{error instanceof Error ? error.message : "Unable to load this email's company."}</p><Link href="/email" className="text-sm font-medium text-primary">Back to email</Link></div>;
+    return <div className="mx-auto max-w-lg space-y-4 p-8"><h2 className="text-xl font-semibold">Email workflows</h2><NotificationToast>{error instanceof Error ? error.message : "Unable to load this email's company."}</NotificationToast><Link href="/email" className="text-sm font-medium text-primary">Back to email</Link></div>;
   }
   const [flows, mailboxes, members, filterOptions] = await Promise.all([
     listEmailFlows(scope), listMailboxes(), listFlowMemberOptions(), listFlowFilterOptions(),

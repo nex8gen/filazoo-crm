@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useActionState } from "react";
 import { socialSignIn } from "@/app/auth/social-actions";
@@ -7,7 +9,7 @@ import type { AuthProvider } from "@/lib/auth-providers";
 export function AuthSocialButtons({ providers, next, signup = false }: { providers: AuthProvider[]; next: string; signup?: boolean }) {
   const [state, action, pending] = useActionState(socialSignIn, undefined);
   if (!providers.length) return null;
-  return <div className="mb-7"><form action={action} className="flex flex-wrap gap-4"><input type="hidden" name="next" value={next} />{providers.map(provider => <button key={provider} name="provider" value={provider} disabled={pending} className="flex h-11 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-black/25 px-4 text-sm hover:bg-black/5 disabled:opacity-50 dark:border-white/20 dark:hover:bg-white/5">{provider === "google" ? <GoogleIcon /> : <AppleIcon />}{signup ? "Sign up" : "Sign in"} with {provider === "google" ? "Google" : "Apple"}</button>)}</form>{state?.error ? <p role="alert" className="mt-3 text-sm text-red-700 dark:text-red-300">{state.error}</p> : null}<p className="mt-3 text-xs leading-5 text-black/55 dark:text-white/55">By continuing, you agree to our <a href="/terms" className="underline">Terms of Service</a> and <a href="/privacy" className="underline">Privacy Policy</a>.</p><div className="my-7 flex items-center gap-4 text-sm text-black/50 dark:text-white/50"><span className="h-px flex-1 bg-black/15 dark:bg-white/15" />or continue with email<span className="h-px flex-1 bg-black/15 dark:bg-white/15" /></div></div>;
+  return <div className="mb-7"><form action={action} className="flex flex-wrap gap-4"><input type="hidden" name="next" value={next} />{providers.map(provider => <button key={provider} name="provider" value={provider} disabled={pending} className="flex h-11 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-black/25 px-4 text-sm hover:bg-black/5 disabled:opacity-50 dark:border-white/20 dark:hover:bg-white/5">{provider === "google" ? <GoogleIcon /> : <AppleIcon />}{signup ? "Sign up" : "Sign in"} with {provider === "google" ? "Google" : "Apple"}</button>)}</form>{state?.error ? <NotificationToast>{state.error}</NotificationToast> : null}<p className="mt-3 text-xs leading-5 text-black/55 dark:text-white/55">By continuing, you agree to our <a href="/terms" className="underline">Terms of Service</a> and <a href="/privacy" className="underline">Privacy Policy</a>.</p><div className="my-7 flex items-center gap-4 text-sm text-black/50 dark:text-white/50"><span className="h-px flex-1 bg-black/15 dark:bg-white/15" />or continue with email<span className="h-px flex-1 bg-black/15 dark:bg-white/15" /></div></div>;
 }
 
 function GoogleIcon() {

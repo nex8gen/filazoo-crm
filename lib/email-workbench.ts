@@ -13,7 +13,7 @@ export const emailFileSchema = z.object({
 export const emailSendSchema = z.object({
   senderName: z.string().trim().max(160).regex(/^[^\r\n]*$/).optional(),
   replyTo: z.email().optional(),
-  campaign: z.object({ id: z.uuid(), contactId: z.uuid(), smartSending: z.boolean() }).optional(),
+  campaign: z.object({ id: z.uuid(), contactId: z.uuid(), smartSending: z.boolean(), variant: z.enum(["A", "B"]).optional() }).optional(),
   mailboxId: z.string().trim().min(1).max(200).optional(),
   to: recipientListSchema.refine((value) => value.length > 0, "Enter at least one recipient."),
   cc: recipientListSchema.default([]), bcc: recipientListSchema.default([]),
@@ -23,12 +23,14 @@ export const emailSendSchema = z.object({
   threadId: z.string().trim().min(1).max(1_100).optional(),
   inReplyTo: z.string().trim().max(1_000).regex(/^<[^<>\s]+>$/).optional(),
   references: z.array(z.string().trim().max(1_000).regex(/^<[^<>\s]+>$/)).max(100).default([]),
-  attachments: z.array(emailFileSchema).max(10).default([]),
+  // Campaign social icons are small inline MIME parts, separate from user files.
+  attachments: z.array(emailFileSchema).max(50).default([]),
   requestId: z.uuid().optional(),
   scheduleAt: z.iso.datetime({ offset: true }).optional(),
   draftId: z.string().min(1).max(512).optional(),
   providerDraft: providerDraftSchema.optional(),
 }).superRefine((value, context) => {
+  if ((value.campaign ? value.attachments.filter(file => !file.cid).length : value.attachments.length) > 10) context.addIssue({ code: "custom", path: ["attachments"], message: "An email supports up to 10 attachments." });
   if (new Set([...value.to, ...value.cc, ...value.bcc]).size > 50) context.addIssue({ code: "custom", message: "An email supports up to 50 recipients." });
   if (!value.text.trim() && !value.html?.trim()) context.addIssue({ code: "custom", message: "Enter a message before sending." });
 });

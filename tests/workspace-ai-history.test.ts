@@ -8,6 +8,7 @@ import * as history from "../lib/ai/chat-history.ts";
 import * as intent from "../lib/ai/assistant-intent.ts";
 import * as researchRequest from "../lib/ai/research-request.ts";
 import * as researchProgress from "../lib/ai/research-progress.ts";
+import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 const require = createRequire(import.meta.url);
 
@@ -45,7 +46,7 @@ test("sidebar history stays enabled across close and reopen while drafts remain 
   };
   const code = ts.transpileModule(readFileSync(new URL("../components/workspace-ai-assistant.tsx", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const exports: Record<string, (props: unknown) => unknown> = {};
-  vm.runInNewContext(code, { exports, require: (name: string) => name === "react/jsx-runtime" ? require(name) : dependencies[name] ?? ui });
+  vm.runInNewContext(code, { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => name === "react/jsx-runtime" ? require(name) : dependencies[name] ?? ui)(name) });
   type Element = { type?: unknown; props?: { children?: unknown; busy?: boolean; loadingHistory?: boolean; value?: string; onChange?: (value: string) => void; onSend?: () => void } };
   function findComposer(value: unknown): Element | undefined {
     if (!value || typeof value !== "object") return;
@@ -118,7 +119,7 @@ test("continuing history from the inbox sends the saved page, record, AI mode an
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const exports: Record<string, (props: unknown) => unknown> = {};
   vm.runInNewContext(code, {
-    exports, require: (name: string) => name === "react/jsx-runtime" ? require(name) : dependencies[name] ?? ui,
+    exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => name === "react/jsx-runtime" ? require(name) : dependencies[name] ?? ui)(name),
     AbortController, performance, crypto,
     fetch: async (url: string, init: RequestInit) => {
       assert.equal(url, "/api/ai/assistant");
@@ -185,7 +186,7 @@ test("Open in Agent preserves the invoice request and images in a fresh Agent co
   };
   const code = ts.transpileModule(readFileSync(new URL("../components/workspace-ai-assistant.tsx", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const exports: Record<string, (props: unknown) => unknown> = {};
-  vm.runInNewContext(code, { exports, require: (name: string) => name === "react/jsx-runtime" ? require(name) : dependencies[name] ?? ui, fetch: () => { throw new Error("Handoff must not submit or execute the invoice"); } });
+  vm.runInNewContext(code, { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => name === "react/jsx-runtime" ? require(name) : dependencies[name] ?? ui)(name), fetch: () => { throw new Error("Handoff must not submit or execute the invoice"); } });
   type Element = { type?: unknown; props?: { children?: unknown; onClick?: () => void; value?: string } };
   function find(value: unknown, match: (element: Element) => boolean): Element | undefined {
     if (!value || typeof value !== "object") return;

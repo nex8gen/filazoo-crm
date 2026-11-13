@@ -8,11 +8,12 @@ import * as budget from "../lib/ai/budget.ts";
 import * as budgetFetch from "../lib/ai/budget-fetch.ts";
 import { generateGatewayText } from "../lib/ai/gateway.ts";
 import { policyTestDependency } from "./helpers/ai-policy.ts";
+import { notificationToastModule } from "./helpers/notification-toast.ts";
 const require = createRequire(import.meta.url);
 function load(file: string, deps: Record<string, unknown>, fetcher: typeof fetch = fetch) {
   const exports: Record<string, unknown> = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => deps[name] ?? policyTestDependency(name) ?? require(name), fetch: fetcher, Response, Request, AbortSignal, URL, Date, console });
+  vm.runInNewContext(code, { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => deps[name] ?? policyTestDependency(name) ?? require(name))(name), fetch: fetcher, Response, Request, AbortSignal, URL, Date, console });
   return exports;
 }
 test("published prices include context tiers and cache writes, and RPC receives only trusted owner", async () => {

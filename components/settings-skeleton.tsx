@@ -4,7 +4,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import "@/app/settings/settings.css";
 
 export function SettingsNavigationSkeleton() {
-  return <div aria-hidden="true" className="settings-navigation [&_[data-slot=skeleton]]:bg-white/10">
+  return <div aria-hidden="true" className="settings-navigation [&_[data-slot=skeleton]]:bg-foreground/10">
       <div className="px-3 pb-4 pt-2"><Skeleton className="h-6 w-20" /></div><Skeleton className="mb-4 h-9 w-full rounded-full" />
       <div className="hidden overflow-hidden pb-2 lg:block lg:space-y-6">{[2, 10].map((count, group) => <div key={group} className="min-w-32 shrink-0"><Skeleton className="mx-3 mb-2 h-4 w-20" /><div className="space-y-1">{Array.from({ length: count }, (_, index) => <div key={index} className="flex min-h-7 items-center gap-3 px-3 py-1"><Skeleton className="size-[17px] shrink-0" /><Skeleton className="h-5 w-32 max-w-full" /></div>)}</div></div>)}</div>
     </div>;

@@ -1,5 +1,5 @@
 import type { ComponentType } from "react";
-import { BookOpen, Building2, ChartNoAxesCombined, ClipboardList, FilePenLine, FolderOpen, House, ListTodo, Mail, Megaphone, MessageSquareText, Package2, Settings, Sparkles, Tags, Workflow } from "lucide-react";
+import { BookOpen, Building2, ChartColumnIncreasing, ClipboardList, FilePenLine, FolderOpen, House, ListTodo, Mail, Megaphone, MessageSquare, Package, Settings, Sparkles, Tags, Workflow } from "lucide-react";
 
 export type NavigationItem = {
   label: string;
@@ -18,6 +18,7 @@ export type NavigationGroup = {
   icon: ComponentType<{ className?: string }>;
   direct?: boolean;
   nested?: boolean;
+  sectionStart?: boolean;
   items: NavigationItem[];
 };
 
@@ -33,10 +34,9 @@ export const navigation: NavigationGroup[] = [
     label: "Email",
     eyebrow: "Mailbox",
     icon: Mail,
-    nested: true,
+    direct: true,
     items: [
       { label: "Email", href: "/email", icon: Mail, description: "Mailbox and email conversations", excludePrefixes: ["/email/campaigns"] },
-      { label: "Marketing campaigns", href: "/email/campaigns", icon: Megaphone, description: "Plan promotional emails, offers and campaign dates" },
     ],
   },
   {
@@ -52,21 +52,30 @@ export const navigation: NavigationGroup[] = [
   {
     label: "Products",
     eyebrow: "Product management",
-    icon: Package2,
+    icon: Package,
     items: [
-      { label: "Products", href: "/products", icon: Package2, description: "Products, pricing and availability" },
+      { label: "Products", href: "/products", icon: Package, description: "Products, pricing and availability" },
       { label: "Company Quotations", href: "/company-quotations", icon: BookOpen, description: "Customer offers, versions and draft orders" },
     ],
   },
   {
     label: "Files & templates",
+    sectionStart: true,
     eyebrow: "Library",
     icon: FolderOpen,
     direct: true,
     items: [{ label: "Files & templates", href: "/documents", icon: FolderOpen, description: "Find files, organize folders and reuse text templates" }],
   },
   {
+    label: "Marketing campaigns",
+    eyebrow: "Marketing",
+    icon: Megaphone,
+    direct: true,
+    items: [{ label: "Marketing campaigns", href: "/email/campaigns", icon: Megaphone, description: "Plan promotional emails, offers and campaign dates" }],
+  },
+  {
     label: "Purchase Order",
+    sectionStart: true,
     eyebrow: "Orders",
     icon: ClipboardList,
     nested: true,
@@ -78,9 +87,9 @@ export const navigation: NavigationGroup[] = [
   {
     label: "Messenger",
     eyebrow: "Engagement",
-    icon: MessageSquareText,
+    icon: MessageSquare,
     direct: true,
-    items: [{ label: "Messenger", href: "/messenger", icon: MessageSquareText, description: "Facebook ad leads and Page Messenger replies" }],
+    items: [{ label: "Messenger", href: "/messenger", icon: MessageSquare, description: "Facebook ad leads and Page Messenger replies" }],
   },
   {
     label: "Workflow",
@@ -91,10 +100,11 @@ export const navigation: NavigationGroup[] = [
   },
   {
     label: "Analytics",
+    sectionStart: true,
     eyebrow: "CRM",
-    icon: ChartNoAxesCombined,
+    icon: ChartColumnIncreasing,
     items: [
-      { label: "Analytics", href: "/analytics", icon: ChartNoAxesCombined, description: "Performance at a glance" },
+      { label: "Analytics", href: "/analytics", icon: ChartColumnIncreasing, description: "Performance at a glance" },
       { label: "Tasks and notifications", href: "/tasks", icon: ListTodo, description: "Assigned work, reminders and alerts" },
     ],
   },

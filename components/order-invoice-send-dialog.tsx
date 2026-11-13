@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, Mail } from "lucide-react";
@@ -74,7 +76,7 @@ export function OrderInvoiceSendDialog({ invoiceId, orderStatus, onClose, onSent
         {context ? <p className="text-xs text-muted-foreground"><span>Attachment:</span> <span data-no-translate>{invoiceLabel(context.invoice)}.pdf</span> · {formatMoney(context.invoice.total_minor, context.invoice.document.currency)}</p> : null}
         {context && !context.mailboxes.length ? <p className="text-sm text-muted-foreground">Add an active sending mailbox in Settings before sending.</p> : null}
         {draft ? <p className="rounded-lg border bg-muted/30 p-3 text-xs leading-5">{!context?.canIssue ? "An admin or operator must issue this draft before it can be sent." : ["draft", "cancelled"].includes(orderStatus) ? "Confirm the purchase order before issuing and sending its invoice." : "Sending will issue this draft and lock the order’s products, prices, customer details, and currency. Review the PDF before continuing."}</p> : null}
-        {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+        {error ? <NotificationToast>{error}</NotificationToast> : null}
         <DialogFooter><Button type="button" variant="outline" disabled={busy} onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || blocked}>{busy ? <LoaderCircle className="size-4 animate-spin" /> : <Mail className="size-4" />}{busy ? "Sending…" : draft ? "Issue & send invoice" : "Send invoice"}</Button></DialogFooter>
       </form>
     </DialogContent>

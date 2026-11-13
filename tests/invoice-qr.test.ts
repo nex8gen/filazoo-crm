@@ -9,12 +9,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import * as invoices from "../lib/invoices.ts";
 import * as crypto from "../lib/customer-portal-crypto.ts";
 import * as banks from "../lib/invoice-banks.ts";
+import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 const require = createRequire(import.meta.url);
 function load<T>(file: string, deps: Record<string, unknown>, env: Record<string, string> = {}): T {
   const exports = {};
   const code = ts.transpileModule(readFileSync(file, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => name === "server-only" ? {} : deps[name] ?? require(name), process: { env, cwd: () => process.cwd() }, URL, console });
+  vm.runInNewContext(code, { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => name === "server-only" ? {} : deps[name] ?? require(name))(name), process: { env, cwd: () => process.cwd() }, URL, console });
   return exports as T;
 }
 const links = load<typeof import("../lib/customer-portal-links.ts")>("lib/customer-portal-links.ts", { "./env": { env: { supabaseSecretKey: "test-secret" } }, "./customer-portal-crypto": crypto });

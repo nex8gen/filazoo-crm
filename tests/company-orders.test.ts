@@ -8,6 +8,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { companyPaidOrderCounts, companyOrderBadge, type CompanyOrderInvoice } from "../lib/company-orders.ts";
 import { readCompanyPaidOrderCounts } from "../lib/data/company-orders.ts";
 import { invoiceMutationSchema } from "../lib/invoices.ts";
+import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 const invoice = (id: string, patch: Partial<CompanyOrderInvoice> = {}): CompanyOrderInvoice => ({ id, company_id: "company-a", purchase_order_id: null, status: "issued", total_minor: 1000, paid_minor: 1000, ...patch });
 
@@ -116,7 +117,7 @@ test("badge artwork renders all tiers and an accessible uncapped count", () => {
   const require = createRequire(import.meta.url);
   const exports: Record<string, (props: { count: number }) => unknown> = {};
   const code = ts.transpileModule(readFileSync(new URL("../components/company-order-badge.tsx", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-  vm.runInNewContext(code, { exports, require: (id: string) => id === "@/lib/company-orders" ? { companyOrderBadge } : require(id) });
+  vm.runInNewContext(code, { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((id: string) => id === "@/lib/company-orders" ? { companyOrderBadge } : require(id))(name) });
   const { renderToStaticMarkup } = require("react-dom/server");
   for (const count of [0, 1, 2, 3, 4, 28]) {
     const html = renderToStaticMarkup(exports.CompanyOrderBadge({ count }));
@@ -157,7 +158,7 @@ function paymentRoute(options: { denied?: boolean; mutationFailure?: boolean; pu
     },
   };
   const code = ts.transpileModule(readFileSync(new URL("../app/api/invoices/[id]/route.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => deps[name], Response, console });
+  vm.runInNewContext(code, { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => deps[name])(name), Response, console });
   const submit = () => exports.PATCH(new Request(`http://localhost/api/invoices/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "payment", payment: { id, amountMinor: 1000, paidOn: "2026-10-30", method: "bank_transfer", reference: "TEST" } }) }), { params: Promise.resolve({ id }) });
   return { paths, submit, mutations: () => mutations };
 }

@@ -15,7 +15,7 @@
 .portal-signout { gap: 8px; padding-inline: 10px; font-size: 12px; }
 .portal-content { padding-block: 44px 24px; }
 .portal-intro { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
-.portal-eyebrow { margin-bottom: 10px; color: var(--primary); font-size: 10px; font-weight: 650; letter-spacing: .15em; }
+.portal-eyebrow { margin-bottom: 10px; color: var(--primary); font-size: var(--ui-text-caption); font-weight: 650; letter-spacing: .15em; }
 .portal-intro h1 { font-size: clamp(28px, 3vw, 38px); font-weight: 600; letter-spacing: -.045em; line-height: 1.18; }
 .portal-welcome { margin-top: 12px; color: var(--muted-foreground); font-size: 14px; }
 .portal-welcome > span { color: var(--foreground); }
@@ -39,7 +39,7 @@
 .portal-stat > p, .portal-stat-status > div > p { color: var(--muted-foreground); font-size: 12px; }
 .portal-stat strong { display: block; margin-top: 6px; font-size: clamp(23px, 2.4vw, 30px); font-weight: 600; letter-spacing: -.045em; line-height: 1.3; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .portal-stat .portal-status { text-transform: capitalize; font-size: 26px; }
-.portal-stat-note { display: block; margin-top: 7px; color: var(--muted-foreground); font-size: 11px; }
+.portal-stat-note { display: block; margin-top: 7px; color: var(--muted-foreground); font-size: var(--ui-text-caption); }
 .portal-stat-status { flex-direction: row; align-items: center; justify-content: flex-start; gap: 17px; }
 .portal-stat-icon { display: flex; width: 48px; height: 48px; align-items: center; justify-content: center; flex-shrink: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--muted); }
 .portal-stat-icon svg { width: 23px; height: 23px; }

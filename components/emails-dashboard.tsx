@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { EmptyState } from "@/components/data-state";
 import { AiIcon } from "@/components/ai-icon";
@@ -482,7 +484,7 @@ export function DeliverabilityDashboard({ overview, canManageTeam }: { overview:
       <div><h2 className="text-sm font-semibold">Email connection checks</h2><p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">Review the sending and receiving setup for your connected mailboxes. These checks use saved account settings; they do not verify DNS records or measure delivery rates.</p></div>
       <Button type="button" variant="outline" size="sm" disabled={pending} onClick={() => startTransition(() => router.refresh())}><RefreshCw className={pending ? "size-3.5 animate-spin" : "size-3.5"} />{pending ? "Refreshing…" : "Refresh"}</Button>
     </div>
-    {overview.error ? <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">{overview.error}</p> : null}
+    {overview.error ? <NotificationToast>{overview.error}</NotificationToast> : null}
     <div role="group" aria-label="Filter email connections" className="flex flex-wrap gap-2">{[{ key: "all", label: "All accounts" }, { key: "attention", label: "Needs setup" }, { key: "paused", label: "Paused" }].map(item => <Button key={item.key} type="button" size="sm" variant={filter === item.key ? "secondary" : "ghost"} aria-pressed={filter === item.key} onClick={() => { setFilter(item.key); setPage(1); }}>{item.label}</Button>)}</div>
     <div className="crm-table-frame crm-table-page-wide">
       <div className="crm-table-viewport">

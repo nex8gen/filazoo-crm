@@ -1,0 +1,32 @@
+.email-block-section { border-bottom:1px solid var(--border); }
+.email-block-section > h3,.email-block-section > summary { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:60px; margin:0; padding:18px; font-size:16px; line-height:24px; font-weight:550; list-style:none; cursor:pointer; }
+.email-block-section > summary::-webkit-details-marker { display:none; }
+.email-block-section > summary:hover { background:var(--editor-control); }
+.email-block-section > summary:focus-visible { outline:2px solid var(--primary); outline-offset:-3px; border-radius:6px; }
+.email-block-section > summary svg { width:16px; height:16px; flex-shrink:0; color:var(--muted-foreground); }
+.email-block-section[open] > summary .email-block-expand,.email-block-section:not([open]) > summary .email-block-collapse { display:none; }
+.email-block-section > div { display:flex; flex-direction:column; gap:14px; padding:2px 18px 20px; }
+.email-block-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:end; gap:12px; }
+.email-block-grid .editor-propertyField { gap:8px; }
+.email-block-grid .editor-propertyField > label { font-size:.875rem; font-weight:400; color:var(--muted-foreground); }
+.email-block-grid .editor-valueInput,.email-block-grid .editor-colorInput { max-width:none; }
+.email-block-padding { display:grid; grid-template-columns:minmax(0,1fr) 28px; align-items:start; gap:6px; }
+.email-block-padding > button { margin-top:0; width:28px; height:34px; }
+.email-block-padding > button[aria-pressed=true] { background:var(--brand-soft); color:var(--primary); }
+.email-block-tabs { position:sticky; top:0; z-index:4; display:flex; flex-shrink:0; gap:22px; padding:0 16px; border-bottom:1px solid var(--border); background:var(--background); }
+.email-block-tabs > button { min-height:44px; padding:10px 0; border-bottom:2px solid transparent; font-size:.875rem; color:var(--muted-foreground); }
+.email-block-tabs > button[aria-pressed=true] { border-bottom-color:var(--foreground); color:var(--foreground); }
+.email-block-note { font-size:.8125rem; line-height:20px; color:var(--muted-foreground); }
+.email-block-choiceList { display:flex; flex-direction:column; border:1px solid var(--editor-control-border); border-radius:9px; overflow:hidden; }
+.email-block-choiceList > button { padding:10px 12px; min-height:40px; border-bottom:1px solid var(--border); text-align:left; font-size:.875rem; }
+.email-block-choiceList > button:last-child { border-bottom:0; }
+.email-block-choiceList > button[aria-pressed=true] { outline:2px solid var(--primary); outline-offset:-2px; background:var(--brand-soft); }
+.email-block-choiceList small { display:block; font-size:.8125rem; color:var(--muted-foreground); }
+
+.email-block-typographyRow { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.1fr); align-items:center; gap:12px; }
+.email-block-typographyRow > * { min-width:0; }
+.email-designer-textFormat { display:flex; align-items:center; justify-content:space-between; gap:2px; }
+.email-designer-textFormat > button { display:grid; place-items:center; flex:1; min-width:26px; height:32px; padding:0; border:1px solid transparent; border-radius:6px; background:transparent; color:var(--foreground); box-shadow:none; }
+.email-designer-textFormat > button svg { width:18px; height:18px; stroke-width:1.8; }
+.email-designer-textFormat > button:hover { background:var(--editor-control); }
+.email-designer-textFormat > button[aria-pressed=true] { border-color:var(--primary); background:var(--brand-soft); color:var(--primary); }

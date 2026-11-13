@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import "./workspace-ai-assistant.css";
 
@@ -447,9 +449,9 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
               <p className="relative z-10 mt-2 max-w-xs text-pretty text-sm leading-6 text-muted-foreground">{`Ask about ${pageLabel}, find patterns, or get a concise recommendation.`}</p>
             </div>
             <div role="group" aria-label="Suggested questions" className="relative z-10 mx-auto mt-6 flex w-full max-w-sm flex-wrap justify-center gap-2">
-              {chatStarters.map(({ label, prompt, icon: Icon, tone }) => <button key={label} type="button" disabled={busy || loadingHistory} onClick={() => void send(t(prompt))} className="inline-flex min-h-8 items-center gap-1.5 rounded-lg bg-muted/80 px-2.5 py-1.5 text-[11px] font-medium leading-4 transition-colors hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50"><Icon aria-hidden="true" className={`size-3.5 shrink-0 ${tone}`} /><span>{label}</span></button>)}
+              {chatStarters.map(({ label, prompt, icon: Icon, tone }) => <button key={label} type="button" disabled={busy || loadingHistory} onClick={() => void send(t(prompt))} className="inline-flex min-h-8 items-center gap-1.5 rounded-lg bg-muted/80 px-2.5 py-1.5 text-xs font-medium leading-4 transition-colors hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50"><Icon aria-hidden="true" className={`size-3.5 shrink-0 ${tone}`} /><span>{label}</span></button>)}
               <DropdownMenu>
-                <DropdownMenuTrigger disabled={busy} className="inline-flex min-h-8 items-center gap-1.5 rounded-lg bg-muted/80 px-2.5 py-1.5 text-[11px] font-medium leading-4 hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50" aria-label="More suggested questions"><Sparkles aria-hidden="true" className="size-3.5 text-primary" /><span>More</span></DropdownMenuTrigger>
+                <DropdownMenuTrigger disabled={busy} className="inline-flex min-h-8 items-center gap-1.5 rounded-lg bg-muted/80 px-2.5 py-1.5 text-xs font-medium leading-4 hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50" aria-label="More suggested questions"><Sparkles aria-hidden="true" className="size-3.5 text-primary" /><span>More</span></DropdownMenuTrigger>
                 <DropdownMenuContent side="bottom" align="end" positionerClassName="z-[70]" className="w-56">
                   {moreChatStarters.map(({ label, prompt, icon: Icon }) => <DropdownMenuItem key={label} disabled={busy || loadingHistory} onClick={() => void send(t(prompt))}><Icon aria-hidden="true" className="size-4 text-primary" />{label}</DropdownMenuItem>)}
                 </DropdownMenuContent>
@@ -470,14 +472,14 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
           </div>)}</div>}
           {pending && activeMode === "chat" ? <div className="mt-5"><ThinkingState working scope={t(pageLabel)} /></div> : null}
           {pending && activeResearch?.chatKey === chatKey ? <ResearchSearching progress={activeResearch.progress} /> : null}
-          {error && error !== history.error ? <div role="status" className="mt-4 rounded-xl border bg-muted/30 p-3 text-sm leading-6 text-muted-foreground">{error}</div> : null}
+          {error && error !== history.error ? <NotificationToast>{error}</NotificationToast> : null}
         </div>
         </div>
 
         <div className={presentation === "page" ? "workspace-ai-page-composer home-ai !mt-0 !shrink-0 px-5 sm:px-6" : "shrink-0 bg-background px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]"}>
           {activeMode === "agent" && (pending || applying) && activeWork ? <div role="status" aria-live="polite" className="mb-3 rounded-xl border border-violet-500/15 bg-violet-500/[0.04] px-3 py-2"><ThinkingState key={applying || "preparing"} working scope={t(workPage)} activity={activeWork} /></div> : null}
           {presentation === "sidebar" ? <div className="mb-2.5 flex min-h-7 min-w-0 items-center justify-between gap-3 px-1">
-            <div id={`${composerId}-context`} className="flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
+            <div id={`${composerId}-context`} className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
               <AgentWorkIcon area={pageWorkArea(pageLabel)} className="size-3.5 shrink-0" />
               <span className="truncate font-medium">{pageLabel}</span>
             </div>
@@ -498,7 +500,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
               <Button type="submit" size="icon" className="size-9 shrink-0 rounded-xl bg-foreground text-background shadow-none hover:bg-foreground/85 disabled:bg-muted disabled:text-muted-foreground disabled:opacity-60" disabled={busy || loadingHistory || attachments.processing || (!question.trim() && !attachments.images.length)} aria-label="Send to Filazoo AI" title="Send message (Enter)"><ArrowUp aria-hidden="true" className="size-4" /></Button>
             </div>
           </form>}
-          {presentation === "sidebar" ? <><p id={`${composerId}-hint`} className="mt-2 text-center text-[10px] leading-4 text-muted-foreground">Enter to send · Shift + Enter for a new line</p><p className="mt-1 text-center text-[10px] leading-4 text-muted-foreground">AI can make mistakes. Review suggestions before using them.</p></> : null}
+          {presentation === "sidebar" ? <><p id={`${composerId}-hint`} className="mt-2 text-center text-xs leading-4 text-muted-foreground">Enter to send · Shift + Enter for a new line</p><p className="mt-1 text-center text-xs leading-4 text-muted-foreground">AI can make mistakes. Review suggestions before using them.</p></> : null}
         </div>
   </Container> : null}</AnimatePresence>;
 }

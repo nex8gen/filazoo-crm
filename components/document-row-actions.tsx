@@ -6,6 +6,7 @@ import { documentSourceHref } from "@/lib/document-connections";
 import { toast } from "sonner";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { LibraryDocument } from "@/lib/documents";
+import { isBuiltinEmailTemplate } from "@/lib/documents";
 
 export function DocumentRowActions({ document, canWrite, onEmail, onEdit, onTrash, onRestore }: {
   document: LibraryDocument; canWrite: boolean; onEmail: () => void; onEdit: () => void; onTrash: () => void; onRestore: () => void;
@@ -13,6 +14,7 @@ export function DocumentRowActions({ document, canWrite, onEmail, onEdit, onTras
   const [busy, setBusy] = useState(false);
   const sourceHref = documentSourceHref(document);
   const binary = document.mime_type !== "application/x-filazoo-record";
+  const builtin = isBuiltinEmailTemplate(document);
   async function download() {
     setBusy(true);
     try {
@@ -33,7 +35,8 @@ export function DocumentRowActions({ document, canWrite, onEmail, onEdit, onTras
       {sourceHref ? <DropdownMenuItem onClick={() => window.location.assign(sourceHref)}><ExternalLink />Open source record</DropdownMenuItem> : null}
       {canWrite && binary ? <DropdownMenuItem disabled={document.kind === "file" && document.size > 7500000} onClick={onEmail}><Mail />Use in email</DropdownMenuItem> : null}
       {binary ? <DropdownMenuItem onClick={() => void download()}><ArrowDownToLine />Download</DropdownMenuItem> : null}
-      {canWrite && !document.source_type ? <><DropdownMenuItem onClick={onEdit}><Pencil />Edit details / move</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem variant="destructive" onClick={onTrash}><Trash2 />Move to trash</DropdownMenuItem></> : null}
+      {canWrite && builtin ? <DropdownMenuItem onClick={onEdit}><Pencil />Customize a copy</DropdownMenuItem> : null}
+      {canWrite && !builtin && !document.source_type ? <><DropdownMenuItem onClick={onEdit}><Pencil />{document.kind === "template" ? "Edit template" : "Edit details / move"}</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem variant="destructive" onClick={onTrash}><Trash2 />Move to trash</DropdownMenuItem></> : null}
     </>}
   </DropdownMenuGroup></DropdownMenuContent></DropdownMenu>;
 }

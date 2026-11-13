@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import Link from "next/link";
@@ -152,7 +154,7 @@ export function EmailFollowupPanel({ mailboxId, messageId, subject, recipient, c
     </div> : null}
     <div className="rounded-xl border bg-background p-3">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="flex min-w-0 items-center gap-2 text-[13px] font-semibold leading-5"><Mail aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />Follow up on this email</h3>
+        <h3 className="flex min-w-0 items-center gap-2 text-sm font-semibold leading-5"><Mail aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />Follow up on this email</h3>
         <Popover>
           <PopoverTrigger aria-label="Follow-up details" title="Follow-up details" className="flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"><Info aria-hidden="true" className="size-3.5" /></PopoverTrigger>
           <PopoverContent align="end" className="w-64 max-w-[calc(100vw-2rem)] gap-3 p-3.5 text-xs leading-5">
@@ -166,41 +168,41 @@ export function EmailFollowupPanel({ mailboxId, messageId, subject, recipient, c
       <div className="mt-2.5 grid gap-2">
         <button type="button" disabled={locked} onClick={() => begin("reminder")} className={`${actionClassName} border-border bg-background hover:border-rose-200 hover:bg-rose-50/50 dark:hover:border-rose-500/30 dark:hover:bg-rose-500/5`}>
           <span aria-hidden="true" className="flex size-7 items-center justify-center rounded-md bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-300"><Bell className="size-4" strokeWidth={1.75} /></span>
-          <span className="min-w-0 text-[13px] font-medium leading-5 text-foreground">Remind me</span>
+          <span className="min-w-0 text-sm font-medium leading-5 text-foreground">Remind me</span>
           <ChevronRight aria-hidden="true" className="size-3.5 text-muted-foreground/60 transition-colors group-hover:text-foreground" />
         </button>
         <button type="button" disabled={locked} onClick={() => begin("ai")} className={`${actionClassName} border-indigo-100 bg-indigo-50/40 hover:border-indigo-200 hover:bg-indigo-50/80 dark:border-indigo-500/20 dark:bg-indigo-500/5 dark:hover:border-indigo-500/40 dark:hover:bg-indigo-500/10`}>
           <span aria-hidden="true" className="flex size-7 items-center justify-center rounded-md bg-indigo-100/80 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300"><Sparkles className="size-4" strokeWidth={1.75} /></span>
-          <span className="min-w-0 text-[13px] font-medium leading-5 text-foreground">AI follow-up</span>
+          <span className="min-w-0 text-sm font-medium leading-5 text-foreground">AI follow-up</span>
           <ChevronRight aria-hidden="true" className="size-3.5 text-muted-foreground/60 transition-colors group-hover:text-foreground" />
         </button>
       </div>
       {!query ? <p className="mt-2 text-xs text-muted-foreground">Open a synced mailbox message to schedule a follow-up.</p> : !loaded && !loadError ? <p role="status" className="mt-2 flex items-center gap-2 text-xs text-muted-foreground"><LoaderCircle className="size-3.5 animate-spin" />Loading follow-up…</p> : null}
       {!canManage ? <p className="mt-2 text-xs text-muted-foreground">Read-only users cannot schedule follow-ups.</p> : null}
-      {loadError ? <p role="alert" className="mt-2 text-xs text-destructive">{loadError} <button type="button" onClick={() => setRetry(value => value + 1)} className="font-medium underline">Retry</button></p> : null}
+      {loadError ? <NotificationToast>{loadError} <button type="button" onClick={() => setRetry(value => value + 1)} className="font-medium underline">Retry</button></NotificationToast> : null}
     </div>
-    {notice ? <p role="status" className="text-xs leading-5 text-primary">{notice}</p> : null}
-    {error && !open ? <p role="alert" className="text-xs text-destructive">{error}</p> : null}
+    {notice ? <NotificationToast tone="message">{notice}</NotificationToast> : null}
+    {error && !open ? <NotificationToast>{error}</NotificationToast> : null}
     <Dialog open={open} onOpenChange={value => { if (!busy) { if (!value) generation.current?.abort(); setOpen(value); setError(""); } }}>
       <DialogContent className="gap-5 sm:max-w-lg" showCloseButton={!busy}>
         <DialogHeader><DialogTitle className="flex items-center gap-2">{kind === "ai" ? <Sparkles className="size-5 text-indigo-600" /> : <Bell className="size-5 text-rose-600" />}{kind === "ai" ? "AI follow-up" : "Remind me"}</DialogTitle><DialogDescription>{kind === "ai" ? "Review the message and choose when to send it." : "Choose a time. We will create a task and notify you."}</DialogDescription></DialogHeader>
         <div className="flex items-center gap-3 rounded-xl bg-blue-50 p-3 dark:bg-blue-500/10"><Mail className="size-5 shrink-0 text-blue-500" /><div className="min-w-0"><p className="truncate text-xs font-semibold" data-no-translate>{recipient}</p><p className="mt-1 truncate text-xs text-muted-foreground" data-no-translate>{subject}</p></div></div>
         <div><h4 className="mb-2 flex items-center gap-2 text-xs font-semibold"><CalendarClock className="size-4" />When should we follow up?</h4><div className="grid grid-cols-4 gap-1.5">{["5 minutes", "1 hour", "Tomorrow", "Custom"].map(value => <button key={value} type="button" aria-pressed={preset === value} disabled={busy || generating} onClick={() => chooseTime(value)} className={`rounded-lg border px-1 py-2 text-xs focus-visible:outline-2 focus-visible:outline-ring ${preset === value ? "border-blue-400 bg-blue-50 text-blue-600 dark:bg-blue-500/10" : "bg-muted/30 text-muted-foreground"}`}>{value}</button>)}</div>
           <DatePicker includeTime required aria-label="Follow-up date and time" value={dueAt} disabled={busy || generating} onValueChange={value => { setDueAt(value); setPreset("Custom"); }} className="mt-3 w-full rounded-lg border bg-background px-3 py-2 text-xs" />
-          <p className="mt-1.5 text-[11px] text-muted-foreground">Your local time. Delivery runs on the next scheduler check.</p>
+          <p className="mt-1.5 text-xs text-muted-foreground">Your local time. Delivery runs on the next scheduler check.</p>
         </div>
         {kind === "ai" ? <div className="space-y-3"><div className="flex items-center justify-between gap-2"><h4 className="text-xs font-semibold">Follow-up message</h4><button type="button" disabled={busy || generating || !aiConfigured} onClick={() => void generate()} className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 disabled:opacity-40">{generating ? <LoaderCircle className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}{generating ? "Generating…" : body ? "Regenerate" : "Generate draft"}</button></div>
           <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-violet-100 bg-violet-50/40 p-3 text-xs leading-5 dark:border-violet-500/20 dark:bg-violet-500/5"><input type="checkbox" checked={nurture} disabled={busy || generating} onChange={event => setNurture(event.target.checked)} className="mt-1 accent-violet-600" /><span><span className="block font-medium">Add to dormant customer nurture</span><span className="text-muted-foreground">Track this conversation in the dormant tab. Sends this approved message once if there is no reply.</span></span></label>
           {!aiConfigured ? <p className="text-xs text-muted-foreground">Connect an AI provider in Settings, or write your follow-up below.</p> : null}
           <label className="grid gap-1 text-xs text-muted-foreground">Subject<input required maxLength={300} disabled={busy || generating} value={draftSubject} onChange={event => setDraftSubject(event.target.value)} className="rounded-lg border bg-background px-3 py-2 text-sm text-foreground" data-no-translate /></label>
           <label className="grid gap-1 text-xs text-muted-foreground">Message<textarea aria-label="Follow-up message" rows={7} maxLength={20000} disabled={busy || generating} value={body} onChange={event => setBody(event.target.value)} placeholder={generating ? "Preparing a follow-up from this conversation…" : "Write your follow-up…"} className="w-full resize-y rounded-lg border bg-background p-3 text-sm leading-6 text-foreground focus-visible:outline-2 focus-visible:outline-ring" data-no-translate /></label>
-          <p className="text-[11px] text-muted-foreground">Your saved email footer will be added when this message sends.</p>
+          <p className="text-xs text-muted-foreground">Your saved email footer will be added when this message sends.</p>
         </div> : null}
         <div className="flex gap-2 rounded-lg bg-emerald-50 p-3 text-xs leading-5 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"><CheckCircle2 className="mt-0.5 size-4 shrink-0" /><p>Stops automatically when the customer replies. A newer message from your team also stops this follow-up.</p></div>
-        {error ? <p role="alert" className="text-xs leading-5 text-destructive">{error}</p> : null}
+        {error ? <NotificationToast>{error}</NotificationToast> : null}
         {!loaded && !loadError ? <p role="status" className="text-xs text-muted-foreground">Checking saved follow-up…</p> : null}
-        {loadError ? <p role="alert" className="text-xs text-destructive">{loadError} <button type="button" onClick={() => setRetry(value => value + 1)} className="font-medium underline">Retry</button></p> : null}
-        <div className="flex items-center justify-between gap-3 border-t pt-4"><p className="text-[11px] text-muted-foreground">{kind === "ai" ? "One email, only after you confirm" : "A reminder for you"}</p><div className="flex gap-2"><Button variant="outline" size="sm" disabled={busy || generating} onClick={() => setOpen(false)}>Close</Button><Button size="sm" disabled={busy || generating || !loaded || Boolean(loadError) || followup?.status === "processing" || followup?.status === "uncertain" || !dueAt || (kind === "ai" && (!body.trim() || !draftSubject.trim()))} onClick={() => void mutate("save")}>{busy ? <LoaderCircle className="size-3.5 animate-spin" /> : null}{busy ? "Saving…" : kind === "ai" ? "Confirm follow-up" : "Save reminder"}</Button></div></div>
+        {loadError ? <NotificationToast>{loadError} <button type="button" onClick={() => setRetry(value => value + 1)} className="font-medium underline">Retry</button></NotificationToast> : null}
+        <div className="flex items-center justify-between gap-3 border-t pt-4"><p className="text-xs text-muted-foreground">{kind === "ai" ? "One email, only after you confirm" : "A reminder for you"}</p><div className="flex gap-2"><Button variant="outline" size="sm" disabled={busy || generating} onClick={() => setOpen(false)}>Close</Button><Button size="sm" disabled={busy || generating || !loaded || Boolean(loadError) || followup?.status === "processing" || followup?.status === "uncertain" || !dueAt || (kind === "ai" && (!body.trim() || !draftSubject.trim()))} onClick={() => void mutate("save")}>{busy ? <LoaderCircle className="size-3.5 animate-spin" /> : null}{busy ? "Saving…" : kind === "ai" ? "Confirm follow-up" : "Save reminder"}</Button></div></div>
       </DialogContent>
     </Dialog>
   </section>;

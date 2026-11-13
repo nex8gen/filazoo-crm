@@ -1,0 +1,543 @@
+{
+  "provider": "Colorlib",
+  "repository": "https://github.com/ColorlibHQ/email-templates",
+  "revision": "3018557fe943fb1c3e3367aa52d39b2fca44f725",
+  "license": "MIT",
+  "files": [
+    {
+      "path": "14/images/001-diet.png",
+      "sha256": "ef54c4f4d55b54c704ead1cdaef846b1f75aacae7efd3da572d108702fe844d5",
+      "bytes": 3273
+    },
+    {
+      "path": "14/images/003-recipe-book.png",
+      "sha256": "2b7d7078301052dcb82c2633c0d24bd4525967c9e2cae2dfafea3b3804a8b16e",
+      "bytes": 3078
+    },
+    {
+      "path": "14/images/004-twitter-logo.png",
+      "sha256": "66e82244f32ed5087f63d14ea5a19df6a8589bc930859c894820908b27185966",
+      "bytes": 6521
+    },
+    {
+      "path": "14/images/005-facebook.png",
+      "sha256": "67f7ccbc0c8cebf7edb092510a036eb78ae550fbd2c09240ccd109fdec9c2038",
+      "bytes": 2253
+    },
+    {
+      "path": "14/images/006-instagram-logo.png",
+      "sha256": "ce5d008d4edde5ca1b85ca09c29fd5e540d550994dae5bfc5948fbb4a627ff1d",
+      "bytes": 8414
+    },
+    {
+      "path": "14/images/about.jpg",
+      "sha256": "1bace665a40270b7c92fb0066bd6c2d4c326b1c2c78a4073874843b43576c2f4",
+      "bytes": 43220
+    },
+    {
+      "path": "14/images/bg_1.jpg",
+      "sha256": "5a9d9d4ecbbffc14ba2c48a5fae721670c6e33819684c5ea8282688e44c2a1cd",
+      "bytes": 54708
+    },
+    {
+      "path": "14/images/blog-1.jpg",
+      "sha256": "b7a513783c3da68e0e10f8d7c1daf261674fd30a2335108fc53475ed29dd8c5d",
+      "bytes": 47833
+    },
+    {
+      "path": "14/images/blog-2.jpg",
+      "sha256": "0f043db19864b91f639f30edd78cb2b4da2b83d21a057bfde1651d44082df2a3",
+      "bytes": 50951
+    },
+    {
+      "path": "14/images/person_1.jpg",
+      "sha256": "13964278dee6ae9dae19abc78925ec7cc4eda6a4b55185c2bf6b557d9d183d2c",
+      "bytes": 7742
+    },
+    {
+      "path": "14/images/person_2.jpg",
+      "sha256": "79688e2e8fb483122f55c4f82e746156bfc3eb51e658e1fa3cedc18b74202b53",
+      "bytes": 5747
+    },
+    {
+      "path": "14/images/person_3.jpg",
+      "sha256": "9e02b2d1eadce2db2ae095a2fdf61d1e817adb550a2dc471b15c7f48720b15f5",
+      "bytes": 6492
+    },
+    {
+      "path": "14/images/work-1.jpg",
+      "sha256": "8df165ad9b5e815ac91950a96e645ab6c6e1034f9f8c0553dc88b41648a770d1",
+      "bytes": 53217
+    },
+    {
+      "path": "14/images/work-2.jpg",
+      "sha256": "d10e84b7b2dabfe1aec1b1f4fbaa83244bd940142c576dfdbe26e8939c7bccb2",
+      "bytes": 13074
+    },
+    {
+      "path": "14/images/work-3.jpg",
+      "sha256": "d724adffc05c8cd56f31d4420d7a581424644bd8c183c090ffbc9d031b6a0370",
+      "bytes": 38850
+    },
+    {
+      "path": "14/images/work-4.jpg",
+      "sha256": "fdf4a37ecd7466e96176fbf99e3aa22e203ebc3cdb990430cbb2f6866c39c70b",
+      "bytes": 36396
+    },
+    {
+      "path": "14/index.html",
+      "sha256": "d9875ff974abfd1c10cc611660887ca3999aa2e3148442a2ca9d63e537b70720",
+      "bytes": 82836
+    },
+    {
+      "path": "18/images/bg_1.jpg",
+      "sha256": "6ca398557f3cef0a493e084e126a8651bd22734e4ab37b3c1962de455257069f",
+      "bytes": 28158
+    },
+    {
+      "path": "18/images/product-1.jpg",
+      "sha256": "4b43f21a04fae54b9642f277cb2400331480f7e12df9376a16cee2ec615cf579",
+      "bytes": 7912
+    },
+    {
+      "path": "18/images/product-2.jpg",
+      "sha256": "2193c1983eac34c10c5b2512d1322d6300d61c3bea73a6aee288503e7010b78d",
+      "bytes": 6979
+    },
+    {
+      "path": "18/images/product-3.jpg",
+      "sha256": "17e7f1600eb9ee1ca486dfbbebba9982fc34ebb37dd4d2dd37f83e8ea7747c07",
+      "bytes": 8075
+    },
+    {
+      "path": "18/index.html",
+      "sha256": "20d4477a9a085c116f0b6de614271a0437be9bab3cb99c59a57b21bc6ee420b0",
+      "bytes": 38931
+    },
+    {
+      "path": "2/images/002-play-button.png",
+      "sha256": "9248c1ec753388813d27c645f79e2529b7df0b242adee7a7f68851c00608de01",
+      "bytes": 4993
+    },
+    {
+      "path": "2/images/about.jpg",
+      "sha256": "1bace665a40270b7c92fb0066bd6c2d4c326b1c2c78a4073874843b43576c2f4",
+      "bytes": 43220
+    },
+    {
+      "path": "2/images/bg_1.jpg",
+      "sha256": "708cb6eefd04b7e155fa17f72b8463ee8270b0bbe8092f8c25fab0703ed3d231",
+      "bytes": 88325
+    },
+    {
+      "path": "2/images/bg_2.jpg",
+      "sha256": "7f3f7871e2e3f86ed470650236471f017a909a26c19422ab6a1e4f2285bf3e3c",
+      "bytes": 76136
+    },
+    {
+      "path": "2/images/blog-1.jpg",
+      "sha256": "b7a513783c3da68e0e10f8d7c1daf261674fd30a2335108fc53475ed29dd8c5d",
+      "bytes": 47833
+    },
+    {
+      "path": "2/images/blog-2.jpg",
+      "sha256": "0f043db19864b91f639f30edd78cb2b4da2b83d21a057bfde1651d44082df2a3",
+      "bytes": 50951
+    },
+    {
+      "path": "2/images/checked.png",
+      "sha256": "c8995c117d144794fa534d7fa1f3ab7425f385386ca966b9a9dde4833b39516a",
+      "bytes": 1038
+    },
+    {
+      "path": "2/images/person_1.jpg",
+      "sha256": "a2f223881a8217ecfb1ad324a61ab60057c082b04df86154e6a93d1805f6f740",
+      "bytes": 19458
+    },
+    {
+      "path": "2/images/person_2.jpg",
+      "sha256": "8437f385edacdb1fb1baff2812ef518a12f1abb3680b4f9d1d26269f58d3e7ad",
+      "bytes": 15460
+    },
+    {
+      "path": "2/images/person_3.jpg",
+      "sha256": "6d8e7dbefd918d1982c2cc9d4b774eff77f48dafb19e1e89948af3e0e7015886",
+      "bytes": 16049
+    },
+    {
+      "path": "2/images/work-1.jpg",
+      "sha256": "234abaa4a88d14e0fe1e58f2d8d09e974cf086efd5583b676c20e256af4153ad",
+      "bytes": 52081
+    },
+    {
+      "path": "2/images/work-2.jpg",
+      "sha256": "1eb28d3c78502e50796aebf6b8b96dd980efd626677d36e6c960accba5fe095e",
+      "bytes": 12729
+    },
+    {
+      "path": "2/images/work-3.jpg",
+      "sha256": "8bb074d261e38df5a0836153ce910eb95dbcd3d62da8a3267001c2109c38283c",
+      "bytes": 37782
+    },
+    {
+      "path": "2/images/work-4.jpg",
+      "sha256": "ba271474ed11d0bb71af8e2993e566be19aaf8d0f3b8958e86be8b495e754772",
+      "bytes": 35555
+    },
+    {
+      "path": "2/index.html",
+      "sha256": "e9c3916c8d2fcdc1d3f6122b125243fc4782d6a60869f090fdff65465af8bf15",
+      "bytes": 79879
+    },
+    {
+      "path": "20/images/about.jpg",
+      "sha256": "b291ccb91d987150b611a55e8da0995bc47940f0c582cdedf19e973574e0ad28",
+      "bytes": 79698
+    },
+    {
+      "path": "20/images/bg_1.jpg",
+      "sha256": "b49ffccd84b94e2735d878095c7552c222f4541d0475438b7640ad32225b3e4e",
+      "bytes": 65781
+    },
+    {
+      "path": "20/images/megaphone.png",
+      "sha256": "7f962bd2d1b90214381d9a0d99b5a958b71ec6bb9945acdd2c4ea1c1fa43f298",
+      "bytes": 3159
+    },
+    {
+      "path": "20/images/network.png",
+      "sha256": "1d950dbad0d08b0c787f65f069c3ae358200cc00158b8fe62519eaa9a110c03f",
+      "bytes": 5741
+    },
+    {
+      "path": "20/images/person_1.jpg",
+      "sha256": "566a187296e5cf2a1b4966f812bfa26986b8eee5ff809719aae014e46dca4e79",
+      "bytes": 10063
+    },
+    {
+      "path": "20/images/person_2.jpg",
+      "sha256": "38734201cf19357a4b9d4143316fdb1a6ee92fe6c50bcdb9f0e856e1344757b4",
+      "bytes": 7473
+    },
+    {
+      "path": "20/images/person_3.jpg",
+      "sha256": "f2424ada925f70a5d30cc9768fb743062b8f5e32aeebe24e65a290055219344d",
+      "bytes": 8439
+    },
+    {
+      "path": "20/images/ticket.png",
+      "sha256": "58aba325172413db5cc3accaa3af6a3c2f54c78c5409fe6eb08c3defed67f9b6",
+      "bytes": 4134
+    },
+    {
+      "path": "20/images/work.png",
+      "sha256": "fa9a186b54bbc5a9b910922166c6d9709d8729e4856f280490e489da062fa869",
+      "bytes": 4782
+    },
+    {
+      "path": "20/index.html",
+      "sha256": "f910e2fcdd28a6abfe033cf0851b74c3cb10901c6be15b5380e9f0997b26d2fe",
+      "bytes": 74176
+    },
+    {
+      "path": "21/index.html",
+      "sha256": "32f75f3c142acf6d93c06b67175950a05df9489d4ff54769074662ee6f59d220",
+      "bytes": 24844
+    },
+    {
+      "path": "22/index.html",
+      "sha256": "1758b5e0dd59802e85b496c063db95836189fed792f6808a0c3cf8ef9769992e",
+      "bytes": 24304
+    },
+    {
+      "path": "24/index.html",
+      "sha256": "95e72451f25f9bb97b56967a20fe2784de281b4b10c64f8ed365dfae45138aa1",
+      "bytes": 34798
+    },
+    {
+      "path": "25/images/hero.jpg",
+      "sha256": "1c6e1558da593a1770154cfbf9c1ad90a16838537e7bfcf7b9a5c12af7b71b8e",
+      "bytes": 212573
+    },
+    {
+      "path": "25/index.html",
+      "sha256": "64e8982d727e10d6c8a93e4873ae62150b43c9551b9b48aa2291d773d698e250",
+      "bytes": 34340
+    },
+    {
+      "path": "26/images/speaker-1.jpg",
+      "sha256": "13964278dee6ae9dae19abc78925ec7cc4eda6a4b55185c2bf6b557d9d183d2c",
+      "bytes": 7742
+    },
+    {
+      "path": "26/images/speaker-2.jpg",
+      "sha256": "79688e2e8fb483122f55c4f82e746156bfc3eb51e658e1fa3cedc18b74202b53",
+      "bytes": 5747
+    },
+    {
+      "path": "26/images/speaker-3.jpg",
+      "sha256": "9e02b2d1eadce2db2ae095a2fdf61d1e817adb550a2dc471b15c7f48720b15f5",
+      "bytes": 6492
+    },
+    {
+      "path": "26/index.html",
+      "sha256": "c74387129e5975a18a38e9680c540663ca5b532292853c0b277b219f59d9f899",
+      "bytes": 36938
+    },
+    {
+      "path": "27/index.html",
+      "sha256": "64b004c76c4c1076eca74fcc0aad7649c261c73c3634fcfc8e47d6abb441a7e6",
+      "bytes": 27648
+    },
+    {
+      "path": "28/index.html",
+      "sha256": "17965c7202a3e0a07aa3433c3e049f934f1b744affe43b1e2683cef72e8ba837",
+      "bytes": 40233
+    },
+    {
+      "path": "3/images/work-1.jpg",
+      "sha256": "234abaa4a88d14e0fe1e58f2d8d09e974cf086efd5583b676c20e256af4153ad",
+      "bytes": 52081
+    },
+    {
+      "path": "3/images/work-2.jpg",
+      "sha256": "1eb28d3c78502e50796aebf6b8b96dd980efd626677d36e6c960accba5fe095e",
+      "bytes": 12729
+    },
+    {
+      "path": "3/images/work-3.jpg",
+      "sha256": "8bb074d261e38df5a0836153ce910eb95dbcd3d62da8a3267001c2109c38283c",
+      "bytes": 37782
+    },
+    {
+      "path": "3/images/work-4.jpg",
+      "sha256": "ba271474ed11d0bb71af8e2993e566be19aaf8d0f3b8958e86be8b495e754772",
+      "bytes": 35555
+    },
+    {
+      "path": "3/images/work-5.jpg",
+      "sha256": "ba54c1c0a9be2f8370765dbe97db578973eb0f6c23353491a14f3ef108ddf814",
+      "bytes": 36958
+    },
+    {
+      "path": "3/images/work-6.jpg",
+      "sha256": "f5b827e56a6484b19255fd06cd35508bf7aceb8b455f942f52ec6ff884796b3c",
+      "bytes": 25065
+    },
+    {
+      "path": "3/images/work-7.jpg",
+      "sha256": "1d2993834a1deb7f89e7f30c9cc1dea85a57d0bed09dcd1b5a47069bbf5cce9e",
+      "bytes": 9595
+    },
+    {
+      "path": "3/images/work-8.jpg",
+      "sha256": "69175ffa8636118fed235c246432fce31b341894f29ce8dc71095b9a848241b2",
+      "bytes": 15231
+    },
+    {
+      "path": "3/index.html",
+      "sha256": "6b4eabc1d72bae079391e90b3feb6b176cc723ece6c463ef9ba45dbbc2679000",
+      "bytes": 41906
+    },
+    {
+      "path": "6/images/004-twitter-logo.png",
+      "sha256": "f142761fdb69870dbc1a1151eb664908f09181747e1dadc985a5aa2d4994cc5a",
+      "bytes": 7519
+    },
+    {
+      "path": "6/images/005-facebook.png",
+      "sha256": "7aab38b1200d7abe428a3987ddfa5e745b69d4fbaf0bf8517b07813ade1b2fe3",
+      "bytes": 2327
+    },
+    {
+      "path": "6/images/006-instagram-logo.png",
+      "sha256": "65b0afc5575216c666fd203107d4f55a94f0ac27d0063d90b4d3a62b4a692225",
+      "bytes": 7467
+    },
+    {
+      "path": "6/images/product-1.jpg",
+      "sha256": "2204c79799af8f9a84b34924ab9a00c4f49acbb9187a6df25279ca274f3d597f",
+      "bytes": 57239
+    },
+    {
+      "path": "6/images/product-2.jpg",
+      "sha256": "c3fe8f603ae702359796b7c0b0eaecfe08910e6e0396aa58c5db38bf3077d753",
+      "bytes": 38519
+    },
+    {
+      "path": "6/images/product-3.jpg",
+      "sha256": "d8186e0b5b9347672af856c0a4403c92622e44ec18092a29c1467c4b077eefc7",
+      "bytes": 48914
+    },
+    {
+      "path": "6/images/product-4.jpg",
+      "sha256": "741b78fcd57b53f199a4bb74e09e53402f6e0fc8bf57108554e1bc664860ac16",
+      "bytes": 47475
+    },
+    {
+      "path": "6/images/product-5.jpg",
+      "sha256": "9943e74fb0830c5bb661ffdab191c1bbcb8e1ca30e7b0c88e319286e4b95fd7a",
+      "bytes": 41815
+    },
+    {
+      "path": "6/images/product-6.jpg",
+      "sha256": "3998a73a392f9c75d27ba75b7a4d5a5aec82713d035a2c3f34120266733ed2d7",
+      "bytes": 42221
+    },
+    {
+      "path": "6/index.html",
+      "sha256": "30a8a629192940736020a7858e54b6d7e5cc7ccc951422faa240d088aa594260",
+      "bytes": 47879
+    },
+    {
+      "path": "7/images/bg_1.jpg",
+      "sha256": "34dbba6c9d30bc38d3214b5b2938a1aa1b586f41bff3b20e30fbaf7f8e7edb47",
+      "bytes": 184522
+    },
+    {
+      "path": "7/images/bg_2.jpg",
+      "sha256": "bf343e1556f4bb6c7d4a5a47d1f7468ab01106f525b5a7b9a3bd7c1df458f06c",
+      "bytes": 151908
+    },
+    {
+      "path": "7/images/work-1.jpg",
+      "sha256": "234abaa4a88d14e0fe1e58f2d8d09e974cf086efd5583b676c20e256af4153ad",
+      "bytes": 52081
+    },
+    {
+      "path": "7/images/work-2.jpg",
+      "sha256": "1eb28d3c78502e50796aebf6b8b96dd980efd626677d36e6c960accba5fe095e",
+      "bytes": 12729
+    },
+    {
+      "path": "7/images/work-3.jpg",
+      "sha256": "8bb074d261e38df5a0836153ce910eb95dbcd3d62da8a3267001c2109c38283c",
+      "bytes": 37782
+    },
+    {
+      "path": "7/images/work-4.jpg",
+      "sha256": "ba271474ed11d0bb71af8e2993e566be19aaf8d0f3b8958e86be8b495e754772",
+      "bytes": 35555
+    },
+    {
+      "path": "7/images/work-5.jpg",
+      "sha256": "ba54c1c0a9be2f8370765dbe97db578973eb0f6c23353491a14f3ef108ddf814",
+      "bytes": 36958
+    },
+    {
+      "path": "7/images/work-6.jpg",
+      "sha256": "f5b827e56a6484b19255fd06cd35508bf7aceb8b455f942f52ec6ff884796b3c",
+      "bytes": 25065
+    },
+    {
+      "path": "7/index.html",
+      "sha256": "c4581a28ccf6ca7c0941ce5b7d574d686d268d5fd90dd1832524d9868c2e9d3c",
+      "bytes": 59078
+    },
+    {
+      "path": "8/images/004-twitter-logo.png",
+      "sha256": "f142761fdb69870dbc1a1151eb664908f09181747e1dadc985a5aa2d4994cc5a",
+      "bytes": 7519
+    },
+    {
+      "path": "8/images/005-facebook.png",
+      "sha256": "7aab38b1200d7abe428a3987ddfa5e745b69d4fbaf0bf8517b07813ade1b2fe3",
+      "bytes": 2327
+    },
+    {
+      "path": "8/images/006-instagram-logo.png",
+      "sha256": "65b0afc5575216c666fd203107d4f55a94f0ac27d0063d90b4d3a62b4a692225",
+      "bytes": 7467
+    },
+    {
+      "path": "8/images/bg_1.jpg",
+      "sha256": "3a9d0fbeb60ff7974799e2605842eb71fb43e1e13e918335ec6997185cd93190",
+      "bytes": 60654
+    },
+    {
+      "path": "8/images/product-1.jpg",
+      "sha256": "2204c79799af8f9a84b34924ab9a00c4f49acbb9187a6df25279ca274f3d597f",
+      "bytes": 57239
+    },
+    {
+      "path": "8/images/product-2.jpg",
+      "sha256": "c3fe8f603ae702359796b7c0b0eaecfe08910e6e0396aa58c5db38bf3077d753",
+      "bytes": 38519
+    },
+    {
+      "path": "8/images/product-3.jpg",
+      "sha256": "d8186e0b5b9347672af856c0a4403c92622e44ec18092a29c1467c4b077eefc7",
+      "bytes": 48914
+    },
+    {
+      "path": "8/images/product-4.jpg",
+      "sha256": "741b78fcd57b53f199a4bb74e09e53402f6e0fc8bf57108554e1bc664860ac16",
+      "bytes": 47475
+    },
+    {
+      "path": "8/images/product-5.jpg",
+      "sha256": "9943e74fb0830c5bb661ffdab191c1bbcb8e1ca30e7b0c88e319286e4b95fd7a",
+      "bytes": 41815
+    },
+    {
+      "path": "8/images/product-6.jpg",
+      "sha256": "3998a73a392f9c75d27ba75b7a4d5a5aec82713d035a2c3f34120266733ed2d7",
+      "bytes": 42221
+    },
+    {
+      "path": "8/index.html",
+      "sha256": "4828fe65f832be3da46573c38ce9cd36d22ca888f7d2ad6e2472875b6809b879",
+      "bytes": 57006
+    },
+    {
+      "path": "9/images/bg_1.jpg",
+      "sha256": "d109982c240020c0c2d7810b4b0c63735bdb2d985e724577d1b515caae563b71",
+      "bytes": 120155
+    },
+    {
+      "path": "9/images/work-1.jpg",
+      "sha256": "a5353593aa70ff74242cc9d6d2e38992611ef3c8b3e0b219e6279d760a7ae716",
+      "bytes": 42892
+    },
+    {
+      "path": "9/images/work-2.jpg",
+      "sha256": "e93040f08c267be862015b4b4c2fe100d2aa7ac251becdc73ad392b98e1591de",
+      "bytes": 29046
+    },
+    {
+      "path": "9/images/work-3.jpg",
+      "sha256": "68bbc1fe57df043f22bc5c29ac2ce6f53150da3c58478afb9c1b4f9ff2eb658e",
+      "bytes": 88047
+    },
+    {
+      "path": "9/images/work-4.jpg",
+      "sha256": "6ace8d03a9ebef1cf6aa4ec6a0ef01a470034d41b6b887081d3845d9a41bf1e5",
+      "bytes": 25825
+    },
+    {
+      "path": "9/images/work-5.jpg",
+      "sha256": "7bf02fb1f2faa6ed9772140e558cd4333180210d6930df20b193263a840ff1ad",
+      "bytes": 65066
+    },
+    {
+      "path": "9/images/work-6.jpg",
+      "sha256": "85bb8a2978703baf4f358fab0515a17003b3d8c49b15d3e83f2256ca7912f226",
+      "bytes": 23738
+    },
+    {
+      "path": "9/images/work-7.jpg",
+      "sha256": "5a767c184c79787cf8f346e16cdb20900ff3f924958ccb307288d826d15d3a85",
+      "bytes": 23513
+    },
+    {
+      "path": "9/images/work-8.jpg",
+      "sha256": "4be763b86866beb790d26c9f30cd43a4df55198c163311ada510cd09d6579e3b",
+      "bytes": 49270
+    },
+    {
+      "path": "9/index.html",
+      "sha256": "d3c0a85f3f198a94202bdd041642ce190efd2eba3a2b3ce0ec971c86fb052e8d",
+      "bytes": 37589
+    }
+  ]
+}

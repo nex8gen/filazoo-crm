@@ -6,6 +6,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import { recoverAgentAction } from "../lib/ai/action-recovery.ts";
 import * as history from "../lib/ai/chat-history.ts";
+import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 const require = createRequire(import.meta.url);
 type Element = { type?: unknown; props?: { children?: unknown; onApprove?: () => Promise<boolean>; result?: { status?: string; success?: string; error?: string } } };
@@ -60,7 +61,7 @@ for (const interruption of ["disconnect", "html-response"]) test(`approval recov
   };
   const code = ts.transpileModule(readFileSync(new URL("../components/workspace-ai-assistant.tsx", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const exports: Record<string, (props: unknown) => unknown> = {};
-  vm.runInNewContext(code, { exports, require: (name: string) => name === "react/jsx-runtime" ? require(name) : dependencies[name] ?? ui,
+  vm.runInNewContext(code, { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => name === "react/jsx-runtime" ? require(name) : dependencies[name] ?? ui)(name),
     fetch: fetcher, window: { dispatchEvent: (event: CustomEvent) => events.push(event) }, document: { querySelector: () => ({}) }, CustomEvent,
   });
   function render() { cursor = 0; return exports.WorkspaceAiAssistant({ open: true, onOpenChange() {}, launchRequest: { id: "test", mode: "agent" } }); }

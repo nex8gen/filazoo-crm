@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import Image from "next/image";
 import { useState } from "react";
@@ -63,6 +65,6 @@ export function ProductImagePicker({ id, label, value, onChange, disabled, mode,
       </div>
       {value && !disabled ? <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => { onChange(null); setError(""); }}>Remove image</Button> : null}
     </div>
-    {error ? <p id={`${id}-error`} role="alert" className="text-xs text-destructive">{error}</p> : null}
+    {error ? <NotificationToast id={`${id}-error`}>{error}</NotificationToast> : null}
   </div>;
 }

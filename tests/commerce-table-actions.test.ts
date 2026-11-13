@@ -7,6 +7,7 @@ import ts from "typescript";
 import * as jsx from "react/jsx-runtime";
 import { quantityPriceRanges } from "../lib/quantity-pricing.ts";
 import type { Product } from "../lib/types.ts";
+import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 const require = createRequire(import.meta.url);
 type Element = { props: Record<string, unknown> };
@@ -20,7 +21,7 @@ function load(file: string, dependencies: Record<string, unknown>, globals: Reco
   const exports: Record<string, (...args: unknown[]) => unknown> = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const component = () => null;
-  vm.runInNewContext(code, { exports, require: (name: string) => dependencies[name] ?? (name === "react/jsx-runtime" ? jsx : name.startsWith("@/") || name === "lucide-react" ? new Proxy({}, { get: () => component }) : require(name)), Date, Set, Map, Intl, Blob, ...globals });
+  vm.runInNewContext(code, { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => dependencies[name] ?? (name === "react/jsx-runtime" ? jsx : name.startsWith("@/") || name === "lucide-react" ? new Proxy({}, { get: () => component }) : require(name)))(name), Date, Set, Map, Intl, Blob, ...globals });
   return exports;
 }
 function product(sku: string, name: string): Product {

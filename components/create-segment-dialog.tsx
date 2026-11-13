@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useActionState, useState } from "react";
 import { Building2, Filter, Loader2, Plus, RefreshCw } from "lucide-react";
@@ -45,7 +47,7 @@ export function CreateSegmentDialog({ companies, segment, onClose }: { companies
         <DialogDescription>Choose individual companies or build an audience with rules.</DialogDescription>
       </DialogHeader>
       <form action={action} className="space-y-5">
-        {rules.stage ? <div role="alert" className="rounded-lg border p-3 text-xs"><p>This audience uses a retired sales rule. Review the membership before rebuilding its rules.</p><Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => setRules(({ stage: _stage, ...current }) => { void _stage; return current; })}>Remove retired rule</Button></div> : null}
+        {rules.stage ? <NotificationToast><p>This audience uses a retired sales rule. Review the membership before rebuilding its rules.</p><Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => setRules(({ stage: _stage, ...current }) => { void _stage; return current; })}>Remove retired rule</Button></NotificationToast> : null}
         <input type="hidden" name="rules" value={JSON.stringify(submittedRules)} />
         {segment ? <input type="hidden" name="segmentId" value={segment.id} /> : null}
         <fieldset disabled={pending} className="grid min-w-0 gap-5 md:grid-cols-[minmax(0,1fr)_16rem]">
@@ -70,7 +72,7 @@ export function CreateSegmentDialog({ companies, segment, onClose }: { companies
             <p className="mt-4 border-t pt-3 text-xs leading-5 text-muted-foreground">A company can belong to multiple saved segments.</p>
           </aside>
         </fieldset>
-        {state.error ? <p role="alert" className="text-sm text-destructive">{state.error}</p> : null}
+        {state.error ? <NotificationToast>{state.error}</NotificationToast> : null}
         <DialogFooter><Button type="button" variant="outline" onClick={onClose} disabled={pending}>Cancel</Button><Button type="submit" disabled={pending || (mode === "manual" && !selectedIds.length)}>{pending ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}{pending ? "Saving…" : segment ? "Save segment" : "Create segment"}</Button></DialogFooter>
       </form>
     </DialogContent>

@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import vm from "node:vm";
 import ts from "typescript";
+import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 const require = createRequire(import.meta.url);
 type FormTree = { props: Record<string, (...args: any[]) => void> & { ref: { current: unknown } } }; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -21,7 +22,7 @@ function mount() {
     document: { activeElement: input }, window: { location: { pathname: "/purchase-orders", search: "" } },
     FormData: class { *[Symbol.iterator]() { yield ["q", input.value]; yield ["status", "confirmed"]; yield ["sort", "oldest"]; } },
     setTimeout: (callback: () => void) => { timers.set(++timerId, callback); return timerId; }, clearTimeout: (id: number) => timers.delete(id),
-    require: (name: string) => name === "react" ? { useRef: (current: unknown) => ({ current }), useEffect: (effect: () => void) => effects.push(effect) } : name === "next/navigation" ? { useRouter: () => ({ replace: (href: string) => navigations.push(href) }) } : require(name),
+    require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => name === "react" ? { useRef: (current: unknown) => ({ current }), useEffect: (effect: () => void) => effects.push(effect) } : name === "next/navigation" ? { useRouter: () => ({ replace: (href: string) => navigations.push(href) }) } : require(name))(name),
   });
   const tree = exports.LiveSearchForm!({ action: "/purchase-orders", searchValue: "", children: null });
   tree.props.ref.current = { elements: { namedItem: () => input } };

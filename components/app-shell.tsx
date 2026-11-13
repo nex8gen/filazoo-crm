@@ -100,7 +100,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
   const AiContainer = isHome ? "main" : "aside";
 
   return (
-    <div data-workspace-shell data-email-workspace={pathname === "/email" || undefined} data-settings={isSettings || undefined} style={{ "--workspace-sidebar-width": effectiveSidebarExpanded ? "14.5rem" : "3.5rem" } as CSSProperties} className={`${usesViewportCanvas || aiOpen ? "h-dvh overflow-hidden" : "min-h-svh"} bg-background text-foreground lg:bg-[#0b0b0b]`}>
+    <div data-workspace-shell data-email-workspace={pathname === "/email" || undefined} data-settings={isSettings || undefined} style={{ "--workspace-sidebar-width": effectiveSidebarExpanded ? "14.75rem" : "3.5rem" } as CSSProperties} className="h-dvh overflow-hidden text-foreground">
       <a href={pageAiOpen ? "#workspace-ai-content" : "#workspace-content"} className="sr-only fixed left-4 top-2 z-[100] rounded-md bg-primary px-4 py-2 text-primary-foreground focus:not-sr-only">Skip to content</a>
       <Button ref={navigationTriggerRef} aria-label="Open navigation" aria-expanded={mobileOpen} variant="outline" size="icon" className="fixed bottom-4 left-4 z-50 rounded-full bg-background shadow-md lg:hidden" onClick={() => setMobileOpen(true)}><Menu /></Button>
 
@@ -131,9 +131,9 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
       </Sheet>
 
       <PageHeaderProvider key={isSettings ? "settings" : "workspace"}>
-        <div hidden={pageAiOpen} inert={pageAiOpen || undefined} className={`workspace-page flex min-w-0 flex-col bg-background transition-transform duration-300 ease-out lg:ml-[var(--workspace-sidebar-width)] ${usesViewportCanvas || isSettings || aiOpen ? "h-dvh" : "min-h-dvh"} ${sidebarAiOpen ? "overflow-y-auto overscroll-y-contain max-lg:-translate-x-full lg:mr-[var(--workspace-ai-width)]" : "translate-x-0 lg:mr-0"}`}>
+        <div hidden={pageAiOpen} inert={pageAiOpen || undefined} className={`workspace-page flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background transition-transform duration-300 ease-out lg:ml-[var(--workspace-sidebar-width)] ${sidebarAiOpen ? "max-lg:-translate-x-full lg:mr-[var(--workspace-ai-width)]" : "translate-x-0 lg:mr-0"}`}>
           {!isSettings ? <WorkspacePageHeader pathname={pathname} /> : null}
-          <main id="workspace-content" tabIndex={-1} className={`${isEmails || isDocuments || isSettings ? "" : "crm-workspace-content"} min-h-0 w-full flex-1 outline-none ${usesViewportCanvas ? "overflow-hidden p-0" : isSettings ? "overflow-y-auto p-0 lg:overflow-hidden" : "px-5 pb-6 pt-2 sm:px-6"}`}><WorkspaceTableHeaders />{children}</main>
+          <main id="workspace-content" tabIndex={-1} className={`${isEmails || isDocuments || isSettings ? "" : "crm-workspace-content"} min-h-0 w-full flex-1 outline-none ${usesViewportCanvas ? "overflow-hidden p-0" : isSettings ? "overflow-y-auto p-0 lg:overflow-hidden" : "overflow-y-auto overscroll-y-contain px-5 pb-6 pt-4 sm:px-6"}`}><WorkspaceTableHeaders />{children}</main>
         </div>
       </PageHeaderProvider>
 
@@ -142,7 +142,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
       ) : null}
       {!aiOpen && !isHome ? <AiLauncher onSelect={mode => { setAiLaunchRequest(current => ({ id: current.id + 1, mode })); setAiLoaded(true); setAiOpen(true); }} /> : null}
       {/* Keep the panel mounted after its first use so drafts and running work survive closing. */}
-      {aiLoaded ? <Suspense fallback={aiOpen ? <AiContainer id={isHome ? "workspace-ai-content" : undefined} aria-label="Filazoo AI workspace" className={`fixed inset-y-0 right-0 flex flex-col bg-background ${isHome ? "left-0 z-40 lg:left-[var(--workspace-sidebar-width)]" : "z-[60] w-full border-l lg:w-[var(--workspace-ai-width)]"}`}><div className="flex items-center justify-between border-b p-4"><span role="status" className="text-sm text-muted-foreground">Loading…</span><Button variant="ghost" size="sm" onClick={() => changeAiOpen(false)}>{isHome ? "Back to overview" : "Close"}</Button></div></AiContainer> : null}><WorkspaceAiAssistant open={aiOpen} onOpenChange={changeAiOpen} launchRequest={aiLaunchRequest} presentation={isHome ? "page" : "sidebar"} /></Suspense> : null}
+      {aiLoaded ? <Suspense fallback={aiOpen ? <AiContainer data-ai-workspace data-ai-presentation={isHome ? "page" : "sidebar"} id={isHome ? "workspace-ai-content" : undefined} aria-label="Filazoo AI workspace" className={`fixed inset-y-0 right-0 flex flex-col bg-background ${isHome ? "left-0 z-40 lg:left-[var(--workspace-sidebar-width)]" : "z-[60] w-full border-l lg:w-[var(--workspace-ai-width)]"}`}><div className="flex items-center justify-between border-b p-4"><span role="status" className="text-sm text-muted-foreground">Loading…</span><Button variant="ghost" size="sm" onClick={() => changeAiOpen(false)}>{isHome ? "Back to overview" : "Close"}</Button></div></AiContainer> : null}><WorkspaceAiAssistant open={aiOpen} onOpenChange={changeAiOpen} launchRequest={aiLaunchRequest} presentation={isHome ? "page" : "sidebar"} /></Suspense> : null}
     </div>
   );
 }

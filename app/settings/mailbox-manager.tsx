@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { startTransition, useActionState, useState } from "react";
 import { LoaderCircle, Trash2 } from "lucide-react";
@@ -44,8 +46,8 @@ export function MailboxManager({ mailbox, controlsOnly = false }: { mailbox: Mai
           </div>
         </form>
       ) : null}
-      {state?.error ? <p role="alert" className="text-destructive">{state.error}</p> : null}
-      {state?.success ? <p role="status" className="text-primary">{state.success}</p> : null}
+      {state?.error ? <NotificationToast>{state.error}</NotificationToast> : null}
+      {state?.success ? <NotificationToast tone="success">{state.success}</NotificationToast> : null}
     </div>
   );
 }

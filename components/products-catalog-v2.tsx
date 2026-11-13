@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { PackageSearch } from "lucide-react";
 import { EmptyState } from "@/components/data-state";
@@ -175,7 +177,7 @@ export function ProductEditor({ product, open = true, onOpenChange, canWrite, mo
           </div>)}</div>
         </section>
         </fieldset>
-        {error ? <p role="alert" className="text-xs text-destructive sm:col-span-2">{error}</p> : null}
+        {error ? <NotificationToast>{error}</NotificationToast> : null}
         <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" disabled={saving || uploading} onClick={() => onOpenChange(false)}>Close</Button>{canWrite ? <Button type="submit" disabled={saving || uploading}>{uploading ? "Uploading image…" : saving ? "Saving…" : product ? "Save changes" : "Add product"}</Button> : null}</DialogFooter>
       </form>
   </div>;

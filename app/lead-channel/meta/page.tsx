@@ -1,3 +1,4 @@
+import { NotificationToast } from "@/components/ui/notification-toast";
 import Link from "next/link";
 import { PageActions } from "@/components/page-header";
 import { MetaLeadsTable } from "@/components/meta-leads-table";
@@ -61,7 +62,7 @@ export default async function MetaLeadsPage() {
       </CardContent>
     </details> : null}
     <Card><CardHeader><CardTitle>Latest submissions</CardTitle></CardHeader><CardContent>
-      {loadError ? <p role="alert" className="text-sm text-destructive">{loadError}</p> : <MetaLeadsTable leads={leads.map((lead) => ({ ...lead, owner: lead.owner_id ? ownerNames.get(lead.owner_id) || "Assigned" : "Unassigned" }))} />}
+      {loadError ? <NotificationToast>{loadError}</NotificationToast> : <MetaLeadsTable leads={leads.map((lead) => ({ ...lead, owner: lead.owner_id ? ownerNames.get(lead.owner_id) || "Assigned" : "Unassigned" }))} />}
       <p className="mt-4 text-xs text-muted-foreground">Form submissions are lead records. They do not open a Messenger conversation. <Link href="/messenger" className="underline">Open Messenger</Link></p>
     </CardContent></Card>
   </div>;

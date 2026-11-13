@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -26,7 +28,7 @@ function InvoicePdfPreview({ invoiceId, revision, label }: { invoiceId: string; 
     void load();
     return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [invoiceId, revision]);
-  return error ? <p role="alert" className="rounded-lg border p-3 text-xs">{error}</p> : url ? <iframe title={`${label} PDF preview`} src={`${url}#toolbar=0`} className="h-[460px] w-full rounded-lg border bg-muted" /> : <p role="status" className="flex items-center gap-2 rounded-lg border p-6 text-xs text-muted-foreground"><LoaderCircle className="size-4 animate-spin" />Loading PDF…</p>;
+  return error ? <NotificationToast>{error}</NotificationToast> : url ? <iframe title={`${label} PDF preview`} src={`${url}#toolbar=0`} className="h-[460px] w-full rounded-lg border bg-muted" /> : <p role="status" className="flex items-center gap-2 rounded-lg border p-6 text-xs text-muted-foreground"><LoaderCircle className="size-4 animate-spin" />Loading PDF…</p>;
 }
 
 export function TaskWorkPanel({ taskId, summary, selected = false, compact = false }: { taskId: string; summary: TaskWorkflowSummary; selected?: boolean; compact?: boolean }) {
@@ -71,7 +73,7 @@ export function TaskWorkPanel({ taskId, summary, selected = false, compact = fal
     <DialogTrigger className={`inline-flex min-h-8 items-center gap-1.5 rounded-md border border-primary/20 bg-primary/5 px-2.5 text-xs font-medium text-primary outline-none transition-colors hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-ring ${compact ? "" : "mt-3"}`}><FileText className="size-3.5" />{workflowLabels[summary.kind]}{summary.status === "preparing" ? <LoaderCircle className="size-3 animate-spin" /> : <ChevronDown className="size-3" />}</DialogTrigger>
     <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
       <DialogHeader><DialogTitle>{workflowLabels[summary.kind]}</DialogTitle><DialogDescription>Review the prepared work, make any needed changes, and finish it here.</DialogDescription></DialogHeader>
-      {error ? <div role="alert" className="rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">{error}<button type="button" disabled={busy} className="ml-2 underline" onClick={() => setRetry(value => value + 1)}>Refresh task</button></div> : null}
+      {error ? <NotificationToast>{error}<button type="button" disabled={busy} className="ml-2 underline" onClick={() => setRetry(value => value + 1)}>Refresh task</button></NotificationToast> : null}
       {!detail && loading ? <p role="status" className="flex items-center gap-2 py-8 text-sm text-muted-foreground"><LoaderCircle className="size-4 animate-spin" />Loading prepared work…</p> : detail ? <TaskWorkContent key={`${detail.workflow.task_id}:${detail.workflow.revision}`} detail={detail} busy={busy} onAction={act} onRefresh={() => setRetry(value => value + 1)} /> : null}
     </DialogContent>
   </Dialog>;
@@ -96,7 +98,7 @@ function TaskWorkContent({ detail, busy, onAction, onRefresh }: { detail: TaskWo
     {work.payload.summary ? <p data-no-translate className="text-sm leading-6 text-muted-foreground">{work.payload.summary}</p> : null}
     {closed && work.payload.deliveryResult ? <p role="status" className="flex items-center gap-2 rounded-lg bg-emerald-500/10 p-3 text-sm"><CheckCheck className="size-4 text-emerald-600" />Email accepted by the sending mailbox. The task is complete.</p> : null}
     {!closed && work.blockers.length ? <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-sm"><p className="font-medium">Needs your input</p><ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-5">{work.blockers.map(message => <li key={message}>{message}</li>)}</ul></div> : null}
-    {work.payload.error ? <p role="alert" className="rounded-lg border p-3 text-xs leading-5 text-muted-foreground">{work.payload.error}</p> : null}
+    {work.payload.error ? <NotificationToast>{work.payload.error}</NotificationToast> : null}
     {invoice ? <section className="space-y-3 rounded-xl border p-4" aria-label="Prepared invoice">
       <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-sm font-semibold">{invoiceLabel(invoice)} <span className="ml-1 text-xs font-normal text-muted-foreground">{invoice.status}</span></p><p data-no-translate className="mt-1 text-xs text-muted-foreground">{invoice.document.customerName}</p></div><p className="text-base font-semibold tabular-nums">{formatMoney(invoiceTotals(invoice.document).total, invoice.document.currency)}</p></div>
       <ul className="divide-y text-xs">{invoice.document.items.map((item, index) => <li key={index} className="flex justify-between gap-3 py-2"><span data-no-translate>{item.description} × {item.quantity}</span><span className="shrink-0 tabular-nums">{formatMoney(item.unitPriceMinor * item.quantity, invoice.document.currency)}</span></li>)}</ul>

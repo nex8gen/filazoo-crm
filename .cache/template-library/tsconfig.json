@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.json",
+  "exclude": [
+    "../../node_modules",
+    "../../tests",
+    "../../tmp",
+    "../../.next-crm",
+    "../../temu-support"
+  ],
+  "compilerOptions": {
+    "incremental": false
+  }
+}

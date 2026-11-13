@@ -11,13 +11,14 @@ import { flowInputSchema } from "../lib/flows.ts";
 import * as flowModel from "../lib/flows.ts";
 import * as flowAudit from "../lib/flow-audit.ts";
 import * as segmentFlowModel from "../lib/segment-flows.ts";
+import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 function loadModule(file: string, dependencies: Record<string, unknown>) {
   const exports: Record<string, (...args: unknown[]) => Promise<unknown>> = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (dependencies[name] ?? {}), Response, Error, Date, URL });
+  vm.runInNewContext(code, { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => policyTestDependency(name) ?? (dependencies[name] ?? {}))(name), Response, Error, Date, URL });
   return exports;
 }
 
@@ -651,7 +652,7 @@ test("bulk failures remain selected with errors and requests cannot run twice wh
   assert.equal(checkboxes(tree)[1].props.checked, false);
   assert.equal(checkboxes(tree)[2].props.checked, true);
   assert.equal(button(tree, "Pause").props.disabled, false);
-  const alert = elements(tree).find((element) => element.props.role === "alert")!;
+  const alert = elements(tree).find((element) => element.type === notificationToastModule.NotificationToast)!;
   assert.ok(JSON.stringify(alert).includes("SMTP configuration missing"));
   assert.ok(JSON.stringify(alert).includes("Flow 1"));
 });
@@ -675,7 +676,7 @@ test("bulk deletion waits for confirmation and request failures retain every sel
   assert.equal(executions, 1);
   tree = list.render();
   assert.equal(selectionCount(tree), "2 selected");
-  assert.ok(JSON.stringify(elements(tree).find((element) => element.props.role === "alert")).includes("Network unavailable"));
+  assert.ok(JSON.stringify(elements(tree).find((element) => element.type === notificationToastModule.NotificationToast)).includes("Network unavailable"));
 });
 
 test("run insights can select older failures and paginate beyond the newest 25 runs", async () => {

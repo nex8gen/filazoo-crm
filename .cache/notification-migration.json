@@ -1,0 +1,1428 @@
+[
+  {
+    "file": "components/add-company-form.tsx",
+    "entries": [
+      {
+        "line": 46,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-xs text-destructive sm:col-span-2\">{state.error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/ai-history-menu.tsx",
+    "entries": [
+      {
+        "line": 17,
+        "tone": "error",
+        "text": "<div role=\"alert\" className=\"mt-2 space-y-1 text-xs text-destructive\">\r\n    <p>{message}</p>\r\n    {signIn ? <><a className=\"underline\" href={`/login?$"
+      }
+    ]
+  },
+  {
+    "file": "components/ai-leads-search-dialog.tsx",
+    "entries": [
+      {
+        "line": 115,
+        "tone": "error",
+        "text": "<div role=\"alert\" className=\"ld-alert\">{error}</div>"
+      }
+    ]
+  },
+  {
+    "file": "components/ai-leads-workspace.tsx",
+    "entries": [
+      {
+        "line": 150,
+        "tone": "error",
+        "text": "<div role=\"alert\" className=\"ld-alert\"><CircleHelp size={16} /><span>{error}</span><button type=\"button\" aria-label=\"Dismiss error\" onClick={() => set"
+      },
+      {
+        "line": 170,
+        "tone": "error",
+        "text": "<div role=\"alert\" className=\"ld-alert\"><CircleHelp size={16} /><span>{current.error || \"Research could not be completed.\"}</span></div>"
+      }
+    ]
+  },
+  {
+    "file": "components/analytics-dashboard.tsx",
+    "entries": [
+      {
+        "line": 88,
+        "tone": "warning",
+        "text": "<div role=\"alert\" className=\"flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-xs\"><CircleAlert className=\"size-4 s"
+      }
+    ]
+  },
+  {
+    "file": "components/auth-social-buttons.tsx",
+    "entries": [
+      {
+        "line": 10,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"mt-3 text-sm text-red-700 dark:text-red-300\">{state.error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/campaign-template-library.tsx",
+    "entries": [
+      {
+        "line": 92,
+        "tone": "error",
+        "text": "<div className=\"campaign-builder-empty\" role=\"alert\"><p>{library.error}</p><Button size=\"sm\" variant=\"outline\" onClick={() => setRevision(value => val"
+      },
+      {
+        "line": 98,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-destructive\">{actionError}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/company-ai.tsx",
+    "entries": [
+      {
+        "line": 159,
+        "tone": "error",
+        "text": "<div role=\"alert\" className=\"mt-5 rounded-xl border border-destructive/20 bg-destructive/5 p-4\"><p className=\"text-sm leading-6\">{error}</p>{retryMess"
+      }
+    ]
+  },
+  {
+    "file": "components/company-analysis-dashboard.tsx",
+    "entries": [
+      {
+        "line": 126,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"pb-2 text-xs text-destructive\">{copy(\"Choose a valid date range ending on or before today.\", \"请选择有效日期范围，结束日期不可晚于今天。\")}</p>"
+      },
+      {
+        "line": 127,
+        "tone": "error",
+        "text": "<div role=\"alert\" className=\"flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm\"><"
+      },
+      {
+        "line": 144,
+        "tone": "message",
+        "text": "<p role=\"status\" className=\"text-xs text-primary\">{notice}</p>"
+      },
+      {
+        "line": 152,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-xs text-destructive\">{taskError}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/company-catalog-pdf-actions.tsx",
+    "entries": [
+      {
+        "line": 76,
+        "tone": "error",
+        "text": "<div role=\"alert\" className=\"space-y-3 py-8\"><p className=\"text-destructive\">{error}</p><Button variant=\"outline\" onClick={() => void loadPdf(false)}>"
+      }
+    ]
+  },
+  {
+    "file": "components/company-details.tsx",
+    "entries": [
+      {
+        "line": 62,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{state.error}</p>"
+      },
+      {
+        "line": 62,
+        "tone": "success",
+        "text": "<p role=\"status\" className=\"text-sm text-primary\">{state.success}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/company-form-fields.tsx",
+    "entries": [
+      {
+        "line": 88,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-xs text-destructive\">Unable to load countries. <Button type=\"button\" variant=\"link\" size=\"sm\" onClick={countries.retry"
+      },
+      {
+        "line": 95,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-xs text-destructive\">Unable to load cities. Enter a city manually or <Button type=\"button\" variant=\"link\" size=\"sm\" on"
+      }
+    ]
+  },
+  {
+    "file": "components/company-portal-workspace.tsx",
+    "entries": [
+      {
+        "line": 35,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"rounded-lg border border-destructive/30 p-3 text-sm text-destructive\">{error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/company-purchase-order-create.tsx",
+    "entries": [
+      {
+        "line": 57,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">Customer details could not be loaded. Please try again.</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/company-timeline.tsx",
+    "entries": [
+      {
+        "line": 93,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"mt-2 text-xs text-destructive\">{state.error}</p>"
+      },
+      {
+        "line": 94,
+        "tone": "success",
+        "text": "<p role=\"status\" className=\"mt-2 text-xs text-muted-foreground\">{state.success}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/confirm-action-dialog.tsx",
+    "entries": [
+      {
+        "line": 35,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/create-segment-dialog.tsx",
+    "entries": [
+      {
+        "line": 48,
+        "tone": "error",
+        "text": "<div role=\"alert\" className=\"rounded-lg border p-3 text-xs\"><p>This audience uses a retired sales rule. Review the membership before rebuilding its ru"
+      },
+      {
+        "line": 73,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{state.error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/crm-action-dialogs.tsx",
+    "entries": [
+      {
+        "line": 24,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-xs text-destructive\">{state.error}</p>"
+      },
+      {
+        "line": 25,
+        "tone": "success",
+        "text": "<p role=\"status\" className=\"text-xs text-primary\">{state.success}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/customer-portal.tsx",
+    "entries": [
+      {
+        "line": 129,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{error}</p>"
+      },
+      {
+        "line": 134,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{error}</p>"
+      },
+      {
+        "line": 155,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"portal-alert\">{error}</p>"
+      },
+      {
+        "line": 176,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"portal-message-error\">{messageError}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/customer-reply-requests.tsx",
+    "entries": [
+      {
+        "line": 47,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"m-5 rounded-lg border border-destructive/15 bg-destructive/5 px-3 py-2 text-xs text-destructive\">{error}</p>"
+      },
+      {
+        "line": 54,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"mt-3 rounded-lg bg-destructive/5 px-3 py-2 text-xs text-destructive\">{row.last_error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/delete-segment-dialog.tsx",
+    "entries": [
+      {
+        "line": 35,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{state.error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/document-add-dialog.tsx",
+    "entries": [
+      {
+        "line": 23,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-xs text-destructive\">{error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/document-editor.tsx",
+    "entries": [
+      {
+        "line": 84,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/document-library-picker.tsx",
+    "entries": [
+      {
+        "line": 31,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/document-pdf-preview.tsx",
+    "entries": [
+      {
+        "line": 107,
+        "tone": "error",
+        "text": "<div className=\"library-pdf-status\" role=\"alert\"><p>{error}</p><button type=\"button\" onClick={() => { setAttempt(value => value + 1); onRefresh(); }}>"
+      }
+    ]
+  },
+  {
+    "file": "components/document-promotions.tsx",
+    "entries": [
+      {
+        "line": 93,
+        "tone": "error",
+        "text": "<div className=\"campaign-empty\" role=\"alert\"><RefreshCw /><h4>Unable to load campaign plans</h4><p>{current.error}</p><Button size=\"sm\" variant=\"outli"
+      }
+    ]
+  },
+  {
+    "file": "components/document-record-links.tsx",
+    "entries": [
+      {
+        "line": 30,
+        "tone": "error",
+        "text": "<div role=\"alert\" className=\"text-xs text-destructive\">{error}<Button type=\"button\" variant=\"ghost\" size=\"xs\" onClick={() => setAttempt(value => value"
+      }
+    ]
+  },
+  {
+    "file": "components/document-template-editor.tsx",
+    "entries": [
+      {
+        "line": 33,
+        "tone": "error",
+        "text": "<div role=\"alert\" className=\"space-y-3\"><p>{error}</p><Button variant=\"outline\" onClick={() => { setError(\"\"); setAttempt(value => value + 1); }}>Try "
+      }
+    ]
+  },
+  {
+    "file": "components/document-upload-dialog.tsx",
+    "entries": [
+      {
+        "line": 77,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"library-upload-validation\"><AlertCircle />{validation}</p>"
+      },
+      {
+        "line": 89,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"library-upload-error\"><AlertCircle />{error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/documents-workspace.tsx",
+    "entries": [
+      {
+        "line": 191,
+        "tone": "error",
+        "text": "<div className=\"library-empty\" role=\"alert\"><ShieldCheck /><h4>Unable to load files</h4><p>{error}</p><Button variant=\"outline\" onClick={reload}><Refr"
+      }
+    ]
+  },
+  {
+    "file": "components/email-ai-summary.tsx",
+    "entries": [
+      {
+        "line": 154,
+        "tone": "error",
+        "text": "<div role=\"status\" className=\"mt-3 text-xs leading-5 text-destructive\">{error}<button type=\"button\" onClick={() => setAttempt(value => value + 1)} cla"
+      }
+    ]
+  },
+  {
+    "file": "components/email-auto-reply-control.tsx",
+    "entries": [
+      {
+        "line": 57,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{error}</p>"
+      },
+      {
+        "line": 147,
+        "tone": "error",
+        "text": "<div className=\"mt-1 flex items-center gap-2 text-xs text-destructive\" role=\"alert\"><span>Unable to load.</span><button type=\"button\" className=\"font-"
+      },
+      {
+        "line": 148,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"mt-2 text-xs text-destructive\">{error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/email-campaign-builder.tsx",
+    "entries": [
+      {
+        "line": 209,
+        "tone": "error",
+        "text": "<p className=\"campaign-builder-error\" role=\"alert\">{error}</p>"
+      },
+      {
+        "line": 211,
+        "tone": "error",
+        "text": "<div className=\"campaign-builder-banner\" role=\"alert\"><AlertCircle /><span>{error || optionsError}</span>{optionsError ? <Button variant=\"outline\" siz"
+      },
+      {
+        "line": 213,
+        "tone": "error",
+        "text": "<p role=\"alert\">{preview.error}</p>"
+      },
+      {
+        "line": 242,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"campaign-builder-error\">{error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/email-campaigns-workspace.tsx",
+    "entries": [
+      {
+        "line": 33,
+        "tone": "error",
+        "text": "<div role=\"alert\" className=\"space-y-3\"><p className=\"text-sm text-destructive\">{error}</p><Button variant=\"outline\" size=\"sm\" onClick={() => setRevis"
+      }
+    ]
+  },
+  {
+    "file": "components/email-catalog-dialog.tsx",
+    "entries": [
+      {
+        "line": 126,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"mb-3 text-sm text-destructive\">{error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/email-design-editor.tsx",
+    "entries": [
+      {
+        "line": 260,
+        "tone": "error",
+        "text": "<div className=\"email-designer-error\" role=\"alert\">{error}</div>"
+      }
+    ]
+  },
+  {
+    "file": "components/email-followup-panel.tsx",
+    "entries": [
+      {
+        "line": 180,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"mt-2 text-xs text-destructive\">{loadError} <button type=\"button\" onClick={() => setRetry(value => value + 1)} className=\"fo"
+      },
+      {
+        "line": 182,
+        "tone": "message",
+        "text": "<p role=\"status\" className=\"text-xs leading-5 text-primary\">{notice}</p>"
+      },
+      {
+        "line": 183,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-xs text-destructive\">{error}</p>"
+      },
+      {
+        "line": 200,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-xs leading-5 text-destructive\">{error}</p>"
+      },
+      {
+        "line": 202,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-xs text-destructive\">{loadError} <button type=\"button\" onClick={() => setRetry(value => value + 1)} className=\"font-me"
+      }
+    ]
+  },
+  {
+    "file": "components/email-image-maker.tsx",
+    "entries": [
+      {
+        "line": 28,
+        "tone": "error",
+        "text": "<p role=\"alert\">{error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/email-inbox.tsx",
+    "entries": [
+      {
+        "line": 1526,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"border-b px-4 py-2 text-xs text-destructive\">{mailboxSwitchError}</p>"
+      },
+      {
+        "line": 1547,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"border-b px-4 py-2 text-xs text-destructive\">{followupFiltersError} <button type=\"button\" onClick={() => setFollowupFilters"
+      },
+      {
+        "line": 1569,
+        "tone": "message",
+        "text": "<p role=\"status\" className=\"border-b bg-muted/30 px-3 py-2 text-xs\">{notice}</p>"
+      },
+      {
+        "line": 1571,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"p-4 text-xs text-red-600\">{scheduledError}</p>"
+      },
+      {
+        "line": 1657,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"mb-2 rounded-md bg-destructive/10 px-2.5 py-2 text-xs text-destructive\">{footerError}</p>"
+      },
+      {
+        "line": 1759,
+        "tone": "message",
+        "text": "<p className=\"mx-6 mb-6 rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground\" role=\"status\">{notice}</p>"
+      },
+      {
+        "line": 1791,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"mb-3 rounded-md bg-destructive/10 px-3 py-2 text-xs leading-5 text-destructive\">{composeError || footerError}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/email-reader-message.tsx",
+    "entries": [
+      {
+        "line": 83,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"mt-2 text-xs text-red-600\">{downloadError}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/emails-dashboard.tsx",
+    "entries": [
+      {
+        "line": 485,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive\">{overview.error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/flow-activity-bell.tsx",
+    "entries": [
+      {
+        "line": 107,
+        "tone": "error",
+        "text": "<div role=\"alert\" className=\"flex items-center justify-between gap-3 border-b bg-destructive/5 px-4 py-3 text-xs text-destructive\"><span>{error}</span"
+      }
+    ]
+  },
+  {
+    "file": "components/flow-activity.tsx",
+    "entries": [
+      {
+        "line": 122,
+        "tone": "error",
+        "text": "<div role=\"alert\" className=\"flex items-center justify-between gap-3 rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-xs text-d"
+      }
+    ]
+  },
+  {
+    "file": "components/flow-builder.tsx",
+    "entries": [
+      {
+        "line": 823,
+        "tone": "message",
+        "text": "<div className=\"sticky bottom-0 border-t bg-background px-5 py-3 text-xs text-muted-foreground\" role=\"status\">{notice}</div>"
+      },
+      {
+        "line": 831,
+        "tone": "message",
+        "text": "<p role=\"status\" className=\"text-xs text-muted-foreground\">{notice}</p>"
+      },
+      {
+        "line": 940,
+        "tone": "error",
+        "text": "<div role=\"alert\" className=\"max-h-48 overflow-auto border-b bg-destructive/5 px-4 py-3 text-sm\"><p className=\"font-medium\">Some workflows could not b"
+      }
+    ]
+  },
+  {
+    "file": "components/flow-check-dialog.tsx",
+    "entries": [
+      {
+        "line": 33,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive\">{error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/flow-customer-picker.tsx",
+    "entries": [
+      {
+        "line": 105,
+        "tone": "error",
+        "text": "<div role=\"alert\" className=\"text-xs text-destructive\">{message} <button type=\"button\" className=\"underline\" onClick={retry}>Retry</button></div>"
+      }
+    ]
+  },
+  {
+    "file": "components/flow-email-test-dialog.tsx",
+    "entries": [
+      {
+        "line": 141,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{error}</p>"
+      },
+      {
+        "line": 148,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{delivery.error}</p>"
+      },
+      {
+        "line": 155,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{testCase.error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/flow-insights.tsx",
+    "entries": [
+      {
+        "line": 66,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-xs text-destructive\">{error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/flow-journey-preview.tsx",
+    "entries": [
+      {
+        "line": 71,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-xs text-destructive\">{error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/flow-scenario-lab.tsx",
+    "entries": [
+      {
+        "line": 22,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"rounded-lg bg-destructive/10 p-4 text-sm text-destructive\">{result.error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/home-workspace.tsx",
+    "entries": [
+      {
+        "line": 23,
+        "tone": "warning",
+        "text": "<div role=\"alert\" className=\"flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/25 bg-amber-500/5 px-4 py-3 text-xs\""
+      }
+    ]
+  },
+  {
+    "file": "components/inventory-connection.tsx",
+    "entries": [
+      {
+        "line": 37,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-destructive\">{status.configurationError || status.lastError}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/invoice-connections.tsx",
+    "entries": [
+      {
+        "line": 631,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">\n          {error}\n        </p>"
+      },
+      {
+        "line": 636,
+        "tone": "message",
+        "text": "<p role=\"status\" className=\"text-sm text-primary\">\n          {notice}\n        </p>"
+      }
+    ]
+  },
+  {
+    "file": "components/invoice-create-dialog.tsx",
+    "entries": [
+      {
+        "line": 36,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/invoice-customer-portal.tsx",
+    "entries": [
+      {
+        "line": 56,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{error}</p>"
+      },
+      {
+        "line": 56,
+        "tone": "message",
+        "text": "<p role=\"status\" className=\"text-sm text-emerald-700\">{notice}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/invoice-editor.tsx",
+    "entries": [
+      {
+        "line": 432,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">\r\n          {error}\r\n        </p>"
+      }
+    ]
+  },
+  {
+    "file": "components/invoice-payment-select.tsx",
+    "entries": [
+      {
+        "line": 42,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{error}</p>"
+      },
+      {
+        "line": 43,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">Remove payment methods that do not support {doc.currency}.</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/invoice-portal-shortcut.tsx",
+    "entries": [
+      {
+        "line": 39,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/invoice-workspace.tsx",
+    "entries": [
+      {
+        "line": 266,
+        "tone": "error",
+        "text": "<div\r\n          role=\"alert\"\r\n          className=\"rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive\"\r\n        >\r\n"
+      },
+      {
+        "line": 274,
+        "tone": "message",
+        "text": "<p role=\"status\" className=\"rounded-lg border bg-muted/40 p-4 text-sm\">\r\n          {notice}\r\n        </p>"
+      }
+    ]
+  },
+  {
+    "file": "components/marketing-asset-editor.tsx",
+    "entries": [
+      {
+        "line": 118,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"rounded-lg border border-destructive/25 bg-destructive/5 p-3 text-sm text-destructive\">{error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/members-table.tsx",
+    "entries": [
+      {
+        "line": 47,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-xs text-destructive\">{state.error}</p>"
+      },
+      {
+        "line": 63,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"mb-4 text-xs text-destructive\">{state.error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/order-invoice-preview.tsx",
+    "entries": [
+      {
+        "line": 20,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"p-4 text-sm text-destructive\">{error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/order-invoice-send-dialog.tsx",
+    "entries": [
+      {
+        "line": 77,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/product-image-picker.tsx",
+    "entries": [
+      {
+        "line": 66,
+        "tone": "error",
+        "text": "<p id={`${id}-error`} role=\"alert\" className=\"text-xs text-destructive\">{error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/products-catalog-v2.tsx",
+    "entries": [
+      {
+        "line": 178,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-xs text-destructive sm:col-span-2\">{error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/products-catalog.tsx",
+    "entries": [
+      {
+        "line": 64,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-xs text-destructive sm:col-span-2\">{state.error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/purchase-order-composer.tsx",
+    "entries": [
+      {
+        "line": 147,
+        "tone": "error",
+        "text": "<p role=\"alert\" className={`${panel ? \"mx-5 mt-5 sm:mx-6\" : \"\"} mb-5 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-d"
+      }
+    ]
+  },
+  {
+    "file": "components/purchase-order-details.tsx",
+    "entries": [
+      {
+        "line": 45,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"mx-auto mt-3 max-w-[1100px] rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive\">{e"
+      }
+    ]
+  },
+  {
+    "file": "components/purchase-order-payments.tsx",
+    "entries": [
+      {
+        "line": 65,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-xs text-destructive\">{error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/purchase-order-product-dialog.tsx",
+    "entries": [
+      {
+        "line": 55,
+        "tone": "error",
+        "text": "<div role=\"alert\" className=\"space-y-3 py-10 text-center\"><p className=\"text-sm text-destructive\">{error.message}</p><Button variant=\"outline\" onClick"
+      }
+    ]
+  },
+  {
+    "file": "components/purchase-order-product-picker.tsx",
+    "entries": [
+      {
+        "line": 118,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">\n          {error.message}\n        </p>"
+      }
+    ]
+  },
+  {
+    "file": "components/quotation-workspace.tsx",
+    "entries": [
+      {
+        "line": 81,
+        "tone": "error",
+        "text": "<div role=\"alert\" className=\"rounded-lg border border-destructive p-3 text-sm text-destructive\">{error}<Button type=\"button\" variant=\"ghost\" onClick={"
+      },
+      {
+        "line": 91,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{c(\"Keep up to 99 product lines. Remove a line before saving.\", \"最多保留99个产品项目，请删除多余项目后保存。\")}</p>"
+      },
+      {
+        "line": 104,
+        "tone": "error",
+        "text": "<p className=\"text-sm text-destructive\" role=\"alert\">{validation.startsWith(\"[\") ? c(\"Check the dates, quantities and prices before saving.\", \"保存前请检查日"
+      }
+    ]
+  },
+  {
+    "file": "components/segments-workspace.tsx",
+    "entries": [
+      {
+        "line": 89,
+        "tone": "warning",
+        "text": "<div role=\"alert\" className=\"flex flex-wrap items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm\"><AlertCircle classNam"
+      }
+    ]
+  },
+  {
+    "file": "components/task-editor.tsx",
+    "entries": [
+      {
+        "line": 106,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"flex items-center justify-between gap-2 text-xs font-normal text-destructive\"><span>{memberError}</span><button type=\"butto"
+      },
+      {
+        "line": 110,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"rounded-lg border border-destructive/15 bg-destructive/5 px-3 py-2 text-xs text-destructive\">{error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/task-work-panel.tsx",
+    "entries": [
+      {
+        "line": 29,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"rounded-lg border p-3 text-xs\">{error}</p>"
+      },
+      {
+        "line": 74,
+        "tone": "error",
+        "text": "<div role=\"alert\" className=\"rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive\">{error}<button type=\"button\" disab"
+      },
+      {
+        "line": 99,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"rounded-lg border p-3 text-xs leading-5 text-muted-foreground\">{work.payload.error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/workspace-ai-assistant.tsx",
+    "entries": [
+      {
+        "line": 473,
+        "tone": "error",
+        "text": "<div role=\"status\" className=\"mt-4 rounded-xl border bg-muted/30 p-3 text-sm leading-6 text-muted-foreground\">{error}</div>"
+      }
+    ]
+  },
+  {
+    "file": "components/workspace-command-menu.tsx",
+    "entries": [
+      {
+        "line": 66,
+        "tone": "warning",
+        "text": "<div role=\"alert\" className=\"border-b px-3 py-2 text-xs leading-5 text-amber-700 dark:text-amber-400\"><p>Some record types could not be searched.</p><"
+      }
+    ]
+  },
+  {
+    "file": "components/ui/ai-image-attachments.tsx",
+    "entries": [
+      {
+        "line": 68,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"my-1 text-xs text-destructive\">{attachments.error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/ui/ai-mascot-input.tsx",
+    "entries": [
+      {
+        "line": 103,
+        "tone": "error",
+        "text": "<p role=\"status\" className=\"mt-2 text-xs text-muted-foreground\">{voiceError}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/ui/date-picker.tsx",
+    "entries": [
+      {
+        "line": 72,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-xs text-destructive\">{invalidMessage}</p>"
+      }
+    ]
+  },
+  {
+    "file": "app/accept-invitation/accept-invitation-form.tsx",
+    "entries": [
+      {
+        "line": 29,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-xs text-destructive\">{state.error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "app/forgot-password/forgot-password-form.tsx",
+    "entries": [
+      {
+        "line": 16,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-xs text-destructive\">{state.error}</p>"
+      },
+      {
+        "line": 17,
+        "tone": "success",
+        "text": "<p role=\"status\" className=\"text-xs text-primary\">{state.success}</p>"
+      }
+    ]
+  },
+  {
+    "file": "app/login/login-form.tsx",
+    "entries": [
+      {
+        "line": 23,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-xs text-destructive\">{state.error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "app/settings/ai-settings-form.tsx",
+    "entries": [
+      {
+        "line": 54,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive\">{error}</p>"
+      },
+      {
+        "line": 55,
+        "tone": "success",
+        "text": "<p role=\"status\" aria-live=\"polite\" className=\"flex items-center gap-2 text-xs text-muted-foreground\">{success ? <CheckCircle2 aria-hidden=\"true\" clas"
+      }
+    ]
+  },
+  {
+    "file": "app/settings/ai-usage-settings-form.tsx",
+    "entries": [
+      {
+        "line": 59,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "app/settings/email-footer-settings.tsx",
+    "entries": [
+      {
+        "line": 22,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"mt-6 text-sm text-destructive\">{loadError}</p>"
+      },
+      {
+        "line": 71,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{error}</p>"
+      },
+      {
+        "line": 72,
+        "tone": "message",
+        "text": "<p role=\"status\" className=\"text-xs text-muted-foreground\">{notice}</p>"
+      }
+    ]
+  },
+  {
+    "file": "app/settings/erp-connection-form.tsx",
+    "entries": [
+      {
+        "line": 70,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{initial.schedulerError}</p>"
+      }
+    ]
+  },
+  {
+    "file": "app/settings/invoice-defaults-form.tsx",
+    "entries": [
+      {
+        "line": 46,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{error}</p>"
+      },
+      {
+        "line": 46,
+        "tone": "message",
+        "text": "<p role=\"status\" className=\"text-sm text-primary\">{notice}</p>"
+      }
+    ]
+  },
+  {
+    "file": "app/settings/lead-assignment-form.tsx",
+    "entries": [
+      {
+        "line": 66,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "app/settings/mailbox-manager.tsx",
+    "entries": [
+      {
+        "line": 47,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-destructive\">{state.error}</p>"
+      },
+      {
+        "line": 48,
+        "tone": "success",
+        "text": "<p role=\"status\" className=\"text-primary\">{state.success}</p>"
+      }
+    ]
+  },
+  {
+    "file": "app/settings/payment-methods-form.tsx",
+    "entries": [
+      {
+        "line": 80,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{error}</p>"
+      },
+      {
+        "line": 81,
+        "tone": "message",
+        "text": "<p role=\"status\" className=\"text-sm text-primary\">{notice}</p>"
+      }
+    ]
+  },
+  {
+    "file": "app/settings/pending-invitations.tsx",
+    "entries": [
+      {
+        "line": 10,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">Unable to load pending invitations.</p>"
+      }
+    ]
+  },
+  {
+    "file": "app/settings/preferences-form.tsx",
+    "entries": [
+      {
+        "line": 51,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{error}</p>"
+      },
+      {
+        "line": 59,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{result.error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "app/settings/profile-photo-form.tsx",
+    "entries": [
+      {
+        "line": 53,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-xs text-destructive\">{message.error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "app/settings/settings-forms.tsx",
+    "entries": [
+      {
+        "line": 15,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-xs text-destructive\">{error}</p>"
+      },
+      {
+        "line": 16,
+        "tone": "success",
+        "text": "<p role=\"status\" className=\"text-xs text-primary\">{success}</p>"
+      }
+    ]
+  },
+  {
+    "file": "app/settings/team-workspace-controls.tsx",
+    "entries": [
+      {
+        "line": 10,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-xs text-destructive\">{state.error}</p>"
+      },
+      {
+        "line": 15,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-xs text-destructive\">{state.error}</p>"
+      },
+      {
+        "line": 15,
+        "tone": "success",
+        "text": "<p role=\"status\" className=\"text-xs text-primary\">{state.success}</p>"
+      },
+      {
+        "line": 25,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-xs text-destructive\">{state.error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "app/signup/signup-form.tsx",
+    "entries": [
+      {
+        "line": 22,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{state.error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "app/update-password/update-password-form.tsx",
+    "entries": [
+      {
+        "line": 28,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-xs text-destructive\">{state.error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "app/workflow/page.tsx",
+    "entries": [
+      {
+        "line": 25,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-muted-foreground\">This segment could not be found. Choose a segment to create its auto workflow.</p>"
+      }
+    ]
+  },
+  {
+    "file": "app/workspaces/workspace-forms.tsx",
+    "entries": [
+      {
+        "line": 14,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{state.error}</p>"
+      },
+      {
+        "line": 14,
+        "tone": "success",
+        "text": "<p role=\"status\" className=\"text-sm text-primary\">{state.success}</p>"
+      },
+      {
+        "line": 26,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"mt-2 text-sm text-destructive\">{state.error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "app/email/workflows/page.tsx",
+    "entries": [
+      {
+        "line": 19,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-muted-foreground\">{error instanceof Error ? error.message : \"Unable to load this email's company.\"}</p>"
+      }
+    ]
+  },
+  {
+    "file": "app/join/[token]/join-form.tsx",
+    "entries": [
+      {
+        "line": 13,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{state.error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "app/lead-channel/meta/page.tsx",
+    "entries": [
+      {
+        "line": 64,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{loadError}</p>"
+      }
+    ]
+  },
+  {
+    "file": "app/settings/apps/app-setup.tsx",
+    "entries": [
+      {
+        "line": 23,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"rounded-xl border p-5 text-sm text-destructive\">Your saved connections could not be loaded. Refresh before adding or updati"
+      },
+      {
+        "line": 62,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-destructive\">The CRM receiver needs server configuration before it can accept leads.</p>"
+      }
+    ]
+  },
+  {
+    "file": "app/settings/apps/email-connections-hub.tsx",
+    "entries": [
+      {
+        "line": 56,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"rounded-xl border border-destructive/20 p-5 text-sm text-destructive\">{overview.error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "app/settings/apps/gmail-connection-form.tsx",
+    "entries": [
+      {
+        "line": 23,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{state.error}</p>"
+      },
+      {
+        "line": 24,
+        "tone": "success",
+        "text": "<p role=\"status\" className=\"text-sm text-primary\">{state.success}</p>"
+      }
+    ]
+  },
+  {
+    "file": "app/settings/apps/netease-connection-form.tsx",
+    "entries": [
+      {
+        "line": 31,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{state.error}</p>"
+      },
+      {
+        "line": 32,
+        "tone": "success",
+        "text": "<p role=\"status\" className=\"text-sm text-primary\">{state.success}</p>"
+      }
+    ]
+  },
+  {
+    "file": "app/settings/sections/ai.tsx",
+    "entries": [
+      {
+        "line": 11,
+        "tone": "error",
+        "text": "<p role=\"alert\">{result.error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "app/settings/sections/assignment.tsx",
+    "entries": [
+      {
+        "line": 8,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"rounded-lg border p-4 text-sm text-destructive\">{assignment.error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "app/signup/verify/verification-form.tsx",
+    "entries": [
+      {
+        "line": 28,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{state.error}</p>"
+      },
+      {
+        "line": 29,
+        "tone": "error",
+        "text": "<p role=\"alert\" className=\"text-sm text-destructive\">{sendState.error}</p>"
+      }
+    ]
+  },
+  {
+    "file": "components/document-preview.tsx",
+    "entries": []
+  },
+  {
+    "file": "components/messenger-inbox.tsx",
+    "entries": []
+  },
+  {
+    "file": "components/purchase-order-summary.tsx",
+    "entries": []
+  },
+  {
+    "file": "components/ui/customer-research.tsx",
+    "entries": []
+  }
+]

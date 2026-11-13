@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useEffect, useState } from "react";
 import { LoaderCircle } from "lucide-react";
@@ -17,7 +19,7 @@ export function OrderInvoicePreview({ invoiceId }: { invoiceId: string }) {
     }).catch(reason => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Unable to load invoice preview."); });
     return () => controller.abort();
   }, [invoiceId]);
-  if (error) return <p role="alert" className="p-4 text-sm text-destructive">{error}</p>;
+  if (error) return <NotificationToast>{error}</NotificationToast>;
   if (!invoice) return <p role="status" className="flex items-center gap-2 p-6 text-sm text-muted-foreground"><LoaderCircle className="size-4 animate-spin" />Loading invoice preview…</p>;
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(new Date());
   return <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border bg-muted/20 p-2 sm:p-5"><InvoicePaper invoice={invoice} today={today} /></div>;

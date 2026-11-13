@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, ChevronDown, Loader2, MapPin, Package2, Search, SlidersHorizontal, Sparkles, Target } from "lucide-react";
@@ -112,7 +114,7 @@ export function AiLeadsSearchDialog({ open, onOpenChange, products, countries, s
       </div>
       <ol className="ld-stepper" aria-label="Search setup progress">{stepNames.map((label, index) => <li key={label} className={index === step ? "is-current" : index < step ? "is-complete" : ""} aria-current={index === step ? "step" : undefined}><span>{index < step ? <Check size={13} /> : index + 1}</span>{label}</li>)}</ol>
       <div className="ld-dialog-body">
-        {error ? <div role="alert" className="ld-alert">{error}</div> : null}
+        {error ? <NotificationToast>{error}</NotificationToast> : null}
         {step === 0 ? <div className="ld-step-content">
           <div className="ld-step-intro"><h3>What are you selling?</h3><p>Your catalog belongs to this workspace. Product codes will be resolved into a clear product category.</p></div>
           <div className="ld-mode-switch" aria-label="Product source"><button type="button" className={mode === "catalog" ? "is-active" : ""} onClick={() => changeProducts(() => setMode("catalog"))}>Workspace products</button><button type="button" className={mode === "custom" ? "is-active" : ""} onClick={() => changeProducts(() => setMode("custom"))}>Describe a product</button></div>

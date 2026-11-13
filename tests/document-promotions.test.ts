@@ -4,13 +4,22 @@ import { promotionEmailTemplate, promotionLibraryRows } from "../lib/document-pr
 import { newMarketingAsset, monthEndSlots } from "../lib/marketing-assets.ts";
 import { documentInputSchema } from "../lib/documents.ts";
 import { campaignConfigSchema } from "../lib/email-campaigns.ts";
+import { newEmailDesign } from "../lib/email-design.ts";
+
+test("creating a template from a campaign preserves its designed layout", () => {
+  const design = newEmailDesign("Hello {{first_name}}, welcome to Filazoo.");
+  const plan = { ...newMarketingAsset("factory_sale", 2026), message: "Hello {{first_name}}, welcome to Filazoo.", campaignConfig: campaignConfigSchema.parse({ emailDesign: design }) };
+  const template = promotionEmailTemplate(plan);
+  assert.deepEqual(template.email_design, design);
+  assert.equal(documentInputSchema.safeParse({ ...template, id: crypto.randomUUID() }).success, true);
+});
 
 test("promotion conversion separates the email subject and keeps planning notes out of its message", () => {
   const plan = { ...newMarketingAsset("month_end", 2026, monthEndSlots(2026)[0]), title: "January offer", audience: "Trade partners", productSkus: ["PLA"], offer: "Ask for bulk pricing", message: "Subject: Your January offer\r\n\r\nHello {{first_name}},\r\nAsk us for a quote." };
   const template = promotionEmailTemplate(plan);
   assert.equal(template.subject, "Your January offer");
   assert.equal(template.body, "Hello {{first_name}},\r\nAsk us for a quote.");
-  assert.equal(template.category, "promotion");
+  assert.equal(template.category, "everyday");
   assert.doesNotMatch(template.description, /Products:|PLA/);
   assert.match(template.description, /Trade partners/);
   assert.doesNotMatch(template.body, /OFFER|MESSAGE|Audience:|Dates:/);

@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 import { useWorkspaceState } from "@/components/workspace-memory";
 import { EmptyState } from "@/components/data-state";
 import { PageActions } from "@/components/page-header";
@@ -263,17 +265,14 @@ export function InvoiceWorkspace({
       </PageActions> : null}
       {(selected?.document.purchaseOrderId || editor?.purchaseOrderId) && <div className="rounded-lg border bg-muted/30 p-4 text-sm">Linked customer order: <Link className="font-medium text-primary underline" href={`/purchase-orders/${(editor ?? selected?.document)?.purchaseOrderId}`}>{(editor ?? selected?.document)?.reference || "View order"}</Link>. {selected?.order_managed && selected.status === "draft" ? "Edit products, quantities, and customer details on the order. This draft updates automatically; invoice taxes, discounts, and payment details can be edited here." : "Invoice quantities and payments are tracked against this order."}</div>}
       {error ? (
-        <div
-          role="alert"
-          className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive"
-        >
+        <NotificationToast>
           {error}
-        </div>
+        </NotificationToast>
       ) : null}
       {notice ? (
-        <p role="status" className="rounded-lg border bg-muted/40 p-4 text-sm">
+        <NotificationToast tone="message">
           {notice}
-        </p>
+        </NotificationToast>
       ) : null}
       {editor ? (
         <InvoiceEditor

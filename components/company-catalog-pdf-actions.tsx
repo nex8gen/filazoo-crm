@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useEffect, useRef, useState } from "react";
 import { Download, Eye, LoaderCircle } from "lucide-react";
@@ -73,7 +75,7 @@ export function CompanyCatalogPdfActions({ catalog }: { catalog: Catalog }) {
             <DialogTitle>{catalog.company} — Catalog v{catalog.version}</DialogTitle>
             <DialogDescription>Preview the saved catalog PDF or download a copy.</DialogDescription>
           </DialogHeader>
-          {busy ? <div role="status" className="flex h-64 items-center justify-center gap-2"><LoaderCircle className="size-5 animate-spin" />Preparing PDF…</div> : error ? <div role="alert" className="space-y-3 py-8"><p className="text-destructive">{error}</p><Button variant="outline" onClick={() => void loadPdf(false)}>Retry</Button></div> : previewUrl ? <iframe src={previewUrl} title={`${catalog.company} catalog PDF`} className="h-[65dvh] w-full rounded-md border" /> : null}
+          {busy ? <div role="status" className="flex h-64 items-center justify-center gap-2"><LoaderCircle className="size-5 animate-spin" />Preparing PDF…</div> : error ? <NotificationToast><p className="text-destructive">{error}</p><Button variant="outline" onClick={() => void loadPdf(false)}>Retry</Button></NotificationToast> : previewUrl ? <iframe src={previewUrl} title={`${catalog.company} catalog PDF`} className="h-[65dvh] w-full rounded-md border" /> : null}
           <div className="flex justify-end"><Button disabled={busy || !previewUrl} onClick={() => void loadPdf(true)}><Download />Download PDF</Button></div>
         </DialogContent>
       </Dialog>

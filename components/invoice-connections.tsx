@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 import { EmptyState } from "@/components/data-state";
 import { PackageSearch } from "lucide-react";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
@@ -628,14 +630,14 @@ export function InvoiceConnections({
         </Button>
       </div>
       {error ? (
-        <p role="alert" className="text-sm text-destructive">
+        <NotificationToast>
           {error}
-        </p>
+        </NotificationToast>
       ) : null}
       {notice ? (
-        <p role="status" className="text-sm text-primary">
+        <NotificationToast tone="message">
           {notice}
-        </p>
+        </NotificationToast>
       ) : null}
     </section>
   );

@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -147,8 +149,8 @@ export function AiLeadsWorkspace({ products, countries, initialSearches, initial
       <Button variant="outline" disabled={refreshing} onClick={() => { setError(""); void refresh().catch(cause => setError(cause.message)); }}><RefreshCw className={refreshing ? "animate-spin" : ""} />Refresh</Button>
       <Button disabled={!canWrite || Boolean(running)} onClick={() => openSearch()}><Plus />New search</Button>
     </PageActions>
-    {error ? <div role="alert" className="ld-alert"><CircleHelp size={16} /><span>{error}</span><button type="button" aria-label="Dismiss error" onClick={() => setError("")}><X size={16} /></button></div> : null}
-    {notice ? <div role="status" className="ld-notice"><CheckCircle2 size={16} /><span>{notice}</span><button type="button" aria-label="Dismiss notification" onClick={() => setNotice("")}><X size={16} /></button></div> : null}
+    {error ? <NotificationToast><CircleHelp size={16} /><span>{error}</span><button type="button" aria-label="Dismiss error" onClick={() => setError("")}><X size={16} /></button></NotificationToast> : null}
+    {notice ? <NotificationToast tone="success"><CheckCircle2 size={16} /><span>{notice}</span><button type="button" aria-label="Dismiss notification" onClick={() => setNotice("")}><X size={16} /></button></NotificationToast> : null}
     {current ? <>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
@@ -167,7 +169,7 @@ export function AiLeadsWorkspace({ products, countries, initialSearches, initial
       </dl>
       {!current.researchSummary && current.status === "complete" ? <div className="ld-legacy-note"><CircleHelp size={16} /><p>Earlier search. Run a new search for fresh, qualified companies.</p><Button variant="ghost" size="sm" disabled={!canWrite || Boolean(running)} onClick={() => openSearch(current.criteria)}>Update targeting<ArrowRight /></Button></div> : null}
       {leadSearchActive(current) ? <div className="ld-progress" role="status" aria-live="polite"><div className="ld-progress-heading"><span><Loader2 size={16} className="animate-spin" /><strong>{current.phase}</strong></span><Button variant="ghost" size="sm" onClick={() => void cancel()} disabled={!canWrite}>Cancel search</Button></div><div className="ld-progress-steps">{["Discover companies", "Read websites & contacts", "Qualify against your profile"].map((label, index) => <div key={label} className={index <= phaseIndex ? "is-current" : ""}><span>{index < phaseIndex ? <Check size={12} /> : index + 1}</span>{label}</div>)}</div></div> : null}
-      {current.status === "failed"&&counts.all ? <div role="alert" className="ld-alert"><CircleHelp size={16} /><span>{current.error || "Research could not be completed."}</span></div> : null}
+      {current.status === "failed"&&counts.all ? <NotificationToast><CircleHelp size={16} /><span>{current.error || "Research could not be completed."}</span></NotificationToast> : null}
       <section className="flex min-w-0 flex-col gap-6" aria-label="Company search results">
         {current.researchSummary ? <div className="space-y-2" role="status"><div className="flex flex-wrap gap-x-6 gap-y-2 text-xs text-muted-foreground"><span>Qualified: {current.researchSummary.qualified}</span><span>Duplicates skipped: {current.researchSummary.duplicates}</span><span>Did not qualify: {current.researchSummary.rejected + current.researchSummary.needsReview}</span><span>Unreadable websites: {current.researchSummary.unreadable}</span><span>No public contact: {current.researchSummary.noContact}</span></div>{current.researchSummary.qualified < current.criteria.limit ? <p className="text-sm text-muted-foreground">Fewer matches found. Only new companies with verified fit and a public contact route are included.</p> : null}</div> : null}
         {showResultControls ? <TableFilters>

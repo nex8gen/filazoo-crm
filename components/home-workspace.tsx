@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -20,7 +22,7 @@ export function HomeWorkspace({ data }: { data: HomeData }) {
     <h1 className="sr-only">Home</h1>
     <HomeOverview data={data} refreshing={refreshing} onRangeChange={changeRange} onRefresh={() => startRefresh(() => router.refresh())} />
 
-    {data.unavailable.length ? <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/25 bg-amber-500/5 px-4 py-3 text-xs"><p>Some data could not be loaded: {data.unavailable.join(", ")}. Affected totals are unavailable.</p><button type="button" onClick={() => startRefresh(() => router.refresh())} disabled={refreshing} className="font-medium underline">Try again</button></div> : null}
+    {data.unavailable.length ? <NotificationToast tone="warning"><p>Some data could not be loaded: {data.unavailable.join(", ")}. Affected totals are unavailable.</p><button type="button" onClick={() => startRefresh(() => router.refresh())} disabled={refreshing} className="font-medium underline">Try again</button></NotificationToast> : null}
 
     <HomeAiComposer name={data.name} asOf={data.asOf} />
 

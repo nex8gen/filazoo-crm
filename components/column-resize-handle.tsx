@@ -13,10 +13,12 @@ type Props = {
   className?: string;
   storageKey?: string;
   orientation?: "vertical" | "horizontal";
+  remainingPanel?: string;
+  minRemaining?: number;
 };
 
 /** A divider that changes a CSS size without rerendering the panel contents. */
-export function ColumnResizeHandle({ label, variable, container, panel, min, max, reverse = false, className = "", storageKey = variable, orientation = "vertical" }: Props) {
+export function ColumnResizeHandle({ label, variable, container, panel, min, max, reverse = false, className = "", storageKey = variable, orientation = "vertical", remainingPanel, minRemaining = 280 }: Props) {
   const horizontal = orientation === "horizontal";
   const ref = useRef<HTMLDivElement>(null);
   const drag = useRef<{ x: number; width: number; limit: number } | null>(null);
@@ -44,6 +46,10 @@ export function ColumnResizeHandle({ label, variable, container, panel, min, max
       return Math.max(min, Math.min(max, height * 0.75, height - 120, target.getBoundingClientRect().height + (conversation?.getBoundingClientRect().height ?? 0) - 100));
     }
     if (variable === "--workspace-ai-preferred-width") return Math.max(min, Math.min(max, window.innerWidth - 600));
+    if (remainingPanel) {
+      const remaining = root.querySelector<HTMLElement>(remainingPanel);
+      return Math.max(min, Math.min(max, target.getBoundingClientRect().width + (remaining?.getBoundingClientRect().width ?? 0) - minRemaining));
+    }
     const visibleReader = root.querySelector<HTMLElement>(".mail-reader");
     const reader = visibleReader && visibleReader.getBoundingClientRect().width > 0 ? visibleReader : root.querySelector<HTMLElement>(".mail-list");
     return Math.max(min, Math.min(max, target.getBoundingClientRect().width + (reader?.getBoundingClientRect().width ?? 0) - 280));

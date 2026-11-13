@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useLanguage } from "@/components/language-provider";
 
@@ -14,7 +16,7 @@ function SummarySources({ ids, summary }: { ids: string[]; summary: EmailSummary
   const sources = summary.research?.sources ?? [];
   return <span className="ml-1 inline-flex flex-wrap gap-1">{ids.flatMap(id => {
     const source = sources.find(source => source.id === id);
-    return source ? [<a key={id} href={source.url} target="_blank" rel="noopener noreferrer" title={source.label} aria-label={`Source: ${source.label}`} className="rounded bg-violet-100 px-1 text-[10px] font-medium text-violet-800 hover:underline dark:bg-violet-500/15 dark:text-violet-200">{id}</a>] : [];
+    return source ? [<a key={id} href={source.url} target="_blank" rel="noopener noreferrer" title={source.label} aria-label={`Source: ${source.label}`} className="rounded bg-violet-100 px-1 text-xs font-medium text-violet-800 hover:underline dark:bg-violet-500/15 dark:text-violet-200">{id}</a>] : [];
   })}</span>;
 }
 
@@ -148,13 +150,13 @@ export function EmailAiSummary({ context, configured, ready, currentFollowUpAt, 
         {!configured ? <p className="text-xs leading-5 text-muted-foreground">Connect an AI provider in Settings to generate conversation summaries.</p>
           : !ready ? <p className="text-xs leading-5 text-muted-foreground">Waiting for the message to load before analysis.</p>
           : loading && !summary ? <p className="flex items-center gap-2 text-xs text-violet-700 dark:text-violet-300"><AiIcon state="thinking" />Researching company and checking product fit…</p>
-          : error && !summary ? <div><p className="text-xs leading-5 text-muted-foreground">{error}</p><button type="button" onClick={() => setAttempt((value) => value + 1)} className="mt-2 text-xs font-semibold text-primary hover:underline">Try again</button></div>
+          : error && !summary ? <NotificationToast tone="error"><p className="text-xs leading-5 text-muted-foreground">{error}</p><button type="button" onClick={() => setAttempt((value) => value + 1)} className="mt-2 text-xs font-semibold text-primary hover:underline">Try again</button></NotificationToast>
           : summary ? <><h4 className="flex items-start gap-2 text-sm font-semibold"><AiIcon className="mt-0.5 size-4 shrink-0 text-violet-600 dark:text-violet-300" />{summary.title}</h4><p className="mt-3 text-xs leading-5">{summary.summary}</p>{summary.keyPoints?.length ? <ul className="mt-2 list-disc space-y-1.5 pl-4 text-xs leading-5">{summary.keyPoints.map((point, index) => <li key={index}>{point}</li>)}</ul> : null}<SummaryCompanyResearch summary={summary} language={language} /><SummaryProducts summary={summary} language={language} /><div className="mt-4 border-t border-violet-200/70 pt-3 dark:border-violet-500/20"><p className="text-xs font-semibold text-violet-700 dark:text-violet-300">Suggested next step</p><p className="mt-1 text-xs leading-5">{summary.nextStep}</p></div></> : null}
       </div>
-      {summary && error ? <div role="status" className="mt-3 text-xs leading-5 text-destructive">{error}<button type="button" onClick={() => setAttempt(value => value + 1)} className="ml-2 font-semibold text-primary hover:underline">Retry next step</button></div> : null}
-      {saveError ? <div role="status" className="mt-3 border-t border-violet-200/70 pt-3"><p className="text-xs leading-5 text-destructive">The summary is ready, but the follow-up could not be saved: {saveError}</p><button type="button" disabled={loading} onClick={() => void retrySaving()} className="mt-2 text-xs font-semibold text-primary hover:underline disabled:opacity-40">Retry saving follow-up</button></div> : null}
+      {summary && error ? <NotificationToast>{error}<button type="button" onClick={() => setAttempt(value => value + 1)} className="ml-2 font-semibold text-primary hover:underline">Retry next step</button></NotificationToast> : null}
+      {saveError ? <NotificationToast tone="error"><p className="text-xs leading-5 text-destructive">The summary is ready, but the follow-up could not be saved: {saveError}</p><button type="button" disabled={loading} onClick={() => void retrySaving()} className="mt-2 text-xs font-semibold text-primary hover:underline disabled:opacity-40">Retry saving follow-up</button></NotificationToast> : null}
       {loading && summary ? <p role="status" className="mt-3 text-xs text-muted-foreground">Updating suggested next step…</p> : null}
-      {scheduleFollowUp ? <p className="mt-4 text-[11px] leading-4 text-muted-foreground">Follow-up scheduled automatically when needed</p> : null}
+      {scheduleFollowUp ? <p className="mt-4 text-xs leading-4 text-muted-foreground">Follow-up scheduled automatically when needed</p> : null}
     </div>
   </section>;
 }

@@ -8,6 +8,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { HistoryHttpError, requestHistoryJson } from "../lib/ai/history-http.ts";
 import { sessionFetch } from "../lib/supabase/session-fetch.ts";
 import { withWorkspaceViewer, currentWorkspaceContext } from "../lib/workspace-context.ts";
+import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 test("history GET recovers once from transient status, HTML server errors or dropped connections", async () => {
   for (const first of [() => Response.json({ error: "Temporary session failure" }, { status: 503 }), () => new Response("<html>Server error</html>", { status: 500 }), () => { throw new TypeError("fetch failed"); }]) {
@@ -48,7 +49,7 @@ function renderHistoryFailure(source: "list" | "restore", status: number) {
   };
   const code = ts.transpileModule(readFileSync(new URL("../components/ai-history-menu.tsx", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const exports: { AiHistoryMenu?: (props: unknown) => ReturnType<typeof import("react").createElement> } = {};
-  vm.runInNewContext(code, { exports, require: (name: string) => dependencies[name] ?? require(name), Error, URLSearchParams });
+  vm.runInNewContext(code, { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => dependencies[name] ?? require(name))(name), Error, URLSearchParams });
   return renderToStaticMarkup(exports.AiHistoryMenu!({ history: { scope: "test", error: source === "restore" ? failure.message : null, errorStatus: status, retry: () => {} }, disabled: false, onNew: () => {} }));
 }
 

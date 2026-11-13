@@ -31,7 +31,7 @@ export async function CompanyInvoices({
           {canWrite ? (
             <Link
               href={`/invoices/new?companyId=${companyId}`}
-              className="rounded-lg bg-primary px-3 py-2 text-primary-foreground"
+              className="rounded-lg bg-action px-3 py-2 text-action-foreground hover:bg-action-hover"
             >
               Create customer invoice
             </Link>

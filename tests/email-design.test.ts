@@ -15,7 +15,7 @@ test("nested email layouts retain columns, duplicate entire sections, and reject
   assert.ok(emailDesignSchema.safeParse(copy.design).success);
   assert.equal(removeEmailBlock(copy.design, copy.id).blocks.length, 4);
   const html = renderEmailDesign(design).html;
-  assert.match(html, /class="email-column"/); assert.match(html, /Left/); assert.match(html, /Right/);
+  assert.match(html, /class="email-column(?: |")/); assert.match(html, /Left/); assert.match(html, /Right/);
 });
 
 test("visual email personalization escapes HTML and preserves links, theme and plain text", () => {

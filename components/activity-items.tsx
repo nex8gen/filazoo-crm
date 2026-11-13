@@ -52,12 +52,12 @@ export function TaskItem({ task, now, pending, disabled, canManage, selected, co
         <div className="rounded-lg bg-muted/60 px-3 py-2.5 text-sm tracking-[-0.006em]">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
           {compact ? <Link href={`/tasks?task=${encodeURIComponent(task.id)}`} className="line-clamp-2 break-words text-sm font-medium leading-5 hover:text-primary" data-no-translate>{task.title}</Link> : <p data-no-translate className={`break-words text-sm font-medium leading-5 ${complete ? "text-muted-foreground line-through" : "text-foreground"}`}>{task.title}</p>}
-          {task.priority === "high" ? <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:text-amber-400"><span aria-hidden="true" className="h-2 w-0.5 rounded bg-current" /><span>High priority</span></span> : null}
-          {task.automation_id ? <span className="rounded-md bg-primary/8 px-1.5 py-0.5 text-[10px] font-semibold text-primary">AI review</span> : null}
+          {task.priority === "high" ? <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-1.5 py-0.5 text-xs font-semibold text-amber-800 dark:text-amber-400"><span aria-hidden="true" className="h-2 w-0.5 rounded bg-current" /><span>High priority</span></span> : null}
+          {task.automation_id ? <span className="rounded-md bg-primary/8 px-1.5 py-0.5 text-xs font-semibold text-primary">AI review</span> : null}
         </div>
         {!compact && notes ? <p data-no-translate className="mt-1.5 line-clamp-2 whitespace-pre-wrap break-words text-xs leading-5 text-muted-foreground">{notes}</p> : null}
         </div>
-        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
           {showAssignee ? <span className="inline-flex items-center gap-1.5"><UserRound className="size-3" /><span data-no-translate>{task.assignee_name || "Workspace member"}</span></span> : null}
           <span className="inline-flex items-center gap-1.5"><Icon className="size-3" aria-hidden="true" /><span>{source}</span></span>
           <span className={`inline-flex items-center gap-1.5 ${group === "Overdue" ? "font-medium text-amber-700 dark:text-amber-400" : ""}`}><CalendarClock className="size-3" aria-hidden="true" /><span>{group}</span>{displayDate && Number.isFinite(Date.parse(displayDate)) ? <time dateTime={displayDate} title={activityTime(displayDate)}>{new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Shanghai", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(displayDate))}</time> : null}</span>
@@ -103,6 +103,6 @@ export function ActivityEmptyState({ kind, filtered = false, completed = false, 
     <p className="mt-2 max-w-[330px] text-sm leading-6 text-muted-foreground">{filtered ? "Try another filter or a different search." : kind === "notifications" ? "Task updates, reminders and AI reviews will appear here when they need you." : completed ? "Completed tasks will appear here, so you can see what you've moved forward." : "Turn a customer follow-up or a small next step into a task. We'll keep it in view."}</p>
     {filtered && onClear ? <Button size="sm" variant="outline" className="mt-5" onClick={onClear}><RotateCcw className="size-3.5" />Clear filters</Button> : !completed && kind === "tasks" && canCreate ? <Button size="sm" className="mt-5" onClick={onCreate}><Plus className="size-3.5" />Create a task</Button> : null}
     {!compact && !filtered && !completed && kind === "tasks" ? <Link href="/companies" className="mt-3 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary">Or follow up from a company profile<ArrowUpRight className="size-3" /></Link> : null}
-    {!compact && kind === "notifications" && !filtered ? <span className="mt-5 inline-flex items-center gap-1.5 rounded-full border bg-muted/25 px-3 py-1 text-[11px] text-muted-foreground"><ArrowDownLeft className="size-3" />Updates arrive automatically</span> : null}
+    {!compact && kind === "notifications" && !filtered ? <span className="mt-5 inline-flex items-center gap-1.5 rounded-full border bg-muted/25 px-3 py-1 text-xs text-muted-foreground"><ArrowDownLeft className="size-3" />Updates arrive automatically</span> : null}
   </div>;
 }

@@ -1,8 +1,8 @@
 import type { LibraryDocument } from "./documents.ts";
 
 export function fillLibraryTemplate(text: string, context: { name?: string; company?: string }) {
-  const values: Record<string, string | undefined> = { first_name: context.name?.trim().split(/\s+/)[0], contact_name: context.name, company_name: context.company };
-  return text.replace(/\{\{\s*(first_name|contact_name|company_name)\s*\}\}/g, (placeholder, key: string) => values[key]?.trim() || placeholder);
+  const values: Record<string, string | undefined> = { first_name: context.name?.trim().split(/\s+/)[0], name: context.name, contact_name: context.name, company: context.company, company_name: context.company };
+  return text.replace(/\{\{\s*(first_name|name|contact_name|company|company_name)\s*\}\}/g, (placeholder, key: string) => values[key]?.trim() || placeholder);
 }
 
 export async function loadLibraryEmailItem(id: string, signal?: AbortSignal, fetcher: typeof fetch = fetch) {

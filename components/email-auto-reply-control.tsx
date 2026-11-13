@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -54,7 +56,7 @@ function BusinessFacts({ compact = false }: { compact?: boolean }) {
     <DialogTrigger aria-label="Business facts & policies" title="Business facts & policies" className={compact ? "rounded p-1.5 text-muted-foreground hover:bg-muted" : "inline-flex items-center gap-1 text-xs text-muted-foreground underline underline-offset-4"}><BookOpen className="size-3.5" />{compact ? null : "Business facts & policies"}</DialogTrigger>
     <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-xl">
       <DialogHeader><DialogTitle>Approved business facts & policies</DialogTitle><DialogDescription>AI uses these shared records and current database products to answer customer questions. Add only information approved for customers.</DialogDescription></DialogHeader>
-      {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+      {error ? <NotificationToast>{error}</NotificationToast> : null}
       {!facts.length ? <p className="text-sm text-muted-foreground">No policies saved yet. Questions without supporting facts will go to a person for review.</p> : facts.map((fact) => <article key={fact.id} className="space-y-2 rounded-lg border p-3"><p className="text-sm font-semibold">{fact.title}</p><p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">{fact.content}</p>{canManage ? <Button size="sm" variant="ghost" disabled={busy} onClick={() => void remove(fact.id)}>Remove</Button> : null}</article>)}
       {canManage ? <form onSubmit={save} className="space-y-3 border-t pt-4">
         <label className="grid gap-1.5 text-sm">Title<input required maxLength={200} className="rounded-md border bg-background px-3 py-2" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Returns, warranty, samples…" /></label>
@@ -144,7 +146,7 @@ export function EmailAutoReplyControl({ automationId, mailboxId, senderId, messa
     </form> : null}
     {automationId && conversationLink ? <Link href={conversationLink} className="mt-2 inline-block text-xs text-primary underline">{manualReady ? "Open conversation to reply manually" : "Open conversation"}</Link> : null}
     {automation?.invoice_id ? <Link href={`/invoices/${automation.invoice_id}`} className="mt-2 inline-block text-xs text-primary underline">View invoice</Link> : null}
-    {loadError ? <div className="mt-1 flex items-center gap-2 text-xs text-destructive" role="alert"><span>Unable to load.</span><button type="button" className="font-medium underline" onClick={() => { setLoadError(""); setRetry((value) => value + 1); }}>Retry</button></div> : null}
-    {error ? <p role="alert" className="mt-2 text-xs text-destructive">{error}</p> : null}
+    {loadError ? <NotificationToast><span>Unable to load.</span><button type="button" className="font-medium underline" onClick={() => { setLoadError(""); setRetry((value) => value + 1); }}>Retry</button></NotificationToast> : null}
+    {error ? <NotificationToast>{error}</NotificationToast> : null}
   </section>;
 }

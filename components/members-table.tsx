@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { EmptyState } from "@/components/data-state";
 import { UsersRound } from "lucide-react";
@@ -44,7 +46,7 @@ function EditMemberDialog({ member, open, onOpenChange }: { member: WorkspaceMem
           <div className="space-y-2"><Label htmlFor={`member-email-${member.id}`}>Email</Label><Input id={`member-email-${member.id}`} name="email" type="email" defaultValue={member.email} readOnly /><p className="text-xs text-muted-foreground">Login email is managed by the account holder.</p></div>
           <div className="space-y-2"><Label htmlFor={`member-role-${member.id}`}>Role</Label><Select name="role" value={role} onValueChange={(value) => setRole(value as WorkspaceMemberRecord["role"])}><SelectTrigger id={`member-role-${member.id}`} className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="admin">Admin</SelectItem><SelectItem value="operator">Operator</SelectItem><SelectItem value="bd_manager">BD Sales Manager</SelectItem><SelectItem value="viewer">Viewer</SelectItem></SelectContent></Select></div>
           <div className="flex items-center justify-between gap-5 rounded-xl border p-4 text-sm"><div><Label htmlFor={`member-assignment-${member.id}`} className="cursor-pointer font-medium">Automatic lead assignment</Label><p id={`member-assignment-help-${member.id}`} className="mt-1 text-xs text-muted-foreground">Include this BD Sales Manager in automatic lead assignment.</p></div><Switch id={`member-assignment-${member.id}`} aria-describedby={`member-assignment-help-${member.id}`} name="autoAssignLeads" defaultChecked={member.autoAssignLeads} disabled={pending || role !== "bd_manager"} /></div>
-          {state?.error ? <p role="alert" className="text-xs text-destructive">{state.error}</p> : null}
+          {state?.error ? <NotificationToast>{state.error}</NotificationToast> : null}
           <DialogFooter><DialogClose render={<Button type="button" variant="outline" />}>Cancel</DialogClose><Button type="submit" disabled={pending}>{pending ? "Saving..." : "Save changes"}</Button></DialogFooter>
         </form>
       </DialogContent>
@@ -60,7 +62,7 @@ function DeleteMemberDialog({ member, open, onOpenChange }: { member: WorkspaceM
         <DialogHeader><DialogTitle>Delete member?</DialogTitle><DialogDescription>This removes {member.displayName || member.email} from the workspace, disconnects their personal mailbox, and pauses their automations. Their customers and linked follow-up tasks are redistributed among active BD Sales Managers with automatic assignment enabled, prioritizing those with fewer customers. If none are available, the customers remain unassigned. CRM history is preserved.</DialogDescription></DialogHeader>
         <form action={action}>
           <input type="hidden" name="userId" value={member.id} />
-          {state?.error ? <p role="alert" className="mb-4 text-xs text-destructive">{state.error}</p> : null}
+          {state?.error ? <NotificationToast>{state.error}</NotificationToast> : null}
           <DialogFooter><DialogClose render={<Button type="button" variant="outline" />}>Cancel</DialogClose><Button type="submit" variant="destructive" disabled={pending}><Trash2 />{pending ? "Deleting..." : "Delete member"}</Button></DialogFooter>
         </form>
       </DialogContent>

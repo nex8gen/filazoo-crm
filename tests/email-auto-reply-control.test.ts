@@ -5,6 +5,7 @@ import { setImmediate } from "node:timers/promises";
 import vm from "node:vm";
 import ts from "typescript";
 import { requestAutoReply } from "../lib/email-auto-reply-client.ts";
+import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 test("a stalled status connection times out instead of permanently disabling the switch", async () => {
   const request: typeof fetch = async (_input, init) => new Promise((_resolve, reject) => {
@@ -59,7 +60,7 @@ function control(initialVisibility = "visible") {
   const exports = {} as { EmailAutoReplyControl: (props: unknown) => Element };
   vm.runInNewContext(ts.transpileModule(readFileSync(new URL("../components/email-auto-reply-control.tsx", import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
-  }).outputText, { exports, require: (name: string) => dependencies[name], URLSearchParams, AbortController, Event,
+  }).outputText, { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => dependencies[name])(name), URLSearchParams, AbortController, Event,
     setInterval: () => 1, clearInterval: () => undefined,
     document: { visibilityState: initialVisibility, addEventListener() {}, removeEventListener() {} },
     window: { addEventListener() {}, removeEventListener() {}, dispatchEvent() {} },

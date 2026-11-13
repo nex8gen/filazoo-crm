@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Loader2, Minus, Plus, RefreshCw } from "lucide-react";
@@ -104,7 +106,7 @@ export function DocumentPdfPreview({ url, name, onRefresh }: { url: string; name
     </div>
     <div ref={viewportRef} className="library-pdf-viewport">
       {loading ? <div className="library-pdf-status" role="status"><Loader2 className="animate-spin" />Loading PDF…</div> : null}
-      {error ? <div className="library-pdf-status" role="alert"><p>{error}</p><button type="button" onClick={() => { setAttempt(value => value + 1); onRefresh(); }}><RefreshCw />Retry preview</button></div> : null}
+      {error ? <NotificationToast><p>{error}</p><button type="button" onClick={() => { setAttempt(value => value + 1); onRefresh(); }}><RefreshCw />Retry preview</button></NotificationToast> : null}
       <canvas ref={canvasRef} role="img" aria-label={`${name}, page ${pageNumber}${pdf ? ` of ${pdf.numPages}` : ""}`} hidden={loading || !!error} />
       {rendering && !loading && !error ? <span className="library-pdf-rendering" role="status"><Loader2 className="animate-spin" />Rendering page…</span> : null}
       <p className="sr-only">{pageText}</p>

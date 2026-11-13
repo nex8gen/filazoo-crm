@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useRef, useState } from "react";
 import { Bold, Italic, Underline, List, Link2, ImagePlus, Smile, LoaderCircle } from "lucide-react";
@@ -19,7 +21,7 @@ export function EmailFooterSettings() {
   const { preferences } = usePreferences();
   const { footer, loading, error: loadError } = useEmailFooter();
   if (loading) return <p role="status" className="mt-6 flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle className="size-4 animate-spin" />Loading footer…</p>;
-  if (loadError) return <p role="alert" className="mt-6 text-sm text-destructive">{loadError}</p>;
+  if (loadError) return <NotificationToast>{loadError}</NotificationToast>;
   return <EmailFooterEditor initial={footer || { text: preferences.emailSignature, html: initialComposerHtml(preferences.emailSignature, "") }} />;
 }
 
@@ -68,8 +70,8 @@ function EmailFooterEditor({ initial }: { initial: EmailFooter }) {
       <p className="text-xs text-muted-foreground">Add text, images, icons, links, or GIFs. You can also paste a signature here.</p>
       {draft.html ? <div className="rounded-lg border bg-muted/20 p-4"><p className="mb-3 text-xs font-medium text-muted-foreground">Footer preview</p><iframe title="Footer preview" sandbox={emailContentSandbox} srcDoc={emailDocument(sanitizeComposerHtml(draft.html, document)).replace("</head>", "<style>body{font:14px/24px Arial,sans-serif}p{margin:0}</style></head>")} onLoad={(event) => { const frame = event.currentTarget; frame.style.height = "1px"; frame.style.height = `${Math.max(64, Math.min(1000, frame.contentDocument?.documentElement.scrollHeight || 208))}px`; }} className="h-52 w-full border-0 bg-white" /></div> : null}
       <div className="flex flex-wrap gap-2"><Button type="button" disabled={busy || mediaBusy || !dirty} onClick={() => void save()}>{busy ? "Saving…" : "Save footer"}</Button><Button type="button" variant="outline" disabled={busy || !dirty} onClick={() => { setDraft(savedFooter.current); setError(""); setNotice(""); }}>Discard changes</Button><Button type="button" variant="ghost" disabled={busy || !draft.html} onClick={() => setDraft({ text: "", html: "" })}>Clear footer</Button></div>
-      {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
-      {notice ? <p role="status" className="text-xs text-muted-foreground">{notice}</p> : null}
+      {error ? <NotificationToast>{error}</NotificationToast> : null}
+      {notice ? <NotificationToast tone="message">{notice}</NotificationToast> : null}
     </>
     <Dialog open={linkOpen} onOpenChange={setLinkOpen}><DialogContent className="sm:max-w-sm"><DialogHeader><DialogTitle>Add link</DialogTitle></DialogHeader><div className="space-y-3"><div className="space-y-1.5"><Label htmlFor="footer-link-text">Link text</Label><Input id="footer-link-text" value={linkText} onChange={(event) => setLinkText(event.target.value)} /></div><div className="space-y-1.5"><Label htmlFor="footer-link-url">Link address</Label><Input id="footer-link-url" value={linkUrl} placeholder="https://filazoo.com" onChange={(event) => setLinkUrl(event.target.value)} /></div></div><DialogFooter><Button type="button" disabled={!/^(https?:\/\/|mailto:|tel:)/i.test(linkUrl)} onClick={() => { setLinkOpen(false); editor.current?.insertLink(linkUrl.trim(), linkText); }}>Insert link</Button></DialogFooter></DialogContent></Dialog>
   </section>;

@@ -2,6 +2,7 @@
 
 import type { MailSyncHealth } from "@/lib/mail-sync-jobs";
 import Link from "next/link";
+import { NotificationToast } from "@/components/ui/notification-toast";
 
 export function EmailSyncStatus({ health, lastSuccessAt, error }: { health: MailSyncHealth[]; lastSuccessAt?: string | null; error: string | null }) {
   const reconnect = health.some((item) => item.state === "reconnect_required");
@@ -12,6 +13,7 @@ export function EmailSyncStatus({ health, lastSuccessAt, error }: { health: Mail
   const history = health.find((item) => item.history !== "idle");
   const warning = Boolean(error || reconnect || stale || health.some((item) => (item.failures || 0) >= 3));
   const label = error ? "Refresh unavailable" : reconnect ? "Mailbox sign-in required" : stale ? "Sync delayed" : retrying ? "Reconnecting…" : active ? "Syncing…" : "Synced";
+  if (warning) return <NotificationToast tone="warning">{label}{reconnect ? <Link href="/settings/apps?view=personal" className="underline">Check mailbox settings</Link> : null}</NotificationToast>;
   return <div role="status" aria-live="polite" className="flex min-h-7 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b px-3 py-1.5 text-[11px] text-muted-foreground">
     <span className={`inline-flex items-center gap-1.5 ${warning ? "text-amber-700 dark:text-amber-300" : ""}`} title={success ? `Last checked: ${new Date(success).toLocaleString()}` : undefined}>
       <span aria-hidden="true" className={`size-1.5 rounded-full ${warning ? "bg-amber-500" : active || retrying ? "animate-pulse bg-muted-foreground" : "bg-emerald-500"}`} />

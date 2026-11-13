@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -123,8 +125,8 @@ export function EmailCatalogDialog({ products, catalogs, customer, busy, onClose
         {currentPreview ? <section ref={previewRef} className="border-t p-5"><div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-semibold">PDF preview</h3><a href={currentPreview.url} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-primary underline">Open in new tab</a></div><iframe title="Catalog PDF preview" src={currentPreview.url} className="h-[400px] w-full rounded-lg border" /></section> : null}
       </div>
       <div className="shrink-0 border-t bg-background px-5 py-4">
-        {error ? <p role="alert" className="mb-3 text-sm text-destructive">{error}</p> : null}
-        <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-muted-foreground" role="status">{locked ? "Preparing your catalog PDF…" : !chosen.length ? "Select products to preview or attach." : !title.trim() ? "Enter a catalog title to continue." : `${chosen.length} products · PDF · Up to 7.5 MB`}</p><div className="flex flex-wrap gap-2"><button type="button" disabled={locked} onClick={onClose} className={buttonClass}>Cancel</button><button type="button" disabled={locked || !chosen.length || !title.trim()} onClick={() => void generate(false)} className={buttonClass}>Preview PDF</button><button type="button" disabled={locked || !chosen.length || !title.trim()} onClick={() => void generate(true)} className={`${buttonClass} border-primary bg-primary text-primary-foreground hover:bg-primary/90`}>{locked ? <LoaderCircle className="size-4 animate-spin" /> : <FileText className="size-4" />}Attach PDF</button></div></div>
+        {error ? <NotificationToast>{error}</NotificationToast> : null}
+        <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-muted-foreground" role="status">{locked ? "Preparing your catalog PDF…" : !chosen.length ? "Select products to preview or attach." : !title.trim() ? "Enter a catalog title to continue." : `${chosen.length} products · PDF · Up to 7.5 MB`}</p><div className="flex flex-wrap gap-2"><button type="button" disabled={locked} onClick={onClose} className={buttonClass}>Cancel</button><button type="button" disabled={locked || !chosen.length || !title.trim()} onClick={() => void generate(false)} className={buttonClass}>Preview PDF</button><button type="button" disabled={locked || !chosen.length || !title.trim()} onClick={() => void generate(true)} className={`${buttonClass} border-action bg-action text-action-foreground hover:bg-action-hover`}>{locked ? <LoaderCircle className="size-4 animate-spin" /> : <FileText className="size-4" />}Attach PDF</button></div></div>
       </div>
     </DialogContent>
   </Dialog>;

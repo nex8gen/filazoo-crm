@@ -5,6 +5,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import { emailFollowupBadge } from "../lib/email-followup-badge.ts";
 import { followupActionState, type FollowupActionRecord } from "../lib/email-followup-filters.ts";
+import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 const now = new Date(2026, 10, 12, 9, 0);
 const dueAt = new Date(2026, 10, 12, 16, 30).toISOString();
@@ -65,7 +66,7 @@ test("the rendered badge has an accessible text status, decorative icon and mach
     "@/lib/email-followup-badge": { emailFollowupBadge },
   };
   vm.runInNewContext(ts.transpileModule(readFileSync(new URL("../components/email-followup-badge.tsx", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText,
-    { exports, require: (name: string) => { assert.ok(name in dependencies, name); return dependencies[name]; } });
+    { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => { assert.ok(name in dependencies, name); return dependencies[name]; })(name) });
   const badge = exports.EmailFollowupBadge({ actions: [action], language: "en" });
   assert.equal(badge.type, "span", "Badges must not nest interactive controls in the email-row button");
   assert.match(String(badge.props["aria-label"]), /Manual follow-up/);

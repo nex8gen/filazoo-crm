@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useEffect, useState } from "react";
 import { Check, Copy, Download, Loader2, Mail, Sparkles, Trash2 } from "lucide-react";
@@ -115,7 +117,7 @@ export function MarketingAssetEditor({ initial, canWrite, onSaved, onDeleted, on
             </fieldset>
             {canWrite ? <div className="rounded-lg border bg-muted/20 p-4"><Button type="button" size="sm" variant="outline" disabled={disabled || !draft.message.trim()} onClick={() => void createTemplate()}><Mail />Create email template</Button><p className="mt-2 text-xs text-muted-foreground">Create a reusable email template from this campaign. Review its subject and message, then link files from your library.</p></div> : null}
             <div className="flex flex-wrap items-center gap-2 border-t pt-4"><Button type="button" variant="outline" size="sm" onClick={() => void copy()}><Copy />Copy plan</Button><Button type="button" variant="outline" size="sm" onClick={download}><Download />Download</Button>{saved.updatedAt && canWrite ? <Button type="button" variant="ghost" size="sm" className="ml-auto text-destructive" disabled={busy !== null} onClick={() => setConfirmation("delete")}><Trash2 />Delete</Button> : null}</div>
-            {error ? <p role="alert" className="rounded-lg border border-destructive/25 bg-destructive/5 p-3 text-sm text-destructive">{error}</p> : null}
+            {error ? <NotificationToast>{error}</NotificationToast> : null}
           </div>
           <div className="flex items-center justify-between gap-3 border-t bg-background px-6 py-4">
             <span role="status" className="text-xs text-muted-foreground">{dirty ? "Unsaved changes" : saved.updatedAt ? "All changes saved" : "New campaign"}</span>

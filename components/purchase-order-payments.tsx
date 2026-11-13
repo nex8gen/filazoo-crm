@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -62,6 +64,6 @@ export function PurchaseOrderPayments({ order, canWrite }: { order: PurchaseOrde
   return <div className="space-y-3 border-t px-4 py-4">
     {context?.invoice.invoice_payments?.length ? <ul className="divide-y text-xs">{context.invoice.invoice_payments.map(payment => <li key={payment.id} className="flex flex-wrap items-center justify-between gap-2 py-2"><span>{payment.paid_on} · {payment.method.replaceAll("_"," ")}{payment.reference ? ` · ${payment.reference}` : ""}</span><strong>{formatMoney(payment.amount_minor, order.document.currency)}</strong></li>)}</ul> : null}
     {canRecord ? <form onSubmit={event => void record(event)} className="grid items-end gap-3 sm:grid-cols-2"><label className="grid gap-2 text-xs">Amount received ({order.document.currency})<Input type="number" required min="0.01" max={(context.invoice.total_minor-context.invoice.paid_minor)/100} step="0.01" value={amount} disabled={busy} onChange={event => setAmount(event.target.value)} /></label><label className="grid gap-2 text-xs">Payment date<DatePicker value={paidOn} max={today} disabled={busy} onValueChange={setPaidOn} /></label><label className="grid gap-2 text-xs">Method<select className="h-9 rounded-md border bg-background px-3" value={method} disabled={busy} onChange={event => setMethod(event.target.value)}><option value="bank_transfer">Bank transfer</option><option value="cash">Cash</option><option value="card">Card</option><option value="other">Other</option></select></label><label className="grid gap-2 text-xs">Reference<Input maxLength={200} value={reference} disabled={busy} onChange={event => setReference(event.target.value)} /></label><p className="text-xs text-muted-foreground">Recording a payment finalizes the order’s billing details.</p><Button type="submit" disabled={busy}>{busy ? "Recording…" : "Record payment"}</Button></form> : null}
-    {error ? <p role="alert" className="text-xs text-destructive">{error}</p> : null}
+    {error ? <NotificationToast>{error}</NotificationToast> : null}
   </div>;
 }

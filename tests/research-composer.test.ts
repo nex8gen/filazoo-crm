@@ -7,6 +7,7 @@ import ts from "typescript";
 import * as history from "../lib/ai/chat-history.ts";
 import * as researchRequest from "../lib/ai/research-request.ts";
 import * as researchProgress from "../lib/ai/research-progress.ts";
+import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 const require = createRequire(import.meta.url);
 for (const turnOff of [false, true]) test(`Analytics composer sends explicit company research with search ${turnOff ? "off after a manual choice" : "automatically enabled"}`, async () => {
@@ -39,7 +40,7 @@ for (const turnOff of [false, true]) test(`Analytics composer sends explicit com
   };
   const code = ts.transpileModule(readFileSync(new URL("../components/workspace-ai-assistant.tsx", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const exports: Record<string, (props: unknown) => unknown> = {};
-  vm.runInNewContext(code, { exports, require: (name: string) => name === "react/jsx-runtime" ? require(name) : dependencies[name] ?? ui,
+  vm.runInNewContext(code, { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => name === "react/jsx-runtime" ? require(name) : dependencies[name] ?? ui)(name),
     document: { querySelector: () => ({ innerText: "Aggregate analytics metrics" }) }, AbortController, performance, crypto,
     fetch: async (_url: string, init: RequestInit) => { sent = JSON.parse(String(init.body)); return Response.json({ output: "Synthetic report" }); },
   });

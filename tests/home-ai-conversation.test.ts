@@ -7,6 +7,7 @@ import ts from "typescript";
 import * as history from "../lib/ai/chat-history.ts";
 import * as researchRequest from "../lib/ai/research-request.ts";
 import * as researchProgress from "../lib/ai/research-progress.ts";
+import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 const require = createRequire(import.meta.url);
 type Element = { type?: unknown; props?: Record<string, unknown> & { children?: unknown } };
@@ -62,7 +63,7 @@ for (const mode of ["chat", "agent"] as const) for (const fail of [false, true])
     const code = ts.transpileModule(readFileSync(new URL("../components/workspace-ai-assistant.tsx", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
     const exports: Record<string, (props: unknown) => Element> = {};
     vm.runInNewContext(code, {
-      exports, require: (name: string) => name === "react/jsx-runtime" ? require(name) : dependencies[name] ?? ui,
+      exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => name === "react/jsx-runtime" ? require(name) : dependencies[name] ?? ui)(name),
       AbortController, performance, crypto,
       document: { querySelector: () => ({ innerText: "Home sales overview" }) },
       MutationObserver: class { observe() {} disconnect() {} },

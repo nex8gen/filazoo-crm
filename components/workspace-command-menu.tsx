@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 import { Building2, ClipboardList, LoaderCircle, Package2, ReceiptText, Search, Truck, UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useLanguage } from "@/components/language-provider";
@@ -63,7 +65,7 @@ export function WorkspaceCommandMenu({ navigation, open, onOpenChange, onNavigat
       <div role="status" aria-live="polite" className="flex min-h-10 items-center gap-2 border-b px-3 py-2 text-xs text-muted-foreground">
         {loading ? <><LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /><span>Searching CRM records...</span></> : !valid ? <><Search className="size-3.5" aria-hidden="true" /><span>{text.includes("*") ? "Wildcard searches are not supported." : "Enter at least 2 characters to search CRM records."}</span></> : current?.error ? <span>{current.error}</span> : <span>Top matches, up to 6 per record type.</span>}
       </div>
-      {current?.data?.unavailable.length ? <div role="alert" className="border-b px-3 py-2 text-xs leading-5 text-amber-700 dark:text-amber-400"><p>Some record types could not be searched.</p><p>{current.data.unavailable.map(kind => t(workspaceSearchLabels[kind])).join(" · ")}</p></div> : null}
+      {current?.data?.unavailable.length ? <NotificationToast tone="warning"><p>Some record types could not be searched.</p><p>{current.data.unavailable.map(kind => t(workspaceSearchLabels[kind])).join(" · ")}</p></NotificationToast> : null}
       {current?.error || current?.data?.unavailable.length ? <button type="button" className="px-3 py-2 text-left text-xs font-medium text-primary underline" onClick={() => { setReply(null); setAttempt(value => value + 1); }}>Retry record search</button> : null}
       <CommandList className="max-h-[55svh]" aria-label="Workspace search results">
         {current?.data ? workspaceSearchKinds.map(kind => {

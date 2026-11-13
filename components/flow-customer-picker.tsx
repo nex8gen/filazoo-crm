@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
@@ -102,7 +104,7 @@ export function FlowCustomerPicker({ config, onChange, disabled }: { config: Jso
 }
 
 function LoadError({ message, retry }: { message: string; retry: () => void }) {
-  return <div role="alert" className="text-xs text-destructive">{message} <button type="button" className="underline" onClick={retry}>Retry</button></div>;
+  return <NotificationToast>{message} <button type="button" className="underline" onClick={retry}>Retry</button></NotificationToast>;
 }
 
 function OptionPages({ offset, hasMore, onChange, disabled, label }: { offset: number; hasMore: boolean; onChange: (value: number) => void; disabled: boolean; label: string }) {

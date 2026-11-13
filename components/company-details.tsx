@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useActionState, useState, useSyncExternalStore } from "react";
 import { Clock3, Save, Workflow } from "lucide-react";
@@ -59,7 +61,7 @@ export function CompanyDetails({ details, canWrite }: { details: CompanyDetailsT
             </CardContent>
           </Card>
 
-          <div className="flex items-center justify-between gap-4"><div>{state?.error && <p role="alert" className="text-sm text-destructive">{state.error}</p>}{state?.success && <p role="status" className="text-sm text-primary">{state.success}</p>}</div><Button type="submit" disabled={!canWrite || pending}><Save />{pending ? "Saving…" : "Save company profile"}</Button></div>
+          <div className="flex items-center justify-between gap-4"><div>{state?.error && <NotificationToast>{state.error}</NotificationToast>}{state?.success && <NotificationToast tone="success">{state.success}</NotificationToast>}</div><Button type="submit" disabled={!canWrite || pending}><Save />{pending ? "Saving…" : "Save company profile"}</Button></div>
         </div>
 
         <div className="space-y-6">

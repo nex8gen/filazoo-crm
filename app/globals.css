@@ -15,7 +15,18 @@ body:has(.column-resize-handle[data-dragging]) iframe { pointer-events: none; }
 @media (min-width: 1024px) { .ai-sidebar-resize { display: block; } }
 
 :root {
-  --radius: 0.375rem;
+  --radius: 0.5rem;
+  --ui-text-caption: 0.75rem;
+  --ui-text-meta: 0.8125rem;
+  --ui-text-body: 0.875rem;
+  --ui-text-prose: 0.9375rem;
+  --ui-text-heading: 1rem;
+  --ui-text-title: 1.125rem;
+  --ui-text-display: 1.75rem;
+  --ui-leading-caption: 1.125rem;
+  --ui-leading-body: 1.375rem;
+  --ui-leading-prose: 1.5rem;
+  --ui-icon-stroke: 1.65;
   --background: #ffffff;
   --foreground: #171717;
   --card: #ffffff;
@@ -24,6 +35,10 @@ body:has(.column-resize-handle[data-dragging]) iframe { pointer-events: none; }
   --popover-foreground: #171717;
   --primary: #08794e;
   --primary-foreground: #ffffff;
+  --action: #000000;
+  --action-foreground: #ffffff;
+  --action-hover: #262626;
+  --action-ring: #a3a3a3;
   --secondary: #f7f7f7;
   --secondary-foreground: #262626;
   --muted: #f4f4f4;
@@ -60,6 +75,10 @@ body:has(.column-resize-handle[data-dragging]) iframe { pointer-events: none; }
   --popover-foreground: #ededed;
   --primary: #3ecf8e;
   --primary-foreground: #052e20;
+  --action: #ededed;
+  --action-foreground: #0a0a0a;
+  --action-hover: #d4d4d4;
+  --action-ring: #737373;
   --secondary: #1c1c1c;
   --secondary-foreground: #e5e5e5;
   --muted: #1c1c1c;
@@ -89,16 +108,25 @@ body:has(.column-resize-handle[data-dragging]) iframe { pointer-events: none; }
 
 @theme inline {
   --font-sans: var(--font-geist-sans);
-  /* CRM type scale: supporting copy 13/20, controls 14/20, body 15/24.
-     Carbon productive typography informs the compact control size:
-     https://carbondesignsystem.com/building-blocks/foundations/typography/type-sets
-     Keep rem units so browser font preferences and zoom remain effective. */
-  --text-xs: 0.8125rem;
-  --text-xs--line-height: 1.25rem;
-  --text-sm: 0.875rem;
+  --font-heading: var(--font-geist-sans);
+  /* One hierarchy across navigation, workspaces, and portalled controls.
+     Rem units preserve browser text-size and zoom preferences. */
+  --text-xs: var(--ui-text-caption);
+  --text-xs--line-height: var(--ui-leading-caption);
+  --text-sm: var(--ui-text-body);
   --text-sm--line-height: 1.25rem;
-  --text-body: 0.9375rem;
-  --text-body--line-height: 1.5rem;
+  --text-body: var(--ui-text-body);
+  --text-body--line-height: var(--ui-leading-body);
+  --text-base: var(--ui-text-prose);
+  --text-base--line-height: var(--ui-leading-prose);
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.625rem;
+  --text-xl: var(--ui-text-title);
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.375rem;
+  --text-2xl--line-height: 1.875rem;
+  --text-3xl: var(--ui-text-display);
+  --text-3xl--line-height: 2.25rem;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -107,6 +135,10 @@ body:has(.column-resize-handle[data-dragging]) iframe { pointer-events: none; }
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-action: var(--action);
+  --color-action-foreground: var(--action-foreground);
+  --color-action-hover: var(--action-hover);
+  --color-action-ring: var(--action-ring);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -134,8 +166,8 @@ body:has(.column-resize-handle[data-dragging]) iframe { pointer-events: none; }
   --color-brand-soft: var(--brand-soft);
   --radius-sm: calc(var(--radius) - 0.125rem);
   --radius-md: var(--radius);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 0.25rem);
+  --radius-lg: calc(var(--radius) + 0.25rem);
+  --radius-xl: calc(var(--radius) + 0.5rem);
 }
 
 @layer base {
@@ -144,7 +176,13 @@ body:has(.column-resize-handle[data-dragging]) iframe { pointer-events: none; }
     @apply bg-background font-sans;
     overscroll-behavior: none;
   }
-  body { @apply min-h-screen bg-background text-body text-foreground antialiased; }
+  body {
+    @apply min-h-screen bg-background text-body text-foreground antialiased;
+    font-kerning: normal;
+    font-optical-sizing: auto;
+  }
+  /* Preserve intentionally heavier checks and custom illustration strokes. */
+  svg.lucide[stroke-width="2"] { stroke-width: var(--ui-icon-stroke); }
   button, a, input, [role="button"] { @apply transition-colors duration-150; }
 }
 
@@ -226,6 +264,21 @@ body,
 
 :is([data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="select-content"]) {
   padding: 0.375rem;
+}
+
+/* Size menus for their labels, keeping long options accessible on small screens. */
+:is([data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="select-content"], [role="menu"]) {
+  width: max-content;
+  min-width: min(max(10rem, var(--anchor-width, 0px)), var(--available-width, calc(100vw - 1rem)));
+  max-width: min(var(--available-width, calc(100vw - 1rem)), calc(100vw - 1rem));
+  overflow-x: auto;
+  touch-action: pan-x pan-y;
+}
+
+:is([role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [data-slot="select-item"]) {
+  min-width: max-content;
+  white-space: nowrap;
+  flex-wrap: nowrap;
 }
 
 .scrollbar-hidden {

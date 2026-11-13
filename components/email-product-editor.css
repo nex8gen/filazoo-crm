@@ -1,0 +1,16 @@
+.email-product-feedCard { width:100%; min-height:80px; padding:16px; white-space:normal; text-align:left; justify-content:flex-start; }
+.email-product-feedCard strong { display:block; font-weight:500; }
+.email-product-feedCard small { display:block; margin-top:6px; font-size:.8125rem; color:var(--muted-foreground); }
+.email-product-cardEditor { display:flex; flex-direction:column; gap:12px; padding:8px 14px 14px; }
+.email-product-search { position:relative; display:block; }
+.email-product-search > svg { position:absolute; top:10px; left:10px; width:17px; height:17px; color:var(--muted-foreground); }
+.email-product-search input { padding-left:34px; }
+.email-product-list { max-height:45vh; overflow-y:auto; }
+.email-product-list > label { display:flex; align-items:center; gap:14px; min-height:68px; border-bottom:1px solid var(--border); padding:12px 4px; cursor:pointer; }
+.email-product-list > label > span:not(.email-product-thumbnail):first-of-type,
+.email-product-list > label > .email-product-thumbnail + span { flex:1; min-width:0; }
+.email-product-thumbnail { flex:0 0 48px; width:48px; height:48px; object-fit:contain; border:1px solid var(--border); border-radius:8px; background:var(--muted); }
+.email-product-list strong { display:block; font-weight:500; font-size:.875rem; }
+.email-product-list small { display:block; margin-top:4px; color:var(--muted-foreground); font-size:.8125rem; }
+.email-product-list input { accent-color:var(--primary); width:16px; height:16px; }
+.email-product-pagination { display:flex; align-items:center; justify-content:space-between; font-size:.8125rem; color:var(--muted-foreground); }

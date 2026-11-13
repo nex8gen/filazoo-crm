@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useEffect, useImperativeHandle, useRef, useState, useTransition, type Ref } from "react";
 import dynamic from "next/dynamic";
@@ -144,7 +146,7 @@ export function PurchaseOrderComposer({ companies, initialCompanyId, initialProf
       <PageActions><div className="flex items-center gap-2 rounded-full bg-foreground py-1 pr-1 pl-4 text-background shadow-sm"><span className="mr-2 hidden text-xs sm:inline">{dirty ? "Unsaved changes" : order ? "Editing order" : "New draft"}</span><Button variant="ghost" size="sm" className="rounded-full text-background hover:bg-background/15 hover:text-background" disabled={pending} onClick={requestClose}>Discard</Button><Button size="sm" className="rounded-full bg-background text-foreground hover:bg-background/90" disabled={pending || !document.items.length || (Boolean(order) && !dirty)} onClick={save}>{pending ? "Saving..." : "Save"}</Button></div></PageActions>
       <Link href={returnPath} onClick={event => { if (dirty) { event.preventDefault(); setDiscardOpen(true); } }} className="mb-5 inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" />{order ? "Back to order" : initialCompanyId ? "Customer orders" : "Drafts"}</Link>
     </>}
-    {error ? <p role="alert" className={`${panel ? "mx-5 mt-5 sm:mx-6" : ""} mb-5 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive`}>{error}</p> : null}
+    {error ? <NotificationToast>{error}</NotificationToast> : null}
     <fieldset disabled={pending} className={panel ? "grid min-w-0 gap-6 p-5 sm:p-6" : "grid min-w-0 gap-8 lg:grid-cols-[minmax(0,1fr)_280px] lg:gap-12"}>
       <div className="min-w-0 space-y-9">
         {panel ? <section aria-label="Order customer" className="flex flex-wrap items-start justify-between gap-3 rounded-lg border bg-muted/20 p-4"><div className="space-y-1"><h3 className="text-xs font-medium text-muted-foreground">Customer</h3><p data-no-translate className="text-sm font-semibold">{document.customer?.companyName || initialProfile?.customer.companyName}</p>{document.customer?.contactName ? <p className="text-sm">{document.customer.contactName}</p> : null}{document.customer?.contactEmail ? <p className="break-all text-xs text-muted-foreground">{document.customer.contactEmail}</p> : null}</div><Button type="button" variant="outline" size="sm" onClick={() => setCustomerDetailsOpen(true)}>Edit customer details</Button></section> : <div><h2 className="text-2xl font-medium tracking-tight">{order ? `Edit order ${purchaseOrderLabel(order)}` : "Create order"}</h2>{order ? null : <p className="mt-1.5 text-xs text-muted-foreground">Order number assigned automatically on save</p>}</div>}

@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { EmptyState } from "@/components/data-state";
 import Image from "next/image";
@@ -115,9 +117,9 @@ export function PurchaseOrderProductPicker({
         />
       </div>
       {error?.key === key ? (
-        <p role="alert" className="text-sm text-destructive">
+        <NotificationToast>
           {error.message}
-        </p>
+        </NotificationToast>
       ) : !current ? (
         <p role="status" className="text-sm text-muted-foreground">
           Loading products…

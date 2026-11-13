@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useActionState } from "react";
 import { Loader2, Trash2 } from "lucide-react";
@@ -32,7 +34,7 @@ export function DeleteSegmentDialog({ segment, onClose }: { segment: DeletableSe
       <form action={action} className="space-y-4">
         <input type="hidden" name="kind" value={segment.kind} />
         <input type="hidden" name="segmentId" value={segment.kind === "saved" ? segment.id : segment.name} />
-        {state.error ? <p role="alert" className="text-sm text-destructive">{state.error}</p> : null}
+        {state.error ? <NotificationToast>{state.error}</NotificationToast> : null}
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onClose} disabled={pending} autoFocus>Cancel</Button>
           <Button type="submit" variant="destructive" disabled={pending}>{pending ? <Loader2 aria-hidden="true" className="size-4 animate-spin" /> : <Trash2 aria-hidden="true" className="size-4" />}{pending ? "Deleting…" : "Delete segment"}</Button>

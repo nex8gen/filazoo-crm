@@ -5,6 +5,7 @@ import { marketingYearSchema } from "@/lib/marketing-assets";
 import { redirect } from "next/navigation";
 import { bootstrapDocumentLibrary } from "@/lib/data/documents";
 import { documentLibraryQueryKey } from "@/lib/document-library-state";
+import { listProducts } from "@/lib/data/crm";
 
 export const metadata = { title: "Files & templates" };
 export default async function DocumentsPage({ searchParams }: { searchParams: Promise<{ category?: string; tab?: string; year?: string }> }) {
@@ -16,7 +17,9 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
   }
   const category = documentCategories.find(item => item.id === params.category)?.id;
   const key = documentLibraryQueryKey({ view: category === "promotion" || category === "everyday" ? "templates" : "all", category, sort: "newest" });
-  let initialData;
-  try { initialData = await bootstrapDocumentLibrary(viewer, new URLSearchParams(key)); } catch { /* The client can retry and show its existing error state. */ }
-  return <DocumentsWorkspace key={`${viewer.workspaceId}-${viewer.id}-${category ?? "all"}`} initialData={initialData} canWrite={viewer.role !== "viewer"} workspaceName={viewer.workspaceName} initialCategory={category} />;
+  const [initialData, { products }] = await Promise.all([
+    bootstrapDocumentLibrary(viewer, new URLSearchParams(key)).catch(() => undefined),
+    listProducts(),
+  ]);
+  return <DocumentsWorkspace key={`${viewer.workspaceId}-${viewer.id}-${category ?? "all"}`} initialData={initialData} products={products} canWrite={viewer.role !== "viewer"} workspaceName={viewer.workspaceName} initialCategory={category} />;
 }

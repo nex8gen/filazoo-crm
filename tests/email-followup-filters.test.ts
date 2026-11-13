@@ -5,6 +5,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import { conversationFollowupActions, followupConversationFilters, followupView, indexFollowupActions, updateFollowupActions, type FollowupActionRecord, type FollowupFilter } from "../lib/email-followup-filters.ts";
 import type { EmailFollowup } from "../lib/email-followup.ts";
+import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 const messages = [{ id: "crm-inquiry", messageId: null, threadId: "local:crm-inquiry" }];
 const record: FollowupActionRecord = { id: "action", source: "followup", kind: "ai", status: "scheduled", messageKey: "crm-inquiry", threadKey: "local:crm-inquiry", anchors: ["local:crm-inquiry"], updatedAt: "2026-11-11T08:00:00Z" };
@@ -87,7 +88,7 @@ test("each filter button switches its selected action and reports the selected s
   const jsx = (type: unknown, props: Record<string, unknown>): Element => ({ type, props });
   const exports = {} as { EmailFollowupFilters: (props: unknown) => Element };
   vm.runInNewContext(ts.transpileModule(readFileSync(new URL("../components/email-followup-filters.tsx", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText,
-    { exports, require: (name: string) => name === "react/jsx-runtime" ? { jsx, jsxs: jsx } : {} });
+    { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => name === "react/jsx-runtime" ? { jsx, jsxs: jsx } : {})(name) });
   let selected: string | null = null;
   const render = () => exports.EmailFollowupFilters({ value: selected, onChange: (value: string) => { selected = value; }, counts: { all: 4, ai: 2, manual: 1, completed: 1, nurture: 1 }, loading: false });
   function buttons(tree: Element) { return (tree.props.children as Element[][])[0]; }

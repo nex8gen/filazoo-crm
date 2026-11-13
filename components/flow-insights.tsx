@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 import { Workflow } from "lucide-react";
 
 import { EmptyState } from "@/components/data-state";
@@ -63,7 +65,7 @@ export function FlowInsights({ flowId }: { flowId: string | null }) {
     <div className="flex items-center justify-between"><h3 className="text-sm font-semibold">Recent runs</h3><Button size="sm" variant="outline" disabled={loading} onClick={() => { setLoading(true); setRevision((value) => value + 1); }}>Refresh</Button></div>
     <select aria-label="Run status" value={status} disabled={loading} onChange={event => { setStatus(event.target.value); setPage(0); setRuns([]); setLoading(true); }} className="h-9 w-full rounded-md border bg-background px-3 text-xs focus-visible:ring-2 focus-visible:ring-ring"><option value="all">All runs</option><option value="failed">Failed runs</option><option value="active">In progress</option><option value="done">Completed</option><option value="cancelled">Stopped</option></select>
     {loading ? <p role="status" className="text-xs text-muted-foreground">Loading run history…</p> : null}
-    {error ? <p role="alert" className="text-xs text-destructive">{error}</p> : null}
+    {error ? <NotificationToast>{error}</NotificationToast> : null}
     {!loading && !error && !runs.length ? <EmptyState compact icon={Workflow} title={status === "all" ? "No contacts have entered this workflow yet." : "No runs match this status."} /> : null}
     {runs.map((run) => <details key={run.id} className="rounded-lg border p-3">
       <summary className="cursor-pointer text-xs"><strong className="capitalize">{run.status === "active" && run.retry ? ["configuration", "data"].includes(run.retry.category) || run.retry.attempt > 5 ? "Blocked — waiting for a fix" : "Retry scheduled" : run.status}</strong> · Step {run.current_step + 1}<span className="mt-1 block text-muted-foreground">{new Date(run.started_at).toLocaleString()}</span></summary>

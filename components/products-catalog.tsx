@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 import { PackageSearch } from "lucide-react";
 import { EmptyState } from "@/components/data-state";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
@@ -61,7 +63,7 @@ function AddProductDialog({ canWrite }: { canWrite: boolean }) {
                 <Field label={`Tier ${tier} unit price`} id={`price-${tier}`}><Input id={`price-${tier}`} name={`price${tier}`} type="number" min="0" step="0.01" required={tier === 1} /></Field>
               </div>
             ))}
-            {state?.error ? <p role="alert" className="text-xs text-destructive sm:col-span-2">{state.error}</p> : null}
+            {state?.error ? <NotificationToast>{state.error}</NotificationToast> : null}
             <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button><Button type="submit" disabled={pending}>{pending ? "Adding…" : "Add product"}</Button></DialogFooter>
           </form>
         </DialogContent>

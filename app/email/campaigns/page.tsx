@@ -11,5 +11,5 @@ export default async function EmailCampaignsPage({ searchParams }: { searchParam
   const parsedYear = marketingYearSchema.safeParse(params.year);
   const year = parsedYear.success ? parsedYear.data : Number(new Intl.DateTimeFormat("en", { year: "numeric", timeZone: "Asia/Shanghai" }).format(new Date()));
   const { products } = await listProducts();
-  return <EmailCampaignsWorkspace key={`${viewer.workspaceId}-${viewer.id}-${year}`} products={products} initialYear={year} canWrite={viewer.role !== "viewer"} />;
+  return <EmailCampaignsWorkspace key={`${viewer.workspaceId}-${viewer.id}-${year}`} sessionScope={`${viewer.workspaceId}:${viewer.id}`} products={products} initialYear={year} canWrite={viewer.role !== "viewer"} />;
 }

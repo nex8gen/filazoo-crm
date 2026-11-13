@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { Fragment, useEffect, useState } from "react";
 import Image from "next/image";
@@ -52,7 +54,7 @@ export function PurchaseOrderProductDialog({ currency, existingKeys, limit, onCl
       <div className="border-b p-4"><div className="relative"><Search className="pointer-events-none absolute top-3 left-3 size-4 text-muted-foreground" aria-hidden /><Input autoFocus value={search} maxLength={100} onChange={event => { setSearch(event.target.value); setPage(0); }} placeholder="Search products by name or SKU" aria-label="Search products" className="pl-9" /></div><p className="mt-2 text-xs text-muted-foreground">{currency} · Select variants at their minimum order quantity.</p></div>
       <div className="grid grid-cols-[minmax(0,1fr)_90px_90px] gap-2 border-b bg-muted/30 px-4 py-2 text-xs text-muted-foreground"><span>Product</span><span>Availability</span><span className="text-right">Price</span></div>
       <div className="min-h-48 flex-1 overflow-y-auto px-4">
-        {error?.key === key ? <div role="alert" className="space-y-3 py-10 text-center"><p className="text-sm text-destructive">{error.message}</p><Button variant="outline" onClick={() => setRetry(value => value + 1)}>Try again</Button></div> : !current ? <p role="status" className="py-10 text-center text-sm text-muted-foreground">Loading products...</p> : current.products.length ? current.products.map(product => {
+        {error?.key === key ? <NotificationToast><p className="text-sm text-destructive">{error.message}</p><Button variant="outline" onClick={() => setRetry(value => value + 1)}>Try again</Button></NotificationToast> : !current ? <p role="status" className="py-10 text-center text-sm text-muted-foreground">Loading products...</p> : current.products.length ? current.products.map(product => {
           const choices = orderProductChoices(product);
           const selectable = choices.filter(choice => choice.price !== null && !existingKeys.has(choice.key));
           const checked = selectable.length > 0 && selectable.every(choice => selected.has(choice.key));

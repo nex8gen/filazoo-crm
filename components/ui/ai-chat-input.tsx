@@ -50,9 +50,9 @@ export function AiChatInput({ contextLabel, value, onChange, onSend, inputRef, d
         <div className="customer-chatbox-inner">
           <div className="flex min-w-0 items-center justify-between gap-3">
             <button type="button" aria-expanded={showContext} aria-controls={`${id}-context`} title="Show this chat's customer context" onClick={() => setShowContext((open) => !open)} className="customer-chat-chip max-w-[85%] gap-1.5 px-2">
-              <AtSign aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" /><span data-no-translate className="truncate text-[11px]">{contextLabel}</span>
+              <AtSign aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" /><span data-no-translate className="truncate text-xs">{contextLabel}</span>
             </button>
-            {busy ? <span role="status" className="pr-1 text-[11px] text-muted-foreground">Working…</span> : null}
+            {busy ? <span role="status" className="pr-1 text-xs text-muted-foreground">Working…</span> : null}
           </div>
           {showContext ? <p id={`${id}-context`} className="mx-1 mt-2 rounded-lg bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground">This conversation uses the saved profile, contacts and permitted activity for <span data-no-translate className="font-medium text-foreground">{contextLabel}</span>.</p> : null}
           <label htmlFor={id} className="sr-only">Ask AI about this customer</label>
@@ -80,6 +80,6 @@ export function AiChatInput({ contextLabel, value, onChange, onSend, inputRef, d
         </div>
       </div>
     </BorderBeam>
-    <p className="mt-2.5 text-center text-[11px] leading-5 text-muted-foreground">Enter to send · Shift + Enter for a new line</p>
+    <p className="mt-2.5 text-center text-xs leading-5 text-muted-foreground">Enter to send · Shift + Enter for a new line</p>
   </form>;
 }

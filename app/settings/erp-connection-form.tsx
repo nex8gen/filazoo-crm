@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -66,8 +68,8 @@ export function ErpConnectionForm({ initial, status, products }: { initial: ErpS
           <datalist id="erp-crm-skus">{products.map(product => <option key={product.sku} value={product.sku}>{product.name}</option>)}</datalist>
           {mappings.map((mapping, index) => <div className="flex items-end gap-2" key={index}><div className="min-w-0 flex-1 space-y-1"><Label htmlFor={`erp-crm-sku-${index}`}>CRM SKU</Label><Input id={`erp-crm-sku-${index}`} list="erp-crm-skus" value={mapping.crmSku} onChange={e => setMappings(current => current.map((item, position) => position === index ? { ...item, crmSku: e.target.value } : item))} required maxLength={200} disabled={pending} /></div><div className="min-w-0 flex-1 space-y-1"><Label htmlFor={`erp-sku-${index}`}>ERP SKU</Label><Input id={`erp-sku-${index}`} value={mapping.erpSku} onChange={e => setMappings(current => current.map((item, position) => position === index ? { ...item, erpSku: e.target.value } : item))} required maxLength={200} disabled={pending} /></div><Button type="button" variant="ghost" size="icon" aria-label="Remove SKU mapping" disabled={pending} onClick={() => setMappings(current => current.filter((_, position) => position !== index))}><Trash2 /></Button></div>)}
         </div>
-        {notice ? <p role={notice.error ? "alert" : "status"} className={`rounded-md border p-3 text-sm ${notice.error ? "border-destructive/30 text-destructive" : "text-foreground"}`}>{notice.text}</p> : null}
-        {initial.schedulerError ? <p role="alert" className="text-sm text-destructive">{initial.schedulerError}</p> : null}
+        {notice ? <NotificationToast tone={notice.error ? "error" : "success"}>{notice.text}</NotificationToast> : null}
+        {initial.schedulerError ? <NotificationToast>{initial.schedulerError}</NotificationToast> : null}
         <div className="flex flex-wrap gap-2"><Button type="submit" disabled={pending}><Save />{pending && operation === "save" ? "Saving…" : "Save connection"}</Button><Button type="button" variant="outline" disabled={pending} onClick={() => run("test", async () => { const result = await testErpConnection(values()); setNotice(result.ok ? { text: "Connection test passed: credentials, IP access, and inventory permission work. Save any changes before syncing.", error: false } : { text: result.error, error: true }); })}><CheckCircle2 />{pending && operation === "test" ? "Testing…" : "Test connection"}</Button><Button type="button" variant="outline" disabled={pending || dirty || !status.configured || status.running} onClick={() => run("sync", async () => { const result = await syncInventory(); setNotice(result.ok ? { text: result.skipped ? "A sync is running or was just requested. Refresh shortly." : `${result.count} ERP SKUs synced.`, error: false } : { text: result.error, error: true }); router.refresh(); })}><RefreshCw className={pending && operation === "sync" ? "animate-spin" : ""} />Sync now</Button></div>
         {dirty ? <p className="text-xs text-muted-foreground">Save your changes before using Sync now.</p> : null}
         <p className="text-xs text-muted-foreground">Turning off the connection pauses automatic and manual syncing. Existing catalog details are kept.</p>

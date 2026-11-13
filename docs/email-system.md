@@ -249,6 +249,28 @@ The Message step has a Create dropdown for drag-and-drop, HTML and text email de
 
 Review permits immediate queued delivery or scheduling through the atomic `queue_marketing_campaign` RPC. Delivery rechecks eligibility, unsubscribe/suppression, role assignment, daily limits and smart sending. Campaign verification uses disposable drafts and templates and never submits real emails. Migrations: `20261112080111_campaign_builder.sql`, `20261112090503_visual_email_design.sql`.
 
+Subject fields support emoji insertion and the supported `first_name`, `name`, `company`, and `email` merge fields at the cursor. Optional A/B subject tests store the alternate subject in `campaign_config.subjectTest.subjectB`. The queue assigns eligible recipients to balanced, deterministic A/B groups, personalizes each assigned subject, and records the variant in each operation's campaign metadata. Review rejects empty, identical, or unsupported subjects and audiences smaller than two. Delivery shows counts by variant. These are full-audience subject splits with delivery reporting; they do not select an automatic winner or measure opens/clicks. The four variation controls offer local text transformations and do not call an AI provider.
+
+The preview menu includes personalized recipient preview, Save as template, a custom plain-text alternative, and editor switching. Custom plain text persists in `campaign_config.plainText` and replaces the text MIME alternative while preserving designed HTML. Switching to text only requires confirmation and preserves extracted text and links. Imported HTML preheaders remain hidden, are omitted from automatic plain text, and appear read-only in message settings. Existing template saves remain explicit and campaign sending remains a separate review action.
+
+Campaign editing survives a same-tab reload. The URL stores the campaign UUID, year, wizard step and message view. The planner reloads the campaign through its authenticated API before reopening it. A tab-local session checkpoint, scoped to workspace and user, recovers unsaved fields and the open visual/HTML/text designer (including its current design and title). New campaigns also recover before their first save. Checkpoints expire after 24 hours, are cleared on explicit close/discard/delete, and are ignored for sent campaigns or when the server revision has changed. Browser storage failures do not block normal editing or explicit server saves; unsaved recovery depends on available session storage. Reload recovery never queues or sends email.
+
+## Social links in visual emails
+
+The full [block feature matrix](email-editor-blocks.md) documents the reference-style inspector, product feeds and static selection, responsive layouts, private product images, image optimization and delivery limits.
+
+Social blocks store platform icons and spacers in their existing ordered `links` array. The inspector supports the platform picker (including a custom image URL), editable labels and URLs, native drag ordering, keyboard up/down ordering, and explicit move buttons. New blocks start with Facebook, Instagram, YouTube, and Pinterest, without text labels. Older `{label, href}` links remain valid and retain labels when no social settings were saved.
+
+The block's `social` settings persist icon size/color, optional label styling, icon spacing, mobile stacking, horizontal/vertical padding, and desktop/mobile visibility. The canvas, preview, exported HTML and campaign rendering use the same settings. Mobile layouts use presentation tables and media queries; hidden blocks remain selectable as placeholders in the editor. Spacer entries do not become links or appear in the plain-text alternative.
+
+Brand icons are bundled PNGs with [Font Awesome attribution](email-social-icons-license.md). Campaign delivery uses the existing `prepareComposerMessage` path to deduplicate and embed images as CID MIME parts. Campaign requests allow up to 50 MIME image/file parts while keeping the 10 non-inline file limit; ordinary email retains its existing combined limit of 10. Tests construct and parse MIME locally without sending email.
+
+## Email template ownership
+
+Email library contains 16 Colorlib designs converted to native drag-and-drop blocks, shipped through `lib/builtin-email-templates.ts`. [Pinned source files, conversion and licensing](email-template-sources.md) document their provenance. Every workspace sees the same catalog. New copies open with independently editable text, images, buttons, sections, columns and tables; gallery previews render the same native design. The original HTML remains bundled unchanged. Direct updates, trash, restore, and star requests against the shared catalog are rejected by the document API.
+
+Custom emails contains templates created by members of the active workspace. Template creates and updates always save with category `everyday`, including requests from older clients using `promotion` or `general`. Existing workspace templates in those categories are presented as Custom emails without changing their IDs, attachments, or content. Workspace queries retain their authenticated workspace context. Both the complete library snapshot and paginated API merge the shared catalog with authorized workspace items.
+
 ## Sources
 
 - [RFC 5322, sections 3.6.2 and 3.6.4](https://www.rfc-editor.org/rfc/rfc5322.html): Reply-To and conversation headers.

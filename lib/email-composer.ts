@@ -61,6 +61,16 @@ export function prepareComposerMessage(text: string, html: string, signature: st
       attachments.push({ filename: `image-${attachments.length + 1}.${contentType === "image/jpeg" ? "jpg" : /icon$/.test(contentType) ? "ico" : contentType.split("/")[1]}`, content, contentType, cid });
     }
     return `src="cid:${cid}"`;
-  }).replace(/<img\b[^>]*>/gi, (tag) => tag.replace(/\sstyle="[^"]*"/gi, "").replace(/\s*\/?>$/, ' style="max-width:100%;height:auto">'));
+  }).replace(/<img\b[^>]*>/gi, tag => {
+    const source = /\sstyle="([^"]*)"/i.exec(tag)?.[1] ?? "";
+    const allowed: Record<string, RegExp> = {
+      "max-width": /^(?:100%|\d{1,4}px)$/, width: /^(?:auto|100%|\d{1,4}px)$/, height: /^(?:auto|\d{1,4}px)$/, "max-height": /^\d{1,4}px$/,
+      display: /^(?:block|inline-block)$/, "border-radius": /^\d{1,2}px$/, "vertical-align": /^(?:top|middle|bottom)$/, margin: /^(?:0|auto|\d{1,3}px)(?: (?:0|auto|\d{1,3}px)){0,3}$/,
+    };
+    const styles = new Map<string, string>([["max-width", "100%"], ["height", "auto"]]);
+    for (const declaration of source.split(";")) { const colon = declaration.indexOf(":"); const key = declaration.slice(0, colon).trim().toLowerCase(), value = declaration.slice(colon + 1).trim(); if (colon > 0 && allowed[key]?.test(value)) styles.set(key, value); }
+    const style = [...styles].map(([key, value]) => `${key}:${value}`).join(";");
+    return tag.replace(/\sstyle="[^"]*"/gi, "").replace(/\s*\/?>$/, ` style="${style}">`);
+  });
   return { text: signedText, html: body, attachments };
 }

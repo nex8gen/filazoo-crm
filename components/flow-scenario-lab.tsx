@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useMemo, useState } from "react";
 import { FlaskConical, CheckCircle2, AlertTriangle } from "lucide-react";
@@ -19,7 +21,7 @@ export function FlowScenarioLab({ flow, onOpenChange }: { flow: FlowInput; onOpe
   const current = report?.cases[selected];
   return <Dialog open onOpenChange={onOpenChange}><DialogContent className="z-[70] max-h-[90vh] overflow-y-auto sm:max-w-5xl">
     <DialogHeader><DialogTitle className="flex items-center gap-2"><FlaskConical className="size-5" />Test scenarios</DialogTitle><DialogDescription>Check branches, missing values, fit-score boundaries, replies and message filters using generated customer scenarios. No email is sent and no CRM record is changed.</DialogDescription></DialogHeader>
-    {result.error ? <p role="alert" className="rounded-lg bg-destructive/10 p-4 text-sm text-destructive">{result.error}</p> : report ? <>
+    {result.error ? <NotificationToast>{result.error}</NotificationToast> : report ? <>
       <div className="grid grid-cols-3 gap-3">{[["Scenarios checked", report.cases.length], ["Actions reached", `${report.reachedActions} / ${report.actionCount}`], ["Paths reached", `${report.reachedPaths} / ${report.pathCount}`]].map(([label, value]) => <div key={label} className="rounded-xl border p-4"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 text-xl font-semibold">{value}</p></div>)}</div>
       <div className="rounded-lg bg-muted/50 p-3 text-xs leading-5">Includes simulated replies, opens and clicks after waits when relevant. These are test inputs. AI output, mailbox delivery and saved-customer eligibility require separate tests.{report.truncated ? ` Showing 256 of ${report.possible} input combinations; this is partial coverage.` : ""}</div>
       {report.uncoveredPaths.length ? <p className="flex items-start gap-2 rounded-lg border border-amber-300 p-3 text-sm"><AlertTriangle className="size-4 shrink-0" />Paths not reached: {report.uncoveredPaths.join(", ")}. Check overlapping rules, entry filters or add a custom scenario in Preview.</p> : <p className="flex items-center gap-2 text-sm text-emerald-700"><CheckCircle2 className="size-4" />Every configured path was reached by a generated scenario.</p>}

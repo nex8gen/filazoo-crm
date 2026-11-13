@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -43,6 +45,6 @@ export function InvoiceDefaultsForm({ initial, canManage }: { initial: InvoiceDe
       <div className="space-y-2"><Label htmlFor="invoiceNotes">Invoice notes and terms</Label><Textarea id="invoiceNotes" name="notes" defaultValue={initial.seller.notes} maxLength={4000} rows={4} /></div>
       {canManage ? <Button type="submit">{busy ? "Saving..." : "Save invoice defaults"}</Button> : null}
     </fieldset>
-    {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}{notice ? <p role="status" className="text-sm text-primary">{notice}</p> : null}
+    {error ? <NotificationToast>{error}</NotificationToast> : null}{notice ? <NotificationToast tone="message">{notice}</NotificationToast> : null}
   </form>;
 }

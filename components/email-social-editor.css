@@ -1,0 +1,43 @@
+.email-social-tabs { position:sticky; top:0; z-index:4; background:var(--background); display:flex; gap:18px; padding:0 16px; border-bottom:1px solid var(--border); }
+.email-social-tabs button { min-height:44px; padding:10px 0; border-bottom:2px solid transparent; font-size:.875rem; color:var(--muted-foreground); }
+.email-social-tabs button[aria-pressed=true] { border-color:var(--foreground); color:var(--foreground); }
+.email-social-section { display:flex; flex-direction:column; gap:18px; padding:20px 18px; border-bottom:1px solid var(--border); }
+.email-social-section h3 { font-size:16px; line-height:24px; font-weight:550; }
+.email-social-sectionHeading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.email-social-cards { display:flex; flex-direction:column; gap:12px; margin-top:4px; }
+.email-social-card { border:1px solid var(--editor-control-border); border-radius:8px; background:var(--background); }
+.email-social-card[data-drag-over=true] { border-color:var(--primary); box-shadow:0 -3px 0 var(--primary); }
+.email-social-card > summary { display:flex; align-items:center; gap:10px; min-height:48px; padding:8px; list-style:none; cursor:pointer; }
+.email-social-card > summary::-webkit-details-marker { display:none; }
+.email-social-card > summary > svg { width:14px; height:14px; flex-shrink:0; }
+.email-social-card[open] > summary > svg { transform:rotate(180deg); }
+.email-social-card > summary > span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.9375rem; font-weight:500; }
+.email-social-card > summary > button { width:28px; height:28px; }
+.email-social-drag { display:grid; place-items:center; color:var(--muted-foreground); cursor:grab; }
+.email-social-drag:active { cursor:grabbing; }
+.email-social-drag svg { width:14px; height:18px; }
+.email-social-cardBody { display:flex; flex-direction:column; gap:12px; padding:4px 14px 14px; }
+.email-social-cardBody .editor-propertyField { gap:6px; }
+.email-social-cardBody .editor-propertyField > label { font-size:.875rem; font-weight:400; }
+.email-social-add { display:flex; flex-wrap:wrap; gap:12px; }
+.email-social-add button { height:34px; border-color:var(--editor-control-border); border-radius:7px; background:var(--background); box-shadow:none; }
+.email-social-sectionToggle { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; text-align:left; font-size:.9375rem; font-weight:500; }
+.email-social-sectionToggle svg { width:18px; height:18px; }
+.email-social-labelControls { display:flex; flex-direction:column; gap:14px; }
+.email-social-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:end; gap:12px; }
+.email-social-grid .editor-propertyField { gap:8px; }
+.email-social-grid .editor-propertyField > label { font-size:14px; font-weight:400; color:var(--foreground); }
+.email-social-grid .editor-valueInput,.email-social-grid .editor-colorInput { max-width:none; }
+.email-social-hint { color:var(--muted-foreground); font-size:.8125rem; line-height:20px; }
+.email-social-moveButtons { display:flex; justify-content:flex-end; gap:6px; }
+.email-social-iconSample { width:40px; height:40px; align-self:center; background-size:24px 24px; background-repeat:no-repeat; background-position:center; background-color:#e5e7eb; border-radius:6px; }
+.email-social-padding { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) 28px; gap:8px; align-items:end; }
+.email-social-padding .editor-propertyField { gap:8px; }
+.email-social-padding .editor-propertyField > label { font-size:.8125rem; font-weight:400; color:var(--muted-foreground); }
+.email-social-padding > button { height:34px; width:28px; }
+.email-social-padding > button[aria-pressed=true] { color:var(--primary); background:var(--brand-soft); }
+.email-social-background > summary > svg { width:18px; height:18px; margin-left:auto; }
+.email-social-background[open] > summary > svg:first-of-type,.email-social-background:not([open]) > summary > svg:last-of-type { display:none; }
+.email-social-background > summary > svg { order:initial!important; transform:none!important; }
+.email-editor-optionIcon { display:inline-block; width:16px; height:16px; object-fit:contain; flex-shrink:0; }
+.email-designer-hiddenBlock { padding:16px; border:1px dashed var(--primary); background:var(--brand-soft); color:var(--primary); font:14px/1.5 Arial,sans-serif; text-align:center; }

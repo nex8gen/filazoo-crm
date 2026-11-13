@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import vm from "node:vm";
 import ts from "typescript";
 import type { EmailInboxBackendData } from "../lib/email-inbox.ts";
+import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 const require = createRequire(import.meta.url);
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -70,7 +71,7 @@ function mount(signalStatics: unknown = AbortSignal) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
   vm.runInNewContext(code, {
-    exports, require: (name: string) => dependencies[name] ?? require(name), window, URLSearchParams, AbortController, AbortSignal: signalStatics, DOMException, Error, Date: Clock,
+    exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => dependencies[name] ?? require(name))(name), window, URLSearchParams, AbortController, AbortSignal: signalStatics, DOMException, Error, Date: Clock,
     setTimeout: (callback: () => void, delay: number) => { const id = ++timerId; timers.set(id, { at: time.now + delay, callback }); return id; },
     clearTimeout: (id: number) => timers.delete(id),
     fetch: (url: string, options: { signal: AbortSignal }) => new Promise<Response>((resolve, reject) => {

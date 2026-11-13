@@ -7,6 +7,7 @@ import ts from "typescript";
 import { renderToStaticMarkup } from "react-dom/server";
 import { HistoryHttpError, requestHistoryJson } from "../lib/ai/history-http.ts";
 import { createHistoryListCache } from "../lib/ai/history-list-cache.ts";
+import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 const require = createRequire(import.meta.url);
 type Element = { props?: { children?: unknown; "aria-label"?: string; onClick?: () => void; onRetry?: () => void; retryLabel?: string } };
@@ -66,14 +67,14 @@ function usageHarness(request: (url: string, init: RequestInit) => Promise<unkno
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   const hookExports = {};
-  vm.runInNewContext(hookCode, { exports: hookExports, require: (name: string) => dependencies[name] ?? require(name), setTimeout, clearTimeout });
+  vm.runInNewContext(hookCode, { exports: hookExports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => dependencies[name] ?? require(name))(name), setTimeout, clearTimeout });
   dependencies["@/components/use-ai-history-list"] = hookExports;
   const code = ts.transpileModule(readFileSync(new URL("../components/ai-history-menu.tsx", import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
   const exports: { AiHistoryMenu?: (props: unknown) => ReturnType<typeof import("react").createElement> } = {};
   vm.runInNewContext(code, {
-    exports, require: (name: string) => dependencies[name] ?? require(name), Error, URLSearchParams, AbortController, window, document,
+    exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => dependencies[name] ?? require(name))(name), Error, URLSearchParams, AbortController, window, document,
     setInterval: (callback: () => void) => { ticks.add(callback); return callback; },
     clearInterval: (callback: () => void) => ticks.delete(callback), setTimeout, clearTimeout,
   });

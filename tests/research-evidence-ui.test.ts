@@ -7,12 +7,13 @@ import ts from "typescript";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { CustomerResearch } from "../lib/ai/customer-research.ts";
 import * as citations from "../lib/ai/source-citations.ts";
+import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 const require = createRequire(import.meta.url);
 function renderComponent(name: string, props: unknown) {
   const code = ts.transpileModule(readFileSync(new URL("../components/ui/customer-research.tsx", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const exports = {} as Record<string, (props: unknown) => ReturnType<typeof import("react").createElement>>;
-  vm.runInNewContext(code, { exports, URL, require: (name: string) => name === "@/components/language-provider" ? { useLanguage: () => ({ language: "en", t: (text: string) => text }) } : name === "@/lib/ai/source-citations" ? citations : require(name) });
+  vm.runInNewContext(code, { exports, URL, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => name === "@/components/language-provider" ? { useLanguage: () => ({ language: "en", t: (text: string) => text }) } : name === "@/lib/ai/source-citations" ? citations : require(name))(name) });
   return renderToStaticMarkup(exports[name](props));
 }
 const render = (research: Omit<CustomerResearch, "findings">) => renderComponent("CustomerResearchSources", { research });

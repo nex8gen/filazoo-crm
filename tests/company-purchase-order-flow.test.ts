@@ -17,6 +17,7 @@ import * as orders from "../lib/purchase-orders.ts";
 import { formatMoney } from "../lib/invoices.ts";
 import type { OrderProfile, PurchaseOrder } from "../lib/purchase-orders.ts";
 import { defaultTableColumns, type TableId } from "../lib/table-column-preferences.ts";
+import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 const require = createRequire(import.meta.url);
 const companyId = "4913b683-bcec-4079-b424-6fd559ed0c2a";
@@ -31,7 +32,7 @@ function load(file: string, deps: Record<string, unknown>, globals: Record<strin
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => name in deps ? deps[name] : require(name), Date, Intl, URLSearchParams, ...globals });
+  vm.runInNewContext(code, { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => name in deps ? deps[name] : require(name))(name), Date, Intl, URLSearchParams, ...globals });
   return exports;
 }
 const navigation = {
@@ -535,7 +536,7 @@ test("a pending company panel cannot close and failed saves keep the draft avail
   assert.equal(fixture.closed(), 0);
   assert.deepEqual(fixture.savedOrders, []);
   assert.deepEqual(fixture.navigation, []);
-  assert.ok(fixture.render().some(node => node.props.role === "alert" && node.props.children === "Customer account is unavailable."));
+  assert.ok(fixture.render().some(node => node.type === notificationToastModule.NotificationToast && node.props.children === "Customer account is unavailable."));
 });
 
 function draftContextAction(role = "operator", fail = false, access: { missing?: boolean; error?: boolean } = {}) {
@@ -736,7 +737,7 @@ test("failed customer loading keeps the company drawer open and retries the same
   fixture.render();
   await fixture.settle();
   let nodes = fixture.render();
-  assert.ok(nodes.some(node => node.props.role === "alert"));
+  assert.ok(nodes.some(node => node.type === notificationToastModule.NotificationToast));
   assert.ok(!nodes.some(node => node.type === "Composer"), "a failed load never opens an unbound customer editor");
   const retry = nodes.find(node => node.type === "button" && node.props.children === "Retry")!;
   (retry.props.onClick as () => void)();

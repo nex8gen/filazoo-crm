@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { Combobox } from "@base-ui/react/combobox";
 import { Check, ChevronDown, Loader2 } from "lucide-react";
@@ -85,14 +87,14 @@ export function CompanyLocationFields({ disabled }: { disabled: boolean }) {
       <SearchableField id="company-country" name="country" label="Country" value={country} onChange={(value) => { setCountry(value); if (value !== country) setCity(""); }}
         options={countryOptions.map((option) => option.name)} keywords={(name) => { const code = countryOptions.find((option) => option.name === name)?.code; return `${code ?? ""} ${code === "US" ? "USA America" : code === "GB" ? "UK Britain" : code === "AE" ? "UAE" : ""}`; }}
         placeholder={countries.loading ? "Loading countries…" : "Search or choose a country"} required disabled={disabled || countries.loading || Boolean(countries.error)} loading={countries.loading} />
-      {countries.error ? <p role="alert" className="text-xs text-destructive">Unable to load countries. <Button type="button" variant="link" size="sm" onClick={countries.retry}>Retry</Button></p> : null}
+      {countries.error ? <NotificationToast>Unable to load countries. <Button type="button" variant="link" size="sm" onClick={countries.retry}>Retry</Button></NotificationToast> : null}
     </div>
     <div className="space-y-2">
       <SearchableField key={selectedCountry?.code ?? "none"} id="company-city" name="city" label="City" value={city} onChange={setCity}
         options={cities.data?.cities ?? []} placeholder={!selectedCountry ? "Choose a country first" : "Search or enter a city"} custom
         disabled={disabled || !selectedCountry} loading={cities.loading}
         hint={!selectedCountry ? "City options depend on the selected country." : cities.loading ? "Loading cities. You can also type a city." : "Choose a city or type one that is not listed."} />
-      {cities.error ? <p role="alert" className="text-xs text-destructive">Unable to load cities. Enter a city manually or <Button type="button" variant="link" size="sm" onClick={cities.retry}>Retry</Button></p> : null}
+      {cities.error ? <NotificationToast>Unable to load cities. Enter a city manually or <Button type="button" variant="link" size="sm" onClick={cities.retry}>Retry</Button></NotificationToast> : null}
     </div>
   </>;
 }

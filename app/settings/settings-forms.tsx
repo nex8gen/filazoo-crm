@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useActionState } from "react";
 import { useWorkspaceState } from "@/components/workspace-memory";
@@ -12,8 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { inviteMember, savePersonalMailbox, saveWorkspaceMailbox, updateMemberRole, updateProfile } from "./actions";
 
 function FormMessage({ error, success }: { error?: string; success?: string }) {
-  if (error) return <p role="alert" className="text-xs text-destructive">{error}</p>;
-  if (success) return <p role="status" className="text-xs text-primary">{success}</p>;
+  if (error) return <NotificationToast>{error}</NotificationToast>;
+  if (success) return <NotificationToast tone="success">{success}</NotificationToast>;
   return null;
 }
 

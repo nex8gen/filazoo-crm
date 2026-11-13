@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useEffect, useRef, useState } from "react";
 import { FlaskConical, FileText, LoaderCircle, Mail, Plus, Trash2 } from "lucide-react";
@@ -138,21 +140,21 @@ export function FlowEmailTestDialog({ flow, open, onOpenChange, messageStepPath,
           <details className="rounded-lg border p-3"><summary className="cursor-pointer text-xs font-semibold">Scenario facts</summary><div className="mt-4"><FlowScenarioFields facts={facts} onChange={(next) => { setFacts(next); setResult(null); }} disabled={running || pending} /></div></details>
           {!sendReal ? <Button variant="outline" size="sm" disabled={running || emails.length >= 3} onClick={() => { setEmails((current) => [...current, blankEmail()]); setResult(null); }}><Plus />Add sample email</Button> : null}
         </fieldset>
-        {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+        {error ? <NotificationToast>{error}</NotificationToast> : null}
         {running ? <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle className="size-4 animate-spin" />Testing workflow and generating replies…</p> : null}
         {delivery ? <div aria-live="polite" className="space-y-3 rounded-xl border p-4">
           <h3 className="text-sm font-semibold">Real delivery test</h3>
           <p className="text-sm" data-no-translate>{delivery.recipient} · {delivery.status}</p>
           {pending && processingDelivery ? <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground"><LoaderCircle className="size-3 animate-spin" />Preparing the reply, attachments and mail-server submission. Keep this dialog open.</p> : pending && delivery.next_run_at ? <p className="text-xs text-muted-foreground">Next email: <time data-no-translate>{new Date(delivery.next_run_at).toLocaleString()}</time></p> : null}
           {delivery.result.map((reply) => <div key={reply.step} className="space-y-2 rounded-lg bg-muted/40 p-3 text-sm"><p className="font-medium" data-no-translate>{reply.subject}</p><p className="whitespace-pre-wrap" data-no-translate>{reply.body}</p><p className="text-xs text-muted-foreground">Accepted by mail server: <time data-no-translate>{new Date(reply.sentAt).toLocaleString()}</time></p>{reply.attachments.map((attachment) => <p key={attachment.filename} className="text-xs" data-no-translate>{attachment.filename} · {Math.ceil(attachment.size / 1024)} KB</p>)}</div>)}
-          {delivery.error ? <p role="alert" className="text-sm text-destructive">{delivery.error}</p> : null}
+          {delivery.error ? <NotificationToast>{delivery.error}</NotificationToast> : null}
           {pending ? <Button variant="outline" size="sm" disabled={running} onClick={() => void cancelDelivery()}>Cancel delivery test</Button> : <Button variant="outline" size="sm" onClick={() => { setDelivery(null); requestId.current = null; setError(""); }}>Start another test</Button>}
         </div> : null}
         {result ? <div aria-live="polite" className="space-y-4 border-t pt-4"><div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold">Test results</h3><div className="flex gap-1"><Button variant={device === "desktop" ? "secondary" : "ghost"} size="sm" onClick={() => setDevice("desktop")}>Desktop</Button><Button variant={device === "mobile" ? "secondary" : "ghost"} size="sm" onClick={() => setDevice("mobile")}>Mobile</Button></div></div>{result.cases.map((testCase, index) => <section key={index} className="space-y-3 rounded-xl border p-4">
           <p className="text-sm font-semibold" data-no-translate>{index + 1}. {testCase.subject}</p>
           <ol className="space-y-2">{testCase.trace.map((entry, traceIndex) => <li key={traceIndex} className="flex items-start gap-2 text-xs"><span className={`mt-1 size-2 shrink-0 rounded-full ${entry.status === "skipped" || entry.status === "stopped" ? "bg-amber-400" : "bg-emerald-500"}`} /><span><strong>Step {entry.step}</strong> · {entry.detail}</span></li>)}</ol>
           {testCase.replies.map((reply) => <div key={reply.step} className="space-y-3 rounded-lg bg-muted/40 p-4"><p className="text-xs font-semibold">Message preview · Step {reply.step}</p><div className={`mx-auto w-full overflow-hidden rounded-xl border bg-white text-slate-900 transition-[max-width] ${device === "mobile" ? "max-w-[360px]" : "max-w-[640px]"}`}><div className="space-y-1 border-b bg-slate-50 px-5 py-4"><p className="text-xs text-slate-500">To: <span data-no-translate>{customerName || emails[index]?.from}</span></p><p className="text-sm font-semibold" data-no-translate>{reply.subject}</p></div><div className="whitespace-pre-wrap break-words px-5 py-6 text-sm leading-6" data-no-translate>{reply.body}</div></div>{reply.attachments.map((attachment) => <div key={attachment.filename} className="flex items-center gap-2 rounded-lg border bg-background p-3 text-xs"><FileText className="size-4 text-violet-600" /><span data-no-translate>{attachment.filename} · {Math.ceil(attachment.size / 1024)} KB</span><span className="ml-auto text-muted-foreground">Would attach</span></div>)}</div>)}
-          {testCase.error ? <p role="alert" className="text-sm text-destructive">{testCase.error}</p> : null}
+          {testCase.error ? <NotificationToast>{testCase.error}</NotificationToast> : null}
         </section>)}</div> : null}
       </div>
       <DialogFooter><Button variant="outline" disabled={running} onClick={() => onOpenChange(false)}>Close</Button><Button disabled={running || Boolean(delivery)} onClick={() => void runTest()}>{running ? <LoaderCircle className="animate-spin" /> : sendReal ? <Mail /> : <FlaskConical />}{running ? "Testing…" : sendReal ? "Start real email test" : "Run preview"}</Button></DialogFooter>

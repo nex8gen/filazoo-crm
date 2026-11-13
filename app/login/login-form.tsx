@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import Link from "next/link";
 import { useActionState } from "react";
@@ -19,8 +21,8 @@ export function LoginForm({ next = "/workspaces", message, providers = [] }: { n
           <AuthField label="Email" id="email" name="email" type="email" autoComplete="email" placeholder="you@company.com" defaultValue={state?.email} required />
           <AuthField label="Password" id="password" name="password" type="password" autoComplete="current-password" placeholder="Enter your password" required />
           <div className="flex justify-end"><Link href="/forgot-password" className="text-sm text-primary underline underline-offset-4 hover:text-primary/80">Forgot password?</Link></div>
-          {message && !state?.error ? <p role="status" className="text-xs text-primary">{message}</p> : null}
-          {state?.error ? <p role="alert" className="text-xs text-destructive">{state.error}</p> : null}
+          {message && !state?.error ? <NotificationToast tone="success">{message}</NotificationToast> : null}
+          {state?.error ? <NotificationToast>{state.error}</NotificationToast> : null}
           {state?.needsVerification ? <Link href={`/signup/verify?next=${encodeURIComponent(next)}`} className="block text-sm underline underline-offset-4">Verify your email or request a new link</Link> : null}
           <button className={authButtonClass} type="submit" disabled={pending}>{pending ? "Signing in…" : "Sign in"}<ArrowRight className="size-4" /></button>
           <p className="pt-3 text-center text-sm text-black/60 dark:text-white/60">New here? <Link href={`/signup?next=${encodeURIComponent(next === "/workspaces" ? "/workspaces/new" : next)}`} className="font-medium text-primary underline underline-offset-4 hover:text-primary/80">Create an account</Link></p>

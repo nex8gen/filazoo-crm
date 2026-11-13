@@ -7,6 +7,7 @@ import ts from "typescript";
 import * as rules from "../lib/email-followup.ts";
 import * as dates from "../lib/company-followup.ts";
 import { followupConversationFilters, indexFollowupActions, updateFollowupActions, type FollowupActionRecord } from "../lib/email-followup-filters.ts";
+import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 type Element = { type: unknown; props: Record<string, unknown> };
 function elements(value: unknown): Element[] {
@@ -44,7 +45,7 @@ function panel(options: { delayStatus?: boolean; saved?: Record<string, unknown>
   };
   const exports = {} as { EmailFollowupPanel: (props: unknown) => Element };
   const sandbox = {
-    exports, require: (name: string) => { assert.ok(name in dependencies, name); return dependencies[name]; },
+    exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => { assert.ok(name in dependencies, name); return dependencies[name]; })(name),
     URLSearchParams, AbortController, AbortSignal, Event, Date, Error, crypto,
     setInterval: () => 1, clearInterval() {},
     window: { addEventListener() {}, removeEventListener() {}, dispatchEvent() {} }, document: { visibilityState: "visible", addEventListener() {}, removeEventListener() {} },

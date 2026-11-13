@@ -31,6 +31,8 @@ export type LibraryDocument = {
   company_id?: string | null; purchase_order_id?: string | null; invoice_id?: string | null; product_skus?: string[];
   search_text?: string;
   design_version?: string | null; email_design?: EmailDesign | null;
+  origin?: "builtin" | "workspace";
+  preview_url?: string;
 };
 export type LibrarySnapshot = { documents: LibraryDocument[]; folders: LibraryFolder[]; stats: LibraryResult["stats"] };
 export type LibraryResult = {
@@ -62,8 +64,15 @@ export const documentInputSchema = documentMetadataSchema.extend({
   if (value.kind === "file" && value.email_design) context.addIssue({ code: "custom", path: ["email_design"], message: "Email designs belong to templates." });
   const emailCategory = ["promotion", "everyday"].includes(value.category);
   if ((value.kind === "file" && emailCategory) || (value.kind === "template" && !emailCategory && value.category !== "general")) context.addIssue({ code: "custom", path: ["category"], message: "Choose a category that matches the file or text template." });
-});
+}).transform(value => ({ ...value, category: value.kind === "template" ? "everyday" as const : value.category }));
 export const folderInputSchema = z.object({ name: z.string().trim().min(1).max(80), color: z.enum(["green", "blue", "amber", "purple"]).default("green") });
+
+export function isBuiltinEmailTemplate(document: Pick<LibraryDocument, "origin">) { return document.origin === "builtin"; }
+
+/** Legacy workspace templates used both email categories; all are custom emails. */
+export function workspaceLibraryDocument(document: LibraryDocument): LibraryDocument {
+  return { ...document, origin: "workspace", category: document.kind === "template" ? "everyday" : document.category };
+}
 
 export function documentSearchText(value: { name: string; company: string; description: string; tags: string[]; subject: string; body: string; product_skus?: string[] }) {
   return [value.name, value.company, value.description, ...value.tags, value.subject, value.body, ...(value.product_skus ?? [])].join(" ").toLowerCase();

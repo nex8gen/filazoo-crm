@@ -2,7 +2,8 @@ import "server-only";
 import type { WorkspaceViewer } from "../auth.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 import { withWorkspaceViewer } from "../workspace-context.ts";
-import { DOCUMENT_BUCKET, MAX_DOCUMENT_BYTES, documentInputSchema, documentSearchText, escapeDocumentSearch, folderInputSchema, type LibraryDocument, type LibraryFolder, type LibraryResult } from "../documents.ts";
+import { DOCUMENT_BUCKET, MAX_DOCUMENT_BYTES, documentInputSchema, documentSearchText, escapeDocumentSearch, folderInputSchema, workspaceLibraryDocument, type LibraryDocument, type LibraryFolder, type LibraryResult } from "../documents.ts";
+import { builtinEmailTemplate, builtinEmailTemplates } from "../builtin-email-templates.ts";
 import { z } from "zod";
 import { validateDocumentConnections } from "./document-connections.ts";
 import { filterDocumentLibrary } from "../document-library-filter.ts";
@@ -21,7 +22,7 @@ export async function bootstrapDocumentLibrary(viewer: WorkspaceViewer, params: 
     [rows, folders, stars].forEach(result => check(result.error));
     if (rows.count === null || rows.count !== rows.data?.length || Buffer.byteLength(JSON.stringify(rows.data)) > 1_000_000) return null;
     const starred = new Set((stars.data ?? []).map(row => row.document_id));
-    const documents = (rows.data ?? []).map(row => ({ ...row, starred: starred.has(row.id) })) as LibraryDocument[];
+    const documents = [...builtinEmailTemplates(), ...(rows.data ?? []).map(row => workspaceLibraryDocument({ ...row, starred: starred.has(row.id) } as LibraryDocument))];
     const active = documents.filter(item => !item.deleted_at);
     return { documents, folders: folders.data as LibraryFolder[], stats: { files: active.filter(item => item.kind === "file").length, templates: active.filter(item => item.kind === "template").length, starred: active.filter(item => item.starred).length, trash: documents.length - active.length } };
   });
@@ -64,6 +65,8 @@ export async function listDocuments(viewer: WorkspaceViewer, params: URLSearchPa
     ]);
     [folders, stars, files, templates, trash].forEach(result => check(result.error));
     const starIds = new Set<string>((stars.data ?? []).map(row => row.document_id));
+    const catalog = builtinEmailTemplates();
+    const builtin = filterDocumentLibrary({ documents: catalog, folders: [], stats: { files: 0, templates: catalog.length, starred: 0, trash: 0 } }, params).documents;
     let query = db.from("library_documents").select(fields, { count: "exact" }).or(visibility(viewer));
     if (params.get("attachable") === "1") query = query.neq("mime_type", "application/x-filazoo-record");
     const view = params.get("view");
@@ -72,7 +75,9 @@ export async function listDocuments(viewer: WorkspaceViewer, params: URLSearchPa
     query = view === "trash" ? query.not("deleted_at", "is", null) : query.is("deleted_at", null);
     if (view === "templates") query = query.eq("kind", "template");
     const category = params.get("category");
-    if (category) query = query.eq("category", category);
+    if (category === "promotion") query = query.in("id", []);
+    else if (category === "everyday") query = query.eq("kind", "template");
+    else if (category) query = query.eq("category", category).neq("kind", "template");
     const company = params.get("company")?.trim().slice(0, 160);
     if (company) query = query.ilike("company", `%${escapeDocumentSearch(company)}%`);
     if (view === "starred") query = query.in("id", [...starIds]);
@@ -92,17 +97,23 @@ export async function listDocuments(viewer: WorkspaceViewer, params: URLSearchPa
     const order = params.get("sort");
     query = order === "name" ? query.order("name").order("id") : order === "oldest" ? query.order("updated_at").order("id") : query.order("updated_at", { ascending: false }).order("id");
     const offset = Math.max(0, Math.min(100000, Number(params.get("offset")) || 0));
-    const result = await query.range(offset, offset + 59);
+    // Include enough preceding workspace rows to merge the small shared catalog
+    // into the requested page without loading an entire large workspace.
+    const start = Math.max(0, offset - builtin.length);
+    const result = await query.range(start, offset + 59);
     check(result.error);
     const activeStars = starIds.size ? await db.from("library_documents").select("id", { count: "exact", head: true }).in("id", [...starIds]).is("deleted_at", null).or(visibility(viewer)) : { count: 0, error: null };
     check(activeStars.error);
-    return { documents: (result.data ?? []).map(row => ({ ...row, starred: starIds.has(row.id) })) as LibraryDocument[], folders: folders.data as LibraryFolder[], total: result.count ?? 0, stats: { files: files.count ?? 0, templates: templates.count ?? 0, starred: activeStars.count ?? 0, trash: trash.count ?? 0 } };
+    const merged = [...builtin, ...(result.data ?? []).map(row => workspaceLibraryDocument({ ...row, starred: starIds.has(row.id) } as LibraryDocument))];
+    const page = filterDocumentLibrary({ documents: merged, folders: [], stats: { files: 0, templates: 0, starred: 0, trash: 0 } }, params, merged.length).documents.slice(offset - start, offset - start + 60);
+    return { documents: page, folders: folders.data as LibraryFolder[], total: (result.count ?? 0) + builtin.length, stats: { files: files.count ?? 0, templates: (templates.count ?? 0) + catalog.length, starred: activeStars.count ?? 0, trash: trash.count ?? 0 } };
   });
 }
 
 export async function mutateDocument(viewer: WorkspaceViewer, value: unknown) {
   const envelope = parse(z.object({ action: z.enum(["prepare_upload", "create", "update", "folder", "star", "trash", "restore"]) }).passthrough(), value);
   if (envelope.action !== "star") writer(viewer);
+  if (typeof envelope.id === "string" && builtinEmailTemplate(envelope.id)) throw new DocumentError("Prebuilt templates are read-only. Customize a copy in Custom emails.", 403);
   return withWorkspaceViewer(viewer, async () => {
     const db = createSupabaseAdmin();
     if (envelope.action === "folder") {
@@ -192,6 +203,8 @@ async function validateRelated(db: ReturnType<typeof createSupabaseAdmin>, ids: 
 
 export async function getLibraryDocument(viewer: WorkspaceViewer, id: string) {
   if (!z.uuid().safeParse(id).success) throw new DocumentError("Choose a valid file.");
+  const builtin = builtinEmailTemplate(id);
+  if (builtin) return { document: builtin, related: [] as LibraryDocument[] };
   return withWorkspaceViewer(viewer, async () => {
     const db = createSupabaseAdmin();
     const result = await db.from("library_documents").select(`${fields},email_design`).eq("id", id).is("deleted_at", null).or(visibility(viewer)).maybeSingle();
@@ -200,7 +213,7 @@ export async function getLibraryDocument(viewer: WorkspaceViewer, id: string) {
     const related = result.data.related_ids.length ? await db.from("library_documents").select(fields).in("id", result.data.related_ids).is("deleted_at", null).or(visibility(viewer)) : { data: [], error: null };
     check(related.error);
     if (related.data?.length !== result.data.related_ids.length) throw new DocumentError("A linked attachment is unavailable to your account. Edit the template to review its linked files.", 409);
-    return { document: { ...result.data, starred: false } as LibraryDocument, related: (related.data ?? []).map(item => ({ ...item, starred: false })) as LibraryDocument[] };
+    return { document: workspaceLibraryDocument({ ...result.data, starred: false } as LibraryDocument), related: (related.data ?? []).map(item => ({ ...item, starred: false })) as LibraryDocument[] };
   });
 }
 

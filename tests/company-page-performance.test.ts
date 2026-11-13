@@ -7,6 +7,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import * as model from "../lib/crm-model.ts";
 import { companyTab, companyTabHref, companyTabs } from "../lib/company-tabs.ts";
+import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 const require = createRequire(import.meta.url);
 const id = "4913b683-bcec-4079-b424-6fd559ed0c2a";
@@ -15,7 +16,7 @@ const contact = { id: "contact-1", name: "Primary", role: "Buyer", email: "buyer
 function load(file: string, deps: Record<string, unknown>) {
   const exports: Record<string, (...args: unknown[]) => Promise<unknown>> = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => name === "../customer-tags.ts" ? customerTags : name in deps ? deps[name] : name.startsWith("react") ? require(name) : {}, process: { env: { NODE_ENV: "test" } }, Date, Intl, console });
+  vm.runInNewContext(code, { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => name === "../customer-tags.ts" ? customerTags : name in deps ? deps[name] : name.startsWith("react") ? require(name) : {})(name), process: { env: { NODE_ENV: "test" } }, Date, Intl, console });
   return exports;
 }
 function profileFixture(options: { denied?: boolean; demo?: boolean; missing?: boolean; failure?: string; owner?: boolean; role?: string; userId?: string } = {}) {

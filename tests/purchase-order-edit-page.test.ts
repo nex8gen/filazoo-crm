@@ -7,6 +7,7 @@ import ts from "typescript";
 import { blankPurchaseOrder } from "../lib/purchase-order-draft.ts";
 import type { PurchaseOrder } from "../lib/purchase-orders.ts";
 import { commerceDefaults } from "../lib/company-commerce.ts";
+import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 const require = createRequire(import.meta.url);
 const id = "083bb9b2-a99d-461e-aba2-c3d571598174";
@@ -27,7 +28,7 @@ function editPage(role = "admin") {
   };
   const exports: { default?: (input: { params: Promise<{ id: string }> }) => Promise<{ type: unknown; props: { initialOrder: PurchaseOrder; initialCompanyId: string } }> } = {};
   const code = ts.transpileModule(readFileSync(new URL("../app/purchase-orders/[id]/edit/page.tsx", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => deps[name] ?? require(name), Date, Set });
+  vm.runInNewContext(code, { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => deps[name] ?? require(name))(name), Date, Set });
   return { page: exports.default!, order, Composer, reads };
 }
 

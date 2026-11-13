@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useId, useRef, useState, type ClipboardEvent } from "react";
 import { ImagePlus, X } from "lucide-react";
@@ -65,5 +67,5 @@ export function AiImagePreviews({ images, onRemove, disabled = false }: { images
 }
 
 export function AiImageFeedback({ attachments }: { attachments: AiImageAttachments }) {
-  return <>{attachments.processing ? <p role="status" className="my-1 text-xs text-muted-foreground">Preparing image…</p> : null}{attachments.error ? <p role="alert" className="my-1 text-xs text-destructive">{attachments.error}</p> : null}</>;
+  return <>{attachments.processing ? <p role="status" className="my-1 text-xs text-muted-foreground">Preparing image…</p> : null}{attachments.error ? <NotificationToast>{attachments.error}</NotificationToast> : null}</>;
 }

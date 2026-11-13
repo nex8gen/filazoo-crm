@@ -2,7 +2,7 @@ import type { LibraryDocument } from "./documents.ts";
 import { holidaySlots, marketingCategoryLabels, monthEndSlots, type MarketingAsset, type MarketingCategory, type MarketingSlot } from "./marketing-assets.ts";
 
 export type PromotionStatusFilter = "all" | "draft" | "ready" | "unplanned" | "scheduled" | "queued";
-export type PromotionTemplateSeed = Pick<LibraryDocument, "name" | "kind" | "category" | "subject" | "body" | "description" | "tags" | "company" | "related_ids">;
+export type PromotionTemplateSeed = Pick<LibraryDocument, "name" | "kind" | "category" | "subject" | "body" | "description" | "tags" | "company" | "related_ids" | "email_design">;
 export type PromotionLibraryRow = { key: string; slot?: MarketingSlot; asset?: MarketingAsset; title: string; startDate: string; endDate: string };
 
 export function promotionLibraryRows(assets: MarketingAsset[], category: MarketingCategory, year: number, status: PromotionStatusFilter, query: string): PromotionLibraryRow[] {
@@ -29,7 +29,7 @@ export function promotionEmailTemplate(asset: MarketingAsset): PromotionTemplate
   const subject = match ? match[1].trim() : asset.title;
   const body = match ? match[2].replace(/^Body\s*:\s*\r?\n/i, "").trim() : message;
   return {
-    name: asset.title, kind: "template", category: "promotion", subject: subject.slice(0, 300), body,
+    name: asset.title, kind: "template", category: "everyday", subject: subject.slice(0, 300), body, email_design: asset.campaignConfig?.emailDesign,
     company: "", tags: [marketingCategoryLabels[asset.category], String(asset.year)], related_ids: [],
     description: [`Promotion: ${marketingCategoryLabels[asset.category]}`, `Dates: ${asset.startDate} – ${asset.endDate}`, asset.audience ? `Audience: ${asset.audience}` : "", asset.offer ? `Offer: ${asset.offer}` : ""].filter(Boolean).join("\n").slice(0, 2000),
   };

@@ -1,4 +1,6 @@
 "use client";
+import { NotificationToast } from "@/components/ui/notification-toast";
+
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -34,7 +36,7 @@ export function InventoryConnection({ status, canSync, canManage = false, matche
         <p className="text-xs text-muted-foreground">{status.lastSyncedAt ? `Last sync: ${new Date(status.lastSyncedAt).toLocaleString("en", { timeZone: "Asia/Shanghai" })} (China time).` : "No successful sync yet."} {stale ? "Stock is over 30 minutes old." : ""} Unmatched products have unknown stock. Amazon FBA is excluded.</p>
         {matched < total ? <p className="text-xs text-muted-foreground">Match each product or variant SKU to its ERP SKU. An administrator can configure aliases when SKUs differ.</p> : null}
       </> : <p className="max-w-3xl text-muted-foreground">Add or enable your Lingxing connection in Settings to sync product stock.</p>}
-      {status.configurationError || status.lastError ? <p role="alert" className="text-destructive">{status.configurationError || status.lastError}</p> : null}
+      {status.configurationError || status.lastError ? <NotificationToast>{status.configurationError || status.lastError}</NotificationToast> : null}
       {message ? <p role="status" className={failed ? "text-destructive" : "text-muted-foreground"}>{message}</p> : null}
     </div>
     <div className="flex shrink-0 flex-wrap gap-2">{canManage ? <Button variant="outline" nativeButton={false} render={<Link href="/settings/erp" />}>Manage ERP connection</Button> : null}{canSync ? <Button variant="outline" disabled={pending || status.running || !status.configured} onClick={sync}><RefreshCw className={pending ? "animate-spin" : ""} />{pending || status.running ? "Syncing…" : "Sync stock"}</Button> : null}</div>
