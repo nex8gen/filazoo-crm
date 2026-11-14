@@ -7,6 +7,8 @@ import ts from "typescript";
 import * as history from "../lib/ai/chat-history.ts";
 import * as researchRequest from "../lib/ai/research-request.ts";
 import * as researchProgress from "../lib/ai/research-progress.ts";
+import * as sessionRecovery from "../lib/ai/session-recovery-fetch.ts";
+import * as sessionResponse from "../lib/workspace-session-response.ts";
 import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 const require = createRequire(import.meta.url);
@@ -34,6 +36,8 @@ for (const turnOff of [false, true]) test(`Analytics composer sends explicit com
     "@/components/ui/customer-research": { WebSearchOption: Toggle, CustomerResearchSources: () => null },
     "@/lib/ai/chat-history": history, "@/lib/ai/research-request": researchRequest,
     "@/lib/ai/research-progress": researchProgress,
+    "@/lib/ai/session-recovery-fetch": sessionRecovery,
+    "@/lib/workspace-session-response": sessionResponse,
     "@/lib/ai/image-input": { chatImageLimitError: () => null },
     "@/lib/ai/agent-progress": { pageWorkArea: () => "analytics" },
     "@/lib/ai/page-context": { readAssistantPageContext: () => ({}) },

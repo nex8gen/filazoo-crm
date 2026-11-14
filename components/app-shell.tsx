@@ -1,14 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { AiLauncher } from "@/components/ai-launcher";
 import type { WorkspaceAiLaunchRequest } from "@/components/workspace-ai-assistant";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { Menu, Search } from "lucide-react";
 import { navigation } from "@/lib/navigation";
-import { FlowActivityBell } from "@/components/flow-activity-bell";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useVisitedPageRefresh } from "@/components/use-visited-page-refresh";
@@ -24,6 +22,13 @@ const loadAiAssistant = () => import("@/components/workspace-ai-assistant");
 const WorkspaceAiAssistant = lazy(() => loadAiAssistant().then((module) => ({ default: module.WorkspaceAiAssistant })));
 
 const WorkspaceCommandMenu = dynamic(() => import("@/components/workspace-command-menu").then((module) => module.WorkspaceCommandMenu));
+// These controls read browser state and fetch their data after hydration. Keep
+// them out of the initial page scripts so the main workspace renders first.
+const AiLauncher = dynamic(() => import("@/components/ai-launcher").then(module => module.AiLauncher), { ssr: false });
+const FlowActivityBell = dynamic(() => import("@/components/flow-activity-bell").then(module => module.FlowActivityBell), {
+  ssr: false,
+  loading: () => <span aria-hidden="true" className="inline-block size-8 shrink-0" />,
+});
 
 export function AppShell({ children, userMenu }: { children: React.ReactNode; userMenu?: React.ReactNode }) {
   const pathname = usePathname();

@@ -11,7 +11,6 @@ const { unstable_getResponseFromNextConfig } = require("next/experimental/testin
 
 test("old page URLs redirect directly to named pages and retain their query parameters", async () => {
   const examples = [
-    ["/", "/analytics"],
     ["/lead-channel/ai-agent?flow=selected", "/workflow?flow=selected"],
     ["/lead-channel/ai-agent/qa", "/workflow/qa"],
     ["/automation?flow=selected", "/workflow?flow=selected"],
@@ -40,7 +39,7 @@ test("canonical pages and loading boundaries exist at the destinations", () => {
 });
 
 test("page renames leave API and other workspace routes untouched", async () => {
-  for (const route of ["/api/catalogs/selected/pdf", "/api/email/flows", "/api/flows", "/companies", "/settings/apps", "/messenger"]) {
+  for (const route of ["/", "/api/catalogs/selected/pdf", "/api/email/flows", "/api/flows", "/companies", "/settings/apps", "/messenger"]) {
     const response = await unstable_getResponseFromNextConfig({ url: `https://crm.example${route}`, nextConfig });
     assert.equal(response.status, 200, route);
     assert.equal(response.headers.get("location"), null, route);

@@ -72,8 +72,51 @@ For normal CRM use, run `npm run crm` and open `http://localhost:3001`.
 This builds and serves an optimized production app using your existing local
 configuration. Its `.next-crm` output is separate from the development build, so
 editing files or running other builds does not invalidate your open CRM pages.
-After the first build, `npm run crm:start` restarts it without rebuilding.
-Stop the normal-use server before running `npm run crm` to install newer code.
+After the first build, `npm run crm:start` restarts it without rebuilding. It checks
+that the build still matches your source and local configuration and stops with
+rebuild instructions if it is stale.
+
+To get a newer release, stop the local CRM, then run:
+
+```bash
+npm run crm:update
+npm run crm:start
+```
+
+The update command downloads `origin/main`, retries interrupted Git downloads up
+to three times, fast-forwards the branch, installs the exact lockfile dependencies,
+checks local authentication/database connectivity, builds the optimized app, and
+checks its bundle budgets. It preserves local edits and refuses to merge when
+they need to be resolved. It does not reset files, push commits, or deploy to Vercel.
+Use `npm run crm` to rebuild local edits without downloading a release.
+
+Vercel production is built from this Git repository. A Git pull updates source
+files; it does not install new dependencies or rebuild an already-running local
+app. Compare the production deployment's Git SHA in Vercel if you need a specific
+deployed version, since a newer commit on `main` can still have a failed deployment.
+Startup now reports missing or outdated packages before opening a broken app.
+
+### Working between the office computer and laptop
+
+Both computers should use `https://github.com/nex8gen/filazoo-crm.git` as `origin`
+and track `origin/main`. This repository is connected to the Vercel project
+`filazoo-crm` under `nex8gens-projects`; its production domain is
+`https://crm.filazoosupply.com`.
+
+1. Before editing on either computer, use **Source Control → … → Pull** in VS Code.
+   When preparing the local CRM after an update, stop its server and run
+   `npm run crm:update`, then `npm run crm:start`.
+2. When finished, stage the intended files with **+**, enter a descriptive commit
+   message, and use **Commit & Sync**. Finish syncing before switching computers.
+3. A push to `main` starts the connected Vercel deployment. Check that deployment
+   reaches **Ready** before expecting the website to show the update. A failed
+   build leaves the preceding production deployment live.
+
+The graph displays commit messages such as `home`, not the computer location or
+an update status. `M` and `U` files are uncommitted work; they appear in history
+only after committing. Pull retrieves commits, and push uploads commits.
+If both computers contain different commits, resolve that divergence before
+syncing; do not force-push or discard work to make the graph match.
 
 Use `npm run dev` and `http://localhost:3000` while changing application code.
 Development mode compiles routes on demand, disables automatic route prefetching,

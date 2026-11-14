@@ -6,7 +6,7 @@ test("local development refuses to start without a real Supabase server key", as
   const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
   const check = readFileSync(new URL("../scripts/check-local-env.mjs", import.meta.url), "utf8");
 
-  assert.equal(packageJson.scripts.predev, "node scripts/check-local-env.mjs");
+  assert.equal(packageJson.scripts.predev, "node scripts/check-local-dependencies.mjs && node scripts/check-local-env.mjs");
   assert.match(check, /localSupabaseConfig\(process\.env\)/);
   assert.match(check, /checkLocalSupabase\(config\)/);
   assert.match(check, /process\.exit\(1\)/);

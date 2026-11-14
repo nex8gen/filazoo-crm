@@ -3,10 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "predev": "node scripts/check-local-env.mjs",
+    "predev": "node scripts/check-local-dependencies.mjs && node scripts/check-local-env.mjs",
     "dev": "next dev",
     "crm": "node scripts/start-crm.mjs",
     "crm:start": "node scripts/start-crm.mjs --skip-build",
+    "crm:update": "node scripts/update-crm.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
