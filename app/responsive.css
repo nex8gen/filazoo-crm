@@ -123,9 +123,7 @@
   padding: 0.25rem;
   border: 1px solid var(--workspace-frame-border);
   border-radius: 0.875rem;
-  background: var(--workspace-frame);
   color: var(--workspace-rail-text);
-  box-shadow: 0 4px 16px rgb(0 0 0 / 10%);
   --tw-ring-color: transparent;
   max-height: var(--available-height);
 }

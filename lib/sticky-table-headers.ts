@@ -20,7 +20,7 @@ export function stickyTableHeaders(root: HTMLElement) {
   const observed = new Set<Element>();
 
   const reset = ({ header }: TrackedTable) => {
-    for (const property of ["--crm-table-header-offset", "--crm-table-pin-start", "--crm-table-pin-end", "--crm-table-pin-distance"])
+    for (const property of ["--crm-table-header-offset", "--crm-table-header-gap", "--crm-table-pin-start", "--crm-table-pin-end", "--crm-table-pin-distance"])
       header.style.removeProperty(property);
     delete header.dataset.crmStickyHeader;
   };
@@ -29,6 +29,19 @@ export function stickyTableHeaders(root: HTMLElement) {
     refresh = true;
     schedule();
   });
+
+  function pinPosition(header: HTMLTableSectionElement, clips: HTMLElement[], origin: number) {
+    const owner = clips.find(clip => clip.scrollHeight > clip.clientHeight + 1)
+      ?? document.scrollingElement as HTMLElement;
+    const ownerTop = owner === document.scrollingElement ? 0 : owner.getBoundingClientRect().top + owner.clientTop;
+    const contentTop = origin - ownerTop + owner.scrollTop;
+    const requestedGap = parseFloat(getComputedStyle(header).getPropertyValue("--crm-table-sticky-top")) || 32;
+    // A table flush with its scroll pane has no space for the usual top gap.
+    // Never translate the header over the first rows at scrollTop = 0.
+    const gap = Math.min(requestedGap, Math.max(0, contentTop));
+    header.style.setProperty("--crm-table-header-gap", `${gap}px`);
+    return { owner, top: ownerTop + gap, start: contentTop - gap };
+  }
 
   function collect() {
     const previous = new Map(tables.map(entry => [entry.header, entry]));
@@ -50,15 +63,11 @@ export function stickyTableHeaders(root: HTMLElement) {
         clips.forEach(clip => nextObserved.add(clip));
 
         if (nativeTimeline && table.getClientRects().length) {
-          const owner = clips.find(clip => clip.scrollHeight > clip.clientHeight + 1)
-            ?? document.scrollingElement as HTMLElement;
-          const ownerTop = owner === document.scrollingElement ? 0 : owner.getBoundingClientRect().top + owner.clientTop;
           const heading = header.getBoundingClientRect();
           const transform = getComputedStyle(header).transform;
           const offset = transform === "none" ? 0 : new DOMMatrixReadOnly(transform).m42;
           const origin = heading.top - offset;
-          const gap = parseFloat(getComputedStyle(header).getPropertyValue("--crm-table-sticky-top")) || 32;
-          const start = origin - ownerTop + owner.scrollTop - gap;
+          const { owner, start } = pinPosition(header, clips, origin);
           const distance = Math.max(0, table.getBoundingClientRect().bottom - heading.height - origin);
           header.style.setProperty("--crm-table-pin-start", `${start}px`);
           header.style.setProperty("--crm-table-pin-end", `${start + Math.max(1, distance)}px`);
@@ -93,9 +102,7 @@ export function stickyTableHeaders(root: HTMLElement) {
       const bounds = table.getBoundingClientRect();
       const heading = header.getBoundingClientRect();
       const origin = heading.top - offset;
-      const gap = parseFloat(getComputedStyle(header).getPropertyValue("--crm-table-sticky-top")) || 32;
-      const top = clips.filter(clip => clip.scrollHeight > clip.clientHeight + 1)
-        .reduce((edge, clip) => Math.max(edge, clip.getBoundingClientRect().top + clip.clientTop), 0) + gap;
+      const { top } = pinPosition(header, clips, origin);
       return Math.max(0, Math.min(top - origin, bounds.bottom - heading.height - origin));
     });
     tables.forEach((entry, index) => {

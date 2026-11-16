@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
 import { z } from "zod";
-import { preferredStartPage } from "../lib/user-preferences.ts";
+import { loginDestination } from "../lib/login-destination.ts";
 
 function fixture(membershipError: unknown, membership: unknown = null, signInError: unknown = null, preferences: unknown = null, next = "/") {
   let signOuts = 0;
@@ -14,8 +14,7 @@ function fixture(membershipError: unknown, membership: unknown = null, signInErr
   const dependencies = {
     zod: { z },
     "next/navigation": { redirect: (path: string) => { throw new Error(`redirect:${path}`); } },
-    "@/lib/safe-redirect": { safeInternalPath: (path: string) => path },
-    "@/lib/user-preferences": { preferredStartPage },
+    "@/lib/login-destination": { loginDestination },
     "@/lib/supabase/server": { createClient: async () => ({ auth: {
       signInWithPassword: async () => ({ data: { user: { id: "fixture", user_metadata: { crm_preferences: preferences } } }, error: signInError }),
       signOut: async () => { signOuts++; },
@@ -37,14 +36,19 @@ test("workspace membership is resolved after login and does not revoke a valid s
   assert.ok(!JSON.stringify(f.logs).includes("private provider response"));
 });
 
-test("sign-in uses a validated start page and preserves explicit record links", async () => {
-  for (const page of ["/", "/analytics", "/companies", "/email"]) {
-    await assert.rejects(fixture(null, null, null, { startPage: page }).run(), new RegExp(`redirect:${page}$`));
-  }
-  for (const page of ["https://example.com", "//example.com", "/settings/team", "/my-day", "constructor"]) {
+test("sign-in always opens Home regardless of saved preferences or previous workspace page", async () => {
+  for (const page of ["/", "/analytics", "/companies", "/email", "https://example.com", "//example.com", "/settings/team", "/my-day", "constructor"]) {
     await assert.rejects(fixture(null, null, null, { startPage: page }).run(), /redirect:\/$/);
   }
-  await assert.rejects(fixture(null, null, null, { startPage: "/email" }, "/companies/record?tab=email").run(), /redirect:\/companies\/record\?tab=email$/);
+  for (const next of ["/email", "/settings", "/analytics", "/companies/record?tab=email", "/login?next=/settings"]) {
+    await assert.rejects(fixture(null, null, null, { startPage: "/email" }, next).run(), /redirect:\/$/);
+  }
+});
+
+test("sign-in still completes workspace onboarding and invitations", async () => {
+  for (const next of ["/workspaces/new", "/join/invitation-token", "/accept-invitation"]) {
+    await assert.rejects(fixture(null, null, null, null, next).run(), error => (error as Error).message === `redirect:${next}`);
+  }
 });
 
 test("a signed-in user without membership keeps their session for workspace onboarding", async () => {

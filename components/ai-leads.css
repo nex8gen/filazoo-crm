@@ -87,7 +87,7 @@
 .ld-review-notes p { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted-foreground); }
 .ld-review-notes svg { color: var(--primary); flex-shrink: 0; }
 .ld-cost-note { font-size: 12px; color: var(--muted-foreground); line-height: 1.7; }
-.ld-dialog-footer { display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 15px 25px; border-top: 1px solid var(--border); background: var(--background); flex-shrink: 0; }
+.ld-dialog-footer { display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 15px 25px; border-top: 1px solid var(--border); background: transparent; flex-shrink: 0; }
 .ld-footer-step { font-size: 12px; color: var(--muted-foreground); margin-left: auto; }
 .lead-detail-sheet { width: min(510px, 100vw); max-width: min(510px, 100vw); gap: 0; overflow: hidden; }
 .ld-detail-header { padding: 29px 26px 21px; border-bottom: 1px solid var(--border); }
@@ -129,7 +129,7 @@
 .ld-source-list a { display: flex; align-items: flex-start; gap: 6px; font-size: 12px; color: var(--muted-foreground); }
 .ld-source-list a > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .ld-source-list svg { flex-shrink: 0; margin-top: 1px; }
-.ld-detail-footer { display: flex; gap: 10px; justify-content: space-between; border-top: 1px solid var(--border); padding: 16px 24px; background: var(--background); flex-shrink: 0; }
+.ld-detail-footer { display: flex; gap: 10px; justify-content: space-between; border-top: 1px solid var(--border); padding: 16px 24px; background: transparent; flex-shrink: 0; }
 
 @media (max-width: 760px) {
   .ld-legacy-note { flex-wrap: wrap; }

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, type CSSProperties } from "react";
 import { useWorkspaceState } from "@/components/workspace-memory";
+import { useSettingsReturnTo } from "@/components/workspace-navigation";
 import { Bot, Building2, ChevronDown, ChevronLeft, CreditCard, LayoutGrid, Mail, MailCheck, Plug, ReceiptText, Search, Settings2, ShieldCheck, Sun, UserRound, UsersRound, Workflow, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { settingsGroups, settingsSectionForPath, visibleSettingsSections } from "@/lib/settings-sections";
@@ -13,6 +14,7 @@ const icons = { bot: Bot, settings: Settings2, sun: Sun, user: UserRound, shield
 
 export function SettingsNavigation({ isAdmin, workspaceName }: { isAdmin: boolean; workspaceName: string }) {
   const pathname = usePathname();
+  const returnTo = useSettingsReturnTo();
   const active = settingsSectionForPath(pathname);
   const [search, setSearch] = useWorkspaceState("settings.search", "");
   const [expanded, setExpanded] = useState(false);
@@ -40,7 +42,7 @@ export function SettingsNavigation({ isAdmin, workspaceName }: { isAdmin: boolea
   }
 
   return <aside className="settings-navigation" data-entering={entering && !search || undefined}>
-    <Link href="/analytics" className="settings-back settings-reveal-item" style={revealStyle(0)}><ChevronLeft aria-hidden="true" className="size-4" /><span>Settings</span></Link>
+    <Link href={returnTo} aria-label="Back to previous page" className="settings-back settings-reveal-item" style={revealStyle(0)}><ChevronLeft aria-hidden="true" className="size-4" /><span>Settings</span></Link>
     <button type="button" aria-expanded={expanded} aria-controls="settings-menu" onClick={() => { setExpanded(!expanded); if (!expanded) setEntering(true); }} className="settings-mobile-toggle">{active?.title || "Settings"}<ChevronDown aria-hidden="true" className={`size-4 transition-transform ${expanded ? "rotate-180" : ""}`} /></button>
     <div id="settings-menu" className={`settings-menu ${expanded ? "is-expanded" : ""}`}>
       <div className="settings-search settings-reveal-item" style={revealStyle(1)}><Search aria-hidden="true" className="settings-search-icon" /><Input type="search" aria-label="Search settings" value={search} onChange={event => { setEntering(false); setSearch(event.target.value); }} placeholder="Search settings" />{search ? <button type="button" aria-label="Clear settings search" onClick={() => setSearch("")}><X aria-hidden="true" className="size-3.5" /></button> : null}</div>

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
 
-function fixture(native: boolean, nested = false) {
+function fixture(native: boolean, nested = false, inset = 100) {
   const frames = new Map<number, () => void>();
   const listeners = new Map<string, () => void>();
   const properties = new Map<string, string>();
@@ -25,7 +25,7 @@ function fixture(native: boolean, nested = false) {
     scrollHeight: 1600, scrollTop: 0, parentElement: owner,
     getBoundingClientRect: () => ({ top: nested ? 100 : 300 - scroll }),
   };
-  const tableTop = () => nested ? 202 - viewport.scrollTop : 300 - scroll;
+  const tableTop = () => nested ? 102 + inset - viewport.scrollTop : 300 - scroll;
   const header = {
     dataset: {} as Record<string, string>,
     style: {
@@ -77,6 +77,7 @@ function fixture(native: boolean, nested = false) {
     properties, header, owner, viewport, listeners, cleanup, flush, resize, mutation,
     get observed() { return observed; }, get unobserved() { return unobserved; },
     scroll(value: number) { scroll = value; owner.scrollTop = value; listeners.get("scroll")?.(); flush(); },
+    scrollPane(value: number) { viewport.scrollTop = value; listeners.get("scroll")?.(); flush(); },
     setNativeOffset(value: number) { nativeOffset = value; },
   };
 }
@@ -117,6 +118,31 @@ test("nested panes use their own scroll timeline and preserve the top gap", () =
   assert.equal(view.viewport.dataset.crmTableScroll, "");
   assert.equal(view.owner.dataset.crmTableScroll, undefined);
   assert.equal(view.properties.get("--crm-table-pin-start"), "68px");
+  view.cleanup();
+});
+
+test("flush and shallow nested tables never start with rows hidden behind the native header", () => {
+  for (const inset of [0, 16]) {
+    const view = fixture(true, true, inset);
+    assert.equal(view.properties.get("--crm-table-pin-start"), "0px");
+    assert.equal(view.properties.get("--crm-table-header-gap"), `${inset}px`);
+    view.scrollPane(120);
+    view.setNativeOffset(120);
+    view.resize();
+    view.flush();
+    assert.equal(view.properties.get("--crm-table-pin-start"), "0px");
+    assert.equal(view.properties.get("--crm-table-header-gap"), `${inset}px`);
+    view.cleanup();
+  }
+});
+
+test("compatibility headers in flush panes return fully above the first row", () => {
+  const view = fixture(false, true, 0);
+  for (const depth of [0, 120, 260, 120, 0]) {
+    view.scrollPane(depth);
+    assert.equal(view.properties.get("--crm-table-header-offset"), `${depth}px`);
+    assert.equal(view.properties.get("--crm-table-header-gap"), "0px");
+  }
   view.cleanup();
 });
 

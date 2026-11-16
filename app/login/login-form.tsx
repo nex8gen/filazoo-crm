@@ -10,7 +10,7 @@ import { AuthSocialButtons } from "@/components/auth-social-buttons";
 import type { AuthProvider } from "@/lib/auth-providers";
 import { login } from "./actions";
 
-export function LoginForm({ next = "/workspaces", message, providers = [] }: { next?: string; message?: string; providers?: AuthProvider[] }) {
+export function LoginForm({ next = "/", message, providers = [] }: { next?: string; message?: string; providers?: AuthProvider[] }) {
   const [state, action, pending] = useActionState(login, undefined);
 
   return (
@@ -25,7 +25,7 @@ export function LoginForm({ next = "/workspaces", message, providers = [] }: { n
           {state?.error ? <NotificationToast>{state.error}</NotificationToast> : null}
           {state?.needsVerification ? <Link href={`/signup/verify?next=${encodeURIComponent(next)}`} className="block text-sm underline underline-offset-4">Verify your email or request a new link</Link> : null}
           <button className={authButtonClass} type="submit" disabled={pending}>{pending ? "Signing in…" : "Sign in"}<ArrowRight className="size-4" /></button>
-          <p className="pt-3 text-center text-sm text-black/60 dark:text-white/60">New here? <Link href={`/signup?next=${encodeURIComponent(next === "/workspaces" ? "/workspaces/new" : next)}`} className="font-medium text-primary underline underline-offset-4 hover:text-primary/80">Create an account</Link></p>
+          <p className="pt-3 text-center text-sm text-black/60 dark:text-white/60">New here? <Link href={`/signup?next=${encodeURIComponent(next === "/" || next === "/workspaces" ? "/workspaces/new" : next)}`} className="font-medium text-primary underline underline-offset-4 hover:text-primary/80">Create an account</Link></p>
         </form>
     </>
   );

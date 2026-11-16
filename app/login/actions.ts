@@ -2,9 +2,8 @@
 
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { safeInternalPath } from "@/lib/safe-redirect";
+import { loginDestination } from "@/lib/login-destination";
 import { createClient } from "@/lib/supabase/server";
-import { preferredStartPage } from "@/lib/user-preferences";
 
 export type LoginState = { error?: string; email?: string; needsVerification?: boolean } | undefined;
 
@@ -46,10 +45,7 @@ export async function login(_state: LoginState, formData: FormData): Promise<Log
       : "Authentication is temporarily unavailable. Try again shortly.", email };
     }
     if (!data.user) return { error: "The email or password is incorrect.", email };
-    destination = safeInternalPath(parsed.data.next);
-    // Explicit deep links take priority. The start page is a display preference,
-    // and destination routes still enforce workspace membership and roles.
-    if (destination === "/") destination = preferredStartPage(data.user.user_metadata?.crm_preferences);
+    destination = loginDestination(parsed.data.next);
 
   } catch (error) {
     reportLoginFailure("unexpected", error);

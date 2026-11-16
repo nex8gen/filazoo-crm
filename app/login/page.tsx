@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { AuthShell } from "@/components/auth-shell";
 import { getViewer } from "@/lib/auth";
 import { LoginForm } from "./login-form";
-import { safeInternalPath } from "@/lib/safe-redirect";
+import { loginDestination } from "@/lib/login-destination";
 import { getAuthProviders } from "@/lib/auth-providers";
 
 export const metadata: Metadata = { title: "Sign in" };
@@ -13,8 +13,8 @@ export const instant = false;
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string; message?: string }> }) {
   const [{ next, message }, viewer] = await Promise.all([searchParams, getViewer()]);
-  if (viewer) redirect(safeInternalPath(next, "/workspaces"));
+  if (viewer) redirect(loginDestination(next));
   return (
-    <AuthShell><LoginForm next={safeInternalPath(next, "/workspaces")} message={message} providers={await getAuthProviders()} /></AuthShell>
+    <AuthShell><LoginForm next={loginDestination(next)} message={message} providers={await getAuthProviders()} /></AuthShell>
   );
 }
