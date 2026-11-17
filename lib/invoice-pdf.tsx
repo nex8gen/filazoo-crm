@@ -148,7 +148,7 @@ function InvoicePdfDocument({ invoice, today, qr }: { invoice: Invoice; today: s
 }
 
 export async function renderInvoicePdf(invoice: Invoice, today: string) {
-  const portalUrl = customerPortalUrl(invoice);
+  const portalUrl = invoice.customer_portal_url || customerPortalUrl(invoice);
   const qr = portalUrl ? await QRCode.toDataURL(portalUrl, { width: 396, margin: 4, errorCorrectionLevel: "M" }) : "";
   return renderToBuffer(<InvoicePdfDocument invoice={invoice} today={today} qr={qr} />);
 }

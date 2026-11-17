@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canvasPointFromClient, flowInsertIndex, layoutFlowNodes, reorderFlowSteps, fitFlowCanvas } from "../lib/flow-canvas.ts";
+import { canvasPointFromClient, flowInsertIndex, layoutFlowNodes, reorderFlowSteps, fitFlowCanvas, FLOW_NODE_GAP } from "../lib/flow-canvas.ts";
 
 test("palette drops insert at the top, middle, or bottom of the flow", () => {
   const { steps } = layoutFlowNodes(["wait", "email", "task"], {});
@@ -27,7 +27,7 @@ test("inserting into a flow shifts every later card and the end marker without o
   const { trigger, steps, end } = layoutFlowNodes(["wait", "new", "email", "task"], { __trigger: 190, new: 230, email: 150 }, 280);
   const nodes = [trigger, ...steps, end];
   for (let index = 1; index < nodes.length; index++) {
-    assert.ok(nodes[index].y >= nodes[index - 1].y + nodes[index - 1].height + 48);
+    assert.equal(nodes[index].y - nodes[index - 1].y - nodes[index - 1].height, FLOW_NODE_GAP);
     assert.equal(nodes[index].x + nodes[index].width / 2, trigger.x + trigger.width / 2);
   }
 });

@@ -3,6 +3,8 @@ import { portalError, portalHeaders, portalSession, PortalError } from "@/lib/da
 import { renderInvoicePdf } from "@/lib/invoice-pdf";
 import { invoicePdfFilename } from "@/lib/invoice-pdf-meta";
 import { withCustomerWorkspace } from "@/lib/data/customer-workspace";
+import { getPublishedPortalDesign } from "@/lib/data/portal-design";
+import { portalFeatureAllowed } from "@/lib/portal-design";
 export const maxDuration = 60;
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   return withCustomerWorkspace(_request, () => downloadInvoice(context));
@@ -12,6 +14,7 @@ async function downloadInvoice(context: { params: Promise<{ id: string }> }) {
     const { id } = await context.params;
     if (!z.uuid().safeParse(id).success) throw new PortalError("Invalid invoice.");
     const { invoice } = await portalSession(id);
+    if (!portalFeatureAllowed(await getPublishedPortalDesign(), "downloadInvoice")) throw new PortalError("Invoice downloads are disabled for this portal.", 403);
     const bytes = await renderInvoicePdf(invoice, new Date().toISOString().slice(0, 10));
     return new Response(new Uint8Array(bytes), { headers: { ...portalHeaders, "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="${invoicePdfFilename(invoice)}"` } });
   } catch (error) { return portalError(error); }

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { Metadata } from "next";
 import { LegalPage } from "@/components/legal-page";
 
@@ -71,7 +72,7 @@ export default function PrivacyPolicyPage() {
         <p>
           We retain information for as long as needed to provide the service, support the business purposes for which it was collected, resolve disputes, maintain security, and meet legal obligations. A workspace administrator may request deletion of workspace information, and an individual may request deletion of personal information associated with a Messenger conversation or Lead Ad submission.
         </p>
-        <p>Deletion instructions are available on our <a href="/data-deletion">Data Deletion page</a>.</p>
+        <p>Deletion instructions are available on our <Link href="/data-deletion">Data Deletion page</Link>.</p>
       </section>
 
       <section>

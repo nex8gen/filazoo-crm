@@ -1,4 +1,5 @@
 import type { FlowInput, JsonConfig } from "./flows.ts";
+import { CANVAS_NODE_WIDTH } from "./flow-canvas.ts";
 
 type Action = FlowInput["steps"][number];
 export const FLOW_BRANCH_GAP = 48;
@@ -43,8 +44,23 @@ export function editFlowSiblings(steps: Action[], path: number[], edit: (sibling
   });
 }
 
-export function flowNodeWidth(action: Action): number {
-  return action.type === "split" ? Math.max(440, flowPaths(action.config).reduce((sum, branch) => sum + Math.max(360, ...branch.steps.map(flowNodeWidth)), 0) + Math.max(0, flowPaths(action.config).length - 1) * FLOW_BRANCH_GAP) : 360;
+export function flowBranchWidths(config: JsonConfig, nodeWidth = CANVAS_NODE_WIDTH): number[] {
+  return flowPaths(config).map((branch) => Math.max(nodeWidth, ...branch.steps.map((action) => flowNodeWidth(action, nodeWidth))));
+}
+
+/** Symmetric branch axes, with a clear gutter between every complete subtree. */
+export function flowSplitLayout(config: JsonConfig, nodeWidth = CANVAS_NODE_WIDTH) {
+  const columnWidths = flowBranchWidths(config, nodeWidth);
+  const spacing = Math.max(0, ...columnWidths.slice(1).map((width, index) => (columnWidths[index] + width) / 2 + FLOW_BRANCH_GAP));
+  const centers = columnWidths.map((_, index) => (index - (columnWidths.length - 1) / 2) * spacing);
+  const halfWidth = Math.max(nodeWidth / 2, ...columnWidths.map((width, index) => Math.abs(centers[index]) + width / 2));
+  return { columnWidths, centers, width: halfWidth * 2, railInset: halfWidth + (centers[0] ?? 0) };
+}
+
+// The envelope is symmetric about the action's axis; card width stays unchanged.
+export function flowNodeWidth(action: Action, nodeWidth = CANVAS_NODE_WIDTH): number {
+  if (action.type !== "split") return nodeWidth;
+  return flowSplitLayout(action.config, nodeWidth).width;
 }
 
 function dropContainer(steps: Action[], branchId: string | null) {

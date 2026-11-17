@@ -43,7 +43,7 @@ async function CompanyPageContent({ params, searchParams }: CompanyPageProps) {
   ]);
   if (!details) notFound();
   return <div data-ai-company-id={id}>
-    <Link href="/companies" className={buttonVariants({ variant: "ghost", size: "sm", className: "mb-4 -ml-2" })}><ArrowLeft />Back to companies</Link>
+    <Link data-company-back href="/companies" className={buttonVariants({ variant: "ghost", size: "sm", className: "mb-4 -ml-2" })}><ArrowLeft />Back to companies</Link>
     <CompanyWorkspace key={id} companyId={id} initialTab={activeTab}
       toolbar={<div className="order-1 flex min-w-0 items-center gap-4 pb-2 sm:order-2 sm:shrink-0 sm:pb-0">
           <div className="flex min-w-0 items-center gap-2.5">

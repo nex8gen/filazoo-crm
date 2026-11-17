@@ -16,14 +16,7 @@ export const shipmentSchema = z.object({
 export type PortalShipment = z.infer<typeof shipmentSchema> & { updated_at?: string };
 export type PortalMessage = { id: string; sender: "customer" | "staff"; body: string; created_at: string };
 export type PortalInvoice = Pick<Invoice, "id" | "number" | "status" | "paid_minor" | "total_minor" | "document" | "creator_name" | "revision" | "created_at" | "updated_at">;
-export type PortalData = {
-  invoice: PortalInvoice;
-  email: string;
-  needsPassword: boolean;
-  messages: PortalMessage[];
-  shipment: PortalShipment | null;
-  order: { reference: string; status: string; deliveryDate: string } | null;
-};
+export type PortalData = ReturnType<typeof import("./portal-design.ts").projectPortalData>;
 // Explicitly exclude CRM IDs, source email threads, staff IDs and payment references.
 export function customerInvoice(invoice: Invoice): PortalInvoice {
   const { companyId: _company, contactId: _contact, purchaseOrderId: _order, sourceThreadId: _thread, bankAccountId: _bank, ...document } = invoice.document;

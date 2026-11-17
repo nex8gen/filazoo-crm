@@ -4,6 +4,7 @@ import { requireWorkspaceMember, type WorkspaceViewer } from "../auth.ts";
 import { validateFlowResources } from "./flow-runtime.ts";
 import { validateEmailFlowScope } from "./email-flows.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
+import { resolveMemberAvatars } from "./cached-member-avatars.ts";
 import { flowInputSchema, isEmailScopedFlow, type FlowBulkAction, type FlowBulkResult, type AutomationFlow, type FlowInput, type FlowStep, type FlowStepType, type JsonConfig, type TriggerType, type FlowStatus } from "../flows.ts";
 
 type FlowRow = {
@@ -199,9 +200,10 @@ export async function bulkUpdateFlows(userId: string, ids: string[], action: Flo
   return results;
 }
 
-export type FlowMemberOption = { id: string; label: string };
+export type FlowMemberOption = { id: string; label: string; avatarUrl?: string };
 
 export async function listFlowMemberOptions(): Promise<FlowMemberOption[]> {
+  await requireWorkspaceMember();
   const admin = createSupabaseAdmin();
   const [{ data: members, error }, { data: users }] = await Promise.all([
     admin.from("workspace_members").select("user_id,display_name").not("activated_at", "is", null).order("display_name"),
@@ -209,9 +211,11 @@ export async function listFlowMemberOptions(): Promise<FlowMemberOption[]> {
   ]);
   if (error) throw new Error(`Unable to load workspace members: ${error.message}`);
   const emails = new Map((users?.users ?? []).map((user) => [user.id, user.email ?? ""]));
+  const avatars = await resolveMemberAvatars((members ?? []).map((member) => member.user_id));
   return (members ?? []).map((member) => ({
     id: member.user_id,
     label: member.display_name || emails.get(member.user_id) || "Workspace member",
+    avatarUrl: avatars.get(member.user_id),
   }));
 }
 

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { Metadata } from "next";
 import { LegalPage } from "@/components/legal-page";
 
@@ -57,7 +58,7 @@ export default function DataDeletionPage() {
       <section>
         <h2>Questions</h2>
         <p>
-          For questions about this process, contact <a href="mailto:raul@filazoo.com">raul@filazoo.com</a>. You can also read the full <a href="/privacy">Filazoo Privacy Policy</a>.
+          For questions about this process, contact <a href="mailto:raul@filazoo.com">raul@filazoo.com</a>. You can also read the full <Link href="/privacy">Filazoo Privacy Policy</Link>.
         </p>
       </section>
     </LegalPage>

@@ -4,6 +4,7 @@ import { withWorkspaceContext } from "../workspace-context";
 import { customerPortalSecret } from "../customer-portal-links";
 import { portalHash, validPortalKey } from "../customer-portal-crypto";
 import { checkPortalOrigin, portalCookie, portalError, PortalError } from "./customer-portal";
+import { assertPortalWorkspaceHost } from "./portal-domain-routing";
 
 /** Resolve a workspace only from a valid invoice capability or opaque customer session. */
 export async function withCustomerWorkspace(request: Request, work: () => Promise<Response>, opening = false) {
@@ -29,6 +30,8 @@ export async function withCustomerWorkspace(request: Request, work: () => Promis
       if (!data || Date.parse(data.expires_at) <= Date.now()) throw new PortalError("Your customer session has expired.", 401);
       workspaceId = data.workspace_id;
     }
+    try { await assertPortalWorkspaceHost(request, workspaceId); }
+    catch { throw new PortalError("This customer link is not available on this portal domain.", 403); }
     return await withWorkspaceContext(workspaceId, work);
   } catch (error) { return portalError(error); }
 }

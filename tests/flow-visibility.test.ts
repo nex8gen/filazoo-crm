@@ -11,6 +11,8 @@ import { flowInputSchema } from "../lib/flows.ts";
 import * as flowModel from "../lib/flows.ts";
 import * as flowAudit from "../lib/flow-audit.ts";
 import * as segmentFlowModel from "../lib/segment-flows.ts";
+import * as triggerEditor from "../lib/flow-trigger-editor.ts";
+import { flowConnectorHealth } from "../lib/flow-connector-health.ts";
 import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 function loadModule(file: string, dependencies: Record<string, unknown>) {
@@ -360,19 +362,20 @@ function builder(hooks?: { values: unknown[]; cursor: number }) {
     "@/lib/flow-audit": flowAudit,
     "@/lib/flow-tree": flowTree,
     "@/lib/flow-mailboxes": flowMailboxes,
+    "@/components/use-flow-connector-health": { useFlowConnectorHealth: (flow: flowModel.FlowInput | null) => flowConnectorHealth(flow) },
     sonner: { toast: { error: () => {}, success: () => {} } },
     "@/components/language-provider": { useLanguage: () => ({ language: "en", t: (text: string) => text }) },
   }, { get: (target, name) => Reflect.get(target, name) ?? components });
   return loadModule("../components/flow-builder.tsx", dependencies).FlowBuilder;
 }
 
-test("shared flow list shows creators and offers View while reserving mutation controls for owners", async () => {
+test("only admins see workflow creators while mutation controls remain reserved for owners and admins", async () => {
   const initialFlows = ["alice", "bob"].map((createdBy) => ({
     ...flowModel.defaultFlowInput, id: `flow-${createdBy}`, name: "3-step follow-up", createdBy,
     updatedAt: "2026-10-27T00:00:00Z", steps: [], activeRuns: 0, completedRuns: 0,
   }));
   const render = builder();
-  const tree = await render({ initialFlows, viewerId: "alice", canEdit: true, mailboxOptions: [], memberOptions: [{ id: "bob", label: "Bob" }], filterOptions: {} });
+  const tree = await render({ initialFlows, viewerId: "alice", canEdit: true, mailboxOptions: [], memberOptions: [{ id: "bob", label: "Bob", avatarUrl: "/bob-profile.webp" }], filterOptions: {} });
   const list = elements(tree).find((element) => typeof element.type === "function" && element.type.name === "FlowListView")!;
   const output = (list.type as (props: Element["props"]) => Element)(list.props);
   const actions = elements(output).filter((element) => typeof element.type === "function" && element.type.name === "FlowActions");
@@ -385,16 +388,27 @@ test("shared flow list shows creators and offers View while reserving mutation c
   assert.equal(items[0].props.children, "View");
   assert.equal(items[2].props.disabled, true);
   assert.equal(items[3].props.disabled, true);
-  assert.ok(JSON.stringify(output).includes("Bob"));
   const headers = elements(output).filter((element) => element.type === "TableHead");
-  assert.equal(headers[2].props.children, "Created by");
-  const cells = elements(output).filter((element) => element.type === "TableCell");
-  assert.equal(cells[2].props.children, "You");
-  assert.equal(cells[11].props.children, "Bob");
+  assert.equal(headers.length, 8);
+  assert.equal(headers[2].props.children, "Trigger");
+  assert.ok(!headers.some(element => element.props.children === "Created by"));
+  assert.equal(elements(output).filter(element => element.type === "UserAvatar").length, 0);
+  const rows = elements(output).filter(element => element.type === "TableRow");
+  assert.ok(rows.slice(1).every(row => elements(row).filter(element => element.type === "TableCell").length === 8));
 
   const adminTree = await render({ ...list.props, initialFlows, viewerId: "alice", isAdmin: true, canEdit: true, mailboxOptions: [], filterOptions: {} });
   const adminList = elements(adminTree).find((element) => typeof element.type === "function" && element.type.name === "FlowListView")!;
   const adminOutput = (adminList.type as (props: Element["props"]) => Element)(adminList.props);
+  const adminHeaders = elements(adminOutput).filter(element => element.type === "TableHead");
+  assert.equal(adminHeaders.length, 9);
+  assert.equal(adminHeaders[2].props.children, "Created by");
+  const cells = elements(adminOutput).filter(element => element.type === "TableCell");
+  assert.ok(elements(cells[2]).some(element => element.type === "span" && element.props.children === "You"));
+  assert.ok(elements(cells[11]).some(element => element.type === "span" && element.props.children === "Bob"));
+  const avatars = elements(adminOutput).filter(element => element.type === "UserAvatar");
+  assert.deepEqual(avatars.map(element => element.props.userId), ["alice", "bob"]);
+  assert.equal(avatars[0].props.imageUrl, undefined);
+  assert.equal(avatars[1].props.imageUrl, "/bob-profile.webp");
   const adminActions = elements(adminOutput).filter((element) => typeof element.type === "function" && element.type.name === "FlowActions");
   assert.ok(adminActions.every((element) => element.props.canEdit === true));
   const adminMenu = (adminActions[1].type as (props: Element["props"]) => Element)(adminActions[1].props);
@@ -421,17 +435,127 @@ test("shared deep links open a read-only builder and the default shortcut select
   }
 });
 
+test("the reference editor switches one left panel between actions and selected node settings", async () => {
+  const hooks = { values: [] as unknown[], cursor: 0 };
+  const render = builder(hooks);
+  const flow = { ...flowModel.defaultFlowInput, id: "editor-flow", createdBy: "alice", updatedAt: "2026-10-27T00:00:00Z" };
+  const props = { initialFlows: [flow], initialFlowId: flow.id, viewerId: "alice", canEdit: true, mailboxOptions: [], memberOptions: [], filterOptions: { segments: [], countries: [] } };
+  const refresh = async () => { hooks.cursor = 0; return render(props); };
+  let tree = await refresh();
+  const component = (name: string) => elements(tree).find(node => typeof node.type === "function" && node.type.name === name);
+  assert.ok(component("FlowActionPalette"));
+  assert.ok(!elements(tree).some(node => node.props["aria-label"] === "Workflow settings"));
+  const canvas = component("FlowCanvas")!;
+  (canvas.props.setSelection as (id: string) => void)("trigger");
+  tree = await refresh();
+  assert.equal(component("FlowActionPalette"), undefined);
+  const trigger = elements(tree).find(node => node.type === "FlowTriggerPanel")!;
+  assert.ok(trigger);
+  assert.equal(elements(tree).filter(node => node.type === "FlowTriggerPanel").length, 1);
+  (trigger.props.onClose as () => void)();
+  tree = await refresh();
+  const palette = component("FlowActionPalette")!;
+  assert.ok(palette);
+  (palette.props.onClose as () => void)();
+  tree = await refresh();
+  assert.equal(component("FlowActionPalette"), undefined);
+  assert.ok(elements(tree).some(node => node.props.className === "wf-show-actions"));
+});
+
+test("every root and branch action uses the same settings panel and respects read-only access", async () => {
+  for (const nested of [false, true]) for (const canEdit of [true, false]) {
+    const hooks = { values: [] as unknown[], cursor: 0 };
+    const render = builder(hooks);
+    const actions = flowModel.stepTypes.map((type, index) => ({ ...flowModel.blankStep(type), id: `action-${index}` }));
+    const steps = nested ? [{ ...flowModel.blankStep("split"), id: "parent-split", config: { paths: [{ id: "matches", name: "Matches", condition: { field: "customer_replied" }, steps: actions }, { id: "other", name: "Everyone else", condition: null, steps: [] }] } }] : actions;
+    const flow = { ...flowModel.defaultFlowInput, id: "all-actions", createdBy: "alice", updatedAt: "2026-10-27T00:00:00Z", steps };
+    const props = { initialFlows: [flow], initialFlowId: flow.id, viewerId: "alice", canEdit, mailboxOptions: [], memberOptions: [], filterOptions: {} };
+    let tree = await render(props);
+    for (const action of actions) {
+      const canvas = elements(tree).find(node => typeof node.type === "function" && node.type.name === "FlowCanvas")!;
+      (canvas.props.setSelection as (id: string) => void)(action.id!);
+      hooks.cursor = 0;
+      tree = await render(props);
+      if (action.type === "wait") {
+        const wait = elements(tree).find(node => node.type === "FlowWaitPanel")!;
+        assert.ok(wait);
+        assert.equal(wait.props.disabled, !canEdit);
+        assert.deepEqual(JSON.parse(JSON.stringify(wait.props.config)), action.config);
+        assert.equal((wait.props.trail as string[]).length > 0, nested);
+        continue;
+      }
+      assert.equal(elements(tree).filter(node => node.props["aria-label"] === "Workflow settings").length, 1);
+      const inspector = elements(tree).find(node => typeof node.type === "function" && node.type.name === "StepInspector")!;
+      assert.equal(inspector.props.type, action.type);
+      assert.equal(inspector.props.disabled, !canEdit);
+      const fields = (inspector.type as (props: Element["props"]) => Element)(inspector.props);
+      assert.equal(fields.props["data-action-kind"], action.type);
+      assert.equal(button(tree, "Duplicate").props.disabled, !canEdit);
+      const remove = elements(tree).find(node => node.props["aria-label"] === "Remove selected action")!;
+      assert.equal(remove.props.disabled, !canEdit);
+      assert.equal(elements(tree).some(node => node.props["aria-label"] === "Action location"), nested);
+    }
+  }
+});
+
+test("turning on a draft first opens review while viewers cannot launch it", async () => {
+  for (const canEdit of [true, false]) {
+    const hooks = { values: [] as unknown[], cursor: 0 };
+    const render = builder(hooks);
+    const flow = { ...flowModel.defaultFlowInput, id: "review-flow", createdBy: "alice", updatedAt: "2026-10-27T00:00:00Z" };
+    const props = { initialFlows: [flow], initialFlowId: flow.id, viewerId: "alice", canEdit, mailboxOptions: [], memberOptions: [], filterOptions: {} };
+    let tree = await render(props);
+    const review = button(tree, "Review and turn on");
+    assert.equal(review.props.disabled, !canEdit);
+    if (!canEdit) continue;
+    const dialogs = () => elements(tree).filter(node => node.type === "Dialog");
+    assert.ok(dialogs().every(node => node.props.open === false));
+    (review.props.onClick as () => void)();
+    hooks.cursor = 0;
+    tree = await render(props);
+    assert.equal(dialogs().filter(node => node.props.open === true).length, 1);
+    const reviewDialog = dialogs().find(node => node.props.open === true)!;
+    assert.ok(JSON.stringify(reviewDialog).includes("Review and turn on"));
+    const canvas = elements(tree).find(node => typeof node.type === "function" && node.type.name === "FlowCanvas")!;
+    assert.equal((canvas.props.draft as flowModel.FlowInput).status, "draft");
+  }
+});
+
+test("analytics create shortcut opens the workflow starter only for editors", async () => {
+  for (const canEdit of [true, false]) {
+    const tree = await builder()({ initialFlows: [], initialCreate: true, viewerId: "alice", canEdit, mailboxOptions: [], memberOptions: [], filterOptions: {} });
+    assert.equal(elements(tree).some(node => node.type === "LazyComponent"), canEdit);
+    const list = elements(tree).find(node => typeof node.type === "function" && node.type.name === "FlowListView")!;
+    const output = (list.type as (props: Element["props"]) => Element)(list.props);
+    assert.ok(elements(output).some(node => node.type === "FlowViewToggle" && node.props.active === "list"));
+  }
+});
+
+test("launch review blocks email workflows on a test-mode server before a save request", async () => {
+  for (const liveSendingEnabled of [false, true]) {
+    const hooks = { values: [] as unknown[], cursor: 0 };
+    const render = builder(hooks);
+    const flow = { ...flowModel.defaultFlowInput, id: "sending-mode", createdBy: "alice", updatedAt: "2026-11-17T00:00:00Z" };
+    const props = { initialFlows: [flow], initialFlowId: flow.id, viewerId: "alice", canEdit: true, liveSendingEnabled, mailboxOptions: [], memberOptions: [], filterOptions: {} };
+    let tree = await render(props);
+    (button(tree, "Review and turn on").props.onClick as () => void)();
+    hooks.cursor = 0;
+    tree = await render(props);
+    const dialog = elements(tree).find(node => node.type === "Dialog" && node.props.open === true)!;
+    assert.equal(button(dialog, "Turn on workflow").props.disabled, !liveSendingEnabled);
+    assert.equal(JSON.stringify(dialog).includes("Email delivery is temporarily unavailable"), !liveSendingEnabled);
+  }
+});
+
 test("launching from any segment shows its fixed audience without customer or trigger selectors", async () => {
   for (const kind of ["saved", "business"]) {
     const initialDraft = segmentFlowModel.createSegmentFlowDraft({ id: "11111111-1111-4111-8111-111111111111", name: "Historical email lead", kind });
     const tree = await builder()({ initialFlows: [], initialDraft, viewerId: "alice", canEdit: true, mailboxOptions: [], memberOptions: [], filterOptions: { segments: ["Historical email lead"], countries: ["US"] } });
-    const inspector = elements(tree).find((node) => typeof node.type === "function" && node.type.name === "TriggerInspector")!;
-    const output = (inspector.type as (props: Element["props"]) => Element)(inspector.props);
-    assert.equal(elements(output).some((node) => node.type === "FlowCustomerPicker"), false);
-    assert.equal(elements(output).some((node) => typeof node.type === "function" && node.type.name === "FlowSelect"), false);
-    assert.ok(JSON.stringify(output).includes("Segment trigger is ready"));
-    assert.ok(JSON.stringify(output).includes("Historical email lead"));
-    assert.ok(elements(output).some((node) => node.props.href === segmentFlowModel.segmentCompaniesHref(initialDraft.triggerConfig)));
+    const inspector = elements(tree).find(node => node.type === "FlowTriggerPanel")!;
+    assert.ok(inspector);
+    assert.deepEqual((inspector.props.flow as flowModel.FlowInput).triggerConfig, initialDraft.triggerConfig);
+    assert.equal((inspector.props.flow as flowModel.FlowInput).triggerType, "company_segment_changed");
+    assert.equal(inspector.props.disabled, false);
   }
 });
 
@@ -441,11 +565,10 @@ test("email builder prefills the scoped trigger and changing events retains its 
   const render = builder(hooks);
   const props = { initialFlows: [], viewerId: "alice", canEdit: true, mailboxOptions: [], memberOptions: [], filterOptions: { segments: [], countries: [] }, initialDraft: { ...flowModel.defaultFlowInput, triggerType: "email_received", triggerConfig: scope }, scopedContext: { config: scope, refreshUrl: "/api/email/flows?recipient=customer@example.com", returnHref: "/email?thread=test" } };
   const tree = await render(props);
-  const inspector = elements(tree).find((node) => typeof node.type === "function" && node.type.name === "TriggerInspector")!;
-  const output = (inspector.type as (props: Element["props"]) => Element)(inspector.props);
-  assert.equal(elements(output).some((node) => node.type === "FlowCustomerPicker"), false);
-  const selector = elements(output).find((node) => typeof node.type === "function" && node.type.name === "FlowSelect")!;
-  (selector.props.onChange as (value: string) => void)("no_reply");
+  const inspector = elements(tree).find(node => node.type === "FlowTriggerPanel")!;
+  const current = inspector.props.flow as flowModel.FlowInput;
+  const change = triggerEditor.applyTriggerEvent(current, "no_reply", triggerEditor.triggerEventDraft(current, "no_reply"));
+  (inspector.props.onChange as (flow: flowModel.FlowInput) => void)({ ...current, ...change });
   hooks.cursor = 0;
   const updated = await render(props);
   const canvas = elements(updated).find((node) => typeof node.type === "function" && node.type.name === "FlowCanvas")!;
@@ -455,7 +578,7 @@ test("email builder prefills the scoped trigger and changing events retains its 
   assert.equal(draft.triggerConfig.scopeCompanyId, scope.scopeCompanyId);
 });
 
-test("workflow tabs isolate email recipients, statistics and bulk actions from workspace automations", async () => {
+test("workflow list combines workspace and email workflows for pagination and bulk actions", async () => {
   const hooks = { values: [] as unknown[], cursor: 0 };
   const initialFlows = [
     { id: "segment", triggerConfig: { segment: "Wholesale" }, activeRuns: 7 },
@@ -464,48 +587,39 @@ test("workflow tabs isolate email recipients, statistics and bulk actions from w
   ].map(flow => ({ ...flowModel.defaultFlowInput, createdBy: "alice", updatedAt: "2026-10-27T00:00:00Z", steps: [], status: "live", ...flow }));
   const tree = await builder(hooks)({ initialFlows, viewerId: "alice", canEdit: true, mailboxOptions: [], memberOptions: [], filterOptions: {} });
   const list = elements(tree).find(node => typeof node.type === "function" && node.type.name === "FlowListView")!;
-  assert.equal(list.props.listTab, "workspace");
   const calls: unknown[] = [];
-  const props = { ...list.props, onTabChange: (tab: string) => { props.listTab = tab; }, onBulkAction: async (ids: string[], action: string) => { calls.push({ ids, action }); return ids.map(id => ({ id, ok: true })); } };
+  const props = { ...list.props, onBulkAction: async (ids: string[], action: string) => { calls.push({ ids, action }); return ids.map(id => ({ id, ok: true })); } };
   hooks.values = [];
   const render = () => { hooks.cursor = 0; return (list.type as (props: Element["props"]) => Element)(props); };
   const ids = (output: Element) => elements(output).filter(node => typeof node.type === "function" && node.type.name === "FlowActions").map(node => (node.props.flow as { id: string }).id);
   let output = render();
-  assert.deepEqual(Array.from(ids(output)), ["segment"]);
-  const tabs = elements(output).filter(node => node.type === "TabsTrigger");
-  assert.equal(tabs.length, 2);
-  assert.equal(elements(output).find(node => node.type === "TablePagination")!.props.total, 1);
-  assert.equal(elements(output).find(node => typeof node.type === "function" && node.type.name === "FlowSummary" && node.props.label === "Active runs")!.props.value, 7);
+  assert.deepEqual(Array.from(ids(output)), ["segment", "contact", "company"]);
+  assert.equal(elements(output).some(node => node.type === "Tabs" || node.type === "TabsTrigger"), false);
+  assert.equal(elements(output).find(node => node.type === "TablePagination")!.props.total, 3);
+  assert.equal(elements(output).some(node => typeof node.type === "function" && node.type.name === "FlowSummary"), false);
   (checkboxes(output)[0].props.onCheckedChange as (checked: boolean) => void)(true);
   output = render();
-  assert.equal(selectionCount(output), "1 selected");
-  const search = elements(output).find(node => node.type === "Input" && node.props.type === "search")!;
-  (search.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: "segment" } });
-  (elements(render()).find(node => node.type === "Tabs")!.props.onValueChange as (value: string) => void)("email");
-  output = render();
-  assert.deepEqual(Array.from(ids(output)), ["contact", "company"]);
-  assert.equal(selectionCount(output), undefined);
-  assert.equal(elements(output).find(node => node.type === "Input" && node.props.type === "search")!.props.value, "");
-  assert.equal(elements(output).find(node => typeof node.type === "function" && node.type.name === "FlowSummary" && node.props.label === "Active runs")!.props.value, 5);
-  assert.equal(elements(output).find(node => node.type === "TablePagination")!.props.total, 2);
-  (checkboxes(output)[0].props.onCheckedChange as (checked: boolean) => void)(true);
+  assert.equal(selectionCount(output), "3 selected");
   await (button(render(), "Pause").props.onClick as () => Promise<void>)();
-  assert.equal(JSON.stringify(calls), JSON.stringify([{ ids: ["contact", "company"], action: "paused" }]));
-  const scoped = (list.type as (props: Element["props"]) => Element)({ ...props, flows: [initialFlows[1]], listTab: "workspace", scopedContext: { config: initialFlows[1].triggerConfig } });
+  assert.equal(JSON.stringify(calls), JSON.stringify([{ ids: ["segment", "contact", "company"], action: "paused" }]));
+  const scoped = (list.type as (props: Element["props"]) => Element)({ ...props, flows: [initialFlows[1]] });
   assert.equal(elements(scoped).some(node => node.type === "TabsTrigger"), false);
   assert.deepEqual(Array.from(ids(scoped)), ["contact"]);
 });
 
-test("an email workflow deep link returns to the email workflow tab", async () => {
+test("an email workflow deep link returns to the combined workflow list", async () => {
   const hooks = { values: [] as unknown[], cursor: 0 };
   const render = builder(hooks);
-  const props = { initialFlows: [{ ...flowModel.defaultFlowInput, id: "email-flow", createdBy: "alice", triggerConfig: { flowScope: "email", scopeContactId: "contact-a", scopeCompanyId: "company-a" } }], initialFlowId: "email-flow", viewerId: "alice", canEdit: true, mailboxOptions: [], memberOptions: [], filterOptions: {} };
+  const props = { initialFlows: [{ ...flowModel.defaultFlowInput, id: "email-flow", createdBy: "alice", updatedAt: "2026-10-27T00:00:00Z", triggerConfig: { flowScope: "email", scopeContactId: "contact-a", scopeCompanyId: "company-a" } }], initialFlowId: "email-flow", viewerId: "alice", canEdit: true, mailboxOptions: [], memberOptions: [], filterOptions: {} };
   const tree = await render(props);
-  const back = elements(tree).find(node => node.type === "button" && Array.isArray(node.props.children) && node.props.children.includes("Workflow"))!;
+  const back = elements(tree).find(node => node.type === "Button" && node.props["aria-label"] === "Back to workflows")!;
   (back.props.onClick as () => void)();
   hooks.cursor = 0;
   const list = elements(await render(props)).find(node => typeof node.type === "function" && node.type.name === "FlowListView")!;
-  assert.equal(list.props.listTab, "email");
+  assert.equal(list.props.flows, props.initialFlows);
+  const output = (list.type as (props: Element["props"]) => Element)(list.props);
+  assert.equal(elements(output).some(node => node.type === "Tabs"), false);
+  assert.equal(elements(output).filter(node => typeof node.type === "function" && node.type.name === "FlowActions").length, 1);
 });
 
 async function flowListHarness(count: number, isAdmin = true, canEdit = true, onBulkAction: (ids: string[], action: flowModel.FlowBulkAction) => Promise<flowModel.FlowBulkResult[]> = async (ids) => ids.map((id) => ({ id, ok: true }))) {
@@ -516,7 +630,7 @@ async function flowListHarness(count: number, isAdmin = true, canEdit = true, on
   }));
   const tree = await builder(hooks)({ initialFlows, viewerId: "alice", isAdmin, canEdit, mailboxOptions: [], memberOptions: [], filterOptions: {} });
   const list = elements(tree).find((element) => typeof element.type === "function" && element.type.name === "FlowListView")!;
-  const props: Element["props"] = { ...list.props, onBulkAction, onTabChange: (tab: string) => { props.listTab = tab; } };
+  const props: Element["props"] = { ...list.props, onBulkAction };
   hooks.values = [];
   const render = () => { hooks.cursor = 0; return (list.type as (props: Element["props"]) => Element)(props); };
   return { render, initialFlows };
@@ -587,10 +701,9 @@ test("workflow filters reset pagination while preserving selected rows outside t
   assert.equal(selectionCount(tree), "5 selected");
 });
 
-test("the email workflow tab finds a recipient even when the flow name has no email", async () => {
+test("the combined workflow list finds a recipient even when the flow name has no email", async () => {
   const list = await flowListHarness(2);
   list.initialFlows[0].triggerConfig = { flowScope: "email", scopeCompanyId: "company", scopeContactId: "contact", scopeLabel: "buyer@example.com" };
-  (elements(list.render()).find(element => element.type === "Tabs")!.props.onValueChange as (tab: string) => void)("email");
   const search = elements(list.render()).find(element => element.type === "Input" && element.props.type === "search")!;
   (search.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: "BUYER@example.com" } });
   const tree = list.render();

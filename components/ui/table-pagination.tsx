@@ -32,7 +32,7 @@ export function TablePagination({ page, pageCount, total, start, end, itemLabel,
         <span aria-hidden="true" className="tabular-nums">{range}</span>
         <Button type="button" variant="ghost" size="icon-sm" aria-label={t("Next page")} title={t("Next page")} disabled={disabled || !state.canNext} onClick={() => onPageChange ? onPageChange(state.page + 1) : onNext()}><NextIcon className="size-4" /></Button>
       </nav>
-      <p aria-live="polite"><span className="sr-only">{t(`Page ${state.page} of ${state.pages}`)} · </span>{t(`${state.total} ${itemLabel}`)}</p>
+      <p className="sr-only" aria-live="polite">{t(`Page ${state.page} of ${state.pages}`)} · {t(`${state.total} ${itemLabel}`)}</p>
     </div>
   );
 }

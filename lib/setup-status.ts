@@ -1,4 +1,5 @@
 import { hasAiProvider } from "./ai/provider-credentials.ts";
+import { workflowDryRun } from "./sending-mode.ts";
 export type IntegrationStatus={id:string;name:string;detail:string;configured:boolean;required:string[]};
 
 const present=(name:string)=>Boolean(process.env[name]?.trim());
@@ -12,4 +13,4 @@ export function getIntegrationStatuses():IntegrationStatus[]{return[
   {id:"telegram",name:"Telegram alerts",detail:"Immediate interested and big-order notifications",configured:present("TELEGRAM_BOT_TOKEN")&&present("TELEGRAM_CHAT_ID"),required:["TELEGRAM_BOT_TOKEN","TELEGRAM_CHAT_ID"]},
 ]}
 
-export function getSetupReadiness(){const integrations=getIntegrationStatuses();const configured=integrations.filter(item=>item.configured).length;return{integrations,configured,total:integrations.length,percent:Math.round(configured/integrations.length*100),dryRun:process.env.DRY_RUN!=="false"}}
+export function getSetupReadiness(){const integrations=getIntegrationStatuses();const configured=integrations.filter(item=>item.configured).length;return{integrations,configured,total:integrations.length,percent:Math.round(configured/integrations.length*100),dryRun:process.env.DRY_RUN!=="false",flowDryRun:workflowDryRun(process.env)}}

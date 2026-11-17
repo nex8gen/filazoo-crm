@@ -228,6 +228,15 @@ const stepConfigSchemas: Record<FlowStepType, z.ZodType<JsonConfig>> = {
   stop: z.object({ reason: z.string().trim().max(300).optional(), outcome: z.enum(["completed", "cancelled"]).optional() }),
 };
 
+/** Validate a split's own settings separately from the actions inside its paths. */
+export function flowActionConfigIssue(type: FlowStepType, config: JsonConfig): string | null {
+  const ownConfig = type === "split" && Array.isArray(config.paths)
+    ? { ...config, paths: config.paths.map(path => path && typeof path === "object" && !Array.isArray(path) ? { ...path, steps: [] } : path) }
+    : config;
+  const result = stepConfigSchemas[type].safeParse(ownConfig);
+  return result.success ? null : result.error.issues[0]?.message || "Complete this action's settings";
+}
+
 export const flowInputSchema = z.object({
   name: z.string().trim().min(1, "Enter a workflow name.").max(160),
   triggerType: z.enum(triggerTypes),

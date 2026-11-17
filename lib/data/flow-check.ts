@@ -65,15 +65,25 @@ export async function checkFlow(input: FlowCheckInput, viewer: WorkspaceViewer):
     const actors = hasAssigned ? await assignedFlowCandidates(ownerId, typeof input.flow.triggerConfig.scopeCompanyId === "string" ? input.flow.triggerConfig.scopeCompanyId : undefined) : [];
     const { data } = await admin.from("workspace_mailboxes").select("*").or(`type.eq.workspace,user_id.in.(${[ownerId, ...actors].join(",")})`).abortSignal(signal).throwOnError();
     const mailboxes = normalizeMailboxRows(data);
-    const senders = new Map<string, (typeof mailboxes)[number]>();
-    for (const step of senderActions) {
+    const senders = new Map<string, { mailbox: (typeof mailboxes)[number]; paths: number[][] }>();
+    const failures: Array<{ message: string; paths: number[][] }> = [];
+    for (const { action: step, path } of locations.filter(location => senderActions.includes(location.action))) {
       for (const actor of step.config.mailboxId === "assigned_owner" ? actors : [ownerId]) {
       const mailbox = resolveFlowSender(mailboxes, actor, step.config.mailboxId === "assigned_owner" ? "owner" : step.config.mailboxId);
-      if (!mailbox?.isActive || !mailbox.smtpHost || !mailbox.smtpUsername || !mailbox.smtpPassword) throw new Error("An action's selected sender is unavailable or has incomplete SMTP settings.");
-      senders.set(mailbox.id, mailbox);
+      if (!mailbox?.isActive || !mailbox.smtpHost || !mailbox.smtpUsername || !mailbox.smtpPassword) {
+        failures.push({ message: "Reconnect this action's sending email account in Email settings.", paths: [path] });
+        continue;
+      }
+      const sender = senders.get(mailbox.id) ?? { mailbox, paths: [] };
+      sender.paths.push(path);
+      senders.set(mailbox.id, sender);
       }
     }
-    await Promise.all([...senders.values()].map(mailbox => verifyMailboxSmtp({ host: mailbox.smtpHost, port: mailbox.smtpPort, user: mailbox.smtpUsername, pass: mailbox.smtpPassword, from: mailbox.email }, { timeoutMs: 3_500 })));
+    await Promise.all([...senders.values()].map(async ({ mailbox, paths }) => {
+      try { await verifyMailboxSmtp({ host: mailbox.smtpHost, port: mailbox.smtpPort, user: mailbox.smtpUsername, pass: mailbox.smtpPassword, from: mailbox.email }, { timeoutMs: 3_500 }); }
+      catch (cause) { failures.push({ message: workflowErrorMessage(cause), paths }); }
+    }));
+    if (failures.length) return { status: failures.every(failure => /timeout|timed out|aborted/i.test(failure.message)) ? "unverified" : "blocked", detail: failures[0].message, actionPaths: failures.flatMap(failure => failure.paths) };
     return { status: "passed", detail: `${senders.size} sender connections authenticated with their mail servers. No email was sent.` };
   }));
   if (hasAi) jobs.push(add("ai", "AI authentication and access", async () => {
@@ -89,12 +99,14 @@ export async function checkFlow(input: FlowCheckInput, viewer: WorkspaceViewer):
   const assignedIds = actions.flatMap(step => step.type === "create_task" && step.config.assigneeType === "user" ? [String(step.config.assigneeId)] : step.type === "internal_alert" && step.config.userId !== "owner" ? [String(step.config.userId)] : []);
   if (assignedIds.length) jobs.push(add("members", "Task and alert recipients", async () => {
     const { data } = await admin.from("workspace_members").select("user_id,role").in("user_id", [...new Set(assignedIds)]).not("activated_at", "is", null).abortSignal(signal).throwOnError();
-    for (const step of actions) {
+    const failedPaths: number[][] = [];
+    for (const { action: step, path } of locations) {
       const id = step.type === "create_task" && step.config.assigneeType === "user" ? step.config.assigneeId : step.type === "internal_alert" && step.config.userId !== "owner" ? step.config.userId : null;
       if (!id) continue;
       const member = data?.find(member => member.user_id === id);
-      if (!member || step.type === "create_task" && member.role === "viewer") throw new Error("A task or alert points to an unavailable member or a read-only task assignee.");
+      if (!member || step.type === "create_task" && member.role === "viewer") failedPaths.push(path);
     }
+    if (failedPaths.length) return { status: "blocked", detail: "A task or alert points to an unavailable member or a read-only task assignee.", actionPaths: failedPaths };
     return { status: "passed", detail: "Every selected task and alert recipient is an active, eligible workspace member." };
   }));
   const config = input.flow.triggerConfig;
@@ -127,7 +139,7 @@ export async function checkFlow(input: FlowCheckInput, viewer: WorkspaceViewer):
     }
     return { status: blocked.length ? "blocked" : "passed", detail: blocked.length ? `${blocked.length} of ${audience.length} companies need a single eligible contact. Check address verification, consent, unsubscribe and suppression. Blocked actions remain visible in Insights.` : `${audience.length} companies each have an eligible contact. Live restrictions and mailbox capacity are checked again before each send.`, links: blocked.slice(0, 10).map(company => ({ label: company.name, href: `/companies/${company.id}` })) };
   }));
-  if (hasMessages && env.dryRun) checks.push({ id: "sending", label: "Live sending", status: "warning", detail: "This server is in dry-run mode. Live workflows record previews; explicit delivery tests can still send to your test inbox." });
+  if (senderActions.length && (env.flowDryRun ?? env.dryRun)) checks.push({ id: "sending", label: "Email delivery", status: "warning", detail: "Email delivery is temporarily unavailable. Please try again later or contact support." });
   if (input.flowId) jobs.push(add("queue", "Saved workflow progress", async () => {
     const cutoff = new Date(Date.now() - 5 * 60_000).toISOString();
     const { count } = await admin.from("flow_runs").select("id", { count: "exact", head: true }).eq("flow_id", input.flowId).eq("status", "active").lt("next_run_at", cutoff).abortSignal(signal).throwOnError();

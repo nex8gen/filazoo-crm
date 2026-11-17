@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { blankStep, cloneFlowStep, flowInputSchema, triggerTypes, type FlowInput, type JsonConfig } from "../lib/flows.ts";
 import { flowStepAtPath, simulateFlow } from "../lib/flow-engine.ts";
-import { editFlowSiblings, flowActionLocations, flowNodeWidth } from "../lib/flow-tree.ts";
+import { editFlowSiblings, flowActionLocations, flowBranchWidths, flowNodeWidth, FLOW_BRANCH_GAP } from "../lib/flow-tree.ts";
 import { testFlowScenarios } from "../lib/flow-scenarios.ts";
 import { auditFlowDefinition } from "../lib/flow-audit.ts";
 import { createFlowRecipe, flowRecipeOptions } from "../lib/flow-recipes.ts";
@@ -48,6 +48,18 @@ test("deep editing and cloning isolate sibling branches and regenerate every ide
   const copy = cloneFlowStep(definition.steps[0]);
   assert.equal(flowInputSchema.safeParse(flow([definition.steps[0], copy])).success, true);
   assert.ok(flowNodeWidth(copy) > 1000);
+});
+
+test("nested branches reserve only the space their descendants need at every card width", () => {
+  const inner = split([email()], [email()]);
+  const outer = split([email(), inner], [email()]);
+  for (const width of [280, 340]) {
+    assert.equal(flowNodeWidth(email(), width), width);
+    const nestedWidth = width * 2 + FLOW_BRANCH_GAP;
+    assert.deepEqual(flowBranchWidths(outer.config, width), [nestedWidth, width]);
+    assert.ok(flowNodeWidth(outer, width) >= width * 3 + FLOW_BRANCH_GAP * 2);
+    assert.deepEqual(flowBranchWidths(inner.config, width), [width, width]);
+  }
 });
 
 test("tree validation bounds depth and action counts, catches repeated IDs and malformed children", () => {

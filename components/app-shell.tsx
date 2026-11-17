@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { WorkspaceAiLaunchRequest } from "@/components/workspace-ai-assistant";
 import dynamic from "next/dynamic";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSelectedLayoutSegment, useSelectedLayoutSegments } from "next/navigation";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { Menu, Search } from "lucide-react";
 import { navigation } from "@/lib/navigation";
@@ -31,13 +31,17 @@ const FlowActivityBell = dynamic(() => import("@/components/flow-activity-bell")
 });
 
 export function AppShell({ children, userMenu }: { children: React.ReactNode; userMenu?: React.ReactNode }) {
-  const pathname = usePathname();
+  const currentPathname = usePathname();
+  const companyPopupOpen = useSelectedLayoutSegment("company") === "(.)companies";
+  const backgroundSegments = useSelectedLayoutSegments();
+  // Intercepted profiles change the URL while the originating workspace stays mounted.
+  const pathname = companyPopupOpen ? `/${backgroundSegments.filter(segment => !segment.startsWith("(")).join("/")}` : currentPathname;
   const isHome = pathname === "/";
   const router = useRouter();
   const isPurchaseOrders = pathname === "/purchase-orders" || pathname.startsWith("/purchase-orders/");
   const { expanded: sidebarExpanded, toggle: toggleSidebar, isDesktop } = useWorkspaceSidebar(isPurchaseOrders ? "filazoo:po-sidebar-expanded:v1" : undefined);
   const isMessenger = pathname === "/messenger" || pathname.startsWith("/messenger/");
-  const isFlowBuilder = pathname === "/workflow" || pathname === "/workflow/qa" || pathname.startsWith("/workflow/qa/");
+  const isFlowBuilder = pathname === "/workflow" || pathname.startsWith("/workflow/");
   const isEmails = pathname === "/email" || pathname.startsWith("/email/workflows") || pathname === "/email/campaigns";
   const isDocuments = pathname === "/documents";
   const isSettings = pathname === "/settings" || pathname.startsWith("/settings/");
@@ -47,7 +51,8 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
     if (isSettings) setSettingsSidebarExpanded(value => !value);
     else toggleSidebar();
   }, [isSettings, toggleSidebar]);
-  const usesViewportCanvas = isMessenger || isFlowBuilder || isEmails || isDocuments;
+  const isPortalEditor = pathname.startsWith("/customer-portal/themes/");
+  const usesViewportCanvas = isMessenger || isFlowBuilder || isEmails || isDocuments || isPortalEditor;
   const [commandOpen, setCommandOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
@@ -59,7 +64,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
   const isPublicPage = isStandaloneRoute(pathname);
   useCustomerTagRefresh(!isPublicPage);
   // Inbox and automation already refresh their own data in place.
-  useVisitedPageRefresh(pathname, !isPublicPage && !usesViewportCanvas);
+  useVisitedPageRefresh(pathname, !isPublicPage && !usesViewportCanvas && !companyPopupOpen);
 
   useEffect(() => {
     if (isPublicPage) return;
@@ -137,7 +142,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
 
       <PageHeaderProvider key={isSettings ? "settings" : "workspace"}>
         <div hidden={pageAiOpen} inert={pageAiOpen || undefined} className={`workspace-page flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background transition-transform duration-300 ease-out lg:ml-[var(--workspace-sidebar-width)] ${sidebarAiOpen ? "max-lg:-translate-x-full lg:mr-[var(--workspace-ai-width)]" : "translate-x-0 lg:mr-0"}`}>
-          {!isSettings ? <WorkspacePageHeader pathname={pathname} /> : null}
+          {!isSettings && !isPortalEditor ? <WorkspacePageHeader pathname={pathname} /> : null}
           <main id="workspace-content" tabIndex={-1} className={`${isHome ? "scrollbar-hidden " : ""}${isEmails || isDocuments || isSettings ? "" : "crm-workspace-content"} min-h-0 w-full flex-1 outline-none ${usesViewportCanvas ? "overflow-hidden p-0" : isSettings ? "overflow-y-auto p-0 lg:overflow-hidden" : "overflow-y-auto overscroll-y-contain px-5 pb-6 pt-4 sm:px-6"}`}><WorkspaceTableHeaders />{children}</main>
         </div>
       </PageHeaderProvider>

@@ -94,3 +94,16 @@ test("a read-only teammate cannot probe another owner's personal sender", async 
   await assert.rejects(() => app.check({ flow: app.flow, flowId: id }, { ...viewer, id: "other", role: "viewer" }), /owner or an administrator/);
   assert.equal(app.calls.includes("smtp:verify"), false);
 });
+
+test("a missing sender or recipient is attributed only to the actions using it", async () => {
+  const app = fixture();
+  const email = app.flow.steps.find(step => step.type === "send_email")!;
+  email.config.mailboxId = "missing-sender";
+  const task = app.flow.steps.find(step => step.type === "create_task")!;
+  task.config.assigneeType = "user";
+  task.config.assigneeId = "missing-user";
+  const result = await app.check({ flow: app.flow }, viewer);
+  assert.deepEqual(structuredClone(result.checks.find(check => check.id === "senders")?.actionPaths), [[app.flow.steps.indexOf(email)]]);
+  assert.deepEqual(structuredClone(result.checks.find(check => check.id === "members")?.actionPaths), [[app.flow.steps.indexOf(task)]]);
+  assert.ok(app.calls.includes("smtp:verify"), "The other, healthy sender is still checked");
+});

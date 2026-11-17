@@ -4,12 +4,22 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
 
-function setup(failWorkflow = false) {
+function setup(failWorkflow = false, preflight: { ready?: boolean; failure?: boolean; unavailableWorkspace?: boolean } = {}) {
   const background: Array<() => Promise<void>> = [];
   const calls: string[] = [];
   const errors: unknown[] = [];
   const dependencies: Record<string, unknown> = {
-    "@/lib/data/workspace-runtime": { forEachWorkspace: async (run: (id: string, count: number) => Promise<unknown>) => [await run("test-workspace", 1)] },
+    "@/lib/data/workspace-runtime": { forEachWorkspace: async (run: (id: string, count: number) => Promise<unknown>, options?: { throwOnError?: boolean }) => {
+      if (preflight.unavailableWorkspace) {
+        assert.equal(options?.throwOnError, true, "readiness must not omit failed workspace checks");
+        throw new Error("private provider details");
+      }
+      return [await run("test-workspace", 1)];
+    } },
+    "@/lib/data/flow-health": { checkWorkspaceFlowHealth: async () => {
+      if (preflight.failure) throw new Error("private provider details");
+      return { ready: preflight.ready ?? true, checks: [], mailboxes: [] };
+    } },
     "next/server": { after: (run: () => Promise<void>) => background.push(run) },
     "@/lib/env": { env: { dryRun: true } },
     "@/lib/data/flow-runtime": { processDueFlowRuns: async () => { calls.push("flows"); if (failWorkflow) throw new Error("Database unavailable"); return []; } },
@@ -43,4 +53,36 @@ test("cron acknowledges before starting work and isolates failed phases", async 
   await app.background[0]();
   assert.deepEqual(app.calls, ["flows"]);
   assert.equal(app.errors.length, 1);
+});
+
+test("readiness returns a failing HTTP status when a provider is unavailable", async () => {
+  const app = setup(false, { ready: false });
+  const response = await app.GET(app.request("?task=preflight"));
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).ready, false);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(app.background.length, 0);
+  assert.deepEqual(app.calls, []);
+});
+
+test("readiness cannot report success when a workspace or database check throws", async () => {
+  for (const preflight of [{ failure: true }, { unavailableWorkspace: true }]) {
+    const app = setup(false, preflight);
+    const response = await app.GET(app.request("?task=preflight"));
+    assert.equal(response.status, 503);
+    const body = await response.json();
+    assert.equal(body.ready, false);
+    assert.equal(body.ok, false);
+    assert.doesNotMatch(JSON.stringify(body), /private provider details/);
+  }
+});
+
+test("ready providers pass the authenticated readiness check without enqueueing sends", async () => {
+  const app = setup();
+  assert.equal((await app.GET(app.request("?task=preflight", false))).status, 401);
+  const response = await app.GET(app.request("?task=preflight"));
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).ready, true);
+  assert.equal(app.background.length, 0);
+  assert.deepEqual(app.calls, []);
 });

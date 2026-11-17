@@ -2,6 +2,8 @@ import { z } from "zod";
 import { checkPortalOrigin, portalError, portalHeaders, portalLimit, portalSession, PortalError } from "@/lib/data/customer-portal";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { withCustomerWorkspace } from "@/lib/data/customer-workspace";
+import { getPublishedPortalDesign } from "@/lib/data/portal-design";
+import { portalFeatureAllowed } from "@/lib/portal-design";
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   return withCustomerWorkspace(request, () => sendMessage(request,context));
 }
@@ -11,6 +13,7 @@ async function sendMessage(request: Request, context: { params: Promise<{ id: st
     const { id } = await context.params;
     if (!z.uuid().safeParse(id).success) throw new PortalError("Invalid invoice.");
     await portalSession(id);
+    if (!portalFeatureAllowed(await getPublishedPortalDesign(), "sendMessages")) throw new PortalError("Messaging is disabled for this portal.", 403);
     const input = z.object({ id: z.uuid(), body: z.string().trim().min(1).max(4000) }).parse(await request.json());
     await portalLimit(`message:${id}`, 30);
     const { error } = await createSupabaseAdmin().from("customer_portal_messages").upsert({ id: input.id, invoice_id: id, sender: "customer", body: input.body }, { onConflict: "id", ignoreDuplicates: true });

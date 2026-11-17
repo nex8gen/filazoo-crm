@@ -42,6 +42,15 @@ test("invoice QR links remain reachable from a phone when generated locally", ()
   assert.equal(new URL(local.customerPortalUrl(draft)!).origin, "https://crm.filazoosupply.com");
 });
 
+test("custom portal origins preserve the signed invoice capability in the URL fragment", () => {
+  const standard = new URL(links.customerPortalUrl(draft)!);
+  const custom = new URL(links.customerPortalUrl(draft, "https://portal.example.com")!);
+  assert.equal(custom.origin, "https://portal.example.com");
+  assert.equal(custom.pathname, standard.pathname);
+  assert.equal(custom.hash, standard.hash);
+  assert.equal(custom.search, "");
+});
+
 test("PO-linked draft creation, saving, listing and reopening return the same QR; standalone creation is rejected", async () => {
   const query: Record<string, unknown> = {};
   let inserts = 0;
@@ -52,6 +61,7 @@ test("PO-linked draft creation, saving, listing and reopening return the same QR
     "../supabase/admin": { createSupabaseAdmin: () => ({ from: () => query, rpc: async (name: string, args: { p_input?: { action: string } }) => ({ data: name === "invoice_receivables" ? [] : args.p_input?.action === "delete" ? null : structuredClone(draft), error: null }) }) },
     "../invoices": invoices, "../customer-portal-links": links,
     "./invoice-connections": { validateInvoiceConnections: async () => {} },
+    "./portal-domain-routing": { connectedPortalOrigin: async () => undefined },
     "../invoice-links": {}, "./cached-member-avatars": {}, "../profile-avatar": {},
   });
   const expected = links.customerPortalUrl(draft);
@@ -105,4 +115,7 @@ test("generated draft and issued PDFs embed the same signed customer QR", async 
     }
   }
   assert.deepEqual(encoded, [links.customerPortalUrl(draft), links.customerPortalUrl(draft)]);
+  const customUrl = links.customerPortalUrl(draft, "https://portal.example.com")!;
+  await pdf.renderInvoicePdf({ ...draft, customer_portal_url: customUrl }, "2026-10-26");
+  assert.equal(encoded.at(-1), customUrl);
 });

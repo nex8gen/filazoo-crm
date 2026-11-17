@@ -1,9 +1,21 @@
 export type CanvasPoint = { x: number; y: number };
 export type CanvasNode = CanvasPoint & { id: string; width: number; height: number };
 
-export const CANVAS_NODE_WIDTH = 440;
+export const CANVAS_NODE_WIDTH = 340;
+export const FLOW_NODE_GAP = 56;
 export const CANVAS_START_X = 180;
 export const MIN_FLOW_ZOOM = 0.001;
+
+/** Layout wrappers include empty branch lanes; only actual controls block panning. */
+export function canPanFlowCanvas(viewport: Element, target: Element, button: number) {
+  if (button !== 0 || !viewport.contains(target)) return false;
+  return !target.closest('[data-flow-card], [data-flow-path-header], .wf-trigger-card, [data-canvas-controls], button, input, select, textarea, a, [role="button"], [role="menu"], [role="dialog"], [role="listbox"], [contenteditable]:not([contenteditable="false"])');
+}
+
+/** React portal events bubble through the canvas even though their DOM is outside it. */
+export function canHandleFlowCanvasWheel(viewport: Element, target: Element) {
+  return viewport.contains(target) && !target.closest('[data-canvas-controls], [data-slot="popover-content"], [data-slot="select-content"], [role="menu"], [role="dialog"], [role="listbox"], input, select, textarea, [contenteditable]:not([contenteditable="false"])');
+}
 
 export function fitFlowCanvas(nodes: CanvasNode[], viewport: { width: number; height: number }) {
   if (!nodes.length) return { zoom: 1, pan: { x: 0, y: 0 } };
@@ -18,10 +30,10 @@ export function fitFlowCanvas(nodes: CanvasNode[], viewport: { width: number; he
 // Layout always follows execution order, including after inserting or moving a step.
 export function layoutFlowNodes(stepIds: string[], heights: Record<string, number>, width = CANVAS_NODE_WIDTH) {
   const trigger: CanvasNode = { id: "__trigger", x: CANVAS_START_X, y: 64, width, height: heights.__trigger ?? 104 };
-  let y = Math.max(240, trigger.y + trigger.height + 48);
+  let y = trigger.y + trigger.height + FLOW_NODE_GAP;
   const steps = stepIds.map((id) => {
     const node: CanvasNode = { id, x: CANVAS_START_X, y, width, height: heights[id] ?? 72 };
-    y += Math.max(144, node.height + 48);
+    y += node.height + FLOW_NODE_GAP;
     return node;
   });
   const end: CanvasNode = { id: "__end", x: CANVAS_START_X + (width - 162) / 2, y, width: 162, height: heights.__end ?? 34 };

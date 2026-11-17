@@ -1,0 +1,19 @@
+.flow-design-preview { display: flex; height: 304px; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; padding: 18px 12px; background-color: color-mix(in srgb, var(--muted) 35%, var(--card)); background-image: radial-gradient(color-mix(in srgb, var(--muted-foreground) 20%, transparent) .8px, transparent .8px); background-size: 14px 14px; }
+.flow-design-stage { display: flex; width: 100%; flex-direction: column; align-items: center; }
+.flow-design-node { display: flex; width: max-content; min-width: 116px; max-width: 90%; min-height: 28px; align-items: center; justify-content: center; gap: 7px; padding: 5px 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--card); color: var(--foreground); box-shadow: 0 2px 3px rgb(0 0 0 / 3%); font-size: 10px; line-height: 1.4; }
+.flow-design-node svg { width: 12px; height: 12px; flex-shrink: 0; }
+.flow-design-node span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.flow-design-trigger { border-color: color-mix(in srgb, var(--primary) 30%, var(--border)); background: color-mix(in srgb, var(--primary) 7%, var(--card)); color: var(--primary); }
+.flow-design-ai_auto_reply { color: var(--primary); }
+.flow-design-split, .flow-design-if_condition { color: #8871ce; }
+.flow-design-wait { color: var(--muted-foreground); }
+.flow-design-connector { width: 1px; height: 13px; flex-shrink: 0; background: color-mix(in srgb, var(--muted-foreground) 35%, var(--border)); }
+.flow-design-branches { position: relative; display: grid; width: 100%; gap: 6px; margin-top: 12px; }
+.flow-design-branches::before { position: absolute; top: -12px; left: 50%; height: 12px; width: 1px; background: var(--border); content: ""; }
+.flow-design-branches::after { position: absolute; top: 0; left: 16.66%; right: 16.66%; height: 1px; background: var(--border); content: ""; }
+.flow-design-branch { display: flex; min-width: 0; flex-direction: column; align-items: center; }
+.flow-design-branch::before { height: 9px; width: 1px; background: var(--border); content: ""; }
+.flow-design-branch .flow-design-node { min-width: 0; max-width: 100%; gap: 4px; padding-inline: 6px; font-size: 9px; }
+.flow-design-path { max-width: 100%; overflow: hidden; margin-bottom: 5px; color: var(--muted-foreground); white-space: nowrap; text-overflow: ellipsis; font-size: 9px; }
+.flow-design-end { border: 1px solid var(--border); border-radius: 20px; background: var(--card); padding: 2px 9px; color: var(--muted-foreground); font-size: 9px; }
+.flow-design-more { margin-top: 4px; color: var(--muted-foreground); font-size: 9px; }

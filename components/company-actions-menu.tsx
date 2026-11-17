@@ -122,9 +122,9 @@ export function CompanyActionsMenu({ companyId, ownerId, managers, canAssign, ca
         <p className="px-2.5 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Company actions</p>
         {canAssign ? <button type="button" role="menuitem" className={actionClass} onClick={() => { setMenuOpen(false); setSelectedOwner(ownerId || "unassigned"); setAssignmentOpen(true); }}><UserRoundCog />Change assignee</button> : null}
         {canWrite ? <button type="button" role="menuitem" className={actionClass} onClick={() => { setMenuOpen(false); setFollowup(followupLocalTime(nextFollowupAt)); setFollowupOpen(true); }}><CalendarClock />Schedule follow-up</button> : null}
-        <button type="button" role="menuitem" className={actionClass} onClick={() => { setMenuOpen(false); router.push(`/companies/${companyId}?tab=history`); }}><History />View activity history</button>
+        <button type="button" role="menuitem" className={actionClass} onClick={() => { setMenuOpen(false); router.replace(`/companies/${companyId}?tab=history`, { scroll: false }); }}><History />View activity history</button>
         <div role="separator" className="-mx-1 my-1 h-px bg-border" />
-        {canWrite ? <button type="button" role="menuitem" className={actionClass} disabled={!email} onClick={() => { setMenuOpen(false); router.push(`/companies/${companyId}?tab=email&compose=1`); }}><Mail />Email customer</button> : null}
+        {canWrite ? <button type="button" role="menuitem" className={actionClass} disabled={!email} onClick={() => { setMenuOpen(false); router.replace(`/companies/${companyId}?tab=email&compose=1`, { scroll: false }); }}><Mail />Email customer</button> : null}
         <button type="button" role="menuitem" className={actionClass} disabled={!websiteUrl} onClick={() => { setMenuOpen(false); if (websiteUrl) window.open(websiteUrl, "_blank", "noopener,noreferrer"); }}><ExternalLink />Visit website</button>
         <div role="separator" className="-mx-1 my-1 h-px bg-border" />
         <button type="button" role="menuitem" className={actionClass} disabled={!email} onClick={() => { setMenuOpen(false); if (email) void copy(email, "Email address copied."); }}><Clipboard />Copy email address</button>

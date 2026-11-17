@@ -19,13 +19,13 @@ export const metadata: Metadata = {
   description: "B2B outreach intelligence and relationship management.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children, company }: LayoutProps<"/">) {
   return (
     <html lang="en" className={GeistSans.variable} data-scroll-behavior="smooth" suppressHydrationWarning>
       <body>
         <LanguageProvider>
           <ThemeProvider>
-            <TooltipProvider><WorkspaceErrorBoundary><Suspense fallback={<div className="min-h-svh bg-background" />}><AccountPreferences><AppShell userMenu={<Suspense fallback={<span className="size-7 rounded-full bg-muted" />}><UserMenu /></Suspense>}>{children}</AppShell></AccountPreferences></Suspense></WorkspaceErrorBoundary></TooltipProvider>
+            <TooltipProvider><WorkspaceErrorBoundary><Suspense fallback={<div className="min-h-svh bg-background" />}><AccountPreferences><AppShell userMenu={<Suspense fallback={<span className="size-7 rounded-full bg-muted" />}><UserMenu /></Suspense>}>{children}{company}</AppShell></AccountPreferences></Suspense></WorkspaceErrorBoundary></TooltipProvider>
             <Toaster position="bottom-right" />
           </ThemeProvider>
         </LanguageProvider>

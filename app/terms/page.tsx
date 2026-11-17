@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { LegalPage } from "@/components/legal-page";
 
 export const metadata = { title: "Terms of Service" };
@@ -9,7 +10,7 @@ export default function TermsPage() {
     <section><h2>3. Your business information</h2><p>You retain your rights to information you add to Filazoo. You authorize us to process that information to provide, secure, and maintain the service. You are responsible for having the necessary rights and permissions to upload customer records, send messages, and connect third-party accounts.</p></section>
     <section><h2>4. Acceptable use</h2><p>Do not use Filazoo for unlawful activity, spam, fraud, harassment, unauthorized access, or attempts to access information belonging to another workspace. Do not interfere with the service or misuse connected platforms. Follow the requirements of the email, messaging, and commerce providers you connect.</p></section>
     <section><h2>5. AI and connected services</h2><p>Review AI-generated information, drafts, and proposed actions before relying on them. AI output may be inaccurate or incomplete. Third-party integrations are subject to the terms and availability of their providers. Connecting a service authorizes Filazoo to perform the operations you request within the access you grant.</p></section>
-    <section><h2>6. Privacy and deletion</h2><p>Our <a href="/privacy">Privacy Policy</a> explains how we handle personal information. See our <a href="/data-deletion">Data Deletion page</a> for deletion requests. Leaving a workspace removes your access; it does not automatically delete business records held by that workspace.</p></section>
+    <section><h2>6. Privacy and deletion</h2><p>Our <Link href="/privacy">Privacy Policy</Link> explains how we handle personal information. See our <Link href="/data-deletion">Data Deletion page</Link> for deletion requests. Leaving a workspace removes your access; it does not automatically delete business records held by that workspace.</p></section>
     <section><h2>7. Availability and account restrictions</h2><p>We may update the service, perform maintenance, or restrict access when needed to address misuse, security issues, or legal requirements. We do not guarantee uninterrupted availability. Keep copies of business information you need independently of the service.</p></section>
     <section><h2>8. Changes and contact</h2><p>We may update these terms as the service changes. The date above identifies the latest revision. For questions about your account, workspace, or these terms, contact <a href="mailto:raul@filazoo.com">raul@filazoo.com</a>.</p></section>
   </LegalPage>;

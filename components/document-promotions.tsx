@@ -2,9 +2,9 @@
 import { NotificationToast } from "@/components/ui/notification-toast";
 
 
-import { useEffect, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
-import { ArrowUpRight, CalendarDays, Gift, Megaphone, Plus, RefreshCw } from "lucide-react";
+import { ArrowUpRight, CalendarDays, Gift, Mail, Megaphone, Plus, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TableFilter, TableFilters } from "@/components/ui/table-filters";
@@ -16,10 +16,31 @@ import type { Product } from "@/lib/types";
 import { useCampaignLocation, navigateCampaign } from "@/components/use-campaign-location";
 import { campaignSessionKey, clearCampaignSession, readCampaignSession, writeCampaignSession } from "@/lib/campaign-editor-session";
 import { marketingAssetInputSchema } from "@/lib/marketing-assets";
+import { renderEmailDesign } from "@/lib/email-design";
 
 const types = [{ id: "factory_sale", icon: Megaphone }, { id: "month_end", icon: CalendarDays }, { id: "holiday", icon: Gift }] as const;
 const EmailCampaignBuilder = dynamic(() => import("@/components/email-campaign-builder").then(module => module.EmailCampaignBuilder));
 type Snapshot = { year: number; assets: MarketingAsset[]; error?: string };
+
+const CampaignCardPreview = memo(function CampaignCardPreview({ asset }: { asset?: MarketingAsset }) {
+  const design = asset?.campaignConfig?.emailDesign;
+  const html = useMemo(() => design ? renderEmailDesign(design, { preview: true }).html : null, [design]);
+  const message = asset?.message.trim();
+
+  return <span className="campaign-cardPreview" aria-hidden="true">
+    {html ? <span className="campaign-cardPaper">
+      <iframe title={`${asset?.title} email thumbnail`} sandbox="" loading="lazy" tabIndex={-1} referrerPolicy="no-referrer" srcDoc={html} />
+    </span> : message ? <span className="campaign-cardPaper campaign-cardTextEmail">
+      <span className="campaign-cardEmailHeader"><Mail /><span>Email preview</span></span>
+      <strong>{asset?.campaignConfig?.subject || asset?.title}</strong>
+      <span className="campaign-cardEmailBody">{message}</span>
+    </span> : <span className="campaign-cardPlaceholder">
+      <span className="campaign-cardPlaceholderIcon"><Mail /></span>
+      <span>No template selected</span>
+      <span className="campaign-cardPlaceholderLines"><i /><i /><i /></span>
+    </span>}
+  </span>;
+});
 
 export function DocumentPromotions({ year, canWrite, sessionScope, onCreateTemplate, products = [] }: { year: number; canWrite: boolean; sessionScope: string; onCreateTemplate: (template: PromotionTemplateSeed) => void; products?: Product[] }) {
   const [query, setQuery] = useState("");
@@ -98,11 +119,14 @@ export function DocumentPromotions({ year, canWrite, sessionScope, onCreateTempl
             const asset = row.asset;
             const status = asset?.dispatch ? asset.campaignConfig?.sendMode === "scheduled" ? "scheduled" : "queued" : asset?.status ?? "unplanned";
             const disabled = !asset && !canEdit;
-            return <button type="button" key={row.key} className="campaign-card" disabled={disabled} onClick={() => openCampaign(asset ?? newMarketingAsset(category, year, row.slot))}>
-              <div className="campaign-cardTop"><span className="campaign-cardIcon"><CategoryIcon aria-hidden="true" /></span><span className="campaign-status" data-status={status}><i aria-hidden="true" />{status === "scheduled" ? "Scheduled" : status === "queued" ? "Queued" : status === "ready" ? "Ready" : asset ? "Draft" : "Not planned"}</span></div>
-              <strong>{row.title}</strong>
-              {asset?.offer ? <span className="campaign-description">{asset.offer}</span> : null}
-              <div className="campaign-cardBottom"><span className="campaign-dates">{marketingDateRange(row.startDate, row.endDate)}</span><ArrowUpRight aria-hidden="true" /></div>
+            return <button type="button" key={row.key} className="campaign-card" aria-label={`Open ${row.title}`} disabled={disabled} onClick={() => openCampaign(asset ?? newMarketingAsset(category, year, row.slot))}>
+              <CampaignCardPreview asset={asset} />
+              <span className="campaign-cardContent">
+                <span className="campaign-cardTop"><span className="campaign-cardChannel"><CategoryIcon aria-hidden="true" />{category === "factory_sale" ? "Email campaign" : category === "month_end" ? "Month-end" : "Holiday"}</span><span className="campaign-status" data-status={status}><i aria-hidden="true" />{status === "scheduled" ? "Scheduled" : status === "queued" ? "Queued" : status === "ready" ? "Ready" : asset ? "Draft" : "Not planned"}</span></span>
+                <strong className="campaign-cardTitle">{row.title}</strong>
+                <span className="campaign-cardSubtitle">{asset?.campaignConfig?.subject || asset?.offer || (asset?.campaignConfig?.emailDesign ? "Email template selected" : asset?.message ? "Plain text email" : "Choose a template to get started")}</span>
+                <span className="campaign-cardBottom"><span className="campaign-dates"><CalendarDays aria-hidden="true" />{marketingDateRange(row.startDate, row.endDate)}</span><span className="campaign-cardOpen"><ArrowUpRight aria-hidden="true" /></span></span>
+              </span>
             </button>;
           })}
         </div>

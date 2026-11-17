@@ -7,6 +7,7 @@ import { listEmailFlows, listFlowFilterOptions, listFlowMemberOptions } from "@/
 import { listMailboxes } from "@/lib/data/mailboxes";
 import { flowMailboxOptions } from "@/lib/flow-mailboxes";
 import { defaultFlowInput, type JsonConfig } from "@/lib/flows";
+import { env } from "@/lib/env";
 
 export const metadata = { title: "Email workflows" };
 
@@ -38,7 +39,7 @@ export default async function EmailFlowsPage({ searchParams }: { searchParams: P
       </nav>
     </div>
     <div className="min-h-0 flex-1">
-      <FlowBuilder key={query.toString()} initialFlows={flows} viewerId={viewer.id} isAdmin={viewer.role === "admin"}
+      <FlowBuilder key={query.toString()} initialFlows={flows} liveSendingEnabled={!env.flowDryRun} viewerId={viewer.id} isAdmin={viewer.role === "admin"}
         initialFlowId={typeof params.flow === "string" ? params.flow : flows[0]?.id}
         initialDraft={{ ...defaultFlowInput, name: `${scope.scopeLabel} workflow`.slice(0, 160), triggerType: "email_received", triggerConfig: scope,
           steps: defaultFlowInput.steps.map((step) => ({ ...step, config: { ...step.config, ...(step.type === "send_email" && selectedMailbox ? { mailboxId: selectedMailbox.id } : {}) } })) }}

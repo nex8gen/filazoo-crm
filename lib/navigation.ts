@@ -1,5 +1,5 @@
 import type { ComponentType } from "react";
-import { BookOpen, Building2, ChartColumnIncreasing, ClipboardList, FilePenLine, FolderOpen, House, ListTodo, Mail, Megaphone, MessageSquare, Package, Settings, Sparkles, Tags, Workflow } from "lucide-react";
+import { BookOpen, Building2, ChartColumnIncreasing, ClipboardList, FilePenLine, FolderOpen, House, ListTodo, Mail, Megaphone, MessageSquare, Package, PanelsTopLeft, Settings, Sparkles, Tags, Workflow } from "lucide-react";
 
 export type NavigationItem = {
   label: string;
@@ -83,6 +83,13 @@ export const navigation: NavigationGroup[] = [
       { label: "Purchase Order", href: "/purchase-orders", icon: ClipboardList, description: "Customer orders, delivery and fulfillment", excludePrefixes: ["/purchase-orders/drafts"] },
       { label: "Drafts", href: "/purchase-orders/drafts", icon: FilePenLine, description: "Purchase orders awaiting confirmation" },
     ],
+  },
+  {
+    label: "Customer portal",
+    eyebrow: "Customer experience",
+    icon: PanelsTopLeft,
+    direct: true,
+    items: [{ label: "Customer portal", href: "/customer-portal", icon: PanelsTopLeft, description: "Customize your customer portal design, sections and customer permissions" }],
   },
   {
     label: "Messenger",

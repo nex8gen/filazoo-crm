@@ -1,4 +1,19 @@
 .customer-portal { --portal-soft: color-mix(in srgb, var(--primary) 8%, var(--card)); min-height: 100svh; background: color-mix(in srgb, var(--background) 65%, var(--muted)); color: var(--foreground); font-size: 14px; line-height: 1.6; }
+.portal-announcement { padding: 10px 24px; text-align: center; background: var(--primary); color: var(--primary-foreground); font-size: 12px; }
+.portal-brand-name { font-size: 22px; letter-spacing: -.04em; color: var(--foreground); max-width: 240px; overflow-wrap: anywhere; }
+.portal-custom-logo { width: auto; max-width: 160px; max-height: 48px; object-fit: contain; }
+.portal-designed .portal-workspace { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.portal-designed[data-layout=stacked] .portal-workspace { grid-template-columns: minmax(0, 1fr); }
+.portal-designed .portal-kind-overview, .portal-designed .portal-kind-invoice, .portal-designed .portal-kind-content { grid-column: 1 / -1; }
+.portal-designed .portal-summary { margin-bottom: 0; border: 0; border-radius: 0; box-shadow: none; }
+.portal-custom-content { padding: 0 24px 24px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted-foreground); font-size: 13px; }
+.portal-designed[data-theme=soft] { background: color-mix(in srgb, var(--primary) 6%, var(--background)); }
+.portal-designed[data-theme=soft] .portal-card { border-radius: 22px; box-shadow: 0 6px 24px rgb(0 0 0 / 3%); }
+.portal-designed[data-theme=bold] .portal-card { border-radius: 4px; border-top: 3px solid var(--primary); }
+.portal-designed[data-theme=bold] .portal-intro h1 { font-weight: 750; }
+.portal-preview-composer { border: 1px solid var(--border); border-radius: 10px; margin: 0 18px; padding: 14px; color: var(--muted-foreground); font-size: 12px; }
+.portal-preview-composer button { display: flex; margin: 18px 0 0 auto; }
+@media (max-width: 700px) { .portal-designed .portal-workspace { grid-template-columns: minmax(0, 1fr); } }
 .customer-portal :where(section, div, article, dl) { min-width: 0; }
 .customer-portal :where(h1, h2, h3, p, dd, a) { overflow-wrap: anywhere; }
 .customer-portal :where(button, a, textarea, [tabindex]):focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; }

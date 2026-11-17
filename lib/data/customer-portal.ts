@@ -4,6 +4,8 @@ import { createSupabaseAdmin } from "../supabase/admin";
 import { getInvoice } from "./invoices";
 import { customerInvoice, type PortalData } from "../customer-portal";
 import { portalEmail, portalHash, portalToken } from "../customer-portal-crypto";
+import { projectPortalData, portalSectionEnabled } from "../portal-design";
+import { getPublishedPortalDesign } from "./portal-design";
 
 export const portalCookie = "filazoo_customer_session";
 export class PortalError extends Error {
@@ -55,12 +57,13 @@ export async function portalSession(invoiceId?: string, challenge = false) {
 }
 export async function loadPortalData(id: string): Promise<PortalData> {
   const { account, invoice } = await portalSession(id);
+  const design = await getPublishedPortalDesign();
   const db = createSupabaseAdmin();
   const [messages, shipment, order] = await Promise.all([
-    db.from("customer_portal_messages").select("id,sender,body,created_at").eq("invoice_id", id).order("created_at", { ascending: false }).order("id", { ascending: false }).limit(100),
-    db.from("customer_portal_shipments").select("status,location,carrier,tracking_number,tracking_url,expected_delivery,updated_at").eq("invoice_id", id).maybeSingle(),
-    invoice.document.purchaseOrderId && invoice.company_id ? db.from("purchase_orders").select("reference,document").eq("id", invoice.document.purchaseOrderId).eq("company_id", invoice.company_id).maybeSingle() : Promise.resolve({ data: null, error: null }),
+    portalSectionEnabled(design, "messages") ? db.from("customer_portal_messages").select("id,sender,body,created_at").eq("invoice_id", id).order("created_at", { ascending: false }).order("id", { ascending: false }).limit(100) : Promise.resolve({ data: [], error: null }),
+    portalSectionEnabled(design, "tracking") ? db.from("customer_portal_shipments").select("status,location,carrier,tracking_number,tracking_url,expected_delivery,updated_at").eq("invoice_id", id).maybeSingle() : Promise.resolve({ data: null, error: null }),
+    portalSectionEnabled(design, "tracking") && invoice.document.purchaseOrderId && invoice.company_id ? db.from("purchase_orders").select("reference,document").eq("id", invoice.document.purchaseOrderId).eq("company_id", invoice.company_id).maybeSingle() : Promise.resolve({ data: null, error: null }),
   ]);
   for (const result of [messages, shipment, order]) if (result.error) throw result.error;
-  return { invoice: customerInvoice(invoice), email: account.email, needsPassword: !account.password_hash, messages: (messages.data ?? []).reverse(), shipment: shipment.data, order: order.data && order.data.document.status !== "draft" ? { reference: order.data.reference, status: order.data.document.status, deliveryDate: order.data.document.deliveryDate } : null };
+  return projectPortalData({ invoice: customerInvoice(invoice), email: account.email, needsPassword: !account.password_hash, messages: (messages.data ?? []).reverse(), shipment: shipment.data, order: order.data && order.data.document.status !== "draft" ? { reference: order.data.reference, status: order.data.document.status, deliveryDate: order.data.document.deliveryDate } : null }, design);
 }

@@ -14,22 +14,36 @@ export const hasLegacyIntegrations = cache(async () => {
 });
 
 /** Invoke only after authenticating the scheduler. Each callback gets independent tenant RLS. */
-export async function forEachWorkspace<T>(work: (workspaceId: string, count: number) => Promise<T>, options: { rotate?: boolean; deadline?: number } = {}) {
-  const { data, error } = await createSupabaseControl().from("workspaces").select("id").order("created_at");
-  if (error?.code === "PGRST205" || error?.code === "42P01") return [await work("legacy", 1)];
-  if (error) throw new Error("Unable to load scheduled workspaces.");
+export async function forEachWorkspace<T>(work: (workspaceId: string, count: number) => Promise<T>, options: { rotate?: boolean; deadline?: number; throwOnError?: boolean } = {}) {
+  const db = createSupabaseControl();
+  const data: { id: string }[] = [];
+  // PostgREST caps a single response. Every tenant must remain schedulable as we grow.
+  const pageSize = 250;
+  for (let offset = 0; ; offset += pageSize) {
+    const { data: page, error } = await db.from("workspaces").select("id").order("created_at").order("id")
+      .range(offset, offset + pageSize - 1).abortSignal(AbortSignal.timeout(15_000));
+    if (!offset && (error?.code === "PGRST205" || error?.code === "42P01")) return [await work("legacy", 1)];
+    if (error) throw new Error("Unable to load scheduled workspaces.");
+    data.push(...(page ?? []));
+    if (!page || page.length < pageSize) break;
+  }
   const results: T[] = [];
-  if (options.rotate && data?.length) {
+  const failures: unknown[] = [];
+  if (options.rotate && data.length) {
     const offset = Math.floor(Date.now() / 60_000) % data.length;
     data.push(...data.splice(0, offset));
   }
-  for (let offset = 0; offset < (data?.length ?? 0); offset += 4) {
+  for (let offset = 0; offset < data.length; offset += 4) {
     if (options.deadline && Date.now() > options.deadline - 120_000) break;
-    const batch = await Promise.allSettled(data!.slice(offset, offset + 4).map(w => withWorkspaceContext(w.id, () => work(w.id, data!.length))));
+    const batch = await Promise.allSettled(data.slice(offset, offset + 4).map(w => withWorkspaceContext(w.id, () => work(w.id, data.length))));
     for (const result of batch) {
       if (result.status === "fulfilled") results.push(result.value);
-      else console.error("Workspace background work failed; durable jobs remain queued.");
+      else {
+        failures.push(result.reason);
+        console.error("Workspace background work failed; durable jobs remain queued.");
+      }
     }
   }
+  if (options.throwOnError && failures.length) throw new AggregateError(failures, "Unable to check every workspace.");
   return results;
 }

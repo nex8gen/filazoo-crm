@@ -17,6 +17,7 @@ import {
 } from "../invoice-links";
 import { resolveMemberAvatars } from "./cached-member-avatars";
 import { customerPortalUrl } from "../customer-portal-links";
+import { connectedPortalOrigin } from "./portal-domain-routing";
 
 export async function listInvoices(
   page = 0,
@@ -50,6 +51,7 @@ export async function listInvoices(
   if (error) throw error;
   if (summary.error) throw summary.error;
   const invoices = (data ?? []) as Invoice[];
+  const portalOrigin = await connectedPortalOrigin();
   const creatorIds = [...new Set(invoices.flatMap((invoice) => invoice.created_by ? [invoice.created_by] : []))];
   const creators = new Map<string, { name?: string; avatarUrl?: string }>();
   if (creatorIds.length) {
@@ -62,7 +64,7 @@ export async function listInvoices(
   return {
     invoices: invoices.map((invoice) => {
       const creator = invoice.created_by ? creators.get(invoice.created_by) : undefined;
-      return { ...invoice, customer_portal_url: customerPortalUrl(invoice), creator_name: invoice.creator_name || creator?.name || (invoice.created_by ? "Workspace member" : "Creator not recorded"), creator_avatar_url: creator?.avatarUrl };
+      return { ...invoice, customer_portal_url: customerPortalUrl(invoice, portalOrigin), creator_name: invoice.creator_name || creator?.name || (invoice.created_by ? "Workspace member" : "Creator not recorded"), creator_avatar_url: creator?.avatarUrl };
     }),
     count: count ?? 0,
     summary: summary.data as InvoiceReceivable[],
@@ -79,7 +81,7 @@ export async function getInvoice(id: string) {
   if (error) throw error;
   if (!data) return null;
   const invoice = data as Invoice;
-  invoice.customer_portal_url = customerPortalUrl(invoice);
+  invoice.customer_portal_url = customerPortalUrl(invoice, await connectedPortalOrigin());
   const skus = [
     ...new Set(
       invoice.document.items.flatMap((item) =>
@@ -117,7 +119,7 @@ export async function createInvoice(document: InvoiceDocument, userId: string, i
     .single();
   if (error) throw error;
   const invoice = data as Invoice;
-  return { ...invoice, customer_portal_url: customerPortalUrl(invoice) };
+  return { ...invoice, customer_portal_url: customerPortalUrl(invoice, await connectedPortalOrigin()) };
 }
 
 export async function mutateInvoice(
@@ -133,5 +135,5 @@ export async function mutateInvoice(
     p_input: input,
   });
   if (error) throw error;
-  return data ? { ...data, customer_portal_url: customerPortalUrl(data as Invoice) } : data;
+  return data ? { ...data, customer_portal_url: customerPortalUrl(data as Invoice, await connectedPortalOrigin()) } : data;
 }

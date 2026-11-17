@@ -37,7 +37,7 @@ body:has(.column-resize-handle[data-dragging]) iframe { pointer-events: none; }
   --glass-highlight: rgb(255 255 255 / 65%);
   --glass-shadow: rgb(0 0 0 / 8%);
   --glass-contact-shadow: rgb(0 0 0 / 3%);
-  --primary: #08794e;
+  --primary: #2563eb;
   --primary-foreground: #ffffff;
   --action: #000000;
   --action-foreground: #ffffff;
@@ -52,7 +52,7 @@ body:has(.column-resize-handle[data-dragging]) iframe { pointer-events: none; }
   --destructive: #b42318;
   --border: #e5e5e5;
   --input: #e5e5e5;
-  --ring: #3ecf8e;
+  --ring: #2563eb;
   --chart-1: #3ecf8e;
   --chart-2: #737373;
   --chart-3: #a3a3a3;
@@ -60,14 +60,14 @@ body:has(.column-resize-handle[data-dragging]) iframe { pointer-events: none; }
   --chart-5: #e5e5e5;
   --sidebar: #ffffff;
   --sidebar-foreground: #262626;
-  --sidebar-primary: #08794e;
+  --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: rgb(62 207 142 / 12%);
+  --sidebar-accent: var(--brand-soft);
   --sidebar-accent-foreground: #171717;
   --sidebar-border: #e5e5e5;
-  --sidebar-ring: #3ecf8e;
+  --sidebar-ring: var(--ring);
   --brand: #3ecf8e;
-  --brand-soft: rgb(62 207 142 / 12%);
+  --brand-soft: rgb(37 99 235 / 10%);
 }
 
 .dark {
@@ -80,8 +80,8 @@ body:has(.column-resize-handle[data-dragging]) iframe { pointer-events: none; }
   --glass-highlight: rgb(255 255 255 / 7%);
   --glass-shadow: rgb(0 0 0 / 28%);
   --glass-contact-shadow: rgb(0 0 0 / 16%);
-  --primary: #3ecf8e;
-  --primary-foreground: #052e20;
+  --primary: #60a5fa;
+  --primary-foreground: #0a1838;
   --action: #ededed;
   --action-foreground: #0a0a0a;
   --action-hover: #d4d4d4;
@@ -95,7 +95,7 @@ body:has(.column-resize-handle[data-dragging]) iframe { pointer-events: none; }
   --destructive: #fda29b;
   --border: #292929;
   --input: #333333;
-  --ring: #3ecf8e;
+  --ring: #60a5fa;
   --chart-1: #3ecf8e;
   --chart-2: #d4d4d4;
   --chart-3: #a3a3a3;
@@ -103,14 +103,14 @@ body:has(.column-resize-handle[data-dragging]) iframe { pointer-events: none; }
   --chart-5: #404040;
   --sidebar: #0d0d0d;
   --sidebar-foreground: #d4d4d4;
-  --sidebar-primary: #3ecf8e;
-  --sidebar-primary-foreground: #052e20;
-  --sidebar-accent: rgb(62 207 142 / 12%);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--brand-soft);
   --sidebar-accent-foreground: #ededed;
   --sidebar-border: #242424;
-  --sidebar-ring: #3ecf8e;
+  --sidebar-ring: var(--ring);
   --brand: #3ecf8e;
-  --brand-soft: rgb(62 207 142 / 12%);
+  --brand-soft: rgb(96 165 250 / 15%);
 }
 
 @theme inline {
@@ -191,6 +191,7 @@ body:has(.column-resize-handle[data-dragging]) iframe { pointer-events: none; }
   /* Preserve intentionally heavier checks and custom illustration strokes. */
   svg.lucide[stroke-width="2"] { stroke-width: var(--ui-icon-stroke); }
   button, a, input, [role="button"] { @apply transition-colors duration-150; }
+  input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
 }
 
 /* Use one compact scrollbar system across the CRM. The thumb stays subtle

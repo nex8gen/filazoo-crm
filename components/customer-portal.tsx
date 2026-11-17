@@ -3,30 +3,16 @@ import { NotificationToast } from "@/components/ui/notification-toast";
 
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowDownToLine, ArrowUpRight, Check, CheckCheck, ChevronRight, CircleCheck, CreditCard, Download, FileText, Headphones, LoaderCircle, LockKeyhole, LogOut, MapPin, MessageCircle, Package, RefreshCw, Send, ShieldCheck, Truck } from "lucide-react";
+import { ChevronRight, LoaderCircle, LockKeyhole, Send, ShieldCheck } from "lucide-react";
 import { BrandMark } from "@/components/brand-mark";
-import { LanguageSwitcher } from "@/components/language-switcher";
-import { InvoicePaper } from "@/components/invoice-paper";
+import { PortalExperience } from "@/components/portal-experience";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { formatMoney, invoiceLabel, invoiceStatus } from "@/lib/invoices";
-import { shipmentLabels, type PortalData } from "@/lib/customer-portal";
+import { type PortalData } from "@/lib/customer-portal";
 import "@/app/invoices/invoices.css";
 import "@/app/customer/customer.css";
-
-const orderSteps = [
-  { value: "confirmed", label: "Confirmed", icon: Check },
-  { value: "in_production", label: "In production", icon: Package },
-  { value: "shipped", label: "Shipped", icon: Truck },
-  { value: "completed", label: "Completed", icon: CircleCheck },
-];
-
-function portalDate(value: string) {
-  const date = new Date(`${value.slice(0, 10)}T00:00:00Z`);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
-}
 
 async function requestPortal(url: string, method = "GET", input?: unknown) {
   const response = await fetch(url, { method, cache: "no-store", headers: input ? { "Content-Type": "application/json" } : undefined, body: input ? JSON.stringify(input) : undefined });
@@ -35,7 +21,7 @@ async function requestPortal(url: string, method = "GET", input?: unknown) {
   return body;
 }
 
-export function CustomerPortal({ invoiceId }: { invoiceId: string }) {
+export function CustomerPortal({ invoiceId, page = "home" }: { invoiceId: string; page?: string }) {
   const [data, setData] = useState<PortalData | null>(null);
   const [email, setEmail] = useState("");
   const [login, setLogin] = useState(false);
@@ -134,54 +120,14 @@ export function CustomerPortal({ invoiceId }: { invoiceId: string }) {
   </form>;
   if (loading) return <main className="customer-portal portal-entry"><div className="portal-entry-card"><BrandMark viewBox="20 18 284 62" style={{ width: 128, height: 28 }} /><LoaderCircle className="portal-spinner" /><p role="status">Opening your customer portal…</p></div></main>;
   if (!data) return <main className="customer-portal portal-entry"><section className="portal-entry-card"><BrandMark viewBox="20 18 284 62" style={{ width: 128, height: 28 }} /><span className="portal-section-icon"><ShieldCheck /></span><div><p className="portal-eyebrow">YOUR PRIVATE WORKSPACE</p><h1>Customer portal</h1></div><p className="portal-muted">{login && email ? "Welcome back. Sign in to view your invoice and order." : "Scan the QR code on your invoice to open your private customer portal."}</p>{login && email ? securityForm : error && <NotificationToast>{error}</NotificationToast>}<p className="portal-entry-footer"><LockKeyhole />Private access. Connected to your invoice.</p></section></main>;
-  const invoice = data.invoice;
-  const today = new Date().toISOString().slice(0, 10);
-  const status = invoiceStatus(invoice, today);
-  const balance = invoice.status === "void" ? 0 : Math.max(0, invoice.total_minor - invoice.paid_minor);
-  const shipment = data.shipment;
-  const activeStep = orderSteps.findIndex(step => step.value === data.order?.status);
-  const deliveryDate = shipment?.expected_delivery || data.order?.deliveryDate;
-  const paid = status === "paid";
-  return <main className="customer-portal">
-    <a className="portal-skip-link" href="#portal-content">Skip to your order</a>
-    <header className="portal-header"><div className="portal-container portal-header-inner">
-      <div className="portal-brand"><BrandMark viewBox="20 18 284 62" style={{ width: 118, height: 26 }} role="img" aria-label="Filazoo" aria-hidden={false} /><span>Customer portal</span></div>
-      <div className="portal-account"><span className="portal-email" title={data.email} data-no-translate>{data.email}</span><LanguageSwitcher /><Button variant="ghost" className="portal-signout" disabled={busy || sending} onClick={() => { setBusy(true); void requestPortal("/api/customer/session", "DELETE").then(() => { setData(null); setEmail(""); setLogin(false); setError(""); setNotice(""); setSetup(false); }).catch(err => setError(err.message)).finally(() => setBusy(false)); }}><LogOut /><span>Sign out</span></Button></div>
-    </div></header>
-    <div className="portal-container portal-content" id="portal-content" tabIndex={-1}>
-      <div className="portal-intro">
-        <div><p className="portal-eyebrow">YOUR CUSTOMER WORKSPACE</p><h1>Your order, at a glance.</h1><p className="portal-welcome">Welcome, <span data-no-translate>{invoice.document.customerName}</span>. Everything you need, all in one place.</p></div>
-        <a className="portal-download" href={`${endpoint}/pdf`}><Download /><span>Download invoice</span><ArrowUpRight /></a>
-      </div>
-      <div className="portal-context"><div className="portal-reference"><FileText /><span data-no-translate>{invoiceLabel(invoice)}</span>{invoice.document.reference && <><ChevronRight /><span data-no-translate>{invoice.document.reference}</span></>}</div><Button variant="ghost" className="portal-refresh" disabled={refreshing} onClick={() => void manualRefresh()}><RefreshCw className={refreshing ? "portal-spinner" : ""} /><span>{refreshing ? "Refreshing…" : "Refresh"}</span></Button></div>
-      {error && !setup && <NotificationToast>{error}</NotificationToast>}
-      {notice && <p role="status" className="portal-notice"><CircleCheck />{notice}</p>}
-      <section className="portal-summary" aria-label="Payment overview">
-        <div className="portal-stat portal-stat-status"><span className={`portal-stat-icon ${paid ? "is-paid" : ""}`}>{paid ? <CheckCheck /> : <CreditCard />}</span><div><p>Payment status</p><strong className={`portal-status ${paid ? "is-paid" : ""}`}>{status === "issued" ? "Unpaid" : status === "partial" ? "Partially paid" : status === "void" ? "Voided" : status}</strong><span className="portal-stat-note">{paid ? "Thank you for your payment" : status === "void" ? "This invoice has been voided" : "See your invoice for payment details"}</span></div></div>
-        <div className="portal-stat"><p>Payments received</p><strong data-no-translate>{formatMoney(invoice.paid_minor, invoice.document.currency)}</strong><span className="portal-stat-note">of {formatMoney(invoice.total_minor, invoice.document.currency)} total</span></div>
-        <div className="portal-stat"><p>Amount due <span className="portal-currency" data-no-translate>{invoice.document.currency}</span></p><strong data-no-translate>{formatMoney(balance, invoice.document.currency)}</strong><span className="portal-stat-note">{paid ? "You're all settled" : status === "void" ? "No payment required" : `Due ${portalDate(invoice.document.dueDate)}`}</span></div>
-      </section>
-      {data.needsPassword && <aside className="portal-security"><ShieldCheck /><div><strong>A little extra peace of mind</strong><p>Add a password to keep your invoice and conversations protected.</p></div><Button variant="outline" disabled={busy || sending} onClick={() => { setError(""); setSetup(true); }}>Set password<ChevronRight /></Button></aside>}
-      <nav className="portal-section-nav" aria-label="Your workspace"><a href="#order-tracking"><Package />Order tracking</a><a href="#your-invoice"><FileText />Your invoice</a><a href="#customer-support"><MessageCircle />Messages{data.messages.length > 0 && <span>{data.messages.length}</span>}</a><p><span className="portal-live-dot" />Updates automatically</p></nav>
-      <div className="portal-workspace">
-        <section id="order-tracking" className="portal-card portal-tracking" aria-labelledby="tracking-title">
-          <div className="portal-card-heading"><div className="portal-heading-group"><span className="portal-section-icon"><Package /></span><div><h2 id="tracking-title">Order tracking</h2><p>{data.order ? <>Order <span data-no-translate>{data.order.reference}</span></> : "Follow your order from start to finish"}</p></div></div>{data.order?.status === "cancelled" && <span className="portal-tag">Cancelled</span>}</div>
-          {data.order && data.order.status !== "cancelled" && <ol className="portal-timeline" aria-label="Order progress">{orderSteps.map((step, index) => <li key={step.value} data-complete={index <= activeStep} aria-current={index === activeStep ? "step" : undefined}><span className="portal-step-icon">{index < activeStep ? <Check /> : <step.icon />}</span><span>{step.label}</span>{index === activeStep && <small>Current stage</small>}</li>)}</ol>}
-          {!data.order && !shipment && <div className="portal-empty"><span className="portal-empty-icon"><Package /></span><h3>Your order updates will appear here</h3><p>We’re keeping everything in one place. Your sales team will share progress as soon as it’s available.</p></div>}
-          {shipment ? <div className="portal-shipment"><div className="portal-shipment-status"><Truck /><strong>{shipmentLabels[shipment.status]}</strong></div><dl>{shipment.location && <div><dt>Latest location</dt><dd><MapPin /><span data-no-translate>{shipment.location}</span></dd></div>}{shipment.carrier && <div><dt>Carrier</dt><dd data-no-translate>{shipment.carrier}</dd></div>}{shipment.tracking_number && <div><dt>Tracking number</dt><dd data-no-translate>{shipment.tracking_number}</dd></div>}{deliveryDate && <div><dt>Estimated delivery</dt><dd>{portalDate(deliveryDate)}</dd></div>}</dl>{shipment.tracking_url && <a className="portal-carrier-link" href={shipment.tracking_url} target="_blank" rel="noopener noreferrer">Track with carrier<ArrowUpRight /></a>}{shipment.updated_at && <p className="portal-updated">Updated {new Date(shipment.updated_at).toLocaleString()}</p>}</div> : <div className="portal-tracking-footnote"><Truck /><p>{data.order?.status === "cancelled" ? "Contact our team if you have questions about this order." : "Shipping details will be added when available."}{deliveryDate && <> Estimated delivery: {portalDate(deliveryDate)}.</>}</p></div>}
-        </section>
-        <section id="customer-support" className="portal-card portal-support" aria-labelledby="support-title">
-          <div className="portal-card-heading"><div className="portal-heading-group"><span className="portal-section-icon"><Headphones /></span><div><h2 id="support-title">Here to help</h2><p>A direct line to your sales team</p></div></div><span className="portal-tag"><MessageCircle />Support</span></div>
-          <div ref={conversation} onScroll={() => { const log = conversation.current; if (log) followConversation.current = log.scrollHeight - log.scrollTop - log.clientHeight < 64; }} role="log" aria-label="Customer conversation" aria-live="polite" tabIndex={0} className="portal-conversation">
-            {data.messages.length ? data.messages.map(item => <article key={item.id} className={`portal-message ${item.sender === "customer" ? "portal-message-own" : ""}`}><p className="portal-message-sender">{item.sender === "customer" ? "You" : "Sales team"}</p><p className="portal-message-body" data-no-translate>{item.body}</p><time dateTime={item.created_at} title={new Date(item.created_at).toLocaleString()}>{new Date(item.created_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</time></article>) : <div className="portal-empty"><span className="portal-empty-icon"><MessageCircle /></span><h3>Let’s talk about your order</h3><p>Questions about your invoice or delivery? Leave a message and your team will get back to you here.</p></div>}
-          </div>
-          <form onSubmit={send} className="portal-composer" aria-busy={sending}><label className="sr-only" htmlFor="customer-message">Message our team</label><Textarea id="customer-message" disabled={sending} value={message} onChange={e => setMessage(e.target.value)} maxLength={4000} required placeholder="How can we help?" />{messageError && <NotificationToast>{messageError}</NotificationToast>}<div className="portal-composer-actions"><p><LockKeyhole />Private conversation</p><Button type="submit" disabled={busy || sending || !message.trim()}>{sending ? <LoaderCircle className="portal-spinner" /> : <Send />}{sending ? "Sending…" : "Send message"}</Button></div></form>
-          <p className="portal-support-note">Messages and order updates refresh every 15 seconds.</p>
-        </section>
-        <section id="your-invoice" className="portal-card portal-invoice" aria-labelledby="invoice-title"><div className="portal-card-heading"><div className="portal-heading-group"><span className="portal-section-icon"><FileText /></span><div><h2 id="invoice-title">Your invoice</h2><p>All the details, whenever you need them</p></div></div><a className="portal-invoice-download" href={`${endpoint}/pdf`} aria-label="Download invoice PDF"><ArrowDownToLine /><span>PDF</span></a></div><div className="customer-invoice-preview"><InvoicePaper invoice={invoice} today={today} customerView /></div></section>
-      </div>
-      <footer className="portal-footer"><span><LockKeyhole />Your private customer portal</span><p>Invoice, order updates, and a team that has your back.</p></footer>
-    </div>
-    <Dialog open={setup} onOpenChange={setSetup}><DialogContent className="portal-security-dialog"><DialogHeader><DialogTitle>Secure your customer account</DialogTitle><DialogDescription>Your invoice email is already connected. Add a password to protect future visits.</DialogDescription></DialogHeader>{securityForm}<Button variant="ghost" disabled={busy} onClick={() => setSetup(false)}>Remind me later</Button></DialogContent></Dialog>
-  </main>;
+  return <>
+    <PortalExperience data={data} invoiceId={invoiceId} page={page} busy={busy || sending} refreshing={refreshing} onRefresh={() => void manualRefresh()}
+      onSignout={() => { setBusy(true); void requestPortal("/api/customer/session", "DELETE").then(() => { setData(null); setEmail(""); setLogin(false); setError(""); setNotice(""); setSetup(false); }).catch(err => setError(err.message)).finally(() => setBusy(false)); }}
+      conversation={conversation} onConversationScroll={() => { const log = conversation.current; if (log) followConversation.current = log.scrollHeight - log.scrollTop - log.clientHeight < 64; }}
+      notifications={<>{error && !setup && <NotificationToast>{error}</NotificationToast>}{notice && <p role="status" className="portal-notice">{notice}</p>}</>}
+      security={data.needsPassword && <aside className="portal-security"><ShieldCheck /><div><strong>A little extra peace of mind</strong><p>Add a password to keep your invoice and conversations protected.</p></div><Button variant="outline" disabled={busy || sending} onClick={() => { setError(""); setSetup(true); }}>Set password<ChevronRight /></Button></aside>}
+      composer={<form onSubmit={send} className="portal-composer" aria-busy={sending}><label className="sr-only" htmlFor="customer-message">Message our team</label><Textarea id="customer-message" disabled={sending} value={message} onChange={e => setMessage(e.target.value)} maxLength={4000} required placeholder="How can we help?" />{messageError && <NotificationToast>{messageError}</NotificationToast>}<div className="portal-composer-actions"><p><LockKeyhole />Private conversation</p><Button type="submit" disabled={busy || sending || !message.trim()}>{sending ? <LoaderCircle className="portal-spinner" /> : <Send />}{sending ? "Sending…" : "Send message"}</Button></div></form>}
+    />
+    <Dialog open={setup} onOpenChange={setSetup}><DialogContent><DialogHeader><DialogTitle>Secure your customer account</DialogTitle><DialogDescription>Create a password to protect your invoice and conversations.</DialogDescription></DialogHeader>{securityForm}</DialogContent></Dialog>
+  </>;
 }

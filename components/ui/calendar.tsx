@@ -89,9 +89,9 @@ function CalendarDayButton({ className, day, modifiers, locale, ...props }: Reac
   const ref = React.useRef<HTMLButtonElement>(null)
   React.useEffect(() => { if (modifiers.focused) ref.current?.focus() }, [modifiers.focused])
   return <button {...props} type="button" ref={ref} data-day={day.date.toLocaleDateString(locale?.code)} className={cn(
-    "relative flex size-9 items-center justify-center rounded-md text-sm hover:bg-black/10 dark:hover:bg-white/10 focus:outline-none focus-visible:ring-1 focus-visible:ring-black dark:focus-visible:ring-white",
-    modifiers.selected && !modifiers.range_middle && "bg-black text-white hover:bg-black/90 dark:bg-white dark:text-black dark:hover:bg-white/90",
-    modifiers.range_middle && "rounded-none bg-neutral-200 text-black dark:bg-neutral-700 dark:text-white",
+    "relative flex size-9 items-center justify-center rounded-md text-sm hover:bg-black/10 dark:hover:bg-white/10 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+    modifiers.selected && !modifiers.range_middle && "bg-primary text-primary-foreground hover:bg-primary/90",
+    modifiers.range_middle && "rounded-none bg-primary/10 text-primary",
     modifiers.range_start && !modifiers.range_end && "rounded-r-none",
     modifiers.range_end && !modifiers.range_start && "rounded-l-none",
     modifiers.outside && !modifiers.selected && "text-muted-foreground/40",

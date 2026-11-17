@@ -1,6 +1,6 @@
 {
   "contractVersion": "2026-11-07.2",
-  "generatedOn": "2026-11-13",
+  "generatedOn": "2026-11-17",
   "capabilities": [
     {
       "name": "create_company",
@@ -906,6 +906,30 @@
         "update_product"
       ],
       "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/customer-portal/actions.ts#createPortalTheme",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Specialized UI test, composition or analysis flow; use its page controls. The agent must provide a handoff and must not claim it executed this feature."
+    },
+    {
+      "surface": "app/customer-portal/actions.ts#publishPortalTheme",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Specialized UI test, composition or analysis flow; use its page controls. The agent must provide a handoff and must not claim it executed this feature."
+    },
+    {
+      "surface": "app/customer-portal/actions.ts#updatePortalDesign",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Specialized UI test, composition or analysis flow; use its page controls. The agent must provide a handoff and must not claim it executed this feature."
+    },
+    {
+      "surface": "app/customer-portal/domains/actions.ts#updatePortalDomain",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Workspace admins use /customer-portal/domains to connect a user-owned domain, copy DNS records, verify ownership and HTTPS, or confirm disconnection. DNS changes happen at the user's provider. General chat must hand off to these controls and must not claim a domain is connected without verification."
     },
     {
       "surface": "app/forgot-password/actions.ts#requestPasswordReset",

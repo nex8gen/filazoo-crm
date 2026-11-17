@@ -8,11 +8,11 @@ export function customerPortalSecret() {
   if (!secret) throw new Error("Customer portal signing is not configured.");
   return secret;
 }
-export function customerPortalUrl(invoice: Invoice) {
+export function customerPortalUrl(invoice: Invoice, portalOrigin?: string) {
   // Print the final link on saved drafts too. The session endpoint keeps draft
   // details private until issue; issuing does not change this QR credential.
   if (!invoice.document.customerEmail.trim()) return undefined;
-  const configured = process.env.NEXT_PUBLIC_APP_URL || "https://crm.filazoosupply.com";
+  const configured = portalOrigin || process.env.NEXT_PUBLIC_APP_URL || "https://crm.filazoosupply.com";
   const origin = /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(configured) ? "https://crm.filazoosupply.com" : configured;
   const url = new URL(`/customer/invoices/${invoice.id}`, origin);
   // A fragment keeps the credential out of HTTP access logs and referrer headers.

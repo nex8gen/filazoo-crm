@@ -5,6 +5,7 @@ import { zhCNAnalytics } from "./i18n-analytics.ts";
 import { zhCNWorkspaceSearch } from "./i18n-workspace-search.ts";
 import { zhCNQuotations } from "./i18n-quotations.ts";
 import { zhCNFlowScenarios } from "./i18n-flow-scenarios.ts";
+import { zhCNFlowEditor } from "./i18n-flow-editor.ts";
 import { zhCNEmailWorkbench } from "./i18n-email-workbench.ts";
 import { zhCNAdditional } from "./i18n-zh-cn.ts";
 import { zhCNSettings } from "./i18n-settings.ts";
@@ -29,6 +30,12 @@ export { LANGUAGE_STORAGE_KEY } from "./app-language.ts";
 // Product terminology is centralized so sales, catalog, mailbox, and
 // automation screens use consistent professional Chinese wording.
 const zhCN: Record<string, string> = {
+  ...zhCNFlowEditor,
+  "We could not load this company. Please try again.": "无法加载此企业。请重试。",
+  "Company not found or you do not have access to it.": "找不到此企业，或您无权访问。",
+  "Start page": "起始页面",
+  "Home opens after sign-in and at the start of each new session.": "登录后及每次新会话开始时打开首页。",
+  "No template selected": "未选择模板",
   ...zhCNAiLauncher,
   ...zhCNEmailCampaigns,
   ...zhCNAiLeads,

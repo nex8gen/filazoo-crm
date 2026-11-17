@@ -29,7 +29,7 @@ import { verifyGatewayAccess } from "../ai/gateway-health.ts";
 import { assignedFlowActor, assignedFlowCandidates } from "./flow-sender.ts";
 import { requireFreshFlowMailbox } from "./flow-mail-context.ts";
 import { normalizeMessageId } from "../email-threading.ts";
-import { flowRecoveryState } from "../flow-recovery.ts";
+import { flowRecoveryState, flowRunActionId } from "../flow-recovery.ts";
 
 type RunRow = {
   id: string;
@@ -189,6 +189,9 @@ export async function getFlowTestMailbox(userId: string, mailboxId: unknown) {
 }
 
 export async function validateFlowResources(userId: string, input: FlowInput) {
+  if ((env.flowDryRun ?? env.dryRun) && allFlowActions(input.steps).some(step => step.type === "send_email" || step.type === "ai_auto_reply" || step.type === "internal_alert" && step.config.channel === "email")) {
+    throw new Error("Email delivery is temporarily unavailable. Your workflow can be saved as a draft. Please try again later or contact support.");
+  }
   const admin = createSupabaseAdmin();
   const connectionChecks = new Map<string, () => Promise<unknown>>();
   const checkSender = (mailbox: NonNullable<Awaited<ReturnType<typeof getMailbox>>>) => {
@@ -206,14 +209,14 @@ export async function validateFlowResources(userId: string, input: FlowInput) {
   for (const step of allFlowActions(input.steps)) {
     if (step.type === "internal_alert" && step.config.channel === "email") {
       const mailbox = await getMailbox({ id: "", user_id: userId, trigger_type: input.triggerType, trigger_config: input.triggerConfig, status: input.status }, step.config.mailboxId);
-      if (!mailbox?.smtpHost || !mailbox.smtpUsername || !mailbox.smtpPassword) throw new Error("The selected sender mailbox needs complete SMTP settings before enabling email alerts.");
+      if (!mailbox?.smtpHost || !mailbox.smtpUsername || !mailbox.smtpPassword) throw new Error("Connect a sending email account before enabling email alerts.");
       checkSender(mailbox);
     }
     if (step.type === "send_email" || step.type === "ai_auto_reply") {
       const senders = step.config.mailboxId === "assigned_owner" ? await assignedFlowCandidates(userId, typeof input.triggerConfig.scopeCompanyId === "string" ? input.triggerConfig.scopeCompanyId : undefined) : [userId];
       for (const senderId of senders) {
       const mailbox = await getMailbox({ id: "", user_id: senderId, trigger_type: input.triggerType, trigger_config: input.triggerConfig, status: input.status }, step.config.mailboxId === "assigned_owner" ? "owner" : step.config.mailboxId);
-      if (!mailbox?.smtpHost || !mailbox.smtpUsername || !mailbox.smtpPassword) throw new Error("The selected sender mailbox needs complete SMTP settings.");
+      if (!mailbox?.smtpHost || !mailbox.smtpUsername || !mailbox.smtpPassword) throw new Error("Connect a sending email account before turning on this workflow.");
       checkSender(mailbox);
       }
       if (step.type === "ai_auto_reply") {
@@ -318,7 +321,7 @@ async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: F
     ? await admin.from("emails").select("id", { count: "exact", head: true }).eq("contact_id", contact.id).eq("direction", "received").or(`owner_id.is.null,owner_id.eq.${flow.user_id}`).throwOnError()
     : { count: 0 };
   const inquiryResponse = ["unverified", "unknown"].includes(contact.verification_status) && (formInquiry || Boolean(inboundCount));
-  const decision = evaluateSend({ email: contact.email, verified: contact.verification_status === "valid", inquiryResponse, unsubscribed: contact.unsubscribed, suppressed: Boolean(suppressed), sentToday: count ?? 0, dailyLimit: env.DAILY_SEND_LIMIT, bounceRate: 0, bouncePausePercent: env.BOUNCE_PAUSE_PERCENT, dryRun: env.dryRun });
+  const decision = evaluateSend({ email: contact.email, verified: contact.verification_status === "valid", inquiryResponse, unsubscribed: contact.unsubscribed, suppressed: Boolean(suppressed), sentToday: count ?? 0, dailyLimit: env.DAILY_SEND_LIMIT, bounceRate: 0, bouncePausePercent: env.BOUNCE_PAUSE_PERCENT, dryRun: (env.flowDryRun ?? env.dryRun) });
   if (!decision.allowed) {
     if (decision.reason === "Daily mailbox limit reached") {
       const tomorrow = new Date(today); tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
@@ -520,7 +523,7 @@ async function executeAction(run: RunRow, flow: FlowRow, step: FlowStep, facts: 
     await insertActionOnce("internal_notifications", run, step, { flow_run_id: run.id, user_id: userId, channel: step.config.channel || "in_app", message: step.config.message, conversation_id: run.conversation_id, include_thread_link: step.config.includeThreadLink !== false });
     let delivery = "in_app";
     if (step.config.channel === "email") {
-      if (env.dryRun) delivery = "email_dry_run";
+      if ((env.flowDryRun ?? env.dryRun)) delivery = "email_dry_run";
       else {
         const [{ data: recipient }, mailbox] = await Promise.all([admin.auth.admin.getUserById(userId), getMailbox(flow, step.config.mailboxId)]);
         if (!recipient.user?.email || !mailbox) throw new FlowPreparationRetry("The alert recipient or sender mailbox is unavailable.", 3_600_000, "configuration");
@@ -937,7 +940,7 @@ export async function listFlowRunInsights(flowId: string, options: { status?: "a
     const { context, locked_at, ...visible } = run;
     const recovery = flowRecoveryState(run);
     const canManage = viewer.role === "admin" || viewer.id === flow.user_id;
-    return { ...visible, retry: context?.preparationRetry ?? null,
+    return { ...visible, currentActionId: flowRunActionId(run), retry: context?.preparationRetry ?? null,
       retryable: canManage && !locked_at && recovery.retryable, uncertain: recovery.uncertain,
       canCancel: canManage && !locked_at && ["active", "failed"].includes(run.status),
       sentCount: (run.flow_run_logs ?? []).filter(log => log.result?.action === "email_sent").length,

@@ -1334,3 +1334,37 @@ test("activation refuses a sender or AI identity that fails real connection chec
     assert.equal(app.delivered(), 0);
   }
 });
+
+test("test-mode servers cannot label email workflows Live, including nested actions and email alerts", async () => {
+  const app = runtime();
+  app.env.dryRun = true;
+  Object.assign(app.env, { flowDryRun: true });
+  for (const type of ["send_email", "ai_auto_reply", "internal_alert", "split"] as const) {
+    const action = flows.blankStep(type);
+    if (type === "send_email") action.config.templateId = "welcome_intro";
+    if (type === "internal_alert") action.config.channel = "email";
+    if (type === "split") (action.config.paths as unknown as Array<{ steps: flows.FlowInput["steps"] }>)[0].steps = [flows.blankStep("ai_auto_reply")];
+    const input = flows.flowInputSchema.parse({ name: "Activation check", triggerType: "new_lead", triggerConfig: {}, status: "live", steps: [action] });
+    await assert.rejects(() => app.exports.validateFlowResources("owner", input), /Email delivery is temporarily unavailable/);
+  }
+  const crmOnly = flows.flowInputSchema.parse({ name: "CRM task", triggerType: "new_lead", triggerConfig: {}, status: "live", steps: [flows.blankStep("create_task")] });
+  await app.exports.validateFlowResources("owner", crmOnly);
+  assert.equal(app.delivered(), 0);
+});
+
+test("a configured real-sending workflow activates and submits email through the existing sender", async () => {
+  const app = runtime();
+  app.env.dryRun = true;
+  Object.assign(app.env, { flowDryRun: false });
+  const action = flows.blankStep("send_email");
+  action.config.templateId = "welcome_intro";
+  action.config.sendWindow = "anytime";
+  const input = flows.flowInputSchema.parse({ name: "Real workflow", triggerType: "new_lead", triggerConfig: {}, status: "live", steps: [action] });
+  await app.exports.validateFlowResources("owner", input);
+  steps(app, input.steps);
+  await app.exports.enrollNewLeadFlows(app.contactId);
+  assert.equal(app.delivered(), 1);
+  assert.equal(app.env.dryRun, true, "Enabling workflows does not change other automation modes");
+  assert.ok(app.db.flow_run_logs.some(row => (row.result as Row)?.action === "email_sent"));
+  assert.ok(!app.db.flow_run_logs.some(row => (row.result as Row)?.action === "email_dry_run"));
+});

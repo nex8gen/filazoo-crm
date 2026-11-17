@@ -9,11 +9,16 @@ export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
   if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   const task = new URL(request.url).searchParams.get("task");
-  if (task === "health") return Response.json({ ok: true, liveSending: !env.dryRun, version: "flow-reliable-v4" }, { headers: { "Cache-Control": "no-store" } });
+  if (task === "health") return Response.json({ ok: true, liveSending: !(env.flowDryRun ?? env.dryRun), version: "flow-reliable-v4" }, { headers: { "Cache-Control": "no-store" } });
   if (task === "preflight") {
-    const { checkWorkspaceFlowHealth } = await import("@/lib/data/flow-health");
-    const workspaces = await forEachWorkspace(async workspaceId => ({ workspaceId, ...await checkWorkspaceFlowHealth() }));
-    return Response.json({ ok: true, ready: workspaces.every(workspace => workspace.ready), workspaces }, { headers: { "Cache-Control": "no-store" } });
+    try {
+      const { checkWorkspaceFlowHealth } = await import("@/lib/data/flow-health");
+      const workspaces = await forEachWorkspace(async workspaceId => ({ workspaceId, ...await checkWorkspaceFlowHealth() }), { throwOnError: true });
+      const ready = workspaces.every(workspace => workspace.ready);
+      return Response.json({ ok: ready, ready, workspaces }, { status: ready ? 200 : 503, headers: { "Cache-Control": "no-store" } });
+    } catch {
+      return Response.json({ ok: false, ready: false, error: "Unable to verify workflow delivery. Please try again later or contact support." }, { status: 503, headers: { "Cache-Control": "no-store" } });
+    }
   }
   if (task && !["resume", "intake", "scheduled-email", "automatic-replies"].includes(task)) return Response.json({ ok: false, error: "Unknown workflow worker." }, { status: 400 });
   // pg_net shares its HTTP batch with mail sync and other scheduled work.

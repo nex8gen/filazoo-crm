@@ -10,6 +10,7 @@ import { createSegmentFlowDraft } from "@/lib/segment-flows";
 import { z } from "zod";
 import Link from "next/link";
 import type { FlowInput } from "@/lib/flows";
+import { env } from "@/lib/env";
 
 export const metadata: Metadata = { title: "Workflow" };
 
@@ -36,13 +37,16 @@ export default async function AiAgentPage({ searchParams }: PageProps<"/workflow
 
   return <div className="h-full min-h-0">
     <FlowBuilder
-      key={initialDraft ? `segment:${String(params.segmentId ?? params.segment)}` : typeof params.flow === "string" ? params.flow : "list"}
+      key={initialDraft ? `segment:${String(params.segmentId ?? params.segment)}` : typeof params.flow === "string" ? params.flow : params.create === "1" ? "create" : "list"}
       initialFlows={flows}
+      liveSendingEnabled={!env.flowDryRun}
       viewerId={viewer.id}
       viewerEmail={viewer.email}
       isAdmin={viewer.role === "admin"}
       initialFlowId={!initialDraft && typeof params.flow === "string" ? params.flow : undefined}
       initialDraft={initialDraft}
+      initialCreate={params.create === "1"}
+      initialCollectionView={params.view === "boxes" ? "boxes" : "list"}
       canEdit={canEdit}
       mailboxOptions={flowMailboxOptions(mailboxes)}
       memberOptions={members}

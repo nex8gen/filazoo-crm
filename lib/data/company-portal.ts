@@ -2,6 +2,7 @@ import "server-only";
 import { createSupabaseAdmin } from "../supabase/admin";
 import { invoiceLabel, invoiceStatus, type Invoice } from "../invoices";
 import { customerPortalUrl } from "../customer-portal-links";
+import { connectedPortalOrigin } from "./portal-domain-routing";
 import { portalEmail } from "../customer-portal-crypto";
 import type { CompanyPortalData, CompanyPortalInvoice } from "../company-portal";
 
@@ -29,10 +30,11 @@ export async function getCompanyPortal(companyId: string, page = 0, invoiceId?: 
   const shipmentMap = new Map((shipments.data ?? []).map(row => [row.invoice_id, row]));
   const orderMap = new Map((orders.data ?? []).map(row => [row.id, row]));
   const today = new Date().toISOString().slice(0, 10);
+  const portalOrigin = await connectedPortalOrigin();
   const mapped = new Map<string, CompanyPortalInvoice>(rows.map(invoice => {
     const version = accountMap.get(portalEmail(invoice.document.customerEmail));
     const order = invoice.document.purchaseOrderId ? orderMap.get(invoice.document.purchaseOrderId) : null;
-    return [invoice.id, { id: invoice.id, label: invoiceLabel(invoice), email: invoice.document.customerEmail, reference: invoice.document.reference, currency: invoice.document.currency, totalMinor: invoice.total_minor, paidMinor: invoice.paid_minor, status: invoiceStatus(invoice, today), dueDate: invoice.document.dueDate, portalUrl: customerPortalUrl(invoice), security: version === undefined ? "not_opened" : version > 0 ? "secured" : "password_needed", shipment: shipmentMap.get(invoice.id) ?? null, order: order ? { id: order.id, reference: order.reference, status: order.document.status, deliveryDate: order.document.deliveryDate } : null }];
+    return [invoice.id, { id: invoice.id, label: invoiceLabel(invoice), email: invoice.document.customerEmail, reference: invoice.document.reference, currency: invoice.document.currency, totalMinor: invoice.total_minor, paidMinor: invoice.paid_minor, status: invoiceStatus(invoice, today), dueDate: invoice.document.dueDate, portalUrl: customerPortalUrl(invoice, portalOrigin), security: version === undefined ? "not_opened" : version > 0 ? "secured" : "password_needed", shipment: shipmentMap.get(invoice.id) ?? null, order: order ? { id: order.id, reference: order.reference, status: order.document.status, deliveryDate: order.document.deliveryDate } : null }];
   }));
   return { invoices: (listing.data ?? []).map(row => mapped.get(row.id)!), selected: invoiceId ? mapped.get(invoiceId) ?? null : null, count: listing.count ?? 0, page, balances: balances.data ?? [] };
 }
