@@ -54,6 +54,13 @@ export async function GET(request: Request) {
     });
   }
 
+  // A failed cache read is not an authoritative empty mailbox. Clients retain
+  // the last successful snapshot while queued receiving work can still retry.
+  if (data.mailboxReadFailed) return Response.json({
+    error: "Saved email could not be loaded. Your messages are kept; the inbox will retry.",
+    syncHealth,
+  }, { status: 503, headers: { "Cache-Control": "no-store" } });
+
   return Response.json({ ...data, syncHealth, syncQueueError }, {
     headers: { "Cache-Control": "no-store", "Server-Timing": `auth;dur=${(authorizedAt - start).toFixed(1)},inbox;dur=${(performance.now() - authorizedAt).toFixed(1)}` },
     status: 200,

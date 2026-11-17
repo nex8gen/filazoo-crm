@@ -806,10 +806,21 @@ export async function scanTimeBasedFlowTriggers(flowId?: string, onError?: (fail
   if (flowId) query = query.eq("id", flowId);
   const { data: flows, error } = await query;
   if (error) throw new Error(`Unable to scan workflow triggers: ${error.message}`);
+  // A large segment/history scan can consume a whole scheduler slice. Rotate
+  // a stable ordering so a later workflow gets the first slot on another tick.
+  const scheduled = [...(flows ?? [])];
+  if (!flowId && options.deadline && scheduled.length > 1) {
+    scheduled.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    const offset = Math.floor(Date.now() / 60_000) % scheduled.length;
+    scheduled.push(...scheduled.splice(0, offset));
+    // New receipts are latency-sensitive; inspect them before historical
+    // segment/no-reply backfills. Stable sort preserves rotation in each group.
+    scheduled.sort((a, b) => Number(b.trigger_type === "email_received") - Number(a.trigger_type === "email_received"));
+  }
   let enrolled = 0;
   const expired = () => Boolean(options.deadline && Date.now() >= options.deadline);
   const enroll = (event: TriggerEvent) => enrollMatchingFlows(event, options);
-  for (const flow of (flows ?? []) as (FlowRow & { lead_enrollment_started_at: string | null; email_enrollment_started_at: string | null })[]) {
+  for (const flow of scheduled as (FlowRow & { lead_enrollment_started_at: string | null; email_enrollment_started_at: string | null })[]) {
     if (expired()) break;
     try {
     if (flow.trigger_type === "company_segment_changed") {
@@ -925,13 +936,29 @@ export async function processDueFlowRuns(limit = 50, options: { syncMailbox?: bo
   const actionDeadline = options.actionDeadline ?? (deadline ? Date.now() + 240_000 : undefined);
   const admin = createSupabaseAdmin();
   const results: Array<Record<string, unknown>> = [];
+  let projectionIncomplete = false;
+  const scanTriggers = async () => {
+    if (options.scanTriggers === false) return;
+    try { await scanTimeBasedFlowTriggers(undefined, failure => results.push({ ...failure, phase: "trigger_scan", status: "error" }), { deadline, deferExecution: deadline !== undefined }); }
+    catch (error) { results.push({ phase: "trigger_scan", status: "error", error: error instanceof Error ? error.message : "Unable to scan workflow triggers." }); }
+  };
   // Receipts must be visible before a waiting action checks whether somebody replied.
   if (options.syncMailbox !== false) {
     try {
       const projection = await syncFlowMailboxMessages({ deadline: Math.min(deadline ?? Infinity, Date.now() + 20_000) });
-      if (projection && !projection.complete) return [{ phase: "mailbox_sync", status: "deferred", reason: "Receipt projection has more work; sending waits for fresh facts." }];
+      if (projection && !projection.complete) {
+        const deferred = { phase: "mailbox_sync", status: "deferred", reason: "Receipt projection has more work; sending waits for fresh facts." };
+        projectionIncomplete = true;
+        // Intake only creates deferred runs from receipts already persisted.
+        // A large import must not prevent those receipts from ever enrolling.
+        // Resume/action workers still require complete, fresh facts to send.
+        results.push(deferred);
+      }
     } catch (error) { return [{ phase: "mailbox_sync", status: "error", error: workflowErrorMessage(error) }]; }
   }
+  // Intake never executes actions. Leave interrupted/due-run reads to resume
+  // so they cannot consume the short slice reserved for receipt enrollment.
+  if (limit === 0) { await scanTriggers(); return results; }
   const { data: interrupted } = await admin.from("flow_runs").select("id,context").eq("status", "active").lt("locked_at", new Date(Date.now() - 15 * 60000).toISOString()).throwOnError();
   for (const run of interrupted ?? []) {
     const checkpoint = run.context?.executionCheckpoint;
@@ -941,16 +968,31 @@ export async function processDueFlowRuns(limit = 50, options: { syncMailbox?: bo
     } else await finishRun(run.id, "failed", "Execution was interrupted. Delivery may have started. Review Sent and the last action before restarting to avoid duplicates.");
   }
   // Paused journeys cannot occupy the whole due-run batch and starve live work.
-  const { data, error } = await admin.from("flow_runs").select("id,flows!inner(status)").eq("flows.status", "live").eq("status", "active").is("locked_at", null).or(`next_run_at.is.null,next_run_at.lte.${new Date().toISOString()}`).order("next_run_at").limit(limit);
+  const { data, error } = await admin.from("flow_runs").select("id,context,contact_id,flows!inner(status,user_id)").eq("flows.status", "live").eq("status", "active").is("locked_at", null).or(`next_run_at.is.null,next_run_at.lte.${new Date().toISOString()}`).order("next_run_at").limit(limit);
   if (error) throw new Error(`Unable to load due workflow runs: ${error.message}`);
   for (const run of data ?? []) {
     if ((deadline && Date.now() >= deadline) || (actionDeadline && Date.now() > actionDeadline - 210_000)) break;
+    if (projectionIncomplete) {
+      const mailboxId = run.context?.receivingMailboxId;
+      const relation = run.flows as unknown as { user_id: string } | Array<{ user_id: string }> | null;
+      const owner = Array.isArray(relation) ? relation[0]?.user_id : relation?.user_id;
+      // Unbound journeys still wait for the complete workspace scan. A bound
+      // receipt can advance only after its own full contact projection AND a
+      // fresh authorized receiving snapshot; unrelated imports cannot starve it.
+      if (typeof mailboxId !== "string" || !run.contact_id || !owner) continue;
+      try {
+        const targeted = await syncFlowMailboxMessages({ mailboxId, contactId: run.contact_id, deadline: Date.now() + 15_000 });
+        if (!targeted.complete) continue;
+        await requireFreshFlowMailbox(mailboxId, owner);
+      } catch (cause) {
+        results.push({ runId: run.id, status: "deferred", error: workflowErrorMessage(cause) });
+        continue;
+      }
+    }
     try { results.push({ runId: run.id, ...(await processFlowRun(run.id, { deadline: actionDeadline })) }); }
     catch (error) { results.push({ runId: run.id, status: "error", error: error instanceof Error ? error.message : "Unable to process this run." }); }
   }
-  if (options.scanTriggers === false) return results;
-  try { await scanTimeBasedFlowTriggers(undefined, failure => results.push({ ...failure, phase: "trigger_scan", status: "error" }), { deadline, deferExecution: deadline !== undefined }); }
-  catch (error) { results.push({ phase: "trigger_scan", status: "error", error: error instanceof Error ? error.message : "Unable to scan workflow triggers." }); }
+  await scanTriggers();
   return results;
 }
 

@@ -20,18 +20,23 @@ export async function syncFlowMailboxMessages(options: { deadline?: number; mail
   const contactsByEmail = new Map<string, string | null>();
   async function loadContacts(addresses: string[]) {
     const missing = [...new Set(addresses.map(address => address.toLowerCase()))].filter(address => !contactsByEmail.has(address));
-    for (let index = 0; index < missing.length; index += 100) {
+    for (let index = 0; index < missing.length; index += 400) {
       if (expired()) return;
-      const batch = missing.slice(index, index + 100);
-      const { data } = await admin.from("contacts").select("id,email").in("email", batch).throwOnError();
-      for (const address of batch) contactsByEmail.set(address, null);
-      const ambiguous = new Set<string>();
-      for (const contact of data ?? []) {
-        const address = contact.email.toLowerCase();
-        if (contactsByEmail.get(address)) ambiguous.add(address);
-        else contactsByEmail.set(address, contact.id);
-      }
-      for (const address of ambiguous) contactsByEmail.set(address, null);
+      // Keep URL-safe batches, but overlap four independent reads. Thousands
+      // of unknown senders must not spend the entire tick on network latency.
+      await Promise.all([0, 100, 200, 300].map(async (offset) => {
+        const batch = missing.slice(index + offset, Math.min(index + offset + 100, index + 400));
+        if (!batch.length) return;
+        const { data } = await admin.from("contacts").select("id,email").in("email", batch).throwOnError();
+        for (const address of batch) contactsByEmail.set(address, null);
+        const ambiguous = new Set<string>();
+        for (const contact of data ?? []) {
+          const address = contact.email.toLowerCase();
+          if (contactsByEmail.get(address)) ambiguous.add(address);
+          else contactsByEmail.set(address, contact.id);
+        }
+        for (const address of ambiguous) contactsByEmail.set(address, null);
+      }));
     }
   }
   async function existing(ids: string[], mailboxId?: string) {

@@ -67,6 +67,7 @@ body:has(.column-resize-handle[data-dragging]) iframe { pointer-events: none; }
   --sidebar-border: #e5e5e5;
   --sidebar-ring: var(--ring);
   --brand: #3ecf8e;
+  --brand-foreground: #08794e;
   --brand-soft: rgb(37 99 235 / 10%);
 }
 
@@ -110,6 +111,7 @@ body:has(.column-resize-handle[data-dragging]) iframe { pointer-events: none; }
   --sidebar-border: #242424;
   --sidebar-ring: var(--ring);
   --brand: #3ecf8e;
+  --brand-foreground: var(--brand);
   --brand-soft: rgb(96 165 250 / 15%);
 }
 
@@ -170,6 +172,7 @@ body:has(.column-resize-handle[data-dragging]) iframe { pointer-events: none; }
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
   --color-brand-soft: var(--brand-soft);
   --radius-sm: calc(var(--radius) - 0.125rem);
   --radius-md: var(--radius);

@@ -81,6 +81,7 @@ export type EmailInboxBackendData = {
   sendConfigured: boolean;
   inboxConfigured: boolean;
   inboxError: string | null;
+  mailboxReadFailed?: boolean;
   lastMailboxSync?: string | null;
   syncHealth?: Record<string, import("./mail-sync-jobs.ts").MailSyncHealth>;
   aiConfigured: boolean;
@@ -348,7 +349,7 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to connect to the mailbox inbox.";
       console.warn("Unable to sync mailbox inbox:", message);
-      return { messages: [], error: message, syncedAt: null };
+      return { messages: [], error: message, syncedAt: null, readFailed: true };
     }
   };
   const [workspace, states, sentMessages, mailboxResult] = await Promise.all([
@@ -424,6 +425,7 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
     sendConfigured,
     inboxConfigured,
     inboxError,
+    mailboxReadFailed: "readFailed" in mailboxResult && mailboxResult.readFailed === true,
     lastMailboxSync,
     aiConfigured,
     defaultMailboxEmail,

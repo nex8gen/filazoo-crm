@@ -609,6 +609,19 @@ function settingsHarness(nested = false, publish = false) {
   };
 }
 
+test("the text-only editor saves its message through the workflow editing endpoint", async () => {
+  const app = settingsHarness(); await app.refresh();
+  (app.component("FlowCanvas").props.onAddStep as (type: string) => void)("send_email");
+  await new Promise(resolve => setImmediate(resolve)); await app.refresh();
+  const email = app.component("FlowEmailPanel");
+  const config = { ...email.props.config as flowModel.JsonConfig, templateId: "custom", contentMode: "text", templateName: "Text only email", subject: "Hello", body: "Hello {{first_name}}", preheader: "A personal note" };
+  assert.equal(await (email.props.onSaveText as (value: flowModel.JsonConfig) => Promise<boolean>)(config), true);
+  await app.refresh();
+  const saved = flowTree.flowActionLocations(app.calls.at(-1)!.steps).find(item => item.action.type === "send_email")!.action;
+  assert.equal(saved.config.contentMode, "text"); assert.equal(saved.config.body, "Hello {{first_name}}");
+  assert.equal(app.component("FlowEmailPanel").props.config && (app.component("FlowEmailPanel").props.config as flowModel.JsonConfig).preheader, "A personal note");
+});
+
 test("explicit Close retains Keep editing and Discard controls for configuration edits", async () => {
   for (const nested of [false, true]) {
     const app = settingsHarness(nested);

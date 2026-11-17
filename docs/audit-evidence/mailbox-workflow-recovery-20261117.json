@@ -1,0 +1,28 @@
+{
+  "verifiedAtUtc": "2026-11-17T09:50:53Z",
+  "problem": "Gmail import stalled at 4925 messages; inbox refresh replaced saved mail with an empty list and workflow enrollment was starved",
+  "databaseMigration": "20261117091340_mailbox_history_complete_snapshot_fast_path",
+  "inboxHistoryRecovered": 5000,
+  "authenticatedProductionInbox": {
+    "status": 200,
+    "messagesAcrossFolders": 5966,
+    "inboxError": null
+  },
+  "workflow": {
+    "flowId": "1fe98594-6349-4159-87b9-5e9973e5a23b",
+    "runId": "d7162bba-58d1-4c8b-a546-a1bfeea413e6",
+    "status": "done",
+    "emailSentEvents": 1,
+    "sentAtUtc": "2026-11-17T09:48:40.970392Z",
+    "startedBy": "existing scheduled worker using the user's already-saved test receipt"
+  },
+  "validation": {
+    "targetedTestsPassed": 130,
+    "typescript": "passed",
+    "targetedLint": "passed",
+    "databaseFixtureChecks": "passed with rollback",
+    "productionBuild": "passed",
+    "browserVerification": "unavailable; verified authenticated API, database records, and live worker logs"
+  },
+  "finalDeploymentId": "dpl_NvFzwCf96ypx9S2RTzueSPggQPGY"
+}

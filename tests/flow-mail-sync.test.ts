@@ -8,7 +8,7 @@ import * as threading from "../lib/email-threading.ts";
 
 type Row = Record<string, unknown>;
 const require = createRequire(import.meta.url);
-function setup({ messages = [] as Row[], contacts = [] as Row[], emails = [] as Row[], sent = [] as Row[], personalOwner = "owner", live = true } = {}) {
+function setup({ messages = [] as Row[], contacts = [] as Row[], emails = [] as Row[], sent = [] as Row[], personalOwner = "owner", live = true, onContactRead = async () => {} } = {}) {
   const mailbox = { id: "mailbox", userId: personalOwner, type: "personal", email: "sales@example.com", is_active: true, imapHost: "imap.test", imapUsername: "sales", imapPassword: "fixture" };
   const tables: Record<string, Row[]> = { flows: live ? [{ user_id: "owner", status: "live" }] : [], contacts, emails, mailbox_message_content: [{ mailbox_key: "fixture", uid_validity: 1, uid: 2, content: { body: "Full customer message" } }], mailbox_sent_messages: sent, workspace_mailboxes: [mailbox] };
   const lookups: Array<{ table: string; column: string; values: unknown[] }> = [];
@@ -28,7 +28,8 @@ function setup({ messages = [] as Row[], contacts = [] as Row[], emails = [] as 
       or() { return query; },
       maybeSingle() { single = true; return query; }, throwOnError() { return query; },
       upsert(input: Row | Row[]) { for (const row of Array.isArray(input) ? input : [input]) { const old = tables[table].find(existing => existing.id === row.id); if (old) Object.assign(old, row); else tables[table].push(row); } return query; },
-      then(resolve: (value: unknown) => unknown) {
+      async then(resolve: (value: unknown) => unknown) {
+        if (table === "contacts") await onContactRead();
         const rows = tables[table].filter(row => filters.every(filter => filter(row)));
         return Promise.resolve({ data: single ? rows[0] ?? null : rows, error: null }).then(resolve);
       },
@@ -68,6 +69,20 @@ test("large inboxes batch unknown senders and never download their bodies", asyn
   assert.equal(contacts.length, 16);
   assert.ok(contacts.every(read => read.values.length <= 100));
   assert.equal(app.bodyReads.length, 0);
+  assert.equal(app.tables.emails.length, 0);
+});
+
+test("large inbox contact checks overlap only four URL-bounded reads at a time", async () => {
+  let active = 0, maximum = 0;
+  const app = setup({ messages: Array.from({ length: 550 }, (_, uid) => message(uid + 1, `unknown-${uid}@test`)), onContactRead: async () => {
+    maximum = Math.max(maximum, ++active);
+    await new Promise<void>(resolve => setImmediate(resolve));
+    active--;
+  } });
+  await app.run();
+  assert.equal(maximum, 4);
+  assert.equal(active, 0);
+  assert.equal(app.lookups.filter(read => read.table === "contacts").length, 6);
   assert.equal(app.tables.emails.length, 0);
 });
 

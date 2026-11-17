@@ -1,5 +1,36 @@
 # CRM email receiving and replies
 
+## Large mailbox connection recovery — November 17, 2026
+
+The initial Gmail import exposed database statement timeouts around 4,925 saved
+messages. Fenced worker commits already contain the complete, deduplicated,
+5,000-message snapshot. `mailbox_history_complete_snapshot_fast_path` avoids
+sorting and merging that snapshot a second time in the legacy history trigger.
+Legacy partial updates still preserve history; account and snapshot leases,
+workspace isolation, epoch resets and the saved-history limit remain enforced.
+The scoped worker flag is restored after each commit.
+
+Failed saved-mail reads are distinguished from an empty mailbox. Inbox polling
+returns a retryable error and retains its last successful client snapshot;
+provider errors with a readable cache still show the saved messages. Company
+history propagates partial read failures as well. Budgeted workflow scans rotate
+a stable workflow order each minute so an expensive earlier segment cannot
+permanently starve a later email trigger. Received-email triggers take priority
+over historical scans. The intake worker reserves at least 30 seconds per
+workspace for receipt projection and trigger scanning, and leaves due-run
+maintenance to the separate resume worker.
+Sender matching overlaps four bounded contact reads instead of waiting for
+every network round trip serially. Intake can queue already saved receipts
+while a larger import is incomplete. A run bound to a receiving mailbox can
+advance after complete projection of that mailbox/contact and the existing
+authorized freshness check; unbound runs still wait for complete workspace
+projection. The scheduler leaves room for these checks before the email
+action's existing preparation reserve, within the 300-second invocation limit.
+
+Verification: `tests/mailbox-complete-snapshot-database.sql` (rolled-back fixtures),
+`tests/email-inbox-route.test.ts`, `tests/flow-runtime.test.ts` and
+`tests/flow-cron.test.ts`, alongside existing sync and company-history coverage.
+
 ## Mailbox reminders and one-time AI follow-ups — November 11, 2026
 
 Action filters appear above the conversation list in Inbox, Sent, All mail and Needs follow-up: All, AI following up, Waiting for manual follow-up, Completed, and Dormant AI nurture. They track the saved **Remind me** and **AI follow-up** actions; continuous conversation auto-reply remains separate. All preserves the chosen folder; Needs follow-up collects actions across folders. Counts respect the folder, search, source and customer-tag controls. Failed/uncertain delivery enters manual follow-up; completed/cancelled actions remain discoverable after their inbox date is cleared. Rows show the saved action and its due time.

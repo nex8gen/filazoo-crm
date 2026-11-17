@@ -24,7 +24,9 @@ export async function GET(request: Request) {
   // pg_net shares its HTTP batch with mail sync and other scheduled work.
   // Acknowledge promptly, then drain saved work within the function lifetime.
   after(async () => {
-    const deadline = Date.now() + 240_000;
+    // Keep 20s of the 300s invocation for cleanup. Receipt/freshness checks
+    // need room before the email action's existing 210s preparation reserve.
+    const deadline = Date.now() + 280_000;
     await forEachWorkspace(async (workspaceId, count) => {
     const phases = task === "scheduled-email" ? [
       { name: "scheduled-email", run: async () => {
@@ -41,7 +43,7 @@ export async function GET(request: Request) {
         return processEmailAutoReplies(undefined, { deadline });
       } },
     ] : [{ name: task === "resume" ? "workflows" : "receipts-and-enrollment", run: () => processDueFlowRuns(task === "resume" ? 10 : 0,
-      { syncMailbox: true, budgetMs: Math.max(15_000, Math.floor((task === "resume" ? 180_000 : 60_000) / count)), actionDeadline: deadline, scanTriggers: task !== "resume" }) }];
+      { syncMailbox: true, budgetMs: Math.max(30_000, Math.floor((task === "resume" ? 180_000 : 120_000) / count)), actionDeadline: deadline, scanTriggers: task !== "resume" }) }];
     const results = await Promise.allSettled(phases.map(phase => phase.run()));
     results.forEach((result, index) => {
       if (result.status === "rejected") console.error("Workflow background phase failed; saved work remains recoverable.", { workspaceId, phase: phases[index].name, error: result.reason instanceof Error ? result.reason.message : "Unknown error" });

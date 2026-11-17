@@ -13,7 +13,7 @@ export default function AuthSectionOne({ children, footer, step }: { children: R
       <div className="grid min-h-[calc(100svh-1.5rem)] gap-3 lg:grid-cols-[0.94fr_1.06fr]">
         <section className="flex min-w-0 flex-col rounded-md border border-black/20 bg-white px-6 py-7 sm:px-10 dark:border-white/15 dark:bg-[#0a0a0a] lg:px-12 xl:px-20">
           <header className="flex items-center justify-between gap-4">
-            <Link href="/login" aria-label="Filazoo sign in" className="flex items-center gap-2.5 font-semibold tracking-tight"><BrandMarkIcon className="h-7 w-auto text-primary" /><span>Filazoo</span></Link>
+            <Link href="/login" aria-label="Filazoo sign in" className="flex items-center gap-2.5 font-semibold tracking-tight"><BrandMarkIcon className="h-7 w-auto text-brand-foreground" /><span>Filazoo</span></Link>
             <LanguageSwitcher />
           </header>
           <div className="mx-auto flex w-full max-w-[590px] flex-1 flex-col justify-center py-12 sm:py-16">

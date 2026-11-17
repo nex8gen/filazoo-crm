@@ -42,6 +42,7 @@ export async function getCompanyEmailBackendData(company: CompanyEmailScope, con
     inboxConfigured: snapshots.some((snapshot) => snapshot.inboxConfigured),
     mailboxConfigured: snapshots.some((snapshot) => snapshot.inboxConfigured) && snapshots[0].sendConfigured,
     inboxError: snapshots.flatMap((snapshot) => snapshot.inboxError ? [snapshot.inboxError] : []).join("; ") || null,
+    mailboxReadFailed: snapshots.some((snapshot) => snapshot.mailboxReadFailed),
     emails: applyConversationCustomerTags(emails, await authorized.states!),
   };
 }

@@ -34,7 +34,7 @@ const code = ts.transpileModule(readFileSync(new URL("../lib/data/flow-runtime.t
 
 // Execute the real enrollment and email runtime against an in-memory database.
 // SMTP is intercepted even when testing live-send mode.
-function runtime(options: { businessWindow?: Date | null; beforeQuery?: (table: string, operation: string) => Promise<void>; aiReplyError?: unknown; smtpError?: unknown; onAiPrepare?: () => Promise<void>; projectionError?: Error } = {}) {
+function runtime(options: { businessWindow?: Date | null; beforeQuery?: (table: string, operation: string) => Promise<void>; aiReplyError?: unknown; smtpError?: unknown; onAiPrepare?: () => Promise<void>; projectionError?: Error; projectionComplete?: boolean; targetedProjectionComplete?: boolean; freshnessError?: Error } = {}) {
   const contactId = randomUUID(), companyId = randomUUID(), flowId = randomUUID();
   const createdAt = new Date().toISOString();
   const db: Record<string, Row[]> = {
@@ -139,8 +139,8 @@ function runtime(options: { businessWindow?: Date | null; beforeQuery?: (table: 
     "./email-footers.ts": { getUserEmailFooter: async () => null, prepareUserEmail: async (_id: string, mail: unknown) => mail },
     "../email-footer.ts": { removeStandardSignoff: (text: string) => text },
     "../mailer.ts": { verifyMailboxSmtp: async () => { if (failures.smtp) throw failures.smtp; }, sendMailboxEmail: async (mailbox: Row, mail: Row) => { if (failures.smtp) throw failures.smtp; delivered++; deliveries.push({ mailbox, mail }); return { messageId: `<test-${delivered}@example.com>` }; } },
-    "./flow-mail-sync.ts": { syncFlowMailboxMessages: async () => { if (options.projectionError) throw options.projectionError; return { complete: true, projected: 0 }; } },
-    "./flow-mail-context.ts": { requireFreshFlowMailbox: async () => {} },
+    "./flow-mail-sync.ts": { syncFlowMailboxMessages: async (input?: { mailboxId?: string }) => { if (options.projectionError) throw options.projectionError; return { complete: input?.mailboxId ? (options.targetedProjectionComplete ?? options.projectionComplete) !== false : options.projectionComplete !== false, projected: 0 }; } },
+    "./flow-mail-context.ts": { requireFreshFlowMailbox: async () => { if (options.freshnessError) throw options.freshnessError; } },
     "./flow-sender.ts": { assignedFlowActor: async (_author: string, company: string, pinned?: string) => {
       const owner = db.pipeline.find(row => row.company_id === company)?.owner_id;
       if (!owner || pinned && pinned !== owner) throw new executionErrors.FlowPreparationRetry("Assigned salesperson changed or missing", 60_000, "data");
@@ -175,6 +175,31 @@ test("budgeted recovery queues enrollment without sending and resumes it once on
   await app.exports.processDueFlowRuns(50, { syncMailbox: false, budgetMs: 180_000 });
   await app.exports.processDueFlowRuns(50, { syncMailbox: false, budgetMs: 180_000 });
   assert.equal(app.delivered(), 1);
+});
+
+test("intake enrolls saved receipts during an incomplete import while sending stays deferred", async () => {
+  const app = runtime({ projectionComplete: false });
+  const results = await app.exports.processDueFlowRuns(0, { syncMailbox: true, budgetMs: 30_000 });
+  assert.equal(app.db.flow_runs.length, 1);
+  assert.equal(app.db.flow_runs[0].status, "active");
+  assert.equal(app.delivered(), 0);
+  assert.equal((results[0] as { status: string }).status, "deferred");
+  await app.exports.processDueFlowRuns(50, { syncMailbox: true, budgetMs: 30_000 });
+  assert.equal(app.delivered(), 0, "Incomplete imports must still block the sending worker");
+});
+
+test("a receipt-bound run requires complete targeted projection and a fresh mailbox during a large import", async () => {
+  for (const scenario of ["fresh", "incomplete", "stale"]) {
+    const app = runtime({ projectionComplete: false, targetedProjectionComplete: scenario !== "incomplete",
+      freshnessError: scenario === "stale" ? new Error("Receiving is behind") : undefined });
+    await app.exports.scanTimeBasedFlowTriggers(undefined, undefined, { deferExecution: true });
+    const run = app.db.flow_runs[0];
+    (run.context as Row).receivingMailboxId = randomUUID();
+    run.flows = { user_id: "owner" };
+    await app.exports.processDueFlowRuns(50, { syncMailbox: true, budgetMs: 180_000 });
+    assert.equal(app.delivered(), scenario === "fresh" ? 1 : 0);
+    assert.equal(run.status, scenario === "fresh" ? "done" : "active");
+  }
 });
 
 test("an expired run budget releases its lock without failing or delivering the saved action", async () => {
@@ -1222,6 +1247,38 @@ test("minute worker enrolls a new received email and skips historical messages a
   assert.equal(app.db.flow_runs.length, 1);
   assert.equal(app.db.flow_runs[0].event_key, "email_received:new");
   assert.equal(app.delivered(), 1);
+});
+
+test("budgeted trigger scans rotate so an earlier expensive segment cannot starve a later workflow", async (t) => {
+  let now = 60_000; // The second workflow gets the first slot on this minute.
+  t.mock.method(Date, "now", () => now);
+  const app = runtime({ beforeQuery: async (table) => { if (table === "company_segments") now += 1000; } });
+  const mailFlowId = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+  Object.assign(app.db.flows[0], { id: mailFlowId });
+  app.db.flow_steps[0].flow_id = mailFlowId;
+  const segmentId = randomUUID();
+  app.db.flows.unshift({ id: "00000000-0000-4000-8000-000000000001", user_id: "owner", status: "live", trigger_type: "company_segment_changed", trigger_config: { savedSegmentId: segmentId } });
+  app.db.company_segments = [{ id: segmentId, rules: { match: "all", rules: [] } }];
+  app.db.emails = [{ id: "new", contact_id: app.contactId, direction: "received", thread_id: "new", created_at: new Date().toISOString() }];
+  await app.exports.scanTimeBasedFlowTriggers(undefined, undefined, { deadline: now + 500, deferExecution: true });
+  assert.equal(app.db.flow_runs.length, 1);
+  assert.equal(app.db.flow_runs[0].flow_id, mailFlowId);
+  assert.equal(app.delivered(), 0);
+});
+
+test("receipt enrollment runs before historical segment work even when rotation starts at that segment", async (t) => {
+  let now = 120_000;
+  t.mock.method(Date, "now", () => now);
+  const app = runtime({ beforeQuery: async (table) => { if (table === "company_segments") now += 1000; } });
+  const mailFlowId = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+  Object.assign(app.db.flows[0], { id: mailFlowId, trigger_type: "email_received", email_enrollment_started_at: new Date(0).toISOString() });
+  app.db.flow_steps[0].flow_id = mailFlowId;
+  app.db.flows.unshift({ id: "00000000-0000-4000-8000-000000000001", user_id: "owner", status: "live", trigger_type: "company_segment_changed", trigger_config: { savedSegmentId: randomUUID() } });
+  app.db.emails = [{ id: "new", contact_id: app.contactId, direction: "received", thread_id: "new", created_at: new Date().toISOString() }];
+  await app.exports.scanTimeBasedFlowTriggers(undefined, undefined, { deadline: now + 500, deferExecution: true });
+  assert.equal(app.db.flow_runs.length, 1);
+  assert.equal(app.db.flow_runs[0].flow_id, mailFlowId);
+  assert.equal(app.delivered(), 0);
 });
 
 test("a workspace time slice below two minutes still executes due work within the invocation deadline", async () => {

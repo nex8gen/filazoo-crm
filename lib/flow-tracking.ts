@@ -72,7 +72,8 @@ export function buildFlowEmail({ body, config, runId, stepId, flowId, appUrl, se
       return config.trackClicks !== false ? trackingUrl("click", url.toString()) : url.toString();
     } });
   }
-  if (config.preheader) html = `<div style="display:none;max-height:0;overflow:hidden">${escapeHtml(String(config.preheader))}</div>${html}`;
+  const preheader = config.hidePreviewText ? "\u200c\u00a0".repeat(100) : String(config.preheader || "");
+  if (preheader) html = `<div style="display:none;max-height:0;overflow:hidden">${escapeHtml(preheader)}</div>${html}`;
   if (config.trackOpens !== false) html += `<img src="${escapeHtml(trackingUrl("open"))}" width="1" height="1" alt="" />`;
   return { text, html };
 }

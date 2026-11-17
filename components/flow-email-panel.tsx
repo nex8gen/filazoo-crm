@@ -20,12 +20,13 @@ const TemplatePage = lazy(() => import("./flow-email-template-page").then(module
 const SavedPreview = lazy(() => import("./flow-email-saved-preview").then(module => ({ default: module.FlowEmailSavedPreview })));
 const emojis = ["😊", "👋", "✨", "🎉", "📦", "💙"];
 
-export function FlowEmailPanel({ config, onChange, onClose, disabled, mailboxes, status, defaultName, sessionKey, footer, editorRef, onDirtyChange, error, onPreview, actionId = "", saved = false, sender, resolveSender, onViewActivity, trail = [] }: {
+export function FlowEmailPanel({ config, onChange, onClose, disabled, mailboxes, status, defaultName, sessionKey, footer, editorRef, onDirtyChange, error, onPreview, actionId = "", saved = false, sender, resolveSender, onViewActivity, onSaveText, trail = [] }: {
   config: JsonConfig; onChange: (config: JsonConfig) => void; onClose: () => void; disabled: boolean;
   mailboxes: { id: string; label: string }[]; status: FlowStatus; defaultName: string; sessionKey: string;
   footer?: ReactNode; editorRef?: Ref<FlowPanelEditor>; onDirtyChange?: (dirty: boolean) => void; error?: string; onPreview: () => void;
   actionId?: string; saved?: boolean; sender?: { name: string; email: string }; onViewActivity?: () => void;
   resolveSender?: (choice: JsonConfig[string]) => { name: string; email: string } | undefined; trail?: string[];
+  onSaveText?: (config: JsonConfig) => Promise<boolean>;
 }) {
   const [draft, setDraft] = useState(() => structuredClone(config));
   const [senderOpen, setSenderOpen] = useState(false);
@@ -39,7 +40,7 @@ export function FlowEmailPanel({ config, onChange, onClose, disabled, mailboxes,
   const id = useId();
   const pendingConfig = { ...draft, ...(config.performanceId ? { performanceId: config.performanceId } : {}) };
   const changed = !flowEditorEqual(config, pendingConfig);
-  const set = (key: string, value: JsonConfig[string]) => { if (!disabled) setDraft(current => ({ ...current, [key]: value })); };
+  const set = (key: string, value: JsonConfig[string]) => { if (!disabled) setDraft(current => ({ ...current, [key]: value, ...(key === "preheader" ? { hidePreviewText: false } : {}) })); };
   const content = flowEmailContent(draft);
   const templateName = String(draft.templateName || flowEmailTemplateNames[String(draft.templateId)] || "");
   const prepare = () => {
@@ -81,6 +82,6 @@ export function FlowEmailPanel({ config, onChange, onClose, disabled, mailboxes,
     </div>
     {footer}
     <Dialog open={performanceOpen} onOpenChange={setPerformanceOpen}><DialogContent className="wf-email-performance-dialog sm:max-w-lg"><DialogHeader><DialogTitle>{String(draft.emailName || defaultName)} performance</DialogTitle><DialogDescription>Last 30 days. Waiting and review show current runs.</DialogDescription></DialogHeader><FlowEmailMetrics actionId={String(draft.performanceId || actionId)} card /><p>Sent counts messages accepted by the sending server. Inbox delivery and order attribution are unavailable. Open and click rates count unique messages and may include automated scanners.</p>{performance.report ? <p>Updated {new Date(performance.report.asOf).toLocaleString()}</p> : null}<div className="wf-email-performance-actions"><Button variant="outline" size="sm" onClick={performance.refresh} disabled={performance.loading}>Refresh</Button>{onViewActivity ? <Button size="sm" onClick={() => { setPerformanceOpen(false); onViewActivity(); }}>View run history</Button> : null}</div></DialogContent></Dialog>
-    {templatePage ? <Suspense fallback={<div className="wf-email-template-loading" role="status">Loading email templates…</div>}><TemplatePage config={draft} mode={templatePage} sessionKey={sessionKey} disabled={disabled} onApply={next => { if (!disabled) { setDraft(next); setValidationError(""); setTemplatePage(null); } }} onClose={() => setTemplatePage(null)} /></Suspense> : null}
+    {templatePage ? <Suspense fallback={<div className="wf-email-template-loading" role="status">Loading email templates…</div>}><TemplatePage config={{ ...pendingConfig, emailName: String(draft.emailName || defaultName) }} onSaveText={onSaveText} mode={templatePage} sessionKey={sessionKey} disabled={disabled} onApply={next => { if (!disabled) { setDraft(next); setValidationError(""); setTemplatePage(null); } }} onClose={() => setTemplatePage(null)} /></Suspense> : null}
   </aside>;
 }

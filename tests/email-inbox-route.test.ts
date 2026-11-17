@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
 
-function setup(queueFailure = false) {
+function setup(queueFailure = false, mailboxReadFailed = false, inboxError: string | null = null) {
   const viewer = { id: "actor", role: "bd_manager" };
   const mailboxes = [{ id: "mine", type: "personal", userId: "actor" }, { id: "team", type: "workspace" }];
   const counts = { auth: 0, mailboxes: 0, inbox: 0, sync: 0 };
@@ -21,7 +21,7 @@ function setup(queueFailure = false) {
       assert.equal(options.syncMailbox, false);
       assert.equal((options.context as { viewer: unknown }).viewer, viewer);
       assert.equal((options.context as { mailboxes: unknown }).mailboxes, mailboxes);
-      return { selectedMailboxId: options.mailboxId ?? "mine", emails: [] };
+      return { selectedMailboxId: options.mailboxId ?? "mine", emails: [], mailboxReadFailed, inboxError };
     } },
     "@/lib/data/mail-sync-worker": { enqueueMailboxSync: async () => { counts.sync++; if (queueFailure) throw new Error("Database unavailable"); }, readMailboxSyncHealth: async () => ({ state: "waiting", history: "idle" }) },
     "@/lib/data/crm": { getCompanyDetails: async (id: string) => ({ details: id === "customer" ? { company: { id, name: "Customer", email: "buyer@example.test" }, contacts: [{ email: "accounts@example.test" }] } : null }) },
@@ -30,7 +30,7 @@ function setup(queueFailure = false) {
       assert.equal(context.mailboxes, mailboxes);
       assert.deepEqual(company.emails.join(","), "buyer@example.test,accounts@example.test");
       companyReads.push(company.id);
-      return { selectedMailboxId: null, emails: [{ id: "workspace-message", contact: "buyer@example.test" }] };
+      return { selectedMailboxId: null, emails: [{ id: "workspace-message", contact: "buyer@example.test" }], mailboxReadFailed, inboxError };
     } },
     "@/lib/data/email-auto-reply-worker": { processEmailAutoReplies: async () => undefined },
     "@/lib/data/conversation-tagging": { processAutomaticConversationTags: async () => ({ analyzed: 0 }) },
@@ -106,4 +106,24 @@ test("queue outages still return saved mail and an actionable refresh error", as
   assert.deepEqual(data.emails, []);
   assert.match(data.syncQueueError, /could not be queued/);
   assert.equal(data.selectedMailboxId, "team");
+});
+
+test("a failed saved-mail read cannot replace the client snapshot with an empty inbox", async () => {
+  for (const params of ["mailboxId=mine", "companyId=customer"]) {
+    const backend = setup(false, true, "canceling statement due to statement timeout");
+    const response = await backend.GET(new Request(`http://localhost/api/email/inbox?${params}`));
+    assert.equal(response.status, 503);
+    assert.equal(response.headers.get("Cache-Control"), "no-store");
+    const result = await response.json();
+    assert.equal(result.emails, undefined, "A failed read must never advertise a replacement snapshot");
+    assert.match(result.error, /messages are kept/);
+    assert.ok(backend.counts.sync > 0, "Receiving can still recover independently");
+  }
+});
+
+test("a provider error with a readable cache still returns an authoritative snapshot", async () => {
+  const backend = setup(false, false, "Mailbox connection timed out");
+  const response = await backend.GET(new Request("http://localhost/api/email/inbox?mailboxId=mine&refresh=false"));
+  assert.equal(response.status, 200);
+  assert.match((await response.json()).inboxError, /timed out/);
 });

@@ -15,7 +15,8 @@ export function useEmailEditorValue() {
 
 export type EmailBodyEditorHandle = {
   focus: () => void; insertText: (text: string) => void; insertImages: (files: File[]) => void;
-  format: (command: "bold" | "italic" | "underline" | "insertUnorderedList") => void;
+  format: (command: "bold" | "italic" | "underline" | "strikeThrough" | "insertUnorderedList" | "insertOrderedList" | "justifyLeft" | "justifyCenter" | "justifyRight" | "undo" | "redo" | "formatBlock" | "foreColor" | "hiliteColor", value?: string) => void;
+  insertImage: (url: string, alt: string) => void;
   selectedText: () => string; insertLink: (url: string, text: string) => void;
   currentFooter: () => EmailFooter | null;
 };
@@ -133,13 +134,15 @@ export function EmailBodyEditor({ value, html, signature, footer, onChange, onEr
       return section ? { html: section.innerHTML, text: detachedFooter.current ? footerText.current : section.innerText.trim() } : footer ? { html: "", text: "" } : null;
     },
     insertLink: (url, text) => { if (/^(https?:\/\/|mailto:|tel:)/i.test(url)) insertHtml(`<a href="${emailTextHtml(url)}">${emailTextHtml(text || url)}</a>`); },
-    format: (command) => {
+    insertImage: (url, alt) => { if (/^https?:\/\//i.test(url)) insertHtml(`<img src="${emailTextHtml(url)}" alt="${emailTextHtml(alt)}" style="max-width:100%;height:auto"><br>`); },
+    format: (command, value) => {
       if (disabled || !editor.current) return;
       editor.current.focus();
       if (selection.current && editor.current.contains(selection.current.commonAncestorContainer)) {
         window.getSelection()?.removeAllRanges(); window.getSelection()?.addRange(selection.current);
       }
-      document.execCommand(command); publish();
+      document.execCommand("styleWithCSS", false, "true");
+      document.execCommand(command, false, value); publish();
     },
   }));
 

@@ -586,7 +586,7 @@ export function EmailInboxWorkspace({
       // A poll started before a user action must not undo that action.
       if (revision !== stateRevision.current || pendingStateWrites.current) return;
       applyMailboxSnapshot(result.emails as EmailWorkspaceItem[]);
-      setSyncError(result.syncQueueError || null);
+      setSyncError(result.syncQueueError || result.inboxError || null);
       if (manual) setNotice("Loading the next batch of older emails. They will appear automatically as they are imported.");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to sync the mailbox inbox.";

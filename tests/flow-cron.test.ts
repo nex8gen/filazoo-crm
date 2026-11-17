@@ -49,7 +49,7 @@ test("intake acknowledges promptly and only projects receipts and enrolls saved 
   await app.flush();
   assert.deepEqual(app.calls, ["workflows"]);
   assert.equal(app.flowOptions()?.syncMailbox, true);
-  assert.equal(app.flowOptions()?.budgetMs, 60000);
+  assert.equal(app.flowOptions()?.budgetMs, 120000);
 });
 
 test("provider workers run in separate invocations and retain attribution for failures", async () => {
@@ -82,5 +82,14 @@ test("multiple workspaces share scheduling time without shrinking the action dea
   await app.GET(app.request("resume"));
   await app.flush();
   assert.equal(app.flowOptions()?.budgetMs, 90_000);
+  assert.ok(app.flowOptions()!.actionDeadline - Date.now() > 270_000);
+  assert.ok(app.flowOptions()!.actionDeadline - Date.now() <= 280_000);
+});
+
+test("four-workspace intake reserves time for trigger scans after receipt projection", async () => {
+  const app = fixture(undefined, 4);
+  await app.GET(app.request("intake"));
+  await app.flush();
+  assert.equal(app.flowOptions()?.budgetMs, 30_000);
   assert.ok(app.flowOptions()!.actionDeadline - Date.now() > 230_000);
 });
