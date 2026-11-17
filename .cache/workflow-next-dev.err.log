@@ -1,0 +1,91 @@
+React expects the `children` prop of <title> tags to be a string, number, bigint, or object with a novel `toString` method but found an Array with length 2 instead. Browsers treat all child Nodes of <title> tags as Text content and React expects to be able to convert `children` of <title> tags to a single string value which is why Arrays of length greater than 1 are not supported. When using JSX it can be common to combine text nodes and value nodes. For example: <title>hello {nameOfUser}</title>. While not immediately apparent, `children` in this case is an Array with length 2. If your `children` prop is using this form try rewriting it using a template string: <title>{`hello ${nameOfUser}`}</title>.
+React expects the `children` prop of <title> tags to be a string, number, bigint, or object with a novel `toString` method but found an Array with length 7 instead. Browsers treat all child Nodes of <title> tags as Text content and React expects to be able to convert `children` of <title> tags to a single string value which is why Arrays of length greater than 1 are not supported. When using JSX it can be common to combine text nodes and value nodes. For example: <title>hello {nameOfUser}</title>. While not immediately apparent, `children` in this case is an Array with length 2. If your `children` prop is using this form try rewriting it using a template string: <title>{`hello ${nameOfUser}`}</title>.
+React expects the `children` prop of <title> tags to be a string, number, bigint, or object with a novel `toString` method but found an Array with length 7 instead. Browsers treat all child Nodes of <title> tags as Text content and React expects to be able to convert `children` of <title> tags to a single string value which is why Arrays of length greater than 1 are not supported. When using JSX it can be common to combine text nodes and value nodes. For example: <title>hello {nameOfUser}</title>. While not immediately apparent, `children` in this case is an Array with length 2. If your `children` prop is using this form try rewriting it using a template string: <title>{`hello ${nameOfUser}`}</title>.
+React expects the `children` prop of <title> tags to be a string, number, bigint, or object with a novel `toString` method but found an Array with length 7 instead. Browsers treat all child Nodes of <title> tags as Text content and React expects to be able to convert `children` of <title> tags to a single string value which is why Arrays of length greater than 1 are not supported. When using JSX it can be common to combine text nodes and value nodes. For example: <title>hello {nameOfUser}</title>. While not immediately apparent, `children` in this case is an Array with length 2. If your `children` prop is using this form try rewriting it using a template string: <title>{`hello ${nameOfUser}`}</title>.
+React expects the `children` prop of <title> tags to be a string, number, bigint, or object with a novel `toString` method but found an Array with length 7 instead. Browsers treat all child Nodes of <title> tags as Text content and React expects to be able to convert `children` of <title> tags to a single string value which is why Arrays of length greater than 1 are not supported. When using JSX it can be common to combine text nodes and value nodes. For example: <title>hello {nameOfUser}</title>. While not immediately apparent, `children` in this case is an Array with length 2. If your `children` prop is using this form try rewriting it using a template string: <title>{`hello ${nameOfUser}`}</title>.
+React expects the `children` prop of <title> tags to be a string, number, bigint, or object with a novel `toString` method but found an Array with length 7 instead. Browsers treat all child Nodes of <title> tags as Text content and React expects to be able to convert `children` of <title> tags to a single string value which is why Arrays of length greater than 1 are not supported. When using JSX it can be common to combine text nodes and value nodes. For example: <title>hello {nameOfUser}</title>. While not immediately apparent, `children` in this case is an Array with length 2. If your `children` prop is using this form try rewriting it using a template string: <title>{`hello ${nameOfUser}`}</title>.
+React expects the `children` prop of <title> tags to be a string, number, bigint, or object with a novel `toString` method but found an Array with length 7 instead. Browsers treat all child Nodes of <title> tags as Text content and React expects to be able to convert `children` of <title> tags to a single string value which is why Arrays of length greater than 1 are not supported. When using JSX it can be common to combine text nodes and value nodes. For example: <title>hello {nameOfUser}</title>. While not immediately apparent, `children` in this case is an Array with length 2. If your `children` prop is using this form try rewriting it using a template string: <title>{`hello ${nameOfUser}`}</title>.
+React expects the `children` prop of <title> tags to be a string, number, bigint, or object with a novel `toString` method but found an Array with length 7 instead. Browsers treat all child Nodes of <title> tags as Text content and React expects to be able to convert `children` of <title> tags to a single string value which is why Arrays of length greater than 1 are not supported. When using JSX it can be common to combine text nodes and value nodes. For example: <title>hello {nameOfUser}</title>. While not immediately apparent, `children` in this case is an Array with length 2. If your `children` prop is using this form try rewriting it using a template string: <title>{`hello ${nameOfUser}`}</title>.
+React expects the `children` prop of <title> tags to be a string, number, bigint, or object with a novel `toString` method but found an Array with length 7 instead. Browsers treat all child Nodes of <title> tags as Text content and React expects to be able to convert `children` of <title> tags to a single string value which is why Arrays of length greater than 1 are not supported. When using JSX it can be common to combine text nodes and value nodes. For example: <title>hello {nameOfUser}</title>. While not immediately apparent, `children` in this case is an Array with length 2. If your `children` prop is using this form try rewriting it using a template string: <title>{`hello ${nameOfUser}`}</title>.
+React expects the `children` prop of <title> tags to be a string, number, bigint, or object with a novel `toString` method but found an Array with length 7 instead. Browsers treat all child Nodes of <title> tags as Text content and React expects to be able to convert `children` of <title> tags to a single string value which is why Arrays of length greater than 1 are not supported. When using JSX it can be common to combine text nodes and value nodes. For example: <title>hello {nameOfUser}</title>. While not immediately apparent, `children` in this case is an Array with length 2. If your `children` prop is using this form try rewriting it using a template string: <title>{`hello ${nameOfUser}`}</title>.
+React expects the `children` prop of <title> tags to be a string, number, bigint, or object with a novel `toString` method but found an Array with length 7 instead. Browsers treat all child Nodes of <title> tags as Text content and React expects to be able to convert `children` of <title> tags to a single string value which is why Arrays of length greater than 1 are not supported. When using JSX it can be common to combine text nodes and value nodes. For example: <title>hello {nameOfUser}</title>. While not immediately apparent, `children` in this case is an Array with length 2. If your `children` prop is using this form try rewriting it using a template string: <title>{`hello ${nameOfUser}`}</title>.
+React expects the `children` prop of <title> tags to be a string, number, bigint, or object with a novel `toString` method but found an Array with length 7 instead. Browsers treat all child Nodes of <title> tags as Text content and React expects to be able to convert `children` of <title> tags to a single string value which is why Arrays of length greater than 1 are not supported. When using JSX it can be common to combine text nodes and value nodes. For example: <title>hello {nameOfUser}</title>. While not immediately apparent, `children` in this case is an Array with length 2. If your `children` prop is using this form try rewriting it using a template string: <title>{`hello ${nameOfUser}`}</title>.
+React expects the `children` prop of <title> tags to be a string, number, bigint, or object with a novel `toString` method but found an Array with length 7 instead. Browsers treat all child Nodes of <title> tags as Text content and React expects to be able to convert `children` of <title> tags to a single string value which is why Arrays of length greater than 1 are not supported. When using JSX it can be common to combine text nodes and value nodes. For example: <title>hello {nameOfUser}</title>. While not immediately apparent, `children` in this case is an Array with length 2. If your `children` prop is using this form try rewriting it using a template string: <title>{`hello ${nameOfUser}`}</title>.
+React expects the `children` prop of <title> tags to be a string, number, bigint, or object with a novel `toString` method but found an Array with length 7 instead. Browsers treat all child Nodes of <title> tags as Text content and React expects to be able to convert `children` of <title> tags to a single string value which is why Arrays of length greater than 1 are not supported. When using JSX it can be common to combine text nodes and value nodes. For example: <title>hello {nameOfUser}</title>. While not immediately apparent, `children` in this case is an Array with length 2. If your `children` prop is using this form try rewriting it using a template string: <title>{`hello ${nameOfUser}`}</title>.
+React expects the `children` prop of <title> tags to be a string, number, bigint, or object with a novel `toString` method but found an Array with length 7 instead. Browsers treat all child Nodes of <title> tags as Text content and React expects to be able to convert `children` of <title> tags to a single string value which is why Arrays of length greater than 1 are not supported. When using JSX it can be common to combine text nodes and value nodes. For example: <title>hello {nameOfUser}</title>. While not immediately apparent, `children` in this case is an Array with length 2. If your `children` prop is using this form try rewriting it using a template string: <title>{`hello ${nameOfUser}`}</title>.
+React expects the `children` prop of <title> tags to be a string, number, bigint, or object with a novel `toString` method but found an Array with length 7 instead. Browsers treat all child Nodes of <title> tags as Text content and React expects to be able to convert `children` of <title> tags to a single string value which is why Arrays of length greater than 1 are not supported. When using JSX it can be common to combine text nodes and value nodes. For example: <title>hello {nameOfUser}</title>. While not immediately apparent, `children` in this case is an Array with length 2. If your `children` prop is using this form try rewriting it using a template string: <title>{`hello ${nameOfUser}`}</title>.
+Error: Route "/workflow/analytics": Next.js encountered uncached data during prerendering or a navigation.
+
+`fetch(...)` or `connection()` accessed outside of `<Suspense>` prevents the route from being prerendered or the navigation from being instant, leading to a slower user experience.
+
+Ways to fix this:
+  - [stream] Provide a placeholder with `<Suspense fallback={...}>` around the data access
+  - [cache] Cache the data access with `"use cache"` (does not apply to `connection()`)
+  - [block] Set `export const instant = false` to allow a blocking route
+
+Learn more: https://nextjs.org/docs/messages/blocking-prerender-dynamic
+    at <anonymous> (lib\auth.ts:52:25)
+    at RootLayout (app\layout.tsx:28:119)
+  50 |   // that work to the incoming request when Cache Components prerenders a shell.
+  51 |   const connection = await getConnection();
+> 52 |   if (connection) await connection();
+     |                         ^
+  53 |   const supabase = await createClient();
+  54 |   assertWorkspaceConfig();
+  55 |   // The SDK verifies signature and expiry using cached public signing keys.
+Unhandled Rejection: Error: Module [project]/node_modules/domutils/lib/esm/index.js [app-rsc] (ecmascript) <export * as DomUtils .getOuterHTML> was instantiated because it was required from module [project]/lib/email-html-document.ts [app-rsc] (ecmascript), but the module factory is not available.
+This is often caused by a stale browser cache, misconfigured Cache-Control headers, or a service worker serving outdated responses.
+To fix this, make sure your Cache-Control headers allow revalidation of chunks and review your service worker configuration. As an immediate workaround, try hard-reloading the page, clearing the browser cache, or unregistering any service workers.
+    at Module.eval (lib\email-html-document.ts:1:1)
+    at Module.eval (lib\email-design.ts:9:1)
+    at Module.eval (lib\flows.ts:2:1)
+    at <unknown> (lib\data\flow-runtime.ts:11:1)
+    at module evaluation (C:\Users\Administrator\filazoo-crm\.next\dev\server\chunks\ssr\[root-of-the-server]__04m9uyq5r2x7j._.js:4490:30)
+    at <unknown> (lib\data\flows.ts:4:1)
+    at module evaluation (C:\Users\Administrator\filazoo-crm\.next\dev\server\chunks\ssr\[root-of-the-server]__04m9uyq5r2x7j._.js:6354:30)
+    at <unknown> (app\workflow\page.tsx:5:1)
+    at module evaluation (C:\Users\Administrator\filazoo-crm\.next\dev\server\chunks\ssr\[root-of-the-server]__04m9uyq5r2x7j._.js:119:30)
+> 1 | import { DomUtils, parseDocument } from "htmlparser2";
+    | ^
+  2 |
+  3 | export function isFullEmailHtml(html: string) { return /<html(?:\s|>)/i.test(html) && /<body(?:\s|>)/i.test(html); }
+  4 | type Options = { imageUrl: (src: string) => string; link: (href: string) => string; personalize?: (value: string) => string };
+⨯ Error: Unable to load automatically saved workflow changes.
+    at loadFlows (lib\data\flows.ts:125:27)
+    at async listWorkspaceFlows (lib\data\flows.ts:64:26)
+    at async AiAgentPage (app\workflow\page.tsx:31:54)
+  123 |   for (let offset = 0; offset < ids.length; offset += 500) {
+  124 |     const { data: copies, error: draftError } = await admin.from("flow_editor_drafts").select("flow_id,payload,revision,base_updated_at").in("flow_id", ids.slice(offset, offset + 500));
+> 125 |     if (draftError) throw new Error("Unable to load automatically saved workflow changes.");
+      |                           ^
+  126 |     for (const copy of copies ?? []) {
+  127 |       const flow = mapped.find(item => item.id === copy.flow_id);
+  128 |       const parsed = flowEditorDefinitionSchema.safeParse(copy.payload); {
+  digest: '261062434'
+}
+⨯ Error: Unable to load automatically saved workflow changes.
+    at loadFlows (lib\data\flows.ts:125:27)
+    at async listWorkspaceFlows (lib\data\flows.ts:64:26)
+    at async AiAgentPage (app\workflow\page.tsx:31:54)
+  123 |   for (let offset = 0; offset < ids.length; offset += 500) {
+  124 |     const { data: copies, error: draftError } = await admin.from("flow_editor_drafts").select("flow_id,payload,revision,base_updated_at").in("flow_id", ids.slice(offset, offset + 500));
+> 125 |     if (draftError) throw new Error("Unable to load automatically saved workflow changes.");
+      |                           ^
+  126 |     for (const copy of copies ?? []) {
+  127 |       const flow = mapped.find(item => item.id === copy.flow_id);
+  128 |       const parsed = flowEditorDefinitionSchema.safeParse(copy.payload); {
+  digest: '261062434'
+}
+⨯ Error: Unable to load automatically saved workflow changes.
+    at loadFlows (lib\data\flows.ts:125:27)
+    at async listWorkspaceFlows (lib\data\flows.ts:64:26)
+    at async AiAgentPage (app\workflow\page.tsx:31:54)
+  123 |   for (let offset = 0; offset < ids.length; offset += 500) {
+  124 |     const { data: copies, error: draftError } = await admin.from("flow_editor_drafts").select("flow_id,payload,revision,base_updated_at").in("flow_id", ids.slice(offset, offset + 500));
+> 125 |     if (draftError) throw new Error("Unable to load automatically saved workflow changes.");
+      |                           ^
+  126 |     for (const copy of copies ?? []) {
+  127 |       const flow = mapped.find(item => item.id === copy.flow_id);
+  128 |       const parsed = flowEditorDefinitionSchema.safeParse(copy.payload); {
+  digest: '261062434'
+}

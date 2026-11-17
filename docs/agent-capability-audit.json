@@ -639,6 +639,12 @@
       "explanation": "Authenticated, read-only workflow connection and resource checks. Uses live dependencies without generating content, sending messages or changing CRM records."
     },
     {
+      "surface": "app/api/flows/editor-draft/route.ts#POST",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Workflow editor autosave preserves incomplete action settings with revision checks. Use create_flow and update_flow for validated assistant changes; unfinished editing copies are managed in the workflow editor."
+    },
+    {
       "surface": "app/api/flows/preview/route.ts#POST",
       "mode": "guided",
       "tools": [],

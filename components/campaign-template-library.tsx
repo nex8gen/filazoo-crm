@@ -1,8 +1,9 @@
 "use client";
+import "./campaign-template-library.css";
 import { NotificationToast } from "@/components/ui/notification-toast";
 
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import dynamic from "next/dynamic";
 import { Check, ChevronDown, Code, FileText, Loader2, Mail, Monitor, Smartphone, MoreHorizontal, Pencil, Eye, Save, Plus, RefreshCw, Search, Type } from "lucide-react";
 import { toast } from "sonner";
@@ -31,15 +32,26 @@ async function fullTemplate(template: LibraryDocument): Promise<LibraryDocument>
 
 function TemplatePaper({ template }: { template: LibraryDocument }) {
   const [design, setDesign] = useState<EmailDesign | null>(template.email_design ?? null);
+  const paper = useRef<HTMLSpanElement>(null);
+  const [previewWidth, setPreviewWidth] = useState(198);
+  useEffect(() => {
+    const element = paper.current;
+    if (!element) return;
+    const measure = () => { if (element.clientWidth) setPreviewWidth(element.clientWidth); };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   useEffect(() => {
     let active = true;
     if (template.design_version && !template.email_design && !template.preview_url) void fullTemplate(template).then(value => { if (active) setDesign(value.email_design ?? null); }).catch(() => {});
     return () => { active = false; };
   }, [template]);
-  return <span className="campaign-builder-templatePaper">{template.preview_url ? <iframe title={`${template.name} thumbnail`} sandbox="allow-same-origin" loading="lazy" tabIndex={-1} src={template.preview_url} /> : design ? <iframe title={`${template.name} thumbnail`} sandbox="allow-same-origin" loading="lazy" tabIndex={-1} srcDoc={renderEmailDesign(design, { preview: true }).html} /> : <><Mail /><strong>{template.subject || template.name}</strong><span>{template.body}</span></>}</span>;
+  return <span ref={paper} className="campaign-builder-templatePaper" style={{ "--template-preview-scale": previewWidth / 600 } as CSSProperties}>{template.preview_url ? <iframe title={`${template.name} thumbnail`} sandbox="allow-same-origin" loading="lazy" tabIndex={-1} src={template.preview_url} /> : design ? <iframe title={`${template.name} thumbnail`} sandbox="allow-same-origin" loading="lazy" tabIndex={-1} srcDoc={renderEmailDesign(design, { preview: true }).html} /> : <><Mail /><strong>{template.subject || template.name}</strong><span>{template.body}</span></>}</span>;
 }
 
-export function CampaignTemplateLibrary({ selectedId, onSelect, onDesignApply, canWrite, design, body, name, subject, products, sessionKey, recoverDesigner, view = "library", onBrowseTemplates, onWriteMessage, preheader, subjectB, plainText, onPlainTextChange, onTextOnly, previewRecipients = [] }: { selectedId: string | null; onSelect: (template: LibraryDocument) => void; onDesignApply: (design: EmailDesign, template?: LibraryDocument | null) => void; canWrite: boolean; design?: EmailDesign; body: string; name: string; subject: string; products: MarketingProduct[]; sessionKey: string; recoverDesigner: boolean; view?: "library" | "preview"; onBrowseTemplates?: () => void; onWriteMessage?: () => void; preheader?: string; subjectB?: string; plainText?: string; onPlainTextChange?: (value: string | undefined) => void; onTextOnly?: () => void; previewRecipients?: CampaignRecipient[] }) {
+export function CampaignTemplateLibrary({ selectedId, onSelect, onDesignApply, canWrite, design, body, name, subject, products, sessionKey, recoverDesigner, view = "library", onBrowseTemplates, onWriteMessage, preheader, subjectB, plainText, onPlainTextChange, onTextOnly, previewRecipients = [], initialEditor }: { selectedId: string | null; onSelect: (template: LibraryDocument) => void; onDesignApply: (design: EmailDesign, template?: LibraryDocument | null) => void; canWrite: boolean; design?: EmailDesign; body: string; name: string; subject: string; products: MarketingProduct[]; sessionKey: string; recoverDesigner: boolean; view?: "library" | "preview"; onBrowseTemplates?: () => void; onWriteMessage?: () => void; preheader?: string; subjectB?: string; plainText?: string; onPlainTextChange?: (value: string | undefined) => void; onTextOnly?: () => void; previewRecipients?: CampaignRecipient[]; initialEditor?: "text" | "html" | "current" }) {
   const [modal, setModal] = useState<"preview" | "plain" | "save" | "textOnly" | null>(null);
   const [plainDraft, setPlainDraft] = useState("");
   const [templateName, setTemplateName] = useState(name);
@@ -57,7 +69,7 @@ export function CampaignTemplateLibrary({ selectedId, onSelect, onDesignApply, c
   const [opening, setOpening] = useState<string | null>(null);
   const [editor, setEditor] = useState<{ design: EmailDesign; template?: LibraryDocument | null; recovery?: CampaignDesignerRecovery } | null>(() => {
     const recovery = canWrite && recoverDesigner ? readCampaignSession(`${sessionKey}:designer`, campaignDesignerRecoverySchema) : null;
-    return recovery ? { design: recovery.initial, template: recovery.template, recovery } : null;
+    return recovery ? { design: recovery.initial, template: recovery.template, recovery } : initialEditor ? { design: initialEditor === "current" ? design ?? newEmailDesign(body, "text") : newEmailDesign("", initialEditor) } : null;
   });
   function closeEditor() { clearCampaignSession(`${sessionKey}:designer`); setEditor(null); }
   const params = new URLSearchParams({ view: "templates", sort: "newest", q: query });

@@ -5,6 +5,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import type { JsonConfig } from "../lib/flows.ts";
 import * as waitEditor from "../lib/flow-wait-editor.ts";
+import type { FlowPanelEditor } from "../lib/flow-editor-session.ts";
 
 type Element = { type: string; props: Record<string, unknown> };
 function elements(value: unknown): Element[] {
@@ -16,18 +17,19 @@ function elements(value: unknown): Element[] {
 function harness(initial: JsonConfig = { amount: 1, unit: "days" }, disabled = false, trail: string[] = []) {
   let config = structuredClone(initial), writes = 0, closes = 0, cursor = 0;
   const state: unknown[] = [];
+  const editorRef: { current: FlowPanelEditor | null } = { current: null };
   const components = new Proxy({}, { get: (_target, name) => String(name) });
   const jsx = (type: string, props: Element["props"]) => ({ type, props });
   const dependencies: Record<string, unknown> = {
     "react/jsx-runtime": { jsx, jsxs: jsx },
-    react: { useState(value: unknown) { const index = cursor++; if (!(index in state)) state[index] = typeof value === "function" ? value() : value; return [state[index], (next: unknown) => { state[index] = typeof next === "function" ? next(state[index]) : next; }]; } },
+    react: { useEffect() {}, useImperativeHandle(ref: typeof editorRef, read: () => FlowPanelEditor) { if (ref) ref.current = read(); }, useState(value: unknown) { const index = cursor++; if (!(index in state)) state[index] = typeof value === "function" ? value() : value; return [state[index], (next: unknown) => { state[index] = typeof next === "function" ? next(state[index]) : next; }]; } },
     "@/lib/flow-wait-editor": waitEditor,
   };
   const output: Record<string, (props: Record<string, unknown>) => Element> = {};
   const code = ts.transpileModule(readFileSync(new URL("../components/flow-wait-panel.tsx", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   vm.runInNewContext(code, { exports: output, require: (name: string) => dependencies[name] || components });
-  const render = () => { cursor = 0; return output.FlowWaitPanel({ config, disabled, trail, onChange: (next: JsonConfig) => { config = next; writes++; }, onClose: () => { closes++; } }); };
-  return { render, get config() { return config; }, get writes() { return writes; }, get closes() { return closes; } };
+  const render = () => { cursor = 0; return output.FlowWaitPanel({ config, disabled, trail, editorRef, onChange: (next: JsonConfig) => { config = next; writes++; }, onClose: () => { closes++; } }); };
+  return { render, editorRef, get config() { return config; }, get writes() { return writes; }, get closes() { return closes; } };
 }
 function control(tree: Element, name: string) { return elements(tree).find(node => node.props["aria-label"] === name)!; }
 function button(tree: Element, label: string) { return elements(tree).find(node => node.type === "Button" && node.props.children === label)!; }
@@ -47,6 +49,20 @@ test("delay edits stay local until Save, including duration and unit", () => {
   assert.equal(app.config.unit, "hours");
   assert.equal(app.writes, 1);
   assert.equal(app.closes, 1);
+});
+
+test("the navigation guard can read and validate pending delay fields without applying them", () => {
+  const app = harness();
+  input(app.render(), "flow-wait-amount", "7"); app.render();
+  assert.equal(app.editorRef.current!.hasChanges(), true);
+  const pending = app.editorRef.current!.prepare();
+  assert.equal(pending.ok && pending.config?.amount, 7);
+  assert.equal(app.config.amount, 1);
+  assert.equal(app.writes, 0);
+  input(app.render(), "flow-wait-amount", "0"); app.render();
+  assert.equal(app.editorRef.current!.prepare().ok, false);
+  app.editorRef.current!.reset(); app.render();
+  assert.equal(app.editorRef.current!.hasChanges(), false);
 });
 
 test("Close and header dismissal discard pending changes", () => {

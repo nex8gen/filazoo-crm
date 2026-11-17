@@ -6,7 +6,7 @@ import { CustomerTagBadge, CustomerTagLabel } from "@/components/customer-tag-ba
 import { isCustomerTag } from "@/lib/customer-tags";
 
 import { FlowSenderField } from "@/components/flow-sender-field";
-import { flowSenderOptions, type FlowMailboxOption } from "@/lib/flow-mailboxes";
+import { visibleFlowSender, flowSenderOptions, type FlowMailboxOption } from "@/lib/flow-mailboxes";
 
 import { EmptyState } from "@/components/data-state";
 import { PageActions } from "@/components/page-header";
@@ -17,7 +17,7 @@ import { useLanguage } from "@/components/language-provider";
 
 import { AiIcon } from "@/components/ai-icon";
 
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ComponentProps, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ComponentProps, type Ref, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 import { DndContext, DragOverlay, PointerSensor, pointerWithin, useDndContext, useDndMonitor, useDraggable, useDroppable, useSensor, useSensors, type DragMoveEvent } from "@dnd-kit/core";
 import {
   AlertTriangle, ArrowDown, ArrowUp, Bell, Check, CheckCircle2,
@@ -28,15 +28,21 @@ import { toast } from "sonner";
 import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { FlowActionPicker, type FlowActionChoice } from "@/components/flow-action-picker";
 import { FlowOutline } from "@/components/flow-outline";
-import { FlowActivityBell } from "@/components/flow-activity-bell";
+import { FlowAlertsBell, FlowAlertsPanel } from "@/components/flow-alerts-panel";
+import { flowAlertKey, flowAlerts, partitionFlowAlerts, type FlowAlert } from "@/lib/flow-alerts";
 import { FlowActionCard } from "@/components/flow-action-card";
 import { FlowConnector } from "@/components/flow-connector";
+import { FLOW_MINIMAP_TARGETS, flowMinimapBounds, measureFlowMinimap, type FlowMinimap } from "@/lib/flow-minimap";
 import { useFlowConnectorHealth } from "@/components/use-flow-connector-health";
-import { FlowHealthNotice } from "@/components/flow-health-notice";
 import type { FlowConnectorHealth } from "@/lib/flow-connector-health";
 import { FlowInsights } from "@/components/flow-insights";
 import { FlowTriggerPanel } from "@/components/flow-trigger-panel";
 import { FlowWaitPanel } from "@/components/flow-wait-panel";
+import { FlowEmailPanel } from "@/components/flow-email-panel";
+import { FlowEmailPerformanceProvider } from "@/components/flow-email-performance";
+import { FlowEmailActionCard } from "@/components/flow-email-action-card";
+import { FlowPanelSaveControls } from "@/components/flow-panel-save-controls";
+import { flowEditorChanged, flowEditorEqual, flowEditorSnapshot, restoreFlowEditor, type FlowEditorSnapshot, type FlowPanelEditor } from "@/lib/flow-editor-session";
 import { waitSummary } from "@/lib/flow-wait-editor";
 import { triggerProfileSummary } from "@/lib/flow-trigger-editor";
 import { FlowConditionEditor } from "@/components/flow-condition-editor";
@@ -56,7 +62,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { TablePagination } from "@/components/ui/table-pagination";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  blankStep, cloneFlowStep, companyStatuses, defaultFlowInput, emailCategories, flowInputSchema, formatTrigger, stepLabels, stepTypes,
+  blankStep, cloneFlowStep, companyStatuses, defaultFlowInput, emailCategories, flowActionConfigIssue, flowInputSchema, formatTrigger, stepLabels, stepTypes,
   type AutomationFlow, type FlowInput, type FlowStatus, type FlowStepType,
   type JsonConfig, type FlowBulkAction, type FlowBulkResult,
 } from "@/lib/flows";
@@ -82,7 +88,7 @@ type Option = { id: string; label: string; disabled?: boolean; avatarUrl?: strin
 const flowNameClassName = "rounded-sm text-left text-sm font-normal leading-5 text-[#1677ff] hover:text-[#0958d9] hover:underline focus-visible:outline-2 focus-visible:outline-ring dark:text-blue-400 dark:hover:text-blue-300";
 function flowActionLabel(type: FlowStepType) { return type === "wait" ? "Time delay" : type === "send_email" ? "Email" : stepLabels[type]; }
 type FilterOptions = { segments: string[]; countries: string[] };
-type DraftFlow = FlowInput & { id: string | null; activeRuns?: number; completedRuns?: number; updatedAt?: string };
+type DraftFlow = FlowInput & { id: string | null; activeRuns?: number; completedRuns?: number; updatedAt?: string; editorRevision?: number };
 type Selection = "trigger" | string;
 const templates: Option[] = [
   { id: "helpful_reminder", label: "Helpful reminder" },
@@ -110,7 +116,8 @@ const stepMeta: Record<FlowStepType, { icon: typeof Mail | typeof AiIcon; tone: 
 const actionChoices: FlowActionChoice[] = stepTypes.filter((type) => type !== "if_condition").map((type) => { const meta = stepMeta[type], Icon = meta.icon; return { type, label: flowActionLabel(type), description: meta.description, group: meta.group, tone: meta.tone, icon: <Icon className="size-4" /> }; });
 
 function toDraft(flow: AutomationFlow): DraftFlow {
-  return { id: flow.id, name: flow.name, triggerType: flow.triggerType, triggerConfig: { ...flow.triggerConfig }, status: flow.status, activeRuns: flow.activeRuns, completedRuns: flow.completedRuns, updatedAt: flow.updatedAt, steps: flow.steps.map((step) => ({ id: step.id, type: step.type, config: { ...step.config } })) };
+  const definition = flow.editorDraft?.definition ?? flow;
+  return { id: flow.id, name: definition.name, triggerType: definition.triggerType, triggerConfig: { ...definition.triggerConfig }, status: flow.status, activeRuns: flow.activeRuns, completedRuns: flow.completedRuns, updatedAt: flow.updatedAt, editorRevision: flow.editorDraft?.revision ?? 0, steps: definition.steps.map((step) => ({ id: step.id, type: step.type, config: { ...step.config } })) };
 }
 
 function newDraft(): DraftFlow {
@@ -156,7 +163,7 @@ function stepSummary(type: FlowStepType, config: JsonConfig) {
   if (type === "wait") return waitSummary(config);
   if (type === "split") return `${Array.isArray(config.paths) ? config.paths.length : 0} ordered paths · first match wins`;
   if (type === "ai_auto_reply") return config.attachCatalog ? "English reply + catalog when needed" : "Personalized reply in English";
-  if (type === "send_email") return templates.find((item) => item.id === config.templateId)?.label || "Choose an email template";
+  if (type === "send_email") return String(config.templateName || templates.find((item) => item.id === config.templateId)?.label || "Choose an email template");
   if (type === "if_condition") return `${titleCase(config.field)} → ${titleCase(config.action)}`;
   if (type === "create_task") return String(config.title || "Create a CRM task");
   if (type === "change_category") return `Set tag to ${config.category || "…"}`;
@@ -303,7 +310,8 @@ function SplitCanvasNode({ step, index, selected, onSelect, onMove, onRemove, on
 function FlowNode({ health, step, index, selected, onSelect, onMove, onRemove, onPointerDown, disabled, last, selection, onSelectAction, onSplitChange, preview, dropTarget, onActionPointerDown, onInsertAction, nodeWidth = CANVAS_NODE_WIDTH }: { selection?: string; onSelectAction?: (id: string) => void; onSplitChange?: (config: JsonConfig) => void; preview?: FlowPreviewResult | null; step: FlowInput["steps"][number]; index: number; selected: boolean; onSelect: () => void; onMove: (offset: number) => void; onRemove: () => void; onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void; disabled: boolean; last: boolean } & CanvasDragProps) {
   const meta = stepMeta[step.type]; const Icon = meta.icon;
   if (step.type === "split") return <SplitCanvasNode health={health} nodeWidth={nodeWidth} step={step} index={index} selected={selected} onSelect={onSelect} onMove={onMove} onRemove={onRemove} onPointerDown={onPointerDown} disabled={disabled} last={last} selection={selection} onSelectAction={onSelectAction} onChange={onSplitChange} preview={preview} dropTarget={dropTarget} onActionPointerDown={onActionPointerDown} onInsertAction={onInsertAction} />;
-  return <FlowActionCard kind={step.type} label={flowActionLabel(step.type)} summary={stepSummary(step.type, step.config)} icon={<Icon className="size-[18px]" />} tone={meta.tone} index={index} selected={selected} disabled={disabled} last={last} onSelect={onSelect} onMove={onMove} onRemove={onRemove} onPointerDown={onPointerDown} />;
+  const ActionCard = step.type === "send_email" ? FlowEmailActionCard : FlowActionCard;
+  return <ActionCard actionId={step.id ?? ""} config={step.config} kind={step.type} label={flowActionLabel(step.type)} summary={stepSummary(step.type, step.config)} icon={<Icon className="size-[18px]" />} tone={meta.tone} index={index} selected={selected} disabled={disabled} last={last} onSelect={onSelect} onMove={onMove} onRemove={onRemove} onPointerDown={onPointerDown} />;
 }
 
 function flowCanvasArea(viewport: HTMLElement) {
@@ -314,8 +322,10 @@ function flowCanvasArea(viewport: HTMLElement) {
     : { x: 0, y: 0, width: viewport.clientWidth, height: viewport.clientHeight };
 }
 
-function FlowCanvas({ health, draft, selection, insertAt, canEdit, setSelection, setInsertAt, onAddStep, onMoveStep, onRemoveStep, onUpdateStep, preview, onDropFlowAction, onNavigate }: { health: FlowConnectorHealth; onNavigate: (id: string) => void; onDropFlowAction: (input: FlowDragInput, target: FlowDropTarget) => void; onUpdateStep: (index: number, config: JsonConfig) => void; preview?: FlowPreviewResult | null; draft: DraftFlow; selection: Selection; insertAt: number | null; canEdit: boolean; setSelection: (selection: Selection) => void; setInsertAt: (position: number | null) => void; onAddStep: (type: FlowStepType, position?: number) => FlowInput["steps"][number] | null; onMoveStep: (index: number, offset: number) => void; onRemoveStep: (index: number) => void }) {
+function FlowCanvas({ health, draft, selection, insertAt, canEdit, setSelection, setInsertAt, onAddStep, onMoveStep, onRemoveStep, onUpdateStep, preview, onDropFlowAction, onNavigate, navigationRef }: { navigationRef?: Ref<{ focusAction: (id: string) => void }>; health: FlowConnectorHealth; onNavigate: (id: string) => void; onDropFlowAction: (input: FlowDragInput, target: FlowDropTarget) => void; onUpdateStep: (index: number, config: JsonConfig) => void; preview?: FlowPreviewResult | null; draft: DraftFlow; selection: Selection; insertAt: number | null; canEdit: boolean; setSelection: (selection: Selection) => void; setInsertAt: (position: number | null) => void; onAddStep: (type: FlowStepType, position?: number) => FlowInput["steps"][number] | null; onMoveStep: (index: number, offset: number) => void; onRemoveStep: (index: number) => void }) {
   const viewportRef = useRef<HTMLElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [minimap, setMinimap] = useState<FlowMinimap>({ nodes: [], connectors: [] });
   const { active } = useDndContext();
   const { setNodeRef } = useDroppable({ id: "flow-canvas", disabled: !canEdit });
   const setViewportRef = useCallback((node: HTMLElement | null) => {
@@ -414,6 +424,20 @@ function FlowCanvas({ health, draft, selection, insertAt, canEdit, setSelection,
     return () => observer.disconnect();
   }, [nodeKeys, draft.steps, draft.triggerConfig, draft.triggerType, nodeWidth]);
 
+  useLayoutEffect(() => {
+    const content = contentRef.current;
+    if (!content) return;
+    const measure = () => {
+      const next = measureFlowMinimap(content);
+      setMinimap(current => JSON.stringify(current) === JSON.stringify(next) ? current : next);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(content);
+    content.querySelectorAll(FLOW_MINIMAP_TARGETS).forEach(node => observer.observe(node));
+    return () => observer.disconnect();
+  }, [draft.steps, draft.triggerConfig, draft.triggerType, nodeHeights, nodeWidth]);
+
   const layout = layoutFlowNodes(draft.steps.map((step, index) => step.id || `step-${index}`), nodeHeights, nodeWidth);
   const triggerPosition = layout.trigger;
   const stepPositions = layout.steps;
@@ -445,13 +469,14 @@ function FlowCanvas({ health, draft, selection, insertAt, canEdit, setSelection,
     onNavigate(id);
     const viewport = viewportRef.current;
     const node = viewport?.querySelector<HTMLElement>(id === "trigger" ? '[data-flow-node-id="__trigger"]' : `[data-flow-action-id="${CSS.escape(id)}"]`);
-    const card = node?.querySelector<HTMLElement>("[data-flow-card]") ?? node;
+    const card = node?.querySelector<HTMLElement>("[data-flow-card], .wf-trigger-card") ?? node;
     if (!viewport || !card) return;
     const area = flowCanvasArea(viewport), bounds = card.getBoundingClientRect(), viewportBounds = viewport.getBoundingClientRect();
     const point = canvasPointFromClient({ x: bounds.left, y: bounds.top }, { x: viewportBounds.left, y: viewportBounds.top }, pan, zoom);
     const nextZoom = Math.min(1, Math.max(MIN_FLOW_ZOOM, (area.width - 64) / (bounds.width / zoom)));
     setZoom(nextZoom);
     setPan({ x: area.x + (area.width - bounds.width / zoom * nextZoom) / 2 - point.x * nextZoom, y: area.y + 96 - point.y * nextZoom });
+    card.focus({ preventScroll: true });
   }
 
   function fitView() {
@@ -593,25 +618,14 @@ function FlowCanvas({ health, draft, selection, insertAt, canEdit, setSelection,
   });
 
   const connectorNodes = nodes.slice(0, -1).map((node, index) => ({ from: node, to: nodes[index + 1]!, insertAt: index }));
-  const minimapNodes = nodes.map(node => {
-    const step = draft.steps.find(item => item.id === node.id);
-    const width = step?.type === "split" ? Math.max(node.width, flowNodeWidth(step, nodeWidth)) : node.width;
-    return { ...node, x: node.x - (width - node.width) / 2, width };
-  });
-  const mapContentLeft = Math.min(...minimapNodes.map(node => node.x)) - 60;
-  const mapContentTop = Math.min(...minimapNodes.map(node => node.y)) - 60;
-  const mapContentWidth = Math.max(...minimapNodes.map(node => node.x + node.width)) - mapContentLeft + 60;
-  const mapContentHeight = Math.max(...minimapNodes.map(node => node.y + node.height)) - mapContentTop + 60;
-  const mapWidth = Math.max(mapContentWidth, mapContentHeight * 4 / 3);
-  const mapHeight = Math.max(mapContentHeight, mapContentWidth * 3 / 4);
-  const mapLeft = mapContentLeft - (mapWidth - mapContentWidth) / 2;
-  const mapTop = mapContentTop - (mapHeight - mapContentHeight) / 2;
+  const { x: mapLeft, y: mapTop, width: mapWidth, height: mapHeight } = flowMinimapBounds(minimap.nodes);
   const mapViewport = { x: ((visibleArea?.x ?? 0) - pan.x) / zoom, y: ((visibleArea?.y ?? 0) - pan.y) / zoom, width: (visibleArea?.width ?? 800) / zoom, height: (visibleArea?.height ?? 600) / zoom };
 
 
+  useImperativeHandle(navigationRef, () => ({ focusAction }));
   // Clipping prevents focus changes from scrolling the canvas behind its pan transform.
   return <main data-flow-dragging={active?.data.current?.flowStepType || dragPreview ? "" : undefined} style={{ "--wf-node-width": `${nodeWidth}px`, "--wf-node-gap": `${FLOW_NODE_GAP}px` } as CSSProperties} ref={setViewportRef} aria-label="Workflow canvas. Drag the background or scroll to pan. Drag actions to reorder the workflow." onWheel={moveCanvasWithWheel} onPointerDown={startPan} onPointerMove={movePan} onPointerUp={endPan} onPointerCancel={(event) => endPan(event, true)} onLostPointerCapture={lostPointerCapture} onClickCapture={(event) => { if (suppressClickRef.current) { event.stopPropagation(); suppressClickRef.current = false; } }} className={`wf-canvas touch-none overflow-clip select-none ${panning ? "cursor-grabbing" : "cursor-grab"}`}>
-    <div className="absolute left-0 top-0 h-[2400px] w-[2400px] origin-top-left" style={{ visibility: layoutReady ? "visible" : "hidden", transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}>
+    <div ref={contentRef} className="absolute left-0 top-0 h-[2400px] w-[2400px] origin-top-left" style={{ visibility: layoutReady ? "visible" : "hidden", transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}>
       <svg aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full overflow-visible">
         {connectorNodes.map(({ from, to }) => <FlowConnector key={from.id} state={health.actions?.[to.id]?.state ?? health.connectionState} actionId={to.id} from={{ x: from.x + from.width / 2, y: from.y + from.height }} to={{ x: to.x + to.width / 2, y: to.y }} />)}
       </svg>
@@ -641,10 +655,14 @@ function FlowCanvas({ health, draft, selection, insertAt, canEdit, setSelection,
       if (event.detail === 0) { fitView(); return; }
       const viewport = viewportRef.current;
       if (!viewport) return;
-      const rect = event.currentTarget.getBoundingClientRect(), area = flowCanvasArea(viewport);
+      const rect = event.currentTarget.querySelector("svg")!.getBoundingClientRect(), area = flowCanvasArea(viewport);
       const point = { x: mapLeft + (event.clientX - rect.left) / rect.width * mapWidth, y: mapTop + (event.clientY - rect.top) / rect.height * mapHeight };
       setPan({ x: area.x + area.width / 2 - point.x * zoom, y: area.y + area.height / 2 - point.y * zoom });
-    }}><svg aria-hidden="true" viewBox={`${mapLeft} ${mapTop} ${mapWidth} ${mapHeight}`} preserveAspectRatio="none">{minimapNodes.map(node => <rect key={node.id} x={node.x} y={node.y} width={node.width} height={node.height} rx="5" className="wf-minimap-node" />)}<rect x={mapViewport.x} y={mapViewport.y} width={mapViewport.width} height={mapViewport.height} className="wf-minimap-viewport" /></svg></button>
+    }}><svg aria-hidden="true" viewBox={`${mapLeft} ${mapTop} ${mapWidth} ${mapHeight}`} preserveAspectRatio="none">
+      {minimap.connectors.map((connector, index) => <path key={index} d={connector.path} transform={`translate(${connector.x} ${connector.y})`} className="wf-minimap-connector" />)}
+      {minimap.nodes.map(node => <rect key={node.id} data-flow-minimap-id={node.id} data-minimap-kind={node.kind} data-selected={node.id === selection || (node.kind === "trigger" && selection === "trigger") ? "" : undefined} x={node.x} y={node.y} width={node.width} height={node.height} rx="10" className="wf-minimap-node" />)}
+      <rect x={mapViewport.x} y={mapViewport.y} width={mapViewport.width} height={mapViewport.height} className="wf-minimap-viewport" />
+    </svg></button>
   </main>;
 }
 
@@ -658,20 +676,50 @@ export function FlowBuilder({ liveSendingEnabled = true, initialFlows, mailboxOp
   const [deletingFlow, setDeletingFlow] = useState<AutomationFlow | null>(null);
   const actionBusy = useRef(false);
   const initial = initialFlowId === "default" ? initialFlows.find((flow) => flow.name === "3-step follow-up" && flow.createdBy === viewerId) : initialFlows.find((flow) => flow.id === initialFlowId);
-  const [draft, setDraft] = useState<DraftFlow | null>(initial ? toDraft(initial) : initialDraft ? { ...initialDraft, id: null } : null);
+  const [draft, setDraftState] = useState<DraftFlow | null>(initial ? toDraft(initial) : initialDraft ? { ...initialDraft, id: null } : null);
+  const latestDraft = useRef(draft);
+  function setDraft(value: DraftFlow | null | ((current: DraftFlow | null) => DraftFlow | null)) {
+    const next = typeof value === "function" ? value(latestDraft.current) : value;
+    latestDraft.current = next; setDraftState(next);
+  }
   const [view, setView] = useState<"list" | "builder">(initial || initialDraft ? "builder" : "list");
-  const [selection, updateSelection] = useState<Selection>("trigger");
+  const [selection, setSelectionState] = useState<Selection>("trigger");
+  const latestSelection = useRef(selection);
+  function updateSelection(value: Selection) { latestSelection.current = value; setSelectionState(value); }
   const [inspectorTab, setInspectorTab] = useState("configure");
   const [editorPanel, setEditorPanel] = useState<"actions" | "settings" | "hidden">(initialDraft ? "settings" : "actions");
   const [mobileBuilderPanel, setMobileBuilderPanel] = useState<"canvas" | "settings">("canvas");
-  const setSelection = (value: Selection) => { updateSelection(value); setInspectorTab("configure"); setEditorPanel("settings"); setMobileBuilderPanel("settings"); };
+  const setSelection = (value: Selection) => {
+    if (value === selection && editorPanel === "settings" && inspectorTab === "configure") return;
+    switchAction(current => activateSelection(value, current));
+  };
+  const [panelSnapshot, setPanelSnapshot] = useState<FlowEditorSnapshot | null>(() => initialDraft ? flowEditorSnapshot(initialDraft, "trigger") : null);
+  const pendingEditor = useRef<FlowPanelEditor | null>(null);
+  const [localPanelDirty, setLocalPanelDirty] = useState(false);
+  const [editorVersion, setEditorVersion] = useState(0);
+  const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
+  const pendingNavigation = useRef<((flow: DraftFlow) => void) | null>(null);
+  const discardWholeFlow = useRef(false);
+  const [panelSaveError, setPanelSaveError] = useState("");
   const [insertAt, setInsertAt] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+  const saveInProgress = useRef(false);
+  const editorIdentity = useRef<{ id: string | null }>({ id: initial?.id ?? null });
+  const editorWriteQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const autoSavePending = useRef(0);
+  const [autoSaving, setAutoSaving] = useState(false);
+  const [autoSaveFailed, setAutoSaveFailed] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState("");
   const [emailTestOpen, setEmailTestOpen] = useState(false);
   const [deliveryTestRequested, setDeliveryTestRequested] = useState(false);
   const [quickCheckOpen, setQuickCheckOpen] = useState(false);
+  const [alertsOpen, setAlertsOpen] = useState(false);
+  const [dismissedAlerts, setDismissedAlerts] = useState<Record<string, string[]>>({});
+  const [alertDraftVersion, setAlertDraftVersion] = useState(0);
+  const alertsPanelId = useId();
+  const alertsBellRef = useRef<HTMLButtonElement | null>(null);
+  const canvasNavigation = useRef<{ focusAction: (id: string) => void } | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewResult, setPreviewResult] = useState<FlowPreviewResult | null>(null);
   const [emailTestPath, setEmailTestPath] = useState<number[] | undefined>(undefined);
@@ -682,8 +730,16 @@ export function FlowBuilder({ liveSendingEnabled = true, initialFlows, mailboxOp
   const canManageFlow = (flow: AutomationFlow) => canCreate && (isAdmin || flow.createdBy === viewerId);
   const canEdit = canCreate && (!draft?.id || flows.some((flow) => flow.id === draft.id && canManageFlow(flow)));
   const savedFlow = flows.find(flow => flow.id === draft?.id);
-  const hasUnsavedChanges = Boolean(draft && (!savedFlow || JSON.stringify(draft) !== JSON.stringify(toDraft(savedFlow))));
-  const connectorHealth = useFlowConnectorHealth(view === "builder" ? draft : null, draft?.id ?? null, savedFlow?.dependencyIssue, !hasUnsavedChanges);
+  const hasUnsavedChanges = Boolean(draft && (!savedFlow || !flowEditorEqual(draft, toDraft(savedFlow))));
+  const hasPanelChanges = Boolean(draft && panelSnapshot && flowEditorChanged(draft, panelSnapshot)) || localPanelDirty;
+  const connectorHealth = useFlowConnectorHealth(view === "builder" ? draft : null, draft?.id ?? null, savedFlow?.dependencyIssue || savedFlow?.editorDraft?.publicationError, !hasUnsavedChanges && !savedFlow?.editorDraft);
+
+  useEffect(() => {
+    if (view !== "builder" || (!hasUnsavedChanges && !hasPanelChanges)) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [view, hasUnsavedChanges, hasPanelChanges]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -714,7 +770,7 @@ export function FlowBuilder({ liveSendingEnabled = true, initialFlows, mailboxOp
   }, [scopedContext?.refreshUrl]);
 
   const senderOwnerId = flows.find((flow) => flow.id === draft?.id)?.createdBy || viewerId;
-  const mailboxes = useMemo(() => flowSenderOptions(mailboxOptions, senderOwnerId), [mailboxOptions, senderOwnerId]);
+  const mailboxes = useMemo(() => flowSenderOptions(mailboxOptions, senderOwnerId, viewerId), [mailboxOptions, senderOwnerId, viewerId]);
   const palette = stepTypes.filter(type => type !== "if_condition");
   const selectedLocation = draft ? flowActionLocations(draft.steps).find((item) => item.action.id === selection) : undefined;
   const selectedIndex = selectedLocation?.path[0] ?? -1;
@@ -724,36 +780,184 @@ export function FlowBuilder({ liveSendingEnabled = true, initialFlows, mailboxOp
     auditFindings.push({ id: "live-sending", severity: "error", label: "Email delivery is temporarily unavailable. Your workflow can be saved as a draft. Please try again later or contact support." });
   }
   const auditCanLaunch = auditFindings.every((finding) => finding.severity !== "error");
+  const alertScope = `${viewerId}:${draft?.id ?? `new:${alertDraftVersion}`}`;
+  const workflowAlerts = draft ? flowAlerts(draft, connectorHealth, auditFindings) : [];
+  const alertLists = partitionFlowAlerts(workflowAlerts, dismissedAlerts[alertScope] ?? []);
 
-  function openFlow(flow: AutomationFlow) { setDraft(toDraft(flow)); setSelection("trigger"); setEditorPanel("actions"); setMobileBuilderPanel("canvas"); setView("builder"); setErrors({}); setNotice(""); }
+  function closeAlerts() { setAlertsOpen(false); alertsBellRef.current?.focus(); }
+  function reviewAlert(alert: FlowAlert) {
+    const actionId = alert.target === "trigger" ? "trigger" : alert.actionId;
+    const focus = () => {
+      if (actionId) { setPreviewOpen(false); setPreviewResult(null); setMobileBuilderPanel("settings"); }
+      if (typeof window !== "undefined" && window.matchMedia?.("(max-width: 760px)").matches) {
+        setAlertsOpen(false);
+        if (typeof requestAnimationFrame !== "undefined") requestAnimationFrame(() => alertsBellRef.current?.closest(".workflow-editor")?.querySelector<HTMLElement>('.wf-inspector input:not([disabled]), .wf-inspector textarea:not([disabled]), .wf-inspector button:not([disabled])')?.focus({ preventScroll: true }));
+        return;
+      }
+      if (actionId && typeof requestAnimationFrame !== "undefined") requestAnimationFrame(() => canvasNavigation.current?.focusAction(actionId));
+    };
+    if (actionId === selection && editorPanel === "settings" && inspectorTab === "configure") { focus(); return; }
+    requestNavigation(current => {
+      if (actionId) { activateSelection(actionId, current); focus(); }
+      else if (alert.target === "workflow") {
+        pendingEditor.current = null; setPanelSnapshot(null); setLocalPanelDirty(false); setEditorPanel("actions");
+        if (typeof requestAnimationFrame !== "undefined") requestAnimationFrame(() => alertsBellRef.current?.closest(".workflow-editor")?.querySelector<HTMLInputElement>('[aria-label="Workflow name"]')?.focus());
+      } else if (alert.target === "checks" && flowInputSchema.safeParse(current).success) setQuickCheckOpen(true);
+      else void setAuditOpen(true);
+    });
+  }
+
+  function activateSelection(value: Selection, current: DraftFlow, before = current) {
+    pendingEditor.current = null;
+    setLocalPanelDirty(false); setPanelSaveError("");
+    setPanelSnapshot(flowEditorSnapshot(before, value));
+    updateSelection(value); setInspectorTab("configure"); setEditorPanel("settings"); setMobileBuilderPanel("settings");
+  }
+  function requestNavigation(go: (flow: DraftFlow) => void, wholeFlow = false) {
+    if (!draft || saveInProgress.current) return;
+    const dirty = hasPanelChanges || pendingEditor.current?.hasChanges() || wholeFlow && hasUnsavedChanges;
+    if (dirty) { pendingNavigation.current = go; discardWholeFlow.current = wholeFlow; setPanelSaveError(""); setLeaveDialogOpen(true); }
+    else go(draft);
+  }
+  function switchAction(go: (flow: DraftFlow) => void, save = true) {
+    if (!draft || saveInProgress.current) return;
+    const changed = hasPanelChanges || pendingEditor.current?.hasChanges();
+    let current = draft;
+    if (changed && canEdit) {
+      const pending = pendingEditor.current?.snapshot?.();
+      if (pending?.trigger) current = { ...current, ...pending.trigger };
+      if (pending?.config && selectedLocation) current = { ...current, steps: editFlowSiblings(current.steps, selectedLocation.path, (steps, index) => steps.map((step, i) => i === index ? { ...step, config: pending.config! } : step)) };
+      setDraft(current);
+    }
+    go(current);
+    if (changed && canEdit && save) void saveEditingCopy(current);
+  }
+  function finishNavigation(current: DraftFlow) {
+    const go = pendingNavigation.current;
+    pendingNavigation.current = null; setLeaveDialogOpen(false); setPanelSaveError("");
+    go?.(current);
+  }
+  function discardPanelChanges() {
+    if (!draft || saveInProgress.current) return;
+    const current = discardWholeFlow.current && savedFlow ? toDraft(savedFlow) : panelSnapshot ? restoreFlowEditor(draft, panelSnapshot) : draft;
+    pendingEditor.current?.reset(); pendingEditor.current = null;
+    setDraft(current); setLocalPanelDirty(false); setEditorVersion(version => version + 1);
+    setPanelSnapshot(flowEditorSnapshot(current, selection));
+    finishNavigation(current);
+  }
+  function closeSettings() {
+    requestNavigation(() => { pendingEditor.current = null; setLocalPanelDirty(false); setPanelSnapshot(null); setEditorPanel("actions"); setMobileBuilderPanel("canvas"); });
+  }
+  function preparedDraft(current: DraftFlow): DraftFlow | null {
+    if (editorPanel !== "settings" || inspectorTab !== "configure") return current;
+    const pending = pendingEditor.current?.prepare();
+    if (pending && !pending.ok) { setPanelSaveError("Complete the highlighted settings before saving."); return null; }
+    if (!pending?.ok) return current;
+    if (pending.trigger) return { ...current, ...pending.trigger };
+    const location = flowActionLocations(current.steps).find(item => item.action.id === selection);
+    return pending.config && location ? { ...current, steps: editFlowSiblings(current.steps, location.path, (steps, index) => steps.map((step, i) => i === index ? { ...step, config: pending.config! } : step)) } : current;
+  }
+  async function savePanel(continueNavigation = false) {
+    const saved = await persist();
+    if (!saved) return;
+    if (continueNavigation) finishNavigation(saved);
+    else if (selectedLocation?.action.type !== "send_email") { pendingEditor.current = null; setPanelSnapshot(null); setLocalPanelDirty(false); setEditorPanel("actions"); setMobileBuilderPanel("canvas"); }
+  }
+  function openFlow(flow: AutomationFlow) {
+    const open = () => { editorIdentity.current = { id: flow.id }; setAutoSaving(false); setAutoSaveFailed(false); pendingEditor.current = null; setLocalPanelDirty(false); setPanelSnapshot(null); setDraft(toDraft(flow)); updateSelection("trigger"); setEditorPanel("actions"); setMobileBuilderPanel("canvas"); setView("builder"); setErrors({}); setNotice(""); };
+    if (view === "builder" && draft) requestNavigation(open, true); else open();
+  }
+  function createScopedFlow() {
+    editorIdentity.current = { id: null }; setAutoSaveFailed(false);
+    const created: DraftFlow = initialDraft ? { ...initialDraft, id: null, triggerConfig: { ...initialDraft.triggerConfig }, steps: initialDraft.steps.map(step => ({ ...step, id: crypto.randomUUID(), config: { ...step.config } })) } : newDraft();
+    setDraft(created); activateSelection("trigger", created); setAlertDraftVersion(version => version + 1); setView("builder"); setErrors({}); setNotice("");
+  }
+  function chooseStarter(flow: FlowInput) {
+    editorIdentity.current = { id: null }; setAutoSaveFailed(false);
+    const created = { ...flow, id: null };
+    setDraft(created); activateSelection("trigger", created); setAlertDraftVersion(version => version + 1);
+    setView("builder"); setErrors({}); setNotice(""); setStarterOpen(false);
+  }
   function updateStep(index: number, config: JsonConfig) { if (!draft) return; setDraft({ ...draft, steps: draft.steps.map((step, i) => i === index ? { ...step, config } : step) }); }
   function updateSelectedStep(config: JsonConfig) {
     if (!draft || !selectedLocation) return;
     setDraft({ ...draft, steps: editFlowSiblings(draft.steps, selectedLocation.path, (steps, index) => steps.map((step, i) => i === index ? { ...step, config } : step)) });
   }
-  function duplicateSelectedStep() {
-    if (!draft || !selectedLocation) return;
-    const copy = cloneFlowStep(selectedLocation.action);
-    setDraft({ ...draft, steps: editFlowSiblings(draft.steps, selectedLocation.path, (steps, index) => { steps.splice(index + 1, 0, copy); return steps; }) });
-    setSelection(copy.id!);
+  function changeEmailStatus(actionId: string, emailStatus: FlowStatus) {
+    if (!canEdit || saving || autoSaving) return;
+    switchAction(current => {
+      const location = flowActionLocations(current.steps).find(item => item.action.id === actionId && item.action.type === "send_email");
+      if (!location) return;
+      const next = { ...current, steps: editFlowSiblings(current.steps, location.path, (steps, index) => steps.map((step, i) => i === index ? { ...step, config: { ...step.config, emailStatus } } : step)) };
+      setDraft(next);
+      if (selection === actionId) setEditorVersion(version => version + 1);
+      void saveEditingCopy(next);
+    }, false);
   }
-  function removeSelectedStep() {
-    if (!draft || !selectedLocation) return;
-    setDraft({ ...draft, steps: editFlowSiblings(draft.steps, selectedLocation.path, (steps, index) => steps.filter((_, i) => i !== index)) });
-    setSelection("trigger");
+  function rememberFlow(flow: AutomationFlow) {
+    const next = flowsRef.current.some(item => item.id === flow.id) ? flowsRef.current.map(item => item.id === flow.id ? flow : item) : [flow, ...flowsRef.current];
+    flowsRef.current = next; setFlows(next);
+  }
+  async function saveEditingCopy(source: DraftFlow): Promise<DraftFlow | null> {
+    const identity = editorIdentity.current;
+    identity.id ??= source.id ?? blankStep("stop").id!;
+    const flowId = identity.id;
+    autoSavePending.current++; setAutoSaving(true); setAutoSaveFailed(false);
+    const operation = editorWriteQueue.current.then(async () => {
+      try {
+        const known = flowsRef.current.find(item => item.id === flowId);
+        const { name, triggerType, triggerConfig, status, steps } = source;
+        const response = await fetch("/api/flows/editor-draft", { method: "POST", headers: { "Content-Type": "application/json" }, signal: typeof AbortSignal === "undefined" ? undefined : AbortSignal.timeout(15_000),
+          body: JSON.stringify({ flowId, create: !known && !source.id, revision: known ? known.editorDraft?.revision ?? 0 : source.editorRevision ?? 0, baseUpdatedAt: known?.updatedAt ?? source.updatedAt ?? null, flow: { name, triggerType, triggerConfig, status, steps } }) });
+        const result = await response.json().catch(() => ({ ok: false, error: "Unable to save changes automatically." }));
+        if (!response.ok || !result.ok) throw new Error(result.error || "Unable to save changes automatically.");
+        const saved = toDraft(result.flow); rememberFlow(result.flow);
+        if (editorIdentity.current === identity) {
+          const definition = ({ name, triggerType, triggerConfig, status, steps }: DraftFlow) => ({ name, triggerType, triggerConfig, status, steps });
+          const latest = latestDraft.current;
+          if (latest && flowEditorEqual(definition(latest), definition(source)) && !pendingEditor.current?.hasChanges()) {
+            const selectedPath = flowActionLocations(source.steps).find(item => item.action.id === latestSelection.current)?.path.join(".");
+            const selectedId = latestSelection.current === "trigger" ? "trigger" : flowActionLocations(saved.steps).find(item => item.path.join(".") === selectedPath)?.action.id || latestSelection.current;
+            setDraft(saved); updateSelection(selectedId);
+            setPanelSnapshot(baseline => baseline ? flowEditorSnapshot(saved, selectedId) : baseline);
+          } else if (latest) {
+            setDraft({ ...saved, name: latest.name, triggerType: latest.triggerType, triggerConfig: latest.triggerConfig, steps: latest.steps });
+          }
+          if (!source.id && typeof window !== "undefined" && window.location?.href) {
+            const url = new URL(window.location.href);
+            url.searchParams.set("flow", saved.id!);
+            for (const key of ["create", "segmentId", "segment"]) url.searchParams.delete(key);
+            window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+          }
+          setAutoSaveFailed(Boolean(result.flow.editorDraft?.publicationError));
+          if (result.flow.editorDraft?.publicationError) setNotice(result.flow.editorDraft.publicationError);
+        }
+        return saved;
+      } catch (cause) {
+        if (editorIdentity.current === identity) { setAutoSaveFailed(true); setNotice(cause instanceof Error ? cause.message : "Unable to save changes automatically."); }
+        return null;
+      } finally { autoSavePending.current--; if (editorIdentity.current === identity && !autoSavePending.current) setAutoSaving(false); }
+    });
+    editorWriteQueue.current = operation;
+    return operation;
   }
   function moveStep(index: number, offset: number) { if (!draft) return; const target = index + offset; if (target < 0 || target >= draft.steps.length) return; setDraft({ ...draft, steps: reorderFlowSteps(draft.steps, index, target) }); }
   function dropAction(input: FlowDragInput, target: FlowDropTarget) {
     if (!draft || !canEdit) return;
-    const result = dropFlowAction(draft.steps, target, "type" in input ? { action: blankStep(input.type) } : input);
-    if (result.error) { toast.error(t(result.error)); return null; }
-    setDraft({ ...draft, steps: result.steps });
-    if (result.action?.id) setSelection(result.action.id);
-    setInsertAt(null);
-    return result.action ?? null;
+    let added: ReturnType<typeof dropFlowAction>["action"] = undefined;
+    switchAction(current => {
+      const result = dropFlowAction(current.steps, target, "type" in input ? { action: blankStep(input.type) } : input);
+      if (result.error) { toast.error(t(result.error)); return; }
+      const next = { ...current, steps: result.steps };
+      setDraft(next);
+      if (result.action?.id) activateSelection(result.action.id, next);
+      void saveEditingCopy(next);
+      setInsertAt(null); added = result.action;
+    }, false);
+    return added ?? null;
   }
   function addStep(type: FlowStepType, position = draft?.steps.length ?? 0) { return dropAction({ type }, { branchId: null, index: position }) ?? null; }
-  function removeStep(index: number) { if (!draft) return; const steps = draft.steps.filter((_, i) => i !== index); setDraft({ ...draft, steps }); setSelection(steps[Math.min(index, steps.length - 1)]?.id || "trigger"); }
+  function removeStep(index: number) { requestNavigation(current => { const steps = current.steps.filter((_, i) => i !== index); const next = { ...current, steps }; setDraft(next); activateSelection(steps[Math.min(index, steps.length - 1)]?.id || "trigger", next); }); }
 
   async function setAuditOpen(open: boolean) {
     setAuditDialogOpen(open);
@@ -769,13 +973,37 @@ export function FlowBuilder({ liveSendingEnabled = true, initialFlows, mailboxOp
     }
   }
 
-  async function persist(status: FlowStatus = draft?.status ?? "draft") {
-    if (!draft || !canEdit) return;
-    const payload = { name: draft.name, triggerType: draft.triggerType, triggerConfig: draft.triggerConfig, status, steps: draft.steps };
+  async function persist(status: FlowStatus = draft?.status ?? "draft"): Promise<DraftFlow | null> {
+    if (!draft || !canEdit || saveInProgress.current || autoSavePending.current) return null;
+    const current = preparedDraft(draft);
+    if (!current) return null;
+    const payload = { name: current.name, triggerType: current.triggerType, triggerConfig: current.triggerConfig, status, steps: current.steps };
     const parsed = flowInputSchema.safeParse(payload);
-    if (!parsed.success) { const next: Record<string, string> = {}; parsed.error.issues.forEach((issue) => { const key = issue.path[0] === "steps" ? `step-${String(issue.path[1])}` : String(issue.path[0] || "form"); next[key] ||= issue.message; }); setErrors(next); setNotice(parsed.error.issues[0]?.message || "Complete the highlighted settings before saving."); return; }
-    setSaving(true); setErrors({}); setNotice("");
-    try { const response = await fetch(draft.id ? `/api/flows/${draft.id}` : "/api/flows", { method: draft.id ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(parsed.data) }); const result = await response.json().catch(() => ({ ok: false, error: "The server returned an invalid response." })); if (!response.ok || !result.ok) throw new Error(result.error || "Unable to save workflow."); const flow = result.flow as AutomationFlow; setFlows((current) => current.some((item) => item.id === flow.id) ? current.map((item) => item.id === flow.id ? flow : item) : [flow, ...current]); setDraft(toDraft(flow)); updateSelection(selectedIndex >= 0 ? flow.steps[selectedIndex]?.id || "trigger" : "trigger"); setNotice(status === "live" ? "Workflow is live." : status === "paused" ? "Workflow paused." : "All changes saved."); toast.success(status === "live" ? "Automation turned on" : status === "paused" ? "Automation paused" : "Workflow saved"); } catch (error) { setNotice(error instanceof Error ? error.message : "Unable to save workflow."); } finally { setSaving(false); }
+    if (!parsed.success && status === current.status) {
+      const action = flowActionLocations(current.steps).find(item => item.action.id === selection)?.action;
+      if (selection === "trigger" || action && !flowActionConfigIssue(action.type, action.config)) {
+        saveInProgress.current = true; setSaving(true);
+        try { const saved = await saveEditingCopy(current); if (saved) { setDraft(saved); setPanelSnapshot(flowEditorSnapshot(saved, selection)); setLocalPanelDirty(false); setEditorVersion(version => version + 1); setPanelSaveError(""); setNotice("All changes saved."); } return saved; }
+        finally { saveInProgress.current = false; setSaving(false); }
+      }
+    }
+    if (!parsed.success) { const next: Record<string, string> = {}; parsed.error.issues.forEach((issue) => { const key = issue.path[0] === "steps" ? `step-${String(issue.path[1])}` : String(issue.path[0] || "form"); next[key] ||= issue.message; }); setErrors(next); const message = parsed.error.issues[0]?.message || "Complete the highlighted settings before saving."; setNotice(message); setPanelSaveError(message); return null; }
+    saveInProgress.current = true; setSaving(true); setErrors({}); setNotice(""); setPanelSaveError("");
+    try {
+      const response = await fetch(current.id ? `/api/flows/${current.id}` : "/api/flows", { method: current.id ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(parsed.data) });
+      const result = await response.json().catch(() => ({ ok: false, error: "The server returned an invalid response." }));
+      if (!response.ok || !result.ok) throw new Error(result.error || "Unable to save workflow.");
+      const flow = result.flow as AutomationFlow, saved = toDraft(flow);
+      const path = selectedLocation?.path.join(".");
+      const selectedId = selection === "trigger" ? "trigger" : flowActionLocations(flow.steps).find(item => item.path.join(".") === path)?.action.id || "trigger";
+      rememberFlow(flow); editorIdentity.current.id = flow.id;
+      setDraft(saved); updateSelection(selectedId); setPanelSnapshot(flowEditorSnapshot(saved, selectedId)); setLocalPanelDirty(false); setEditorVersion(version => version + 1);
+      const statusChanged = status !== current.status;
+      setNotice(statusChanged ? status === "live" ? "Workflow is live." : "Workflow paused." : "All changes saved.");
+      toast.success(statusChanged ? status === "live" ? "Automation turned on" : "Automation paused" : "Workflow saved");
+      return saved;
+    } catch (error) { const message = error instanceof Error ? error.message : "Unable to save workflow."; setNotice(message); setPanelSaveError(message); return null; }
+    finally { saveInProgress.current = false; setSaving(false); }
   }
 
   async function removeFlow(flow: AutomationFlow) {
@@ -849,58 +1077,61 @@ export function FlowBuilder({ liveSendingEnabled = true, initialFlows, mailboxOp
     }
   }
 
-  if (view === "list" || !draft) return <><FlowListView collectionView={collectionView} onViewChange={setCollectionView} flows={flows} canEdit={canCreate} viewerId={viewerId} isAdmin={isAdmin} memberOptions={memberOptions} scopedContext={scopedContext} onBulkAction={runBulkAction} onCreate={() => { if (!scopedContext) { setStarterOpen(true); return; } setDraft(initialDraft ? { ...initialDraft, id: null, triggerConfig: { ...initialDraft.triggerConfig }, steps: initialDraft.steps.map((step) => ({ ...step, id: crypto.randomUUID(), config: { ...step.config } })) } : newDraft()); setSelection("trigger"); setView("builder"); }} onOpen={openFlow} onDuplicate={duplicateFlow} onChangeStatus={changeStatus} onRemove={async (flow) => { setDeletingFlow(flow); }} />{starterOpen ? <Suspense fallback={null}><LazyStarterDialog viewerId={viewerId} onOpenChange={setStarterOpen} onChoose={(flow) => { setDraft({ ...flow, id: null }); setSelection("trigger"); setView("builder"); setErrors({}); setNotice(""); setStarterOpen(false); }} /></Suspense> : null}<ConfirmActionDialog open={Boolean(deletingFlow)} onOpenChange={(open) => { if (!open) setDeletingFlow(null); }} title="Delete workflow?" description={`Delete “${deletingFlow?.name ?? ""}” and its run history? This cannot be undone.`} onConfirm={async () => { if (deletingFlow) await removeFlow(deletingFlow); }} /></>;
+  if (view === "list" || !draft) return <><FlowListView collectionView={collectionView} onViewChange={setCollectionView} flows={flows} canEdit={canCreate} viewerId={viewerId} isAdmin={isAdmin} memberOptions={memberOptions} scopedContext={scopedContext} onBulkAction={runBulkAction} onCreate={() => { if (!scopedContext) { setStarterOpen(true); return; } createScopedFlow(); }} onOpen={openFlow} onDuplicate={duplicateFlow} onChangeStatus={changeStatus} onRemove={async (flow) => { setDeletingFlow(flow); }} />{starterOpen ? <Suspense fallback={null}><LazyStarterDialog viewerId={viewerId} onOpenChange={setStarterOpen} onChoose={chooseStarter} /></Suspense> : null}<ConfirmActionDialog open={Boolean(deletingFlow)} onOpenChange={(open) => { if (!open) setDeletingFlow(null); }} title="Delete workflow?" description={`Delete “${deletingFlow?.name ?? ""}” and its run history? This cannot be undone.`} onConfirm={async () => { if (deletingFlow) await removeFlow(deletingFlow); }} /></>;
 
   const selectedStep = selectedLocation?.action;
+  const selectedSender = selectedStep ? visibleFlowSender(mailboxOptions, senderOwnerId, viewerId, selectedStep.config.mailboxId) : null;
+  const savedEmailIds = savedFlow ? flowActionLocations(savedFlow.steps).filter(item => item.action.type === "send_email").map(item => item.action.id!) : [];
   const selectedTrail = selectedLocation ? flowActionTrail(draft.steps, selectedLocation.path) : [];
   const InspectorIcon = inspectorTab === "insights" ? History : selectedStep ? stepMeta[selectedStep.type].icon : Zap;
-  return <div data-ai-flow-id={draft.id} data-ai-flow-draft={JSON.stringify({ name: draft.name, triggerType: draft.triggerType, triggerConfig: draft.triggerConfig, status: draft.status, steps: draft.steps })} data-ai-flow-unsaved={hasUnsavedChanges} data-ai-flow-step-id={selection} data-flow-health={connectorHealth.state} className="workflow-editor">
+  const settingsFooter = <>{autoSaveFailed ? <p role="alert" className="wf-save-error">Changes could not be saved automatically. <button type="button" className="underline" onClick={() => void saveEditingCopy(draft)}>Retry</button></p> : panelSaveError ? <p role="alert" className="wf-save-error">{panelSaveError}</p> : null}<FlowPanelSaveControls cancelLabel={selectedStep?.type === "send_email" ? "Cancel" : undefined} dirty={hasPanelChanges || hasUnsavedChanges} saving={saving} autoSaving={autoSaving} disabled={!canEdit} onSave={() => void savePanel()} onCancel={closeSettings} /></>;
+  return <FlowEmailPerformanceProvider flowId={draft.id} version={savedFlow?.updatedAt} status={draft.status} savedIds={savedEmailIds} emailNames={Object.fromEntries(flowActionLocations(draft.steps).filter(item => item.action.type === "send_email").map((item, index) => [item.action.id!, `Email #${index + 1}`]))} disabled={!canEdit || saving || autoSaving} onEmailStatusChange={changeEmailStatus}><div data-ai-flow-id={draft.id} data-ai-flow-draft={JSON.stringify({ name: draft.name, triggerType: draft.triggerType, triggerConfig: draft.triggerConfig, status: draft.status, steps: draft.steps })} data-ai-flow-unsaved={hasUnsavedChanges} data-ai-flow-step-id={selection} data-flow-health={connectorHealth.state} className="workflow-editor">
     <header className="wf-topbar">
       <div className="wf-breadcrumb">
-        <Button type="button" variant="ghost" size="sm" aria-label={scopedContext ? "Back to email" : "Back to workflows"} onClick={() => { if (scopedContext) window.location.assign(scopedContext.returnHref); else setView("list"); }}>{scopedContext ? "Email" : "Flows"}</Button><span aria-hidden="true">/</span>
-        <div className="wf-name-field"><span aria-hidden="true">{draft.name || "Untitled workflow"}</span><Input value={draft.name} onChange={event => setDraft({ ...draft, name: event.target.value })} aria-label="Workflow name" disabled={!canEdit || previewOpen} /></div>
+        <Button type="button" variant="ghost" size="sm" aria-label={scopedContext ? "Back to email" : "Back to workflows"} onClick={() => requestNavigation(() => { if (scopedContext) window.location.assign(scopedContext.returnHref); else setView("list"); }, true)}>{scopedContext ? "Email" : "Flows"}</Button><span aria-hidden="true">/</span>
+        <div className="wf-name-field"><span aria-hidden="true">{draft.name || "Untitled workflow"}</span><Input value={draft.name} onChange={event => setDraft({ ...draft, name: event.target.value })} aria-label="Workflow name" disabled={!canEdit || saving || previewOpen} /></div>
         <DropdownMenu><DropdownMenuTrigger render={<Button variant="ghost" size="icon-xs" aria-label="Switch workflow" />}><ChevronDown /></DropdownMenuTrigger><DropdownMenuContent align="start" className="max-h-80 max-w-96 overflow-y-auto">{flows.map(flow => <DropdownMenuItem key={flow.id} onClick={() => openFlow(flow)}><span className="truncate">{flow.name}</span>{flow.id === draft.id ? <Check className="ml-auto" /> : null}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu>
         <Badge variant={statusVariant(draft.status)} className="capitalize">{draft.status}</Badge>
-        {connectorHealth.state !== "idle" ? <span className="wf-health-status" data-health={connectorHealth.state} role="status" title={connectorHealth.message} aria-label={connectorHealth.message}>{connectorHealth.state === "error" ? "Needs attention" : connectorHealth.state === "live" ? "Healthy" : "Health unverified"}</span> : null}
+        {!hasUnsavedChanges && !savedFlow?.editorDraft && connectorHealth.state !== "idle" ? <span className="wf-health-status" data-health={connectorHealth.state} role="status" title={connectorHealth.message} aria-label={connectorHealth.message}>{connectorHealth.state === "error" ? "Needs attention" : connectorHealth.state === "live" ? "Healthy" : "Health unverified"}</span> : null}
       </div>
       <div className="wf-toolbar-actions">
         <span className="sr-only" role="status">{hasUnsavedChanges ? "Unsaved changes" : "All changes saved"}</span>
         {previewOpen ? <Button variant="outline" size="sm" onClick={() => { setPreviewOpen(false); setPreviewResult(null); setEditorPanel("actions"); }}>Exit preview</Button> : <>
-          <div className="wf-toolbar-tools"><DropdownMenu><DropdownMenuTrigger render={<Button className="wf-icon-button" variant="ghost" size="icon-sm" aria-label="Workflow options" />}><MoreVertical /></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => setQuickCheckOpen(true)}><CheckCircle2 />Quick test</DropdownMenuItem><DropdownMenuItem onClick={() => setScenarioLabOpen(true)}><ListFilter />Simulate scenarios</DropdownMenuItem><DropdownMenuItem onClick={() => { setEmailTestPath(undefined); setEmailTestOpen(true); }} disabled={!canCreate}><Mail />Test with emails</DropdownMenuItem><DropdownMenuItem onClick={() => { setEditorPanel("actions"); setMobileBuilderPanel("settings"); }}><PanelLeft />Actions panel</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
-          <Button className="wf-icon-button" variant="ghost" size="icon-sm" aria-label="Workflow analytics" onClick={() => { setInspectorTab("insights"); setEditorPanel("settings"); setMobileBuilderPanel("settings"); }}><ChartNoAxesCombined /></Button>
-          <Button className="wf-icon-button" variant="ghost" size="icon-sm" aria-label="Workflow run history" onClick={() => { setInspectorTab("insights"); setEditorPanel("settings"); setMobileBuilderPanel("settings"); }}><History /></Button>
-          <FlowActivityBell />
-          <Button className="wf-icon-button" variant="ghost" size="icon-sm" aria-label="Preview workflow" onClick={() => { setPreviewOpen(true); setPreviewResult(null); setInsertAt(null); setMobileBuilderPanel("settings"); }}><Eye /></Button>
-          <Button className="wf-icon-button" variant="ghost" size="icon-sm" aria-label={saving ? "Saving workflow" : "Save workflow"} title={hasUnsavedChanges ? "Save changes" : "All changes saved"} onClick={() => void persist(draft.status)} disabled={!canEdit || saving}><Save /></Button>
+          <div className="wf-toolbar-tools"><DropdownMenu><DropdownMenuTrigger render={<Button className="wf-icon-button" variant="ghost" size="icon-sm" aria-label="Workflow options" />}><MoreVertical /></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => setQuickCheckOpen(true)}><CheckCircle2 />Quick test</DropdownMenuItem><DropdownMenuItem onClick={() => setScenarioLabOpen(true)}><ListFilter />Simulate scenarios</DropdownMenuItem><DropdownMenuItem onClick={() => { setEmailTestPath(undefined); setEmailTestOpen(true); }} disabled={!canCreate}><Mail />Test with emails</DropdownMenuItem><DropdownMenuItem onClick={() => requestNavigation(() => { setPanelSnapshot(null); setEditorPanel("actions"); setMobileBuilderPanel("settings"); })}><PanelLeft />Actions panel</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
+          <Button className="wf-icon-button" variant="ghost" size="icon-sm" aria-label="Workflow analytics" onClick={() => requestNavigation(() => { setInspectorTab("insights"); setEditorPanel("settings"); setMobileBuilderPanel("settings"); })}><ChartNoAxesCombined /></Button>
+          <Button className="wf-icon-button" variant="ghost" size="icon-sm" aria-label="Workflow run history" onClick={() => requestNavigation(() => { setInspectorTab("insights"); setEditorPanel("settings"); setMobileBuilderPanel("settings"); })}><History /></Button>
+          <FlowAlertsBell count={alertLists.active.length} open={alertsOpen} panelId={alertsPanelId} buttonRef={alertsBellRef} onToggle={() => setAlertsOpen(open => !open)} />
+          <Button className="wf-icon-button" variant="ghost" size="icon-sm" aria-label="Preview workflow" onClick={() => requestNavigation(() => { setPreviewOpen(true); setPreviewResult(null); setInsertAt(null); setMobileBuilderPanel("settings"); })}><Eye /></Button>
+          <Button className="wf-icon-button" variant="ghost" size="icon-sm" aria-label={saving ? "Saving workflow" : "Save workflow"} title={hasUnsavedChanges ? "Save changes" : "All changes saved"} onClick={() => void persist(draft.status)} disabled={!canEdit || saving || autoSaving}><Save /></Button>
           </div><div className="wf-toolbar-commands"><Button variant="secondary" size="sm" className="wf-text-button wf-audit-button" onClick={() => void setAuditOpen(true)} disabled={!canEdit}><AiIcon />Audit flow</Button>
-          {draft.status === "live" ? <Button className="wf-text-button wf-pause-button" size="sm" variant="secondary" onClick={() => void persist("paused")} disabled={!canEdit || saving}><Pause />Pause</Button> : <Button className="wf-text-button wf-launch-button" size="sm" onClick={() => setLaunchReviewOpen(true)} disabled={!canEdit || saving}>Review and turn on</Button>}
+          {draft.status === "live" ? <Button className="wf-text-button wf-pause-button" size="sm" variant="secondary" onClick={() => void persist("paused")} disabled={!canEdit || saving || autoSaving}><Pause />Pause</Button> : <Button className="wf-text-button wf-launch-button" size="sm" onClick={() => setLaunchReviewOpen(true)} disabled={!canEdit || saving || autoSaving}>Review and turn on</Button>}
           </div>
         </>}
       </div>
     </header>
-    <FlowHealthNotice health={connectorHealth} onReview={() => { if (flowInputSchema.safeParse(draft).success) setQuickCheckOpen(true); else setAuditOpen(true); }} />
-    {scopedContext ? <div className="wf-context-bar"><span className="min-w-0 flex-1 truncate">{String(scopedContext.config.scopeLabel)}</span><Button size="sm" variant="ghost" onClick={() => setView("list")}>Manage email workflows</Button></div> : null}
+    {scopedContext ? <div className="wf-context-bar"><span className="min-w-0 flex-1 truncate">{String(scopedContext.config.scopeLabel)}</span><Button size="sm" variant="ghost" onClick={() => requestNavigation(() => setView("list"), true)}>Manage email workflows</Button></div> : null}
     {!canEdit ? <NotificationToast tone="warning">{canCreate ? "Shared workflow is read-only. Its creator or an administrator can change it." : "Viewer access is read-only."}</NotificationToast> : null}
     <div className="wf-mobile-tabs" role="group" aria-label="Workflow workspace view">
       <Button variant={mobileBuilderPanel === "canvas" ? "secondary" : "ghost"} className="flex-1" aria-pressed={mobileBuilderPanel === "canvas"} onClick={() => setMobileBuilderPanel("canvas")}><Workflow />Canvas</Button>
       <Button variant={mobileBuilderPanel === "settings" ? "secondary" : "ghost"} className="flex-1" aria-pressed={mobileBuilderPanel === "settings"} onClick={() => { if (editorPanel === "hidden") setEditorPanel("actions"); setMobileBuilderPanel("settings"); }}><Settings2 />{editorPanel === "settings" ? "Settings" : "Actions"}</Button>
     </div>
     <DndContext id="flow-action-palette" sensors={sensors} collisionDetection={pointerWithin} autoScroll={false}>
-    <div data-mobile-panel={mobileBuilderPanel} data-editor-panel={previewOpen ? "preview" : editorPanel} className="wf-workbench">
+    <div data-mobile-panel={mobileBuilderPanel} data-alerts-open={alertsOpen || undefined} data-editor-panel={previewOpen ? "preview" : editorPanel} className="wf-workbench">
       {!previewOpen && editorPanel === "actions" ? <FlowActionPalette
         canEdit={canEdit}
         actions={palette}
         onAdd={(type) => addStep(type, insertAt ?? draft.steps.length)}
         onClose={() => setEditorPanel("hidden")}
       /> : null}
-      {previewOpen ? <FlowJourneyPreview flow={draft} flowId={draft.id} result={previewResult} onResult={setPreviewResult} onFocus={id => { setSelection(id); setMobileBuilderPanel("canvas"); }} onTestMessage={path => { setEmailTestPath(path); setEmailTestOpen(true); }} /> : editorPanel === "settings" ? selection === "trigger" && inspectorTab === "configure" ? <FlowTriggerPanel flow={draft} onChange={flow => setDraft({ ...draft, ...flow })} disabled={!canEdit} filterOptions={filterOptions} receivingMailboxes={mailboxOptions.filter(mailbox => mailbox.isActive && (mailbox.type === "workspace" || mailbox.userId === senderOwnerId)).map(mailbox => ({ id: mailbox.id, label: mailbox.email }))} onClose={() => { setEditorPanel("actions"); setMobileBuilderPanel("canvas"); }} onPreview={() => { setPreviewOpen(true); setPreviewResult(null); setMobileBuilderPanel("settings"); }} /> : selectedStep?.type === "wait" && inspectorTab === "configure" ? <FlowWaitPanel key={selectedStep.id} config={selectedStep.config} onChange={updateSelectedStep} disabled={!canEdit} trail={selectedTrail} onClose={() => { setEditorPanel("actions"); setMobileBuilderPanel("canvas"); }} /> : <aside className="wf-panel wf-inspector" aria-label="Workflow settings">
-        <div className="wf-settings-heading"><span className="wf-settings-icon"><InspectorIcon /></span><h2>{inspectorTab === "insights" ? "Workflow activity" : selection === "trigger" ? "Trigger" : selectedStep ? flowActionLabel(selectedStep.type) : "Action settings"}</h2><Button type="button" variant="ghost" size="icon-sm" aria-label="Close workflow settings" onClick={() => { setEditorPanel("actions"); setMobileBuilderPanel("canvas"); }}><X /></Button></div>
-        <div className="wf-inspector-content scroll-surface">{inspectorTab === "insights" ? <FlowInsights key={draft.id} flowId={draft.id} /> : <>{selectedStep ? <>{["send_email", "ai_auto_reply"].includes(selectedStep.type) ? <Button variant="outline" size="sm" className="mb-5 w-full" onClick={() => { setEmailTestPath(selectedMessagePath); setEmailTestOpen(true); }}><Eye />Preview & test message</Button> : null}{selectedTrail.length ? <nav aria-label="Action location" className="wf-action-location"><span translate="no">{selectedTrail.join(" / ")}</span></nav> : null}<StepInspector type={selectedStep.type} config={selectedStep.config} onChange={updateSelectedStep} mailboxes={mailboxes} members={memberOptions} disabled={!canEdit} />{errors[`step-${selectedIndex}`] ? <NotificationToast tone="error">{errors[`step-${selectedIndex}`]}</NotificationToast> : null}</> : null}</>}</div>
-        <div className="wf-settings-footer">{selectedStep && inspectorTab === "configure" ? <div className="wf-settings-footer-actions"><Button variant="outline" size="sm" onClick={duplicateSelectedStep} disabled={!canEdit}><Copy />Duplicate</Button><Button variant="destructive" size="icon-sm" aria-label="Remove selected action" onClick={removeSelectedStep} disabled={!canEdit}><Trash2 /></Button></div> : null}<Button variant="outline" size="sm" onClick={() => { setEditorPanel("actions"); setMobileBuilderPanel("canvas"); }}>Close</Button></div>
+      {previewOpen ? <FlowJourneyPreview flow={draft} flowId={draft.id} result={previewResult} onResult={setPreviewResult} onFocus={id => { setSelection(id); setMobileBuilderPanel("canvas"); }} onTestMessage={path => { setEmailTestPath(path); setEmailTestOpen(true); }} /> : editorPanel === "settings" ? selection === "trigger" && inspectorTab === "configure" ? <FlowTriggerPanel key={`trigger-${editorVersion}`} editorRef={pendingEditor} onDirtyChange={setLocalPanelDirty} onNavigate={go => requestNavigation(() => go())} footer={settingsFooter} flow={draft} onChange={flow => setDraft({ ...draft, ...flow })} disabled={!canEdit || saving || autoSaving} filterOptions={filterOptions} receivingMailboxes={mailboxOptions.filter(mailbox => mailbox.isActive && (mailbox.type === "workspace" || mailbox.userId === senderOwnerId)).map(mailbox => ({ id: mailbox.id, label: mailbox.email }))} onClose={closeSettings} onPreview={() => requestNavigation(() => { setPreviewOpen(true); setPreviewResult(null); setMobileBuilderPanel("settings"); })} /> : selectedStep?.type === "wait" && inspectorTab === "configure" ? <FlowWaitPanel key={`${selectedStep.id}-${editorVersion}`} editorRef={pendingEditor} onDirtyChange={setLocalPanelDirty} footer={settingsFooter} config={selectedStep.config} onChange={updateSelectedStep} disabled={!canEdit || saving || autoSaving} trail={selectedTrail} onClose={closeSettings} /> : selectedStep?.type === "send_email" && inspectorTab === "configure" ? <FlowEmailPanel key={`${selectedStep.id}-${editorVersion}`} actionId={selectedStep.id} trail={selectedTrail} saved={savedEmailIds.includes(selectedStep.id!)} resolveSender={choice => { const mailbox = visibleFlowSender(mailboxOptions, senderOwnerId, viewerId, choice); return mailbox ? { name: mailbox.displayName || "", email: mailbox.email } : undefined; }} sender={selectedSender ? { name: selectedSender.displayName || "", email: selectedSender.email } : undefined} onViewActivity={() => requestNavigation(() => { setInspectorTab("insights"); setEditorPanel("settings"); setMobileBuilderPanel("settings"); })} config={selectedStep.config} onChange={updateSelectedStep} onClose={closeSettings} disabled={!canEdit || saving || autoSaving} mailboxes={mailboxes} status={draft.status} defaultName={`Email #${flowActionLocations(draft.steps).filter(item => item.action.type === "send_email").findIndex(item => item.action.id === selectedStep.id) + 1}`} sessionKey={`flow:${draft.id ?? "new"}:${selectedStep.id}`} editorRef={pendingEditor} onDirtyChange={setLocalPanelDirty} footer={settingsFooter} error={errors[`step-${selectedIndex}`]} onPreview={() => { setEmailTestPath(selectedMessagePath); setEmailTestOpen(true); }} /> : <aside className="wf-panel wf-inspector" aria-label="Workflow settings">
+        <div className="wf-settings-heading"><span className="wf-settings-icon"><InspectorIcon /></span><h2>{inspectorTab === "insights" ? "Workflow activity" : selection === "trigger" ? "Trigger" : selectedStep ? flowActionLabel(selectedStep.type) : "Action settings"}</h2><Button type="button" variant="ghost" size="icon-sm" aria-label="Close workflow settings" onClick={closeSettings}><X /></Button></div>
+        <div className="wf-inspector-content scroll-surface">{inspectorTab === "insights" ? <FlowInsights key={draft.id} flowId={draft.id} /> : <>{selectedStep ? <>{["send_email", "ai_auto_reply"].includes(selectedStep.type) ? <Button variant="outline" size="sm" className="mb-5 w-full" onClick={() => { setEmailTestPath(selectedMessagePath); setEmailTestOpen(true); }}><Eye />Preview & test message</Button> : null}{selectedTrail.length ? <nav aria-label="Action location" className="wf-action-location"><span translate="no">{selectedTrail.join(" / ")}</span></nav> : null}<StepInspector type={selectedStep.type} config={selectedStep.config} onChange={updateSelectedStep} mailboxes={mailboxes} members={memberOptions} disabled={!canEdit || saving || autoSaving} />{errors[`step-${selectedIndex}`] ? <NotificationToast tone="error">{errors[`step-${selectedIndex}`]}</NotificationToast> : null}</> : null}</>}</div>
+        {inspectorTab === "configure" ? settingsFooter : <div className="wf-settings-footer"><Button variant="outline" size="sm" onClick={closeSettings}>Close</Button></div>}
       </aside> : null}
       {!previewOpen && editorPanel === "hidden" ? <Button className="wf-show-actions" variant="outline" size="sm" onClick={() => { setEditorPanel("actions"); setMobileBuilderPanel("settings"); }}><PanelLeft />Actions</Button> : null}
       <div data-flow-canvas-safe-area className="wf-canvas-safe-area" aria-hidden="true" />
-      <FlowCanvas health={connectorHealth} key={draft.id || "new-flow"} draft={draft} selection={editorPanel === "settings" || previewOpen ? selection : ""} insertAt={insertAt} canEdit={canEdit && !previewOpen} preview={previewOpen ? previewResult : null} setSelection={(value) => { setSelection(value); if (!previewOpen) setMobileBuilderPanel("settings"); }} setInsertAt={setInsertAt} onAddStep={addStep} onDropFlowAction={dropAction} onNavigate={setSelection} onMoveStep={moveStep} onRemoveStep={removeStep} onUpdateStep={updateStep} />
+      {alertsOpen ? <FlowAlertsPanel key={alertScope} id={alertsPanelId} active={alertLists.active} dismissed={alertLists.dismissed} canEdit={canEdit} onClose={closeAlerts} onReview={reviewAlert} onDismiss={alert => setDismissedAlerts(current => ({ ...current, [alertScope]: [...new Set([...(current[alertScope] ?? []), flowAlertKey(alert)])] }))} onRestore={alert => setDismissedAlerts(current => ({ ...current, [alertScope]: (current[alertScope] ?? []).filter(key => key !== flowAlertKey(alert)) }))} /> : null}
+      <FlowCanvas navigationRef={canvasNavigation} health={connectorHealth} key={draft.id || "new-flow"} draft={draft} selection={editorPanel === "settings" || previewOpen ? selection : ""} insertAt={insertAt} canEdit={canEdit && !saving && !hasPanelChanges && !previewOpen} preview={previewOpen ? previewResult : null} setSelection={(value) => { setSelection(value); if (!previewOpen) setMobileBuilderPanel("settings"); }} setInsertAt={setInsertAt} onAddStep={addStep} onDropFlowAction={dropAction} onNavigate={setSelection} onMoveStep={moveStep} onRemoveStep={removeStep} onUpdateStep={updateStep} />
 
     </div>
     <FlowPaletteOverlay />
@@ -909,10 +1140,11 @@ export function FlowBuilder({ liveSendingEnabled = true, initialFlows, mailboxOp
     {scenarioLabOpen ? <Suspense fallback={null}><LazyScenarioLab flow={draft} onOpenChange={setScenarioLabOpen} /></Suspense> : null}
     {emailTestOpen ? <FlowEmailTestDialog key={emailTestPath?.join("-") || "journey"} flow={draft} initialSendReal={deliveryTestRequested} defaultRecipient={viewerEmail} messageStepPath={emailTestPath} sample={previewOpen && previewResult ? { facts: previewResult.facts, customerName: previewResult.customer?.name, email: previewResult.customer?.email } : undefined} open={emailTestOpen} onOpenChange={(open) => { setEmailTestOpen(open); if (!open) setDeliveryTestRequested(false); }} /> : null}
 
-    <Dialog open={launchReviewOpen} onOpenChange={setLaunchReviewOpen}><DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>Review and turn on</DialogTitle><DialogDescription>Review this workflow before contacts can enter and actions begin running.</DialogDescription></DialogHeader><div className="max-h-[50dvh] space-y-2 overflow-y-auto">{auditFindings.map(finding => <AuditRow key={finding.id} severity={finding.severity} label={finding.label} />)}</div>{!auditCanLaunch ? <p className="text-sm text-destructive">Resolve the highlighted issues before turning on this workflow.</p> : <p className="text-sm text-muted-foreground">This workflow is ready to go live.</p>}<DialogFooter showCloseButton><Button disabled={!canEdit || saving || !auditCanLaunch} onClick={() => { setLaunchReviewOpen(false); void persist("live"); }}><Play />Turn on workflow</Button></DialogFooter></DialogContent></Dialog>
+    <Dialog open={leaveDialogOpen} onOpenChange={open => { if (!saving && !open) { pendingNavigation.current = null; setLeaveDialogOpen(false); setPanelSaveError(""); } }}><DialogContent className="wf-unsaved-dialog sm:max-w-lg" showCloseButton={false}><DialogHeader><DialogTitle>Save changes?</DialogTitle><DialogDescription>You have unsaved changes. Save them before leaving, or discard them to continue.</DialogDescription></DialogHeader>{panelSaveError ? <p className="text-sm text-destructive" role="alert">{panelSaveError}</p> : null}<DialogFooter><Button variant="outline" disabled={saving} onClick={() => { pendingNavigation.current = null; setLeaveDialogOpen(false); setPanelSaveError(""); }}>Keep editing</Button><Button variant="destructive" disabled={saving} onClick={discardPanelChanges}>Discard changes</Button><Button disabled={saving || autoSaving} onClick={() => void savePanel(true)}>{saving ? "Saving…" : "Save changes"}</Button></DialogFooter></DialogContent></Dialog>
+    <Dialog open={launchReviewOpen} onOpenChange={setLaunchReviewOpen}><DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>Review and turn on</DialogTitle><DialogDescription>Review this workflow before contacts can enter and actions begin running.</DialogDescription></DialogHeader><div className="max-h-[50dvh] space-y-2 overflow-y-auto">{auditFindings.map(finding => <AuditRow key={finding.id} severity={finding.severity} label={finding.label} />)}</div>{!auditCanLaunch ? <p className="text-sm text-destructive">Resolve the highlighted issues before turning on this workflow.</p> : <p className="text-sm text-muted-foreground">This workflow is ready to go live.</p>}<DialogFooter showCloseButton><Button disabled={!canEdit || saving || autoSaving || !auditCanLaunch} onClick={() => { setLaunchReviewOpen(false); void persist("live"); }}><Play />Turn on workflow</Button></DialogFooter></DialogContent></Dialog>
     {notice && !auditOpen ? <div className="wf-feedback"><NotificationToast tone="message">{notice}</NotificationToast></div> : null}
     <Dialog open={auditOpen} onOpenChange={setAuditOpen}><DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle className="flex items-center gap-2"><AiIcon className="size-4 text-violet-600" />Workflow audit</DialogTitle><DialogDescription>Checks configuration, B2B safety, message pressure, and customer experience before launch.</DialogDescription></DialogHeader><div className="max-h-[55vh] space-y-2 overflow-auto">{auditFindings.map((finding) => <AuditRow key={finding.id} severity={finding.severity} label={`${finding.label}${finding.step ? ` · step ${finding.step}` : ""}`} />)}</div>{notice ? <NotificationToast tone="message">{notice}</NotificationToast> : null}<DialogFooter showCloseButton><Button onClick={() => { setAuditOpen(false); if (!auditCanLaunch) setNotice("Resolve blocking audit findings before turning on this workflow."); }}><Check />{auditCanLaunch ? "Audit passed" : "Review findings"}</Button></DialogFooter></DialogContent></Dialog>
-  </div>;
+  </div></FlowEmailPerformanceProvider>;
 }
 
 function FlowListView({ flows, canEdit, viewerId, isAdmin, memberOptions, onCreate, onOpen, onDuplicate, onChangeStatus, onRemove, onBulkAction, scopedContext, collectionView, onViewChange }: {

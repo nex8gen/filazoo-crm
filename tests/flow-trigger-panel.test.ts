@@ -6,6 +6,8 @@ import ts from "typescript";
 import * as flows from "../lib/flows.ts";
 import * as triggerEditor from "../lib/flow-trigger-editor.ts";
 import * as segments from "../lib/segment-flows.ts";
+import * as editorSession from "../lib/flow-editor-session.ts";
+import type { FlowPanelEditor } from "../lib/flow-editor-session.ts";
 
 type Element = { type: string | ((props: Record<string, unknown>) => Element); props: Record<string, unknown> };
 function elements(value: unknown): Element[] {
@@ -17,20 +19,21 @@ function elements(value: unknown): Element[] {
 function harness(initial: flows.FlowInput = flows.defaultFlowInput, disabled = false) {
   let flow = structuredClone(initial), writes = 0, previews = 0, cursor = 0;
   const state: unknown[] = [];
+  const editorRef: { current: FlowPanelEditor | null } = { current: null };
   const components = new Proxy({}, { get: (_target, name) => String(name) });
   const jsx = (type: Element["type"], props: Element["props"]) => ({ type, props });
   const dependencies: Record<string, unknown> = {
     "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
-    react: { useState(value: unknown) { const index = cursor++; if (!(index in state)) state[index] = value; return [state[index], (next: unknown) => { state[index] = typeof next === "function" ? next(state[index]) : next; }]; } },
+    react: { useEffect() {}, useImperativeHandle(ref: typeof editorRef, read: () => FlowPanelEditor) { if (ref) ref.current = read(); }, useState(value: unknown) { const index = cursor++; if (!(index in state)) state[index] = value; return [state[index], (next: unknown) => { state[index] = typeof next === "function" ? next(state[index]) : next; }]; } },
     "@/lib/flows": flows,
-    "@/lib/flow-trigger-editor": triggerEditor,
+    "@/lib/flow-trigger-editor": triggerEditor, "@/lib/flow-editor-session": editorSession,
     "@/lib/segment-flows": segments,
   };
   const output: Record<string, (props: Record<string, unknown>) => Element> = {};
   const code = ts.transpileModule(readFileSync(new URL("../components/flow-trigger-panel.tsx", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   vm.runInNewContext(code, { exports: output, require: (name: string) => dependencies[name] || components });
-  const render = () => { cursor = 0; return output.FlowTriggerPanel({ flow, disabled, onChange: (next: flows.FlowInput) => { flow = next; writes++; }, onClose: () => {}, onPreview: () => { previews++; }, filterOptions: { segments: ["Wholesale"], countries: ["Canada", "France"] }, receivingMailboxes: [] }); };
-  return { render, get flow() { return flow; }, get writes() { return writes; }, get previews() { return previews; } };
+  const render = () => { cursor = 0; return output.FlowTriggerPanel({ flow, disabled, editorRef, onChange: (next: flows.FlowInput) => { flow = next; writes++; }, onClose: () => {}, onPreview: () => { previews++; }, filterOptions: { segments: ["Wholesale"], countries: ["Canada", "France"] }, receivingMailboxes: [] }); };
+  return { render, editorRef, get flow() { return flow; }, get writes() { return writes; }, get previews() { return previews; } };
 }
 function button(tree: Element, label: string) {
   return elements(tree).find(node => node.type === "Button" && node.props.children === label)!;
@@ -49,6 +52,20 @@ test("trigger overview contains summaries and preview, with filters kept out of 
   assert.equal(elements(tree).filter(node => node.type === "input" && node.props.type === "radio").length, 3);
   click(tree, "Preview");
   assert.equal(app.previews, 1);
+});
+
+test("the navigation guard includes pending profile filters before the trigger is applied", () => {
+  const app = harness();
+  click(app.render(), "Add");
+  (choice(app.render(), "Country").props.onChange as (value: string) => void)("Canada");
+  app.render();
+  assert.equal(app.editorRef.current!.hasChanges(), true);
+  const pending = app.editorRef.current!.prepare();
+  assert.equal(pending.ok && pending.trigger?.triggerConfig.country, "Canada");
+  assert.equal(app.flow.triggerConfig.country, undefined);
+  assert.equal(app.writes, 0);
+  app.editorRef.current!.reset(); app.render();
+  assert.equal(app.editorRef.current!.hasChanges(), false);
 });
 
 test("profile filters only update the workflow when saved; cancel discards the edits", () => {

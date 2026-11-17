@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { emailDesignSchema, emailDesignText } from "./email-design.ts";
 import { customerTagValues } from "./customer-tags.ts";
 import { hasRetiredSalesConfig, retiredSalesMessage } from "./retired-sales.ts";
 export { hasRetiredSalesConfig, retiredSalesMessage } from "./retired-sales.ts";
@@ -48,6 +49,7 @@ export type AutomationFlow = {
   activeRuns: number;
   completedRuns: number;
   dependencyIssue?: string;
+  editorDraft?: { definition: FlowInput; revision: number; baseUpdatedAt: string; publicationError?: string };
   steps: FlowStep[];
 };
 
@@ -127,7 +129,7 @@ export const flowConditionCriteriaSchema = z.union([
   z.object({ match: z.enum(["all", "any"]), rules: z.array(flowConditionRuleSchema).min(1).max(20) }),
 ]);
 
-const stepConfigSchemas: Record<FlowStepType, z.ZodType<JsonConfig>> = {
+export const stepConfigSchemas: Record<FlowStepType, z.ZodType<JsonConfig>> = {
   ai_auto_reply: z.object({
     stopOnReply: z.boolean().optional(),
     filters: flowConditionCriteriaSchema.optional(),
@@ -195,7 +197,15 @@ const stepConfigSchemas: Record<FlowStepType, z.ZodType<JsonConfig>> = {
   send_email: z.object({
     filters: flowConditionCriteriaSchema.optional(),
     smartSendingHours: z.number().int().min(0).max(720).optional(),
-    templateId: z.enum(["helpful_reminder", "send_catalog", "quote_follow_up", "welcome_intro", "last_chance"], { error: "Complete the email template settings." }),
+    templateId: z.enum(["", "helpful_reminder", "send_catalog", "quote_follow_up", "welcome_intro", "last_chance", "custom"], { error: "Complete the email template settings." }),
+    emailName: z.string().trim().max(200).optional(),
+    emailStatus: z.preprocess(value => value === "paused" ? "draft" : value, z.enum(["draft", "live"])).optional(),
+    performanceId: z.string().trim().min(1).max(100).optional(),
+    templateName: z.string().trim().max(200).optional(),
+    sourceTemplateId: z.string().trim().max(200).optional(),
+    useCustomUtm: z.boolean().optional(),
+    utmParameters: z.object({ utm_source: z.string().trim().max(200), utm_medium: z.string().trim().max(200), utm_campaign: z.string().trim().max(200), utm_term: z.string().trim().max(200).optional(), utm_content: z.string().trim().max(200).optional() }).optional(),
+    emailDesign: emailDesignSchema.optional(),
     mailboxId: z.string().trim().min(1),
     replyInThread: z.boolean(),
     subject: z.string().trim().max(300).optional(),
@@ -206,6 +216,12 @@ const stepConfigSchemas: Record<FlowStepType, z.ZodType<JsonConfig>> = {
     utmTracking: z.boolean().optional(),
     stopOnReply: z.boolean().optional(),
     sendWindow: z.enum(["anytime", "business_hours"]).default("business_hours"),
+  }).superRefine((value, context) => {
+    if (value.emailStatus === "draft") return;
+    if (!value.templateId) context.addIssue({ code: "custom", path: ["templateId"], message: "Complete the email template settings." });
+    if (value.templateId === "custom" && !value.subject?.trim()) context.addIssue({ code: "custom", path: ["subject"], message: "Enter an email subject line." });
+    if (value.useCustomUtm && value.utmTracking !== false && (!value.utmParameters?.utm_source || !value.utmParameters?.utm_medium || !value.utmParameters?.utm_campaign)) context.addIssue({ code: "custom", path: ["utmParameters"], message: "Enter a custom UTM source, medium, and campaign." });
+    if (value.templateId === "custom" && !(value.emailDesign ? emailDesignText(value.emailDesign).trim() : value.body?.trim())) context.addIssue({ code: "custom", path: ["body"], message: "Add content to your email template." });
   }),
   create_task: z.object({
     assigneeType: z.enum(["owner", "user"]),
@@ -335,7 +351,7 @@ export function blankStep(type: FlowStepType = "wait"): FlowInput["steps"][numbe
     wait: { amount: 1, unit: "days", businessDays: true, resumeAt: "09:00" },
     split: { name: "Customer path", paths: [{ id: `${id}-match`, name: "Path 1", condition: { field: "customer_replied", lookbackDays: 7 }, steps: [] }, { id: `${id}-otherwise`, name: "Everyone else", condition: null, steps: [] }] },
     if_condition: { field: "customer_replied", action: "stop_flow", unmatchedAction: "continue", lookbackDays: 7 },
-    send_email: { templateId: "", mailboxId: "default", replyInThread: true, subject: "", preheader: "", trackOpens: true, trackClicks: true, utmTracking: true, stopOnReply: true, sendWindow: "business_hours" },
+    send_email: { templateId: "", mailboxId: "default", replyInThread: true, subject: "", preheader: "", smartSendingHours: 16, trackOpens: true, trackClicks: true, utmTracking: false, stopOnReply: true, sendWindow: "business_hours" },
     create_task: { assigneeType: "owner", assigneeId: null, dueInDays: 1, title: "Follow up with customer", priority: "normal", notes: "" },
     change_category: { category: "Quotation Follow-up", reason: "" },
     update_company: { companyStatus: "engaged", note: "Updated by automation" },
@@ -348,6 +364,7 @@ export function blankStep(type: FlowStepType = "wait"): FlowInput["steps"][numbe
 /** Copies must have independent canvas/tracking identities, including actions inside split paths. */
 export function cloneFlowStep(step: FlowInput["steps"][number]): FlowInput["steps"][number] {
   const copy = { ...step, id: blankStep(step.type).id, config: structuredClone(step.config) };
+  if (copy.type === "send_email") delete copy.config.performanceId;
   if (copy.type === "split" && Array.isArray(copy.config.paths)) {
     copy.config.paths = copy.config.paths.map((value) => {
       if (!value || typeof value !== "object" || Array.isArray(value) || !Array.isArray(value.steps)) return value;
@@ -355,6 +372,21 @@ export function cloneFlowStep(step: FlowInput["steps"][number]): FlowInput["step
     });
   }
   return copy;
+}
+
+/** The database replaces root step rows on save. Preserve email metrics across those row IDs. */
+export function withFlowEmailIdentities<T extends FlowInput>(flow: T): T {
+  const normalize = (steps: FlowInput["steps"]): FlowInput["steps"] => steps.map(step => {
+    if (step.type === "send_email") return { ...step, config: { ...step.config, performanceId: step.config.performanceId || (step.id && step.id.length <= 100 ? step.id : blankStep("send_email").id!) } };
+    if (step.type !== "split" || !Array.isArray(step.config.paths)) return step;
+    return { ...step, config: { ...step.config, paths: step.config.paths.map(path => path && typeof path === "object" && !Array.isArray(path) && Array.isArray(path.steps) ? { ...path, steps: normalize(path.steps as FlowInput["steps"]) } : path) } };
+  });
+  return { ...flow, steps: normalize(flow.steps) };
+}
+
+/** Existing email actions remain enabled until explicitly paused or made drafts. */
+export function flowEmailStatus(config: JsonConfig): "draft" | "live" {
+  return config.emailStatus === "draft" || config.emailStatus === "paused" ? "draft" : "live";
 }
 
 /** Keep the assistant's configuration guide tied to the same validators as the flow editor. */

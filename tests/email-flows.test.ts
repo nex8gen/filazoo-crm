@@ -5,6 +5,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import { z } from "zod";
 import * as flowModel from "../lib/flows.ts";
+import * as editorDraftModel from "../lib/flow-editor-draft.ts";
 
 const companyId = "11111111-1111-4111-8111-111111111111";
 const contactId = "22222222-2222-4222-8222-222222222222";
@@ -24,7 +25,7 @@ function fixture() {
     companies: [{ id: companyId, name: "Company A" }],
     contacts: [{ id: contactId, company_id: companyId, email: "customer@example.com" }],
     pipeline: [{ company_id: companyId, owner_id: "alice" }],
-    flows: [], flow_steps: [], flow_runs: [],
+    flows: [], flow_steps: [], flow_runs: [], flow_editor_drafts: [],
   };
   const admin = {
     from(table: string) {
@@ -54,7 +55,7 @@ function fixture() {
     },
   };
   const auth = { requireWorkspaceMember: async () => { if (!role) throw new Error("Access denied."); return { id: "alice", role }; } };
-  const dependencies = { zod: { z }, "../auth.ts": auth, "../supabase/admin.ts": { createSupabaseAdmin: () => admin }, "../flows.ts": flowModel };
+  const dependencies = { zod: { z }, "../auth.ts": auth, "../supabase/admin.ts": { createSupabaseAdmin: () => admin }, "../flows.ts": flowModel, "../flow-editor-draft.ts": editorDraftModel, "./flow-runtime.ts": { validateFlowSenderAccess: async () => {} } };
   const scope = load("../lib/data/email-flows.ts", dependencies);
   const flows = load("../lib/data/flows.ts", { ...dependencies, "./email-flows.ts": scope });
   return { rows, calls, scope, flows, auth, role: (value: string | null) => { role = value; }, fail: () => { failure = true; } };

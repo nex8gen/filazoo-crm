@@ -21,9 +21,10 @@
       "/api/cron/flows?task=health": 401
     },
     "smtp": {
-      "verified": 0,
-      "timedOut": 4,
-      "observation": "DNS resolves and TCP connections open, but SMTP greeting or TLS handshakes did not complete from this machine. Authentication was not verified. This does not identify the cause of the network stall."
+      "verifiedWithTemporaryDirectRouting": 4,
+      "authenticationFailuresWithDirectRouting": 0,
+      "timedOutThroughNormalVpnRouting": 4,
+      "observation": "FlClash runs in global mode and resolves the mail hostname to synthetic address 198.18.0.6. The same mail servers completed TLS and SMTP greetings through temporary destination-specific routes outside the VPN. All four saved SMTP accounts authenticated successfully over that direct path, without sending messages. Temporary routes were removed afterward; the original VPN routing remains unchanged."
     }
   },
   "productionObservations": {
@@ -52,7 +53,7 @@
   },
   "limitations": [
     "The source changes in this audit have not been deployed to production",
-    "Local SMTP delivery remains unverified because of connection timeouts",
+    "Normal local VPN routing still stalls SMTP. All four saved accounts passed authentication over a temporary direct path; a permanent mail-only VPN bypass has not been configured",
     "Recorded email acceptance does not prove inbox delivery",
     "No authenticated browser session was available for manual end-to-end customer testing",
     "Point-in-time checks cannot guarantee future service availability"

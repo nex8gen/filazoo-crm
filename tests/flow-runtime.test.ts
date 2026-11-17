@@ -23,6 +23,8 @@ import * as flowMailboxes from "../lib/flow-mailboxes.ts";
 import * as recovery from "../lib/flow-recovery.ts";
 import * as threading from "../lib/email-threading.ts";
 import { createFlowRecipe } from "../lib/flow-recipes.ts";
+import { newEmailDesign } from "../lib/email-design.ts";
+import { applyFlowEmailTemplate } from "../lib/flow-email-editor.ts";
 
 type Row = Record<string, unknown>;
 const require = createRequire(import.meta.url);
@@ -155,6 +157,8 @@ function runtime(options: { businessWindow?: Date | null; beforeQuery?: (table: 
     enrollMatchingFlows: (event: engine.TriggerEvent) => Promise<Array<{ enrolled: boolean; reason: string }>>;
     processFlowRun: (id: string, options?: { deadline?: number }) => Promise<{ status: string }>;
     validateFlowResources: (userId: string, input: flows.FlowInput) => Promise<void>;
+    validateFlowSenderAccess: (userId: string, input: flows.FlowInput, ownerId?: string) => Promise<void>;
+    getFlowTestMailbox: (userId: string, choice: unknown) => Promise<Row | null>;
     processDueFlowRuns: (limit: number, options: { syncMailbox: boolean; budgetMs?: number; actionDeadline?: number }) => Promise<unknown[]>;
     scanTimeBasedFlowTriggers: (id?: string, onError?: unknown, options?: { deadline?: number; deferExecution?: boolean }) => Promise<number>;
   };
@@ -531,6 +535,8 @@ test("screenshot journey stops replies, resumes the other path and rechecks repl
   for (const replyAt of ["never", "first-wait", "branch-wait"]) {
     const app = runtime();
     const mail = app.db.flow_steps[0];
+    // This journey exercises two sends minutes apart; opt out of the new-email Smart Sending default.
+    mail.config = { ...mail.config as flows.JsonConfig, smartSendingHours: 0 };
     steps(app, [mail as unknown as flows.FlowInput["steps"][number], { ...flows.blankStep("wait"), config: { amount: 5, unit: "minutes" } },
       route({ field: "customer_replied", lookbackDays: 7 }, [flows.blankStep("stop")], [
         { ...flows.blankStep("wait"), config: { amount: 2, unit: "minutes" } }, { ...flows.blankStep("send_email"), config: mail.config as flows.JsonConfig },
@@ -550,6 +556,32 @@ test("screenshot journey stops replies, resumes the other path and rechecks repl
     assert.equal(app.delivered(), replyAt === "never" ? 2 : 1);
     assert.equal(app.db.crm_tasks?.length ?? 0, replyAt === "never" ? 1 : 0);
   }
+});
+
+test("a selected library design survives validation and reaches SMTP as personalized HTML", async () => {
+  const app = runtime();
+  const design = newEmailDesign('<html><body><table><tr><td>Hello {{first_name}}<a href="https://example.com/catalog">View catalog</a></td></tr></table></body></html>', "html");
+  app.db.flow_steps[0].config = applyFlowEmailTemplate(app.db.flow_steps[0].config as flows.JsonConfig, { id: "saved-template", name: "Library catalog", subject: "Your catalog", design });
+  await app.exports.enrollNewLeadFlows(app.contactId);
+  assert.equal(app.delivered(), 1);
+  const mail = app.deliveries[0].mail;
+  assert.equal(mail.subject, "Your catalog");
+  assert.match(String(mail.html), /<table>/);
+  assert.match(String(mail.html), /Hello Test/);
+  assert.doesNotMatch(String(mail.html), /\{\{first_name\}\}|&lt;table/);
+});
+
+test("workflow sends and tracking retain their performance identity after database action IDs change", async () => {
+  const app = runtime();
+  app.db.flow_steps[0].config = { ...app.db.flow_steps[0].config as flows.JsonConfig, performanceId: "persistent-email-action" };
+  await app.exports.enrollNewLeadFlows(app.contactId);
+  assert.equal(app.delivered(), 1);
+  const sent = app.db.flow_run_logs.find(event => (event.result as Row)?.action === "email_sent")!;
+  assert.equal((sent.result as Row).performanceId, "persistent-email-action");
+  assert.notEqual((sent.result as Row).stepId, "persistent-email-action");
+  const src = /src="([^"]+\/api\/flows\/track[^\"]+)"/.exec(String(app.deliveries[0].mail.html))![1].replaceAll("&amp;", "&");
+  const payload = tracking.verifyTracking(new URL(src).searchParams.get("token")!, "test");
+  assert.equal(payload?.stepId, "persistent-email-action");
 });
 
 test("compound split and message criteria use each rule's own engagement lookback", async () => {
@@ -779,6 +811,72 @@ test("template emails, AI replies and email alerts send using their selected per
       assert.equal(app.deliveries[0].mailbox.user, choice === "workspace" ? "sales" : choice === "explicit" ? "team-login" : "personal-login");
       if (type !== "internal_alert") assert.equal(app.db.mailbox_sent_messages[0].mailbox_id, choice === "owner" || choice === "default" ? "personal" : choice === "workspace" ? "sender" : choice);
     }
+  }
+});
+
+test("a draft email is skipped while the workflow's live email and later CRM actions continue", async () => {
+  const app = runtime();
+  steps(app, [
+    { type: "send_email", config: { ...flows.blankStep("send_email").config, emailStatus: "draft" } },
+    { type: "send_email", config: { ...flows.blankStep("send_email").config, templateId: "welcome_intro", sendWindow: "anytime", emailStatus: "live" } },
+    flows.blankStep("create_task"),
+  ]);
+  await app.exports.enrollNewLeadFlows(app.contactId);
+  assert.equal(app.db.flows[0].status, "live");
+  assert.equal(app.delivered(), 1);
+  assert.equal(app.db.crm_tasks.length, 1);
+  assert.equal(app.db.flow_runs[0].status, "done");
+  assert.match(JSON.stringify(app.db.flow_run_logs), /This email is draft/);
+});
+
+test("draft status applies by stable email identity to root and nested queued snapshots", async () => {
+  for (const nested of [false, true]) {
+    const app = runtime();
+    const email = { ...flows.blankStep("send_email"), config: { ...flows.blankStep("send_email").config, templateId: "welcome_intro", emailStatus: "live", performanceId: "stable-email", sendWindow: "anytime" } };
+    const next = { ...flows.blankStep("send_email"), config: { ...flows.blankStep("send_email").config, templateId: "helpful_reminder", sendWindow: "anytime", smartSendingHours: 0 } };
+    const definitions = [{ ...flows.blankStep("wait"), config: { amount: 1, unit: "minutes" } }, email, next, flows.blankStep("create_task")];
+    steps(app, nested ? [route({ field: "customer_replied", negate: true }, definitions)] : definitions);
+    await app.exports.enrollNewLeadFlows(app.contactId);
+    const run = app.db.flow_runs[0];
+    assert.equal(app.delivered(), 0);
+    assert.equal(app.db.flows[0].status, "live");
+    assert.equal(run.status, "active");
+    assert.equal((run.context as flows.JsonConfig).executionState, undefined);
+    // Publication can replace the row ID. The logical email identity is stable.
+    const savedEmail = engine.allFlowActions(app.db.flow_steps as unknown as flows.FlowStep[]).find(step => step.config.performanceId === "stable-email")!;
+    savedEmail.id = randomUUID(); savedEmail.config.emailStatus = "draft";
+    run.next_run_at = new Date(Date.now() - 1).toISOString();
+    await app.exports.processFlowRun(String(run.id));
+    assert.equal(app.delivered(), 1);
+    assert.equal(app.db.crm_tasks.length, 1);
+    assert.equal(run.status, "done");
+  }
+});
+
+test("a retired paused status during preparation safely skips the email without SMTP", async () => {
+  let reads = 0;
+  const app = runtime({ beforeQuery: async (table, operation) => {
+    if (table === "flow_steps" && operation === "select" && ++reads === 4) (app.db.flow_steps[0].config as flows.JsonConfig).emailStatus = "paused";
+  } });
+  await app.exports.enrollNewLeadFlows(app.contactId);
+  assert.equal(app.delivered(), 0);
+  assert.equal(app.db.flows[0].status, "live");
+  assert.equal(app.db.flow_runs[0].status, "done");
+  assert.match(JSON.stringify(app.db.flow_run_logs), /email_skipped/);
+});
+
+test("current email draft or deletion stops an old queued live snapshot", async () => {
+  for (const remove of [false, true]) {
+    const app = runtime();
+    steps(app, [{ ...flows.blankStep("wait"), config: { amount: 1, unit: "minutes" } }, { type: "send_email", config: { ...flows.blankStep("send_email").config, templateId: "welcome_intro", sendWindow: "anytime" } }, flows.blankStep("create_task")]);
+    await app.exports.enrollNewLeadFlows(app.contactId);
+    const run = app.db.flow_runs[0];
+    if (remove) app.db.flow_steps.splice(1, 1); else (app.db.flow_steps[1].config as flows.JsonConfig).emailStatus = "draft";
+    run.next_run_at = new Date(Date.now() - 1).toISOString();
+    await app.exports.processFlowRun(String(run.id));
+    assert.equal(app.delivered(), 0);
+    assert.equal(app.db.crm_tasks.length, 1);
+    assert.equal(run.status, "done");
   }
 });
 
@@ -1300,15 +1398,57 @@ test("a newer inquiry during generation queues regeneration instead of submittin
   assert.equal(result[0].reason, "retrying");
 });
 
-test("assigned-salesperson sending uses the assignee's mailbox and AI identity", async () => {
+test("legacy assigned-salesperson workflows cannot send from another member's mailbox", async () => {
   const app = runtime();
   const original = app.db.workspace_mailboxes[0];
   app.db.workspace_mailboxes.push({ ...original, id: randomUUID(), type: "personal", user_id: "sales-owner", email: "sales-owner@example.com" });
   steps(app, [{ type: "ai_auto_reply", config: { ...flows.blankStep("ai_auto_reply").config, mailboxId: "assigned_owner" } }]);
   await app.exports.enrollNewLeadFlows(app.contactId);
-  assert.equal(app.delivered(), 1);
-  assert.equal(app.deliveries[0].mailbox.from, "sales-owner@example.com");
-  assert.equal(app.aiCalls[0].userId, "sales-owner");
+  assert.equal(app.delivered(), 0);
+  assert.equal(app.aiCalls.length, 0);
+  assert.match(JSON.stringify(app.db.flow_run_logs), /Assigned-salesperson sending is no longer available/);
+});
+
+test("workflow save authorization allows only the actor's own or shared senders, including admin edits", async () => {
+  const app = runtime();
+  const team = app.db.workspace_mailboxes[0];
+  app.db.workspace_mailboxes.push(
+    { ...team, id: "own-personal", type: "personal", user_id: "owner", email: "owner@example.com" },
+    { ...team, id: "other-personal", type: "personal", user_id: "sales-owner", email: "sales-owner@example.com" },
+  );
+  for (const type of ["send_email", "ai_auto_reply", "internal_alert"] as const) {
+    const action = flows.blankStep(type);
+    if (type === "send_email") action.config.templateId = "welcome_intro";
+    if (type === "internal_alert") action.config.channel = "email";
+    const input = { ...flows.defaultFlowInput, steps: [action] };
+    for (const choice of ["sender", "own-personal", "default", "owner", "workspace"]) {
+      action.config.mailboxId = choice;
+      await app.exports.validateFlowSenderAccess("owner", input);
+      assert.ok(await app.exports.getFlowTestMailbox("owner", choice));
+    }
+    for (const choice of ["other-personal", "assigned_owner"]) {
+      action.config.mailboxId = choice;
+      await assert.rejects(() => app.exports.validateFlowSenderAccess("owner", input), /Other members' personal email/);
+      assert.equal(await app.exports.getFlowTestMailbox("owner", choice), null);
+      await assert.rejects(() => app.exports.validateFlowResources("owner", input), /sending email account/);
+    }
+    for (const choice of ["other-personal", "default", "owner", "own-personal"]) {
+      action.config.mailboxId = choice;
+      await assert.rejects(() => app.exports.validateFlowSenderAccess("owner", input, "sales-owner"), /Other members' personal email/);
+    }
+    action.config.mailboxId = "sender";
+    await app.exports.validateFlowSenderAccess("owner", input, "sales-owner");
+  }
+  assert.equal(app.delivered(), 0);
+});
+
+test("saving checks nested sender permissions while allowing disconnected default drafts", async () => {
+  const app = runtime();
+  app.db.workspace_mailboxes = [];
+  await app.exports.validateFlowSenderAccess("owner", flows.defaultFlowInput);
+  const split = flows.blankStep("split");
+  (split.config.paths as unknown as Array<{ steps: flows.FlowStep[] }>)[0].steps = [{ ...flows.blankStep("ai_auto_reply"), config: { mailboxId: "assigned_owner" } }];
+  await assert.rejects(() => app.exports.validateFlowSenderAccess("owner", { ...flows.defaultFlowInput, steps: [split] }), /Other members' personal email/);
 });
 
 test("two workflows matching one receipt can submit only one response", async () => {

@@ -13,29 +13,33 @@ export function resolveFlowSender<T extends FlowSenderMailbox>(mailboxes: T[], o
 
 export type FlowMailboxOption = Pick<NormalizedMailboxRecord, "id" | "userId" | "type" | "email" | "isDefault" | "isActive"> & {
   sendConfigured: boolean;
+  displayName?: string | null;
 };
 
 // Only public sender details cross the server/client boundary.
 export function flowMailboxOptions(mailboxes: NormalizedMailboxRecord[]): FlowMailboxOption[] {
-  return mailboxes.map(({ id, userId, type, email, isDefault, isActive, smtpHost, smtpUsername, smtpPassword }) => ({
-    id, userId, type, email, isDefault, isActive,
+  return mailboxes.map(({ id, userId, type, email, displayName, isDefault, isActive, smtpHost, smtpUsername, smtpPassword }) => ({
+    id, userId, type, email, displayName, isDefault, isActive,
     sendConfigured: Boolean(smtpHost && smtpUsername && smtpPassword),
   }));
 }
 
-export function flowSenderOptions(mailboxes: FlowMailboxOption[], ownerId: string) {
-  const available = mailboxes.filter((mailbox) => mailbox.type === "workspace" || mailbox.userId === ownerId);
+export function flowSenderOptions(mailboxes: FlowMailboxOption[], ownerId: string, viewerId = ownerId) {
+  const available = mailboxes.filter((mailbox) => mailbox.type === "workspace" || mailbox.userId === ownerId && mailbox.userId === viewerId);
   const label = (mailbox: FlowMailboxOption) => `${mailbox.type === "personal" ? "Personal email" : "Team email"} · ${mailbox.email}${!mailbox.isActive ? " (stopped)" : !mailbox.sendConfigured ? " (setup required)" : ""}`;
-  const defaultOption = (id: string, type: FlowMailboxOption["type"]) => {
-    const mailbox = defaultMailboxForType(available, type);
-    return { id, label: mailbox ? `${label(mailbox)} (default)` : `${type === "personal" ? "Personal email" : "Team email"} · No default connected`, disabled: !mailbox?.isActive || !mailbox.sendConfigured };
-  };
-  const preferred = resolveFlowSender(available, ownerId, "default");
-  return [
-    { id: "default", label: preferred ? `My default email · ${preferred.email} (${preferred.type === "personal" ? "personal" : "team"})` : "My default email · No email connected", disabled: !preferred?.isActive || !preferred.sendConfigured },
-    defaultOption("owner", "personal"),
-    defaultOption("workspace", "workspace"),
-    { id: "assigned_owner", label: "Assigned salesperson · Personal mailbox", disabled: false },
-    ...available.map((mailbox) => ({ id: mailbox.id, label: label(mailbox), disabled: !mailbox.isActive || !mailbox.sendConfigured })),
-  ];
+  // Legacy rules still resolve, but never appear as duplicate account choices.
+  return available.map((mailbox) => ({
+    id: mailbox.id, label: label(mailbox), disabled: !mailbox.isActive || !mailbox.sendConfigured,
+    aliases: (viewerId === ownerId ? ["default", "owner", "workspace"] : ["workspace"]).filter((choice) => resolveFlowSender(available, ownerId, choice)?.id === mailbox.id),
+  }));
+}
+
+export function selectedFlowSender<T extends { id: string; aliases?: string[] }>(options: T[], value: string): T | undefined {
+  return options.find((option) => option.id === value) ?? options.find((option) => option.aliases?.includes(value));
+}
+
+/** A viewer's limited inventory cannot resolve another owner's default sender. */
+export function visibleFlowSender(mailboxes: FlowMailboxOption[], ownerId: string, viewerId: string, choice: unknown) {
+  const selected = selectedFlowSender(flowSenderOptions(mailboxes, ownerId, viewerId), String(choice ?? "default"));
+  return mailboxes.find(mailbox => mailbox.id === selected?.id) ?? null;
 }

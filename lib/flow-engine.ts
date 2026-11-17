@@ -1,4 +1,4 @@
-import type { FlowInput, FlowStepType, JsonConfig, TriggerType } from "./flows.ts";
+import { flowEmailStatus, type FlowInput, type FlowStepType, type JsonConfig, type TriggerType } from "./flows.ts";
 
 export type FlowFacts = {
   customerReplied: boolean;
@@ -212,6 +212,11 @@ export function simulateFlow(flow: FlowInput, facts: FlowFacts, from = new Date(
   while (index < steps.length) {
     const { step, path } = steps[index]!;
     const push = (entry: SimulationEntry) => trace.push({ stepPath: path, ...entry });
+    if (step.type === "send_email" && flowEmailStatus(step.config) !== "live") {
+      push({ step: index + 1, type: step.type, status: "skipped", detail: "This email is draft and will be skipped." });
+      index += 1;
+      continue;
+    }
     if (step.type === "split") {
       const paths = Array.isArray(step.config.paths) ? step.config.paths : [];
       const selected = paths.find((path) => path && typeof path === "object" && !Array.isArray(path) && path.condition && typeof path.condition === "object" && !Array.isArray(path.condition) && conditionMatches(path.condition as JsonConfig, currentFacts))

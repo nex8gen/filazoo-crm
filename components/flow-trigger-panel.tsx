@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useImperativeHandle, useState, type ReactNode, type Ref } from "react";
+import { flowEditorEqual, type FlowPanelEditor } from "@/lib/flow-editor-session";
 import Link from "next/link";
 import { ArrowLeft, LockKeyhole, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -22,13 +23,17 @@ type Props = {
   disabled: boolean;
   filterOptions: { segments: string[]; countries: string[] };
   receivingMailboxes: Option[];
+  footer?: ReactNode;
+  editorRef?: Ref<FlowPanelEditor>;
+  onDirtyChange?: (dirty: boolean) => void;
+  onNavigate?: (go: () => void) => void;
 };
 
 function TriggerChoice({ label, value, options, onChange, disabled }: { label: string; value: string; options: Option[]; onChange: (value: string) => void; disabled: boolean }) {
   return <div className="wf-trigger-field"><Label>{label}</Label><Select value={value} onValueChange={next => { if (next) onChange(next); }} disabled={disabled}><SelectTrigger className="w-full" aria-label={label}><SelectValue /></SelectTrigger><SelectContent>{options.map(option => <SelectItem key={option.id} value={option.id}>{option.label}</SelectItem>)}</SelectContent></Select></div>;
 }
 
-export function FlowTriggerPanel({ flow, onChange, onClose, onPreview, disabled, filterOptions, receivingMailboxes }: Props) {
+export function FlowTriggerPanel({ flow, onChange, onClose, onPreview, disabled, filterOptions, receivingMailboxes, footer, editorRef, onDirtyChange, onNavigate }: Props) {
   const [view, setView] = useState<"overview" | "event" | "filters">("overview");
   const [pending, setPending] = useState<{ type: TriggerType; config: JsonConfig } | null>(null);
   const [error, setError] = useState("");
@@ -39,9 +44,22 @@ export function FlowTriggerPanel({ flow, onChange, onClose, onPreview, disabled,
   const segments = [...new Set([String(config.segment || ""), ...filterOptions.segments])].filter(Boolean);
   const countries = [...new Set([String(config.country || ""), ...filterOptions.countries])].filter(Boolean);
   const categories = [...new Set([typeof config.category === "string" ? config.category : "", ...emailCategories])].filter(Boolean);
-  const changed = pending !== null && (pending.type !== flow.triggerType || JSON.stringify(pending.config) !== JSON.stringify(flow.triggerConfig));
+  const changed = pending !== null && (pending.type !== flow.triggerType || !flowEditorEqual(pending.config, flow.triggerConfig));
+  useEffect(() => { onDirtyChange?.(changed); }, [changed, onDirtyChange]);
   const open = (next: "event" | "filters") => { setPending({ type: flow.triggerType, config: { ...flow.triggerConfig } }); setError(""); setView(next); };
   const cancel = () => { setPending(null); setError(""); setView("overview"); };
+  useImperativeHandle(editorRef, () => ({
+    hasChanges: () => changed,
+    snapshot: () => pending ? { trigger: view === "event" ? applyTriggerEvent(flow, pending.type, pending.config) : { triggerType: flow.triggerType, triggerConfig: applyTriggerProfiles(flow, pending.config) } } : {},
+    prepare: () => {
+      if (!pending) return { ok: true };
+      const trigger = view === "event" ? applyTriggerEvent(flow, pending.type, pending.config) : { triggerType: flow.triggerType, triggerConfig: applyTriggerProfiles(flow, pending.config) };
+      const problem = triggerSettingsError(trigger.triggerType, trigger.triggerConfig);
+      if (problem) { setError(problem); return { ok: false }; }
+      return { ok: true, trigger };
+    },
+    reset: cancel,
+  }));
   const setField = (key: string, value: JsonConfig[string] | undefined) => {
     if (!pending || disabled) return;
     const next = { ...pending.config };
@@ -67,7 +85,7 @@ export function FlowTriggerPanel({ flow, onChange, onClose, onPreview, disabled,
 
   return <aside className="wf-panel wf-inspector wf-trigger-panel" aria-label="Trigger settings">
     <div className="wf-settings-heading">
-      {view === "overview" ? <span className="wf-settings-icon"><Zap /></span> : <Button variant="ghost" size="icon-sm" aria-label="Back to trigger" onClick={cancel}><ArrowLeft /></Button>}
+      {view === "overview" ? <span className="wf-settings-icon"><Zap /></span> : <Button variant="ghost" size="icon-sm" aria-label="Back to trigger" onClick={() => onNavigate ? onNavigate(cancel) : cancel()}><ArrowLeft /></Button>}
       <div className="wf-trigger-panel-title"><h2>{view === "overview" ? "Trigger" : view === "filters" ? "Profile filters" : "Trigger event"}</h2>{view !== "overview" ? <p>{view === "filters" ? "Edit profile filters" : "Choose when contacts enter"}</p> : null}</div>
       {view === "overview" ? <Button variant="ghost" size="icon-sm" aria-label="Close trigger settings" onClick={onClose}><X /></Button> : null}
     </div>
@@ -112,6 +130,6 @@ export function FlowTriggerPanel({ flow, onChange, onClose, onPreview, disabled,
         {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
       </div>}
     </div>
-    <div className="wf-settings-footer">{view === "overview" ? <Button variant="outline" size="sm" onClick={onClose}>Close</Button> : <><Button variant="outline" size="sm" onClick={cancel}>Cancel</Button><Button size="sm" disabled={disabled || !changed} onClick={save}>Save</Button></>}</div>
+    {footer ?? <div className="wf-settings-footer">{view === "overview" ? <Button variant="outline" size="sm" onClick={onClose}>Close</Button> : <><Button variant="outline" size="sm" onClick={cancel}>Cancel</Button><Button size="sm" disabled={disabled || !changed} onClick={save}>Save</Button></>}</div>}
   </aside>;
 }

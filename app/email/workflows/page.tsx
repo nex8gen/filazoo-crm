@@ -4,7 +4,7 @@ import { FlowBuilder } from "@/components/flow-builder";
 import { requireWorkspaceMember } from "@/lib/auth";
 import { resolveEmailFlowScope } from "@/lib/data/email-flows";
 import { listEmailFlows, listFlowFilterOptions, listFlowMemberOptions } from "@/lib/data/flows";
-import { listMailboxes } from "@/lib/data/mailboxes";
+import { getViewerMailboxes } from "@/lib/data/mailboxes";
 import { flowMailboxOptions } from "@/lib/flow-mailboxes";
 import { defaultFlowInput, type JsonConfig } from "@/lib/flows";
 import { env } from "@/lib/env";
@@ -21,7 +21,7 @@ export default async function EmailFlowsPage({ searchParams }: { searchParams: P
     return <div className="mx-auto max-w-lg space-y-4 p-8"><h2 className="text-xl font-semibold">Email workflows</h2><NotificationToast>{error instanceof Error ? error.message : "Unable to load this email's company."}</NotificationToast><Link href="/email" className="text-sm font-medium text-primary">Back to email</Link></div>;
   }
   const [flows, mailboxes, members, filterOptions] = await Promise.all([
-    listEmailFlows(scope), listMailboxes(), listFlowMemberOptions(), listFlowFilterOptions(),
+    listEmailFlows(scope), getViewerMailboxes(viewer.id), listFlowMemberOptions(), listFlowFilterOptions(),
   ]);
   const query = new URLSearchParams({ recipient: String(params.recipient), scope: String(scope.flowScope), companyId: String(scope.scopeCompanyId) });
   if (typeof params.thread === "string") query.set("thread", params.thread);

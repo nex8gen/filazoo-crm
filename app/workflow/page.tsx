@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { FlowBuilder } from "@/components/flow-builder";
 import { requireWorkspaceMember } from "@/lib/auth";
 import { listFlowFilterOptions, listFlowMemberOptions, listWorkspaceFlows } from "@/lib/data/flows";
-import { listMailboxes } from "@/lib/data/mailboxes";
+import { getViewerMailboxes } from "@/lib/data/mailboxes";
 import { flowMailboxOptions } from "@/lib/flow-mailboxes";
 import { getSavedSegment } from "@/lib/data/segments";
 import { createSegmentFlowDraft } from "@/lib/segment-flows";
@@ -30,7 +30,7 @@ export default async function AiAgentPage({ searchParams }: PageProps<"/workflow
   }
   const [flows, mailboxes, members, filterOptions] = await Promise.all([
     listWorkspaceFlows(),
-    listMailboxes(),
+    getViewerMailboxes(viewer.id),
     listFlowMemberOptions().catch(() => [{ id: viewer.id, label: viewer.displayName || viewer.email || "You" }]),
     listFlowFilterOptions().catch(() => ({ segments: [], countries: [] })),
   ]);

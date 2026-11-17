@@ -13,14 +13,17 @@ import * as flowAudit from "../lib/flow-audit.ts";
 import * as segmentFlowModel from "../lib/segment-flows.ts";
 import * as triggerEditor from "../lib/flow-trigger-editor.ts";
 import { flowConnectorHealth } from "../lib/flow-connector-health.ts";
+import * as flowEditorSession from "../lib/flow-editor-session.ts";
+import * as flowAlertsModel from "../lib/flow-alerts.ts";
+import * as flowEditorDraftModel from "../lib/flow-editor-draft.ts";
 import { notificationToastModule } from "./helpers/notification-toast.ts";
 
-function loadModule(file: string, dependencies: Record<string, unknown>) {
+function loadModule(file: string, dependencies: Record<string, unknown>, globals: Record<string, unknown> = {}) {
   const exports: Record<string, (...args: unknown[]) => Promise<unknown>> = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => policyTestDependency(name) ?? (dependencies[name] ?? {}))(name), Response, Error, Date, URL });
+  vm.runInNewContext(code, { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => policyTestDependency(name) ?? (dependencies[name] ?? {}))(name), Response, Error, Date, URL, ...globals });
   return exports;
 }
 
@@ -36,6 +39,8 @@ function fixture(role: string | null = "operator") {
   };
   const calls: Array<{ table: string; operation: string; args: unknown[] }> = [];
   const validations: string[] = [];
+  const senderChecks: Array<{ viewerId: string; ownerId: string }> = [];
+  let senderDenied = false;
   let failure: string | null = null;
   const admin = {
     from(table: string) {
@@ -70,11 +75,33 @@ function fixture(role: string | null = "operator") {
       return { id: "alice", role };
     },
   };
-  const dependencies = { "../auth.ts": auth, "../supabase/admin.ts": { createSupabaseAdmin: () => admin }, "../flows.ts": flowModel };
-  const flows = loadModule("../lib/data/flows.ts", { ...dependencies, "./flow-runtime.ts": { validateFlowResources: async (userId: string) => { validations.push(userId); } } });
+  const dependencies = { "../auth.ts": auth, "../supabase/admin.ts": { createSupabaseAdmin: () => admin }, "../flows.ts": flowModel, "../flow-editor-draft.ts": flowEditorDraftModel };
+  const flows = loadModule("../lib/data/flows.ts", { ...dependencies, "./flow-runtime.ts": {
+    validateFlowSenderAccess: async (viewerId: string, _input: unknown, ownerId = viewerId) => {
+      senderChecks.push({ viewerId, ownerId });
+      if (senderDenied) throw new Error("Sender access denied.");
+    },
+    validateFlowResources: async (userId: string) => { validations.push(userId); },
+  } });
   const runtime = loadModule("../lib/data/flow-runtime.ts", { ...dependencies, "../flow-recovery.ts": recovery });
-  return { flows, runtime, calls, rows, auth, validations, fail: (message: string) => { failure = message; } };
+  return { flows, runtime, calls, rows, auth, validations, senderChecks, denySender: () => { senderDenied = true; }, fail: (message: string) => { failure = message; } };
 }
+
+test("workflow sender authorization runs before create or update writes for every editor role", async () => {
+  for (const role of ["admin", "operator", "bd_manager"]) {
+    const f = fixture(role);
+    f.denySender();
+    await assert.rejects(f.flows.createFlow("alice", flowModel.defaultFlowInput), /Sender access denied/);
+    await assert.rejects(f.flows.updateFlow("alice", "flow-alice", flowModel.defaultFlowInput), /Sender access denied/);
+    assert.deepEqual(f.senderChecks, [{ viewerId: "alice", ownerId: "alice" }, { viewerId: "alice", ownerId: "alice" }]);
+    assert.ok(!f.calls.some(call => call.table === "rpc"));
+  }
+  const admin = fixture("admin");
+  admin.denySender();
+  await assert.rejects(admin.flows.updateFlow("alice", "flow-bob", flowModel.defaultFlowInput), /Sender access denied/);
+  assert.deepEqual(admin.senderChecks, [{ viewerId: "alice", ownerId: "bob" }]);
+  assert.ok(!admin.calls.some(call => call.table === "rpc"));
+});
 
 test("every workspace role sees other creators' flows with their steps and run counts", async () => {
   for (const role of ["admin", "operator", "bd_manager", "viewer"]) {
@@ -87,6 +114,51 @@ test("every workspace role sees other creators' flows with their steps and run c
     assert.equal(shared.activeRuns, 1);
     assert.ok(!f.calls.some((call) => call.table === "flows" && call.operation === "eq" && call.args[0] === "user_id"));
   }
+});
+
+test("email card status changes edit only the selected root or nested email and preserve workflow status", async () => {
+  for (const nested of [false, true]) {
+    const hooks = { values: [] as unknown[], cursor: 0 };
+    const requests: flowModel.FlowInput[] = [];
+    const render = builder(hooks, { fetch: async (_url: string, init: { body: string }) => {
+      const payload = JSON.parse(init.body) as { flow: flowModel.FlowInput };
+      requests.push(payload.flow);
+      return Response.json({ ok: true, flow: { ...flow, ...payload.flow } });
+    } });
+    const target = { ...flowModel.blankStep("send_email"), id: "target-email", config: { ...flowModel.defaultFlowInput.steps[1].config, emailName: "Welcome", emailStatus: "live" } };
+    const sibling = { ...target, id: "other-email", config: { ...target.config, emailName: "Follow up" } };
+    const split = flowModel.blankStep("split");
+    (split.config.paths as unknown as Array<{ steps: flowModel.FlowStep[] }>)[0].steps = [target];
+    const flow = { ...flowModel.defaultFlowInput, id: "email-status-flow", createdBy: "alice", status: "live", updatedAt: "2026-11-17T00:00:00Z", steps: nested ? [split, sibling] : [target, sibling] };
+    const props = { initialFlows: [flow], initialFlowId: flow.id, viewerId: "alice", canEdit: true, mailboxOptions: [], memberOptions: [], filterOptions: {} };
+    let tree = await render(props);
+    const provider = elements(tree).find(node => node.type === "FlowEmailPerformanceProvider")!;
+    (provider.props.onEmailStatusChange as (id: string, status: string) => void)(target.id, "draft");
+    await new Promise<void>(resolve => setImmediate(resolve));
+    hooks.cursor = 0; tree = await render(props);
+    const canvas = elements(tree).find(node => typeof node.type === "function" && node.type.name === "FlowCanvas")!;
+    const draft = canvas.props.draft as flowModel.FlowInput;
+    assert.equal(draft.status, "live");
+    const actions = flowTree.flowActionLocations(draft.steps);
+    assert.equal(actions.find(item => item.action.id === target.id)!.action.config.emailStatus, "draft");
+    assert.equal(actions.find(item => item.action.id === sibling.id)!.action.config.emailStatus, "live");
+    assert.equal(actions.find(item => item.action.id === target.id)!.action.config.emailName, "Welcome");
+    assert.equal(requests.length, 1, "Changing card status must be persisted immediately");
+    assert.equal(requests[0].status, "live");
+    assert.equal(flowTree.flowActionLocations(requests[0].steps).find(item => item.action.id === target.id)!.action.config.emailStatus, "draft");
+  }
+});
+
+test("loading a saved editing copy restores incomplete actions without replacing the runnable definition", async () => {
+  const f = fixture();
+  const email = flowModel.blankStep("send_email");
+  f.rows.flow_editor_drafts = [{ flow_id: "flow-alice", revision: 3, base_updated_at: "2026-10-27T00:00:00Z", payload: { ...flowModel.defaultFlowInput, steps: [email] } }];
+  const flows = await f.flows.listWorkspaceFlows() as flowModel.AutomationFlow[];
+  const saved = flows.find(flow => flow.id === "flow-alice")!;
+  assert.equal(saved.steps[0].type, "stop");
+  assert.equal(saved.editorDraft?.definition.steps[0].id, email.id);
+  assert.equal(saved.editorDraft?.definition.steps[0].config.templateId, "");
+  assert.equal(saved.editorDraft?.revision, 3);
 });
 
 test("shared reads reject nonmembers before issuing privileged queries", async () => {
@@ -338,21 +410,22 @@ function elements(value: unknown): Element[] {
   return [element, ...elements(element.props.children)];
 }
 
-function builder(hooks?: { values: unknown[]; cursor: number }) {
+function builder(hooks?: { values: unknown[]; cursor: number }, globals: Record<string, unknown> = {}) {
   // Inspect the actual component output and handlers with React/browser
   // boundaries isolated, so these tests need no session or email provider.
   const components = new Proxy({}, { get: (_target, name) => String(name) });
   const jsx = (type: Element["type"], props: Element["props"]) => ({ type, props });
   function state(value: unknown): [unknown, (next: unknown) => void] {
-    if (!hooks) return [value, () => {}];
+    if (!hooks) return [typeof value === "function" ? value() : value, () => {}];
     const index = hooks.cursor++;
-    if (!(index in hooks.values)) hooks.values[index] = value;
+    if (!(index in hooks.values)) hooks.values[index] = typeof value === "function" ? value() : value;
     return [hooks.values[index], (next: unknown) => { hooks.values[index] = typeof next === "function" ? next(hooks.values[index]) : next; }];
   }
   const dependencies = new Proxy({
     "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
     react: {
       lazy: () => "LazyComponent", Suspense: "Suspense",
+      useId: () => "test-workflow-alerts", useImperativeHandle: () => {},
       useState: state, useRef: (value: unknown) => state({ current: value })[0],
       useEffect: () => {}, useMemo: (fn: () => unknown) => fn(), useCallback: (fn: unknown) => fn,
     },
@@ -361,12 +434,14 @@ function builder(hooks?: { values: unknown[]; cursor: number }) {
     "@/lib/segment-flows": segmentFlowModel,
     "@/lib/flow-audit": flowAudit,
     "@/lib/flow-tree": flowTree,
+    "@/lib/flow-editor-session": flowEditorSession,
+    "@/lib/flow-alerts": flowAlertsModel,
     "@/lib/flow-mailboxes": flowMailboxes,
     "@/components/use-flow-connector-health": { useFlowConnectorHealth: (flow: flowModel.FlowInput | null) => flowConnectorHealth(flow) },
     sonner: { toast: { error: () => {}, success: () => {} } },
     "@/components/language-provider": { useLanguage: () => ({ language: "en", t: (text: string) => text }) },
   }, { get: (target, name) => Reflect.get(target, name) ?? components });
-  return loadModule("../components/flow-builder.tsx", dependencies).FlowBuilder;
+  return loadModule("../components/flow-builder.tsx", dependencies, globals).FlowBuilder;
 }
 
 test("only admins see workflow creators while mutation controls remain reserved for owners and admins", async () => {
@@ -484,18 +559,246 @@ test("every root and branch action uses the same settings panel and respects rea
         assert.equal((wait.props.trail as string[]).length > 0, nested);
         continue;
       }
+      if (action.type === "send_email") {
+        const email = elements(tree).find(node => node.type === "FlowEmailPanel")!;
+        assert.ok(email); assert.equal(email.props.disabled, !canEdit);
+        assert.deepEqual(JSON.parse(JSON.stringify(email.props.config)), action.config);
+        continue;
+      }
       assert.equal(elements(tree).filter(node => node.props["aria-label"] === "Workflow settings").length, 1);
       const inspector = elements(tree).find(node => typeof node.type === "function" && node.type.name === "StepInspector")!;
       assert.equal(inspector.props.type, action.type);
       assert.equal(inspector.props.disabled, !canEdit);
       const fields = (inspector.type as (props: Element["props"]) => Element)(inspector.props);
       assert.equal(fields.props["data-action-kind"], action.type);
-      assert.equal(button(tree, "Duplicate").props.disabled, !canEdit);
-      const remove = elements(tree).find(node => node.props["aria-label"] === "Remove selected action")!;
-      assert.equal(remove.props.disabled, !canEdit);
+      assert.equal(button(tree, "Duplicate"), undefined);
+      assert.equal(elements(tree).find(node => node.props["aria-label"] === "Remove selected action"), undefined);
+      const controls = elements(tree).find(node => node.type === "FlowPanelSaveControls")!;
+      assert.equal(controls.props.disabled, !canEdit);
       assert.equal(elements(tree).some(node => node.props["aria-label"] === "Action location"), nested);
     }
   }
+});
+
+function settingsHarness(nested = false, publish = false) {
+  const hooks = { values: [] as unknown[], cursor: 0 };
+  const wait = flowModel.blankStep("wait"), stop = flowModel.blankStep("stop");
+  const split = flowModel.blankStep("split");
+  if (nested) (split.config.paths as Array<{ steps: flowModel.FlowInput["steps"] }>)[0].steps = [stop];
+  const flow = { ...structuredClone(flowModel.defaultFlowInput), id: "settings-flow", createdBy: "alice", updatedAt: "2026-11-17T00:00:00Z", steps: nested ? [wait, split] : [wait, stop] };
+  const calls: flowModel.FlowInput[] = [];
+  let failSave = false;
+  let gate: Promise<void> | null = null;
+  const render = builder(hooks, { fetch: async (url: string, init: { body: string }) => {
+    const input = JSON.parse(init.body); calls.push(input.flow ?? input);
+    if (gate) await gate;
+    return failSave ? Response.json({ ok: false, error: "Connection interrupted. Try saving again." }, { status: 503 }) : Response.json({ ok: true, flow: url === "/api/flows/editor-draft" ? publish ? { ...flow, ...input.flow, steps: input.flow.steps.map((step: flowModel.FlowStep, index: number) => ({ ...step, id: `published-${calls.length}-${index}` })), updatedAt: "2026-11-17T01:00:00Z" } : { ...flow, editorDraft: { definition: input.flow, revision: input.revision + 1, baseUpdatedAt: flow.updatedAt } } : { ...flow, ...input, updatedAt: "2026-11-17T01:00:00Z" } });
+  } });
+  const props = { initialFlows: [flow], initialFlowId: flow.id, viewerId: "alice", canEdit: true, mailboxOptions: [], memberOptions: [], filterOptions: { countries: [], segments: [] } };
+  let tree: Element;
+  const component = (name: string) => elements(tree).find(node => node.type === name || typeof node.type === "function" && node.type.name === name)!;
+  const refresh = async () => { hooks.cursor = 0; tree = await render(props) as Element; return tree; };
+  return {
+    refresh, component, wait, stop, calls,
+    fail(value: boolean) { failSave = value; },
+    hold() { let release!: () => void; gate = new Promise<void>(resolve => { release = resolve; }); return () => { gate = null; release(); }; },
+    get draft() { return component("FlowCanvas").props.draft as flowModel.FlowInput; },
+    select(id: string) { (component("FlowCanvas").props.setSelection as (id: string) => void)(id); },
+    close() { const close = elements(tree).find(node => node.props["aria-label"] === "Close workflow settings"); if (close) (close.props.onClick as () => void)(); else { const panel = ["FlowWaitPanel", "FlowEmailPanel"].map(component).find(Boolean)!; (panel.props.onClose as () => void)(); } },
+    get dialog() { return elements(tree).find(node => node.type === "Dialog" && node.props.open === true && elements(node).some(child => child.type === "DialogTitle" && child.props.children === "Save changes?")); },
+  };
+}
+
+test("explicit Close retains Keep editing and Discard controls for configuration edits", async () => {
+  for (const nested of [false, true]) {
+    const app = settingsHarness(nested);
+    await app.refresh(); app.select(app.stop.id!); await app.refresh();
+    const inspector = app.component("StepInspector");
+    (inspector.props.onChange as (config: flowModel.JsonConfig) => void)({ ...app.stop.config, reason: "Unsaved reason" });
+    await app.refresh(); app.close(); await app.refresh();
+    assert.ok(app.dialog);
+    assert.equal(app.component("StepInspector").props.type, "stop");
+    (button(app.dialog!, "Keep editing").props.onClick as () => void)();
+    await app.refresh();
+    assert.equal(app.dialog, undefined);
+    assert.equal(flowTree.flowActionLocations(app.draft.steps).find(item => item.action.id === app.stop.id)!.action.config.reason, "Unsaved reason");
+    app.close(); await app.refresh();
+    (button(app.dialog!, "Discard changes").props.onClick as () => void)();
+    await app.refresh();
+    assert.equal(app.dialog, undefined);
+    assert.equal(app.component("StepInspector"), undefined);
+    assert.equal(flowTree.flowActionLocations(app.draft.steps).find(item => item.action.id === app.stop.id)!.action.config.reason, app.stop.config.reason);
+    assert.equal(app.calls.length, 0);
+  }
+});
+
+test("Save changes persists the selected action before continuing and retains edits on failure", async () => {
+  const app = settingsHarness(true);
+  await app.refresh(); app.select(app.stop.id!); await app.refresh();
+  (app.component("StepInspector").props.onChange as (config: flowModel.JsonConfig) => void)({ ...app.stop.config, reason: "Saved nested reason" });
+  await app.refresh(); app.close(); await app.refresh();
+  app.fail(true);
+  await (button(app.dialog!, "Save changes").props.onClick as () => Promise<void>)();
+  // The UI handler deliberately returns void; allow its mocked request and response to settle.
+  await new Promise(resolve => setImmediate(resolve)); await app.refresh();
+  assert.ok(app.dialog, "a failed save must not navigate or discard the form");
+  assert.equal(app.component("StepInspector").props.type, "stop");
+  assert.ok(JSON.stringify(app.dialog).includes("Connection interrupted"));
+  app.fail(false);
+  (button(app.dialog!, "Save changes").props.onClick as () => void)();
+  await new Promise(resolve => setImmediate(resolve)); await app.refresh();
+  assert.equal(app.dialog, undefined);
+  assert.equal(app.component("StepInspector"), undefined);
+  assert.equal(app.calls.length, 2);
+  assert.equal(flowTree.flowActionLocations(app.calls[1].steps).find(item => item.action.id === app.stop.id)!.action.config.reason, "Saved nested reason");
+});
+
+test("pending delay fields participate in both Close and top-level Save before reaching the workflow", async () => {
+  const app = settingsHarness();
+  await app.refresh(); app.select(app.wait.id!); await app.refresh();
+  const wait = app.component("FlowWaitPanel");
+  const editor = wait.props.editorRef as { current: flowEditorSession.FlowPanelEditor | null };
+  editor.current = { hasChanges: () => true, prepare: () => ({ ok: true, config: { ...app.wait.config, amount: 8 } }), reset() {} };
+  (wait.props.onDirtyChange as (dirty: boolean) => void)(true);
+  await app.refresh();
+  assert.equal(app.draft.steps[0].config.amount, 1);
+  const footer = elements(app.component("FlowWaitPanel").props.footer).find(node => node.type === "FlowPanelSaveControls")!;
+  (footer.props.onCancel as () => void)(); await app.refresh();
+  assert.ok(app.dialog);
+  (button(app.dialog!, "Keep editing").props.onClick as () => void)(); await app.refresh();
+  const tree = await app.refresh();
+  const save = elements(tree).find(node => node.props["aria-label"] === "Save workflow")!;
+  (save.props.onClick as () => void)();
+  await new Promise(resolve => setImmediate(resolve)); await app.refresh();
+  assert.equal(app.calls.length, 1);
+  assert.equal(app.calls[0].steps[0].config.amount, 8);
+});
+
+test("new action placement saves automatically and switching away never asks for a separate save", async () => {
+  const app = settingsHarness(); await app.refresh();
+  (app.component("FlowCanvas").props.onAddStep as (type: string) => void)("send_email");
+  await app.refresh();
+  const inserted = app.draft.steps.at(-1)!;
+  assert.equal(inserted.type, "send_email");
+  app.select(app.wait.id!); await app.refresh();
+  assert.equal(app.dialog, undefined);
+  await new Promise(resolve => setImmediate(resolve)); await app.refresh();
+  assert.equal(app.calls.length, 1);
+  assert.equal(app.calls[0].steps.at(-1)!.id, inserted.id);
+  assert.equal(app.draft.steps.at(-1)!.id, inserted.id);
+  assert.equal(app.component("FlowAlertsBell").props.count, 1, "incomplete settings stay in Alerts after autosave");
+});
+
+test("switching actions automatically saves nested configuration changes without a prompt", async () => {
+  const app = settingsHarness(true); await app.refresh(); app.select(app.stop.id!); await app.refresh();
+  (app.component("StepInspector").props.onChange as (config: flowModel.JsonConfig) => void)({ ...app.stop.config, reason: "Automatically saved" });
+  await app.refresh(); app.select(app.wait.id!); await app.refresh();
+  assert.equal(app.dialog, undefined); assert.ok(app.component("FlowWaitPanel"));
+  await new Promise(resolve => setImmediate(resolve)); await app.refresh();
+  assert.equal(flowTree.flowActionLocations(app.calls[0].steps).find(item => item.action.id === app.stop.id)!.action.config.reason, "Automatically saved");
+});
+
+test("switching preserves unfinished local fields without treating them as runnable settings", async () => {
+  const app = settingsHarness(); await app.refresh(); app.select(app.wait.id!); await app.refresh();
+  const editor = app.component("FlowWaitPanel").props.editorRef as { current: flowEditorSession.FlowPanelEditor | null };
+  editor.current = { hasChanges: () => true, snapshot: () => ({ config: { ...app.wait.config, amount: "" } }), prepare: () => ({ ok: false }), reset() {} };
+  app.select(app.stop.id!); await app.refresh();
+  assert.equal(app.dialog, undefined); assert.equal(app.draft.steps[0].config.amount, "");
+  await new Promise(resolve => setImmediate(resolve)); await app.refresh();
+  assert.equal(app.calls[0].steps[0].config.amount, "");
+});
+
+test("rapid action additions are queued without dropping or duplicating previous actions", async () => {
+  const app = settingsHarness(); await app.refresh();
+  (app.component("FlowCanvas").props.onAddStep as (type: string) => void)("send_email"); await app.refresh();
+  (app.component("FlowCanvas").props.onAddStep as (type: string) => void)("wait"); await app.refresh();
+  assert.equal(app.dialog, undefined);
+  await new Promise(resolve => setImmediate(resolve)); await app.refresh();
+  assert.equal(app.calls.length, 2);
+  assert.equal(app.calls[0].steps.length, 3);
+  assert.equal(app.calls[1].steps.length, 4);
+  assert.equal(new Set(app.draft.steps.map(step => step.id)).size, 4);
+});
+
+test("an insertion response cannot overwrite settings edited while that request was pending", async () => {
+  const app = settingsHarness(); const release = app.hold(); await app.refresh();
+  (app.component("FlowCanvas").props.onAddStep as (type: string) => void)("send_email"); await app.refresh();
+  await new Promise(resolve => setImmediate(resolve));
+  const inserted = app.draft.steps.at(-1)!;
+  (app.component("FlowEmailPanel").props.onChange as (config: flowModel.JsonConfig) => void)({ ...inserted.config, subject: "Keep this later edit" });
+  await app.refresh(); app.select(app.wait.id!); await app.refresh();
+  release(); await new Promise(resolve => setImmediate(resolve)); await app.refresh();
+  assert.equal(app.dialog, undefined);
+  assert.equal(app.draft.steps.at(-1)!.config.subject, "Keep this later edit");
+  assert.equal(app.calls.length, 2);
+  assert.equal(app.calls[1].steps.at(-1)!.config.subject, "Keep this later edit");
+});
+
+test("automatic publication keeps the selected settings panel open when database action IDs change", async () => {
+  const app = settingsHarness(false, true); await app.refresh();
+  (app.component("FlowCanvas").props.onAddStep as (type: string) => void)("wait"); await app.refresh();
+  await new Promise(resolve => setImmediate(resolve)); await app.refresh();
+  assert.equal(app.component("FlowCanvas").props.selection, app.draft.steps.at(-1)!.id);
+  assert.ok(app.component("FlowWaitPanel"));
+  assert.equal(app.component("FlowWaitPanel").props.config.amount, 1);
+  app.select(app.draft.steps[1].id!); await app.refresh();
+  assert.equal(app.dialog, undefined); assert.equal(app.component("StepInspector").props.type, "stop");
+});
+
+test("failed autosaves retain inserted actions and expose a retry instead of a save/discard popup", async () => {
+  const app = settingsHarness(); app.fail(true); await app.refresh();
+  (app.component("FlowCanvas").props.onAddStep as (type: string) => void)("send_email"); await app.refresh();
+  await new Promise(resolve => setImmediate(resolve)); await app.refresh();
+  assert.equal(app.draft.steps.length, 3);
+  assert.equal(app.dialog, undefined);
+  const email = app.component("FlowEmailPanel");
+  const retry = elements(email.props.footer).find(node => node.type === "button" && node.props.children === "Retry")!;
+  assert.ok(retry); app.fail(false);
+  (retry.props.onClick as () => void)();
+  await new Promise(resolve => setImmediate(resolve)); await app.refresh();
+  assert.equal(app.calls.length, 2);
+  assert.equal(app.draft.steps.length, 3);
+});
+
+test("the toolbar bell opens current-workflow setup alerts, respects unsaved edits, and scopes dismissals", async () => {
+  const hooks = { values: [] as unknown[], cursor: 0 };
+  const render = builder(hooks);
+  const email = flowModel.blankStep("send_email"), task = flowModel.blankStep("create_task"), split = flowModel.blankStep("split");
+  task.config.title = "";
+  (split.config.paths as Array<{ steps: flowModel.FlowInput["steps"] }>)[0].steps = [task];
+  const flow = { ...structuredClone(flowModel.defaultFlowInput), id: "alerts-one", name: "First workflow", createdBy: "alice", steps: [email, split] };
+  const other = { ...flow, id: "alerts-two", name: "Other workflow" };
+  const props = { initialFlows: [flow, other], initialFlowId: flow.id, viewerId: "alice", canEdit: true, mailboxOptions: [], memberOptions: [], filterOptions: { countries: [], segments: [] } };
+  let tree: Element;
+  const refresh = async () => { hooks.cursor = 0; tree = await render(props) as Element; };
+  const component = (name: string) => elements(tree).find(node => node.type === name || typeof node.type === "function" && node.type.name === name)!;
+  const active = () => component("FlowAlertsPanel").props.active as flowAlertsModel.FlowAlert[];
+  await refresh();
+  assert.equal(component("FlowActivityBell"), undefined);
+  assert.equal(component("FlowHealthNotice"), undefined);
+  assert.equal(component("FlowAlertsBell").props.count, 2);
+  (component("FlowAlertsBell").props.onToggle as () => void)(); await refresh();
+  const review = () => component("FlowAlertsPanel").props.onReview as (alert: flowAlertsModel.FlowAlert) => void;
+  review()(active().find(alert => alert.actionId === email.id)!); await refresh();
+  assert.ok(component("FlowEmailPanel"));
+  (component("FlowEmailPanel").props.onChange as (config: flowModel.JsonConfig) => void)({ ...email.config, templateId: "helpful_reminder" });
+  await refresh();
+  assert.equal(component("FlowAlertsBell").props.count, 1);
+  review()(active().find(alert => alert.actionId === task.id)!); await refresh();
+  const confirm = elements(tree).find(node => node.type === "Dialog" && node.props.open === true)!;
+  assert.ok(confirm, "reviewing another action must preserve the save/discard guard");
+  assert.ok(component("FlowEmailPanel"));
+  (button(confirm, "Discard changes").props.onClick as () => void)(); await refresh();
+  assert.equal(component("StepInspector").props.type, "create_task");
+  assert.equal(component("FlowAlertsBell").props.count, 2);
+  const alert = active().find(alert => alert.actionId === email.id)!;
+  (component("FlowAlertsPanel").props.onDismiss as (alert: flowAlertsModel.FlowAlert) => void)(alert); await refresh();
+  assert.equal(component("FlowAlertsBell").props.count, 1);
+  assert.equal((component("FlowAlertsPanel").props.dismissed as unknown[]).length, 1);
+  const otherItem = elements(tree).find(node => node.type === "DropdownMenuItem" && elements(node).some(child => child.type === "span" && child.props.children === other.name))!;
+  (otherItem.props.onClick as () => void)(); await refresh();
+  assert.equal(component("FlowAlertsBell").props.count, 2, "another workflow cannot inherit the first workflow's dismissal");
+  assert.equal((component("FlowAlertsPanel").props.dismissed as unknown[]).length, 0);
 });
 
 test("turning on a draft first opens review while viewers cannot launch it", async () => {

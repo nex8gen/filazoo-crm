@@ -158,14 +158,6 @@
 .email-designer-previewActions { display: flex; justify-content: center; gap: 6px; }
 .email-designer-previewFrame { flex-shrink: 0; height: min(70vh,800px); min-height: 280px; max-width: 100%; margin: auto; border: 1px solid var(--border); background: white; }
 .email-designer button:focus-visible, .email-designer select:focus-visible, .email-designer summary:focus-visible, .email-designer-block:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
-/* Template previews are also used outside the editor. */
-.campaign-builder-templateCard { position: relative; overflow: hidden; border: 1px solid var(--border); border-radius: 9px; background: var(--background); }
-.campaign-builder-templateCard[data-selected=true] { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
-.campaign-builder-templateCard > .campaign-builder-template { width: 100%; height: 100%; border: 0; border-radius: 0; text-align: left; }
-.campaign-builder-templateCard > .campaign-builder-template > small { display: block; padding-bottom: 12px; }
-.campaign-builder-templateMenu { position: absolute; right: 8px; bottom: 8px; }
-.campaign-builder-templatePaper iframe { width: 600px; height: 610px; transform: scale(.33); transform-origin: top left; pointer-events: none; border: 0; background: white; }
-.campaign-builder-templatePaper:has(iframe) { display: block; overflow: hidden; height: 202px; padding: 0; }
 .campaign-builder-designPreview { width: 100%; height: 400px; border: 0; background: #fff; }
 .campaign-builder-envelope:has(iframe), .campaign-builder-emailPreview:has(iframe) { padding: 12px; }
 .campaign-builder-envelope .campaign-builder-designPreview { height: 430px; }

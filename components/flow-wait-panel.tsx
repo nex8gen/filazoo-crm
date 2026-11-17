@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useImperativeHandle, useState, type ReactNode, type Ref } from "react";
+import type { FlowPanelEditor } from "@/lib/flow-editor-session";
 import { Clock3, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -11,12 +12,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { applyWaitDraft, maxWaitAmount, waitDraftChanged, waitEditorDraft, waitUnits } from "@/lib/flow-wait-editor";
 import type { JsonConfig } from "@/lib/flows";
 
-export function FlowWaitPanel({ config, onChange, onClose, disabled, trail = [] }: { config: JsonConfig; onChange: (config: JsonConfig) => void; onClose: () => void; disabled: boolean; trail?: string[] }) {
+export function FlowWaitPanel({ config, onChange, onClose, disabled, trail = [], footer, editorRef, onDirtyChange }: { config: JsonConfig; onChange: (config: JsonConfig) => void; onClose: () => void; disabled: boolean; trail?: string[]; footer?: ReactNode; editorRef?: Ref<FlowPanelEditor>; onDirtyChange?: (dirty: boolean) => void }) {
   const [draft, setDraft] = useState(() => waitEditorDraft(config));
   const changed = waitDraftChanged(config, draft);
   const result = applyWaitDraft(config, draft);
   const update = (change: Partial<typeof draft>) => { if (!disabled) setDraft(current => ({ ...current, ...change })); };
   const save = () => { if (!disabled && changed && result.ok) { onChange(result.config); onClose(); } };
+  useEffect(() => { onDirtyChange?.(changed); }, [changed, onDirtyChange]);
+  useImperativeHandle(editorRef, () => ({ hasChanges: () => changed, snapshot: () => ({ config: result.ok ? result.config : { ...config, amount: draft.amount, unit: draft.unit, businessDays: draft.businessDays, resumeAt: draft.specificTime ? draft.resumeAt : "" } }), prepare: () => result.ok ? { ok: true, config: result.config } : { ok: false }, reset: () => setDraft(waitEditorDraft(config)) }));
 
   return <aside className="wf-panel wf-inspector wf-wait-panel" aria-label="Time delay settings">
     <div className="wf-settings-heading"><span className="wf-settings-icon"><Clock3 /></span><h2>Time delay details</h2><Button type="button" variant="ghost" size="icon-sm" aria-label="Close time delay settings" onClick={onClose}><X /></Button></div>
@@ -35,6 +38,6 @@ export function FlowWaitPanel({ config, onChange, onClose, disabled, trail = [] 
         {changed && !result.ok ? <p role="alert" className="wf-wait-error">{result.error}</p> : null}
       </div>
     </div>
-    <div className="wf-settings-footer"><Button type="button" variant="outline" size="sm" onClick={onClose}>Close</Button><Button type="button" size="sm" disabled={disabled || !changed || !result.ok} onClick={save}>Save</Button></div>
+    {footer ?? <div className="wf-settings-footer"><Button type="button" variant="outline" size="sm" onClick={onClose}>Close</Button><Button type="button" size="sm" disabled={disabled || !changed || !result.ok} onClick={save}>Save</Button></div>}
   </aside>;
 }

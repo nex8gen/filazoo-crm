@@ -27,8 +27,8 @@ export async function testFlowWithEmails(input: FlowEmailTestInput, managerName:
         try {
           const template = emailTemplates[String(step.config.templateId)];
           const contact = { name: input.customerName, email: email.from };
-          const subject = renderFlowTemplate(String(step.config.subject || template.subject), contact);
-          const body = renderFlowTemplate(String(step.config.body || template.body), contact);
+          const subject = renderFlowTemplate(String(step.config.subject || template?.subject || ""), contact);
+          const body = renderFlowTemplate(String(step.config.body || template?.body || ""), contact);
           const attachments = step.config.templateId === "send_catalog" ? await prepareFlowTemplateCatalog(userId) : [];
           testCase.replies.push({ step: entry.step, subject, body, attachments: attachments.map((attachment) => ({ filename: attachment.filename, size: attachment.content.length })) });
           previousMessages += 1;

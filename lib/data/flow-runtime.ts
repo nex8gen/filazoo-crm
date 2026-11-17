@@ -8,7 +8,7 @@ import { buildFlowEmail } from "../flow-tracking.ts";
 import { emailTemplates, renderFlowTemplate as renderTemplate } from "../flow-templates.ts";
 
 import { allFlowActions, calculateWaitUntil, conditionMatches, triggerMatches, matchesFlowCustomer, matchesFlowScope, matchesProfileFilters, flowConversationPath, nextBusinessWindow, type FlowFacts, type TriggerEvent } from "../flow-engine.ts";
-import { flowInputSchema, flowLeadListForSource, hasRetiredSalesConfig, retiredSalesMessage, type FlowInput, type FlowStep, type JsonConfig, type TriggerType } from "../flows.ts";
+import { flowEmailStatus, flowInputSchema, flowLeadListForSource, hasRetiredSalesConfig, retiredSalesMessage, type FlowInput, type FlowStep, type JsonConfig, type TriggerType } from "../flows.ts";
 import { env } from "../env.ts";
 import { sendMailboxEmail, verifyMailboxSmtp } from "../mailer.ts";
 import { getUserEmailFooter, prepareUserEmail } from "./email-footers.ts";
@@ -26,7 +26,6 @@ import { matchesSegment, segmentRulesSchema } from "../segments.ts";
 import { FlowPreparationRetry, flowPreparationError, workflowErrorMessage } from "../flow-execution-errors.ts";
 import { resolveGatewayTokenAsync } from "../ai/provider-credentials.ts";
 import { verifyGatewayAccess } from "../ai/gateway-health.ts";
-import { assignedFlowActor, assignedFlowCandidates } from "./flow-sender.ts";
 import { requireFreshFlowMailbox } from "./flow-mail-context.ts";
 import { normalizeMessageId } from "../email-threading.ts";
 import { flowRecoveryState, flowRunActionId } from "../flow-recovery.ts";
@@ -90,7 +89,7 @@ export async function loadFlowFacts({ userId, contactId, companyId, messageKey, 
 }
 
 function loadRunFacts(run: RunRow, flow: FlowRow, lookbackDays = 365) {
-  return loadFlowFacts({ userId: typeof run.context?.senderUserId === "string" ? run.context.senderUserId : flow.user_id, contactId: run.contact_id, companyId: run.company_id,
+  return loadFlowFacts({ userId: flow.user_id, contactId: run.contact_id, companyId: run.company_id,
     messageKey: String(run.context?.messageKey || "") || run.conversation_id, lookbackDays,
     conversationId: String(run.context?.emailThreadId || run.conversation_id), since: String(run.context?.replySince || run.started_at),
     runId: run.id, fallbackCategory: typeof run.context?.category === "string" ? run.context.category : null,
@@ -188,8 +187,26 @@ export async function getFlowTestMailbox(userId: string, mailboxId: unknown) {
   return getMailbox({ id: "", user_id: userId, trigger_type: "new_lead", trigger_config: {}, status: "draft" }, mailboxId);
 }
 
+/** Saving a workflow never grants access to another member's private sender. */
+export async function validateFlowSenderAccess(viewerId: string, input: FlowInput, ownerId = viewerId) {
+  const actions = allFlowActions(input.steps).filter(step => step.type === "send_email" || step.type === "ai_auto_reply" || step.type === "internal_alert" && step.config.channel === "email");
+  if (!actions.length) return;
+  const { data } = await createSupabaseAdmin().from("workspace_mailboxes").select("id,user_id,type,email,is_default,is_active")
+    .or(`type.eq.workspace,user_id.eq.${ownerId}`).order("created_at", { ascending: false }).throwOnError();
+  const mailboxes = normalizeMailboxRows(data);
+  for (const step of actions) {
+    const choice = step.config.mailboxId;
+    const mailbox = resolveFlowSender(mailboxes, ownerId, choice);
+    // Disconnected defaults can still be saved as drafts and fixed in Settings.
+    if (!mailbox && viewerId === ownerId && (choice == null || ["default", "owner", "workspace"].includes(String(choice)))) continue;
+    if (!mailbox || mailbox.type === "personal" && mailbox.userId !== viewerId) {
+      throw new Error("Choose your own email account or a shared team email. Other members' personal email accounts cannot be used.");
+    }
+  }
+}
+
 export async function validateFlowResources(userId: string, input: FlowInput) {
-  if ((env.flowDryRun ?? env.dryRun) && allFlowActions(input.steps).some(step => step.type === "send_email" || step.type === "ai_auto_reply" || step.type === "internal_alert" && step.config.channel === "email")) {
+  if ((env.flowDryRun ?? env.dryRun) && allFlowActions(input.steps).some(step => step.type === "send_email" && flowEmailStatus(step.config) === "live" || step.type === "ai_auto_reply" || step.type === "internal_alert" && step.config.channel === "email")) {
     throw new Error("Email delivery is temporarily unavailable. Your workflow can be saved as a draft. Please try again later or contact support.");
   }
   const admin = createSupabaseAdmin();
@@ -207,18 +224,16 @@ export async function validateFlowResources(userId: string, input: FlowInput) {
     if (!data?.is_active || data.type === "personal" && data.user_id !== userId) throw new Error("Choose an active receiving mailbox owned by this workflow's sender or a shared team mailbox.");
   }
   for (const step of allFlowActions(input.steps)) {
+    if (step.type === "send_email" && flowEmailStatus(step.config) !== "live") continue;
     if (step.type === "internal_alert" && step.config.channel === "email") {
       const mailbox = await getMailbox({ id: "", user_id: userId, trigger_type: input.triggerType, trigger_config: input.triggerConfig, status: input.status }, step.config.mailboxId);
       if (!mailbox?.smtpHost || !mailbox.smtpUsername || !mailbox.smtpPassword) throw new Error("Connect a sending email account before enabling email alerts.");
       checkSender(mailbox);
     }
     if (step.type === "send_email" || step.type === "ai_auto_reply") {
-      const senders = step.config.mailboxId === "assigned_owner" ? await assignedFlowCandidates(userId, typeof input.triggerConfig.scopeCompanyId === "string" ? input.triggerConfig.scopeCompanyId : undefined) : [userId];
-      for (const senderId of senders) {
-      const mailbox = await getMailbox({ id: "", user_id: senderId, trigger_type: input.triggerType, trigger_config: input.triggerConfig, status: input.status }, step.config.mailboxId === "assigned_owner" ? "owner" : step.config.mailboxId);
+      const mailbox = await getMailbox({ id: "", user_id: userId, trigger_type: input.triggerType, trigger_config: input.triggerConfig, status: input.status }, step.config.mailboxId);
       if (!mailbox?.smtpHost || !mailbox.smtpUsername || !mailbox.smtpPassword) throw new Error("Connect a sending email account before turning on this workflow.");
       checkSender(mailbox);
-      }
       if (step.type === "ai_auto_reply") {
         if (!hasFlowReplyProvider() && !await resolveGatewayTokenAsync()) throw new Error("Configure a valid, unexpired AI provider before enabling AI auto-reply.");
         await requireAiAutomation(["sending", ...(step.config.attachCatalog ? ["catalogs"] as const : [])], ["emails", "customers", "team", ...(step.config.useProducts || step.config.attachCatalog ? ["products"] as const : [])]);
@@ -239,23 +254,31 @@ export async function validateFlowResources(userId: string, input: FlowInput) {
   await Promise.all([...connectionChecks.values()].map(check => check()));
 }
 
+async function currentEmailStatus(flowId: string, step: FlowStep) {
+  const { data } = await createSupabaseAdmin().from("flow_steps").select("id,type,config").eq("flow_id", flowId).throwOnError();
+  const identity = String(step.config.performanceId || step.id);
+  const current = allFlowActions((data ?? []) as FlowStep[]).find(action => action.type === "send_email" && (String(action.config.performanceId || action.id) === identity || action.id === step.id));
+  // Removing an email also stops queued snapshots from sending it.
+  return current ? flowEmailStatus(current.config) : "draft";
+}
+
 async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: FlowFacts) {
-  const authorId = flow.user_id;
+  const performanceId = String(step.config.performanceId || step.id);
+  const logEmail = (result: JsonConfig) => logRun(run.id, step.id, { ...result, performanceId });
+  if (step.type === "send_email") {
+    const status = await currentEmailStatus(flow.id, step);
+    if (status === "draft") { await logEmail({ action: "email_skipped", reason: "This email is draft or was removed from the workflow." }); return; }
+  }
   if (step.config.mailboxId === "assigned_owner") {
-    const senderId = await assignedFlowActor(flow.user_id, run.company_id, typeof run.context?.senderUserId === "string" ? run.context.senderUserId : undefined);
-    run.context = { ...run.context, senderUserId: senderId };
-    await createSupabaseAdmin().from("flow_runs").update({ context: run.context }).eq("id", run.id).throwOnError();
-    flow = { ...flow, user_id: senderId };
-    step = { ...step, config: { ...step.config, mailboxId: "owner" } };
-    facts = await loadRunFacts(run, flow);
+    throw new FlowPreparationRetry("Choose your own email account or a shared team email. Assigned-salesperson sending is no longer available.", 3_600_000, "configuration");
   }
   if (!matchesProfileFilters(flow.trigger_config, facts) || (step.config.filters && !await matchesRunCondition(step.config.filters as JsonConfig, run, flow, facts))) {
-    await logRun(run.id, step.id, { action: "email_skipped", reason: "Profile or message filters no longer match." });
+    await logEmail({ action: "email_skipped", reason: "Profile or message filters no longer match." });
     return;
   }
   const stopsOnReply = step.type === "send_email" && step.config.stopOnReply !== false || step.config.stopOnReply === true || run.context?.noReplyGuard === true;
   if (stopsOnReply && facts.customerReplied) {
-    await logRun(run.id, step.id, { action: "cancelled", reason: "Customer replied" });
+    await logEmail({ action: "cancelled", reason: "Customer replied" });
     await finishRun(run.id, "cancelled");
     return "terminal" as const;
   }
@@ -276,12 +299,12 @@ async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: F
   }
   if (!contact) throw new FlowPreparationRetry("Email action is waiting for a CRM contact. Add a contact with an email to this company; this run will resume automatically.", 3_600_000, "data");
   if (run.company_id && contact.company_id !== run.company_id) {
-    await logRun(run.id, step.id, { action: "cancelled", reason: "The contact moved to another company during this workflow." });
+    await logEmail({ action: "cancelled", reason: "The contact moved to another company during this workflow." });
     await finishRun(run.id, "cancelled");
     return "terminal" as const;
   }
   if (!matchesFlowCustomer(flow.trigger_config ?? {}, contact.id) || !matchesFlowScope(flow.trigger_config ?? {}, contact.company_id, contact.id)) {
-    await logRun(run.id, step.id, { action: "cancelled", reason: "Customer is no longer selected for this workflow." });
+    await logEmail({ action: "cancelled", reason: "Customer is no longer selected for this workflow." });
     await finishRun(run.id, "cancelled");
     return "terminal" as const;
   }
@@ -290,14 +313,14 @@ async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: F
   if (Number(step.config.smartSendingHours) > 0) {
     const since = new Date(Date.now() - Number(step.config.smartSendingHours) * 3_600_000).toISOString();
     const { count } = await admin.from("mailbox_sent_messages").select("id", { count: "exact", head: true }).eq("user_id", flow.user_id).eq("to_email", contact.email.toLowerCase()).gte("sent_at", since).throwOnError();
-    if (count) { await logRun(run.id, step.id, { action: "email_skipped", reason: "Smart Sending: this customer was emailed recently." }); return; }
+    if (count) { await logEmail({ action: "email_skipped", reason: "Smart Sending: this customer was emailed recently." }); return; }
   }
   const { data: conversationAutomation, error: automationError } = await admin.from("email_auto_replies").select("id").eq("recipient", contact.email.toLowerCase())
     .eq("mailbox_id", automatedMailbox?.id || "00000000-0000-0000-0000-000000000000")
     .eq("thread_key", String(run.context?.emailThreadId || run.conversation_id)).eq("enabled", true).limit(1).maybeSingle();
   if (automationError && !isAutoReplySchemaMissing(automationError)) throw automationError;
   if (conversationAutomation) {
-    await logRun(run.id, step.id, { action: "cancelled", reason: "Conversation AI auto-reply is handling this customer." });
+    await logEmail({ action: "cancelled", reason: "Conversation AI auto-reply is handling this customer." });
     await finishRun(run.id, "cancelled");
     return "terminal" as const;
   }
@@ -328,15 +351,15 @@ async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: F
       throw new FlowPreparationRetry(decision.reason, tomorrow.getTime() - Date.now(), "daily_limit");
     }
     if (decision.reason === "Address is not verified" && ["unverified", "unknown"].includes(contact.verification_status)) throw new FlowPreparationRetry("Address is not verified and no customer inquiry is available yet. Verify the contact or restore its incoming message; this action will recheck automatically.", 60_000, "data");
-    await logRun(run.id, step.id, { action: "email_skipped", reason: decision.reason });
+    await logEmail({ action: "email_skipped", reason: decision.reason });
     return;
   }
   const template = emailTemplates[String(step.config.templateId)];
-  if (step.type === "send_email" && !template) throw new Error("The selected email template is unavailable.");
-  let subject = step.type === "ai_auto_reply" ? "AI personalized reply" : renderTemplate(String(step.config.subject || template!.subject), contact);
-  let body = step.type === "ai_auto_reply" ? "" : renderTemplate(String(step.config.body || template!.body), contact);
+  if (step.type === "send_email" && !template && step.config.templateId !== "custom") throw new Error("The selected email template is unavailable.");
+  let subject = step.type === "ai_auto_reply" ? "AI personalized reply" : renderTemplate(String(step.config.subject || template?.subject || ""), contact);
+  let body = step.type === "ai_auto_reply" ? "" : renderTemplate(String(step.config.body || template?.body || ""), contact);
   if (decision.mode === "dry-run") {
-    await logRun(run.id, step.id, { action: "email_dry_run", to: contact.email, subject, aiGenerated: step.type === "ai_auto_reply", catalogRequested: step.config.attachCatalog === true, reason: decision.reason });
+    await logEmail({ action: "email_dry_run", to: contact.email, subject, aiGenerated: step.type === "ai_auto_reply", catalogRequested: step.config.attachCatalog === true, reason: decision.reason });
     return "continue" as const;
   }
   const mailbox = await getMailbox(flow, step.config.mailboxId);
@@ -357,7 +380,7 @@ async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: F
   const replyHeaders = inReplyTo ? { inReplyTo, references: [inReplyTo] } : {};
   const footer = await getUserEmailFooter(flow.user_id);
   if (footer?.html) body = removeStandardSignoff(body);
-  const content = await prepareUserEmail(flow.user_id, { ...buildFlowEmail({ body, config: step.config, runId: run.id, stepId: step.id, flowId: flow.id, appUrl: env.NEXT_PUBLIC_APP_URL, secret: env.supabaseSecretKey! }), attachments }, false, footer);
+  const content = await prepareUserEmail(flow.user_id, { ...buildFlowEmail({ body, config: step.config, contact, runId: run.id, stepId: performanceId, flowId: flow.id, appUrl: env.NEXT_PUBLIC_APP_URL, secret: env.supabaseSecretKey! }), attachments }, false, footer);
   attachments = content.attachments as typeof attachments;
   body = content.text;
   const sentRecordId = randomUUID();
@@ -384,19 +407,18 @@ async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: F
     const latestContact = await getContact(contact.id);
     if (!latestContact || latestContact.email !== contact.email || latestContact.company_id !== contact.company_id) throw new FlowPreparationRetry("The recipient changed during preparation. Review the current contact before sending.", 60_000, "data");
     if (latestContact.verification_status !== contact.verification_status || latestContact.consent_source !== contact.consent_source) throw new FlowPreparationRetry("Recipient eligibility changed during preparation. This action will re-evaluate the current contact.", 60_000, "data");
-    if (typeof run.context?.senderUserId === "string") await assignedFlowActor(authorId, run.company_id, run.context.senderUserId);
     const latestFacts = await loadRunFacts(run, { ...flow, trigger_config: currentFlow.trigger_config });
     const currentFiltersMatch = matchesFlowCustomer(currentFlow.trigger_config, latestContact.id) && matchesFlowScope(currentFlow.trigger_config, latestContact.company_id, latestContact.id)
       && matchesProfileFilters(currentFlow.trigger_config, latestFacts) && (!step.config.filters || await matchesRunCondition(step.config.filters as JsonConfig, run, flow, latestFacts));
     if (!currentFiltersMatch || stopsOnReply && latestFacts.customerReplied) {
-      await logRun(run.id, step.id, { action: "email_skipped", reason: latestFacts.customerReplied ? "Customer replied during preparation." : "Audience filters changed during preparation." });
+      await logEmail({ action: "email_skipped", reason: latestFacts.customerReplied ? "Customer replied during preparation." : "Audience filters changed during preparation." });
       if (uploadPaths.length) await admin.storage.from("mailbox-attachments").remove(uploadPaths);
       if (stopsOnReply && latestFacts.customerReplied) { await finishRun(run.id, "cancelled"); return "terminal" as const; }
       return "continue" as const;
     }
     const { count: latestSuppressed } = await admin.from("suppression").select("email", { count: "exact", head: true }).eq("email", latestContact.email).throwOnError();
     if (latestContact.unsubscribed || latestSuppressed) {
-      await logRun(run.id, step.id, { action: "email_skipped", reason: latestContact.unsubscribed ? "Contact unsubscribed during preparation." : "Contact was suppressed during preparation." });
+      await logEmail({ action: "email_skipped", reason: latestContact.unsubscribed ? "Contact unsubscribed during preparation." : "Contact was suppressed during preparation." });
       if (uploadPaths.length) await admin.storage.from("mailbox-attachments").remove(uploadPaths);
       await finishRun(run.id, "cancelled");
       return "terminal" as const;
@@ -407,7 +429,7 @@ async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: F
     if (!/^(company:|shopify:|lead:)/.test(currentThread)) inboundQuery = inboundQuery.eq("thread_id", currentThread);
     const { data: latestInbound } = await inboundQuery.order("created_at", { ascending: false }).limit(1).maybeSingle().throwOnError();
     if (flow.trigger_type === "email_received" && latestInbound?.automatic_response) {
-      await logRun(run.id, step.id, { action: "email_skipped", reason: "Automatic response detected. No reply sent." });
+      await logEmail({ action: "email_skipped", reason: "Automatic response detected. No reply sent." });
       if (uploadPaths.length) await admin.storage.from("mailbox-attachments").remove(uploadPaths);
       return "continue" as const;
     }
@@ -419,10 +441,18 @@ async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: F
     ]);
     const ownMessageIds = new Set((ownSends ?? []).map(log => log.result?.messageId));
     if ((outbound ?? []).some(message => !ownMessageIds.has(message.message_id))) {
-      await logRun(run.id, step.id, { action: "email_skipped", reason: "A teammate already replied after this action was triggered." });
+      await logEmail({ action: "email_skipped", reason: "A teammate already replied after this action was triggered." });
       if (uploadPaths.length) await admin.storage.from("mailbox-attachments").remove(uploadPaths);
       await finishRun(run.id, "cancelled");
       return "terminal" as const;
+    }
+    if (step.type === "send_email") {
+      const status = await currentEmailStatus(flow.id, step);
+      if (status !== "live") {
+        if (uploadPaths.length) await admin.storage.from("mailbox-attachments").remove(uploadPaths);
+        await logEmail({ action: "email_skipped", reason: "This email was made draft or removed during preparation." });
+        return "continue" as const;
+      }
     }
     // A receipt can match multiple live flows. Claim its response atomically;
     // per-flow enrollment deduplication alone does not prevent two replies.
@@ -435,7 +465,7 @@ async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: F
         const { data: claim } = await admin.from("flow_run_logs").select("run_id,result").eq("id", responseClaimId).single().throwOnError();
         responseClaimId = null;
         if (claim.run_id !== run.id || claim.result?.stepId !== step.id) {
-          await logRun(run.id, step.id, { action: "email_skipped", reason: "Another workflow has already claimed the response to this message." });
+          await logEmail({ action: "email_skipped", reason: "Another workflow has already claimed the response to this message." });
           if (uploadPaths.length) await admin.storage.from("mailbox-attachments").remove(uploadPaths);
           await finishRun(run.id, "cancelled");
           return "terminal" as const;
@@ -468,7 +498,7 @@ async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: F
     admin.from("flow_runs").update({ context: run.context }).eq("id", run.id).throwOnError(),
     admin.from("mailbox_sent_messages").insert({ id: sentRecordId, user_id: flow.user_id, mailbox_id: mailbox.id, message_id: sent.messageId || null, thread_key: threadId, in_reply_to: inReplyTo || null, reference_ids: inReplyTo ? [inReplyTo] : [], from_email: mailbox.email, to_email: contact.email, subject, body, body_html: content.html || null, status: "sent", attachments: storedAttachments }).throwOnError(),
     admin.from("emails").insert({ contact_id: contact.id, direction: "sent", subject, body, thread_id: threadId, owner_id: flow.user_id, message_id: sent.messageId || null, status: "sent", step: run.current_step + 1, sent_at: new Date().toISOString() }).throwOnError(),
-    logRun(run.id, step.id, { action: "email_sent", to: contact.email, subject, messageId: sent.messageId || null, aiGenerated: Boolean(aiReply), catalogAttached: Boolean(attachments.length) }),
+    logEmail({ action: "email_sent", to: contact.email, subject, messageId: sent.messageId || null, aiGenerated: Boolean(aiReply), catalogAttached: Boolean(attachments.length) }),
   ]);
   return "continue" as const;
 }
@@ -652,6 +682,7 @@ export async function processFlowRun(runId: string, options: { deadline?: number
       delete cleanContext.executionCheckpoint;
       delete cleanContext.preparationRetry;
       delete cleanContext.executionState;
+      delete cleanContext.emailPausedStepId;
       run.context = cleanContext;
       await admin.from("flow_runs").update({ current_step: index, next_run_at: null, context: run.context }).eq("id", run.id).throwOnError();
     }

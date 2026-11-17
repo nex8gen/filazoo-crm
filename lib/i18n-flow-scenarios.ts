@@ -1,4 +1,6 @@
 export const zhCNFlowScenarios: Record<string, string> = {
+  "Choose your own email account or a shared team email. Other members' personal email accounts cannot be used.": "请选择您自己的邮箱或团队共享邮箱。不能使用其他成员的个人邮箱。",
+  "No email accounts connected": "尚未连接邮箱账户",
   "Needs attention:": "需要处理：",
   "Only new customer messages received after activation enroll. Automatic responses are excluded.": "仅处理启用后收到的新客户邮件，自动回复邮件不会进入流程。",
   "Reads the submitted form requirements and latest customer conversation before sending.": "发送前读取客户提交的表单需求和最新邮件对话。",

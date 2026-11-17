@@ -1,5 +1,9 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { JsonConfig } from "./flows.ts";
+import { emailDesignSchema, emailDesignUrl, renderEmailDesign } from "./email-design.ts";
+import { sanitizeFullEmailHtml } from "./email-html-document.ts";
+import { renderFlowTemplate } from "./flow-templates.ts";
+import { applyFlowUtm } from "./flow-email-utm.ts";
 
 type TrackingPayload = { runId: string; stepId: string; kind: "open" | "click"; target?: string; expires: number };
 
@@ -27,7 +31,7 @@ function escapeHtml(value: string) {
   return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
 }
 
-export function buildFlowEmail({ body, config, runId, stepId, flowId, appUrl, secret }: { body: string; config: JsonConfig; runId: string; stepId: string; flowId: string; appUrl: string; secret: string }) {
+export function buildFlowEmail({ body, config, runId, stepId, flowId, appUrl, secret, contact }: { body: string; config: JsonConfig; runId: string; stepId: string; flowId: string; appUrl: string; secret: string; contact?: { name: string | null; email: string } }) {
   const expires = Date.now() + 366 * 86400000;
   const trackingUrl = (kind: "open" | "click", target?: string) => `${appUrl.replace(/\/$/, "")}/api/flows/track?token=${signTracking({ runId, stepId, kind, target, expires }, secret)}`;
   let text = "";
@@ -47,11 +51,7 @@ export function buildFlowEmail({ body, config, runId, stepId, flowId, appUrl, se
       offset = match.index + match[0].length;
       continue;
     }
-    if (config.utmTracking !== false) {
-      url.searchParams.set("utm_source", "filazoo");
-      url.searchParams.set("utm_medium", "email");
-      url.searchParams.set("utm_campaign", flowId);
-    }
+    applyFlowUtm(url, config, flowId);
     const target = url.toString();
     const href = config.trackClicks !== false ? trackingUrl("click", target) : target;
     text += href;
@@ -61,6 +61,17 @@ export function buildFlowEmail({ body, config, runId, stepId, flowId, appUrl, se
   text += body.slice(offset);
   html += escapeHtml(body.slice(offset));
   html = `<div style="white-space:pre-wrap">${html}</div>`;
+  if (config.emailDesign) {
+    const design = emailDesignSchema.parse(config.emailDesign);
+    const rendered = renderEmailDesign(design, { personalize: contact ? value => renderFlowTemplate(value, contact) : undefined });
+    html = sanitizeFullEmailHtml(rendered.html, { imageUrl: src => emailDesignUrl(src, true), link: href => {
+      const safe = emailDesignUrl(href);
+      if (!/^https?:\/\//i.test(safe)) return safe;
+      const url = new URL(safe);
+      applyFlowUtm(url, config, flowId);
+      return config.trackClicks !== false ? trackingUrl("click", url.toString()) : url.toString();
+    } });
+  }
   if (config.preheader) html = `<div style="display:none;max-height:0;overflow:hidden">${escapeHtml(String(config.preheader))}</div>${html}`;
   if (config.trackOpens !== false) html += `<img src="${escapeHtml(trackingUrl("open"))}" width="1" height="1" alt="" />`;
   return { text, html };

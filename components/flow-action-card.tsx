@@ -18,6 +18,8 @@ type Props = {
   split?: boolean;
   kind?: FlowStepType;
   detail?: ReactNode;
+  body?: ReactNode;
+  expanded?: boolean;
   onSelect: () => void;
   onMove: (offset: number) => void;
   onRemove: () => void;
@@ -25,13 +27,14 @@ type Props = {
 };
 
 /** A quiet card surface keeps the configured action legible at every branch width. */
-export function FlowActionCard({ label, summary, icon, tone, index, selected, disabled, last, split, kind, detail, onSelect, onMove, onRemove, onPointerDown }: Props) {
+export function FlowActionCard({ label, summary, icon, tone, index, selected, disabled, last, split, kind, detail, body, expanded, onSelect, onMove, onRemove, onPointerDown }: Props) {
   const actionKind = kind || (split ? "split" : "stop");
   const actionGroup = actionKind === "send_email" || actionKind === "ai_auto_reply" ? "message" : ["create_task", "change_category", "update_company", "internal_alert"].includes(actionKind) ? "data" : "logic";
   return <div
     data-flow-card
     data-flow-kind={actionKind}
     data-flow-group={actionGroup}
+    data-flow-expanded={expanded || undefined}
     data-flow-split-header={split ? "" : undefined}
     role="button"
     tabIndex={0}
@@ -60,8 +63,8 @@ export function FlowActionCard({ label, summary, icon, tone, index, selected, di
         </DropdownMenu>
       </div> : null}
     </div>
-    {!split && kind !== "stop" && kind !== "wait" ? <div data-no-drag className="wf-node-body" onPointerDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()}><Button type="button" variant="outline" className="wf-node-configure" onClick={onSelect}>Configure {label.toLowerCase()}</Button></div> : null}
-    {detail ? <div className="flex items-center gap-2 rounded-b-2xl border-t bg-muted/25 px-4 py-2 text-[11px] text-muted-foreground">{detail}</div> : null}
+    {body ?? (!split && kind !== "stop" && kind !== "wait" ? <div data-no-drag className="wf-node-body" onPointerDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()}><Button type="button" variant="outline" className="wf-node-configure" onClick={onSelect}>Configure {label.toLowerCase()}</Button></div> : null)}
+    {detail ? <div data-no-drag onPointerDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()} className="wf-node-detail flex items-center gap-2 rounded-b-2xl border-t bg-muted/25 px-4 py-2 text-[11px] text-muted-foreground">{detail}</div> : null}
     <GripVertical aria-hidden="true" className="pointer-events-none absolute -left-5 top-5 size-4 text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100" />
   </div>;
 }

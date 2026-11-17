@@ -4,24 +4,25 @@ import { useId } from "react";
 import Link from "next/link";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { selectedFlowSender } from "@/lib/flow-mailboxes";
 
 export function FlowSenderField({ value, onChange, options, disabled }: {
   value: string;
   onChange: (value: string) => void;
-  options: { id: string; label: string; disabled?: boolean }[];
+  options: { id: string; label: string; disabled?: boolean; aliases?: string[] }[];
   disabled: boolean;
 }) {
   const id = useId();
-  const selected = options.find((option) => option.id === value);
+  const selected = selectedFlowSender(options, value);
   return <div className="space-y-2">
     <Label htmlFor={id}>Send from</Label>
-    <Select value={value} onValueChange={(next) => next && onChange(next)} disabled={disabled}>
+    <Select value={selected?.id ?? value} onValueChange={(next) => next && onChange(next)} disabled={disabled || options.length === 0}>
       <SelectTrigger id={id} aria-describedby={`${id}-help`} className="h-auto min-h-9 w-full text-left [&_[data-slot=select-value]]:whitespace-normal">
-        <SelectValue>{selected?.label || "Selected email is unavailable"}</SelectValue>
+        <SelectValue>{selected?.label || (options.length ? "Selected email is unavailable" : "No email accounts connected")}</SelectValue>
       </SelectTrigger>
       <SelectContent>{options.map((option) => <SelectItem key={option.id} value={option.id} disabled={option.disabled}>{option.label}</SelectItem>)}</SelectContent>
     </Select>
-    <p id={`${id}-help`} className="text-xs leading-5 text-muted-foreground">My default email uses the workflow owner&apos;s personal account when connected, otherwise the team account. Choose a specific address to always use it. <Link href="/settings/apps" className="underline underline-offset-2">Manage email accounts</Link></p>
+    <p id={`${id}-help`} className="text-xs leading-5 text-muted-foreground">Choose your own email account or a shared team email. Other members&apos; personal email accounts cannot be used. <Link href="/settings/apps" className="underline underline-offset-2">Manage email accounts</Link></p>
     {!selected || selected.disabled ? <p role="status" className="text-xs text-destructive">Connect this email account or choose another sender before going live.</p> : null}
   </div>;
 }

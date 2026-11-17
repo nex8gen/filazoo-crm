@@ -1,11 +1,12 @@
 import "server-only";
 
 import { requireWorkspaceMember, type WorkspaceViewer } from "../auth.ts";
-import { validateFlowResources } from "./flow-runtime.ts";
+import { validateFlowResources, validateFlowSenderAccess } from "./flow-runtime.ts";
 import { validateEmailFlowScope } from "./email-flows.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 import { resolveMemberAvatars } from "./cached-member-avatars.ts";
-import { flowInputSchema, isEmailScopedFlow, type FlowBulkAction, type FlowBulkResult, type AutomationFlow, type FlowInput, type FlowStep, type FlowStepType, type JsonConfig, type TriggerType, type FlowStatus } from "../flows.ts";
+import { flowEditorDefinitionSchema, editingDefinition } from "../flow-editor-draft.ts";
+import { withFlowEmailIdentities, flowInputSchema, isEmailScopedFlow, type FlowBulkAction, type FlowBulkResult, type AutomationFlow, type FlowInput, type FlowStep, type FlowStepType, type JsonConfig, type TriggerType, type FlowStatus } from "../flows.ts";
 
 type FlowRow = {
   id: string;
@@ -41,7 +42,9 @@ function mapFlows(rows: FlowRow[], steps: StepRow[], runs: RunRow[]): Automation
 }
 
 async function insertFlow(userId: string, input: FlowInput) {
+  input = withFlowEmailIdentities(input);
   if (isEmailScopedFlow(input.triggerConfig)) input = { ...input, triggerConfig: await validateEmailFlowScope(input.triggerConfig) };
+  await validateFlowSenderAccess(userId, input);
   if (input.status === "live") await validateFlowResources(userId, input);
   const { data, error } = await createSupabaseAdmin().rpc("save_automation_flow", { p_user_id: userId, p_flow_id: null, p_input: input });
   if (error) throw new Error(`Unable to create workflow: ${error.message}`);
@@ -119,6 +122,15 @@ async function loadFlows(userId?: string, flowIds?: string[], scope?: JsonConfig
     })(),
   ]);
   const mapped = mapFlows((rows ?? []) as FlowRow[], steps, runs);
+  for (let offset = 0; offset < ids.length; offset += 500) {
+    const { data: copies, error: draftError } = await admin.from("flow_editor_drafts").select("flow_id,payload,revision,base_updated_at,publication_error").in("flow_id", ids.slice(offset, offset + 500));
+    if (draftError) throw new Error("Unable to load automatically saved workflow changes.");
+    for (const copy of copies ?? []) {
+      const flow = mapped.find(item => item.id === copy.flow_id);
+      const parsed = flowEditorDefinitionSchema.safeParse(copy.payload);
+      if (flow && parsed.success) flow.editorDraft = { definition: { ...editingDefinition(parsed.data), status: flow.status }, revision: Number(copy.revision), baseUpdatedAt: copy.base_updated_at, ...(copy.publication_error ? { publicationError: String(copy.publication_error) } : {}) };
+    }
+  }
   const segmentIds = [...new Set(mapped.flatMap(flow => typeof flow.triggerConfig.savedSegmentId === "string" ? [flow.triggerConfig.savedSegmentId] : []))];
   if (segmentIds.length) {
     const { data } = await admin.from("company_segments").select("id").in("id", segmentIds).throwOnError();
@@ -127,6 +139,8 @@ async function loadFlows(userId?: string, flowIds?: string[], scope?: JsonConfig
   }
   return mapped;
 }
+
+export async function getFlowEditingResult(ownerId: string, flowId: string) { return (await loadFlows(ownerId, [flowId]))[0]!; }
 
 export async function createFlow(userId: string, input: FlowInput) {
   const id = await insertFlow(userId, input);
@@ -147,6 +161,7 @@ export async function updateFlow(userId: string, flowId: string, input: FlowInpu
   const { data: flow, error: lookupError } = await query.maybeSingle();
   if (lookupError) throw new Error(`Unable to load workflow: ${lookupError.message}`);
   if (!flow) throw new Error("Workflow not found.");
+  input = withFlowEmailIdentities(input);
   const previous = (flow.trigger_config ?? {}) as JsonConfig;
   if (isEmailScopedFlow(previous) && ["flowScope", "scopeCompanyId", "scopeContactId"].some((key) => previous[key] !== input.triggerConfig[key])) {
     throw new Error("An email workflow must keep its original email or company scope.");
@@ -155,6 +170,7 @@ export async function updateFlow(userId: string, flowId: string, input: FlowInpu
   // Authorize the actor above, then save using the existing owner identity so
   // admin edits retain the original sender, notifications, and runtime scope.
   const ownerId = flow.user_id as string;
+  await validateFlowSenderAccess(viewer.id, input, ownerId);
   if (input.status === "live") await validateFlowResources(ownerId, input);
   const { error } = await admin.rpc("save_automation_flow", { p_user_id: ownerId, p_flow_id: flowId, p_input: input });
   if (error) throw new Error(error.message);

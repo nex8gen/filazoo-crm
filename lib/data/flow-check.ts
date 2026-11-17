@@ -13,10 +13,9 @@ import { loadFlowReplyProducts } from "./flow-ai-reply.ts";
 import { listSegmentCompanies } from "./crm.ts";
 import { matchesSegment, segmentRulesSchema } from "../segments.ts";
 import { validateEmailFlowScope } from "./email-flows.ts";
-import { stepLabels } from "../flows.ts";
+import { flowEmailStatus, stepLabels } from "../flows.ts";
 import { workflowErrorMessage } from "../flow-execution-errors.ts";
 import { flowCheckStatus, type FlowCheck, type FlowCheckInput, type FlowCheckResult } from "../flow-check.ts";
-import { assignedFlowCandidates, assignedFlowActor } from "./flow-sender.ts";
 import { evaluateSend } from "../outreach-policy.ts";
 
 /** Real, bounded, read-only probes; no generation, SMTP submission, or CRM writes. */
@@ -45,8 +44,8 @@ export async function checkFlow(input: FlowCheckInput, viewer: WorkspaceViewer):
     finally { signal.removeEventListener("abort", fail); }
   };
   const actions = locations.map(item => item.action);
-  const hasMessages = actions.some(step => ["send_email", "ai_auto_reply"].includes(step.type));
-  const senderActions = actions.filter(step => ["send_email", "ai_auto_reply"].includes(step.type) || step.type === "internal_alert" && step.config.channel === "email");
+  const hasMessages = actions.some(step => step.type === "ai_auto_reply" || step.type === "send_email" && flowEmailStatus(step.config) === "live");
+  const senderActions = actions.filter(step => step.type === "ai_auto_reply" || step.type === "send_email" && flowEmailStatus(step.config) === "live" || step.type === "internal_alert" && step.config.channel === "email");
   const hasAi = actions.some(step => step.type === "ai_auto_reply");
   const tables = new Set(["flow_runs", "flow_steps", "flow_run_logs"]);
   for (const step of actions) {
@@ -61,15 +60,16 @@ export async function checkFlow(input: FlowCheckInput, viewer: WorkspaceViewer):
     return { status: "passed", detail: "The workflow and every action's required tables are reachable. No records were changed." };
   })];
   if (senderActions.length) jobs.push(add("senders", "Sender authentication", async () => {
-    const hasAssigned = senderActions.some(step => step.config.mailboxId === "assigned_owner");
-    const actors = hasAssigned ? await assignedFlowCandidates(ownerId, typeof input.flow.triggerConfig.scopeCompanyId === "string" ? input.flow.triggerConfig.scopeCompanyId : undefined) : [];
-    const { data } = await admin.from("workspace_mailboxes").select("*").or(`type.eq.workspace,user_id.in.(${[ownerId, ...actors].join(",")})`).abortSignal(signal).throwOnError();
+    const { data } = await admin.from("workspace_mailboxes").select("*").or(`type.eq.workspace,user_id.eq.${ownerId}`).abortSignal(signal).throwOnError();
     const mailboxes = normalizeMailboxRows(data);
     const senders = new Map<string, { mailbox: (typeof mailboxes)[number]; paths: number[][] }>();
     const failures: Array<{ message: string; paths: number[][] }> = [];
     for (const { action: step, path } of locations.filter(location => senderActions.includes(location.action))) {
-      for (const actor of step.config.mailboxId === "assigned_owner" ? actors : [ownerId]) {
-      const mailbox = resolveFlowSender(mailboxes, actor, step.config.mailboxId === "assigned_owner" ? "owner" : step.config.mailboxId);
+      const mailbox = resolveFlowSender(mailboxes, ownerId, step.config.mailboxId);
+      if (mailbox?.type === "personal" && mailbox.userId !== viewer.id) {
+        failures.push({ message: "This action uses the workflow owner's personal email account. Only that owner can verify its connection. Choose a shared team email in Subject and sender to use a team account.", paths: [path] });
+        continue;
+      }
       if (!mailbox?.isActive || !mailbox.smtpHost || !mailbox.smtpUsername || !mailbox.smtpPassword) {
         failures.push({ message: "Reconnect this action's sending email account in Email settings.", paths: [path] });
         continue;
@@ -77,7 +77,6 @@ export async function checkFlow(input: FlowCheckInput, viewer: WorkspaceViewer):
       const sender = senders.get(mailbox.id) ?? { mailbox, paths: [] };
       sender.paths.push(path);
       senders.set(mailbox.id, sender);
-      }
     }
     await Promise.all([...senders.values()].map(async ({ mailbox, paths }) => {
       try { await verifyMailboxSmtp({ host: mailbox.smtpHost, port: mailbox.smtpPort, user: mailbox.smtpUsername, pass: mailbox.smtpPassword, from: mailbox.email }, { timeoutMs: 3_500 }); }
@@ -91,7 +90,7 @@ export async function checkFlow(input: FlowCheckInput, viewer: WorkspaceViewer):
     await verifyGatewayAccess({ signal });
     return { status: "passed", detail: "AI Gateway accepted the current credentials. Automation permissions are enabled. Generation is checked by the delivery test." };
   }));
-  if (actions.some(step => step.type === "ai_auto_reply" && (step.config.useProducts || step.config.attachCatalog) || step.type === "send_email" && step.config.templateId === "send_catalog")) jobs.push(add("products", "Products and catalog", async () => {
+  if (actions.some(step => step.type === "ai_auto_reply" && (step.config.useProducts || step.config.attachCatalog) || step.type === "send_email" && flowEmailStatus(step.config) === "live" && step.config.templateId === "send_catalog")) jobs.push(add("products", "Products and catalog", async () => {
     const products = await loadFlowReplyProducts({ useProducts: true, attachCatalog: true }, ownerId);
     if (!products.length) throw new Error("The workflow owner has no active products available for the requested catalog or product reply.");
     return { status: "passed", detail: `${products.length} active products are available to the workflow owner.` };
@@ -127,7 +126,7 @@ export async function checkFlow(input: FlowCheckInput, viewer: WorkspaceViewer):
           && (!Array.isArray(config.contactIds) || config.contactIds.includes(contact.id)) && (!config.scopeContactId || config.scopeContactId === contact.id));
         if (recipients.length !== 1) { blocked.push(company); continue; }
         const recipient = recipients[0];
-        const actor = actions.some(step => step.config.mailboxId === "assigned_owner") ? await assignedFlowActor(ownerId, company.id) : ownerId;
+        const actor = ownerId;
         const [{ count: suppressed }, { count: inquiries }] = await Promise.all([
           admin.from("suppression").select("email", { count: "exact", head: true }).eq("email", recipient.email).abortSignal(signal).throwOnError(),
           admin.from("emails").select("id", { count: "exact", head: true }).eq("contact_id", recipient.id).eq("direction", "received").or(`owner_id.is.null,owner_id.eq.${actor}`).abortSignal(signal).throwOnError(),

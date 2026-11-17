@@ -128,7 +128,7 @@ export async function processFlowEmailDeliveryTest(id: string, userId: string) {
     const subject = `[Workflow test] ${reply.subject}`;
     const threadId = `flow-test:${id}`;
     const footer = await getUserEmailFooter(userId);
-    const content = await prepareUserEmail(userId, { ...buildFlowEmail({ body: footer?.html ? removeStandardSignoff(reply.body) : reply.body, config: { ...step.config, trackOpens: false, trackClicks: false, utmTracking: false },
+      const content = await prepareUserEmail(userId, { ...buildFlowEmail({ body: footer?.html ? removeStandardSignoff(reply.body) : reply.body, contact: { name: input.customerName, email: sample.from }, config: { ...step.config, trackOpens: false, trackClicks: false, utmTracking: false },
       runId: id, stepId: step.id || id, flowId: id, appUrl: env.NEXT_PUBLIC_APP_URL, secret: env.supabaseSecretKey! }), attachments: reply.attachments }, false, footer);
     const recordId = randomUUID();
     const stored: Array<{ filename: string; contentType?: string; size: number; path: string; cid?: string }> = [];

@@ -95,6 +95,30 @@ test("a read-only teammate cannot probe another owner's personal sender", async 
   assert.equal(app.calls.includes("smtp:verify"), false);
 });
 
+test("even admins cannot authenticate another member's private sender or assigned-salesperson rule", async () => {
+  for (const choice of ["sender", "assigned_owner"]) {
+    const app = fixture();
+    for (const step of app.flow.steps) if (["send_email", "ai_auto_reply"].includes(step.type)) step.config.mailboxId = choice;
+    const report = await app.check({ flow: app.flow, flowId: id }, { ...viewer, id: "other-admin" });
+    assert.equal(report.checks.find(check => check.id === "senders")?.status, "blocked");
+    assert.equal(app.calls.includes("smtp:verify"), false);
+  }
+});
+
+test("another owner's default sender reports private access rather than a disconnected mailbox", async () => {
+  const app = fixture();
+  const email = model.blankStep("send_email");
+  email.config.mailboxId = "default";
+  app.flow.steps = [email];
+  const report = await app.check({ flow: app.flow, flowId: id }, { ...viewer, id: "other-admin" });
+  const sender = report.checks.find(check => check.id === "senders")!;
+  assert.equal(sender.status, "blocked");
+  assert.match(sender.detail, /Only that owner can verify/);
+  assert.doesNotMatch(sender.detail, /Reconnect|owner@example.com/);
+  assert.deepEqual(structuredClone(sender.actionPaths), [[0]]);
+  assert.equal(app.calls.includes("smtp:verify"), false);
+});
+
 test("a missing sender or recipient is attributed only to the actions using it", async () => {
   const app = fixture();
   const email = app.flow.steps.find(step => step.type === "send_email")!;

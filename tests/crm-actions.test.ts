@@ -43,7 +43,7 @@ const hooks = registerHooks({
     if (specifier === "@/lib/auth" || specifier === "../auth.ts") source = `${runtime} export async function requireWorkspaceMember(roles) { if (roles && !roles.includes(state.role)) throw new Error('Access denied'); return {id: 'actor', role: state.role}; }`;
     if (specifier === "@/lib/supabase/admin" || specifier === "../supabase/admin.ts") source = `${runtime} export function createSupabaseAdmin() { return admin; }`;
     if (specifier === "next/cache") source = `${runtime} export function revalidatePath(path) { state.paths.push(path); }`;
-    if (specifier === "@/lib/data/flow-runtime" || specifier === "./flow-runtime.ts") source = `${runtime} export async function enrollMatchingFlows(event) { state.calls.push(['enroll', event]); } export async function enrollNewLeadFlows(id) { state.calls.push(['new_lead', id]); } export async function validateFlowResources() {}`;
+    if (specifier === "@/lib/data/flow-runtime" || specifier === "./flow-runtime.ts") source = `${runtime} export async function enrollMatchingFlows(event) { state.calls.push(['enroll', event]); } export async function enrollNewLeadFlows(id) { state.calls.push(['new_lead', id]); } export async function validateFlowResources() {} export async function validateFlowSenderAccess() {}`;
     if (specifier === "@/lib/lead-assignment") source = "export async function claimNextBdSalesManager() { throw new Error('Manual companies must not use automatic assignment'); }";
     if (source) return { url: `data:text/javascript,${encodeURIComponent(source)}`, shortCircuit: true };
     if (specifier.startsWith("@/lib/")) return { url: new URL(`../lib/${specifier.slice(6)}.ts`, import.meta.url).href, shortCircuit: true };
