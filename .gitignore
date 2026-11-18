@@ -23,6 +23,9 @@
 /output/
 /tmp/
 
+# temporary recovery worktree (kept locally, not part of the app)
+/.cache/mailbox-recovery-release/
+
 # misc
 .DS_Store
 *.pem
