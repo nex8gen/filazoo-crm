@@ -1,5 +1,6 @@
 "use client";
 import { NotificationToast } from "@/components/ui/notification-toast";
+import dynamic from "next/dynamic";
 
 import { useWorkspaceState } from "@/components/workspace-memory";
 import { EmptyState } from "@/components/data-state";
@@ -15,7 +16,6 @@ import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
 import { TablePagination } from "@/components/ui/table-pagination";
 import { TableFilters, TableFilter } from "@/components/ui/table-filters";
-import { InvoiceEditor } from "@/components/invoice-editor";
 import { invoiceRequest as api, invoiceContextUrl } from "@/lib/invoice-client";
 import { InvoicePaper } from "@/components/invoice-paper";
 import { InvoicePortalShortcut } from "@/components/invoice-portal-shortcut";
@@ -30,6 +30,10 @@ import {
   type InvoiceReceivable,
 } from "@/lib/invoices";
 import "@/app/invoices/invoices.css";
+
+const InvoiceEditor = dynamic(() => import("@/components/invoice-editor").then(module => module.InvoiceEditor), {
+  loading: () => <div role="status" className="min-h-80 rounded-lg border bg-muted/20 p-6 text-sm text-muted-foreground">Loading…</div>,
+});
 
 type Listing = {
   invoices: Invoice[];

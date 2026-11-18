@@ -13,6 +13,7 @@ import { listInboxCompanies } from "./data/inbox-companies.ts";
 import { canViewEmail } from "./email-access.ts";
 import { getAssignedEmailContacts } from "./data/email-access.ts";
 import { companyEmailContact } from "./company-email.ts";
+import { withInboxReadBudget } from "./mailbox-sync.ts";
 import { normalizeMessageId, normalizeReferences, threadKeyForEmail } from "./email-threading.ts";
 import type { CustomerProfileContext } from "./ai/email-rewrite.ts";
 
@@ -82,6 +83,7 @@ export type EmailInboxBackendData = {
   inboxConfigured: boolean;
   inboxError: string | null;
   mailboxReadFailed?: boolean;
+  mailboxSnapshotPartial?: boolean;
   lastMailboxSync?: string | null;
   syncHealth?: Record<string, import("./mail-sync-jobs.ts").MailSyncHealth>;
   aiConfigured: boolean;
@@ -147,19 +149,21 @@ export async function fetchMailboxInboxMessages(mailbox: import("./mailbox-imap.
   return receiveMailboxMessages(mailbox, options);
 }
 
-async function listShopifyFormInboxMessages() {
+async function listShopifyFormInboxMessages(signal?: AbortSignal) {
   const { createSupabaseAdmin } = await import("./supabase/admin.ts");
   const admin = createSupabaseAdmin();
   const pageSize = 500;
   const rows: ShopifyInboxRow[] = [];
   for (let from = 0; ; from += pageSize) {
-    const { data, error } = await admin
+    let query = admin
       .from("shopify_leads")
       .select("webhook_id,customer_id,email,full_name,company_name,phone,tags,raw_payload,created_at")
       .eq("status", "processed")
       .is("duplicate_of", null)
       .order("created_at", { ascending: false })
       .range(from, from + pageSize - 1);
+    if (signal) query = query.abortSignal(signal);
+    const { data, error } = await query;
     if (error) throw new Error(`Unable to load Shopify enquiries: ${error.message}`);
     const page = (data ?? []) as ShopifyInboxRow[];
     rows.push(...page);
@@ -306,14 +310,21 @@ export function buildInboxEmailItems({
   });
 }
 
-async function readWorkspaceInboxSources(viewer: WorkspaceViewer) {
+async function readWorkspaceInboxSources(viewer: WorkspaceViewer, interactive = false) {
   const { listEmailDrafts, listReplies } = await import("./data/crm.ts");
   const { listMetaLeadInquiries } = await import("./data/lead-inquiries.ts");
+  let partial = false;
+  const optional = async <T>(read: (signal?: AbortSignal) => Promise<T>, fallback: T) => {
+    if (!interactive) return read();
+    try { return await withInboxReadBudget(read); } catch { partial = true; return fallback; }
+  };
   const [drafts, replies, shopify, assigned, meta] = await Promise.all([
-    listEmailDrafts(viewer), listReplies(viewer),
-    listShopifyFormInboxMessages().catch(() => []), getAssignedEmailContacts(viewer), listMetaLeadInquiries().catch(() => []),
+    optional(signal => listEmailDrafts(viewer, { signal }), { emails: [], mode: "live" as const }),
+    optional(signal => listReplies(viewer, { signal }), { replies: [], mode: "live" as const }),
+    optional(signal => listShopifyFormInboxMessages(signal).catch(() => []), []), getAssignedEmailContacts(viewer),
+    optional(() => listMetaLeadInquiries().catch(() => []), []),
   ]);
-  return { drafts, replies, shopify, assigned, meta };
+  return { drafts, replies, shopify, assigned, meta, partial };
 }
 
 type EmailInboxReadContext = {
@@ -334,18 +345,23 @@ export function createEmailInboxReadContext(viewer: WorkspaceViewer, mailboxes: 
   };
 }
 
-export async function getEmailInboxBackendData({ syncMailbox = true, history = false, mailboxId, context }: { syncMailbox?: boolean; history?: boolean; mailboxId?: string; context?: EmailInboxReadContext } = {}): Promise<EmailInboxBackendData> {
+export async function getEmailInboxBackendData({ syncMailbox = true, history = false, mailboxId, context, interactive = false, providerFolder }: { syncMailbox?: boolean; history?: boolean; mailboxId?: string; context?: EmailInboxReadContext; interactive?: boolean; providerFolder?: string } = {}): Promise<EmailInboxBackendData> {
   const viewer = context?.viewer ?? await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   const mailboxes = context?.mailboxes ?? await getViewerMailboxes(viewer.id);
   const defaultSender = defaultViewerMailbox(context?.senderMailboxes ?? mailboxes);
   const defaultMailbox = mailboxId !== undefined ? mailboxes.find((mailbox) => mailbox.id === mailboxId) : defaultSender;
   if (mailboxId !== undefined && !defaultMailbox) throw new Error("Mailbox unavailable.");
   const personal = defaultMailbox?.type === "personal";
+  let metadataPartial = false;
+  const optional = async <T>(read: (signal?: AbortSignal) => Promise<T>, fallback: T) => {
+    if (!interactive) return read().catch(() => fallback);
+    try { return await withInboxReadBudget(read); } catch { metadataPartial = true; return fallback; }
+  };
   const loadInbound = async () => {
     if (!mailboxHasImap(defaultMailbox) || !defaultMailbox) return { messages: [], error: null, syncedAt: null };
     try {
       const { loadMailboxWorkspace } = await import("./data/mailbox-sync.ts");
-      return await loadMailboxWorkspace(defaultMailbox, { sync: syncMailbox, history });
+      return await loadMailboxWorkspace(defaultMailbox, { sync: syncMailbox, history, interactive, folder: providerFolder });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to connect to the mailbox inbox.";
       console.warn("Unable to sync mailbox inbox:", message);
@@ -353,9 +369,9 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
     }
   };
   const [workspace, states, sentMessages, mailboxResult] = await Promise.all([
-    personal ? Promise.resolve(null) : context?.workspace ?? readWorkspaceInboxSources(viewer),
-    context?.states ?? listEmailInboxStates(viewer.id).catch(() => new Map()),
-    defaultMailbox ? listSentMailboxMessages(viewer.id, defaultMailbox.id, context?.allowedPersonalContacts).catch(() => []) : Promise.resolve([]),
+    personal ? Promise.resolve(null) : context?.workspace ?? readWorkspaceInboxSources(viewer, interactive),
+    context?.states ?? optional(signal => listEmailInboxStates(viewer.id, signal), new Map()),
+    defaultMailbox ? optional(signal => listSentMailboxMessages(viewer.id, defaultMailbox.id, context?.allowedPersonalContacts, signal), []) : Promise.resolve([]),
     loadInbound(),
   ]);
   const { emails, mode } = workspace?.drafts ?? { emails: [], mode: "live" as const };
@@ -374,9 +390,8 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
     .filter((item) => canViewEmail(viewer, item.contact, assignedContacts, defaultMailbox, context?.allowedPersonalContacts));
   // There is nothing to enrich when access rules exclude the saved messages.
   const [companyResult, automation] = await Promise.all([
-    visibleInbox.length ? listInboxCompanies(visibleInbox, assignedContacts) : Promise.resolve({ companies: [] }),
-    getEmailAutomationSettings(viewer.id, visibleInbox.filter((item) => item.direction === "inbound").length)
-      .catch(() => ({ enabled: false, queueCount: 0, steps: [] })),
+    visibleInbox.length ? (interactive ? optional(signal => listInboxCompanies(visibleInbox, assignedContacts, signal), { companies: [] }) : listInboxCompanies(visibleInbox, assignedContacts)) : Promise.resolve({ companies: [] }),
+    optional(signal => getEmailAutomationSettings(viewer.id, visibleInbox.filter((item) => item.direction === "inbound").length, signal), { enabled: false, queueCount: 0, steps: [] }),
   ]);
 
   const companiesByEmail = new Map(companyResult.companies.filter((company) => company.email).map((company) => [company.email.toLowerCase(), company]));
@@ -426,6 +441,7 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
     inboxConfigured,
     inboxError,
     mailboxReadFailed: "readFailed" in mailboxResult && mailboxResult.readFailed === true,
+    mailboxSnapshotPartial: Boolean(("partial" in mailboxResult && mailboxResult.partial) || workspace?.partial || metadataPartial),
     lastMailboxSync,
     aiConfigured,
     defaultMailboxEmail,

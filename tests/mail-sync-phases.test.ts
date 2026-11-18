@@ -7,6 +7,7 @@ import { createHash, webcrypto } from "node:crypto";
 import * as sync from "../lib/mailbox-sync.ts";
 import * as content from "../lib/email-content.ts";
 import * as mime from "../lib/email-mime.ts";
+import * as provider from "../lib/email-provider.ts";
 
 test("preview and flag failures cannot erase committed new mail or change its successful check time", async () => {
   const message = (uid: number) => ({ id: `imap-${uid}`, uid, uidValidity: 1, contact: "buyer@test", body: "", preview: "", timestamp: new Date().toISOString() });
@@ -30,6 +31,8 @@ test("preview and flag failures cannot erase committed new mail or change its su
   const dependencies: Record<string, unknown> = {
     "node:crypto": { createHash },
     "../supabase/admin.ts": { createSupabaseAdmin: () => ({ from }) },
+    "../mailbox-snapshot-reader.ts": { readMailboxSnapshots: async () => [structuredClone(state)] },
+    "../email-provider.ts": provider,
     "../mailbox-sync.ts": sync,
     "../email-content.ts": content,
     "../email-mime.ts": mime,

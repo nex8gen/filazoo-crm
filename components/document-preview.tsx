@@ -33,32 +33,31 @@ export function DocumentPreview({ document, folders, canWrite, onClose, onEdit, 
   const [templateError, setTemplateError] = useState("");
   const id = document?.id, mime = document?.mime_type, deleted = document?.deleted_at;
   const previewable = !!mime && canPreviewDocument(mime);
+  const needsTemplate = Boolean(document?.design_version && !document.email_design);
+  const needsRelated = Boolean(document?.related_ids.length);
   useEffect(() => {
-    if (!id || !document?.design_version || document.email_design || deleted) return;
+    if (!id || deleted || (!needsTemplate && !needsRelated)) return;
     const controller = new AbortController();
+    // The details response includes both the design and related files. Share
+    // one authorized request when the selected template needs both.
     void (async () => {
       try {
         const response = await fetch(`/api/documents/${id}?details=1`, { signal: controller.signal });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || "Unable to load the email design.");
-        if (!controller.signal.aborted) { setFullTemplate(result.document); setTemplateError(""); }
-      } catch (cause) { if (!controller.signal.aborted) setTemplateError(cause instanceof Error ? cause.message : "Unable to load the email design."); }
+        if (!controller.signal.aborted) {
+          if (needsTemplate) { setFullTemplate(result.document); setTemplateError(""); }
+          if (needsRelated) { setRelated(result.related); setRelatedError(""); }
+        }
+      } catch (cause) {
+        if (!controller.signal.aborted) {
+          if (needsTemplate) setTemplateError(cause instanceof Error ? cause.message : "Unable to load the email design.");
+          if (needsRelated) setRelatedError(cause instanceof Error ? cause.message : "Unable to load related files.");
+        }
+      }
     })();
     return () => controller.abort();
-  }, [id, document?.design_version, document?.email_design, document?.updated_at, deleted, attempt]);
-  useEffect(() => {
-    if (!id || !document?.related_ids.length || deleted) return;
-    const controller = new AbortController();
-    void (async () => {
-      try {
-        const response = await fetch(`/api/documents/${id}?details=1`, { signal: controller.signal });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error);
-        if (!controller.signal.aborted) { setRelated(result.related); setRelatedError(""); }
-      } catch (error) { if (!controller.signal.aborted) setRelatedError(error instanceof Error ? error.message : "Unable to load related files."); }
-    })();
-    return () => controller.abort();
-  }, [id, document?.related_ids.length, document?.updated_at, deleted]);
+  }, [id, needsTemplate, needsRelated, document?.design_version, document?.email_design, document?.related_ids.length, document?.updated_at, deleted, attempt]);
   useEffect(() => {
     if (!id || !previewable || deleted) return;
     const controller = new AbortController();

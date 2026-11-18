@@ -92,4 +92,7 @@ export const zhCNEmailWorkbench: Record<string, string> = {
   "Your local time": "您所在时区的时间",
   "Edit draft": "编辑草稿", "Edit scheduled email": "编辑定时邮件",
   "Send options": "发送选项", "Text formatting": "文本格式",
+  "Mailbox temporarily unavailable": "邮箱暂时不可用",
+  "Showing recent messages. Saved history will retry automatically.": "正在显示最近邮件，系统将自动重试加载历史邮件。",
+  "Your emails could not be loaded. We will retry automatically; you can also use Refresh inbox.": "无法加载邮件。系统将自动重试，您也可以点击“刷新收件箱”。",
 };

@@ -70,10 +70,13 @@ copy .env.example .env.local
 npm run crm
 ```
 
-For normal CRM use, run `npm run crm` and open `http://localhost:3001`.
+For normal CRM use, stop `npm run dev`, run `npm run crm`, and open `http://localhost:3000`.
 This builds and serves an optimized production app using your existing local
 configuration. Its `.next-crm` output is separate from the development build, so
 editing files or running other builds does not invalidate your open CRM pages.
+Production mode enables automatic route prefetching; `npm run dev` is for coding
+and compiles pages on demand. Use `npm run crm -- --port=3001` if you need both
+servers at the same time.
 After the first build, `npm run crm:start` restarts it without rebuilding. It checks
 that the build still matches your source and local configuration and stops with
 rebuild instructions if it is stale.

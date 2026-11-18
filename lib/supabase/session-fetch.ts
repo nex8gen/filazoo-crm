@@ -1,4 +1,27 @@
-import { setTimeout as delay } from "node:timers/promises";
+import { fetchRead } from "./read-fetch.ts";
+import { createHash } from "node:crypto";
+
+// Share only requests that are still running, never completed authorization.
+// A new request after completion always rechecks revocation and membership.
+const pendingReads = new WeakMap<typeof fetch, Map<string, Promise<Response>>>();
+
+async function readSession(input: Parameters<typeof fetch>[0], init: RequestInit, fetcher: typeof fetch) {
+  if (input instanceof Request || init.signal) return fetchRead(input, init, fetcher);
+  let pending = pendingReads.get(fetcher);
+  if (!pending) { pending = new Map(); pendingReads.set(fetcher, pending); }
+  const key = createHash("sha256").update(JSON.stringify([String(input), [...new Headers(init.headers).entries()].sort(), init.body])).digest("hex");
+  let response = pending.get(key);
+  if (!response) {
+    // Do not abort a valid but slow database response after seven seconds.
+    // Live measurements exceeded twelve seconds before returning successfully.
+    response = fetchRead(input, init, fetcher);
+    pending.set(key, response);
+    const active = response;
+    const clear = () => { if (pending.get(key) === active) pending.delete(key); };
+    void response.then(clear, clear);
+  }
+  return (await response).clone();
+}
 
 /** Session readers use POST, so the SDK's idempotent-method retries do not apply.
  * Retry these two read-only RPCs once; never replay provisioning or CRM writes.
@@ -6,31 +29,11 @@ import { setTimeout as delay } from "node:timers/promises";
 export function sessionFetch(fetcher: typeof fetch = fetch): typeof fetch {
   return async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
-    const read = init?.method?.toUpperCase() === "POST" && typeof init.body === "string"
+    const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
+    const read = method === "POST" && typeof init?.body === "string"
       && ["/rest/v1/rpc/read_workspace_session", "/rest/v1/rpc/read_crm_session"].includes(url.pathname);
-    if (!read) return fetcher(input, init);
-    const deadline = AbortSignal.any([...(init?.signal ? [init.signal] : []), AbortSignal.timeout(15_000)]);
-    for (let attempt = 0; ; attempt++) {
-      deadline.throwIfAborted();
-      // A single slow connection must not consume the entire retry budget.
-      const attemptTimeout = AbortSignal.timeout(7_000);
-      const signal = AbortSignal.any([deadline, attemptTimeout]);
-      const options = { ...init, cache: "no-store" as const, signal };
-      try {
-        const response = await fetcher(input, options);
-        if (attempt === 0 && [408, 500, 502, 503, 504, 520, 521, 522, 524].includes(response.status) && !deadline.aborted) {
-          await response.body?.cancel().catch(() => {});
-        } else {
-          // fetch resolves at the headers. Read the small session response here
-          // so a dropped/stalled body is covered by the same retry and deadline.
-          const body = response.body ? await response.arrayBuffer() : null;
-          return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
-        }
-      } catch (error) {
-        if (attempt > 0 || deadline.aborted || (!(error instanceof TypeError) && !attemptTimeout.aborted)) throw error;
-      }
-      // Let a temporarily broken upstream connection recover before reconnecting.
-      await delay(250, undefined, { signal: deadline });
-    }
+    if (read) return readSession(input, init!, fetcher);
+    if (url.pathname.startsWith("/rest/v1/") && ["GET", "HEAD"].includes(method)) return fetchRead(input, init, fetcher);
+    return fetcher(input, init);
   };
 }

@@ -1,5 +1,46 @@
 import type { InboxEmailItem } from "./email-inbox.ts";
 
+export function mergePartialMailboxMessages<T extends { id: string }>(current: T[], incoming: T[]): T[] {
+  return [...new Map([...current, ...incoming].map(message => [message.id, message])).values()];
+}
+
+/** A slow history cache must not hide mail that the provider can read. The
+ * fallback is receive-only, starts once, and never displaces a faster cache.
+ */
+export async function readMailboxWithFallback<T>(saved: (signal: AbortSignal) => Promise<T>, recent: () => Promise<T>, delayMs = 2000): Promise<T> {
+  const controller = new AbortController();
+  let started = false;
+  let startRecent!: () => void;
+  const fallback = new Promise<T>((resolve, reject) => {
+    startRecent = () => {
+      if (started) return;
+      started = true;
+      void Promise.resolve().then(recent).then(resolve, reject);
+    };
+  });
+  const timer = setTimeout(startRecent, delayMs);
+  try {
+    return await Promise.any([
+      Promise.resolve().then(() => saved(controller.signal)).catch(error => { startRecent(); throw error; }),
+      fallback,
+    ]);
+  } catch (error) {
+    if (error instanceof AggregateError) throw new Error("Saved history and the email provider are both unavailable. Please retry.", { cause: error });
+    throw error;
+  } finally { clearTimeout(timer); controller.abort(); }
+}
+
+/** Optional CRM details have a small budget and cannot block the mailbox. */
+export async function withInboxReadBudget<T>(read: (signal: AbortSignal) => Promise<T>, budgetMs = 2000): Promise<T> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([Promise.resolve().then(() => read(controller.signal)), new Promise<never>((_, reject) => {
+      timer = setTimeout(() => { controller.abort(); reject(new Error("Email detail loading exceeded its budget.")); }, budgetMs);
+    })]);
+  } finally { clearTimeout(timer); controller.abort(); }
+}
+
 export type MailboxCursor = { uidValidity: number; lastUid: number };
 export type MailboxBatch = { received: number; hasMore: boolean; totalMessages?: number; reset?: boolean };
 export type MailboxSnapshot = {

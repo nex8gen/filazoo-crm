@@ -1,4 +1,4 @@
-import { CompanyAnalysisDashboard } from "@/components/company-analysis-dashboard";
+import { CompanyAnalysisDashboard } from "@/components/company-section-views";
 import { getCompanyAnalysis } from "@/lib/data/company-analysis";
 import type { CompanyAnalysisData } from "@/lib/company-analysis";
 

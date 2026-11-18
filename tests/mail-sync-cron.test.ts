@@ -3,6 +3,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
+import { supabaseSessionDependencies } from "./helpers/supabase-session.ts";
 
 function setup(secret: string | undefined = "fixture-secret") {
   let calls = 0;
@@ -48,7 +49,7 @@ test("the authenticated tag diagnostic runs no mail sync or sending workflow", a
 test("the session gate delegates mail sync authentication to its bearer guard while keeping staff pages gated", async () => {
   const exports = {} as { updateSession: (request: unknown) => Promise<{ status: number }> };
   const response = (status: number) => ({ status, cookies: { getAll: () => [], set() {} } });
-  const dependencies = { "@supabase/ssr": { createServerClient: () => ({ auth: { getClaims: async () => ({ data: { claims: null } }) } }) },
+  const dependencies = { ...supabaseSessionDependencies, "@supabase/ssr": { createServerClient: () => ({ auth: { getClaims: async () => ({ data: { claims: null } }) } }) },
     "next/server": { NextResponse: { next: () => response(200), redirect: () => response(307) } } };
   vm.runInNewContext(ts.transpileModule(readFileSync(new URL("../lib/supabase/proxy.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText,
     { exports, process: { env: { AUTH_REQUIRED: "true", NEXT_PUBLIC_SUPABASE_URL: "https://db.test", NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "fixture" } }, require: (name: keyof typeof dependencies) => dependencies[name] });

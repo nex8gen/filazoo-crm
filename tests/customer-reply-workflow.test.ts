@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import vm from "node:vm";
 import ts from "typescript";
+import { supabaseSessionDependencies } from "./helpers/supabase-session.ts";
 import * as workflow from "../lib/customer-reply-workflow.ts";
 import * as threading from "../lib/email-threading.ts";
 import * as actions from "../lib/ai/agent-actions.ts";
@@ -163,7 +164,7 @@ test("the cron bypasses staff session redirects but still requires its own beare
   const { NextRequest, NextResponse } = require("next/server");
   const exports: { updateSession?: (request: unknown) => Promise<Response> } = {};
   const proxy = ts.transpileModule(readFileSync(new URL("../lib/supabase/proxy.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(proxy, { exports, require: (name: string) => policyTestDependency(name) ?? (name === "@supabase/ssr" ? { createServerClient: () => ({ auth: { getClaims: async () => ({ data: null }) } }) } : { NextResponse }), process: { env: { NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co", NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "fixture", AUTH_REQUIRED: "true" } } });
+  vm.runInNewContext(proxy, { exports, require: (name: string) => supabaseSessionDependencies[name] ?? policyTestDependency(name) ?? (name === "@supabase/ssr" ? { createServerClient: () => ({ auth: { getClaims: async () => ({ data: null }) } }) } : { NextResponse }), process: { env: { NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co", NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "fixture", AUTH_REQUIRED: "true" } } });
   const bypass = await exports.updateSession!(new NextRequest("https://crm.example/api/cron/customer-replies"));
   assert.equal(bypass.headers.get("location"), null);
   let calls = 0;

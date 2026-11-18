@@ -6,7 +6,6 @@ import Image from "next/image";
 import { useState } from "react";
 import { prepareProductImageUpload } from "@/app/product-image-actions";
 import { PRODUCT_IMAGE_BUCKET, PRODUCT_IMAGE_TYPES, productImageError } from "@/lib/product-images";
-import { createClient } from "@/lib/supabase/client";
 import type { DataMode } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,6 +39,7 @@ export function ProductImagePicker({ id, label, value, onChange, disabled, mode,
       } else {
         const result = await prepareProductImageUpload(file.type, file.size);
         if (result.error || !result.token || !result.path || !result.imageUrl) throw new Error(result.error || "Could not start the upload.");
+        const { createClient } = await import("@/lib/supabase/client");
         const { error: uploadError } = await createClient().storage.from(PRODUCT_IMAGE_BUCKET)
           .uploadToSignedUrl(result.path, result.token, file, { contentType: file.type });
         if (uploadError) throw new Error("Image upload failed. Please try again.");

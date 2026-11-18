@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { Copy, Eye, Globe, LoaderCircle, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,7 +10,6 @@ import { NotificationToast } from "@/components/ui/notification-toast";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PortalThemeArtwork } from "@/components/portal-theme-artwork";
-import { PortalExperience } from "@/components/portal-experience";
 import { PortalLocalTime } from "@/components/portal-local-time";
 import { defaultPortalDesign, type PortalDesign, type PortalDesignView } from "@/lib/portal-design";
 import { createPortalTemplate, livePortalThemeId, portalLibraryThemes, portalTemplates } from "@/lib/portal-themes";
@@ -18,6 +18,10 @@ import { createPortalTheme, publishPortalTheme } from "@/app/customer-portal/act
 import "@/app/invoices/invoices.css";
 import "@/app/customer/customer.css";
 import "./portal-theme-library.css";
+
+const PortalExperience = dynamic(() => import("@/components/portal-experience").then(module => module.PortalExperience), {
+  loading: () => <div role="status" className="min-h-80 p-6 text-sm text-muted-foreground">Loading…</div>,
+});
 
 export function PortalThemeLibrary({ initial, canWrite, workspaceName }: { initial: PortalDesignView; canWrite: boolean; workspaceName: string }) {
   const [view, setView] = useState(initial);

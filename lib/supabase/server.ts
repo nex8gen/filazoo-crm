@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { env } from "../env.ts";
+import { authFetch } from "./auth-fetch.ts";
 
 export async function createClient() {
   const key = env.supabasePublishableKey;
@@ -7,6 +8,7 @@ export async function createClient() {
   const { cookies } = await import("next/headers");
   const cookieStore = await cookies();
   return createServerClient(env.NEXT_PUBLIC_SUPABASE_URL, key, {
+    global: { fetch: authFetch() },
     cookies: {
       getAll: () => cookieStore.getAll(),
       setAll: (cookiesToSet) => {

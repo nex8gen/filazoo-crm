@@ -15,16 +15,16 @@ export function DocumentTemplateCard({ document, workspaceName, selected, onPrev
   const [loaded, setLoaded] = useState<{ design: EmailDesign | null; error: boolean } | null>(null);
   const design = document.email_design ?? loaded?.design;
   const needsDesign = !!document.design_version && !document.email_design && !document.preview_url;
-  const html = useMemo(() => design ? renderEmailDesign(design, { preview: true }).html : null, [design]);
+  const html = useMemo(() => visible && design ? renderEmailDesign(design, { preview: true }).html : null, [design, visible]);
 
   useEffect(() => {
-    if (!card.current || !needsDesign) return;
+    if (!card.current || document.preview_url) return;
     const observer = new IntersectionObserver(entries => {
       if (entries.some(entry => entry.isIntersecting)) { setVisible(true); observer.disconnect(); }
     }, { rootMargin: "200px" });
     observer.observe(card.current);
     return () => observer.disconnect();
-  }, [needsDesign]);
+  }, [document.preview_url]);
 
   useEffect(() => {
     if (!visible || !needsDesign) return;

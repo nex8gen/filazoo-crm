@@ -1,6 +1,7 @@
 import * as credentials from "../lib/ai/provider-credentials.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
+import { supabaseSessionDependencies } from "./helpers/supabase-session.ts";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import vm from "node:vm";
@@ -134,6 +135,7 @@ test("workspace authorization validates the session once even where React.cache 
   for (const [signedIn, member, allowed, expected] of [[true, true, ["admin"], "ok"], [false, true, ["admin"], "/login"], [true, false, ["admin"], "/workspaces"], [true, true, ["viewer"], "/access-denied"]] as const) {
     let authReads = 0, memberReads = 0;
     const api = load("../lib/auth.ts", {
+      ...supabaseSessionDependencies,
       "react": { cache: (fn: unknown) => fn },
       "./env.ts": { env: { NEXT_PUBLIC_SUPABASE_URL: "https://test.supabase.co" }, hasSupabaseAuthConfig: () => true, hasSupabaseConfig: () => true },
       "./supabase/server.ts": { createClient: async () => ({ auth: { getClaims: async () => { authReads++; return { data: { claims: signedIn ? { sub: "aaaaaaaa-1111-2222-3333-444444444444", session_id: "bbbbbbbb-1111-2222-3333-444444444444", aud: "authenticated", role: "authenticated", iss: "https://test.supabase.co/auth/v1" } : null }, error: null }; } } }) },

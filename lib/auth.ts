@@ -3,6 +3,7 @@ import { env, hasSupabaseAuthConfig, hasSupabaseConfig } from "./env.ts";
 import { createSupabaseControl } from "./supabase/control.ts";
 import { workspaceCookie, workspaceIdSchema } from "./workspaces.ts";
 import { createClient } from "./supabase/server.ts";
+import { isTransientAuthError } from "./supabase/auth-error.ts";
 import { isAvatarPreset, type AvatarPreset } from "./profile-avatar.ts";
 import { readUserPreferences, type UserPreferences } from "./user-preferences.ts";
 import { readTableColumnPreferences, type TableColumnPreferences } from "./table-column-preferences.ts";
@@ -55,6 +56,7 @@ const getAuthSnapshot = cache(async (): Promise<AuthSnapshot | null> => {
   // The SDK verifies signature and expiry using cached public signing keys.
   // Never trust decoded cookies, JWT user_metadata, or client-provided roles.
   const { data, error } = await supabase.auth.getClaims();
+  if (isTransientAuthError(error)) throw new Error("Unable to verify your workspace session. Please retry.", { cause: error });
   const claims = data?.claims;
   if (error || !claims || !uuid.test(claims.sub) || typeof claims.session_id !== "string" || !uuid.test(claims.session_id)) return null;
   const audience = Array.isArray(claims.aud) ? claims.aud[0] : claims.aud;

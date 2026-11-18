@@ -1,5 +1,16 @@
 {
   "maxShellGzipBytes": 420000,
+  "allRouteShells": true,
+  "routeLimits": {
+    "workflow/qa": 560000
+  },
+  "clientEntries": [
+    { "manifest": "products/page", "module": "components/products-catalog-v2.tsx", "maxGzipBytes": 225000 },
+    { "manifest": "customer-portal/page", "module": "components/portal-theme-library.tsx", "maxGzipBytes": 190000 },
+    { "manifest": "workflow/page", "module": "components/flow-builder.tsx", "maxGzipBytes": 390000 },
+    { "manifest": "email/page", "module": "components/email-accounts-workspace.tsx", "maxGzipBytes": 380000 },
+    { "manifest": "documents/page", "module": "components/documents-workspace.tsx", "maxGzipBytes": 330000 }
+  ],
   "routes": [
     "analytics",
     "companies",

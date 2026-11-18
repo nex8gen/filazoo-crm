@@ -1,5 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { authFetch } from "./auth-fetch.ts";
+import { isTransientAuthError } from "./auth-error.ts";
+import { workspaceSessionUnavailableResponse } from "../workspace-session-response.ts";
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -17,6 +20,7 @@ export async function updateSession(request: NextRequest) {
   if (!url || !key) return response;
 
   const supabase = createServerClient(url, key, {
+    global: { fetch: authFetch() },
     cookies: {
       getAll: () => request.cookies.getAll(),
       setAll: (cookiesToSet, headersToSet) => {
@@ -28,7 +32,7 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  const { data } = await supabase.auth.getClaims();
+  const { data, error } = await supabase.auth.getClaims();
   // Meta reaches this webhook without a Filazoo session. POST requests are
   // authenticated separately with Meta's x-hub-signature-256 HMAC signature.
   const publicPaths = [
@@ -57,6 +61,14 @@ export async function updateSession(request: NextRequest) {
     "/api/shopify/form-lead",
   ];
   const isPublic = publicPaths.includes(request.nextUrl.pathname) || request.nextUrl.pathname.startsWith("/auth/") || request.nextUrl.pathname.startsWith("/join/");
+  if (!isPublic && isTransientAuthError(error)) {
+    if (request.nextUrl.pathname.startsWith("/api/")) return workspaceSessionUnavailableResponse();
+    // Let the page's authenticated loader retry independently, then show its
+    // recoverable error boundary if the outage persists. Never redirect to
+    // login, clear cookies, or authorize from an unverified token here.
+    response.headers.set("Cache-Control", "private, no-store");
+    return response;
+  }
   if (!data?.claims && !isPublic) {
     if (request.nextUrl.pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "Sign in with an active workspace account." }, { status: 401, headers: { "Cache-Control": "private, no-store" } });

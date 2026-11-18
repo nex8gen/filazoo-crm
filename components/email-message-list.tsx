@@ -25,13 +25,14 @@ function dateGroup(value: string, language: AppLanguage) {
   return date.toLocaleDateString(language, { month: "long", day: "numeric", year: "numeric" });
 }
 
-export function EmailMessageList({ conversations, categories = {}, followups, compact, simple = false, emptyIcon = Inbox, activeId, checked, readMessages, starred, onCheck, onOpen, onStar }: {
+export function EmailMessageList({ conversations, categories = {}, followups, compact, simple = false, emptyIcon = Inbox, unavailable = false, activeId, checked, readMessages, starred, onCheck, onOpen, onStar }: {
   conversations: Conversation[];
   categories?: Record<string, CustomerTag>;
   followups?: Map<string, FollowupActionRecord[]>;
   compact: boolean;
   simple?: boolean;
   emptyIcon?: LucideIcon;
+  unavailable?: boolean;
   activeId?: string;
   checked: Set<string>;
   readMessages: Set<string>;
@@ -42,6 +43,7 @@ export function EmailMessageList({ conversations, categories = {}, followups, co
 }) {
   const { language } = useLanguage();
   const showFollowupBadges = !simple && followups !== undefined;
+  if (!conversations.length && unavailable) return <EmptyState className="m-5" icon={emptyIcon} title="Mailbox temporarily unavailable" description="Your emails could not be loaded. We will retry automatically; you can also use Refresh inbox." />;
   if (!conversations.length) return <EmptyState className="m-5" icon={emptyIcon} title={simple ? "No conversations here yet" : "No conversations match this view"} description={simple ? "New messages from this customer's saved contacts will appear here." : "Try another folder or clear your filters."} />;
   return <div className={compact ? "mail-rows mail-rows-compact" : "mail-rows"} data-followup-badges={showFollowupBadges}>
     {conversations.map((item, index) => {

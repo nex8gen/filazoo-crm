@@ -9,6 +9,8 @@ export function createSupabaseAdmin() {
   let scope: Promise<{ workspaceId: string; userId?: string } | null> | undefined;
   return createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.supabaseSecretKey, {
     auth: { persistSession: false, autoRefreshToken: false },
+    // workspaceFetch owns a bounded retry, including failures after headers.
+    db: { retry: false },
     global: { fetch: workspaceFetch(async () => {
       const explicit = currentWorkspaceContext();
       if (explicit) return explicit;

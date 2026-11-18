@@ -3,11 +3,17 @@ import { NotificationToast } from "@/components/ui/notification-toast";
 
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { ArrowUpRight, Bell, LoaderCircle, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
-import { ActivityEmptyState, NotificationItem, TaskItem } from "./activity-items";
 import type { ActivitySummary, FlowActivityData } from "@/lib/task-activity";
+
+// The closed bell only needs its count. Download the task/email renderers when
+// the popover opens, rather than on every workspace page.
+const ActivityEmptyState = dynamic(() => import("./activity-items").then(module => module.ActivityEmptyState));
+const NotificationItem = dynamic(() => import("./activity-items").then(module => module.NotificationItem));
+const TaskItem = dynamic(() => import("./activity-items").then(module => module.TaskItem));
 
 export function FlowActivityBell({ sidebar = false, expanded = false }: { sidebar?: boolean; expanded?: boolean }) {
   const [summary, setSummary] = useState<ActivitySummary>({ openTasks: 0, unreadAlerts: 0, overdueTasks: 0, dueToday: 0 });

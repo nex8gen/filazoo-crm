@@ -40,13 +40,13 @@ function run(command, args, capture = true, environment = {}) {
 }
 
 async function main() {
-  await checkCrmPort(3001);
+  await checkCrmPort(3000);
   const commit = await syncCrmSource(run);
   console.log(`Source synchronized at ${commit}. Installing the pinned release dependencies...`);
   await run(process.platform === "win32" ? "npm.cmd" : "npm", ["ci", "--no-audit", "--no-fund"], false);
   await run(process.execPath, ["scripts/start-crm.mjs", "--build-only"], false);
   await run(process.execPath, ["scripts/audit-client-bundles.mjs"], false, { FILAZOO_STABLE_RUNTIME: "1" });
-  console.log(`CRM ${commit} is prepared. Run npm run crm:start and open http://localhost:3001.`);
+  console.log(`CRM ${commit} is prepared. Run npm run crm:start and open http://localhost:3000.`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

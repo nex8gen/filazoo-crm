@@ -8,14 +8,14 @@ import { assertCurrentLocalBuild, localBuildFingerprint, saveLocalBuild } from "
 const root = fileURLToPath(new URL("../", import.meta.url));
 
 export function crmRuntimePlan(args = [], environment = process.env) {
-  let port = "3001";
+  let port = "3000";
   let build = true;
   let serve = true;
   for (const arg of args) {
     if (arg === "--skip-build") build = false;
     else if (arg === "--build-only") serve = false;
     else if (/^--port=\d+$/.test(arg)) port = arg.slice(7);
-    else throw new Error(`Unknown argument: ${arg}. Use --port=3001, --skip-build or --build-only.`);
+    else throw new Error(`Unknown argument: ${arg}. Use --port=3000, --skip-build or --build-only.`);
   }
   if (!build && !serve) throw new Error("--skip-build and --build-only cannot be used together.");
   if (!Number.isInteger(Number(port)) || Number(port) < 1 || Number(port) > 65535) throw new Error("Choose a port between 1 and 65535.");
@@ -35,7 +35,7 @@ export function crmRuntimePlan(args = [], environment = process.env) {
 export async function checkCrmPort(port) {
   await new Promise((resolve, reject) => {
     const server = createServer();
-    server.once("error", () => reject(new Error(`Port ${port} is already in use. If the CRM is running, open http://localhost:${port}. Stop it before rebuilding.`)));
+    server.once("error", () => reject(new Error(`Port ${port} is already in use. Stop the server using it before running the optimized CRM. If it is npm run dev, stop that development server first. To run separately, use npm run crm -- --port=3001.`)));
     server.listen(port, "127.0.0.1", () => server.close(resolve));
   });
 }

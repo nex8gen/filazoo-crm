@@ -10,6 +10,7 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { EmailSyncStatus } from "@/components/email-sync-status";
 import { PageActions, PageHeaderDetails } from "@/components/page-header";
 import type { MailSyncHealth } from "@/lib/mail-sync-jobs";
+import { mergePartialMailboxMessages } from "@/lib/mailbox-sync";
 import { usePreferences } from "@/components/preferences-provider";
 import { useBackgroundRefresh } from "@/components/use-background-refresh";
 import { prepareComposerMessage } from "@/lib/email-composer";
@@ -55,7 +56,6 @@ import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { InboxCalculator } from "@/components/inbox-calculator";
-import { EmailCatalogDialog } from "@/components/email-catalog-dialog";
 import { EmailAttachmentMenu } from "@/components/email-attachment-menu";
 import { fillLibraryTemplate, loadLibraryEmailItem } from "@/lib/document-email";
 import type { LibraryDocument } from "@/lib/documents";
@@ -73,7 +73,6 @@ import "./email-ai-writing.css";
 import { AssignedOwner } from "@/components/assigned-owner";
 import { ContactSummary } from "@/components/contact-summary";
 import { groupEmailConversations, replyReferences, replyTarget, threadKeyForEmail } from "@/lib/email-threading";
-import { buildCatalogPdfWithImages } from "@/lib/catalog-pdf";
 import { prepareEmailTranslation } from "@/lib/email-translation-document";
 import { requestEmailTranslation } from "@/lib/email-translation-client";
 import type { Catalog, Product } from "@/lib/types";
@@ -86,6 +85,9 @@ import type { MailboxOption } from "@/lib/mailbox-utils";
 
 const InvoiceCreateDialog = dynamic(()=>import("@/components/invoice-create-dialog").then(module=>module.InvoiceCreateDialog));
 const DocumentLibraryPicker = dynamic(() => import("@/components/document-library-picker").then(module => module.DocumentLibraryPicker));
+const EmailCatalogDialog = dynamic(() => import("@/components/email-catalog-dialog").then(module => module.EmailCatalogDialog), {
+  loading: () => <div role="status" className="fixed bottom-6 right-6 z-50 rounded-lg border bg-background p-4 text-sm text-muted-foreground">Loading…</div>,
+});
 
 export type EmailWorkspaceItem = {
   id: string;
@@ -241,6 +243,9 @@ export function EmailInboxWorkspace({
   initialComposeTo,
   inboxConfigured,
   inboxError,
+  mailboxReadFailed = false,
+  mailboxSnapshotPartial = false,
+  loadResources,
   lastMailboxSync,
   syncHealth: initialSyncHealth = {},
   aiConfigured,
@@ -248,8 +253,8 @@ export function EmailInboxWorkspace({
   mailboxes,
   selectedMailboxId,
   defaultSenderId,
-  products,
-  catalogs,
+  products: initialProducts,
+  catalogs: initialCatalogs,
   canCreateInvoices = false,
   invoiceViewer,
   companyScope,
@@ -273,6 +278,9 @@ export function EmailInboxWorkspace({
   sendConfigured: boolean;
   inboxConfigured: boolean;
   inboxError: string | null;
+  mailboxReadFailed?: boolean;
+  mailboxSnapshotPartial?: boolean;
+  loadResources?: () => Promise<{ products: Product[]; catalogs: Catalog[] }>;
   lastMailboxSync?: string | null;
   syncHealth?: Record<string, MailSyncHealth>;
   aiConfigured: boolean;
@@ -289,12 +297,19 @@ export function EmailInboxWorkspace({
   companyScope?: CompanyEmailScope;
   assignedCustomersOnly?: boolean;
   onMailboxChange?: (mailboxId: string) => void;
-  onMailboxSnapshot?: (mailboxId: string | null, emails: EmailWorkspaceItem[]) => void;
+  onMailboxSnapshot?: (mailboxId: string | null, emails: EmailWorkspaceItem[], readFailed?: boolean, partial?: boolean) => void;
   switchingMailboxId?: string | null;
   mailboxSwitchError?: string | null;
   providerFolders?: ProviderFolder[];
 }) {
   const sourceEmails = companyScope ? filterCompanyEmails(initialEmails, companyScope) : initialEmails;
+  const [products, setProducts] = useState(initialProducts);
+  const [catalogs, setCatalogs] = useState(initialCatalogs);
+  const ensureResources = async () => {
+    const result = loadResources ? await loadResources() : { products, catalogs };
+    setProducts(result.products); setCatalogs(result.catalogs);
+    return result;
+  };
   const router = useRouter();
   const { preferences } = usePreferences();
   const { footer: personalFooter, loading: footerLoading, error: footerError } = useEmailFooter();
@@ -433,6 +448,9 @@ export function EmailInboxWorkspace({
   const [lastSuccessfulSync, setLastSuccessfulSync] = useState(lastMailboxSync);
   const [syncing, setSyncing] = useState(false);
   const syncInProgress = useRef(false);
+  const lastReceiveRequest = useRef<number | null>(null);
+  const [mailboxUnavailable, setMailboxUnavailable] = useState(mailboxReadFailed);
+  const [partialSnapshot, setPartialSnapshot] = useState(mailboxSnapshotPartial);
   const bodyRequests = useRef(new Set<string>());
   const [loadingBodies, setLoadingBodies] = useState<Set<string>>(new Set());
   const [bodyErrors, setBodyErrors] = useState<Record<string, string>>({});
@@ -453,8 +471,8 @@ export function EmailInboxWorkspace({
       ...email,
       starred: starred.has(email.id), read: readMessages.has(email.id),
       category: categories[email.id] ?? null, folder: folderStates[email.id] ?? "inbox", followUpAt: followUps[email.id] ?? null,
-    })));
-  }, [onMailboxSnapshot, selectedMailboxId, emails, starred, readMessages, categories, folderStates, followUps]);
+    })), mailboxUnavailable, partialSnapshot);
+  }, [onMailboxSnapshot, selectedMailboxId, emails, starred, readMessages, categories, folderStates, followUps, mailboxUnavailable, partialSnapshot]);
 
   useEffect(() => { unsentDraft.current = Boolean(composeTo.trim() || composeSubject.trim() || composeBody.trim() || draft.trim() || replyHasImages || composeHasImages || composeAttachments.length || replyAttachments.length); }, [composeTo, composeSubject, composeBody, draft, replyHasImages, composeHasImages, composeAttachments.length, replyAttachments.length]);
   useEffect(() => {
@@ -535,29 +553,37 @@ export function EmailInboxWorkspace({
     return () => controller.abort();
   }, [initialLibraryItem, initialLibraryRequest, setComposeBody]);
 
-  const applyMailboxSnapshot = useCallback((nextEmails: EmailWorkspaceItem[]) => {
+  const applyMailboxSnapshot = useCallback((nextEmails: EmailWorkspaceItem[], partial = false) => {
     if (companyScope) nextEmails = filterCompanyEmails(nextEmails, companyScope);
     savedStates.current = new Map([...savedStates.current, ...nextEmails.map((email): [string, MessageState] => [email.id, messageState(email)])]);
     setEmails((current) => {
       const loaded = new Map(current.filter((email) => email.bodyLoaded).map((email) => [email.id, email]));
-      return nextEmails.map((email) => {
+      return (partial ? mergePartialMailboxMessages(current, nextEmails) : nextEmails).map((email) => {
         const previous = loaded.get(email.id);
         const sameLocation = previous && email.uid === previous.uid && email.uidValidity === previous.uidValidity && email.mailboxKey === previous.mailboxKey && email.providerFolder === previous.providerFolder;
         return email.bodyLoaded === false && previous && sameLocation ? { ...email, body: previous.body, html: previous.html, preview: previous.preview, attachments: previous.attachments,
           from: previous.from, to: previous.to, cc: previous.cc, bcc: previous.bcc, replyTo: previous.replyTo, bodyLoaded: true } : email;
       });
     });
-    setStarred(new Set(nextEmails.filter((email) => email.starred).map((email) => email.id)));
-    setReadMessages(new Set(nextEmails.filter((email) => email.read || email.direction === "outbound").map((email) => email.id)));
-    setCategories(Object.fromEntries(nextEmails.flatMap((email) => email.category ? [[email.id, email.category]] : [])));
-    setFollowUps(Object.fromEntries(nextEmails.flatMap((email) => email.followUpAt ? [[email.id, email.followUpAt]] : [])));
-    setFolderStates(Object.fromEntries(nextEmails.map((email) => [email.id, email.folder ?? "inbox"])));
+    setStarred(current => {
+      const result = partial ? new Set(current) : new Set<string>();
+      for (const email of nextEmails) { if (email.starred) result.add(email.id); else if (email.starred !== undefined) result.delete(email.id); }
+      return result;
+    });
+    setReadMessages(current => {
+      const result = partial ? new Set(current) : new Set<string>();
+      for (const email of nextEmails) { if (email.read || email.direction === "outbound") result.add(email.id); else if (email.read !== undefined) result.delete(email.id); }
+      return result;
+    });
+    setCategories(current => ({ ...(partial ? current : {}), ...Object.fromEntries(nextEmails.flatMap((email) => email.category ? [[email.id, email.category]] : [])) }));
+    setFollowUps(current => ({ ...(partial ? current : {}), ...Object.fromEntries(nextEmails.flatMap((email) => email.followUpAt ? [[email.id, email.followUpAt]] : [])) }));
+    setFolderStates(current => ({ ...(partial ? current : {}), ...Object.fromEntries(nextEmails.map((email) => [email.id, email.folder ?? "inbox"])) }));
     const target = pendingThread.current ? nextEmails.find((email) => threadKeyForEmail(email) === pendingThread.current || email.id === pendingThread.current) : undefined;
     if (target) {
       pendingThread.current = undefined;
       setFolder(target.folder && target.folder !== "inbox" ? target.folder : target.direction === "outbound" ? "sent" : "inbox");
     }
-    setSelectedId((current) => target?.id ?? (nextEmails.some((email) => email.id === current) ? current : ""));
+    setSelectedId((current) => target?.id ?? (partial || nextEmails.some((email) => email.id === current) ? current : ""));
   }, [companyScope]);
 
   const syncInbox = useCallback(async (manual = false, refreshRequested = false) => {
@@ -569,26 +595,34 @@ export function EmailInboxWorkspace({
     const timeout = setTimeout(() => controller.abort(), 30_000);
     try {
       const params = new URLSearchParams();
-      if (!manual && !refreshRequested) params.set("refresh", "false");
+      // Check imported headers frequently; wake provider receiving at most every
+      // 15 seconds, independently of an external scheduler.
+      const receive = manual || refreshRequested || lastReceiveRequest.current === null || Date.now() - lastReceiveRequest.current >= 15_000;
+      params.set("refresh", !receive ? "false" : manual || refreshRequested ? "true" : "background");
+      if (receive) lastReceiveRequest.current = Date.now();
       if (selectedMailboxId && !companyScope) params.set("mailboxId", selectedMailboxId);
       if (manual) params.set("scope", "history");
+      if (Object.values(syncHealth).some(item => item.history !== "idle" && !item.historyComplete)) params.set("health", "true");
       const providerFolder = folder.startsWith("provider:") ? folder.slice(9) : providerFolders.find((item) => item.kind === folder)?.path;
       if (providerFolder && providerFolder !== "INBOX") params.set("providerFolder", providerFolder);
       if (companyScope) params.set("companyId", companyScope.id);
       const response = await fetch(`/api/email/inbox?${params}`, { cache: "no-store", signal: controller.signal });
       const result = await response.json().catch(() => ({ error: "The inbox returned an invalid response." }));
-      if (!response.ok || !Array.isArray(result.emails)) {
+      if (!response.ok || result.mailboxReadFailed || !Array.isArray(result.emails) || (!companyScope && result.selectedMailboxId !== selectedMailboxId)) {
         throw new Error(result.error || "Unable to sync the mailbox inbox.");
       }
-      if (Array.isArray(result.providerFolders)) setProviderFolders(result.providerFolders);
-      if (result.syncHealth) setSyncHealth(result.syncHealth);
+      if (Array.isArray(result.providerFolders)) setProviderFolders(current => result.mailboxSnapshotPartial ? [...new Map([...current, ...result.providerFolders].map(item => [item.path, item])).values()] : result.providerFolders);
+      if (result.syncHealth && Object.keys(result.syncHealth).length) setSyncHealth(result.syncHealth);
+      setMailboxUnavailable(false);
+      setPartialSnapshot(Boolean(result.mailboxSnapshotPartial));
       setLastSuccessfulSync(result.lastMailboxSync || null);
       // A poll started before a user action must not undo that action.
       if (revision !== stateRevision.current || pendingStateWrites.current) return;
-      applyMailboxSnapshot(result.emails as EmailWorkspaceItem[]);
+      applyMailboxSnapshot(result.emails as EmailWorkspaceItem[], Boolean(result.mailboxSnapshotPartial));
       setSyncError(result.syncQueueError || result.inboxError || null);
       if (manual) setNotice("Loading the next batch of older emails. They will appear automatically as they are imported.");
     } catch (error) {
+      lastReceiveRequest.current = null;
       const message = error instanceof Error ? error.message : "Unable to sync the mailbox inbox.";
       setSyncError(message);
       if (manual) setNotice(message);
@@ -597,7 +631,7 @@ export function EmailInboxWorkspace({
       syncInProgress.current = false;
       setSyncing(false);
     }
-  }, [applyMailboxSnapshot, companyScope, inboxConfigured, selectedMailboxId, folder, providerFolders]);
+  }, [applyMailboxSnapshot, companyScope, inboxConfigured, selectedMailboxId, folder, providerFolders, syncHealth]);
 
   useBackgroundRefresh(syncInbox, inboxConfigured, preferences.emailSyncSeconds);
 
@@ -1109,9 +1143,11 @@ export function EmailInboxWorkspace({
     }
   }
 
-  function openCatalogPicker(target: "reply" | "compose") {
-    setCatalogTarget(target);
-    setCatalogOpen(true);
+  async function openCatalogPicker(target: "reply" | "compose") {
+    setAttachmentBusy(true);
+    try { await ensureResources(); setCatalogTarget(target); setCatalogOpen(true); }
+    catch (error) { setNotice(error instanceof Error ? error.message : "Unable to load the product catalog. Please retry."); }
+    finally { setAttachmentBusy(false); }
   }
 
   async function insertLibraryItem(document: LibraryDocument) {
@@ -1209,6 +1245,8 @@ export function EmailInboxWorkspace({
     startReply();
     setNotice("Reading the conversation and preparing your reply…");
     try {
+      const { products, catalogs } = await ensureResources();
+      if (!isCurrent()) return;
       // IMAP list rows can contain only a preview. Load original bodies first.
       const history = await Promise.all(conversation.slice(-8).map(async (message) => {
         if (message.bodyLoaded !== false) return message;
@@ -1244,6 +1282,7 @@ export function EmailInboxWorkspace({
         const saved = catalogs.filter((catalog) => catalog.company === selected.company).sort((a, b) => b.version - a.version)[0];
         const catalogProducts = saved ? products.filter((product) => saved.productSkus.includes(product.sku)) : products;
         if (!catalogProducts.length) throw new Error("No catalog products are available. Add products before generating a catalog reply.");
+        const { buildCatalogPdfWithImages } = await import("@/lib/catalog-pdf");
         const bytes = await buildCatalogPdfWithImages(catalogProducts, { title: "Filazoo product catalog", customer: selected.company });
         if (!isCurrent()) return;
         if (bytes.byteLength > 7_500_000) throw new Error("The catalog PDF exceeds 7.5 MB. Attach a smaller catalog manually.");
@@ -1566,12 +1605,13 @@ export function EmailInboxWorkspace({
 
 </>}
           {inboxConfigured ? <EmailSyncStatus health={Object.values(syncHealth)} lastSuccessAt={lastSuccessfulSync} error={syncError} /> : null}
+          {partialSnapshot ? <p role="status" className="border-b px-3 py-2 text-xs text-muted-foreground">Showing recent messages. Saved history will retry automatically.</p> : null}
           {searchStatus ? <p role="status" className="border-b px-3 py-2 text-xs text-muted-foreground">{searchStatus}</p> : null}
           {!companyScope && !["drafts", "scheduled"].includes(folder) && !Object.values(syncHealth).some((item) => item.history !== "idle" || item.historyComplete) ? <button type="button" disabled={syncing || !inboxConfigured} onClick={() => void syncInbox(true)} className="border-b px-3 py-2 text-left text-xs text-muted-foreground hover:bg-muted disabled:opacity-40">Load older emails</button> : null}
           {notice ? <NotificationToast tone="message">{notice}</NotificationToast> : null}
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
 {folder === "drafts" ? <div className="divide-y">{Object.values(savedDrafts.drafts).length ? Object.values(savedDrafts.drafts).map((value) => <div key={value.id} className="flex items-center gap-3 px-4 py-4"><button type="button" onClick={() => resumeDraft(value)} className="min-w-0 flex-1 text-left"><span className="block truncate text-sm font-medium">{value.subject || "(No subject)"}</span><span className="block truncate text-xs text-muted-foreground">{value.to || "No recipient"} · {value.bodyText.slice(0, 100)}</span></button><button type="button" onClick={() => { savedDrafts.remove(value); if (value.id === composeDraftId) { setComposeDraftId(""); setComposeTo(""); setComposeCc(""); setComposeBcc(""); setComposeBody(""); setComposeSubject(""); setComposeAttachments([]); setComposeProviderDraft(undefined); } }} aria-label={"Discard draft " + value.subject} className="rounded p-2 text-muted-foreground"><Trash2 className="size-4" /></button></div>) : <p className="p-5 text-sm text-muted-foreground">No saved drafts.</p>}<EmailMessageList emptyIcon={FileText} conversations={pageItems} categories={visibleCategories} compact={reading} activeId={selectedConversation?.id} checked={checkedIds} readMessages={readMessages} starred={starred} onCheck={() => undefined} onOpen={openConversation} onStar={toggleStar} /></div> : folder === "scheduled" ? <div className="divide-y">{scheduledError ? <NotificationToast>{scheduledError}</NotificationToast> : null}{scheduledEmails.map((value) => <div key={value.id} className="p-4"><p className="font-medium">{value.payload.subject || "(No subject)"}</p><p className="mt-1 text-xs text-muted-foreground">{value.payload.to?.join(", ")} · {new Date(value.scheduled_at).toLocaleString()} · {value.status}</p>{value.error ? <p className="mt-2 text-xs text-red-600">{value.error}</p> : null}{value.status === "scheduled" ? <button type="button" className="mt-2 text-xs underline" onClick={async () => { const response = await fetch("/api/email/scheduled", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: value.id }) }); const result = await response.json(); if (response.ok) setScheduledEmails((current) => current.filter((item) => item.id !== value.id)); else setScheduledError(result.error); }}>Cancel scheduled send</button> : null}{["scheduled", "failed"].includes(value.status) ? <button type="button" className="ml-4 mt-2 text-xs underline" onClick={() => void editScheduledEmail(value)}>Edit scheduled email</button> : null}</div>)}{!scheduledEmails.length && !scheduledError ? <p className="p-5 text-sm text-muted-foreground">No scheduled emails.</p> : null}</div> : <>
-            <EmailMessageList followups={selectedMailboxId && followupActions?.mailboxId === selectedMailboxId ? conversationActions : undefined} emptyIcon={folderItems.find((item) => item.id === folder)?.icon} conversations={pageItems} categories={visibleCategories} compact={Boolean(companyScope) || reading} simple={Boolean(companyScope)} activeId={reading ? selectedConversation?.id : undefined} checked={checkedIds} readMessages={readMessages} starred={starred} onCheck={(id) => setCheckedIds((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; })} onOpen={openConversation} onStar={toggleStar} /></>}
+            <EmailMessageList unavailable={mailboxUnavailable} followups={selectedMailboxId && followupActions?.mailboxId === selectedMailboxId ? conversationActions : undefined} emptyIcon={folderItems.find((item) => item.id === folder)?.icon} conversations={pageItems} categories={visibleCategories} compact={Boolean(companyScope) || reading} simple={Boolean(companyScope)} activeId={reading ? selectedConversation?.id : undefined} checked={checkedIds} readMessages={readMessages} starred={starred} onCheck={(id) => setCheckedIds((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; })} onOpen={openConversation} onStar={toggleStar} /></>}
 
           </div>
           <div className="flex min-h-12 items-center justify-end gap-3 border-t px-3 text-xs text-muted-foreground">

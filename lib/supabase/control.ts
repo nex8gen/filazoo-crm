@@ -7,6 +7,7 @@ export function createSupabaseControl() {
   if (!env.NEXT_PUBLIC_SUPABASE_URL || !env.supabaseSecretKey) throw new Error("Supabase server authentication is not configured.");
   return createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.supabaseSecretKey, {
     auth: { persistSession: false, autoRefreshToken: false },
+    db: { retry: false },
     global: { headers: { "x-crm-control": "1" }, fetch: sessionFetch() },
   });
 }

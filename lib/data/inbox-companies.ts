@@ -16,7 +16,7 @@ const literalPattern = (value: string) => JSON.stringify(value.replace(/[\\%_]/g
 
 /** Caller has authorized and filtered the inbox. Enrich only its correspondents;
  * never scan all companies. Resolve only the distinct visible owners' cached avatars. */
-export async function listInboxCompanies(messages: InboxEmailItem[], assigned: AssignedEmailContacts) {
+export async function listInboxCompanies(messages: InboxEmailItem[], assigned: AssignedEmailContacts, signal?: AbortSignal) {
   const admin = createSupabaseAdmin();
   const addresses = [...new Set(messages.map((item) => item.contact.trim().toLowerCase()).filter((email) => email.includes("@") && !assigned?.has(email)))];
   const ids = [...new Set(messages.flatMap((item) => {
@@ -30,9 +30,11 @@ export async function listInboxCompanies(messages: InboxEmailItem[], assigned: A
     (async () => {
       for (let start = 0; start < addresses.length; start += 50) {
         for (let offset = 0; ; offset += 500) {
-          const { data, error } = await admin.from("contacts").select(`email,companies!inner(${fields})`)
+          let query = admin.from("contacts").select(`email,companies!inner(${fields})`)
             .or(addresses.slice(start, start + 50).map((email) => `email.ilike.${literalPattern(email)}`).join(","))
             .order("id").range(offset, offset + 499);
+          if (signal) query = query.abortSignal(signal);
+          const { data, error } = await query;
           if (error) throw new Error(`Unable to load email customer context: ${error.message}`);
           for (const match of data ?? []) {
             const company = first(match.companies as unknown as Relation<CompanyRow>);
@@ -47,8 +49,10 @@ export async function listInboxCompanies(messages: InboxEmailItem[], assigned: A
     (async () => {
       const filters = [...ids.map((id) => `id.eq.${JSON.stringify(id)}`), ...names.map((name) => `name.ilike.${literalPattern(name)}`)];
       for (let start = 0; start < filters.length; start += 50) {
-        const { data, error } = await admin.from("companies").select(fields).or("source.is.null,source.neq.sample_seed")
+        let query = admin.from("companies").select(fields).or("source.is.null,source.neq.sample_seed")
           .or(filters.slice(start, start + 50).join(","));
+        if (signal) query = query.abortSignal(signal);
+        const { data, error } = await query;
         if (error) throw new Error(`Unable to load email customer context: ${error.message}`);
         for (const row of data ?? []) rows.set(row.id, row as unknown as CompanyRow);
       }
@@ -56,7 +60,7 @@ export async function listInboxCompanies(messages: InboxEmailItem[], assigned: A
   ]);
   const ownerIds = [...new Set([...rows.values()].map((row) => first(row.pipeline)?.owner_id).filter((id): id is string => Boolean(id)))];
   const [{ data: owners, error }, ownerAvatars] = await Promise.all([ownerIds.length
-    ? admin.from("workspace_members").select("user_id,display_name").in("user_id", ownerIds)
+    ? (signal ? admin.from("workspace_members").select("user_id,display_name").in("user_id", ownerIds).abortSignal(signal) : admin.from("workspace_members").select("user_id,display_name").in("user_id", ownerIds))
     : { data: [], error: null },
     ownerIds.length ? import("./cached-member-avatars.ts").then(({ resolveMemberAvatars }) => resolveMemberAvatars(ownerIds)) : new Map<string, string>(),
   ]);

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { policyTestDependency } from "./helpers/ai-policy.ts";
 import * as customerTags from "../lib/customer-tags.ts";
 import * as credentials from "../lib/ai/provider-credentials.ts";
 import * as leadInquiries from "../lib/lead-inquiries.ts";
@@ -11,6 +12,7 @@ import * as mailboxUtils from "../lib/mailbox-utils.ts";
 import * as threading from "../lib/email-threading.ts";
 import { canViewEmail } from "../lib/email-access.ts";
 import { synchronizeMailbox } from "../lib/mailbox-sync.ts";
+import * as mailboxSync from "../lib/mailbox-sync.ts";
 import * as emailContent from "../lib/email-content.ts";
 import * as workbench from "../lib/email-workbench.ts";
 import * as sendFailure from "../lib/email-send-failure.ts";
@@ -24,6 +26,8 @@ import type { WorkspaceViewer } from "../lib/auth.ts";
 
 const require = createRequire(import.meta.url);
 function loadModule<T>(path: string, dependencies: Record<string, unknown>): T {
+  dependencies["./mailbox-sync.ts"] ??= mailboxSync;
+  dependencies["../email-provider.ts"] ??= provider;
   dependencies["@/lib/data/company-email-access"] ??= {};
   dependencies["@/lib/company-email"] = companyEmail;
   dependencies["./company-email.ts"] = companyEmail;
@@ -41,7 +45,7 @@ function loadModule<T>(path: string, dependencies: Record<string, unknown>): T {
   const code = ts.transpileModule(readFileSync(new URL(path, import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => dependencies[name] ?? require(name), Response, Request, URL, Buffer, ReadableStream, crypto, console, process });
+  vm.runInNewContext(code, { exports, require: (name: string) => dependencies[name] ?? policyTestDependency(name) ?? require(name), Response, Request, URL, Buffer, ReadableStream, crypto, console, process });
   return exports as T;
 }
 
@@ -156,8 +160,9 @@ async function setupInbox(role = "operator", assignedContacts: Map<string, strin
   const counts = { auth: 0, mailboxes: 0 };
   const knownCompanies: { id: string; name: string; email: string }[] = [];
   const received: Partial<InboxEmailItem> = {};
+  const failures = { replies: false, enrichment: false };
   const viewer: WorkspaceViewer = { id: "actor", role: role as WorkspaceViewer["role"], email: null, displayName: null };
-  const backend = loadModule<{ getEmailInboxBackendData: (options?: { mailboxId?: string; syncMailbox?: boolean; context?: { viewer: WorkspaceViewer; mailboxes: WorkspaceMailboxRecord[] } }) => Promise<EmailInboxBackendData> }>("../lib/email-inbox.ts", {
+  const backend = loadModule<{ getEmailInboxBackendData: (options?: { mailboxId?: string; syncMailbox?: boolean; interactive?: boolean; context?: { viewer: WorkspaceViewer; mailboxes: WorkspaceMailboxRecord[] } }) => Promise<EmailInboxBackendData> }>("../lib/email-inbox.ts", {
     "./auth.ts": { requireWorkspaceMember: async () => { counts.auth++; return viewer; } },
     "./mailbox-utils.ts": mailboxUtils,
     "./email-threading.ts": threading,
@@ -168,11 +173,11 @@ async function setupInbox(role = "operator", assignedContacts: Map<string, strin
       mailboxHasSmtp: setupData.mailboxes.mailboxHasSmtp,
       mailboxHasImap: (mailbox: WorkspaceMailboxRecord | null) => Boolean(mailbox?.isActive && mailbox.imapPassword),
     },
-    "./data/inbox-companies.ts": { listInboxCompanies: async () => { reads.push("companies"); return { companies: knownCompanies }; } },
+    "./data/inbox-companies.ts": { listInboxCompanies: async () => { reads.push("companies"); if (failures.enrichment) throw new Error("CRM context unavailable"); return { companies: knownCompanies }; } },
     "./data/crm.ts": {
       listCompanies: async () => { reads.push("companies"); return { companies: [] }; },
       listEmailDrafts: async (authorizedViewer: WorkspaceViewer) => { assert.equal(authorizedViewer, viewer); reads.push("drafts"); return { emails: [{ id: "workspace-draft", subject: "Outreach", contact: "lead@example.com", preview: "Hello", step: 1, status: "Draft" }], mode: "live" }; },
-      listReplies: async (authorizedViewer: WorkspaceViewer) => { assert.equal(authorizedViewer, viewer); reads.push("replies"); return { replies: [{ id: "workspace-reply", contact: "lead@example.com", body: "Shared reply" }] }; },
+      listReplies: async (authorizedViewer: WorkspaceViewer) => { assert.equal(authorizedViewer, viewer); reads.push("replies"); if (failures.replies) throw new Error("Database timeout"); return { replies: [{ id: "workspace-reply", contact: "lead@example.com", body: "Shared reply" }] }; },
     },
     "./data/email-state.ts": {
       listEmailInboxStates: async () => new Map(),
@@ -189,8 +194,18 @@ async function setupInbox(role = "operator", assignedContacts: Map<string, strin
     } },
     "./supabase/admin.ts": { createSupabaseAdmin: () => ({ from: () => ({ select: () => ({ eq: () => ({ order: () => ({ range: async () => ({ data: [], error: null }) }) }) }) }) }) },
   });
-  return { backend, synced, sentScopes, reads, counts, knownCompanies, received, context: { viewer, mailboxes } };
+  return { backend, synced, sentScopes, reads, counts, knownCompanies, received, failures, context: { viewer, mailboxes } };
 }
+
+test("interactive mailbox messages remain visible when CRM replies and enrichment fail", async () => {
+  const { backend, context, failures } = await setupInbox();
+  failures.replies = true; failures.enrichment = true;
+  const data = await backend.getEmailInboxBackendData({ interactive: true, syncMailbox: false, mailboxId: "team", context });
+  assert.equal(data.mailboxReadFailed, false);
+  assert.equal(data.mailboxSnapshotPartial, true);
+  assert.ok(data.emails.some(message => message.id === "received-team"));
+  assert.ok(data.emails.some(message => message.id === "sent-team"));
+});
 
 test("company-scoped admin reads a colleague's CC customer mail while ordinary personal access still denies it", async () => {
   const { backend, context, received } = await setupInbox("admin");
@@ -263,6 +278,10 @@ test("assigned BD customer mail remains visible in either account", async () => 
 test("header-only saved inbox reads never query cached message bodies or contact IMAP", async () => {
   const tables: string[] = [];
   const loader = loadModule<{ loadSyncedMailbox: (mailbox: WorkspaceMailboxRecord, options: { sync: boolean; includeContent: boolean }) => Promise<{ messages: InboxEmailItem[] }> }>("../lib/data/mailbox-sync.ts", {
+    "../mailbox-snapshot-reader.ts": { readMailboxSnapshots: async (db: { from: (table: string) => { select: () => { eq: () => { maybeSingle: () => Promise<{ data: unknown }> } } } }) => {
+      const { data } = await db.from("mailbox_sync_state").select().eq().maybeSingle();
+      return data ? [data] : [];
+    } },
     "../supabase/admin.ts": { createSupabaseAdmin: () => ({ from: (table: string) => {
       tables.push(table);
       assert.equal(table, "mailbox_sync_state", "List requests must not download cached HTML content");

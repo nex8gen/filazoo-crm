@@ -2,6 +2,6 @@
 
 import { ErrorState } from "@/components/data-state";
 
-export default function ErrorPage({ reset }: { error: Error & { digest?: string }; reset: () => void }) {
-  return <ErrorState retry={reset} />;
+export default function ErrorPage({ retry }: { error: unknown; retry: () => void }) {
+  return <ErrorState retry={retry} />;
 }

@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import { HeaderSkeleton, LoadingRegion, TableSkeleton } from "@/components/page-skeletons";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageActions } from "@/components/page-header";
-import { AuthShell } from "@/components/auth-shell";
 
 function PanelSkeleton({ className = "", children }: { className?: string; children?: ReactNode }) {
   return <div className={`min-w-0 rounded-xl border bg-card p-5 ${className}`}><Skeleton className="h-5 w-36 max-w-full" /><Skeleton className="mt-2 h-4 w-3/4" />{children ?? <div className="mt-6 space-y-4"><Skeleton className="h-4 w-full" /><Skeleton className="h-4 w-5/6" /><Skeleton className="h-4 w-full" /><Skeleton className="h-4 w-2/3" /><Skeleton className="h-9 w-28" /></div>}</div>;
@@ -84,10 +83,6 @@ export function MetaLeadsSkeleton() {
 
 export function SetupSkeleton() {
   return <LoadingRegion label="Loading setup"><HeaderSkeleton /><PanelSkeleton className="mb-6"><Skeleton className="mt-4 h-8 w-20" /><Skeleton className="mt-4 h-2 w-full" /></PanelSkeleton><div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_18rem]"><div className="space-y-4">{Array.from({ length: 4 }, (_, index) => <PanelSkeleton key={index}><div className="mt-5 grid gap-4 sm:grid-cols-2"><Skeleton className="h-28 w-full" /><Skeleton className="h-28 w-full" /></div></PanelSkeleton>)}</div><div className="space-y-4"><PanelSkeleton /><PanelSkeleton /><PanelSkeleton /></div></div></LoadingRegion>;
-}
-
-export function AuthSkeleton({ fields = 2 }: { fields?: number }) {
-  return <AuthShell><LoadingRegion label="Loading account" className="space-y-6"><div className="space-y-2 text-center"><Skeleton className="mx-auto h-7 w-40" /><Skeleton className="mx-auto h-5 w-64 max-w-full" /></div><div className="space-y-4">{Array.from({ length: fields }, (_, index) => <FieldSkeleton key={index} />)}<Skeleton className="h-10 w-full" /></div><Skeleton className="mx-auto h-4 w-48 max-w-full" /></LoadingRegion></AuthShell>;
 }
 
 export function EmailQueueSkeleton() {

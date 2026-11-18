@@ -8,7 +8,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { activityTime, taskDueGroup, taskNotes, taskSource, type ActivityCompany, type ActivityTask, type ActivityAlert } from "@/lib/task-activity";
 import { CompanyAvatar } from "@/components/company-avatar";
 import { activityAction, activityRelativeTime, type ActivityAction } from "@/lib/activity-action";
-import { flowConversationPath } from "@/lib/flow-engine";
+import { flowConversationPath } from "@/lib/flow-conversation-path";
 
 const EmailAutoReplyControl = dynamic(() => import("@/components/email-auto-reply-control").then(mod => mod.EmailAutoReplyControl));
 const TaskWorkPanel = dynamic(() => import("@/components/task-work-panel").then(mod => mod.TaskWorkPanel));

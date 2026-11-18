@@ -1,11 +1,13 @@
 import { createHash } from "node:crypto";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 import type { WorkspaceMailboxRecord } from "./mailboxes.ts";
-import { synchronizeMailbox, type MailboxSnapshot, type MailboxSyncStore } from "../mailbox-sync.ts";
+import { synchronizeMailbox, readMailboxWithFallback, withInboxReadBudget, type MailboxSnapshot, type MailboxSyncStore } from "../mailbox-sync.ts";
+import { providerFolderKind } from "../email-provider.ts";
 import type { InboxEmailItem } from "../email-inbox.ts";
 import { resolveEmailContentIds, plainEmailContentHtml } from "../email-content.ts";
 import { decodeEmailFilename } from "../email-mime.ts";
 import type { ProviderFolder } from "../email-provider.ts";
+import { readMailboxSnapshots } from "../mailbox-snapshot-reader.ts";
 
 function presentMailboxMessage(message: InboxEmailItem, key: string): InboxEmailItem {
   const attachments = message.attachments?.map((attachment) => {
@@ -19,21 +21,35 @@ function presentMailboxMessage(message: InboxEmailItem, key: string): InboxEmail
   return { ...message, html, attachments, mailboxKey: key };
 }
 
-export async function loadMailboxMessageContent(mailbox: WorkspaceMailboxRecord, uid: number, uidValidity: number, folder = "INBOX"): Promise<InboxEmailItem> {
+export async function loadMailboxMessageContent(mailbox: WorkspaceMailboxRecord, uid: number, uidValidity: number, folder = "INBOX", options: { defer?: (work: () => Promise<void>) => void } = {}): Promise<InboxEmailItem> {
   const admin = createSupabaseAdmin();
   const key = mailboxSyncKey(mailbox, folder);
-  const { data } = await admin.from("mailbox_message_content").select("content").eq("mailbox_key", key).eq("uid_validity", uidValidity).eq("uid", uid).maybeSingle().throwOnError();
-  const cached = data?.content as (InboxEmailItem & { mimeVersion?: number }) | undefined;
+  let cached: (InboxEmailItem & { mimeVersion?: number }) | undefined;
+  const read = async (signal?: AbortSignal) => {
+    let query = admin.from("mailbox_message_content").select("content").eq("mailbox_key", key).eq("uid_validity", uidValidity).eq("uid", uid);
+    if (signal) query = query.abortSignal(signal);
+    const { data } = await query.maybeSingle().throwOnError();
+    return data?.content as (InboxEmailItem & { mimeVersion?: number }) | undefined;
+  };
+  try { cached = options.defer ? await withInboxReadBudget(read) : await read(); }
+  catch (error) { if (!options.defer) throw error; }
   const needsRepair = cached && cached.mimeVersion !== 2 && (!cached.html && /\[cid:/i.test(cached.body || "") || cached.bodyLoaded === false);
   if (cached && !needsRepair) return presentMailboxMessage(cached, key);
-  const { receiveMailboxMessages } = await import("../mailbox-imap.ts");
-  const folders = folder === "INBOX" ? [] : await savedProviderFolders(mailbox);
+  const { receiveMailboxMessages, withMailboxSyncSessions } = await import("../mailbox-imap.ts");
+  const folders = folder === "INBOX" || options.defer ? [] : await savedProviderFolders(mailbox);
   let email: InboxEmailItem | undefined;
-  try { [email] = await receiveMailboxMessages(mailbox, { uids: [uid], uidValidity, headersOnly: false, folder, kind: folders.find((item) => item.path === folder)?.kind, preferModernTransport: true }); }
+  try {
+    const receive = () => receiveMailboxMessages(mailbox, { uids: [uid], uidValidity, headersOnly: false, folder, kind: folders.find((item) => item.path === folder)?.kind || providerFolderKind(folder, []), preferModernTransport: true });
+    [email] = options.defer ? await withMailboxSyncSessions(receive, 8000) : await receive();
+  }
   catch (error) { if (cached) return presentMailboxMessage(cached, key); throw error; }
   if (!email) { if (cached) return presentMailboxMessage(cached, key); throw new Error("This message is no longer available in the mailbox."); }
-  await admin.from("mailbox_sync_state").upsert({ mailbox_key: key }, { onConflict: "mailbox_key", ignoreDuplicates: true }).throwOnError();
-  await admin.from("mailbox_message_content").upsert({ mailbox_key: key, uid_validity: uidValidity, uid, content: { ...email, mimeVersion: 2 } }, { onConflict: "mailbox_key,uid_validity,uid" }).throwOnError();
+  const save = async () => {
+    await admin.from("mailbox_sync_state").upsert({ mailbox_key: key }, { onConflict: "mailbox_key", ignoreDuplicates: true }).throwOnError();
+    await admin.from("mailbox_message_content").upsert({ mailbox_key: key, uid_validity: uidValidity, uid, content: { ...email, mimeVersion: 2 } }, { onConflict: "mailbox_key,uid_validity,uid" }).throwOnError();
+  };
+  if (options.defer) options.defer(async () => { try { await save(); } catch { console.warn("Email content cache will retry when opened again."); } });
+  else await save();
   return presentMailboxMessage(email, key);
 }
 
@@ -50,8 +66,7 @@ export async function loadSyncedMailbox(mailbox: WorkspaceMailboxRecord, options
   const preserveFreshness = maintenance || options.history;
   const store: MailboxSyncStore = {
     async read(): Promise<MailboxSnapshot> {
-      const { data, error } = await admin.from("mailbox_sync_state").select("messages,uid_validity,last_uid,synced_at,last_error,reconciled_at").eq("mailbox_key", key).maybeSingle();
-      if (error) throw new Error(`Unable to load saved mailbox: ${error.message}`);
+      const [data] = await readMailboxSnapshots(admin, [key]);
       reconciledAt = data?.reconciled_at ?? null;
       saved = {
         messages: Array.isArray(data?.messages) ? data.messages as InboxEmailItem[] : [],
@@ -132,23 +147,46 @@ export async function loadSyncedMailbox(mailbox: WorkspaceMailboxRecord, options
   return { messages: visibleMessages.map((message) => presentMailboxMessage({ ...byUid.get(message.uid), ...message, ...(byUid.get(message.uid) ? { body: byUid.get(message.uid)!.body, html: byUid.get(message.uid)!.html, bodyLoaded: true } : {}) }, key)), error: snapshot.error ?? null, syncedAt: snapshot.syncedAt ?? null };
 }
 
-export async function savedProviderFolders(mailbox: WorkspaceMailboxRecord): Promise<ProviderFolder[]> {
-  const { data, error } = await createSupabaseAdmin().from("mailbox_provider_folders").select("folders").eq("mailbox_key", mailboxSyncKey(mailbox)).maybeSingle();
+export async function savedProviderFolders(mailbox: WorkspaceMailboxRecord, signal?: AbortSignal): Promise<ProviderFolder[]> {
+  let query = createSupabaseAdmin().from("mailbox_provider_folders").select("folders").eq("mailbox_key", mailboxSyncKey(mailbox));
+  if (signal) query = query.abortSignal(signal);
+  const { data, error } = await query.maybeSingle();
   if (error) return [];
   return (data?.folders || []) as ProviderFolder[];
 }
 
 /** Read saved messages only. Refresh requests enqueue durable work. */
-export async function loadMailboxWorkspace(mailbox: WorkspaceMailboxRecord, options: { sync?: boolean; history?: boolean; folder?: string } = {}) {
+type MailboxWorkspaceSnapshot = { messages: InboxEmailItem[]; folders: ProviderFolder[]; error: string | null; syncedAt: string | null; partial: boolean };
+export async function loadMailboxWorkspace(mailbox: WorkspaceMailboxRecord, options: { sync?: boolean; history?: boolean; folder?: string; interactive?: boolean; signal?: AbortSignal } = {}): Promise<MailboxWorkspaceSnapshot> {
+  if (options.interactive) {
+    return readMailboxWithFallback(
+      async signal => {
+        const saved = await loadMailboxWorkspace(mailbox, { ...options, interactive: false, sync: false, signal });
+        // No successful checkpoint means an initial import has never completed;
+        // it is not evidence that the real mailbox is empty.
+        if (!saved.syncedAt || saved.error && !saved.messages.length) throw new Error("Saved mailbox history is not ready.");
+        return saved;
+      },
+      async () => {
+        const { receiveMailboxMessages, withMailboxSyncSessions } = await import("../mailbox-imap.ts");
+        const folder = options.folder || "INBOX";
+        const kind = providerFolderKind(folder, []);
+        const messages = await withMailboxSyncSessions(() => receiveMailboxMessages(mailbox, { limit: 50, folder, kind, headersOnly: true, includePreview: false }), 8000);
+        const key = mailboxSyncKey(mailbox, folder);
+        return { messages: messages.map(message => presentMailboxMessage({ ...message, mailboxId: mailbox.id }, key)),
+          folders: [{ path: folder, name: folder, kind }], error: null, syncedAt: new Date().toISOString(), partial: true };
+      },
+    );
+  }
   const db = createSupabaseAdmin();
-  const folders = await savedProviderFolders(mailbox);
+  const folders = await savedProviderFolders(mailbox, options.signal);
   if (options.sync !== false) {
     const { enqueueMailboxSync } = await import("./mail-sync-worker.ts");
     await enqueueMailboxSync(mailbox, { history: options.history, folder: options.folder });
   }
   const folderList = [{ path: "INBOX", kind: "inbox" }, ...folders.filter((folder) => folder.kind !== "inbox")];
   const byKey = new Map(folderList.map((folder) => [mailboxSyncKey(mailbox, folder.path), folder]));
-  const { data: cached } = await db.from("mailbox_sync_state").select("mailbox_key,messages,last_error,synced_at").in("mailbox_key", [...byKey.keys()]).throwOnError();
+  const cached = await readMailboxSnapshots(db, [...byKey.keys()], options.signal);
   const snapshots = (cached || []).map((row) => {
     const folder = byKey.get(row.mailbox_key)!;
     return { messages: (row.messages as InboxEmailItem[]).filter((message) => !message.providerRemoved).map((message) => presentMailboxMessage({ ...message, mailboxId: mailbox.id, providerFolder: folder.path, providerKind: folder.kind }, row.mailbox_key)), error: row.last_error, syncedAt: row.synced_at };
@@ -164,5 +202,5 @@ export async function loadMailboxWorkspace(mailbox: WorkspaceMailboxRecord, opti
     }
   }
   const inbox = cached?.find((row) => row.mailbox_key === mailboxSyncKey(mailbox));
-  return { messages: [...messages.values()], folders, error: inbox?.last_error || null, syncedAt: inbox?.synced_at || null };
+  return { messages: [...messages.values()], folders, error: inbox?.last_error || null, syncedAt: inbox?.synced_at || null, partial: false };
 }

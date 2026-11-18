@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import vm from "node:vm";
 import ts from "typescript";
+import { supabaseSessionDependencies } from "./helpers/supabase-session.ts";
 import { companyPortalHref } from "../lib/company-portal.ts";
 import * as portal from "../lib/customer-portal.ts";
 const require = createRequire(import.meta.url);
@@ -39,7 +40,7 @@ test("staff sign-in preserves the selected portal tab and invoice", async () => 
   const { NextRequest, NextResponse } = require("next/server");
   const source = ts.transpileModule(readFileSync(new URL("../lib/supabase/proxy.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const exports: { updateSession?: (request: unknown) => Promise<Response> } = {};
-  vm.runInNewContext(source, { exports, require: (name: string) => name === "@supabase/ssr" ? { createServerClient: () => ({ auth: { getClaims: async () => ({ data: null }) } }) } : name === "next/server" ? { NextResponse } : require(name), process: { env: { NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co", NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "test", AUTH_REQUIRED: "true" } } });
+  vm.runInNewContext(source, { exports, require: (name: string) => supabaseSessionDependencies[name] ?? (name === "@supabase/ssr" ? { createServerClient: () => ({ auth: { getClaims: async () => ({ data: null }) } }) } : name === "next/server" ? { NextResponse } : require(name)), process: { env: { NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co", NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "test", AUTH_REQUIRED: "true" } } });
   const path = companyPortalHref(companyA, invoiceId);
   const response = await exports.updateSession!(new NextRequest(`https://crm.example${path}`));
   const target = new URL(response.headers.get("location")!);

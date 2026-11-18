@@ -62,7 +62,9 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
   const [aiLaunchRequest, setAiLaunchRequest] = useState<WorkspaceAiLaunchRequest>({ id: 0, mode: "chat" });
   const navigationTriggerRef = useRef<HTMLButtonElement>(null);
   const isPublicPage = isStandaloneRoute(pathname);
-  useCustomerTagRefresh(!isPublicPage);
+  // Only company views render server-owned customer tags. Inbox tags have
+  // their own mailbox refresh; other pages don't need another polling request.
+  useCustomerTagRefresh(companyPopupOpen || pathname === "/companies" || pathname.startsWith("/companies/"));
   // Inbox and automation already refresh their own data in place.
   useVisitedPageRefresh(pathname, !isPublicPage && !usesViewportCanvas && !companyPopupOpen);
 

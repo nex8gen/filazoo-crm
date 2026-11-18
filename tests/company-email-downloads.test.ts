@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { policyTestDependency } from "./helpers/ai-policy.ts";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
@@ -10,7 +11,7 @@ import * as companyEmail from "../lib/company-email.ts";
 function load(path: string, dependencies: Record<string, unknown>) {
   const exports = {} as { GET: (request: Request, context?: unknown) => Promise<Response> };
   vm.runInNewContext(ts.transpileModule(readFileSync(new URL(path, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText,
-    { exports, require: (name: string) => dependencies[name], Response, URL, Uint8Array, ReadableStream });
+    { exports, require: (name: string) => dependencies[name] ?? policyTestDependency(name), Response, URL, Uint8Array, ReadableStream });
   return exports;
 }
 

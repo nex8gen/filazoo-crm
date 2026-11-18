@@ -440,17 +440,19 @@ function emailStatus(status: string): EmailDraft["status"] {
 }
 
 
-export async function listEmailDrafts(authorizedViewer?: WorkspaceViewer): Promise<{ mode: DataMode; emails: EmailDraft[] }> {
+export async function listEmailDrafts(authorizedViewer?: WorkspaceViewer, options: { signal?: AbortSignal } = {}): Promise<{ mode: DataMode; emails: EmailDraft[] }> {
   const mode = getCrmDataMode();
   if (mode === "demo") return { mode, emails: [] };
   if (!authorizedViewer) await authorizeLiveRead();
 
-  const { data, error } = await createSupabaseAdmin()
+  let query = createSupabaseAdmin()
     .from("emails")
     .select("id,subject,body,step,scheduled_for,status,contacts(name,companies(name))")
     .in("status", ["draft", "pending_approval", "approved", "scheduled"])
     .order("created_at", { ascending: false })
     .limit(200);
+  if (options.signal) query = query.abortSignal(options.signal);
+  const { data, error } = await query;
   if (error) throw new Error(`Unable to load email queue: ${error.message}`);
 
   const emails = ((data ?? []) as unknown as EmailRow[]).filter((row) => !isSampleEmailSubject(row.subject)).map((row) => {
@@ -527,17 +529,19 @@ export async function listCatalogs(): Promise<{ mode: DataMode; catalogs: Catalo
   };
 }
 
-export async function listReplies(authorizedViewer?: WorkspaceViewer): Promise<{ mode: DataMode; replies: Reply[] }> {
+export async function listReplies(authorizedViewer?: WorkspaceViewer, options: { signal?: AbortSignal } = {}): Promise<{ mode: DataMode; replies: Reply[] }> {
   const mode = getCrmDataMode();
   if (mode === "demo") return { mode, replies: [] };
   if (!authorizedViewer) await authorizeLiveRead();
 
-  const { data, error } = await createSupabaseAdmin()
+  let query = createSupabaseAdmin()
     .from("emails")
     .select("id,subject,body,sent_at,created_at,message_id,thread_id,contacts(name,email,companies(name))")
     .eq("direction", "received")
     .order("created_at", { ascending: false })
     .limit(200);
+  if (options.signal) query = query.abortSignal(options.signal);
+  const { data, error } = await query;
   if (error) throw new Error(`Unable to load replies: ${error.message}`);
 
   return {

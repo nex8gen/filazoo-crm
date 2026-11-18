@@ -1,5 +1,5 @@
 import { getCompanyPortal } from "@/lib/data/company-portal";
-import { CompanyPortalWorkspace } from "@/components/company-portal-workspace";
+import { CompanyPortalWorkspace } from "@/components/company-section-views";
 import { z } from "zod";
 
 export async function CompanyCustomerPortal({ companyId, companyName, invoiceId, canWrite }: { companyId: string; companyName: string; invoiceId?: string; canWrite: boolean }) {

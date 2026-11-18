@@ -7,6 +7,7 @@ import { isAvatarPreset } from "../lib/profile-avatar.ts";
 import { readUserPreferences } from "../lib/user-preferences.ts";
 import { readTableColumnPreferences } from "../lib/table-column-preferences.ts";
 import { workspaceIdSchema, workspaceCookie } from "../lib/workspaces.ts";
+import { isTransientAuthError } from "../lib/supabase/auth-error.ts";
 
 const id = "aaaaaaaa-1111-2222-3333-444444444444";
 const sessionId = "bbbbbbbb-1111-2222-3333-444444444444";
@@ -30,6 +31,7 @@ function load(options: Options = {}) {
       getClaims: async () => { calls.claims++; return { data: state.claims ? { claims: state.claims } : null, error: options.claimError ?? null }; },
       getUser: async () => { calls.getUser++; return { data: { user: options.legacySignedIn === false ? null : member }, error: null }; },
     } }) },
+    "./supabase/auth-error.ts": { isTransientAuthError },
     "./supabase/control.ts": { createSupabaseControl: () => ({
       rpc: (name: string, params: unknown) => {
         calls.rpc++;
@@ -121,5 +123,13 @@ test("database outages and permission errors cannot become successful authorizat
     const { api, calls } = load({ rpcError: { code, message: "Unavailable" } });
     await assert.rejects(api.requireWorkspaceMember(), /Workspace session lookup failed/);
     assert.equal(calls.getUser, 0);
+  }
+});
+
+test("temporary authentication outages and refresh conflicts never become a login redirect", async () => {
+  for (const claimError of [{ name: "AuthRetryableFetchError", status: 503 }, { name: "AuthApiError", status: 409, code: "conflict" }, { name: "TimeoutError" }]) {
+    const { api, calls } = load({ claims: null, claimError });
+    await assert.rejects(api.requireWorkspaceMember(), /Unable to verify your workspace session/);
+    assert.equal(calls.rpc, 0);
   }
 });

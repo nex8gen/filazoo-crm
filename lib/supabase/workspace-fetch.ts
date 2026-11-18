@@ -1,3 +1,5 @@
+import { fetchRead } from "./read-fetch.ts";
+
 type Scope = { workspaceId: string; userId?: string };
 
 /** Database RLS enforces the header; this also adapts legacy upsert conflict targets. */
@@ -21,6 +23,9 @@ export function workspaceFetch(resolve: () => Promise<Scope | null>, fetcher: ty
     // but must use its composite keys after the database rollout. Only retry a
     // rejected conflict target: PostgreSQL has not executed that failed write.
     const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+    if (["GET", "HEAD"].includes(method.toUpperCase())) {
+      return fetchRead(input instanceof Request ? new Request(url, input) : url, options, fetcher);
+    }
     const legacyConflict = (!scope || scope.workspaceId === "legacy") && method.toUpperCase() === "POST"
       && conflict && !conflict.split(",").includes("workspace_id");
     const retryInput = legacyConflict && input instanceof Request ? input.clone() : input;

@@ -24,11 +24,13 @@ const defaultSteps: AutomationFlowStep[] = [
   { id: "create-task", title: "Create CRM task", delay: "same day", action: "Assign a follow-up task to the owner and log the intent.", enabled: true },
 ];
 
-export async function listEmailInboxStates(userId: string): Promise<Map<string, EmailInboxState>> {
-  const [{ data, error }, sharedTags] = await Promise.all([createSupabaseAdmin()
+export async function listEmailInboxStates(userId: string, signal?: AbortSignal): Promise<Map<string, EmailInboxState>> {
+  let query = createSupabaseAdmin()
     .from("email_inbox_state")
     .select("message_key,category,starred,is_read,folder,follow_up_at")
-    .eq("user_id", userId), listSharedEmailTagAssignments()]);
+    .eq("user_id", userId);
+  if (signal) query = query.abortSignal(signal);
+  const [{ data, error }, sharedTags] = await Promise.all([query, listSharedEmailTagAssignments(signal)]);
   if (error) throw new Error(`Unable to load email state: ${error.message}`);
   const states = new Map<string, EmailInboxState>((data ?? []).map((row) => [row.message_key, {
     messageKey: row.message_key,
@@ -62,12 +64,13 @@ export async function saveEmailInboxState(userId: string, state: Omit<EmailInbox
     : { categoryChanged: false, previousCategory: null };
 }
 
-export async function getEmailAutomationSettings(userId: string, queueCount: number) {
-  const { data, error } = await createSupabaseAdmin()
+export async function getEmailAutomationSettings(userId: string, queueCount: number, signal?: AbortSignal) {
+  let query = createSupabaseAdmin()
     .from("email_automation_settings")
     .select("enabled,steps")
-    .eq("user_id", userId)
-    .maybeSingle();
+    .eq("user_id", userId);
+  if (signal) query = query.abortSignal(signal);
+  const { data, error } = await query.maybeSingle();
   if (error) throw new Error(`Unable to load email automation: ${error.message}`);
   return {
     enabled: Boolean(data?.enabled),
@@ -87,13 +90,14 @@ export async function saveEmailAutomationSettings(userId: string, enabled: boole
   return { enabled, steps };
 }
 
-export async function listSentMailboxMessages(userId: string, mailboxId?: string, companyContacts?: ReadonlySet<string>): Promise<InboxEmailItem[]> {
+export async function listSentMailboxMessages(userId: string, mailboxId?: string, companyContacts?: ReadonlySet<string>, signal?: AbortSignal): Promise<InboxEmailItem[]> {
   if (companyContacts && !companyContacts.size) return [];
   let query = createSupabaseAdmin()
     .from("mailbox_sent_messages")
     .select("id,mailbox_id,from_email,to_email,to_recipients,cc_recipients,bcc_recipients,subject,body,body_html,status,sent_at,message_id,thread_key,in_reply_to,reference_ids,attachments");
   query = companyContacts ? query.eq("status", "sent") : query.eq("user_id", userId);
   if (mailboxId !== undefined) query = query.eq("mailbox_id", mailboxId);
+  if (signal) query = query.abortSignal(signal);
   const ordered = query.order("sent_at", { ascending: false }).order("id");
   const rows = [];
   for (let offset = 0; ; offset += 500) {

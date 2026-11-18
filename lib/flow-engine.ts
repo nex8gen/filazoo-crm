@@ -47,10 +47,7 @@ function normalized(value: unknown) {
   return String(value ?? "").trim().toLowerCase();
 }
 
-export function flowConversationPath(conversationId: string) {
-  const company = /^company:([\da-f-]{36})(?::pipeline|:lead:[\da-f-]{36})?$/i.exec(conversationId);
-  return company ? `/companies/${company[1]}` : `/email?thread=${encodeURIComponent(conversationId)}`;
-}
+export { flowConversationPath } from "./flow-conversation-path.ts";
 
 export function matchesProfileFilters(config: JsonConfig, facts: FlowFacts) {
   if (config.savedSegmentId && !facts.savedSegmentIds?.includes(String(config.savedSegmentId))) return false;

@@ -1,1 +1,1 @@
-export { AuthSkeleton as default } from "@/components/workspace-skeletons";
+export { AuthSkeleton as default } from "@/components/auth-skeleton";

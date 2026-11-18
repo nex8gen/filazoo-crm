@@ -3,16 +3,18 @@
 import { useCallback, useEffect, useRef, useState, type ComponentProps } from "react";
 import { EmailInboxWorkspace } from "@/components/email-inbox";
 import type { EmailInboxBackendData, InboxEmailItem } from "@/lib/email-inbox";
+import type { Product, Catalog } from "@/lib/types";
 
 type Props = {
   initialData: EmailInboxBackendData;
+  resourcesDeferred?: boolean;
 } & Omit<ComponentProps<typeof EmailInboxWorkspace>,
   "mailboxes" | "selectedMailboxId" | "defaultSenderId" | "initialEmails" |
   "mailboxConfigured" | "sendConfigured" | "inboxConfigured" | "inboxError" |
   "aiConfigured" | "defaultMailboxEmail" | "dataMode" | "initialAutomation" |
-  "assignedCustomersOnly" | "onMailboxChange" | "onMailboxSnapshot" | "switchingMailboxId" | "mailboxSwitchError">;
+  "assignedCustomersOnly" | "mailboxReadFailed" | "mailboxSnapshotPartial" | "loadResources" | "onMailboxChange" | "onMailboxSnapshot" | "switchingMailboxId" | "mailboxSwitchError">;
 
-export function EmailAccountsWorkspace({ initialData, ...props }: Props) {
+export function EmailAccountsWorkspace({ initialData, resourcesDeferred = false, ...props }: Props) {
   const [data, setData] = useState(initialData);
   const [switchingMailboxId, setSwitchingMailboxId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -21,6 +23,15 @@ export function EmailAccountsWorkspace({ initialData, ...props }: Props) {
   const snapshots = useRef(new Map([[initialData.selectedMailboxId, initialData]]));
   const loads = useRef(new Map<string, { controller: AbortController; promise: Promise<EmailInboxBackendData> }>());
   const navigation = useRef(0);
+  const resourcesRequest = useRef<Promise<{ products: Product[]; catalogs: Catalog[] }> | null>(null);
+  const loadResources = useCallback(() => {
+    if (!resourcesRequest.current) resourcesRequest.current = fetch("/api/email/resources", { cache: "no-store" }).then(async response => {
+      const result = await response.json();
+      if (!response.ok || !Array.isArray(result.products) || !Array.isArray(result.catalogs)) throw new Error(result.error || "Unable to load the product catalog. Please retry.");
+      return result;
+    }).catch(error => { resourcesRequest.current = null; throw error; });
+    return resourcesRequest.current;
+  }, []);
 
   const loadMailbox = useCallback((mailboxId: string) => {
     const pending = loads.current.get(mailboxId);
@@ -36,7 +47,7 @@ export function EmailAccountsWorkspace({ initialData, ...props }: Props) {
         });
         const next = await response.json();
         if (controller.signal.aborted) throw new DOMException("Mailbox request cancelled", "AbortError");
-        if (!response.ok || !Array.isArray(next.emails) || next.selectedMailboxId !== mailboxId) {
+        if (!response.ok || next.mailboxReadFailed || !Array.isArray(next.emails) || next.selectedMailboxId !== mailboxId) {
           throw new Error(next.error || "Unable to switch mailboxes. Please try again.");
         }
         snapshots.current.set(mailboxId, next);
@@ -85,9 +96,13 @@ export function EmailAccountsWorkspace({ initialData, ...props }: Props) {
     }
   }, [loadMailbox]);
 
-  const rememberSnapshot = useCallback((mailboxId: string | null, emails: InboxEmailItem[]) => {
+  const rememberSnapshot = useCallback((mailboxId: string | null, emails: InboxEmailItem[], readFailed?: boolean, partial?: boolean) => {
     const saved = snapshots.current.get(mailboxId);
-    if (saved) snapshots.current.set(mailboxId, { ...saved, emails });
+    if (saved) snapshots.current.set(mailboxId, { ...saved, emails,
+      mailboxReadFailed: readFailed ?? saved.mailboxReadFailed,
+      mailboxSnapshotPartial: partial ?? saved.mailboxSnapshotPartial,
+      inboxError: readFailed === false && saved.mailboxReadFailed ? null : saved.inboxError,
+    });
   }, []);
 
   const cancelLoads = useCallback(() => {
@@ -98,7 +113,7 @@ export function EmailAccountsWorkspace({ initialData, ...props }: Props) {
   useEffect(() => {
     // Warm the other authorized account while the user reads the current one.
     // These requests only read saved data; provider sync stays on the active view.
-    for (const mailbox of initialData.mailboxes) {
+    for (const mailbox of initialData.mailboxSnapshotPartial || initialData.mailboxReadFailed ? [] : initialData.mailboxes) {
       if (!snapshots.current.has(mailbox.id)) void loadMailbox(mailbox.id).catch(() => undefined);
     }
     const onBack = () => {
@@ -111,7 +126,7 @@ export function EmailAccountsWorkspace({ initialData, ...props }: Props) {
       cancelLoads();
       window.removeEventListener("popstate", onBack);
     };
-  }, [initialData.defaultSenderId, initialData.mailboxes, loadMailbox, switchMailbox, cancelLoads]);
+  }, [initialData.defaultSenderId, initialData.mailboxes, initialData.mailboxSnapshotPartial, initialData.mailboxReadFailed, loadMailbox, switchMailbox, cancelLoads]);
 
   return <EmailInboxWorkspace
     {...props}
@@ -128,6 +143,9 @@ export function EmailAccountsWorkspace({ initialData, ...props }: Props) {
     sendConfigured={data.sendConfigured}
     inboxConfigured={data.inboxConfigured}
     inboxError={data.inboxError}
+    mailboxReadFailed={data.mailboxReadFailed}
+    mailboxSnapshotPartial={data.mailboxSnapshotPartial}
+    loadResources={resourcesDeferred ? loadResources : undefined}
     lastMailboxSync={data.lastMailboxSync}
     syncHealth={data.syncHealth}
     providerFolders={data.providerFolders}

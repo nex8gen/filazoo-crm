@@ -5,11 +5,13 @@ export async function listSharedEmailTags() {
   return new Map([...(await listSharedEmailTagAssignments())].map(([key, value]) => [key, value.category]));
 }
 
-export async function listSharedEmailTagAssignments() {
+export async function listSharedEmailTagAssignments(signal?: AbortSignal) {
   const tags = new Map<string, { category: CustomerTag | null; updatedAt?: string }>();
   for (let offset = 0; ; offset += 500) {
-    const { data, error } = await createSupabaseAdmin().from("crm_email_tags")
+    let query = createSupabaseAdmin().from("crm_email_tags")
       .select("message_key,tag,updated_at").order("message_key").range(offset, offset + 499);
+    if (signal) query = query.abortSignal(signal);
+    const { data, error } = await query;
     if (error) throw new Error(`Unable to load customer tags: ${error.message}`);
     for (const row of data ?? []) tags.set(row.message_key, { category: isCustomerTag(row.tag) ? row.tag : null, updatedAt: row.updated_at });
     if ((data?.length ?? 0) < 500) break;

@@ -12,7 +12,6 @@ import Link from "next/link";
 import { Box, CheckSquare2, ChevronLeft, ChevronRight, Clipboard, Download, FileDown, ImageIcon, PackagePlus, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { createProduct, updateProduct } from "@/app/crm-actions";
-import { downloadCatalogPdf } from "@/lib/catalog-pdf";
 import { parseCurrencyAmount } from "@/lib/product-utils";
 import { quantityPriceRanges, quantityPricingError, quantityRangeLabel } from "@/lib/quantity-pricing";
 import type { DataMode, Product, ProductVariant } from "@/lib/types";
@@ -201,7 +200,7 @@ function CatalogDownloadDialog({ products, open, onOpenChange }: { products: Pro
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="sm:max-w-lg">
     <DialogHeader><DialogTitle>Download custom catalog</DialogTitle><DialogDescription>Landscape quotation with {products.length} selected products, current CRM pricing, and every variant. Missing images use a default photo.</DialogDescription></DialogHeader>
     <div className="space-y-6"><Field label="Catalog title" id="catalog-title"><Input id="catalog-title" value={title} onChange={(event) => setTitle(event.target.value)} /></Field><Field label="Prepared for (optional)" id="catalog-customer"><Input id="catalog-customer" value={customer} onChange={(event) => setCustomer(event.target.value)} placeholder="Customer or company name" /></Field><div className="max-h-32 overflow-y-auto rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground"><p className="font-medium text-foreground">Selected products</p><p className="mt-1">{products.map((product) => product.name).join(", ")}</p></div></div>
-    <DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={downloading} onClick={async () => { setDownloading(true); try { await downloadCatalogPdf(products, { title, customer }); toast.success("Custom catalog downloaded."); onOpenChange(false); } catch (error) { toast.error(error instanceof Error ? error.message : "Could not generate catalog. Please try again."); } finally { setDownloading(false); } }}><FileDown />{downloading ? "Preparing PDF…" : "Download PDF"}</Button></DialogFooter>
+    <DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={downloading} onClick={async () => { setDownloading(true); try { const { downloadCatalogPdf } = await import("@/lib/catalog-pdf"); await downloadCatalogPdf(products, { title, customer }); toast.success("Custom catalog downloaded."); onOpenChange(false); } catch (error) { toast.error(error instanceof Error ? error.message : "Could not generate catalog. Please try again."); } finally { setDownloading(false); } }}><FileDown />{downloading ? "Preparing PDF…" : "Download PDF"}</Button></DialogFooter>
   </DialogContent></Dialog>;
 }
 

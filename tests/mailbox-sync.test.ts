@@ -1,11 +1,52 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mergeMailboxSnapshot, selectMailboxUids, synchronizeMailbox, type MailboxSnapshot, type MailboxSyncStore } from "../lib/mailbox-sync.ts";
+import { mergeMailboxSnapshot, selectMailboxUids, synchronizeMailbox, readMailboxWithFallback, withInboxReadBudget, mergePartialMailboxMessages, type MailboxSnapshot, type MailboxSyncStore } from "../lib/mailbox-sync.ts";
 import type { InboxEmailItem } from "../lib/email-inbox.ts";
 
 function message(uid: number): InboxEmailItem {
   return { id: `imap-${uid}`, uid, direction: "inbound", status: "Received", subject: "Enquiry", contact: "new@buyer.test", company: "Unknown company", preview: "Hello", body: "Hello", timestamp: "2026-10-22T00:00:00Z", source: "mailbox" };
 }
+
+test("a stalled database falls back to real provider messages and cancels its cache read", async () => {
+  let signal!: AbortSignal;
+  let providerReads = 0;
+  const result = await readMailboxWithFallback<InboxEmailItem[]>(readSignal => {
+    signal = readSignal;
+    return new Promise((_, reject) => readSignal.addEventListener("abort", () => reject(new Error("cancelled")), { once: true }));
+  }, async () => { providerReads++; return [message(10)]; }, 1);
+  assert.equal(result[0].uid, 10);
+  assert.equal(providerReads, 1);
+  assert.equal(signal.aborted, true);
+});
+
+test("a readable empty cache is authoritative and starts no provider request", async () => {
+  const result = await readMailboxWithFallback(async () => [], async () => { assert.fail("A fast cache does not need a provider request"); }, 5);
+  assert.deepEqual(result, []);
+});
+
+test("provider failure cannot discard a later successful database read", async () => {
+  const result = await readMailboxWithFallback(() => new Promise(resolve => setTimeout(() => resolve([message(20)]), 5)), async () => { throw new Error("Provider unavailable"); }, 0);
+  assert.equal((result as InboxEmailItem[])[0].uid, 20);
+});
+
+test("failure of both sources remains an error rather than an empty inbox", async () => {
+  await assert.rejects(readMailboxWithFallback(async () => { throw new Error("Cache unavailable"); }, async () => { throw new Error("Provider unavailable"); }, 100), /both unavailable/);
+});
+
+test("optional CRM reads are cancelled within their budget", async () => {
+  let signal!: AbortSignal;
+  await assert.rejects(withInboxReadBudget(readSignal => { signal = readSignal; return new Promise(() => {}); }, 1), /exceeded its budget/);
+  assert.equal(signal.aborted, true);
+});
+
+test("a recent-mail fallback keeps older cached mail while updating overlapping messages", () => {
+  const current = [message(1), message(2)];
+  const incoming = [{ ...message(2), read: true }, message(3)];
+  const merged = mergePartialMailboxMessages(current, incoming);
+  assert.deepEqual(merged.map(item => item.uid), [1, 2, 3]);
+  assert.equal(merged.find(item => item.uid === 2)?.read, true);
+  assert.equal(current[1].read, undefined);
+});
 function memoryStore(initial: MailboxSnapshot = { messages: [] }) {
   let snapshot = initial;
   let lease: string | null = null;

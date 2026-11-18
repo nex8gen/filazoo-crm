@@ -423,6 +423,8 @@ function builder(hooks?: { values: unknown[]; cursor: number }, globals: Record<
   }
   const dependencies = new Proxy({
     "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
+    // Isolate deferred panels just like the previously eager component stubs.
+    "next/dynamic": { default: (loader: () => unknown) => /module\.(\w+)/.exec(String(loader))?.[1] ?? "DeferredComponent" },
     react: {
       lazy: () => "LazyComponent", Suspense: "Suspense",
       useId: () => "test-workflow-alerts", useImperativeHandle: () => {},

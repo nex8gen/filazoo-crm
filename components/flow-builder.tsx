@@ -1,5 +1,6 @@
 "use client";
 import "./workflow-editor.css";
+import dynamic from "next/dynamic";
 import { NotificationToast } from "@/components/ui/notification-toast";
 
 import { CustomerTagBadge, CustomerTagLabel } from "@/components/customer-tag-badges";
@@ -35,10 +36,6 @@ import { FlowConnector } from "@/components/flow-connector";
 import { FLOW_MINIMAP_TARGETS, flowMinimapBounds, measureFlowMinimap, type FlowMinimap } from "@/lib/flow-minimap";
 import { useFlowConnectorHealth } from "@/components/use-flow-connector-health";
 import type { FlowConnectorHealth } from "@/lib/flow-connector-health";
-import { FlowInsights } from "@/components/flow-insights";
-import { FlowTriggerPanel } from "@/components/flow-trigger-panel";
-import { FlowWaitPanel } from "@/components/flow-wait-panel";
-import { FlowEmailPanel } from "@/components/flow-email-panel";
 import { FlowEmailPerformanceProvider } from "@/components/flow-email-performance";
 import { FlowEmailActionCard } from "@/components/flow-email-action-card";
 import { FlowPanelSaveControls } from "@/components/flow-panel-save-controls";
@@ -76,6 +73,12 @@ const LazyStarterDialog = lazy(() => import("@/components/flow-starter-dialog").
 const LazyJourneyPreview = lazy(() => import("@/components/flow-journey-preview").then((module) => ({ default: module.FlowJourneyPreview })));
 const LazyFlowCheckDialog = lazy(() => import("@/components/flow-check-dialog").then((module) => ({ default: module.FlowCheckDialog })));
 const LazyEmailTestDialog = lazy(() => import("@/components/flow-email-test-dialog").then((module) => ({ default: module.FlowEmailTestDialog })));
+
+const inspectorLoading = () => <aside className="wf-panel wf-inspector" role="status"><p className="p-5 text-sm text-muted-foreground">Loading…</p></aside>;
+const FlowInsights = dynamic(() => import("@/components/flow-insights").then(module => module.FlowInsights), { loading: inspectorLoading });
+const FlowTriggerPanel = dynamic(() => import("@/components/flow-trigger-panel").then(module => module.FlowTriggerPanel), { loading: inspectorLoading });
+const FlowWaitPanel = dynamic(() => import("@/components/flow-wait-panel").then(module => module.FlowWaitPanel), { loading: inspectorLoading });
+const FlowEmailPanel = dynamic(() => import("@/components/flow-email-panel").then(module => module.FlowEmailPanel), { loading: inspectorLoading });
 
 function FlowJourneyPreview(props: ComponentProps<typeof LazyJourneyPreview>) {
   return <Suspense fallback={<aside className="border-l p-5 text-sm lg:w-[360px]" role="status">Loading…</aside>}><LazyJourneyPreview {...props} /></Suspense>;

@@ -21,7 +21,7 @@ function snapshot(id: string): EmailInboxBackendData {
 
 // Exercise the component's async event handlers with deterministic hooks and
 // controlled HTTP responses, including responses arriving after cancellation.
-function mount(signalStatics: unknown = AbortSignal) {
+function mount(signalStatics: unknown = AbortSignal, options: { partial?: boolean; resourcesDeferred?: boolean } = {}) {
   const time = { now: 0 };
   const timers = new Map<number, { at: number; callback: () => void }>();
   let timerId = 0;
@@ -64,7 +64,7 @@ function mount(signalStatics: unknown = AbortSignal) {
       if (!(index in slots)) { slots[index] = true; cleanups.push(effect()); }
     },
   };
-  type View = { selectedMailboxId: string; switchingMailboxId: string | null; mailboxSwitchError: string | null; onMailboxChange: (id: string) => void; onMailboxSnapshot: (id: string, emails: EmailInboxBackendData["emails"]) => void; initialEmails: EmailInboxBackendData["emails"]; initialThreadId?: string; initialAgentDraft?: string };
+  type View = { selectedMailboxId: string; switchingMailboxId: string | null; mailboxSwitchError: string | null; onMailboxChange: (id: string) => void; onMailboxSnapshot: (id: string, emails: EmailInboxBackendData["emails"]) => void; initialEmails: EmailInboxBackendData["emails"]; initialThreadId?: string; initialAgentDraft?: string; loadResources?: () => Promise<{ products: unknown[]; catalogs: unknown[] }> };
   const exports = {} as { EmailAccountsWorkspace: (props: unknown) => { props: View } };
   const dependencies: Record<string, unknown> = { react, "@/components/email-inbox": { EmailInboxWorkspace: () => null } };
   const code = ts.transpileModule(readFileSync(new URL("../components/email-accounts-workspace.tsx", import.meta.url), "utf8"), {
@@ -75,14 +75,14 @@ function mount(signalStatics: unknown = AbortSignal) {
     setTimeout: (callback: () => void, delay: number) => { const id = ++timerId; timers.set(id, { at: time.now + delay, callback }); return id; },
     clearTimeout: (id: number) => timers.delete(id),
     fetch: (url: string, options: { signal: AbortSignal }) => new Promise<Response>((resolve, reject) => {
-      options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true });
-      requests.push({ url, signal: options.signal, resolve });
+      options.signal?.addEventListener("abort", () => reject(options.signal.reason), { once: true });
+      requests.push({ url, signal: options.signal ?? new AbortController().signal, resolve });
     }),
   });
-  const initialData = snapshot("mine");
+  const initialData = { ...snapshot("mine"), mailboxSnapshotPartial: options.partial };
   const render = () => {
     cursor = 0;
-    return exports.EmailAccountsWorkspace({ initialData, products: [], catalogs: [], initialThreadId: "original-thread", initialAgentDraft: "original-draft" }).props;
+    return exports.EmailAccountsWorkspace({ initialData, resourcesDeferred: options.resourcesDeferred, products: [], catalogs: [], initialThreadId: "original-thread", initialAgentDraft: "original-draft" }).props;
   };
   render();
   const elapse = (milliseconds: number) => {
@@ -93,6 +93,32 @@ function mount(signalStatics: unknown = AbortSignal) {
   };
   return { render, requests, history, location, time, timers, elapse, back: () => listeners.get("popstate")!(), unmount: () => cleanups.forEach((cleanup) => cleanup()) };
 }
+
+test("an inbox recovering from cache failure starts no speculative mailbox reads", async () => {
+  const ui = mount(AbortSignal, { partial: true });
+  assert.equal(ui.requests.length, 0);
+  ui.render().onMailboxChange("team");
+  assert.equal(ui.requests.length, 1);
+  ui.requests[0].resolve(Response.json(snapshot("team")));
+  await tick();
+  assert.equal(ui.render().selectedMailboxId, "team");
+  ui.unmount();
+});
+
+test("catalog data loads only on demand and shares its request across composer actions", async () => {
+  const ui = mount(AbortSignal, { partial: true, resourcesDeferred: true });
+  assert.equal(ui.requests.length, 0, "Reading mail must never wait on inventory or catalogs");
+  const first = ui.render().loadResources!();
+  const second = ui.render().loadResources!();
+  assert.equal(first, second);
+  assert.equal(ui.requests.length, 1);
+  assert.equal(ui.requests[0].url, "/api/email/resources");
+  ui.requests[0].resolve(Response.json({ products: [{ sku: "saved-product" }], catalogs: [] }));
+  assert.equal((await first).products.length, 1);
+  assert.equal(await ui.render().loadResources!(), await first);
+  assert.equal(ui.requests.length, 1);
+  ui.unmount();
+});
 
 test("mailbox switching works without AbortSignal.any or AbortSignal.timeout", async () => {
   const ui = mount({});
@@ -195,8 +221,8 @@ test("selecting the current tab cancels a pending switch", async () => {
   ui.unmount();
 });
 
-test("failed and mismatched responses retain the existing inbox and report an error", async () => {
-  for (const response of [Response.json({ error: "Mailbox unavailable." }, { status: 404 }), Response.json(snapshot("other"))]) {
+test("failed, incomplete and mismatched responses retain the existing inbox and report an error", async () => {
+  for (const response of [Response.json({ error: "Mailbox unavailable." }, { status: 404 }), Response.json(snapshot("other")), Response.json({ ...snapshot("team"), mailboxReadFailed: true })]) {
     const ui = mount();
     ui.render().onMailboxChange("team");
     ui.requests[0].resolve(response);

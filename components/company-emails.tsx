@@ -1,4 +1,4 @@
-import { EmailInboxWorkspace } from "@/components/email-inbox";
+import { EmailInboxWorkspace } from "@/components/company-section-views";
 import { getCompanyEmailBackendData } from "@/lib/data/company-emails";
 import { filterCompanyEmails, type CompanyEmailScope } from "@/lib/company-email";
 import { listCatalogs, listProducts } from "@/lib/data/crm";
