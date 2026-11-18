@@ -86,11 +86,12 @@ test("new email defaults match the reference and view-only fields cannot be edit
   assert.equal(app.editorRef.current!.hasChanges(), false);
 });
 
-test("saved live emails show performance, sender summaries and device previews, with inline editing", () => {
+test("saved email settings show sender summaries and previews without duplicate reports", () => {
   const app = harness(false, true);
   const tree = app.render();
-  assert.ok(button(tree, "View details"));
-  assert.ok(elements(tree).some(node => node.type === "FlowEmailMetrics" && node.props.actionId === "email"));
+  assert.equal(elements(tree).some(node => node.type === "FlowEmailMetrics"), false);
+  assert.equal(elements(tree).some(node => node.props.children === "View details"), false);
+  assert.equal(elements(tree).some(node => node.type === "Dialog"), false);
   assert.ok(elements(tree).some(node => node.type === "dd" && node.props.children === "sender@example.com"));
   assert.equal(elements(tree).some(node => node.props.id === "email-subject"), false);
   assert.ok(elements(tree).some(node => node.props["aria-label"] === "Mobile preview"));
@@ -102,10 +103,8 @@ test("saved live emails show performance, sender summaries and device previews, 
   assert.equal(app.writes, 0);
 });
 
-test("saved email controls open performance details, switch preview devices, and reopen the template editor", () => {
+test("saved email controls switch preview devices and reopen the template editor", () => {
   const app = harness(false, true);
-  click(app.render(), "View details");
-  assert.ok(elements(app.render()).some(node => node.type === "Dialog" && node.props.open === true));
   (elements(app.render()).find(node => node.props["aria-label"] === "Mobile preview")!.props.onClick as () => void)();
   assert.equal(elements(app.render()).find(node => node.props.device === "mobile")?.type, "TemplatePage");
   (elements(app.render()).find(node => node.props["aria-label"] === "Edit email template")!.props.onClick as () => void)();

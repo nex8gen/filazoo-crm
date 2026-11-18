@@ -1,4 +1,5 @@
 import { FlowBuilder } from "@/components/flow-builder";
+import { requireWorkspaceMember } from "@/lib/auth";
 import { blankStep, defaultFlowInput, type AutomationFlow } from "@/lib/flows";
 
 const split = blankStep("split");
@@ -22,6 +23,7 @@ const flow: AutomationFlow = {
   steps: [{ ...split, id: "qa-split" }, ...defaultFlowInput.steps].map((step, position) => ({ ...step, id: step.id!, position })),
 };
 
-export default function FlowCanvasQaPage() {
+export default async function FlowCanvasQaPage() {
+  await requireWorkspaceMember();
   return <FlowBuilder initialFlows={[flow]} viewerId={flow.createdBy} initialFlowId={flow.id} canEdit mailboxOptions={[]} memberOptions={[]} filterOptions={{ segments: [], countries: [] }} />;
 }

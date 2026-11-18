@@ -3,12 +3,16 @@ import { gatewayTokenUsage, type AiTokenUsage } from "./usage.ts";
 import { selectAiModel, type AiTask } from "./model-routing.ts";
 
 type GatewayResponse = {
+  id?: string;
+  model?: string;
   choices?: Array<{ message?: { content?: string | Array<{ type?: string; text?: string }> } }>;
   error?: { message?: string };
   usage?: Record<string, unknown>;
   status?: string;
   output?: Array<{ type?: string; content?: Array<{ type?: string; text?: string }> }>;
 };
+
+export type GatewayGeneration = { generationId: string | null; model: string; inputTokens: number | null; outputTokens: number | null; success: boolean };
 
 export type GenerateGatewayTextOptions = {
   token: string;
@@ -20,6 +24,7 @@ export type GenerateGatewayTextOptions = {
   maxOutputTokens?: number;
   fetcher?: typeof fetch;
   onUsage?: (usage: AiTokenUsage) => void;
+  onGeneration?: (generation: GatewayGeneration) => Promise<void>;
   task?: AiTask;
   userText?: string;
   complex?: boolean;
@@ -39,6 +44,7 @@ export async function generateGatewayText({
   maxOutputTokens = 1_200,
   fetcher = fetch,
   onUsage,
+  onGeneration,
   task,
   userText,
   complex,
@@ -82,6 +88,7 @@ export async function generateGatewayText({
           signal: attemptSignal,
         });
     } catch (error) {
+      await onGeneration?.({ generationId: null, model: selectedModel, inputTokens: null, outputTokens: null, success: false });
       if (deadline.aborted || signal?.aborted) throw error;
       if (attempt === 0 && (error instanceof TypeError || attemptSignal.aborted)) continue;
       throw error;
@@ -89,6 +96,8 @@ export async function generateGatewayText({
 
     const result = await response.json().catch(() => ({})) as GatewayResponse;
     if (result.usage) onUsage?.(gatewayTokenUsage(result.usage));
+    const usage = result.usage ? gatewayTokenUsage(result.usage) : null;
+    await onGeneration?.({ generationId: typeof result.id === "string" && /^gen_[a-zA-Z0-9]+$/.test(result.id) ? result.id : null, model: result.model || selectedModel, inputTokens: usage?.inputTokens ?? null, outputTokens: usage?.outputTokens ?? null, success: response.ok });
     if (!response.ok) {
       if (attempt === 0 && [408, 409, 429, 500, 502, 503, 504].includes(response.status)) {
         const retryAfter = response.headers.get("retry-after");

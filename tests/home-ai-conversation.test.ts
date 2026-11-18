@@ -21,9 +21,11 @@ function find(value: unknown, type: unknown): Element | undefined {
   return element.type === type ? element : find(element.props?.children, type);
 }
 
-for (const mode of ["chat", "agent"] as const) for (const outcome of ["success", "failure", "reconnect"] as const) {
+for (const surface of ["home", "analytics"] as const) for (const mode of ["chat", "agent"] as const) for (const outcome of ["success", "failure", "reconnect"] as const) {
   const fail = outcome === "failure";
-  test(`Home ${mode} sends once after context is ready and ${fail ? "preserves a failed prompt" : outcome === "reconnect" ? "recovers a temporary session interruption" : "keeps the reply on the page"}`, async () => {
+  test(`${surface} ${mode} sends once after context is ready and ${fail ? "preserves a failed prompt" : outcome === "reconnect" ? "recovers a temporary session interruption" : "keeps the reply on the page"}`, async () => {
+    const originalPathname = surface === "home" ? "/" : "/workflow/analytics";
+    let pathname = originalPathname;
     const slots: unknown[] = [];
     let cursor = 0, ready = false;
     let effects: (() => unknown)[] = [];
@@ -38,6 +40,7 @@ for (const mode of ["chat", "agent"] as const) for (const outcome of ["success",
       useEffectEvent: (callback: unknown) => callback, useId: () => "home-conversation",
     };
     function Composer() {}
+    function MascotComposer() {}
     function ResizeHandle() {}
     function StreamingText() {}
     function HistoryMenu() {}
@@ -46,16 +49,17 @@ for (const mode of ["chat", "agent"] as const) for (const outcome of ["success",
     let creates = 0;
     let sessionInterruptions = 0;
     const controller = {
-      scope: history.conversationScope({ pathname: "/", mode }), conversation: null,
+      scope: history.conversationScope({ pathname: originalPathname, mode }), conversation: null,
       get loading() { return !ready; },
       ensure: async () => { creates++; return { conversationId: "home-history", requestId: "home-request", version: 0 }; },
       accept() {},
     };
     const dependencies: Record<string, unknown> = {
-      react, "next/navigation": { usePathname: () => "/", useRouter: () => ({}) }, "motion/react": { motion: ui },
+      react, "next/navigation": { usePathname: () => pathname, useRouter: () => ({}) }, "motion/react": { motion: ui },
       "@/components/language-provider": { useLanguage: () => ({ language: "en", t: (value: string) => value }) },
       "@/components/use-ai-conversation": { useAiConversation: () => controller },
       "@/components/home-ai-composer": { HomeAiInput: Composer },
+      "@/components/ui/ai-mascot-input": { AiMascotInput: MascotComposer },
       "@/components/column-resize-handle": { ColumnResizeHandle: ResizeHandle },
       "@/components/ai-history-menu": { AiHistoryMenu: HistoryMenu },
       "@/components/ui/ai-agent-response": { StreamingText, ThinkingState: () => null },
@@ -81,34 +85,39 @@ for (const mode of ["chat", "agent"] as const) for (const outcome of ["success",
         return Response.json(fail ? { error: "Temporarily unavailable" } : { output: "Here is your sales summary." }, { status: fail ? 503 : 200 });
       },
     });
-    let launchRequest = { id: 1, mode, prompt: "Summarize my sales", submit: true };
+    let launchRequest = { id: 1, mode, prompt: surface === "home" ? "Summarize my sales" : "Review workflow performance", submit: true, ...(surface === "analytics" ? { pathname: originalPathname } : {}) };
     let closes = 0;
-    function render(open = true, presentation: "page" | "sidebar" = "page") {
+    function render(open = true, presentation: "page" | "sidebar" = surface === "home" ? "page" : "sidebar") {
       cursor = 0; effects = [];
       const tree = exports.WorkspaceAiAssistant({ open, onOpenChange: () => { closes++; }, launchRequest, presentation });
       for (const effect of effects) effect();
       return tree;
     }
-    const page = find(render(), "main");
-    assert.ok(page, "page conversations render a main landmark inside the animation wrapper");
-    assert.equal(page.props?.id, "workspace-ai-content");
-    assert.equal(find(page, ResizeHandle), undefined, "page conversations do not resize or use a sidebar");
-    assert.equal(find(page, Composer)?.props?.busy, true, "queue waits for context and history readiness");
+    const initial = render();
+    const page = surface === "home" ? find(initial, "main") : initial;
+    assert.ok(page);
+    if (surface === "home") {
+      assert.equal(page.props?.id, "workspace-ai-content");
+      assert.equal(find(page, ResizeHandle), undefined, "page conversations do not resize or use a sidebar");
+    }
+    if (surface === "home") assert.equal(find(page, Composer)?.props?.busy, true, "queue waits for context and history readiness");
     assert.equal(requests.length, 0);
     ready = true;
+    if (surface === "analytics") pathname = "/workflow";
     render(true, "sidebar");
     await new Promise(resolve => setImmediate(resolve));
-    assert.equal(requests.length, 0, "a delayed Home launch must not send after leaving the page view");
+    assert.equal(requests.length, 0, "a delayed launch must not send after leaving its originating page");
+    pathname = originalPathname;
     for (let i = 0; i < 6; i++) { render(); await new Promise(resolve => setImmediate(resolve)); }
     assert.equal(creates, 1);
     assert.equal(sessionInterruptions, outcome === "reconnect" ? 1 : 0);
     assert.equal(requests.length, 1, "rerenders must not submit the initial prompt again");
-    assert.equal(requests[0].pathname, "/");
+    assert.equal(requests[0].pathname, originalPathname);
     assert.equal(requests[0].mode, mode === "agent" ? "work" : "analyze");
     assert.equal(requests[0].approvalMode, "ask");
     assert.equal((requests[0].messages as { content: string }[])[0].content, launchRequest.prompt);
     const result = render();
-    if (fail) assert.equal(find(result, Composer)?.props?.value, launchRequest.prompt, "failed sends remain editable for retry");
+    if (fail) assert.equal(find(result, surface === "home" ? Composer : mode === "agent" ? MascotComposer : "textarea")?.props?.value, launchRequest.prompt, "failed sends remain editable for retry");
     else assert.equal(find(result, StreamingText)?.props?.text, "Here is your sales summary.");
     (find(result, HistoryMenu)?.props?.onClose as () => void)();
     assert.equal(closes, 1, "back to overview closes the page view");
@@ -116,7 +125,7 @@ for (const mode of ["chat", "agent"] as const) for (const outcome of ["success",
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(requests.length, 1, "back and reopen keep the conversation without resubmitting");
     if (!fail) {
-      launchRequest = { id: 2, mode, prompt: "Show the next steps", submit: true };
+      launchRequest = { ...launchRequest, id: 2, prompt: "Show the next steps" };
       render();
       assert.equal(requests.length, 1, "a new launch waits for the current reply to finish");
       (find(render(), StreamingText)?.props?.onComplete as () => void)();

@@ -10,7 +10,9 @@ function split(name: string, condition: JsonConfig, yes: FlowInput["steps"], no:
   return step;
 }
 export const flowRecipeOptions = [
+  { id: "lead_intake", title: "New lead auto-response", description: "Send an introduction or ask for missing requirements, attach the catalog, and hand over next business morning at 09:00 China time.", trigger: "New lead" },
   { id: "lead_ai_handoff", title: "AI lead reply and personal handoff", description: "Wait one minute, send an AI reply, then check after 24 hours. Assign replies to you or send one AI reminder.", trigger: "New lead" },
+  { id: "dormant", title: "Reactivate inactive customers", description: "Find inactive customers and follow up at months 1, 3, 6 and 12. Stop on replies, orders or manual takeover.", trigger: "Customer becomes inactive" },
   { id: "inbound", title: "Respond to an inquiry", description: "AI answers a received email, then checks for a reply before assigning follow-up work.", trigger: "Email received" },
   { id: "qualification", title: "Qualify and route leads", description: "Route by fit score, then by market. Update the company, assign a task and notify its owner.", trigger: "New lead" },
   { id: "followup", title: "Follow up without a reply", description: "Send a reminder after two days without a reply, wait, then hand off to a teammate.", trigger: "No reply after" },
@@ -24,6 +26,22 @@ export const flowRecipeOptions = [
 export function createFlowRecipe(id: string, options: { assigneeId?: string } = {}): FlowInput {
   const base: FlowInput = { name: flowRecipeOptions.find((item) => item.id === id)?.title || "Untitled workflow", triggerType: "new_lead", triggerConfig: {}, status: "draft", steps: [] };
   const replyExit = () => split("Has the customer replied?", { field: "customer_replied" }, [action("stop", { reason: "Customer replied" })], [action("create_task")]);
+  if (id === "lead_intake") return { ...base, triggerConfig: { reentryMode: "no_reentry" }, steps: [
+    action("wait", { amount: 1, unit: "minutes", businessDays: false }),
+    action("ai_auto_reply", { leadIntake: true, attachCatalog: true, useProducts: true, usePrices: false, sendWindow: "anytime", instructions: "For a specific inquiry, acknowledge the supplied requirements and ask only for missing material, specifications, color, quantity or use. Keep the response concise. Sales will review the conversation the next business morning." }),
+    action("wait", { amount: 1, unit: "days", businessDays: true, resumeAt: "01:00" }),
+    action("create_task", { assigneeType: options.assigneeId ? "user" : "owner", assigneeId: options.assigneeId || null, title: "Review new lead and take over", notes: "Review the original inquiry, initial response, customer requirements and open questions. Continue this conversation personally; the initial-response automation ends here.", dueInDays: 0, priority: "high" }),
+    action("internal_alert", { userId: options.assigneeId || "owner", message: "A new lead is ready for your review and personal follow-up.", includeThreadLink: true, channel: "in_app" }),
+    action("stop", { reason: "New-lead response completed; handed over to sales" }),
+  ] };
+  if (id === "dormant") return { ...base, triggerType: "dormant_customer", triggerConfig: { inactivityMonths: 1, reentryMode: "every_event" }, steps: [
+    ...[1, 3, 6, 12].flatMap(month => [
+      action("wait", { amount: month, unit: "months", anchor: "trigger", businessDays: true, resumeAt: "09:00" }),
+      action("ai_auto_reply", { nurture: true, stopOnReply: true, usePrices: false, attachCatalog: false, sendWindow: "business_hours", instructions: "Re-engage this inactive customer using the actual conversation and saved customer history. For an unanswered quotation, ask about purchasing plans or unresolved requirements. For a past buyer, ask about their experience and replenishment needs. Ask one useful question. Do not repeat fulfilled requests, invent offers, automatically discount, or pretend this is a new incoming inquiry." }),
+    ]),
+    action("create_task", { title: "Review inactive customer after nurture", priority: "normal", notes: "The automatic follow-up sequence has finished. Review the customer before contacting them again." }),
+    action("stop", { reason: "Inactive customer follow-up sequence finished" }),
+  ] };
   if (id === "lead_ai_handoff") {
     const handoff = () => [
       action("create_task", { assigneeType: options.assigneeId ? "user" : "owner", assigneeId: options.assigneeId || null, dueInDays: 0, priority: "high", title: "Reply to this customer's email", notes: "Read the latest customer reply and continue the conversation personally. Open the linked customer context from the accompanying notification and review their email conversation. Automated reminders end on this branch." }),

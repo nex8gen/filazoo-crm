@@ -84,6 +84,7 @@ export type EmailInboxBackendData = {
   inboxError: string | null;
   mailboxReadFailed?: boolean;
   mailboxSnapshotPartial?: boolean;
+  mailboxHistoryPartial?: boolean;
   lastMailboxSync?: string | null;
   syncHealth?: Record<string, import("./mail-sync-jobs.ts").MailSyncHealth>;
   aiConfigured: boolean;
@@ -442,6 +443,7 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
     inboxError,
     mailboxReadFailed: "readFailed" in mailboxResult && mailboxResult.readFailed === true,
     mailboxSnapshotPartial: Boolean(("partial" in mailboxResult && mailboxResult.partial) || workspace?.partial || metadataPartial),
+    mailboxHistoryPartial: Boolean("partial" in mailboxResult && mailboxResult.partial),
     lastMailboxSync,
     aiConfigured,
     defaultMailboxEmail,

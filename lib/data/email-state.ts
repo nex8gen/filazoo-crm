@@ -49,7 +49,7 @@ export async function listEmailInboxStates(userId: string, signal?: AbortSignal)
 
 export async function saveEmailInboxState(userId: string, state: Omit<EmailInboxState, "category"> & { category: string | null; categoryWrite?: boolean; tagMessageKey?: string; tagConversationKeys?: string[]; tagMessageKeys?: string[]; contactEmail?: string }) {
   const admin = createSupabaseAdmin();
-  if (state.categoryWrite && state.category !== null && !isCustomerTag(state.category)) throw new Error("Choose one of the ten customer tags.");
+  if (state.categoryWrite && state.category !== null && !isCustomerTag(state.category)) throw new Error("Choose one of the customer tags.");
   const { error } = await admin.from("email_inbox_state").upsert({
     user_id: userId,
     message_key: state.messageKey,

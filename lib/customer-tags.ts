@@ -4,7 +4,6 @@ import { normalizeMessageId, normalizeReferences, threadKeyForEmail, groupEmailC
 export const customerTagValues = [
   "Prospect Nurturing", "New Inquiries", "Quotation Follow-up", "Active Negotiations",
   "Payment Follow-up", "Orders in Fulfillment", "Repeat Customers", "Inactive Customers",
-  "Long-term Inactive Customers", "Postponed Purchasing",
 ] as const;
 
 export type CustomerTag = (typeof customerTagValues)[number];
@@ -49,9 +48,7 @@ export const customerTags = customerTagValues.map((name, index) => ({
     "Purchasing terms are confirmed and a documented payment arrangement exists.",
     "At least one active, incomplete order exists.",
     "At least two qualifying purchases exist.",
-    "The configured inactivity threshold has been reached.",
-    "The longer inactivity threshold has been reached.",
-    "The customer explicitly postponed purchasing; record the reason and next contact date.",
+    "The customer is inactive or has postponed purchasing; record any agreed next contact date.",
   ][index],
   className: [
     "bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300",
@@ -62,8 +59,6 @@ export const customerTags = customerTagValues.map((name, index) => ({
     "bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300",
     "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
     "bg-slate-100 text-slate-600 dark:bg-slate-500/15 dark:text-slate-300",
-    "bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300",
-    "bg-fuchsia-50 text-fuchsia-600 dark:bg-fuchsia-500/15 dark:text-fuchsia-300",
   ][index],
 }));
 
@@ -71,8 +66,14 @@ export function isCustomerTag(value: unknown): value is CustomerTag {
   return typeof value === "string" && customerTagValues.some(tag => tag === value);
 }
 
+/** Preserve saved assignments while the retired tags are merged into inactivity. */
+export function normalizeCustomerTag(value: unknown): CustomerTag | null {
+  if (value === "Long-term Inactive Customers" || value === "Postponed Purchasing") return "Inactive Customers";
+  return isCustomerTag(value) ? value : null;
+}
+
 export function uniqueCustomerTags(values: readonly unknown[]): CustomerTag[] {
-  const selected = new Set(values);
+  const selected = new Set(values.map(normalizeCustomerTag));
   return customerTagValues.filter(tag => selected.has(tag));
 }
 

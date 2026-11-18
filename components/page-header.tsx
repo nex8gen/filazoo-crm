@@ -23,13 +23,13 @@ export function PageHeader({ title, icon: Icon }: {
 }) {
   const header = useContext(PageHeaderContext);
   return (
-    <header className="workspace-page-header flex min-h-14 shrink-0 flex-wrap items-center gap-x-4 gap-y-2 bg-background px-5 py-2 sm:px-6">
+    <header className="workspace-page-header flex min-h-12 shrink-0 flex-wrap items-center gap-x-4 gap-y-2 bg-background pl-5 sm:pl-6">
       <div className="flex min-w-0 items-center gap-2.5">
         <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
         <h1 className="truncate text-[length:var(--ui-text-heading)] font-medium leading-6 tracking-[-0.01em]">{title}</h1>
       </div>
       <div ref={header?.setDetailsHost} className="order-last min-w-0 max-w-full flex-1 basis-full empty:hidden sm:order-none sm:basis-0" />
-      <div ref={header?.setActionsHost} className="ml-auto min-w-0 max-w-full empty:hidden" />
+      <div ref={header?.setActionsHost} className="ml-auto min-w-0 max-w-full self-start empty:hidden" />
     </header>
   );
 }
@@ -44,7 +44,7 @@ export function PageHeaderDetails({ children }: { children: ReactNode }) {
 /** Keep page commands on the title row without coupling them to the shell. */
 export function PageActions({ children }: { children: ReactNode }) {
   const header = useContext(PageHeaderContext);
-  const actions = <div role="group" aria-label="Page actions" className="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">{children}</div>;
+  const actions = <div data-page-actions role="group" aria-label="Page actions" className="flex min-w-0 max-w-full flex-wrap items-start justify-end gap-2">{children}</div>;
   if (!header) return <div className="mb-3">{actions}</div>;
   return header.actionsHost ? createPortal(actions, header.actionsHost) : null;
 }

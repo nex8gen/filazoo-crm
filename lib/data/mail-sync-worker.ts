@@ -5,6 +5,7 @@ import { mailSyncHealth, mailSyncInterval, mailSyncRetrySeconds, mailSyncBatchSi
 import { mailboxSyncKey, savedProviderFolders, loadSyncedMailbox } from "./mailbox-sync.ts";
 import type { WorkspaceMailboxRecord } from "./mailboxes.ts";
 import type { ProviderFolder } from "../email-provider.ts";
+import { historyFolderSelected, readMailImportPreferences } from "../mail-import.ts";
 
 /** One warm cron worker at a time; the reserved cache row is server-only. */
 export async function withMailSyncWorkerLease<T>(run: () => Promise<T>): Promise<T | { alreadyRunning: true }> {
@@ -36,16 +37,48 @@ export async function enqueueMailboxSync(mailbox: WorkspaceMailboxRecord, option
   await db.from("mail_sync_jobs").update({ state: "queued", next_run_at: new Date().toISOString() })
     .eq("account_key", account).eq("state", "idle").neq("kind", "history").throwOnError();
   if (options.history) await db.from("mail_sync_jobs").update({ state: "queued", next_run_at: new Date().toISOString() })
-    .eq("account_key", account).eq("kind", "history").eq("folder", folder).eq("state", "idle").throwOnError();
+    .eq("account_key", account).eq("kind", "history").eq("state", "idle").throwOnError();
+  else if (!mailbox.syncPreferences?.historyPaused) {
+    // Recover a policy change made while a previous batch was finishing.
+    // Only stopped work is eligible; retries keep their backoff and running
+    // jobs keep their ownership. Completed provider history stays complete.
+    const preferences = mailbox.syncPreferences || readMailImportPreferences(null);
+    const { data: stopped } = await db.from("mail_sync_jobs").select("id,folder,progress").eq("account_key", account).eq("kind", "history").eq("state", "idle").throwOnError();
+    const resume = (stopped || []).filter(item => {
+      const kind = item.folder === "INBOX" ? "inbox" : folders.find(entry => entry.path === item.folder)?.kind || "custom";
+      return historyFolderSelected(preferences, kind) && !item.progress?.completed && (item.progress?.imported || 0) < preferences.historyLimit;
+    }).map(item => item.id);
+    if (resume.length) await db.from("mail_sync_jobs").update({ state: "queued", next_run_at: new Date().toISOString() }).in("id", resume).eq("state", "idle").throwOnError();
+  }
   if (options.refresh) await db.from("mail_sync_jobs").update({ next_run_at: new Date().toISOString() })
     .eq("account_key", account).eq("kind", folder === "INBOX" ? "inbox" : "folder").eq("folder", folder).eq("state", "queued").eq("attempts", 0).throwOnError();
   return folders;
 }
 
 export async function readMailboxSyncHealth(mailbox: WorkspaceMailboxRecord, fallback: string | null = null, folder = "INBOX") {
-  const { data } = await createSupabaseAdmin().from("mail_sync_jobs").select("kind,folder,state,attempts,next_run_at,last_attempt_at,last_success_at,last_error,progress")
-    .eq("account_key", mailboxSyncKey(mailbox)).in("kind", ["inbox", "folder", "history"]).throwOnError();
-  return mailSyncHealth((data || []) as MailSyncJob[], fallback, Date.now(), folder);
+  const [{ data }, folders] = await Promise.all([
+    createSupabaseAdmin().from("mail_sync_jobs").select("kind,folder,state,attempts,next_run_at,last_attempt_at,last_success_at,last_error,progress")
+      .eq("account_key", mailboxSyncKey(mailbox)).in("kind", ["inbox", "folder", "history"]).throwOnError(),
+    savedProviderFolders(mailbox),
+  ]);
+  const health = mailSyncHealth((data || []) as MailSyncJob[], fallback, Date.now(), folder);
+  const preferences = mailbox.syncPreferences || readMailImportPreferences(null);
+  function applyPreferences(item: ReturnType<typeof mailSyncHealth>, path: string) {
+    const kind = path === "INBOX" ? "inbox" : folders.find(entry => entry.path === path)?.kind || "custom";
+    item.historyTarget = preferences.historyLimit;
+    if (!historyFolderSelected(preferences, kind) || preferences.historyPaused) {
+      item.history = "idle";
+      item.historyReason = !historyFolderSelected(preferences, kind) ? "not_selected" : "paused";
+      item.historyComplete = false;
+    } else if (item.history === "idle" && ["limit", "paused", "not_selected"].includes(item.historyReason || "") && (item.historyImported || 0) < preferences.historyLimit) {
+      item.historyReason = undefined;
+      item.historyComplete = false;
+    }
+    return item;
+  }
+  applyPreferences(health, folder);
+  health.histories = ((data || []) as MailSyncJob[]).filter(job => job.kind === "history").map(job => ({ folder: job.folder, health: applyPreferences(mailSyncHealth((data || []) as MailSyncJob[], null, Date.now(), job.folder), job.folder) }));
+  return health;
 }
 
 /** One bounded receive-only job. No SMTP, automation actions, or UI lifecycle. */
@@ -82,8 +115,24 @@ export async function runMailSyncJob(job: MailSyncJob, token: string, accounts?:
   }
   const folders = accounts?.get(job.account_key)?.folders || await savedProviderFolders(mailbox);
   const folder = folders.find((item) => item.path === job.folder);
+  const kind = job.folder === "INBOX" ? "inbox" : folder?.kind || "custom";
+  // History pause/limit changes take effect between batches, without waiting for
+  // the credential cache or interrupting delivery of new messages.
+  if (job.kind === "history") {
+    const { data: settings } = await db.from("workspace_mailboxes").select("sync_preferences,is_active").eq("id", mailbox.id).maybeSingle().throwOnError();
+    if (!settings || settings.is_active === false) return { completed: false, hasMore: false, completionReason: "paused" as const };
+    mailbox = { ...mailbox, syncPreferences: readMailImportPreferences(settings?.sync_preferences) };
+    if (accounts) accounts.set(job.account_key, { mailbox, folders, loadedAt: accounts.get(job.account_key)?.loadedAt ?? Date.now() });
+    if (mailbox.syncPreferences.historyPaused || !historyFolderSelected(mailbox.syncPreferences, kind)) return {
+      completed: false, hasMore: false, completionReason: mailbox.syncPreferences.historyPaused ? "paused" as const : "not_selected" as const,
+      target: mailbox.syncPreferences.historyLimit,
+    };
+  }
+  const preferences = mailbox.syncPreferences || readMailImportPreferences(null);
+  const historyLimit = historyFolderSelected(preferences, kind) ? preferences.historyLimit : 50;
+  const started = Date.now();
   const batchSize = mailSyncBatchSize(job.kind, job.attempts, job.progress?.batchSize);
-  const result = await loadSyncedMailbox(mailbox, { sync: true, includeContent: false, history: job.kind === "history", batchSize, folder: job.folder, kind: folder?.kind || "inbox",
+  const result = await loadSyncedMailbox(mailbox, { sync: true, includeContent: false, history: job.kind === "history", historyLimit, batchSize, folder: job.folder, kind,
     phase: job.kind === "flags" || job.kind === "previews" ? job.kind : "headers", worker: { account: job.account_key, token } });
   if (result.error) throw new Error(result.error);
   if (result.batch?.received && ["inbox", "folder", "history"].includes(job.kind)) {
@@ -93,7 +142,13 @@ export async function runMailSyncJob(job: MailSyncJob, token: string, accounts?:
     if (result.batch?.reset) await db.from("mail_sync_jobs").update({ state: "queued", next_run_at: new Date().toISOString(), progress: { completed: false } })
       .eq("account_key", job.account_key).eq("kind", "history").eq("folder", job.folder).eq("state", "idle").throwOnError();
   }
-  return { ...(result.batch || {}), imported: result.messages.length, ...(["history", "previews"].includes(job.kind) ? { batchSize } : {}), ...(job.kind === "history" ? { completed: !result.batch?.hasMore } : {}) };
+  const previous = job.progress?.target === historyLimit ? job.progress : undefined;
+  return { ...(result.batch || {}), imported: result.messages.length, ...(["history", "previews"].includes(job.kind) ? { batchSize } : {}), ...(job.kind === "history" ? {
+    completed: !result.batch?.hasMore && result.batch?.completionReason !== "limit", target: historyLimit,
+    startedAt: previous?.startedAt || new Date(started).toISOString(),
+    elapsedMs: (previous?.elapsedMs || 0) + Date.now() - started,
+    receivedTotal: (previous?.receivedTotal || 0) + (result.batch?.received || 0),
+  } : {}) };
 }
 
 export async function runMailSyncWorker(options: { budgetMs?: number; maxJobs?: number; seed?: boolean; waitForWork?: boolean } = {}) {

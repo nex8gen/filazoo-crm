@@ -42,12 +42,30 @@ function fixture() {
   return { data, state: exports as typeof import("../lib/data/email-state.ts"), db, writes };
 }
 
-test("the ten named tags have unique colors; company aggregation retains every distinct tag", () => {
-  assert.equal(vocabulary.customerTags.length, 10);
-  assert.equal(new Set(vocabulary.customerTags.map(tag => tag.className)).size, 10);
+test("the eight named tags have unique colors; company aggregation retains every distinct tag", () => {
+  assert.equal(vocabulary.customerTags.length, 8);
+  assert.equal(new Set(vocabulary.customerTags.map(tag => tag.className)).size, 8);
   assert.equal(vocabulary.customerTags[0].name, "Prospect Nurturing");
-  assert.equal(vocabulary.customerTags[9].name, "Postponed Purchasing");
+  assert.equal(vocabulary.customerTags[7].name, "Inactive Customers");
   assert.deepEqual(vocabulary.uniqueCustomerTags(["Repeat Customers", "New Inquiries", "Repeat Customers", "PLA", null]), ["New Inquiries", "Repeat Customers"]);
+});
+
+test("retired inactivity tags merge without dropping or duplicating customer assignments", async () => {
+  const app = fixture();
+  for (const tag of ["Inactive Customers", "Long-term Inactive Customers", "Postponed Purchasing"]) {
+    app.db.crm_email_tags.push({ message_key: tag, tag, updated_at: "2026-11-18T01:00:00Z" });
+  }
+  const assignments = await app.data.listSharedEmailTagAssignments();
+  assert.equal(assignments.size, 3);
+  for (const assignment of assignments.values()) {
+    assert.equal(assignment.category, "Inactive Customers");
+    assert.equal(assignment.updatedAt, "2026-11-18T01:00:00Z");
+  }
+  assert.deepEqual(vocabulary.uniqueCustomerTags(app.db.crm_email_tags.map(row => row.tag)), ["Inactive Customers"]);
+  for (const retired of ["Long-term Inactive Customers", "Postponed Purchasing"]) {
+    assert.equal(vocabulary.isCustomerTag(retired), false);
+    assert.equal(emailInboxStateSchema.shape.category.safeParse(retired).success, false);
+  }
 });
 
 test("CRM, sent mail and provider copies share a tag key without merging different emails in one thread", () => {

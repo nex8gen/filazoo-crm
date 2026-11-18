@@ -42,7 +42,7 @@ export async function withInboxReadBudget<T>(read: (signal: AbortSignal) => Prom
 }
 
 export type MailboxCursor = { uidValidity: number; lastUid: number };
-export type MailboxBatch = { received: number; hasMore: boolean; totalMessages?: number; reset?: boolean };
+export type MailboxBatch = { received: number; hasMore: boolean; totalMessages?: number; reset?: boolean; completionReason?: "limit" | "complete" };
 export type MailboxSnapshot = {
   messages: InboxEmailItem[];
   cursor?: MailboxCursor;
@@ -81,10 +81,11 @@ export type MailboxSyncStore = {
 export async function synchronizeMailbox(
   store: MailboxSyncStore,
   fetchMessages: (options: { limit: number; cursor?: MailboxCursor; beforeUid?: number; onMailbox: (cursor: MailboxCursor) => void; onBatch: (batch: MailboxBatch) => void }) => Promise<InboxEmailItem[]>,
-  { sync = true, history = false, force = false, batchSize }: { sync?: boolean; history?: boolean; force?: boolean; batchSize?: number } = {},
+  { sync = true, history = false, force = false, batchSize, historyLimit = 5000 }: { sync?: boolean; history?: boolean; force?: boolean; batchSize?: number; historyLimit?: number } = {},
 ): Promise<MailboxSnapshot> {
   const saved = await store.read();
-  if (history && saved.messages.length >= 5000) return { ...saved, error: null, batch: { received: 0, hasMore: false } };
+  const target = Math.max(50, Math.min(5000, historyLimit));
+  if (history && saved.messages.length >= target) return { ...saved, error: null, batch: { received: 0, hasMore: false, completionReason: "limit" } };
   if (!sync || (!force && !history && saved.syncedAt && Date.now() - Date.parse(saved.syncedAt) < 5000)) return saved;
   const token = crypto.randomUUID();
   if (!await store.acquire(token)) return store.read();
@@ -95,7 +96,7 @@ export async function synchronizeMailbox(
     let batch: MailboxBatch | undefined;
     const knownUids = previous.messages.flatMap((message) => Number.isSafeInteger(message.uid) && message.uid! > 0 ? [message.uid!] : []);
     const messages = await fetchMessages({
-      limit: batchSize ? Math.max(1, Math.min(500, batchSize)) : history ? 25 : 10,
+      limit: Math.min(batchSize ? Math.max(1, Math.min(500, batchSize)) : history ? 25 : 10, history ? Math.max(1, target - previous.messages.length) : !previous.cursor ? Math.min(50, target) : target),
       cursor: previous.cursor,
       beforeUid: history && knownUids.length ? Math.min(...knownUids) : undefined,
       onMailbox: (cursor) => { nextCursor = cursor; },
@@ -103,7 +104,12 @@ export async function synchronizeMailbox(
     });
     if (!nextCursor) throw new Error("Mailbox sync ended without a valid UID checkpoint.");
     const snapshot = mergeMailboxSnapshot(previous, messages, nextCursor);
-    if (batch) snapshot.batch = { ...batch, reset: Boolean(previous.cursor && previous.cursor.uidValidity !== nextCursor.uidValidity) };
+    if (batch) {
+      const limited = history && batch.hasMore && snapshot.messages.length >= target;
+      snapshot.batch = { ...batch, hasMore: limited ? false : batch.hasMore,
+        ...(history && (limited || !batch.hasMore) ? { completionReason: limited ? "limit" : "complete" } : {}),
+        reset: Boolean(previous.cursor && previous.cursor.uidValidity !== nextCursor.uidValidity) };
+    }
     // Empty polls still advance the checkpoint and release the lease, but do
     // not need to rewrite/recompress thousands of saved message headers.
     await store.commit(token, snapshot, {

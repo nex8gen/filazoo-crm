@@ -10,21 +10,20 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { FlowConditionEditor } from "@/components/flow-condition-editor";
 import { FlowSenderField } from "@/components/flow-sender-field";
 import { flowEmailContent, flowEmailTemplateNames } from "@/lib/flow-email-editor";
-import { flowEmailStatus, stepConfigSchemas, type JsonConfig, type FlowStatus } from "@/lib/flows";
+import { flowEmailStatus, stepConfigSchemas, type JsonConfig } from "@/lib/flows";
 import { flowEditorEqual, type FlowPanelEditor } from "@/lib/flow-editor-session";
-import { FlowEmailMetrics, FlowEmailStatus, useEmailPerformance } from "@/components/flow-email-performance";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { FlowEmailStatus } from "@/components/flow-email-performance";
 import { flowUtmKeys } from "@/lib/flow-email-utm";
 
 const TemplatePage = lazy(() => import("./flow-email-template-page").then(module => ({ default: module.FlowEmailTemplatePage })));
 const SavedPreview = lazy(() => import("./flow-email-saved-preview").then(module => ({ default: module.FlowEmailSavedPreview })));
 const emojis = ["😊", "👋", "✨", "🎉", "📦", "💙"];
 
-export function FlowEmailPanel({ config, onChange, onClose, disabled, mailboxes, status, defaultName, sessionKey, footer, editorRef, onDirtyChange, error, onPreview, actionId = "", saved = false, sender, resolveSender, onViewActivity, onSaveText, trail = [] }: {
+export function FlowEmailPanel({ config, onChange, onClose, disabled, mailboxes, defaultName, sessionKey, footer, editorRef, onDirtyChange, error, onPreview, saved = false, sender, resolveSender, onSaveText, trail = [] }: {
   config: JsonConfig; onChange: (config: JsonConfig) => void; onClose: () => void; disabled: boolean;
-  mailboxes: { id: string; label: string }[]; status: FlowStatus; defaultName: string; sessionKey: string;
+  mailboxes: { id: string; label: string }[]; defaultName: string; sessionKey: string;
   footer?: ReactNode; editorRef?: Ref<FlowPanelEditor>; onDirtyChange?: (dirty: boolean) => void; error?: string; onPreview: () => void;
-  actionId?: string; saved?: boolean; sender?: { name: string; email: string }; onViewActivity?: () => void;
+  saved?: boolean; sender?: { name: string; email: string };
   resolveSender?: (choice: JsonConfig[string]) => { name: string; email: string } | undefined; trail?: string[];
   onSaveText?: (config: JsonConfig) => Promise<boolean>;
 }) {
@@ -34,8 +33,6 @@ export function FlowEmailPanel({ config, onChange, onClose, disabled, mailboxes,
   const [validationError, setValidationError] = useState("");
   const [editingDetails, setEditingDetails] = useState(!saved);
   const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
-  const [performanceOpen, setPerformanceOpen] = useState(false);
-  const performance = useEmailPerformance();
   const displayedSender = resolveSender ? resolveSender(draft.mailboxId) : sender;
   const id = useId();
   const pendingConfig = { ...draft, ...(config.performanceId ? { performanceId: config.performanceId } : {}) };
@@ -65,7 +62,6 @@ export function FlowEmailPanel({ config, onChange, onClose, disabled, mailboxes,
     <div className="wf-inspector-content scroll-surface">
       {trail.length ? <nav className="wf-action-location" aria-label="Action location"><span translate="no">{trail.join(" / ")}</span></nav> : null}
       <section className="wf-email-section wf-email-identity"><div className="wf-email-field"><Label htmlFor={`${id}-name`}>Email name</Label><Input id={`${id}-name`} value={String(draft.emailName ?? defaultName)} maxLength={200} disabled={disabled} onChange={event => set("emailName", event.target.value)} /></div><div className="wf-email-field"><Label>Status</Label><FlowEmailStatus status={flowEmailStatus(draft)} onChange={value => set("emailStatus", value)} disabled={disabled} /></div></section>
-      {saved && status !== "draft" ? <section className="wf-email-section wf-email-performance"><div className="wf-email-section-heading"><div><h3>Performance</h3><p>Based on the last 30 days</p></div><Button variant="outline" size="sm" onClick={() => setPerformanceOpen(true)}>View details</Button></div><FlowEmailMetrics actionId={String(draft.performanceId || actionId)} /></section> : null}
       <section className="wf-email-section"><div className="wf-email-section-heading"><h3>Subject and sender</h3>{saved ? <Button variant="outline" size="sm" disabled={disabled} aria-expanded={editingDetails} onClick={() => setEditingDetails(value => !value)}>{editingDetails ? "Done" : "Edit"}</Button> : null}</div>{editingDetails ? <>{field("subject", "Subject line", String(draft.subject ?? content.subject))}{field("preheader", "Preview text", String(draft.preheader || ""))}<Button variant="outline" size="sm" disabled={disabled} aria-expanded={senderOpen} onClick={() => setSenderOpen(open => !open)}>Edit sender</Button>{senderOpen ? <div className="wf-email-sender"><FlowSenderField value={String(draft.mailboxId || "default")} onChange={value => set("mailboxId", value)} options={mailboxes} disabled={disabled} /></div> : null}</> : <dl className="wf-email-details-summary"><div><dt>Subject line</dt><dd>{content.subject || "—"}</dd></div><div><dt>Preview text</dt><dd>{String(draft.preheader || "—")}</dd></div><div><dt>Sender name</dt><dd>{displayedSender?.name || "—"}</dd></div><div><dt>Sender email address</dt><dd>{displayedSender?.email || (draft.mailboxId === "assigned_owner" ? "Assigned salesperson’s mailbox" : "Sender unavailable")}</dd></div></dl>}
         {saved ? <div className="wf-email-ab-test" aria-disabled="true"><FlaskConical /><div><strong>Create A/B test</strong><span>A/B testing is not available for workflow emails.</span></div></div> : null}
       </section>
@@ -81,7 +77,6 @@ export function FlowEmailPanel({ config, onChange, onClose, disabled, mailboxes,
       {validationError || error ? <p role="alert" className="wf-save-error">{validationError || error}</p> : null}
     </div>
     {footer}
-    <Dialog open={performanceOpen} onOpenChange={setPerformanceOpen}><DialogContent className="wf-email-performance-dialog sm:max-w-lg"><DialogHeader><DialogTitle>{String(draft.emailName || defaultName)} performance</DialogTitle><DialogDescription>Last 30 days. Waiting and review show current runs.</DialogDescription></DialogHeader><FlowEmailMetrics actionId={String(draft.performanceId || actionId)} card /><p>Sent counts messages accepted by the sending server. Inbox delivery and order attribution are unavailable. Open and click rates count unique messages and may include automated scanners.</p>{performance.report ? <p>Updated {new Date(performance.report.asOf).toLocaleString()}</p> : null}<div className="wf-email-performance-actions"><Button variant="outline" size="sm" onClick={performance.refresh} disabled={performance.loading}>Refresh</Button>{onViewActivity ? <Button size="sm" onClick={() => { setPerformanceOpen(false); onViewActivity(); }}>View run history</Button> : null}</div></DialogContent></Dialog>
     {templatePage ? <Suspense fallback={<div className="wf-email-template-loading" role="status">Loading email templates…</div>}><TemplatePage config={{ ...pendingConfig, emailName: String(draft.emailName || defaultName) }} onSaveText={onSaveText} mode={templatePage} sessionKey={sessionKey} disabled={disabled} onApply={next => { if (!disabled) { setDraft(next); setValidationError(""); setTemplatePage(null); } }} onClose={() => setTemplatePage(null)} /></Suspense> : null}
   </aside>;
 }

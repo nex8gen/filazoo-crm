@@ -6,6 +6,7 @@ import { Building2, ChartNoAxesCombined, ClipboardList, History, Mail, MessageCi
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CompanyBillingSkeleton } from "@/components/workspace-skeletons";
 import { companyTab, companyTabHref, type CompanyTab } from "@/lib/company-tabs";
+import "./company-workspace.css";
 
 const sections = [
   { value: "profile", label: "Profile", icon: Building2 },
@@ -44,11 +45,11 @@ export function CompanyWorkspace({ companyId, initialTab, toolbar, profile, sect
     });
   }
 
-  return <Tabs value={activeTab} onValueChange={select} className="gap-6">
-    <div className="sticky top-0 z-30 flex min-w-0 flex-col gap-3 border-b bg-background py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-5">
-      <div className="order-2 min-w-0 overflow-x-auto pb-1 sm:order-1">
-        <TabsList variant="line" aria-label="Customer profile sections" className="min-w-max justify-start gap-2 lg:gap-4">
-          {sections.map(({ value, label, icon: Icon }) => <TabsTrigger key={value} id={value === "profile" || value === "history" ? `company-${value}-tab` : undefined} value={value} className="gap-2 px-3"><Icon />{label}</TabsTrigger>)}
+  return <Tabs value={activeTab} onValueChange={select} className="min-w-0 gap-6">
+    <div className="sticky top-0 z-30 flex min-w-0 flex-col gap-3 border-b bg-background py-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-5">
+      <div className="company-workspace-navigation order-2 min-w-0 pb-1 sm:order-1">
+        <TabsList variant="line" aria-label="Customer profile sections" className="company-workspace-tabs">
+          {sections.map(({ value, label, icon: Icon }) => <TabsTrigger key={value} id={value === "profile" || value === "history" ? `company-${value}-tab` : undefined} value={value} aria-label={label} title={label} className="gap-2 px-3"><Icon aria-hidden="true" /><span className="company-workspace-tab-label">{label}</span></TabsTrigger>)}
         </TabsList>
       </div>
       {toolbar}

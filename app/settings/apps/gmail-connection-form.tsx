@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { saveGmailConnection } from "./gmail-actions";
 import type { EmailConnectionScope } from "@/lib/email-connections";
+import { ConnectionEmailImport } from "@/components/email-import-fields";
 
 export function GmailConnectionForm({ account, scope = "personal" }: { account?: { id: string; email: string; name: string }; scope?: EmailConnectionScope }) {
   const [state, action, pending] = useActionState(saveGmailConnection, undefined);
@@ -22,6 +23,7 @@ export function GmailConnectionForm({ account, scope = "personal" }: { account?:
       <div className="space-y-2"><Label htmlFor={`${prefix}-email`}>Gmail address</Label><Input id={`${prefix}-email`} name="email" type="email" autoComplete="email" placeholder="you@gmail.com" value={email} onChange={event => setEmail(event.target.value)} readOnly={Boolean(account)} required disabled={pending} /></div>
       <div className="space-y-2"><Label htmlFor={`${prefix}-name`}>Connection name</Label><Input id={`${prefix}-name`} name="displayName" placeholder="Sales Gmail" value={name} onChange={event => setName(event.target.value)} maxLength={80} disabled={pending} /></div>
       <div className="space-y-2"><Label htmlFor={`${prefix}-password`}>Google app password</Label><Input id={`${prefix}-password`} name="appPassword" type="password" autoComplete="new-password" placeholder={account ? "Leave blank to keep the saved app password" : "Your 16-character app password"} required={!account} disabled={pending} /><p className="text-xs leading-5 text-muted-foreground">Use an app password from your Google account. A Google Workspace administrator may need to enable this option.</p></div>
+      {!account ? <ConnectionEmailImport disabled={pending} /> : null}
       {state?.error ? <NotificationToast>{state.error}</NotificationToast> : null}
       {state?.success ? <NotificationToast tone="success">{state.success}</NotificationToast> : null}
       <Button type="submit" disabled={pending}><Mail />{pending ? "Checking connection..." : account ? "Test and save connection" : "Connect Gmail"}</Button>

@@ -1,0 +1,19 @@
+.workflow-analytics-ideas { display: flex; min-width: 0; align-items: stretch; gap: 10px; border-bottom: 1px solid var(--border); padding: 0 24px; background: var(--background); }
+.workflow-analytics-ideas-toggle { display: flex; flex-shrink: 0; align-items: center; gap: 6px; padding-block: 10px; color: var(--foreground); font-size: 12px; cursor: pointer; }
+.workflow-analytics-ideas-toggle > svg { color: var(--muted-foreground); }
+.workflow-analytics-ideas[data-expanded=true] .workflow-analytics-ideas-toggle > svg { transform: rotate(180deg); }
+.workflow-analytics-ideas-items { display: flex; min-width: 0; flex: 1; align-items: stretch; gap: 20px; overflow-x: auto; scrollbar-width: none; }
+.workflow-analytics-ideas-items::-webkit-scrollbar { display: none; }
+.workflow-analytics-idea { display: flex; flex-shrink: 0; align-items: center; gap: 8px; padding: 10px 2px; text-align: left; cursor: pointer; }
+.workflow-analytics-idea:hover .workflow-analytics-idea-title { color: var(--primary); }
+.workflow-analytics-idea-icon { display: flex; flex-shrink: 0; align-items: center; justify-content: center; color: #9989dd; }
+.workflow-analytics-idea-copy { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.workflow-analytics-idea-title { font-size: 12px; font-weight: 500; line-height: 18px; white-space: nowrap; }
+.workflow-analytics-idea-description { max-width: 190px; color: var(--muted-foreground); font-size: 12px; line-height: 17px; }
+.workflow-analytics-ideas[data-expanded=true] { gap: 20px; }
+.workflow-analytics-ideas[data-expanded=true] .workflow-analytics-ideas-items { gap: 0; padding-block: 10px; }
+.workflow-analytics-ideas[data-expanded=true] .workflow-analytics-idea { flex: 1 0 190px; gap: 12px; padding: 0 18px; border-left: 1px solid var(--border); }
+.workflow-analytics-ideas[data-expanded=true] .workflow-analytics-idea:first-child { border-left: 0; padding-left: 0; }
+.workflow-analytics-ideas[data-expanded=true] .workflow-analytics-idea-icon { width: 40px; height: 40px; }
+.workflow-analytics-ideas :is(button):focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; border-radius: 4px; }
+@media (max-width: 639px) { .workflow-analytics-ideas { gap: 12px; padding-inline: 20px; } .workflow-analytics-ideas[data-expanded=true] { gap: 12px; } .workflow-analytics-ideas[data-expanded=true] .workflow-analytics-idea { flex-basis: 220px; } }

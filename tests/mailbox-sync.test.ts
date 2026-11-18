@@ -85,6 +85,39 @@ test("large history batches expose continuation without rewinding the new-mail c
   assert.equal((await store.read()).batch?.hasMore, false);
 });
 
+test("a selected history target bounds the last batch and stops without claiming all mail was imported", async () => {
+  const store = memoryStore({ messages: Array.from({ length: 490 }, (_, i) => message(1000 - i)), cursor: { uidValidity: 1, lastUid: 1000 } });
+  const result = await synchronizeMailbox(store, async ({ limit, beforeUid, onMailbox, onBatch }) => {
+    assert.equal(limit, 10);
+    assert.equal(beforeUid, 511);
+    onMailbox({ uidValidity: 1, lastUid: 510 }); onBatch({ received: 10, hasMore: true, totalMessages: 2000 });
+    return Array.from({ length: 10 }, (_, i) => message(510 - i));
+  }, { history: true, historyLimit: 500, batchSize: 200 });
+  assert.equal(result.messages.length, 500);
+  assert.equal(result.batch?.hasMore, false);
+  assert.equal(result.batch?.completionReason, "limit");
+  await synchronizeMailbox(store, async () => { assert.fail("A reached target must not download another batch"); }, { history: true, historyLimit: 500 });
+  const newer = await synchronizeMailbox(store, async ({ onMailbox, onBatch }) => {
+    onMailbox({ uidValidity: 1, lastUid: 1001 }); onBatch({ received: 1, hasMore: false }); return [message(1001)];
+  }, { historyLimit: 500, force: true });
+  assert.equal(newer.messages.length, 501, "The history target must never stop new-mail delivery");
+});
+
+test("new-account bootstrap stays small and a later raised target resumes before the oldest cached UID", async () => {
+  const store = memoryStore();
+  await synchronizeMailbox(store, async ({ limit, onMailbox, onBatch }) => {
+    assert.equal(limit, 50);
+    onMailbox({ uidValidity: 1, lastUid: 1000 }); onBatch({ received: 50, hasMore: true });
+    return Array.from({ length: 50 }, (_, i) => message(1000 - i));
+  }, { batchSize: 100, historyLimit: 500 });
+  await synchronizeMailbox(store, async ({ beforeUid, onMailbox, onBatch }) => {
+    assert.equal(beforeUid, 951);
+    onMailbox({ uidValidity: 1, lastUid: 950 }); onBatch({ received: 1, hasMore: false }); return [message(950)];
+  }, { history: true, historyLimit: 1000, batchSize: 200 });
+  assert.equal((await store.read()).batch?.completionReason, "complete");
+  assert.equal((await store.read()).cursor?.lastUid, 1000);
+});
+
 test("initial sync persists unknown senders and reload reads cache without IMAP", async () => {
   const store = memoryStore();
   const first = await synchronizeMailbox(store, async ({ cursor, onMailbox, limit }) => {

@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { attachmentMimeType } from "@/lib/email-files";
 import { DatePicker } from "@/components/ui/date-picker";
 import { EmailSyncStatus } from "@/components/email-sync-status";
+import { EmailHistoryImport } from "@/components/email-history-import";
 import { PageActions, PageHeaderDetails } from "@/components/page-header";
 import type { MailSyncHealth } from "@/lib/mail-sync-jobs";
 import { mergePartialMailboxMessages } from "@/lib/mailbox-sync";
@@ -445,6 +446,7 @@ export function EmailInboxWorkspace({
   const [notice, setNotice] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(inboxError);
   const [syncHealth, setSyncHealth] = useState<Record<string, MailSyncHealth>>(initialSyncHealth);
+  const [syncStatusError, setSyncStatusError] = useState<string | null>(null);
   const [lastSuccessfulSync, setLastSuccessfulSync] = useState(lastMailboxSync);
   const [syncing, setSyncing] = useState(false);
   const syncInProgress = useRef(false);
@@ -602,7 +604,7 @@ export function EmailInboxWorkspace({
       if (receive) lastReceiveRequest.current = Date.now();
       if (selectedMailboxId && !companyScope) params.set("mailboxId", selectedMailboxId);
       if (manual) params.set("scope", "history");
-      if (Object.values(syncHealth).some(item => item.history !== "idle" && !item.historyComplete)) params.set("health", "true");
+      if (companyScope) params.set("health", "true");
       const providerFolder = folder.startsWith("provider:") ? folder.slice(9) : providerFolders.find((item) => item.kind === folder)?.path;
       if (providerFolder && providerFolder !== "INBOX") params.set("providerFolder", providerFolder);
       if (companyScope) params.set("companyId", companyScope.id);
@@ -620,7 +622,7 @@ export function EmailInboxWorkspace({
       if (revision !== stateRevision.current || pendingStateWrites.current) return;
       applyMailboxSnapshot(result.emails as EmailWorkspaceItem[], Boolean(result.mailboxSnapshotPartial));
       setSyncError(result.syncQueueError || result.inboxError || null);
-      if (manual) setNotice("Loading the next batch of older emails. They will appear automatically as they are imported.");
+      if (manual) setNotice(result.historyQueued ? "History import queued. Emails will appear as they are imported." : "History import could not start yet. Use Import settings to check and retry.");
     } catch (error) {
       lastReceiveRequest.current = null;
       const message = error instanceof Error ? error.message : "Unable to sync the mailbox inbox.";
@@ -631,9 +633,45 @@ export function EmailInboxWorkspace({
       syncInProgress.current = false;
       setSyncing(false);
     }
-  }, [applyMailboxSnapshot, companyScope, inboxConfigured, selectedMailboxId, folder, providerFolders, syncHealth]);
+  }, [applyMailboxSnapshot, companyScope, inboxConfigured, selectedMailboxId, folder, providerFolders]);
 
   useBackgroundRefresh(syncInbox, inboxConfigured, preferences.emailSyncSeconds);
+
+  const syncProviderFolder = folder.startsWith("provider:") ? folder.slice(9) : providerFolders.find(item => item.kind === folder)?.path;
+  const syncHealthRequest = useRef(0);
+  const syncStatusFlight = useRef<{ key: string; controller: AbortController } | null>(null);
+  const refreshSyncStatus = useCallback(async () => {
+    if (!inboxConfigured || !selectedMailboxId || companyScope) return;
+    const key = `${selectedMailboxId}:${syncProviderFolder || "INBOX"}`;
+    if (syncStatusFlight.current?.key === key) return;
+    syncStatusFlight.current?.controller.abort();
+    const controller = new AbortController();
+    syncStatusFlight.current = { key, controller };
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+    const requestId = ++syncHealthRequest.current;
+    try {
+      const params = new URLSearchParams({ mailboxId: selectedMailboxId, ...(syncProviderFolder ? { providerFolder: syncProviderFolder } : {}) });
+      const response = await fetch(`/api/email/sync?${params}`, { cache: "no-store", signal: controller.signal });
+      const result = await response.json();
+      if (!response.ok || !result.health) throw new Error(result.error || "Unable to check sync status.");
+      if (requestId !== syncHealthRequest.current) return;
+      setSyncHealth({ [selectedMailboxId]: result.health });
+      setSyncStatusError(null);
+    } catch (reason) { if (requestId === syncHealthRequest.current) setSyncStatusError(reason instanceof Error ? reason.message : "Unable to check sync status."); }
+    finally { clearTimeout(timeout); if (syncStatusFlight.current?.controller === controller) syncStatusFlight.current = null; }
+  }, [inboxConfigured, selectedMailboxId, companyScope, syncProviderFolder]);
+  const historyImportActive = Object.values(syncHealth).some(item => item.history !== "idle" || item.histories?.some(entry => entry.health.history !== "idle"));
+  const invalidateSyncStatus = useCallback(() => { ++syncHealthRequest.current; syncStatusFlight.current?.controller.abort(); syncStatusFlight.current = null; }, []);
+  useEffect(() => {
+    if (!inboxConfigured || companyScope) return;
+    const refresh = () => { if (document.visibilityState === "visible") void refreshSyncStatus(); };
+    refresh();
+    const seconds = historyImportActive ? 5 : preferences.emailSyncSeconds;
+    const timer = seconds ? window.setInterval(refresh, Math.max(5, seconds) * 1000) : undefined;
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => { invalidateSyncStatus(); clearInterval(timer); window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh); };
+  }, [refreshSyncStatus, invalidateSyncStatus, inboxConfigured, companyScope, historyImportActive, preferences.emailSyncSeconds]);
 
   useEffect(() => {
     const query = search.trim();
@@ -1584,7 +1622,7 @@ export function EmailInboxWorkspace({
         <section className="mail-list" aria-label="Email list">
           {showFollowupFilters ? <>
             <EmailFollowupFilters value={folder === "followup" ? followupFilter : null} counts={followupFilterCounts} loading={followupFiltersLoading} onChange={value => { changeFolder("followup"); setFollowupFilter(value); }} />
-            {folder === "followup" && followupFilter === "nurture" ? <div className="border-b bg-violet-50/70 px-4 py-3 text-xs leading-5 text-violet-800 dark:bg-violet-500/10 dark:text-violet-200"><p className="font-semibold">Dormant customer nurture</p><p>Only conversations explicitly enrolled through AI follow-up. Stops when the customer replies.</p></div> : null}
+            {folder === "followup" && followupFilter === "nurture" ? <div className="border-b bg-violet-50/70 px-4 py-3 text-xs leading-5 text-violet-800 dark:bg-violet-500/10 dark:text-violet-200"><div className="flex flex-wrap items-center justify-between gap-2"><p className="font-semibold">Dormant customer nurture</p><Link href="/workflow" className="font-medium underline underline-offset-2">Manage workflows</Link></div><p>Includes one-time AI follow-ups and inactive-customer workflows. Stops when the customer replies.</p></div> : null}
             {followupFiltersError ? <NotificationToast>{followupFiltersError} <button type="button" onClick={() => setFollowupFiltersRetry(value => value + 1)} className="font-medium underline">Retry</button></NotificationToast> : null}
           </> : null}
 {companyScope ? <div className="space-y-3 border-b p-4">
@@ -1597,17 +1635,19 @@ export function EmailInboxWorkspace({
             <div className="mail-search" role="search" aria-label="Search mailbox"><Search className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" /><input aria-label="Search email" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search customer mail" />{search ? <button type="button" onClick={() => setSearch("")} aria-label="Clear email search" className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"><X className="size-3.5" /></button> : null}</div>
             <div className="mt-2 flex gap-1 overflow-x-auto pb-0.5" aria-label="Filter inbox by message source">{sourceFilters.map((item) => <button key={item.id} type="button" aria-pressed={sourceFilter === item.id} onClick={() => { setSourceFilter(item.id); setSelectedId(""); }} className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors ${sourceFilter === item.id ? "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-500/40 dark:bg-blue-500/10 dark:text-blue-300" : "bg-background text-muted-foreground hover:bg-muted"}`}>{item.label}</button>)}</div>
           </div>
-          <div className="flex min-h-11 flex-wrap items-center gap-2 border-b px-3 text-xs">
+          <div className="flex min-h-11 shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b px-3 py-1 text-xs">
             <input type="checkbox" aria-label="Select all conversations on this page" checked={allPageChecked} onChange={() => setCheckedIds((current) => { const next = new Set(current); for (const item of pageItems) { if (allPageChecked) next.delete(item.id); else next.add(item.id); } return next; })} />
             {checkedVisible.length ? <><span>{checkedVisible.length} selected</span><button type="button" disabled={bulkBusy} title="Mark selected as read" onClick={() => void bulkUpdate({ read: true })} className="rounded p-2 hover:bg-muted disabled:opacity-40"><MailOpen className="size-4" /></button><button type="button" disabled={bulkBusy} title="Mark selected as unread" onClick={() => void bulkUpdate({ read: false })} className="rounded p-2 hover:bg-muted disabled:opacity-40"><Mail className="size-4" /></button><button type="button" disabled={bulkBusy} title={folder === "trash" || folder === "archive" ? "Restore selected to inbox" : "Archive selected"} onClick={() => void bulkUpdate({ folder: folder === "trash" || folder === "archive" ? "inbox" : "archive" })} className="rounded p-2 hover:bg-muted disabled:opacity-40"><Archive className="size-4" /></button><button type="button" disabled={bulkBusy} title="Move selected to trash" onClick={() => void bulkUpdate({ folder: "trash" })} className="rounded p-2 hover:bg-muted disabled:opacity-40"><Trash2 className="size-4" /></button></> : <><button type="button" title="Refresh inbox" disabled={syncing || !inboxConfigured} onClick={() => void syncInbox(false, true)} className="rounded p-2 hover:bg-muted disabled:opacity-40"><RefreshCw className={syncing ? "size-4 animate-spin" : "size-4"} /></button><span className="text-muted-foreground">{visible.length} conversations</span></>}
+            <div className="ml-auto flex min-w-0 items-center gap-2">
+              {inboxConfigured ? <EmailSyncStatus health={Object.values(syncHealth)} lastSuccessAt={lastSuccessfulSync} error={syncError || syncStatusError} partialSnapshot={partialSnapshot} /> : null}
+              {inboxConfigured && selectedMailboxId && !["drafts", "scheduled"].includes(folder) ? <EmailHistoryImport key={`${selectedMailboxId}:${syncProviderFolder || "INBOX"}`} mailboxId={selectedMailboxId} providerFolder={syncProviderFolder} health={syncHealth[selectedMailboxId]} onChange={refreshSyncStatus} /> : null}
+            </div>
           </div>
           <div className="mail-header-compose border-b px-3 py-2"><button type="button" onClick={openComposer} className="inline-flex h-8 items-center gap-2 rounded-md bg-foreground px-3 text-xs font-semibold text-background"><Plus className="size-4" />New email</button></div>
 
 </>}
-          {inboxConfigured ? <EmailSyncStatus health={Object.values(syncHealth)} lastSuccessAt={lastSuccessfulSync} error={syncError} /> : null}
-          {partialSnapshot ? <p role="status" className="border-b px-3 py-2 text-xs text-muted-foreground">Showing recent messages. Saved history will retry automatically.</p> : null}
+          {companyScope && inboxConfigured ? <div className="flex shrink-0 items-center justify-end border-b px-3 py-1"><EmailSyncStatus health={Object.values(syncHealth)} lastSuccessAt={lastSuccessfulSync} error={syncError} partialSnapshot={partialSnapshot} /></div> : null}
           {searchStatus ? <p role="status" className="border-b px-3 py-2 text-xs text-muted-foreground">{searchStatus}</p> : null}
-          {!companyScope && !["drafts", "scheduled"].includes(folder) && !Object.values(syncHealth).some((item) => item.history !== "idle" || item.historyComplete) ? <button type="button" disabled={syncing || !inboxConfigured} onClick={() => void syncInbox(true)} className="border-b px-3 py-2 text-left text-xs text-muted-foreground hover:bg-muted disabled:opacity-40">Load older emails</button> : null}
           {notice ? <NotificationToast tone="message">{notice}</NotificationToast> : null}
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
 {folder === "drafts" ? <div className="divide-y">{Object.values(savedDrafts.drafts).length ? Object.values(savedDrafts.drafts).map((value) => <div key={value.id} className="flex items-center gap-3 px-4 py-4"><button type="button" onClick={() => resumeDraft(value)} className="min-w-0 flex-1 text-left"><span className="block truncate text-sm font-medium">{value.subject || "(No subject)"}</span><span className="block truncate text-xs text-muted-foreground">{value.to || "No recipient"} · {value.bodyText.slice(0, 100)}</span></button><button type="button" onClick={() => { savedDrafts.remove(value); if (value.id === composeDraftId) { setComposeDraftId(""); setComposeTo(""); setComposeCc(""); setComposeBcc(""); setComposeBody(""); setComposeSubject(""); setComposeAttachments([]); setComposeProviderDraft(undefined); } }} aria-label={"Discard draft " + value.subject} className="rounded p-2 text-muted-foreground"><Trash2 className="size-4" /></button></div>) : <p className="p-5 text-sm text-muted-foreground">No saved drafts.</p>}<EmailMessageList emptyIcon={FileText} conversations={pageItems} categories={visibleCategories} compact={reading} activeId={selectedConversation?.id} checked={checkedIds} readMessages={readMessages} starred={starred} onCheck={() => undefined} onOpen={openConversation} onStar={toggleStar} /></div> : folder === "scheduled" ? <div className="divide-y">{scheduledError ? <NotificationToast>{scheduledError}</NotificationToast> : null}{scheduledEmails.map((value) => <div key={value.id} className="p-4"><p className="font-medium">{value.payload.subject || "(No subject)"}</p><p className="mt-1 text-xs text-muted-foreground">{value.payload.to?.join(", ")} · {new Date(value.scheduled_at).toLocaleString()} · {value.status}</p>{value.error ? <p className="mt-2 text-xs text-red-600">{value.error}</p> : null}{value.status === "scheduled" ? <button type="button" className="mt-2 text-xs underline" onClick={async () => { const response = await fetch("/api/email/scheduled", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: value.id }) }); const result = await response.json(); if (response.ok) setScheduledEmails((current) => current.filter((item) => item.id !== value.id)); else setScheduledError(result.error); }}>Cancel scheduled send</button> : null}{["scheduled", "failed"].includes(value.status) ? <button type="button" className="ml-4 mt-2 text-xs underline" onClick={() => void editScheduledEmail(value)}>Edit scheduled email</button> : null}</div>)}{!scheduledEmails.length && !scheduledError ? <p className="p-5 text-sm text-muted-foreground">No scheduled emails.</p> : null}</div> : <>

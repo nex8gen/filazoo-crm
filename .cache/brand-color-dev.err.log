@@ -340,3 +340,51 @@ Unable to sync mailbox inbox: canceling statement due to statement timeout
   82 |   }
   83 |   const row = sessionData as SessionRow | null;
   84 |   if (!row || row.id !== claims.sub) return null;
+⨯ Error: Workspace session lookup failed: TimeoutError: The operation was aborted due to timeout
+    at <unknown> (lib\auth.ts:81:11)
+    at async (lib\auth.ts:108:20)
+    at async (lib\supabase\admin.ts:17:26)
+    at async (lib\supabase\workspace-fetch.ts:8:19)
+    at async GET (app\api\customer-tags\revision\route.ts:17:24)
+  79 |   }
+  80 |   if (sessionError) {
+> 81 |     throw new Error(`Workspace session lookup failed: ${sessionError.message}`);
+     |           ^
+  82 |   }
+  83 |   const row = sessionData as SessionRow | null;
+  84 |   if (!row || row.id !== claims.sub) return null;
+⨯ Error: Workspace session lookup failed: TimeoutError: The operation was aborted due to timeout
+    at <unknown> (lib\auth.ts:81:11)
+    at async requireWorkspaceMember (lib\auth.ts:115:20)
+    at async GET (app\api\customer-tags\revision\route.ts:7:18)
+  79 |   }
+  80 |   if (sessionError) {
+> 81 |     throw new Error(`Workspace session lookup failed: ${sessionError.message}`);
+     |           ^
+  82 |   }
+  83 |   const row = sessionData as SessionRow | null;
+  84 |   if (!row || row.id !== claims.sub) return null;
+⨯ Error: Workspace session lookup failed: TimeoutError: The operation was aborted due to timeout
+    at <unknown> (lib\auth.ts:81:11)
+    at async (lib\auth.ts:108:20)
+    at async (lib\supabase\admin.ts:17:26)
+    at async (lib\supabase\workspace-fetch.ts:8:19)
+    at async GET (app\api\customer-tags\revision\route.ts:17:24)
+  79 |   }
+  80 |   if (sessionError) {
+> 81 |     throw new Error(`Workspace session lookup failed: ${sessionError.message}`);
+     |           ^
+  82 |   }
+  83 |   const row = sessionData as SessionRow | null;
+  84 |   if (!row || row.id !== claims.sub) return null;
+⨯ Error: Workspace session lookup failed: TimeoutError: The operation was aborted due to timeout
+    at <unknown> (lib\auth.ts:81:11)
+    at async requireWorkspaceMember (lib\auth.ts:115:20)
+    at async GET (app\api\customer-tags\revision\route.ts:7:18)
+  79 |   }
+  80 |   if (sessionError) {
+> 81 |     throw new Error(`Workspace session lookup failed: ${sessionError.message}`);
+     |           ^
+  82 |   }
+  83 |   const row = sessionData as SessionRow | null;
+  84 |   if (!row || row.id !== claims.sub) return null;

@@ -34,7 +34,7 @@ const code = ts.transpileModule(readFileSync(new URL("../lib/data/flow-runtime.t
 
 // Execute the real enrollment and email runtime against an in-memory database.
 // SMTP is intercepted even when testing live-send mode.
-function runtime(options: { businessWindow?: Date | null; beforeQuery?: (table: string, operation: string) => Promise<void>; aiReplyError?: unknown; smtpError?: unknown; onAiPrepare?: () => Promise<void>; projectionError?: Error; projectionComplete?: boolean; targetedProjectionComplete?: boolean; freshnessError?: Error } = {}) {
+function runtime(options: { dormantState?: { eligible: boolean; baseline: string }; businessWindow?: Date | null; beforeQuery?: (table: string, operation: string) => Promise<void>; aiReplyError?: unknown; smtpError?: unknown; onAiPrepare?: () => Promise<void>; projectionError?: Error; projectionComplete?: boolean; targetedProjectionComplete?: boolean; freshnessError?: Error } = {}) {
   const contactId = randomUUID(), companyId = randomUUID(), flowId = randomUUID();
   const createdAt = new Date().toISOString();
   const db: Record<string, Row[]> = {
@@ -113,6 +113,10 @@ function runtime(options: { businessWindow?: Date | null; beforeQuery?: (table: 
     return query;
   }
   const dependencies: Record<string, unknown> = {
+    "./dormant-customers.ts": {
+      dormantCustomers: async (_user: string, _months: number, input: { after?: string }) => input.after ? [] : [{ company_id: companyId, contact_id: contactId, last_activity_at: options.dormantState?.baseline, eligible: options.dormantState?.eligible }],
+      dormantRunEligible: async (_user: string, _months: number, _company: string, baseline: string) => options.dormantState?.eligible && baseline === options.dormantState.baseline,
+    },
     "../flow-recovery.ts": recovery,
     "../email-threading.ts": threading,
     "../segments.ts": segments,
@@ -165,6 +169,54 @@ function runtime(options: { businessWindow?: Date | null; beforeQuery?: (table: 
   vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (dependencies[name] ?? require(name)), Date, console });
   return { db, env, contactId, companyId, flowId, exports, deliveries, aiCalls, failures, delivered: () => delivered };
 }
+
+test("inactive customer cycles enroll once, keep cumulative milestones, and stop during a wait after new activity", async () => {
+  const state = { eligible: true, baseline: new Date(Date.now() - 45 * 86400_000).toISOString() };
+  const app = runtime({ dormantState: state, businessWindow: null });
+  const definition = createFlowRecipe("dormant");
+  app.db.flows[0].trigger_type = "dormant_customer";
+  app.db.flows[0].trigger_config = definition.triggerConfig;
+  app.db.flow_steps = definition.steps.map((step, position) => ({ ...step, flow_id: app.flowId, position }));
+  await app.exports.scanTimeBasedFlowTriggers(undefined, undefined, { deferExecution: true });
+  await app.exports.scanTimeBasedFlowTriggers(undefined, undefined, { deferExecution: true });
+  assert.equal(app.db.flow_runs.length, 1);
+  const run = app.db.flow_runs[0];
+  await app.exports.processFlowRun(String(run.id));
+  run.next_run_at = null;
+  await app.exports.processFlowRun(String(run.id));
+  assert.equal(app.delivered(), 1);
+  assert.equal(run.next_run_at, engine.calculateWaitUntil({ amount: 3, unit: "months", businessDays: true, resumeAt: "09:00" }, new Date(String((run.context as Row).triggerAt))).toISOString());
+  state.eligible = false;
+  await app.exports.scanTimeBasedFlowTriggers(undefined, undefined, { deferExecution: true });
+  assert.equal(run.status, "cancelled");
+  assert.equal(app.delivered(), 1);
+});
+
+test("inactive customer eligibility is checked again after AI preparation and before SMTP", async () => {
+  const state = { eligible: true, baseline: new Date(Date.now() - 45 * 86400_000).toISOString() };
+  const app = runtime({ dormantState: state, businessWindow: null, onAiPrepare: async () => { state.eligible = false; } });
+  const definition = createFlowRecipe("dormant");
+  app.db.flows[0].trigger_type = "dormant_customer"; app.db.flows[0].trigger_config = definition.triggerConfig;
+  app.db.flow_steps = definition.steps.map((step, position) => ({ ...step, flow_id: app.flowId, position }));
+  await app.exports.scanTimeBasedFlowTriggers(undefined, undefined, { deferExecution: true });
+  const run = app.db.flow_runs[0];
+  await app.exports.processFlowRun(String(run.id)); run.next_run_at = null;
+  await app.exports.processFlowRun(String(run.id));
+  assert.equal(run.status, "cancelled"); assert.equal(app.delivered(), 0);
+});
+
+test("manually stopping an inactive-customer run during AI preparation prevents delivery", async () => {
+  const state = { eligible: true, baseline: new Date(Date.now() - 45 * 86400_000).toISOString() };
+  const app = runtime({ dormantState: state, businessWindow: null, onAiPrepare: async () => { app.db.flow_runs[0].status = "cancelled"; } });
+  const definition = createFlowRecipe("dormant");
+  app.db.flows[0].trigger_type = "dormant_customer"; app.db.flows[0].trigger_config = definition.triggerConfig;
+  app.db.flow_steps = definition.steps.map((step, position) => ({ ...step, flow_id: app.flowId, position }));
+  await app.exports.scanTimeBasedFlowTriggers(undefined, undefined, { deferExecution: true });
+  const run = app.db.flow_runs[0];
+  await app.exports.processFlowRun(String(run.id)); run.next_run_at = null;
+  await app.exports.processFlowRun(String(run.id));
+  assert.equal(run.status, "cancelled"); assert.equal(app.delivered(), 0);
+});
 
 test("budgeted recovery queues enrollment without sending and resumes it once on the next tick", async () => {
   const app = runtime();
@@ -854,6 +906,34 @@ test("a draft email is skipped while the workflow's live email and later CRM act
   assert.match(JSON.stringify(app.db.flow_run_logs), /This email is draft/);
 });
 
+test("draft AI replies skip generation and SMTP while later actions continue", async () => {
+  const app = runtime();
+  steps(app, [{ ...flows.blankStep("ai_auto_reply"), config: { ...flows.blankStep("ai_auto_reply").config, emailStatus: "draft", performanceId: "stable-ai" } }, flows.blankStep("create_task")]);
+  await app.exports.enrollNewLeadFlows(app.contactId);
+  assert.equal(app.aiCalls.length, 0);
+  assert.equal(app.delivered(), 0);
+  assert.equal(app.db.crm_tasks.length, 1);
+  assert.ok(app.db.flow_run_logs.some(log => (log.result as Row)?.performanceId === "stable-ai" && (log.result as Row)?.action === "email_skipped"));
+});
+
+test("AI usage is durably recorded even when generation later fails, and making AI draft during preparation prevents sending", async () => {
+  for (const fails of [true, false]) {
+    const app: ReturnType<typeof runtime> = runtime({ onAiPrepare: async () => {
+      const record = app.aiCalls.at(-1)!.onGeneration as (usage: Row) => Promise<void>;
+      await record({ generationId: "gen_attempt", model: "synthetic/model", inputTokens: 10, outputTokens: 2, success: true });
+      if (fails) throw new Error("AI Gateway returned an incomplete response.");
+      (app.db.flow_steps[0].config as flows.JsonConfig).emailStatus = "draft";
+    } });
+    steps(app, [{ ...flows.blankStep("ai_auto_reply"), config: { ...flows.blankStep("ai_auto_reply").config, performanceId: "stable-ai" } }]);
+    await app.exports.enrollNewLeadFlows(app.contactId);
+    assert.equal(app.delivered(), 0);
+    const usage = app.db.flow_run_logs.find(log => (log.result as Row)?.action === "ai_usage");
+    assert.equal((usage!.result as Row).generationId, "gen_attempt");
+    assert.equal((usage!.result as Row).performanceId, "stable-ai");
+    assert.equal((usage!.result as Row).costUsd, null);
+  }
+});
+
 test("draft status applies by stable email identity to root and nested queued snapshots", async () => {
   for (const nested of [false, true]) {
     const app = runtime();
@@ -1506,6 +1586,17 @@ test("saving checks nested sender permissions while allowing disconnected defaul
   const split = flows.blankStep("split");
   (split.config.paths as unknown as Array<{ steps: flows.FlowStep[] }>)[0].steps = [{ ...flows.blankStep("ai_auto_reply"), config: { mailboxId: "assigned_owner" } }];
   await assert.rejects(() => app.exports.validateFlowSenderAccess("owner", { ...flows.defaultFlowInput, steps: [split] }), /Other members' personal email/);
+});
+
+test("concurrent new-lead workflows can submit only one initial response", async () => {
+  const app = runtime();
+  const second = randomUUID();
+  app.db.flows.push({ ...app.db.flows[0], id: second });
+  app.db.flow_steps.push({ ...app.db.flow_steps[0], id: randomUUID(), flow_id: second });
+  await app.exports.scanTimeBasedFlowTriggers(undefined, undefined, { deferExecution: true });
+  assert.equal(app.db.flow_runs.length, 2);
+  await Promise.all(app.db.flow_runs.map(run => app.exports.processFlowRun(String(run.id))));
+  assert.equal(app.delivered(), 1);
 });
 
 test("two workflows matching one receipt can submit only one response", async () => {

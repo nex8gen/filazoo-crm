@@ -17,6 +17,7 @@ function service(options: { missingMailbox?: boolean; denyContact?: boolean; emp
     async throwOnError() { calls.push("status"); return { data: options.empty ? null : row }; },
   };
   const dependencies: Record<string, unknown> = {
+    "./dormant-customers.ts": { listDormantActions: async () => [] },
     "server-only": {}, "../email-threading": { normalizeMessageId },
     "../supabase/admin": { createSupabaseAdmin: () => ({ from: (table: string) => { assert.equal(table, "email_message_followups"); return query; } }) },
     "./mailboxes": { getViewerMailboxes: async (userId: string, accessOnly: boolean) => { assert.equal(userId, "actor"); assert.equal(accessOnly, true); calls.push("mailbox-access"); return options.missingMailbox ? [] : [{ id: "team-mailbox", type: "workspace" }]; } },
@@ -65,6 +66,7 @@ test("filter metadata paginates saved follow-up actions, enforces mailbox/owner 
     "server-only": {}, "../email-threading": { normalizeMessageId },
     "../supabase/admin": { createSupabaseAdmin: () => db },
     "./mailboxes": { getViewerMailboxes: async () => [{ id: "team", type: "workspace" }] },
+    "./dormant-customers.ts": { listDormantActions: async () => [] },
     "./email-access": { getAssignedEmailContacts: async () => null },
     "../email-access": { canViewEmail: (_viewer: unknown, recipient: string) => recipient !== "denied@example.test" },
   };

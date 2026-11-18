@@ -1,0 +1,21 @@
+.company-workspace-navigation {
+  container: company-tabs / inline-size;
+  flex: 1 0 264px;
+  max-width: 100%;
+}
+
+.company-workspace-tabs[data-slot="tabs-list"] {
+  width: 100%;
+  gap: 4px;
+  overflow: visible;
+}
+
+/* Use the space left beside the company toolbar, including inside the drawer. */
+@container company-tabs (max-width: 850px) {
+  .company-workspace-tab-label { display: none; }
+  .company-workspace-tabs [data-slot="tabs-trigger"] { min-width: 0; padding-inline: 8px; }
+}
+
+@media (max-width: 639px) {
+  .company-workspace-navigation { flex-basis: auto; width: 100%; }
+}

@@ -25,6 +25,7 @@ test("normalizes empty mailbox responses without crashing", () => {
     {
       id: "mailbox-1",
       userId: null,
+      syncPreferences: { historyLimit: 5000, historyFolders: "all", historyPaused: false },
       type: "workspace",
       email: "hello@company.com",
       displayName: "Shared inbox",

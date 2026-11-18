@@ -12,6 +12,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { inviteMember, savePersonalMailbox, saveWorkspaceMailbox, updateMemberRole, updateProfile } from "./actions";
+import { ConnectionEmailImport } from "@/components/email-import-fields";
+import { newMailImportPreferences, type MailImportPreferences } from "@/lib/mail-import";
 
 function FormMessage({ error, success }: { error?: string; success?: string }) {
   if (error) return <NotificationToast>{error}</NotificationToast>;
@@ -67,6 +69,7 @@ export function MemberRoleForm({ memberId, role }: { memberId: string; role: "ad
 }
 
 type MailboxFormProps = {
+  defaultSyncPreferences?: MailImportPreferences;
   mailboxId?: string;
   defaultEmail?: string;
   defaultDisplayName?: string;
@@ -82,6 +85,7 @@ type MailboxFormProps = {
 };
 
 function MailboxFields({
+  defaultSyncPreferences,
   prefix,
   mailboxId,
   defaultEmail,
@@ -130,11 +134,13 @@ function MailboxFields({
         <Label htmlFor={`${prefix}-default-mailbox`} className="cursor-pointer text-sm">{prefix === "workspace" ? "Use this as the default workspace mailbox" : "Make this my default personal mailbox"}</Label>
         <Switch id={`${prefix}-default-mailbox`} name="isDefault" defaultChecked={defaultIsDefault} />
       </div>
+      <ConnectionEmailImport defaultValue={defaultSyncPreferences} />
     </>
   );
 }
 
 const mailboxDefaults = {
+  defaultSyncPreferences: newMailImportPreferences,
   mailboxId: "",
   defaultEmail: "",
   defaultDisplayName: "",
@@ -157,7 +163,7 @@ export function WorkspaceMailboxForm(props: MailboxFormProps) {
       <fieldset disabled={pending} className="space-y-4"><MailboxFields prefix="workspace" {...values} /></fieldset>
       <FormMessage error={state?.error} success={state?.success} />
       <div className="rounded-lg border border-blue-200 bg-blue-50/70 p-3 text-xs leading-5 text-blue-900 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-200">
-        After saving, open <strong>Email</strong> and choose <strong>Import history</strong>. Shopify form enquiries appear automatically; IMAP collects past and new customer replies.
+        Your selected history imports automatically after connecting. Open <strong>Email</strong> to follow its progress or change <strong>Import settings</strong>.
       </div>
       <Button type="submit" disabled={pending}><ShieldCheck />{pending ? "Testing connection..." : props.mailboxId ? "Test and save connection" : "Test and connect mailbox"}</Button>
     </form>

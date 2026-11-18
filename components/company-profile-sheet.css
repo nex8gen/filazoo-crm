@@ -1,4 +1,4 @@
-/* Match the workflow starter's full-width bottom sheet and slide animation. */
+/* Keep the company list visible beside the full-height profile drawer. */
 .company-profile-overlay[data-slot="sheet-overlay"] {
   z-index: 69;
   background: rgb(0 0 0 / 8%);
@@ -6,30 +6,30 @@
   backdrop-filter: none;
 }
 
-.company-profile-sheet[data-slot="sheet-content"][data-side="bottom"] {
-  inset: auto 0 0;
+.company-profile-sheet[data-slot="sheet-content"][data-side="right"] {
+  inset: 0 0 0 auto;
   z-index: 70;
-  width: 100%;
+  width: min(1280px, calc(100vw - 64px));
   max-width: none;
-  height: 80vh;
-  height: 80dvh;
-  max-height: 80dvh;
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100dvh;
   gap: 0;
   overflow: hidden;
-  border-radius: 20px 20px 0 0;
-  border-top: 1px solid var(--border);
+  border-radius: 20px 0 0 20px;
+  border-left: 1px solid var(--border);
   background: var(--background);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
-  box-shadow: 0 -12px 48px rgb(0 0 0 / 10%);
+  box-shadow: -12px 0 48px rgb(0 0 0 / 10%);
   opacity: 1;
   translate: 0 0;
-  transition: translate 240ms cubic-bezier(.22, 1, .36, 1);
+  /* LazyMotion owns the transform; disable the shared sheet's CSS transition. */
+  transition: none;
 }
 
-.company-profile-sheet[data-slot="sheet-content"]:is([data-starting-style], [data-ending-style]) { translate: 0 100%; opacity: 1; }
 .company-profile-header[data-slot="sheet-header"] { flex-shrink: 0; padding: 20px 60px 18px 28px; border-bottom: 1px solid var(--border); }
-.company-profile-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.company-profile-scroll { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
 .company-profile-content { width: 100%; max-width: 1680px; margin-inline: auto; padding: 0 28px max(28px, env(safe-area-inset-bottom)); }
 .company-profile-sheet [data-company-back] { display: none; }
 
@@ -39,10 +39,7 @@ body:has(.company-profile-sheet) :is([data-slot="dialog-content"], [data-slot="s
 body:has(.company-profile-sheet) :has(> :is([data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="select-content"], [data-slot="popover-content"], [data-slot="tooltip-content"])) { z-index: 81; }
 
 @media (max-width: 640px) {
+  .company-profile-sheet[data-slot="sheet-content"][data-side="right"] { width: 100%; border-radius: 0; border-left: 0; }
   .company-profile-header[data-slot="sheet-header"] { padding: 18px 56px 16px 16px; }
   .company-profile-content { padding-inline: 16px; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .company-profile-sheet[data-slot="sheet-content"] { transition: none; }
 }

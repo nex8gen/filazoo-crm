@@ -72,6 +72,17 @@ test("quick checks cover all action types and authenticate dependencies without 
   assert.ok(!JSON.stringify(report).includes("private-token"));
 });
 
+test("a draft AI action does not require a live AI provider or sender check", async () => {
+  const app = fixture({ providerStatus: 401 });
+  const ai = model.blankStep("ai_auto_reply");
+  ai.config.emailStatus = "draft";
+  app.flow.steps = [ai];
+  const report = await app.check({ flow: app.flow }, viewer);
+  assert.equal(report.status, "ready");
+  assert.equal(app.calls.includes("ai:access"), false);
+  assert.equal(app.calls.includes("smtp:verify"), false);
+});
+
 test("AI authentication failure and absent recipients cannot produce a green result", async () => {
   for (const options of [{ providerStatus: 401 }, { missingEmail: true }]) {
     const app = fixture(options);

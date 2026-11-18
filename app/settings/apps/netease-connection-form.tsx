@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { neteaseServerProfiles, type NeteaseServerProfile } from "@/lib/netease-mail";
 import { saveNeteaseConnection } from "./netease-actions";
 import type { EmailConnectionScope } from "@/lib/email-connections";
+import { ConnectionEmailImport } from "@/components/email-import-fields";
 
 export function NeteaseConnectionForm({ account, scope = "personal" }: { account?: { id: string; email: string; name: string; serverProfile: NeteaseServerProfile; smtpPort: number }; scope?: EmailConnectionScope }) {
   const [state, action, pending] = useActionState(saveNeteaseConnection, undefined);
@@ -30,6 +31,7 @@ export function NeteaseConnectionForm({ account, scope = "personal" }: { account
         <div className="space-y-2"><Label htmlFor={`${prefix}-port`}>SMTP port (SSL/TLS)</Label><select id={`${prefix}-port`} name="smtpPort" value={smtpPort} onChange={event => setSmtpPort(event.target.value)} disabled={pending} className="h-10 w-full rounded-lg border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"><option value="994">994</option><option value="465">465</option></select></div>
         <p className="break-all text-xs leading-6 text-muted-foreground">SMTP: {neteaseServerProfiles[profile].smtpHost}:{smtpPort}<br />IMAP: {neteaseServerProfiles[profile].imapHost}:993</p><p className="text-xs text-muted-foreground">Use the server profile and port shown in your NetEase client settings. Both connections use SSL/TLS.</p>
       </div></details>
+      {!account ? <ConnectionEmailImport disabled={pending} /> : null}
       {state?.error ? <NotificationToast>{state.error}</NotificationToast> : null}
       {state?.success ? <NotificationToast tone="success">{state.success}</NotificationToast> : null}
       <Button type="submit" disabled={pending}><Mail />{pending ? "Checking connection..." : account ? "Test and save connection" : "Connect Lingxi Mail"}</Button>

@@ -3,7 +3,8 @@ import type { EmailFollowup } from "./email-followup.ts";
 
 export type FollowupFilter = "all" | "ai" | "manual" | "completed" | "nurture";
 export type FollowupActionRecord = {
-  id: string; source: "followup" | "auto-reply"; kind: "ai" | "reminder"; status: string;
+  id: string; source: "followup" | "auto-reply" | "workflow"; kind: "ai" | "reminder"; status: string;
+  companyId?: string; progress?: string;
   enabled?: boolean; messageKey?: string; threadKey: string; anchors: string[]; updatedAt: string;
   taskStatus?: string | null;
   purpose?: "followup" | "nurture"; dueAt?: string;
@@ -13,16 +14,17 @@ const identity = (value: string) => normalizeMessageId(value) || value;
 export function indexFollowupActions(records: FollowupActionRecord[]): FollowupActionIndex {
   const index: FollowupActionIndex = new Map();
   for (const record of records) {
-    if (record.source !== "followup") continue;
+    if (record.source !== "followup" && record.source !== "workflow") continue;
     const keys = new Set([...(record.messageKey ? [record.messageKey, `local:${record.messageKey}`] : []), `thread:${record.threadKey}`, ...record.anchors].map(identity));
     for (const key of keys) index.set(key, [...index.get(key) || [], record]);
+    if (record.source === "workflow" && record.companyId) index.set(`company:${record.companyId}`, [...index.get(`company:${record.companyId}`) || [], record]);
   }
   return index;
 }
 export function conversationFollowupActions(messages: EmailThreadMetadata[], index: FollowupActionIndex): FollowupActionRecord[] {
   const matches = new Map<string, FollowupActionRecord>();
   for (const message of messages) {
-    for (const key of [message.id, `local:${message.id}`, `thread:${threadKeyForEmail(message)}`, ...replyReferences(message)].map(identity)) {
+    for (const key of [message.id, `local:${message.id}`, `thread:${threadKeyForEmail(message)}`, ...(message.companyId ? [`company:${message.companyId}`] : []), ...replyReferences(message)].map(identity)) {
       for (const action of index.get(key) || []) matches.set(`${action.source}:${action.id}`, action);
     }
   }
@@ -31,10 +33,10 @@ export function conversationFollowupActions(messages: EmailThreadMetadata[], ind
 export function followupActionState(action: FollowupActionRecord): Exclude<FollowupFilter, "all"> {
   const complete = ["sent", "cancelled"].includes(action.status) || ["done", "cancelled"].includes(action.taskStatus || "");
   if (complete) return "completed";
-  if (action.kind === "reminder" || ["failed", "uncertain", "needs_review", "waiting_shipping"].includes(action.status)) return "manual";
+  if (action.kind === "reminder" || ["failed", "uncertain", "needs_review", "waiting_shipping", "paused"].includes(action.status)) return "manual";
   return action.purpose === "nurture" ? "nurture" : "ai";
 }
-/** Only actions saved through the follow-up panel enroll a conversation. */
+/** Saved actions and actual workflow enrollments supply status; tags alone never enroll. */
 export function followupConversationFilters(messages: EmailThreadMetadata[], index: FollowupActionIndex): Set<Exclude<FollowupFilter, "all">> {
   const matches = conversationFollowupActions(messages, index);
   const result = new Set<Exclude<FollowupFilter, "all">>();

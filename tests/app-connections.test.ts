@@ -9,6 +9,7 @@ import { neteaseServerProfiles, neteaseProfileForHosts } from "../lib/netease-ma
 import { buildMailerTransportConfig } from "../lib/mailer.ts";
 import { normalizeMailboxRows } from "../lib/mailbox-utils.ts";
 import { emailConnectionAccounts, emailProviderSummary, emailProviderHref } from "../lib/email-connections.ts";
+import * as mailImport from "../lib/mail-import.ts";
 
 const accountId = "00000000-0000-4000-8000-000000000001";
 const mailbox = { id: accountId, type: "personal", user_id: "owner", email: "owner@gmail.com", provider: "smtp", is_active: true,
@@ -38,6 +39,8 @@ function connectionAction(options: { owner?: string; signedIn?: boolean; duplica
   const isNetease = options.appId === "netease-mail";
   const saved = { ...mailbox, ...(isNetease ? { email: "owner@example.com", smtp_host: "smtp.qiye.163.com", imap_host: "imap.qiye.163.com" } : {}), type: options.scope ?? "personal", user_id: options.owner ?? "owner" };
   const dependencies: Record<string, unknown> = {
+    "@/lib/mail-import": mailImport,
+    "@/lib/data/mail-import-connection": { scheduleConnectedMailboxImport: () => {} },
     "next/cache": { revalidatePath: () => {} },
     zod: { z },
     "@/lib/auth": { requireWorkspaceMember: async () => { if (options.signedIn === false) throw new Error("Authentication required"); return { id: "owner", role: options.role ?? "admin" }; } },
@@ -118,6 +121,14 @@ test("existing Gmail updates preserve saved passwords, active state, and default
   assert.equal(fixture.writes[0].filters.user_id, "owner");
   assert.equal("is_default" in fixture.writes[0].record, false);
   assert.equal("is_active" in fixture.writes[0].record, false);
+  assert.equal("sync_preferences" in fixture.writes[0].record, false, "Credential edits must keep existing import choices");
+});
+
+test("a new Gmail connection persists its explicit history choice before importing", async () => {
+  const fixture = gmailAction();
+  const result = await fixture.action(undefined, input({ syncPreferences: JSON.stringify({ historyLimit: 1000, historyFolders: "inbox_sent", historyPaused: false }) }));
+  assert.ok(result?.success);
+  assert.equal((fixture.writes[0].record.sync_preferences as mailImport.MailImportPreferences).historyLimit, 1000);
 });
 
 test("authentication failure saves nothing and duplicate addresses do not become success", async () => {

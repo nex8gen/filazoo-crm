@@ -6,6 +6,7 @@ import { listMailboxes } from "@/lib/data/mailboxes";
 import { SettingsSkeleton } from "@/components/settings-skeleton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PersonalMailboxForm, WorkspaceMailboxForm } from "../../settings-forms";
+import { newMailImportPreferences } from "@/lib/mail-import";
 
 type Props = { searchParams: Promise<{ scope?: string; account?: string }> };
 
@@ -23,6 +24,7 @@ async function SmtpSettings({ searchParams }: Props) {
   if (query.account && !account) notFound();
   // Pass editable connection fields explicitly. Saved transport passwords stay on the server.
   const values = {
+    defaultSyncPreferences: account?.syncPreferences ?? newMailImportPreferences,
     mailboxId: account?.id ?? "", defaultEmail: account?.email ?? "", defaultDisplayName: account?.displayName ?? "",
     defaultSmtpHost: account?.smtpHost ?? "", defaultSmtpPort: account?.smtpPort ?? 587, defaultSmtpUsername: account?.smtpUsername ?? "",
     defaultImapHost: account?.imapHost ?? "", defaultImapPort: account?.imapPort ?? 993, defaultImapUsername: account?.imapUsername ?? "",

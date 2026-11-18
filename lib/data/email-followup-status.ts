@@ -45,12 +45,14 @@ export async function listFollowupActions(viewer: WorkspaceViewer, mailboxId: st
   ]);
   const mailbox = mailboxes.find(mailbox => mailbox.id === mailboxId);
   if (!mailbox) throw new Error("This mailbox is unavailable.");
-  return followups
+  const { listDormantActions } = await import("./dormant-customers.ts");
+  const dormant = await listDormantActions(viewer, mailbox);
+  return [...dormant, ...followups
     .filter(row => canViewEmail(viewer, String(row.recipient), assigned, mailbox))
-    .map(row => {
+    .map((row): FollowupActionRecord => {
       const task = (Array.isArray(row.task) ? row.task[0] : row.task) as { status?: string } | null;
       return { id: String(row.id), source: "followup", kind: row.kind as "ai" | "reminder", purpose: row.purpose === "nurture" ? "nurture" : "followup", status: String(row.status),
         messageKey: String(row.message_key), taskStatus: task?.status || null, dueAt: String(row.due_at),
         threadKey: String(row.thread_key), anchors: row.anchors as string[], updatedAt: String(row.updated_at) };
-    });
+    })];
 }

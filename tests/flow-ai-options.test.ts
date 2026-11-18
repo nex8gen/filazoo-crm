@@ -6,6 +6,7 @@ import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
 import * as replyPolicy from "../lib/ai/flow-reply.ts";
+import * as leadIntake from "../lib/lead-intake.ts";
 import { blankStep } from "../lib/flows.ts";
 import { crmProduct } from "../lib/product-utils.ts";
 import { invoiceProduct } from "../lib/invoice-links.ts";
@@ -15,15 +16,17 @@ import * as signatures from "../lib/ai/email-rewrite.ts";
 const require = createRequire(import.meta.url);
 type Row = Record<string, unknown>;
 function fixture() {
-  const calls: Array<{ prompt: string; systemInstruction: string }> = [];
+  const calls: Array<{ prompt: string; systemInstruction: string; onGeneration?: (generation: { generationId: string; model: string; inputTokens: number; outputTokens: number; success: boolean }) => Promise<void> }> = [];
   const catalogRequests: Array<Parameters<typeof buildCatalogPdf>[0]> = [];
   const env: Record<string, string> = { AI_GATEWAY_API_KEY: "synthetic-test-key" };
   let catalogPlan = { intent: "none", scope: "all", productSkus: [] as string[] };
   let replyBodies = ["Hello from a synthetic test"];
   let gatewayError: string | null = null;
+  let inquiryKind: "general" | "specific" = "specific";
   const exports = {} as { hasFlowReplyProvider: () => boolean; generateFlowAiReply: (input: Row) => Promise<{ subject: string; body: string; inReplyTo: string | null; attachments: Array<{ content: Buffer }> }>; prepareFlowTemplateCatalog: () => Promise<Array<{ content: Buffer }>> };
   const query = { select: () => query, eq: () => query, order: () => query, range: () => query, throwOnError: async () => ({ data: productRows }) };
   const dependencies: Record<string, unknown> = {
+    "../lead-intake.ts": leadIntake,
     "server-only": {}, "../supabase/admin.ts": { createSupabaseAdmin: () => ({ from: () => query }) },
     "./flow-inquiry.ts": { loadFlowInquiry: async () => null },
     "./flow-mail-context.ts": { hydrateFlowMessages: async (messages: unknown) => messages },
@@ -35,6 +38,8 @@ function fixture() {
     "../ai/gateway.ts": { generateGatewayText: async (input: typeof calls[number]) => {
       if (gatewayError) throw new Error(gatewayError);
       calls.push(input);
+      await input.onGeneration?.({ generationId: `gen_${calls.length}`, model: "synthetic/model", inputTokens: 10, outputTokens: 2, success: true });
+      if (input.systemInstruction.includes("Classify the customer's actual product inquiry")) return JSON.stringify({ kind: inquiryKind });
       if (JSON.parse(input.prompt).task === "select_catalog_products") return JSON.stringify(catalogPlan);
       const body = replyBodies.length > 1 ? replyBodies.shift()! : replyBodies[0];
       return JSON.stringify({ subject: "Synthetic subject", body, quotes: [] });
@@ -44,7 +49,7 @@ function fixture() {
   };
   const code = ts.transpileModule(readFileSync(new URL("../lib/data/flow-ai-reply.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (dependencies[name] ?? require(name)), process: { env }, Buffer, Error, AbortSignal });
-  return { calls, catalogRequests, exports, env, setProviderError: (message: string) => { gatewayError = message; }, setCatalog: (plan: typeof catalogPlan) => { catalogPlan = plan; }, setBodies: (bodies: string[]) => { replyBodies = [...bodies]; } };
+  return { calls, catalogRequests, exports, env, setInquiryKind: (kind: "general" | "specific") => { inquiryKind = kind; }, setProviderError: (message: string) => { gatewayError = message; }, setCatalog: (plan: typeof catalogPlan) => { catalogPlan = plan; }, setBodies: (bodies: string[]) => { replyBodies = [...bodies]; } };
 }
 
 const productRows = ["PLA", "PETG", "ABS"].map((material) => ({ sku: material, name: `Synthetic ${material}`, material,
@@ -53,6 +58,27 @@ const productRows = ["PLA", "PETG", "ABS"].map((material) => ({ sku: material, n
 const baseInput = () => ({ config: blankStep("ai_auto_reply").config, contact: { name: "Synthetic customer", email: "synthetic@example.com" },
   company: { name: "Synthetic company" }, managerName: "Synthetic manager", productRows,
   messages: [{ subject: "Material inquiry", body: "Synthetic message", direction: "received", created_at: "2026-10-27T00:00:00Z", message_id: "<synthetic@example.com>", thread_id: "synthetic-thread" }], previousAutomatedMessages: 1 });
+
+test("new-lead intake uses the approved introduction for general requests and AI only for specific questions", async () => {
+  for (const kind of ["general", "specific"] as const) {
+    const app = fixture(); app.setInquiryKind(kind);
+    const input = baseInput(); input.previousAutomatedMessages = 3;
+    input.config = { ...input.config, leadIntake: true, usePrices: false, attachCatalog: true, introductionTemplate: "Approved introduction. Which materials interest you?" };
+    const result = await app.exports.generateFlowAiReply(input);
+    assert.equal(result.attachments.length, 1);
+    assert.match(result.body, kind === "general" ? /Approved introduction/ : /Hello from a synthetic test/);
+    assert.equal(app.calls.some(call => call.systemInstruction.includes("Classify the customer's actual product inquiry")), true);
+  }
+});
+
+test("billing follows every catalog, inquiry-classification and reply request", async () => {
+  const app = fixture();
+  const generations: string[] = [];
+  await app.exports.generateFlowAiReply({ ...baseInput(), config: { ...baseInput().config, leadIntake: true, usePrices: false }, onGeneration: async (generation: { generationId: string }) => { generations.push(generation.generationId); } });
+  assert.ok(app.calls.length >= 3);
+  assert.equal(generations.length, app.calls.length);
+  assert.equal(new Set(generations).size, generations.length);
+});
 
 test("AI flow readiness requires Gateway credentials and supports local OIDC", () => {
   const app = fixture();

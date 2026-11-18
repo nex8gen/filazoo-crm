@@ -89,7 +89,7 @@ test("event editing preserves existing filters and uses supported event options"
   const app = harness({ ...flows.defaultFlowInput, triggerConfig: { ...flows.defaultFlowInput.triggerConfig, country: "Canada", reentryMode: "no_reentry" } });
   click(app.render(), "Change");
   const selector = choice(app.render(), "Trigger event");
-  assert.equal((selector.props.options as unknown[]).length, 6);
+  assert.equal((selector.props.options as unknown[]).length, triggerEditor.editableTriggerTypes.length);
   (selector.props.onChange as (value: string) => void)("email_received");
   click(app.render(), "Save");
   assert.equal(app.flow.triggerType, "email_received");

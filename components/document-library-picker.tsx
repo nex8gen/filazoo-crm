@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Loader2, Search } from "lucide-react";
 import { documentSizeLabel } from "@/lib/document-connections";
 import { DocumentFileIcon } from "@/components/document-file-icon";
+import { DocumentAiSearch } from "@/components/document-ai-search";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatDocumentSize, type LibraryDocument } from "@/lib/documents";
@@ -24,6 +25,7 @@ export function DocumentLibraryPicker({ onClose, onSelect, filesOnly = false, in
   const error = selectionError || loadError;
   return <Dialog open onOpenChange={open => { if (!open && !busy) onClose(); }}><DialogContent className="sm:max-w-xl">
     <DialogHeader><DialogTitle>{filesOnly ? "Choose a related file" : "Files & templates"}</DialogTitle><DialogDescription>{filesOnly ? "Link a file from your library to this template." : "Insert a template or attach a file from your workspace library."}</DialogDescription></DialogHeader>
+    <DocumentAiSearch kind={filesOnly ? "file" : undefined} disabled={Boolean(busy)} onSelect={async document => { setBusy(document.id); try { await onSelect(document); onClose(); } finally { setBusy(null); } }} />
     <div className="flex h-9 items-center gap-2 rounded-lg border px-3"><Search className="size-4 text-muted-foreground" /><input autoFocus aria-label="Search library items" className="min-w-0 flex-1 bg-transparent text-sm outline-none" placeholder="Search files, companies, and tags" value={query} onChange={event => { setQuery(event.target.value); setSelectionError(""); }} /></div>
     {!filesOnly ? <div className="flex gap-2"><Button size="sm" variant={tab === "templates" ? "secondary" : "ghost"} onClick={() => { setTab("templates"); setSelectionError(""); }}>Email templates</Button><Button size="sm" variant={tab === "all" ? "secondary" : "ghost"} onClick={() => { setTab("all"); setSelectionError(""); }}>Files</Button></div> : null}
     <div className="min-h-40 max-h-80 overflow-y-auto rounded-lg border divide-y">{data?.documents.map(document => <button disabled={!!busy} type="button" key={document.id} className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted disabled:opacity-50" onClick={async () => { setBusy(document.id); setSelectionError(""); try { await onSelect(document); onClose(); } catch (cause) { setSelectionError(cause instanceof Error ? cause.message : "Unable to insert this item."); } finally { setBusy(null); } }}>

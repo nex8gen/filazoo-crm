@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { generateGatewayText } from "../lib/ai/gateway.ts";
+import { generateGatewayText, type GatewayGeneration } from "../lib/ai/gateway.ts";
 
 test("uses the cheap writing model through Responses when an unsupported legacy pin requests another model", async () => {
   let requestUrl = "";
@@ -30,4 +30,16 @@ test("expired local OIDC tokens fail with a refresh instruction before making a 
   let requests = 0;
   await assert.rejects(generateGatewayText({ token: `header.${payload}.signature`, systemInstruction: "Test", prompt: "Test", fetcher: async () => { requests++; throw new Error("Must not fetch"); } }), /authentication has expired.*vercel env pull/);
   assert.equal(requests, 0);
+});
+
+test("billing identities are captured for every provider attempt, including retries and rejected output", async () => {
+  const generations: GatewayGeneration[] = [];
+  let calls = 0;
+  const result = await generateGatewayText({ token: "synthetic", systemInstruction: "Test", prompt: "Test", onGeneration: async value => { generations.push(value); }, fetcher: async () => ++calls === 1
+    ? Response.json({ id: "gen_retry", usage: { input_tokens: 10, output_tokens: 2 } }, { status: 503, headers: { "retry-after": "0" } })
+    : Response.json({ id: "gen_completed", model: "actual/model", usage: { input_tokens: 20, output_tokens: 5 }, output: [{ type: "message", content: [{ type: "output_text", text: "Reply" }] }] }) });
+  assert.equal(result, "Reply");
+  assert.deepEqual(generations.map(g => [g.generationId, g.inputTokens, g.outputTokens, g.success]), [["gen_retry", 10, 2, false], ["gen_completed", 20, 5, true]]);
+  await assert.rejects(generateGatewayText({ token: "synthetic", prompt: "Test", systemInstruction: "Test", onGeneration: async value => { generations.push(value); }, fetcher: async () => Response.json({ id: "gen_incomplete", status: "incomplete" }) }), /incomplete/);
+  assert.equal(generations.at(-1)?.generationId, "gen_incomplete");
 });

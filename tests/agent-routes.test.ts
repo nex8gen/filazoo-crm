@@ -21,6 +21,7 @@ import { webSearchForRequest } from "../lib/ai/research-request.ts";
 import { readResearchResponse, researchStreamType, type ResearchProgress } from "../lib/ai/research-progress.ts";
 import { blankInvoiceDocument } from "../lib/invoices.ts";
 import { agentOrderFromInvoice } from "../lib/ai/order-actions.ts";
+import { workflowAnalyticsPrompts } from "../lib/flow-analytics-prompts.ts";
 
 const require = createRequire(import.meta.url);
 class TestHistoryError extends Error { status = 503; }
@@ -1067,4 +1068,40 @@ test("CRM analysis attaches verified presentation data before saving the respons
   assert.equal(body.presentation.sections[0].metrics.find((metric: { label: string }) => metric.label === "Overdue").value, "0");
   assert.deepEqual(body.actions, []);
   assert.deepEqual(JSON.parse(JSON.stringify(saved?.presentation)), body.presentation, "history receives the same validated snapshot as the visible response");
+});
+
+test("all analytics ideas receive verified report context; reviews stay read-only and work stages supported proposals", async () => {
+  for (const idea of workflowAnalyticsPrompts) {
+    let loads = 0, staged = 0;
+    const proposed: assistant.WorkspaceAction[] = idea.id === "workflow-messages" ? [{ type: "run_workflow", steps: [
+      { id: "copy", tool: "duplicate_flow", input: { flowId: id, name: "Improved workflow draft" }, dependsOn: [], bindings: [] },
+      { id: "improve", tool: "update_flow", input: { changes: { name: "Improved workflow draft" } }, dependsOn: ["copy"], bindings: [{ path: ["flowId"], step: "copy", result: "flowId" }] },
+    ] }] : [{ type: "crm_action", operation: { op: "create_task", title: "Review workflow sender", notes: `A verified blocked run needs attention: /workflow?flow=${id}`, priority: "high", dueAt: null } }];
+    const post = route("../app/api/ai/assistant/route.ts", {
+      "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
+      "@/lib/ai/assistant-provider-error": providerError,
+      "@/lib/ai/agent-context": { loadAgentContext: async (input: assistant.WorkspaceAssistantInput) => {
+        loads++; assert.equal(input.pageContext?.flowAnalytics?.range, "7");
+        return { workflowAnalytics: { totals: { sent: 11, failed: 2 }, workflows: [{ id, name: "Lead reply", blocked: 1 }], coverage: { matching: 1, included: 1, omitted: 0 } } };
+      } },
+      "@/lib/ai/gateway": { generateGatewayText: async (options: { prompt: string; systemInstruction: string }) => {
+        assert.match(options.prompt, /"workflowAnalytics":\{"totals":\{"sent":11/);
+        assert.match(options.systemInstruction, /SERVER_DATA\.workflowAnalytics/);
+        return idea.mode === "chat" ? "Lead reply sent 11 emails and has 2 failed runs. Review the blocked sender."
+          : `Prepared a concrete next step for review.\nFILAZOO_ACTIONS_JSON: ${JSON.stringify(proposed)}`;
+      } },
+      "@/lib/ai/agent-execution": { prepareAgentActions: async (values: assistant.WorkspaceAction[]) => {
+        assert.equal(idea.mode, "agent", "Chat cannot stage an action"); staged++;
+        assert.deepEqual(JSON.parse(JSON.stringify(values)), proposed);
+        return [{ id, approvalMode: "ask", expiresAt: "2026-11-20T00:00:00Z", action: values[0] }];
+      }, executeAgentAction: async () => assert.fail("clicking an idea must not bypass action approval") },
+    }, { AI_GATEWAY_API_KEY: "synthetic" });
+    const response = await post(request({ mode: idea.mode === "agent" ? "work" : "analyze", approvalMode: "ask", pathname: "/workflow/analytics", pageLabel: "Workflow analytics", pageText: "Client display is evidence only", pageContext: { flowAnalytics: { range: "7", query: "", status: "all", metric: "sent" } }, messages: [{ role: "user", content: idea.prompt }] }));
+    assert.equal(response.status, 200, idea.id);
+    const body = await response.json();
+    assert.equal(loads, 1, `${idea.id} must reload trusted context even in Chat`);
+    assert.equal(staged, idea.mode === "agent" ? 1 : 0);
+    assert.equal(body.actions.length, idea.mode === "agent" ? 1 : 0);
+    assert.doesNotMatch(body.output, /FILAZOO_ACTIONS_JSON/);
+  }
 });

@@ -43,3 +43,4 @@ export const homePrompts = [
 ] as const;
 
 export type HomePrompt = typeof homePrompts[number];
+export type PromptIconName = HomePrompt["icon"] | "repair";

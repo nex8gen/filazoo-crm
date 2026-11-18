@@ -1,6 +1,7 @@
-import type { HomePrompt } from "./home-prompts.ts";
+import type { HomePrompt, PromptIconName } from "./home-prompts.ts";
+import { workflowAnalyticsPrompts } from "./flow-analytics-prompts.ts";
 
-export type PageAiPrompt = { id: string; label: string; mode: "chat" | "agent"; icon: HomePrompt["icon"]; prompt: string };
+export type PageAiPrompt = { id: string; label: string; mode: "chat" | "agent"; icon: PromptIconName; prompt: string };
 type PromptSet = { page: string; prompts: PageAiPrompt[] };
 
 const pageIcons: Record<string, HomePrompt["icon"][]> = {
@@ -149,6 +150,7 @@ export function getPageAiPrompts(pathname: string): PromptSet {
   const path = pathname.split(/[?#]/, 1)[0];
   const at = (prefix: string) => path === prefix || path.startsWith(`${prefix}/`);
   if (at("/email/campaigns")) return prompts.campaigns;
+  if (at("/workflow/analytics")) return { page: "Workflow analytics", prompts: workflowAnalyticsPrompts };
   if (at("/email/workflows") || at("/workflow") || at("/automation")) return prompts.workflow;
   if (at("/email")) return prompts.email;
   if (at("/companies")) return path === "/companies" || path === "/companies/" ? prompts.companies : prompts.company;

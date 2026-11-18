@@ -36,10 +36,12 @@ test("mounted performance controls load real totals, open the actual status menu
   const host = document.createElement("div"); document.body.append(host);
   const root = createRoot(host);
   let version = 0;
-  const render = async (flowId = "one", status: "live" | "draft" = "live", disabled = false) => {
-    await React.act(async () => root.render(React.createElement(controls.FlowEmailPerformanceProvider, { flowId, status, version: String(++version), savedIds: ["email"], disabled, onEmailStatusChange: (_id, value) => changes.push(value) }, React.createElement(React.Fragment, null, React.createElement(controls.FlowEmailMetrics, { actionId: "email" }), React.createElement(controls.FlowEmailMetrics, { actionId: "email", card: true }), React.createElement(controls.FlowEmailStatus, { status, disabled, onChange: value => changes.push(value) })))));
+  const render = async (flowId = "one", status: "live" | "draft" = "live", disabled = false, reportsVisible = true) => {
+    await React.act(async () => root.render(React.createElement(controls.FlowEmailPerformanceProvider, { flowId, status, reportsVisible, version: String(++version), savedIds: ["email"], disabled, onEmailStatusChange: (_id, value) => changes.push(value) }, React.createElement(React.Fragment, null, React.createElement(controls.FlowEmailMetrics, { actionId: "email" }), React.createElement(controls.FlowEmailMetrics, { actionId: "email", card: true }), React.createElement(controls.FlowEmailStatus, { status, disabled, onChange: value => changes.push(value) })))));
   };
   try {
+    await render("one", "live", false, false);
+    assert.equal(requests, 0, "Hidden reports must not load performance");
     await render();
     assert.match(host.textContent!, /53\.8% \(7\)/); assert.match(host.textContent!, /7\.7% \(1\)/);
     const trigger = host.querySelector<HTMLButtonElement>('button[aria-label^="Email status"]')!;
@@ -61,5 +63,9 @@ test("mounted performance controls load real totals, open the actual status menu
     await render("two", "draft", true);
     assert.equal(requests, before, "Draft workflows must not request live analytics");
     assert.equal(host.querySelector<HTMLButtonElement>('button[aria-label^="Email status"]')!.disabled, true);
+    await render("two", "live", false, false);
+    assert.equal(requests, before, "Hidden reports must not start background loading");
+    mode = "ready"; await render("two");
+    assert.equal(requests, before + 1, "Showing reports refreshes their data");
   } finally { await React.act(async () => root.unmount()); host.remove(); dom.window.close(); }
 });

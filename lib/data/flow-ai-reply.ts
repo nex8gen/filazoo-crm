@@ -1,12 +1,13 @@
 import { resolveGatewayTokenAsync, hasAiProvider } from "../ai/provider-credentials.ts";
 import "server-only";
+import { leadIntakeClassification, leadIntakeKindSchema, leadIntroduction } from "../lead-intake.ts";
 import { requireAiAutomation } from "./ai-settings.ts";
 import { aiBehaviorInstruction } from "../ai-policy.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 import { crmProduct, type CrmProductRow } from "../product-utils.ts";
 import { invoiceProduct } from "../invoice-links.ts";
 import { buildServerCatalogPdf } from "../catalog-pdf-server.ts";
-import { generateGatewayText } from "../ai/gateway.ts";
+import { generateGatewayText, type GatewayGeneration } from "../ai/gateway.ts";
 import { flowReplyInstruction, resolveFlowReply, flowCatalogInstruction, resolveFlowCatalog, flowReplyContainsChinese } from "../ai/flow-reply.ts";
 import { applyEmailSignature, DEFAULT_EMAIL_COMPANY, DEFAULT_EMAIL_TITLE } from "../ai/email-rewrite.ts";
 import type { JsonConfig } from "../flows.ts";
@@ -35,18 +36,19 @@ export async function prepareFlowTemplateCatalog(userId?: string) {
   return [{ filename: "Filazoo-product-catalog.pdf", contentType: "application/pdf", content }];
 }
 
-export async function prepareFlowAiReply({ userId, contactId, companyId, conversationId, config, inquiryBefore, inquiryOrigin }: {
+export async function prepareFlowAiReply({ userId, contactId, companyId, conversationId, config, inquiryBefore, inquiryOrigin, onGeneration }: {
   userId: string; contactId: string; companyId: string; conversationId: string; config: JsonConfig;
   inquiryBefore?: string; inquiryOrigin?: { source: string; id: string };
+  onGeneration?: (generation: GatewayGeneration) => Promise<void>;
 }) {
-  await requireAiAutomation(["sending", ...(config.attachCatalog === true ? ["catalogs"] as const : [])], ["emails", "customers", "team", ...(config.useProducts || config.attachCatalog ? ["products"] as const : [])]);
+  await requireAiAutomation(["sending", ...(config.attachCatalog === true ? ["catalogs"] as const : [])], ["emails", "customers", "team", ...(config.nurture ? ["billing"] as const : []), ...(config.useProducts || config.attachCatalog ? ["products"] as const : [])]);
   if (!await resolveGatewayTokenAsync(process.env)) throw new Error("AI auto-reply is not configured. Add an AI provider in the server settings.");
   const admin = createSupabaseAdmin();
   const leadConversation = /^(company:|shopify:|lead:)/.test(conversationId);
   let messagesQuery = admin.from("emails").select("id,subject,body,direction,message_id,thread_id,created_at,body_loaded,mailbox_id,mailbox_uid,mailbox_uid_validity")
     .eq("contact_id", contactId).or(`owner_id.is.null,owner_id.eq.${userId}`).order("created_at", { ascending: false }).limit(12);
   if (!leadConversation) messagesQuery = messagesQuery.eq("thread_id", conversationId);
-  const [messages, contact, company, manager, previousRuns, products, inquiry] = await Promise.all([
+  const [messages, contact, company, manager, previousRuns, products, inquiry, purchaseHistory] = await Promise.all([
     messagesQuery.throwOnError(),
     admin.from("contacts").select("name,email").eq("id", contactId).single().throwOnError(),
     admin.from("companies").select("name,country,segment").eq("id", companyId).single().throwOnError(),
@@ -54,42 +56,46 @@ export async function prepareFlowAiReply({ userId, contactId, companyId, convers
     admin.from("flow_runs").select("id").eq("contact_id", contactId).throwOnError(),
     loadFlowReplyProducts(config, userId),
     inquiryBefore ? loadFlowInquiry(contactId, inquiryBefore, inquiryOrigin) : Promise.resolve(null),
+    config.nurture ? admin.from("purchase_orders").select("document,total_minor,created_at").eq("company_id", companyId).not("document->>status", "in", "(draft,cancelled)").order("created_at", { ascending: false }).limit(5).throwOnError() : Promise.resolve({ data: [] }),
   ]);
   const runIds = (previousRuns.data ?? []).map((run) => run.id);
   const { count: sentBefore } = runIds.length ? await admin.from("flow_run_logs").select("id", { count: "exact", head: true })
     .in("run_id", runIds).eq("result->>action", "email_sent").throwOnError() : { count: 0 };
-  return generateFlowAiReply({ usageUserId: userId, config, contact: contact.data, company: company.data, managerName: manager.data?.display_name || null,
-    messages: await hydrateFlowMessages(messages.data ?? [], userId), productRows: products, previousAutomatedMessages: sentBefore ?? 0, inquiry });
+  return generateFlowAiReply({ usageUserId: userId, onGeneration, config, contact: contact.data, company: company.data, managerName: manager.data?.display_name || null,
+    messages: await hydrateFlowMessages(messages.data ?? [], userId), productRows: products, previousAutomatedMessages: sentBefore ?? 0, inquiry, purchaseHistory: purchaseHistory.data });
 }
 
-export async function generateFlowAiReply({ usageUserId, config, contact, company, managerName, messages, productRows, previousAutomatedMessages, inquiry }: {
+export async function generateFlowAiReply({ usageUserId, config, contact, company, managerName, messages, productRows, previousAutomatedMessages, inquiry, purchaseHistory, onGeneration }: {
   usageUserId?: string; config: JsonConfig; contact: { name: string | null; email: string }; company: { name: string; country?: string | null; segment?: string | null };
   managerName: string | null; messages: FlowReplyMessage[]; productRows: CrmProductRow[]; previousAutomatedMessages: number;
   inquiry?: FlowInquiry | null;
+  purchaseHistory?: unknown;
+  onGeneration?: (generation: GatewayGeneration) => Promise<void>;
 }) {
   const token = await resolveGatewayTokenAsync(process.env);
   if (!token) throw new Error("AI auto-reply is not configured. Add an AI provider in the server settings.");
-  const policy = await requireAiAutomation(["sending", ...(config.attachCatalog === true ? ["catalogs"] as const : [])], ["emails", "customers", "team", ...(config.useProducts || config.attachCatalog ? ["products"] as const : [])]);
+  const policy = await requireAiAutomation(["sending", ...(config.attachCatalog === true ? ["catalogs"] as const : [])], ["emails", "customers", "team", ...(config.nurture ? ["billing"] as const : []), ...(config.useProducts || config.attachCatalog ? ["products"] as const : [])]);
   const priceProducts = productRows.map((row) => invoiceProduct({ ...row, tags: row.tags ?? [] }));
   const catalogProducts = productRows.map(crmProduct);
   const orderedMessages = [...messages].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
   const history = [...orderedMessages].reverse().map((message) => ({ ...message, body: (message.body || "").slice(0, 6000) }));
   const signal = AbortSignal.timeout(90_000);
+  const catalogMessageCount = config.leadIntake ? 0 : previousAutomatedMessages;
   const generate = async (systemInstruction: string, prompt: string) => {
     const options = { systemInstruction: systemInstruction + aiBehaviorInstruction(policy, true), prompt, maxOutputTokens: 8192 };
-    return generateGatewayText({ usageUserId, ...options, signal, token: token!, model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim(), task: "email", complex: config.usePrices === true, userText: config.instructions as string | undefined });
+    return generateGatewayText({ usageUserId, onGeneration, ...options, signal, token: token!, model: process.env.AI_GATEWAY_EMAIL_MODEL?.trim(), task: "email", complex: config.usePrices === true, userText: config.instructions as string | undefined });
   };
   // Resolve the attachment before drafting so the email describes exactly what will be sent.
   const selectedSkus = config.attachCatalog === true ? resolveFlowCatalog(await generate(flowCatalogInstruction, JSON.stringify({
     task: "select_catalog_products", conversation: history, inquiry: inquiry ?? null,
-    firstAutomatedMessage: previousAutomatedMessages === 0 && config.catalogFirstMessageOnly !== false,
+    firstAutomatedMessage: catalogMessageCount === 0 && config.catalogFirstMessageOnly !== false,
     products: catalogProducts.map((product) => ({ sku: product.sku, name: product.name, material: product.material,
       color: product.color, diameter: product.diameter, weight: product.weight })),
-  })), config, previousAutomatedMessages, catalogProducts.map((product) => product.sku)) : [];
+  })), config, catalogMessageCount, catalogProducts.map((product) => product.sku)) : [];
   const selectedProducts = catalogProducts.filter((product) => selectedSkus.includes(product.sku));
   const attachCatalog = selectedProducts.length > 0;
   const prompt = JSON.stringify({
-    recipient: contact, company,
+    recipient: contact, company, ...(config.nurture ? { purchaseHistory: purchaseHistory ?? [] } : {}),
     conversation: history, inquiry: inquiry ?? null, managerGuidance: config.instructions || "", catalogAttached: attachCatalog,
     attachedCatalogProducts: selectedProducts.map((product) => ({ sku: product.sku, name: product.name, material: product.material })),
     products: config.useProducts ? catalogProducts.map((product, index) => ({
@@ -100,7 +106,10 @@ export async function generateFlowAiReply({ usageUserId, config, contact, compan
     })) : [],
   });
   const instruction = flowReplyInstruction(config, attachCatalog);
-  let plan = resolveFlowReply(await generate(instruction, prompt), priceProducts, config.usePrices === true);
+  const intakeKind = config.leadIntake ? leadIntakeKindSchema.parse(JSON.parse((await generate(leadIntakeClassification, JSON.stringify({ conversation: history, inquiry: inquiry ?? null }))).trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""))).kind : null;
+  let plan = intakeKind === "general"
+    ? { subject: "Thank you for contacting Filazoo", body: leadIntroduction(typeof config.introductionTemplate === "string" ? config.introductionTemplate : undefined, contact.name, attachCatalog), quotes: [] }
+    : resolveFlowReply(await generate(instruction, prompt), priceProducts, config.usePrices === true);
   const properNames = [contact.name || "", company.name, ...catalogProducts.flatMap((product) => [product.name, product.sku])];
   if (flowReplyContainsChinese(plan, properNames)) {
     plan = resolveFlowReply(await generate(`${instruction} Your previous draft contained Chinese prose. Regenerate the entire subject and body in English.`, prompt), priceProducts, config.usePrices === true);

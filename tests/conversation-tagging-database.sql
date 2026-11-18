@@ -33,11 +33,11 @@ begin
   update public.crm_conversation_tag_analysis set checked_at=now()-interval '2 minutes' where conversation_key=root;
   if not public.claim_conversation_tag_analysis(root, 'reply', latest + interval '1 minute', 2, next_token) then raise exception 'New reply did not invalidate cache'; end if;
   -- A manual update to any conversation alias wins over the in-flight model result.
-  update public.crm_email_tags set tag='Postponed Purchasing', source='manual', updated_at=clock_timestamp() where message_key=alias;
+  update public.crm_email_tags set tag='Inactive Customers', source='manual', updated_at=clock_timestamp() where message_key=alias;
   perform public.finish_conversation_tag_analysis(root, next_token, array[root,alias], array[legacy], buyer_email,
     'Payment Follow-up', .98, 'Stale proposed payment tag', '[]');
   select tag into actual from public.crm_email_tags where message_key=alias;
-  if actual <> 'Postponed Purchasing' then raise exception 'Manual edit was overwritten'; end if;
+  if actual <> 'Inactive Customers' then raise exception 'Manual edit was overwritten'; end if;
   if not exists(select 1 from public.crm_conversation_tag_analysis where conversation_key=root and status='manual') then raise exception 'Override was not recorded'; end if;
 
   -- A manual decision made before the next reply does not permanently freeze automation.
@@ -52,7 +52,7 @@ begin
   update public.workspace_ai_settings set policy=jsonb_set(policy,'{actions,tagging}','"deny"') where singleton;
   perform public.finish_conversation_tag_analysis(root, next_token, array[root,alias], array[legacy], buyer_email, 'Orders in Fulfillment', .99, 'Order started', '[]');
   select tag into actual from public.crm_email_tags where message_key=alias;
-  if actual <> 'Postponed Purchasing' then raise exception 'Revoked AI permission was ignored'; end if;
+  if actual <> 'Inactive Customers' then raise exception 'Revoked AI permission was ignored'; end if;
   if not exists(select 1 from public.crm_conversation_tag_analysis where conversation_key=root and status='failed' and retry_at > now()) then raise exception 'Recovery backoff missing'; end if;
 end $$;
 rollback;

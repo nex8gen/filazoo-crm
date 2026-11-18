@@ -1,10 +1,12 @@
 .home-workspace a:focus-visible,
 .home-workspace button:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
-.home-workspace { --home-mist: #cde4dc; --home-emerald: #239a79; --home-forest: #073c3e; position: relative; isolation: isolate; container: home / inline-size; min-height: calc(100dvh - 2rem); }
-.home-workspace::before,
-.home-workspace::after { content: ""; pointer-events: none; position: absolute; top: -16px; inset-inline: -20px; height: 760px; mask-composite: intersect; }
-.home-workspace::before { z-index: -2; background: radial-gradient(ellipse 65% 70% at 0% 20%, #a9d3c5b3, transparent 80%), linear-gradient(160deg, var(--home-mist), #e9f2ee 65%, var(--background) 100%); mask-image: linear-gradient(#000 65%, transparent 100%), linear-gradient(to right, #000d, #000 18%, #000 82%, #000d); }
-.home-workspace::after {
+.home-workspace { position: relative; isolation: isolate; container: home / inline-size; min-height: calc(100dvh - 2rem); }
+/* Use the active route: cached Home content can remain hidden on other pages. */
+.workspace-page[data-home="true"] { --home-mist: #cde4dc; --home-emerald: #239a79; --home-forest: #073c3e; position: relative; isolation: isolate; }
+.workspace-page[data-home="true"]::before,
+.workspace-page[data-home="true"]::after { content: ""; pointer-events: none; position: absolute; top: 0; inset-inline: 0; height: 760px; mask-composite: intersect; }
+.workspace-page[data-home="true"]::before { z-index: -2; background: radial-gradient(ellipse 65% 70% at 0% 20%, #a9d3c5b3, transparent 80%), linear-gradient(160deg, var(--home-mist), #e9f2ee 65%, var(--background) 100%); mask-image: linear-gradient(#000 65%, transparent 100%), linear-gradient(to right, #000d, #000 18%, #000 82%, #000d); }
+.workspace-page[data-home="true"]::after {
   z-index: -1;
   background: radial-gradient(ellipse 13% 27% at 80% 40%, var(--home-emerald) 10%, transparent 75%), radial-gradient(ellipse 42% 48% at 90% 85%, var(--home-forest) 22%, #0c705c 46%, transparent 75%), radial-gradient(ellipse 38% 42% at 0% 70%, #3ca88c 8%, #68b79e80 48%, transparent 76%);
   filter: blur(38px);
@@ -12,9 +14,8 @@
   opacity: .72;
   mask-image: linear-gradient(transparent 5%, #000 25%, #000 65%, transparent 100%), linear-gradient(to right, #000d, #000 18%, #000 82%, #000d);
 }
-.dark .home-workspace { --home-mist: #132f29; --home-emerald: #288b67; --home-forest: #061f25; }
-.dark .home-workspace::before { background: radial-gradient(ellipse 65% 70% at 0% 20%, #1b5d474d, transparent 80%), linear-gradient(160deg, var(--home-mist), #122620 65%, var(--background) 100%); }
-@media (min-width: 640px) { .home-workspace::before, .home-workspace::after { inset-inline: -24px; } }
+.dark .workspace-page[data-home="true"] { --home-mist: #132f29; --home-emerald: #288b67; --home-forest: #061f25; }
+.dark .workspace-page[data-home="true"]::before { background: radial-gradient(ellipse 65% 70% at 0% 20%, #1b5d474d, transparent 80%), linear-gradient(160deg, var(--home-mist), #122620 65%, var(--background) 100%); }
 .home-overview { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: start; column-gap: 24px; padding: 24px 0 20px; min-height: 84px; }
 .home-overview-date { display: flex; align-items: center; gap: 4px; width: fit-content; max-width: 100%; min-width: 0; flex-wrap: wrap; padding: 4px; border-radius: var(--radius-lg); background: color-mix(in srgb, var(--muted) 60%, transparent); }
 .home-date-trigger { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 4px 10px; border-radius: var(--radius-md); background: var(--background); font-size: 12px; font-weight: 500; line-height: 16px; text-align: left; box-shadow: 0 1px 3px #0000001a, 0 1px 2px -1px #0000001a; cursor: pointer; }

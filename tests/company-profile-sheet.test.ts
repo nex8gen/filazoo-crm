@@ -8,7 +8,7 @@ import { JSDOM } from "jsdom";
 import ts from "typescript";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>", { url: "https://crm.test/companies", pretendToBeVisual: true });
-for (const key of ["document", "navigator", "HTMLElement", "HTMLInputElement", "Element", "Node", "NodeFilter", "ShadowRoot", "DocumentFragment", "MutationObserver", "Event", "MouseEvent", "KeyboardEvent"] as const) Object.defineProperty(globalThis, key, { configurable: true, value: dom.window[key] });
+for (const key of ["document", "navigator", "HTMLElement", "HTMLInputElement", "SVGElement", "Element", "Node", "NodeFilter", "ShadowRoot", "DocumentFragment", "MutationObserver", "Event", "MouseEvent", "KeyboardEvent"] as const) Object.defineProperty(globalThis, key, { configurable: true, value: dom.window[key] });
 Object.defineProperty(globalThis, "window", { configurable: true, value: dom.window });
 Object.defineProperty(globalThis, "getComputedStyle", { configurable: true, value: dom.window.getComputedStyle.bind(dom.window) });
 Object.defineProperty(globalThis, "requestAnimationFrame", { configurable: true, value: dom.window.requestAnimationFrame.bind(dom.window) });
@@ -34,6 +34,7 @@ async function mount() {
   const host = document.createElement("div"); document.body.append(host);
   const root = createRoot(host);
   const { CompanyProfileSheet } = load("components/company-profile-sheet.tsx", {
+    "@/lib/motion-features": { default: require("motion/react").domAnimation },
     "@/components/ui/sheet": sheet,
     "next/navigation": { useParams: () => ({ id: "acme" }), useRouter: () => ({ back: () => { backCount++; root.render(null); }, replace: (href: string) => replacements.push(href) }) },
   });
@@ -48,11 +49,24 @@ async function mount() {
   return { render, replacements, backCount: () => backCount, close: async () => { await React.act(async () => root.unmount()); host.remove(); } };
 }
 
-test("company profiles use the workflow-style bottom sheet and retain drafts when server sections change", async () => {
+test("the lazy-loaded drawer slides in from the right and does not replay when changing sections", async () => {
+  const ui = await mount();
+  try {
+    const popup = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    assert.match(popup.style.transform, /translateX\(/, "the drawer starts offset to the right");
+    await React.act(async () => { await new Promise(resolve => setTimeout(resolve, 550)); });
+    assert.equal(popup.style.transform, "none", "the animation finishes in the resting position");
+    await ui.render("Email");
+    assert.equal(document.querySelector('[role="dialog"]'), popup);
+    assert.equal(popup.style.transform, "none", "tab navigation does not restart the entrance");
+  } finally { await ui.close(); }
+});
+
+test("company profiles use a right-side drawer and retain drafts when server sections change", async () => {
   const ui = await mount();
   try {
     const popup = document.querySelector('[role="dialog"]')!;
-    assert.equal(popup.getAttribute("data-side"), "bottom");
+    assert.equal(popup.getAttribute("data-side"), "right");
     assert.ok(popup.classList.contains("company-profile-sheet"));
     assert.ok(document.querySelector(".company-profile-overlay"));
     assert.equal(document.getElementById(popup.getAttribute("aria-labelledby")!)?.textContent, "Company profile");

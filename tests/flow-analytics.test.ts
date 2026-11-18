@@ -4,6 +4,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import { readFileSync } from "node:fs";
 import * as metrics from "../lib/flow-analytics.ts";
+import * as chartData from "../lib/flow-analytics-chart.ts";
 
 const now = new Date("2026-11-16T12:00:00.000Z");
 const flows: metrics.AnalyticsFlow[] = [{ id: "workspace", name: "Lead reply", status: "live" }, { id: "email", name: "Customer follow-up", status: "paused" }, { id: "empty", name: "Unused", status: "draft" }];
@@ -127,6 +128,8 @@ function analyticsUi() {
     "@/components/ui/button": { Button: "Button", buttonVariants: () => "button" },
     "@/components/language-provider": { useLanguage: () => ({ language: "en" }) },
     "@/lib/flow-analytics": metrics,
+    "@/lib/flow-analytics-chart": chartData,
+    "@/components/flow-analytics-chart": { FlowAnalyticsChart: "FlowAnalyticsChart" },
   }, { get: (target, name) => Reflect.get(target, name) ?? components });
   const exports: Record<string, (props: unknown) => Element> = {};
   const FakeURL = { createObjectURL: () => "blob:report", revokeObjectURL() {} };
@@ -145,17 +148,16 @@ test("analytics controls filter the combined report, switch metrics, navigate da
   const search = elements(tree).find(node => node.type === "Input")!;
   (search.props.onChange as (event: unknown) => void)({ target: { value: "Customer" } });
   tree = app.render(); assert.equal(pagination(tree).props.total, 1);
-  const selects = elements(tree).filter(node => node.type === "select");
-  (selects[0].props.onChange as (event: unknown) => void)({ target: { value: "90" } });
+  const control = (value: Element, label: string) => elements(value).find(node => typeof node.type === "function" && node.type.name === "AnalyticsSelect" && node.props.label === label)!;
+  (control(tree, "Date range").props.onChange as (value: string) => void)("90");
   assert.equal(app.navigations[0], "/workflow/analytics?range=90&q=Customer");
-  (selects[3].props.onChange as (event: unknown) => void)({ target: { value: "failed" } });
+  (control(tree, "Chart metric").props.onChange as (value: string) => void)("failed");
   tree = app.render();
-  assert.equal(elements(tree).find(node => typeof node.type === "function" && node.type.name === "PerformanceChart")!.props.metric, "failed");
+  assert.equal(elements(tree).find(node => node.type === "FlowAnalyticsChart")!.props.metric, "failed");
   const exportButton = elements(tree).find(node => node.type === "Button" && Array.isArray(node.props.children) && node.props.children.includes("Export CSV"))!;
   (exportButton.props.onClick as () => void)();
   assert.equal(app.downloads[0], "workflow-analytics-7-2026-11-16.csv");
-  const status = elements(tree).filter(node => node.type === "select")[2];
-  (status.props.onChange as (event: unknown) => void)({ target: { value: "live" } });
+  (control(tree, "Status").props.onChange as (value: string) => void)("live");
   assert.equal(pagination(app.render()).props.total, 0);
   assert.equal(elements(app.render(false)).some(node => node.props.href === "/workflow?create=1"), false);
 });
@@ -163,10 +165,37 @@ test("analytics controls filter the combined report, switch metrics, navigate da
 test("chart and table render both real activity and clear empty states", () => {
   const app = analyticsUi();
   const tree = app.render();
-  const chart = elements(tree).find(node => typeof node.type === "function" && node.type.name === "PerformanceChart")!;
-  const output = (chart.type as (props: Element["props"]) => Element)(chart.props);
-  assert.ok(elements(output).some(node => node.type === "svg" && node.props.role === "img"));
+  const chart = elements(tree).find(node => node.type === "FlowAnalyticsChart")!;
+  const components = new Proxy({}, { get: (_target, name) => String(name) });
+  const jsx = (type: Element["type"], props: Element["props"]) => ({ type, props });
+  const exports = {} as { FlowAnalyticsChart: (props: Element["props"]) => Element };
+  vm.runInNewContext(ts.transpileModule(readFileSync(new URL("../components/flow-analytics-chart.tsx", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText, {
+    exports, Intl, Date, require: (name: string) => name === "react" ? { useMemo: (fn: () => unknown) => fn() } : name === "react/jsx-runtime" ? { jsx, jsxs: jsx } : name === "next/link" ? { default: "Link" } : name === "@/lib/flow-analytics-chart" ? chartData : components,
+  });
+  const output = exports.FlowAnalyticsChart(chart.props);
+  assert.ok(elements(output).some(node => node.type === "ChartContainer"));
+  assert.ok(elements(output).some(node => node.type === "LineChart" && node.props.accessibilityLayer));
+  assert.ok(elements(output).some(node => node.type === "Tooltip"));
+  assert.ok(elements(output).some(node => node.type === "YAxis" && node.props.allowDecimals === false));
   assert.ok(elements(output).some(node => node.props.href === "/workflow?flow=workspace"));
-  const empty = (chart.type as (props: Element["props"]) => Element)({ ...chart.props, rows: [] });
+  const empty = exports.FlowAnalyticsChart({ ...chart.props, rows: [] });
   assert.ok(JSON.stringify(empty).includes("No activity in this period"));
+});
+
+test("chart ranks workflows by the selected metric and aligns sparse points by date", () => {
+  const report = metrics.summarizeFlowAnalytics(flows, [], [], "7", now);
+  report.rows[0].sent = 3; report.rows[1].sent = 8;
+  const point = (date: string, sent: number): metrics.FlowAnalyticsPoint => ({ date, sent, failed: 0, skipped: 0 });
+  const result = chartData.prepareFlowAnalyticsChart(report.rows, {
+    [report.rows[0].id]: [point("2026-11-12", 3)],
+    [report.rows[1].id]: [point("2026-11-11", 5), point("2026-11-13", 3)],
+  }, "sent");
+  assert.equal(result.workflows[0].id, report.rows[1].id);
+  assert.deepEqual(result.data, [
+    { date: "2026-11-11", flow_0: 5, flow_1: 0 },
+    { date: "2026-11-12", flow_0: 0, flow_1: 3 },
+    { date: "2026-11-13", flow_0: 3, flow_1: 0 },
+  ]);
+  assert.equal(chartData.prepareFlowAnalyticsChart(report.rows, {}, "sent").data.length, 0);
+  assert.equal(chartData.prepareFlowAnalyticsChart(report.rows, {}, "failed").workflows.length, 0);
 });

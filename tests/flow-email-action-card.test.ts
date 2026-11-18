@@ -13,13 +13,13 @@ function elements(value: unknown): Element[] {
   const node = value as Element;
   return [node, ...elements(node.props.children)];
 }
-function render(status: string, saved: boolean, emailStatus = "live", emailName = "WELCOME10", onEmailStatusChange: (id: string, status: string) => void = () => {}) {
+function render(status: string, saved: boolean, emailStatus = "live", emailName = "WELCOME10", onEmailStatusChange: (id: string, status: string) => void = () => {}, ai = false, reportsVisible = true) {
   const jsx = (type: string, props: Element["props"]) => ({ type, props });
-  const dependencies: Record<string, unknown> = { "react/jsx-runtime": { jsx, jsxs: jsx }, "@/lib/flows": flows, "@/components/flow-action-card": { FlowActionCard: "FlowActionCard" }, "@/lib/flow-email-editor": editor, "@/components/flow-email-performance": { useEmailPerformance: () => ({ status, savedIds: saved ? ["email"] : [], emailNames: { email: "Email #1" }, onEmailStatusChange }), FlowEmailMetrics: "FlowEmailMetrics", FlowEmailStatus: "FlowEmailStatus" } };
+  const dependencies: Record<string, unknown> = { "react/jsx-runtime": { jsx, jsxs: jsx }, "@/lib/flows": flows, "@/components/flow-action-card": { FlowActionCard: "FlowActionCard" }, "@/lib/flow-email-editor": editor, "@/components/flow-email-performance": { useEmailPerformance: () => ({ status, reportsVisible, savedIds: saved ? ["email"] : [], emailNames: { email: "Email #1" }, onEmailStatusChange }), FlowEmailMetrics: "FlowEmailMetrics", FlowEmailStatus: "FlowEmailStatus" } };
   const output: Record<string, (props: Record<string, unknown>) => Element> = {};
   const code = ts.transpileModule(readFileSync(new URL("../components/flow-email-action-card.tsx", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   vm.runInNewContext(code, { exports: output, require: (name: string) => dependencies[name] });
-  return output.FlowEmailActionCard({ actionId: "email", config: { ...flows.defaultFlowInput.steps[1].config, emailStatus, emailName, smartSendingHours: 16 }, label: "Email", summary: "Helpful reminder" });
+  return output.FlowEmailActionCard({ actionId: "email", kind: ai ? "ai_auto_reply" : "send_email", config: { ...flows.defaultFlowInput.steps[1].config, ...(ai ? { templateId: "", attachCatalog: true } : {}), emailStatus, emailName, smartSendingHours: 16 }, label: ai ? "AI auto-reply" : "Email", summary: "Helpful reminder" });
 }
 
 test("saved live and paused email cards expand with the saved name, subject, real metrics, and status", () => {
@@ -52,4 +52,27 @@ test("the card names unnamed emails consistently and changes only its own status
   const control = elements(tree.props.detail).find(node => node.type === "FlowEmailStatus")!;
   (control.props.onChange as (status: string) => void)("draft");
   assert.deepEqual(changes, [["email", "draft"]]);
+});
+
+test("saved AI replies show the email metrics and cost without requiring a template or fabricated subject", () => {
+  for (const status of ["live", "paused"]) {
+    const tree = render(status, true, "live", "", undefined, true);
+    assert.equal(tree.props.expanded, true);
+    assert.equal(tree.props.label, "AI auto-reply");
+    assert.ok(elements(tree.props.body).some(node => node.type === "FlowEmailMetrics" && node.props.ai === true));
+    assert.equal(elements(tree.props.body).some(node => node.props.className === "wf-email-card-subject"), false);
+    assert.ok(elements(tree.props.detail).some(node => node.props.children === "Catalog"));
+  }
+  assert.equal(render("draft", true, "live", "", undefined, true).props.expanded, false);
+  assert.equal(render("live", false, "live", "", undefined, true).props.expanded, false);
+});
+
+test("the shared visibility control hides email and AI reports while preserving action status", () => {
+  for (const ai of [false, true]) {
+    const hidden = render("live", true, "draft", "", undefined, ai, false);
+    assert.equal(hidden.props.expanded, false);
+    assert.equal(hidden.props.body, undefined);
+    assert.ok(elements(hidden.props.detail).some(node => node.type === "FlowEmailStatus" && node.props.status === "draft"));
+    assert.equal(render("live", true, "draft", "", undefined, ai, true).props.expanded, true);
+  }
 });

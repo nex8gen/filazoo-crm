@@ -1,4 +1,5 @@
 export type EmailThreadMetadata = {
+  companyId?: string | null;
   id: string;
   threadId?: string | null;
   messageId?: string | null;

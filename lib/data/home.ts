@@ -59,6 +59,7 @@ export async function getHomeData(range?: Partial<HomeRange>): Promise<HomeData>
   };
   return { name: viewer.displayName?.split(/\s+/)[0] || "there", workspaceName: viewer.workspaceName, isAdmin, asOf: now.toISOString(),
     preferenceKey: `${viewer.workspaceId}:${viewer.id}`,
+    canManageTasks: viewer.role !== "viewer",
     report: buildHomeReport(input, range, now, isAdmin),
     unavailable: unavailable.sort(),
     periods: Object.fromEntries((["today", "month", "all"] as HomePeriod[]).map(period => [period, buildHomePeriod(input, period, now, isAdmin)])) as HomeData["periods"] };

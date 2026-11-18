@@ -7,6 +7,8 @@ import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { verifyMailboxConnections } from "@/lib/mailbox-connection";
 import { mailboxAppId } from "@/lib/app-connection-status";
 import type { SettingsActionState } from "../actions";
+import { connectionImportPreferences } from "@/lib/mail-import";
+import { scheduleConnectedMailboxImport } from "@/lib/data/mail-import-connection";
 
 const schema = z.object({
   mailboxScope: z.enum(["personal", "workspace"]),
@@ -24,6 +26,7 @@ export async function saveGmailConnection(_state: SettingsActionState, formData:
   if (values.mailboxScope === "workspace" && viewer.role !== "admin") return { error: "Only an administrator can manage team email connections." };
   const admin = createSupabaseAdmin();
   try {
+    const importPreferences = connectionImportPreferences(formData, Boolean(values.mailboxId));
     let lookup = admin.from("workspace_mailboxes")
       .select("id,email,smtp_host,imap_host,provider,smtp_password,imap_password,is_default,is_active")
       .eq("id", values.mailboxId).eq("type", values.mailboxScope);
@@ -39,6 +42,7 @@ export async function saveGmailConnection(_state: SettingsActionState, formData:
     await verifyMailboxConnections({ email: values.email, smtpHost: "smtp.gmail.com", smtpPort: 587, smtpUsername: values.email, smtpPassword,
       imapHost: "imap.gmail.com", imapPort: 993, imapUsername: values.email, imapPassword });
     const record = {
+      ...(importPreferences ? { sync_preferences: importPreferences } : {}),
       email: values.email, user_id: values.mailboxScope === "personal" ? viewer.id : null, type: values.mailboxScope, display_name: values.displayName || "Gmail",
       provider: "google", smtp_host: "smtp.gmail.com", smtp_port: 587, smtp_username: values.email, smtp_password: smtpPassword,
       imap_host: "imap.gmail.com", imap_port: 993, imap_username: values.email, imap_password: imapPassword,
@@ -52,6 +56,7 @@ export async function saveGmailConnection(_state: SettingsActionState, formData:
     const result = await write.select("id").maybeSingle();
     if (result.error?.code === "23505") return { error: "This address is already saved. Update its existing connection instead of adding it again." };
     if (result.error || !result.data) return { error: "Gmail could not be saved. Your other connections were kept." };
+    if (!existing.data || importPreferences) scheduleConnectedMailboxImport(result.data.id, viewer);
     revalidatePath("/settings", "layout");
     revalidatePath("/email");
     return { success: existing.data?.is_active === false ? "Gmail credentials verified and updated. This account is still paused." : "Gmail connected. Sending and receiving authentication passed." };

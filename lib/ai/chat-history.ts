@@ -26,12 +26,12 @@ export type HistoryDetail = { conversation: Conversation; messages: HistoryMessa
 
 export function conversationScope(input: ConversationInput) {
   const c = input.pageContext ?? {};
-  return JSON.stringify([input.pathname, input.mode, c.companyId ?? null, c.invoiceId ?? null, c.mailboxId ?? null, c.emailId ?? null, c.conversationId ?? null, c.flowId ?? null]);
+  return JSON.stringify([input.pathname, input.mode, c.companyId ?? null, c.invoiceId ?? null, c.mailboxId ?? null, c.emailId ?? null, c.conversationId ?? null, c.flowId ?? null, ...(c.flowAnalytics ? [c.flowAnalytics] : [])]);
 }
 
-/** Only record identifiers are retained. Unsaved editor contents are never restored. */
+/** Retain record identifiers and analytics filters; never metric facts or unsaved editor contents. */
 export function savedPageContext(context: z.infer<typeof assistantPageContextSchema> = {}): NonNullable<ConversationInput["pageContext"]> {
-  return { companyId: context.companyId, invoiceId: context.invoiceId, mailboxId: context.mailboxId, emailId: context.emailId, conversationId: context.conversationId, flowId: context.flowId };
+  return { companyId: context.companyId, invoiceId: context.invoiceId, mailboxId: context.mailboxId, emailId: context.emailId, conversationId: context.conversationId, flowId: context.flowId, ...(context.flowAnalytics ? { flowAnalytics: context.flowAnalytics } : {}) };
 }
 
 /** Bounded extractive memory: attributed excerpts, never instructions or verified CRM facts. */

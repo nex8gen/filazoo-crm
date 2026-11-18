@@ -73,13 +73,13 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
     const launch = (event: Event) => {
       const detail = (event as CustomEvent<WorkspaceAiLaunchDetail>).detail;
       if (!detail || !["chat", "agent"].includes(detail.mode)) return;
-      setAiLaunchRequest(current => ({ id: current.id + 1, mode: detail.mode, prompt: detail.prompt?.slice(0, 6_000), submit: isHome && detail.submit === true }));
+      setAiLaunchRequest(current => ({ id: current.id + 1, mode: detail.mode, prompt: detail.prompt?.slice(0, 6_000), submit: detail.submit === true, pathname }));
       setAiLoaded(true);
       setAiOpen(true);
     };
     window.addEventListener(workspaceAiLaunchEvent, launch);
     return () => window.removeEventListener(workspaceAiLaunchEvent, launch);
-  }, [isPublicPage, isHome]);
+  }, [isPublicPage, isHome, pathname]);
 
   useEffect(() => {
     if (isPublicPage) return;
@@ -143,7 +143,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
       </Sheet>
 
       <PageHeaderProvider key={isSettings ? "settings" : "workspace"}>
-        <div hidden={pageAiOpen} inert={pageAiOpen || undefined} className={`workspace-page flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background transition-transform duration-300 ease-out lg:ml-[var(--workspace-sidebar-width)] ${sidebarAiOpen ? "max-lg:-translate-x-full lg:mr-[var(--workspace-ai-width)]" : "translate-x-0 lg:mr-0"}`}>
+        <div data-home={isHome || undefined} hidden={pageAiOpen} inert={pageAiOpen || undefined} className={`workspace-page flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background transition-transform duration-300 ease-out lg:ml-[var(--workspace-sidebar-width)] ${sidebarAiOpen ? "max-lg:-translate-x-full lg:mr-[var(--workspace-ai-width)]" : "translate-x-0 lg:mr-0"}`}>
           {!isSettings && !isPortalEditor ? <WorkspacePageHeader pathname={pathname} /> : null}
           <main id="workspace-content" tabIndex={-1} className={`${isHome ? "scrollbar-hidden " : ""}${isEmails || isDocuments || isSettings ? "" : "crm-workspace-content"} min-h-0 w-full flex-1 outline-none ${usesViewportCanvas ? "overflow-hidden p-0" : isSettings ? "overflow-y-auto p-0 lg:overflow-hidden" : "overflow-y-auto overscroll-y-contain px-5 pb-6 pt-4 sm:px-6"}`}><WorkspaceTableHeaders />{children}</main>
         </div>

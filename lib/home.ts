@@ -20,6 +20,7 @@ export type HomeReport = {
   sales: HomeSalesReport;
 };
 export type HomeData = {
+  canManageTasks?: boolean;
   name: string; workspaceName: string; isAdmin: boolean; asOf: string;
   periods: Record<HomePeriod, { metrics: HomeMetrics; team: HomePerformance[] }>;
   unavailable: string[];

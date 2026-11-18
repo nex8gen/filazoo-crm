@@ -57,7 +57,7 @@ export function mailboxSyncKey(mailbox: Pick<WorkspaceMailboxRecord, "id" | "ema
   return createHash("sha256").update(JSON.stringify([mailbox.id, mailbox.email, mailbox.imapHost, mailbox.imapPort, mailbox.imapUsername, ...(folder === "INBOX" ? [] : [folder])])).digest("hex");
 }
 
-export async function loadSyncedMailbox(mailbox: WorkspaceMailboxRecord, options: { sync?: boolean; history?: boolean; includeContent?: boolean; onProgress?: (stage: string) => void; folder?: string; kind?: string; phase?: "headers" | "previews" | "flags"; batchSize?: number; worker?: { account: string; token: string } } = {}) {
+export async function loadSyncedMailbox(mailbox: WorkspaceMailboxRecord, options: { sync?: boolean; history?: boolean; historyLimit?: number; includeContent?: boolean; onProgress?: (stage: string) => void; folder?: string; kind?: string; phase?: "headers" | "previews" | "flags"; batchSize?: number; worker?: { account: string; token: string } } = {}) {
   const admin = createSupabaseAdmin();
   const key = mailboxSyncKey(mailbox, options.folder);
   let saved: MailboxSnapshot | undefined;

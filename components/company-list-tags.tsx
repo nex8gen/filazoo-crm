@@ -8,8 +8,7 @@ import "./company-list-tags.css";
 // Pending revenue and customer commitments come before passive relationship states.
 const companyTagPriority: readonly CustomerTag[] = [
   "Payment Follow-up", "Orders in Fulfillment", "Active Negotiations", "Quotation Follow-up",
-  "New Inquiries", "Postponed Purchasing", "Repeat Customers", "Prospect Nurturing",
-  "Inactive Customers", "Long-term Inactive Customers",
+  "New Inquiries", "Repeat Customers", "Prospect Nurturing", "Inactive Customers",
 ];
 
 export function CompanyListTags({ tags = [], className = "" }: { tags?: readonly string[]; className?: string }) {

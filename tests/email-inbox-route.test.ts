@@ -7,7 +7,7 @@ import ts from "typescript";
 import { currentWorkspaceContext } from "../lib/workspace-context.ts";
 import { validProviderFolder } from "../lib/email-provider.ts";
 
-function setup(queueFailure = false, mailboxReadFailed = false, inboxError: string | null = null, mailboxSnapshotPartial = false) {
+function setup(queueFailure = false, mailboxReadFailed = false, inboxError: string | null = null, mailboxSnapshotPartial = false, mailboxHistoryPartial?: boolean) {
   const viewer = { id: "actor", role: "bd_manager" };
   const mailboxes = [{ id: "mine", type: "personal", userId: "actor" }, { id: "team", type: "workspace" }];
   const counts = { auth: 0, mailboxes: 0, inbox: 0, sync: 0 };
@@ -27,7 +27,7 @@ function setup(queueFailure = false, mailboxReadFailed = false, inboxError: stri
       assert.equal((options.context as { viewer: unknown }).viewer, viewer);
       assert.equal((options.context as { mailboxes: unknown }).mailboxes, mailboxes);
       assert.equal(currentWorkspaceContext()?.userId, viewer.id);
-      return { selectedMailboxId: options.mailboxId ?? "mine", emails: [...received], mailboxReadFailed, inboxError, mailboxSnapshotPartial };
+      return { selectedMailboxId: options.mailboxId ?? "mine", emails: [...received], mailboxReadFailed, inboxError, mailboxSnapshotPartial, mailboxHistoryPartial };
     } },
     "@/lib/data/mail-sync-worker": {
       enqueueMailboxSync: async () => { counts.sync++; if (queueFailure) throw new Error("Database unavailable"); },
@@ -153,6 +153,20 @@ test("recent provider mail remains readable without adding more work to an overl
   assert.equal(backend.counts.sync, 0);
   assert.equal(backend.worker.health, 0);
   assert.equal(backend.background.length, 0);
+});
+
+test("partial optional CRM details do not prevent a manual mailbox refresh", async () => {
+  const backend = setup(false, false, null, true, false);
+  const response = await backend.GET(new Request("http://localhost/api/email/inbox?mailboxId=mine&refresh=true"));
+  assert.equal(response.status, 200);
+  assert.equal(backend.counts.sync, 1);
+});
+
+test("a history request skipped for a partial history cache is never reported as queued", async () => {
+  const backend = setup(false, false, null, true, true);
+  const response = await backend.GET(new Request("http://localhost/api/email/inbox?mailboxId=mine&refresh=true&scope=history"));
+  assert.equal((await response.json()).historyQueued, false);
+  assert.equal(backend.counts.sync, 0);
 });
 
 test("missing company cannot read or sync any mailbox", async () => {

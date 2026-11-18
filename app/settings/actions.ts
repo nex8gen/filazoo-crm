@@ -6,6 +6,8 @@ import { createTeamInvitation } from "./team-actions";
 import { requireWorkspaceMember } from "@/lib/auth";
 import { verifyMailboxConnections } from "@/lib/mailbox-connection";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { connectionImportPreferences } from "@/lib/mail-import";
+import { scheduleConnectedMailboxImport } from "@/lib/data/mail-import-connection";
 
 export type SettingsActionState = { error?: string; success?: string; invitationUrl?: string } | undefined;
 
@@ -133,7 +135,7 @@ export async function deleteMember(_state: SettingsActionState, formData: FormDa
 }
 
 export async function saveWorkspaceMailbox(_state: SettingsActionState, formData: FormData): Promise<SettingsActionState> {
-  await requireWorkspaceMember(["admin"]);
+  const viewer = await requireWorkspaceMember(["admin"]);
   const parsed = mailboxSchema.safeParse({
     mailboxId: formData.get("mailboxId"),
     email: formData.get("email"),
@@ -158,6 +160,7 @@ export async function saveWorkspaceMailbox(_state: SettingsActionState, formData
   const isDefault = parsed.data.isDefault === "on" || parsed.data.isDefault === "true";
 
   try {
+    const importPreferences = connectionImportPreferences(formData, Boolean(parsed.data.mailboxId));
     const existing = parsed.data.mailboxId
       ? await admin.from("workspace_mailboxes").select("id,email,smtp_password,imap_password").eq("id", parsed.data.mailboxId).eq("type", "workspace").maybeSingle()
       : { data: null, error: null };
@@ -189,6 +192,7 @@ export async function saveWorkspaceMailbox(_state: SettingsActionState, formData
     }
 
     const record = {
+      ...(importPreferences ? { sync_preferences: importPreferences } : {}),
       email,
       user_id: null,
       type: "workspace",
@@ -212,6 +216,7 @@ export async function saveWorkspaceMailbox(_state: SettingsActionState, formData
     const { data: saved, error: saveError } = await mutation.select("id").maybeSingle();
     if (saveError?.code === "23505") return { error: "This email address is already connected. Manage the existing connection instead." };
     if (saveError || !saved) return { error: "The mailbox could not be saved. Refresh and check your access." };
+    if (!existing.data || importPreferences) scheduleConnectedMailboxImport(saved.id, viewer);
 
     revalidatePath("/settings", "layout");
     revalidatePath("/email");
@@ -246,6 +251,7 @@ export async function savePersonalMailbox(_state: SettingsActionState, formData:
   const isDefault = parsed.data.isDefault === "on" || parsed.data.isDefault === "true";
 
   try {
+    const importPreferences = connectionImportPreferences(formData, Boolean(parsed.data.mailboxId));
     const existing = parsed.data.mailboxId
       ? await admin.from("workspace_mailboxes").select("id,email,smtp_password,imap_password").eq("id", parsed.data.mailboxId).eq("user_id", viewer.id).eq("type", "personal").maybeSingle()
       : { data: null, error: null };
@@ -279,6 +285,7 @@ export async function savePersonalMailbox(_state: SettingsActionState, formData:
     }
 
     const record = {
+      ...(importPreferences ? { sync_preferences: importPreferences } : {}),
       email: parsed.data.email,
       user_id: viewer.id,
       type: "personal",
@@ -302,6 +309,7 @@ export async function savePersonalMailbox(_state: SettingsActionState, formData:
     const { data: saved, error: saveError } = await mutation.select("id").maybeSingle();
     if (saveError?.code === "23505") return { error: "This email address is already connected. Manage the existing connection instead." };
     if (saveError || !saved) return { error: "The mailbox could not be saved. Refresh and check your access." };
+    if (!existing.data || importPreferences) scheduleConnectedMailboxImport(saved.id, viewer);
 
     revalidatePath("/settings", "layout");
     revalidatePath("/email");

@@ -14,3 +14,7 @@ reference-welcome.png -> 26d035ea29cfa3ad.png (welcomeSeries)
 reference-tag.png -> 032a6500474331fa.png (saleCampaign)
 
 Artwork is served locally with its original colors and transparency.
+
+workflow-repair.png: generated on 2026-11-18 for the workflow repair prompt,
+matching the Home artwork's ivory, satin metal and orange-accent style.
+Prepared as a transparent 256px PNG from the high-resolution generated original.

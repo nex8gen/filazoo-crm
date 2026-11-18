@@ -1,4 +1,5 @@
 import { zhCNApps } from "./i18n-apps.ts";
+import { zhCNSalesAutomation } from "./i18n-sales-automation.ts";
 import { zhCNCustomerTags } from "./i18n-customer-tags.ts";
 import { zhCNCustomerPortal } from "./i18n-customer-portal.ts";
 import { zhCNAnalytics } from "./i18n-analytics.ts";
@@ -30,6 +31,7 @@ export { LANGUAGE_STORAGE_KEY } from "./app-language.ts";
 // Product terminology is centralized so sales, catalog, mailbox, and
 // automation screens use consistent professional Chinese wording.
 const zhCN: Record<string, string> = {
+  ...zhCNSalesAutomation,
   ...zhCNFlowEditor,
   "We could not load this company. Please try again.": "无法加载此企业。请重试。",
   "Company not found or you do not have access to it.": "找不到此企业，或您无权访问。",
@@ -418,6 +420,14 @@ export function translateUiText(value: string, language: AppLanguage): string {
   if (!text) return value;
   const exact = Object.hasOwn(zhCN, text) ? zhCN[text] : undefined;
   if (exact) return `${leading}${exact}${trailing}`;
+  const importEstimate = text.match(/^About (\d+)–(\d+) minutes remaining$/);
+  if (importEstimate) return `${leading}预计剩余约 ${importEstimate[1]}–${importEstimate[2]} 分钟${trailing}`;
+  const importDuration = text.match(/^(\d+) (seconds|minutes)$/);
+  if (importDuration) return `${leading}${importDuration[1]} ${importDuration[2] === "seconds" ? "秒" : "分钟"}${trailing}`;
+  const providerCount = text.match(/^· ([\d,]+) at provider$/);
+  if (providerCount) return `${leading}· 邮箱服务商共 ${providerCount[1]} 封${trailing}`;
+  const syncDetails = text.match(/^Email sync details: (.+)$/);
+  if (syncDetails) return `${leading}邮件同步详情：${translateUiText(syncDetails[1], language)}${trailing}`;
   const date = translateEnglishDate(text);
   if (date) return `${leading}${date}${trailing}`;
   for (const [pattern, format] of patterns) {

@@ -4,12 +4,15 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
 import { z } from "zod";
+import * as mailImport from "../lib/mail-import.ts";
 
 const id = "00000000-0000-4000-8000-000000000001";
 function fixture(options: { scope?: string; owner?: string; role?: string; duplicate?: boolean; verifyFails?: boolean; disappeared?: boolean } = {}) {
   const writes: { operation: string; record: Record<string, unknown>; filters: Record<string, unknown> }[] = [];
   const checks: Record<string, unknown>[] = [];
   const dependencies: Record<string, unknown> = {
+    "@/lib/mail-import": mailImport,
+    "@/lib/data/mail-import-connection": { scheduleConnectedMailboxImport: () => {} },
     zod: { z }, "next/cache": { revalidatePath: () => {} }, "./team-actions": {},
     "@/lib/auth": { requireWorkspaceMember: async (roles: string[]) => {
       const role = options.role ?? "admin";

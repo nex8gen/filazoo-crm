@@ -474,6 +474,12 @@
       "explanation": "Specialized UI test, composition or analysis flow; use its page controls. The agent must provide a handoff and must not claim it executed this feature."
     },
     {
+      "surface": "app/api/documents/search/route.ts#POST",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Specialized UI test, composition or analysis flow; use its page controls. The agent must provide a handoff and must not claim it executed this feature."
+    },
+    {
       "surface": "app/api/email/assist/route.ts#POST",
       "mode": "internal",
       "tools": [],
@@ -575,6 +581,12 @@
         "set_email_state"
       ],
       "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
+    },
+    {
+      "surface": "app/api/email/sync/route.ts#POST",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Use Email > Import settings to choose a per-folder history target, start or resume importing, or pause history while new mail continues syncing. Only the personal mailbox owner or a team administrator can change its policy. General chat must hand off to these controls and must not claim it changed import settings."
     },
     {
       "surface": "app/api/flows/[id]/route.ts#DELETE",

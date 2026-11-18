@@ -2,7 +2,8 @@ import type { JsonConfig } from "./flows.ts";
 import { analyticsStart } from "./flow-analytics.ts";
 
 export type EmailPerformance = { sent: number; opens: number; clicks: number; openRate: number | null; clickRate: number | null; skipped: number; waiting: number; review: number };
-export type EmailPerformanceReport = { asOf: string; from: string; actions: Record<string, EmailPerformance> };
+export type EmailAiSpend = { recordedUsd: number | null; requests: number; pending: number; untracked: boolean };
+export type EmailPerformanceReport = { asOf: string; from: string; actions: Record<string, EmailPerformance>; costs?: Record<string, EmailAiSpend> };
 export type EmailPerformanceLog = { id: string; run_id: string; step_id?: string | null; created_at: string; error?: string | null; result: JsonConfig | null };
 export type EmailPerformanceRun = { id: string; status: string; current_step: number; context: JsonConfig | null };
 export function emptyEmailPerformance(): EmailPerformance { return { sent: 0, opens: 0, clicks: 0, openRate: null, clickRate: null, skipped: 0, waiting: 0, review: 0 }; }
@@ -54,7 +55,36 @@ export function summarizeEmailPerformance(logs: EmailPerformanceLog[], runs: Ema
   for (const value of Object.values(actions)) {
     if (value.sent) { value.openRate = value.opens / value.sent * 100; value.clickRate = value.clicks / value.sent * 100; }
   }
-  return { from, asOf: now.toISOString(), actions };
+  const costs: Record<string, EmailAiSpend> = Object.create(null);
+  const spend = (id: string) => costs[id] ??= { recordedUsd: null, requests: 0, pending: 0, untracked: false };
+  const usageRuns = new Set<string>(), generations = new Map<string, EmailPerformanceLog>();
+  const hasCost = (log: EmailPerformanceLog) => typeof log.result?.costUsd === "number" && Number.isFinite(log.result.costUsd) && log.result.costUsd >= 0;
+  const lifetime = [...new Map(logs.filter(log => Date.parse(log.created_at) <= now.getTime()).map(log => [log.id, log])).values()];
+  for (const log of lifetime) {
+    const id = stepId(log); if (!id || log.result?.action !== "ai_usage") continue;
+    usageRuns.add(key(id, log.run_id));
+    const generation = typeof log.result.generationId === "string" ? log.result.generationId : log.id;
+    if (!generations.has(generation) || !hasCost(generations.get(generation)!) && hasCost(log)) generations.set(generation, log);
+  }
+  for (const log of generations.values()) {
+    const id = stepId(log)!;
+    const value = spend(id); value.requests++;
+    const cost = log.result!.costUsd;
+    if (typeof cost === "number" && Number.isFinite(cost) && cost >= 0) value.recordedUsd = Number(((value.recordedUsd ?? 0) + cost).toFixed(10));
+    else value.pending++;
+    if (!log.result!.generationId || log.result!.costExternal === true || log.result!.costLookupUnavailable === true) value.untracked = true;
+  }
+  for (const log of lifetime) {
+    const id = stepId(log);
+    if (id && log.result?.action === "email_sent" && log.result.aiGenerated === true && !usageRuns.has(key(id, log.run_id))) spend(id).untracked = true;
+  }
+  return { from, asOf: now.toISOString(), actions, costs };
+}
+
+export function emailAiSpend(value?: EmailAiSpend): string {
+  if (!value || value.recordedUsd === null) return value?.untracked ? "Not recorded" : value?.pending ? "Pending" : "—";
+  const amount = value.recordedUsd > 0 && value.recordedUsd < 0.0001 ? "<$0.0001" : new Intl.NumberFormat("en", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(value.recordedUsd);
+  return `${amount}${value.pending || value.untracked ? "+" : ""}`;
 }
 
 export function emailRate(rate: number | null, count: number): string {

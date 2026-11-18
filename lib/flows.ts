@@ -5,7 +5,7 @@ import { hasRetiredSalesConfig, retiredSalesMessage } from "./retired-sales.ts";
 export { hasRetiredSalesConfig, retiredSalesMessage } from "./retired-sales.ts";
 
 export const flowStatuses = ["draft", "live", "paused"] as const;
-export const triggerTypes = ["new_lead", "email_received", "category_changed", "no_reply", "lead_added_to_list", "company_segment_changed", "pipeline_stage_changed"] as const;
+export const triggerTypes = ["new_lead", "email_received", "category_changed", "no_reply", "lead_added_to_list", "company_segment_changed", "dormant_customer", "pipeline_stage_changed"] as const;
 export const stepTypes = ["wait", "split", "if_condition", "send_email", "ai_auto_reply", "create_task", "change_category", "update_company", "internal_alert", "stop"] as const;
 export const emailCategories = customerTagValues;
 // Keep saved legacy flows readable while every new choice uses the shared vocabulary.
@@ -61,6 +61,7 @@ export const triggerLabels: Record<TriggerType, string> = {
   lead_added_to_list: "Lead added to list",
   company_segment_changed: "Company enters segment",
   pipeline_stage_changed: "Retired sales trigger",
+  dormant_customer: "Customer becomes inactive",
 };
 
 export const stepLabels: Record<FlowStepType, string> = {
@@ -105,6 +106,7 @@ const triggerConfigSchemas: Record<TriggerType, z.ZodType<JsonConfig>> = {
   lead_added_to_list: z.object({ listId: z.enum(flowLeadLists), ...profileFilters }),
   company_segment_changed: z.object({ ...profileFilters, segment: z.string().trim().min(1).max(120) }),
   pipeline_stage_changed: z.object({ stage: z.enum(pipelineStages), ...profileFilters }),
+  dormant_customer: z.object({ ...profileFilters, inactivityMonths: z.number().int().min(1).max(24).default(1) }),
 };
 
 export const conditionOperators = ["equals", "not_equals", "contains", "not_contains", "starts_with", "ends_with", "is_set", "is_not_set", "gte", "gt", "lte", "lt"] as const;
@@ -131,6 +133,11 @@ export const flowConditionCriteriaSchema = z.union([
 
 export const stepConfigSchemas: Record<FlowStepType, z.ZodType<JsonConfig>> = {
   ai_auto_reply: z.object({
+    performanceId: z.string().trim().min(1).max(100).optional(),
+    emailStatus: z.preprocess(value => value === "paused" ? "draft" : value, z.enum(["draft", "live"])).optional(),
+    nurture: z.boolean().optional(),
+    leadIntake: z.boolean().optional(),
+    introductionTemplate: z.string().trim().max(4000).optional(),
     stopOnReply: z.boolean().optional(),
     filters: flowConditionCriteriaSchema.optional(),
     smartSendingHours: z.number().int().min(0).max(720).optional(),
@@ -148,12 +155,16 @@ export const stepConfigSchemas: Record<FlowStepType, z.ZodType<JsonConfig>> = {
     utmTracking: z.boolean().optional(),
   }).superRefine((value, context) => {
     if (value.usePrices && !value.useProducts) context.addIssue({ code: "custom", message: "Enable product information before using prices." });
+    if (value.leadIntake && (!value.attachCatalog || !value.useProducts || value.usePrices)) context.addIssue({ code: "custom", message: "New-lead intake needs product information and the catalog, with automatic pricing disabled." });
   }),
   wait: z.object({
     amount: z.number().int().min(1).max(525600),
-    unit: z.enum(["minutes", "hours", "days"]),
+    unit: z.enum(["minutes", "hours", "days", "months"]),
+    anchor: z.enum(["previous_action", "trigger"]).optional(),
     businessDays: z.boolean().optional(),
     resumeAt: z.union([z.literal(""), z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Choose a valid resume time.")]).optional(),
+  }).superRefine((value, context) => {
+    if (value.unit === "months" && value.amount > 24) context.addIssue({ code: "custom", path: ["amount"], message: "Choose a delay of 24 months or less." });
   }),
   split: z.object({
     name: z.string().trim().min(1).max(120),
@@ -368,7 +379,7 @@ export function blankStep(type: FlowStepType = "wait"): FlowInput["steps"][numbe
 /** Copies must have independent canvas/tracking identities, including actions inside split paths. */
 export function cloneFlowStep(step: FlowInput["steps"][number]): FlowInput["steps"][number] {
   const copy = { ...step, id: blankStep(step.type).id, config: structuredClone(step.config) };
-  if (copy.type === "send_email") delete copy.config.performanceId;
+  if (copy.type === "send_email" || copy.type === "ai_auto_reply") delete copy.config.performanceId;
   if (copy.type === "split" && Array.isArray(copy.config.paths)) {
     copy.config.paths = copy.config.paths.map((value) => {
       if (!value || typeof value !== "object" || Array.isArray(value) || !Array.isArray(value.steps)) return value;
@@ -381,7 +392,7 @@ export function cloneFlowStep(step: FlowInput["steps"][number]): FlowInput["step
 /** The database replaces root step rows on save. Preserve email metrics across those row IDs. */
 export function withFlowEmailIdentities<T extends FlowInput>(flow: T): T {
   const normalize = (steps: FlowInput["steps"]): FlowInput["steps"] => steps.map(step => {
-    if (step.type === "send_email") return { ...step, config: { ...step.config, performanceId: step.config.performanceId || (step.id && step.id.length <= 100 ? step.id : blankStep("send_email").id!) } };
+    if (step.type === "send_email" || step.type === "ai_auto_reply") return { ...step, config: { ...step.config, performanceId: step.config.performanceId || (step.id && step.id.length <= 100 ? step.id : blankStep(step.type).id!) } };
     if (step.type !== "split" || !Array.isArray(step.config.paths)) return step;
     return { ...step, config: { ...step.config, paths: step.config.paths.map(path => path && typeof path === "object" && !Array.isArray(path) && Array.isArray(path.steps) ? { ...path, steps: normalize(path.steps as FlowInput["steps"]) } : path) } };
   });
@@ -410,6 +421,7 @@ export function flowAgentCapabilities() {
 }
 
 export function formatTrigger(type: TriggerType, config: JsonConfig) {
+  if (type === "dormant_customer") return `Inactive for ${config.inactivityMonths || 1} month${Number(config.inactivityMonths || 1) === 1 ? "" : "s"}`;
   if (type === "category_changed") return `Category changed to ${config.category || "…"}`;
   if (type === "no_reply") return `No reply after ${config.amount || "…"} ${config.unit || "days"}`;
   if (type === "lead_added_to_list") return `Lead added to ${config.listId || "list"}`;

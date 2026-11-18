@@ -68,7 +68,7 @@ async function assistantResponse(request: Request, report: (progress: ResearchPr
   }
   if (!policy.features.pageContext || restricted) {
     parsed.data.pageText = "";
-    if (parsed.data.pageContext) { delete parsed.data.pageContext.flowDraft; delete parsed.data.pageContext.flowUnsaved; }
+    if (parsed.data.pageContext) { delete parsed.data.pageContext.flowDraft; delete parsed.data.pageContext.flowUnsaved; delete parsed.data.pageContext.flowAnalytics; }
   }
   const gatewayToken = resolveGatewayToken(process.env);
   if (!gatewayToken) {
@@ -110,7 +110,7 @@ async function assistantResponse(request: Request, report: (progress: ResearchPr
   const gateway = () => generateGatewayText({ usageUserId: viewer.id, ...options, token: gatewayToken!, model: gatewayModel, visionModel: process.env.AI_GATEWAY_VISION_MODEL?.trim(),
     task: agentMode ? "agent" : "chat", userText: parsed.data.messages.filter((message) => message.role === "user").at(-1)?.content, complex: escalateModel, standard: standardModel, signal: deadline });
   let serverData: Awaited<ReturnType<typeof loadAgentContext>> | undefined;
-  if (agentMode || parsed.data.webSearch || parsed.data.pageContext?.emailId || parsed.data.pageContext?.conversationId || parsed.data.pageContext?.flowId || parsed.data.pageContext?.flowDraft) {
+  if (agentMode || parsed.data.webSearch || parsed.data.pageContext?.emailId || parsed.data.pageContext?.conversationId || parsed.data.pageContext?.flowId || parsed.data.pageContext?.flowDraft || parsed.data.pathname === "/workflow/analytics") {
     try {
       serverData = await loadAgentContext(parsed.data, viewer);
     options.prompt = buildWorkspaceAssistantPrompt(parsed.data, serverData) + (session?.summaryPrompt ?? "");

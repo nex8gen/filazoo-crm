@@ -1,0 +1,11 @@
+const fs=require('node:fs');const p='components/flow-builder.tsx';let s=fs.readFileSync(p,'utf8');
+s=s.replace('import { FlowEmailPerformanceProvider }','import { FlowEmailMetrics, FlowEmailPerformanceProvider }');
+s=s.replace('ai_auto_reply: { icon: AiIcon, tone: "bg-violet-50 text-violet-600 dark:bg-violet-500/10"','ai_auto_reply: { icon: Sparkles, tone: "bg-brand-soft text-primary"');
+s=s.replace('if (type === "ai_auto_reply") return config.attachCatalog ? "English reply + catalog when needed" : "Personalized reply in English";', 'if (type === "ai_auto_reply") return config.leadIntake ? "Collect missing requirements" : config.attachCatalog ? "Answer questions + catalog when relevant" : "Answer customer questions";');
+s=s.replace('const ActionCard = step.type === "send_email" ? FlowEmailActionCard', 'const ActionCard = (step.type === "send_email" || step.type === "ai_auto_reply") ? FlowEmailActionCard');
+s=s.replace('item.action.id === actionId && item.action.type === "send_email"','item.action.id === actionId && (item.action.type === "send_email" || item.action.type === "ai_auto_reply")');
+s=s.replace('const savedEmailIds = savedFlow ? flowActionLocations(savedFlow.steps).filter(item => item.action.type === "send_email")', 'const savedEmailIds = savedFlow ? flowActionLocations(savedFlow.steps).filter(item => item.action.type === "send_email" || item.action.type === "ai_auto_reply")');
+const marker='<StepInspector type={selectedStep.type} config={selectedStep.config}';
+if(!s.includes('aria-label="AI reply performance"'))s=s.replace(marker, '{selectedStep.type === "ai_auto_reply" && savedEmailIds.includes(selectedStep.id!) && draft.status !== "draft" ? <section className="wf-ai-reply-performance" aria-label="AI reply performance"><h3>Performance</h3><FlowEmailMetrics actionId={String(selectedStep.config.performanceId || selectedStep.id)} ai /></section> : null}'+marker);
+s=s.replaceAll('savedEmailIds.includes(selectedStep.id!)','savedEmailIds.includes(String(selectedStep.config.performanceId || selectedStep.id))');
+fs.writeFileSync(p,s);

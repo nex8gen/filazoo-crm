@@ -17,6 +17,7 @@
 /* Keep the page inside a padded frame, including its scrollbars. */
 [data-workspace-shell] {
   --workspace-frame-gap: 0.375rem;
+  --workspace-header-inset: 0.5rem;
   padding: var(--workspace-frame-gap);
   background: var(--workspace-frame);
 }
@@ -26,6 +27,11 @@
   border: 1px solid var(--workspace-frame-border);
   border-radius: 1rem;
   box-shadow: 0 1px 2px rgb(0 0 0 / 4%);
+}
+
+.workspace-page-header {
+  padding-block: var(--workspace-header-inset);
+  padding-inline-end: var(--workspace-header-inset);
 }
 
 [data-workspace-shell] > [data-ai-workspace] {

@@ -103,8 +103,17 @@ test("long provider quotes are verified in full before storing a bounded exact e
 
 test("inactivity cannot be invented from old dates, and a null decision preserves the current tag", () => {
   const context = tagging.conversationTagContext([message()], "Active Negotiations");
-  for (const tag of ["Inactive Customers", "Long-term Inactive Customers"]) assert.throws(() => tagging.parseConversationTagDecision(JSON.stringify(decision({ tag })), context), /thresholds/);
+  assert.throws(() => tagging.parseConversationTagDecision(JSON.stringify(decision({ tag: "Inactive Customers" })), context), /thresholds/);
+  for (const tag of ["Long-term Inactive Customers", "Postponed Purchasing"]) assert.throws(() => tagging.parseConversationTagDecision(JSON.stringify(decision({ tag })), context));
   assert.equal(tagging.parseConversationTagDecision(JSON.stringify(decision({ tag: null, evidence: [] })), context).tag, null);
+});
+
+test("explicit buyer postponement uses the combined inactive tag with verified evidence", () => {
+  for (const quote of ["We have paused purchasing until January.", "Our next order is on hold until January.", "我们决定暂缓采购，明年再联系。 ".trim()]) {
+    const input = decision({ tag: "Inactive Customers", evidence: [{ messageKey: "imap-root@buyer.test", quote }] });
+    assert.equal(tagging.parseConversationTagDecision(JSON.stringify(input), tagging.conversationTagContext([message({ body: quote })], null)).tag, "Inactive Customers");
+    assert.throws(() => tagging.parseConversationTagDecision(JSON.stringify(input), tagging.conversationTagContext([message({ body: quote, direction: "outbound" })], null)), /buyer postponement/);
+  }
 });
 
 test("truncated or missing history cannot replace a tag", () => {

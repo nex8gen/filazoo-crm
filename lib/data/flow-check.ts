@@ -43,7 +43,7 @@ export async function checkFlow(input: FlowCheckInput, viewer: WorkspaceViewer):
     catch (cause) { const detail = workflowErrorMessage(cause); checks.push({ id, label, status: /timeout|timed out|aborted/i.test(detail) ? "unverified" : "blocked", detail }); }
     finally { signal.removeEventListener("abort", fail); }
   };
-  const actions = locations.map(item => item.action);
+  const actions = locations.map(item => item.action).filter(step => !["send_email", "ai_auto_reply"].includes(step.type) || flowEmailStatus(step.config) === "live");
   const hasMessages = actions.some(step => step.type === "ai_auto_reply" || step.type === "send_email" && flowEmailStatus(step.config) === "live");
   const senderActions = actions.filter(step => step.type === "ai_auto_reply" || step.type === "send_email" && flowEmailStatus(step.config) === "live" || step.type === "internal_alert" && step.config.channel === "email");
   const hasAi = actions.some(step => step.type === "ai_auto_reply");

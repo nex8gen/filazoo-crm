@@ -28,6 +28,7 @@ export type TriggerEvent = {
   occurredAt?: string;
   inquirySource?: "shopify" | "meta";
   inquiryId?: string;
+  inactivitySince?: string;
   mailboxId?: string;
 };
 
@@ -98,7 +99,14 @@ export function calculateWaitUntil(config: JsonConfig, from = new Date()) {
   const amount = Math.max(1, Number(config.amount) || 1);
   const unit = String(config.unit || "days");
   const result = new Date(from);
-  if (unit === "minutes" || unit === "hours") {
+  if (unit === "months") {
+    const day = result.getUTCDate();
+    result.setUTCDate(1);
+    result.setUTCMonth(result.getUTCMonth() + amount);
+    const lastDay = new Date(Date.UTC(result.getUTCFullYear(), result.getUTCMonth() + 1, 0)).getUTCDate();
+    result.setUTCDate(Math.min(day, lastDay));
+    if (config.businessDays) moveOffWeekend(result);
+  } else if (unit === "minutes" || unit === "hours") {
     let remaining = amount * (unit === "minutes" ? 60_000 : 3_600_000);
     if (config.businessDays) {
       moveOffWeekend(result);
@@ -209,7 +217,7 @@ export function simulateFlow(flow: FlowInput, facts: FlowFacts, from = new Date(
   while (index < steps.length) {
     const { step, path } = steps[index]!;
     const push = (entry: SimulationEntry) => trace.push({ stepPath: path, ...entry });
-    if (step.type === "send_email" && flowEmailStatus(step.config) !== "live") {
+    if ((step.type === "send_email" || step.type === "ai_auto_reply") && flowEmailStatus(step.config) !== "live") {
       push({ step: index + 1, type: step.type, status: "skipped", detail: "This email is draft and will be skipped." });
       index += 1;
       continue;
@@ -230,7 +238,7 @@ export function simulateFlow(flow: FlowInput, facts: FlowFacts, from = new Date(
       continue;
     }
     if (step.type === "wait") {
-      cursor = calculateWaitUntil(step.config, cursor);
+      cursor = calculateWaitUntil(step.config, step.config.anchor === "trigger" ? from : cursor);
       push({ step: index + 1, type: step.type, status: "waiting", scheduledAt: cursor.toISOString(), detail: `Would resume at ${cursor.toISOString()}` });
       waitsReached++;
       if (scenario.afterWait?.number === waitsReached) Object.assign(currentFacts, scenario.afterWait.facts);

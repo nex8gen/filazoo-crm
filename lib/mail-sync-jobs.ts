@@ -3,13 +3,17 @@ export type MailSyncJob = {
   id: string; account_key: string; kind: MailSyncKind; folder: string;
   state: "queued" | "running" | "idle"; attempts: number; next_run_at: string;
   last_attempt_at: string | null; last_success_at: string | null; last_error: string | null;
-  progress?: { hasMore?: boolean; completed?: boolean; imported?: number; totalMessages?: number; batchSize?: number };
+  progress?: { hasMore?: boolean; completed?: boolean; imported?: number; totalMessages?: number; batchSize?: number;
+    target?: number; completionReason?: "limit" | "complete" | "paused" | "not_selected"; startedAt?: string; elapsedMs?: number; receivedTotal?: number };
 };
 export type MailSyncHealth = {
   state: "waiting" | "checking" | "up_to_date" | "stale" | "retrying" | "reconnect_required";
   lastSuccessAt: string | null; nextRetryAt: string | null;
   history: "idle" | "queued" | "running" | "retrying";
   historyImported?: number; historyTotal?: number; historyComplete?: boolean; failures?: number;
+  historyTarget?: number; historyReason?: "limit" | "complete" | "paused" | "not_selected";
+  historyStartedAt?: string; historyElapsedMs?: number; historyReceived?: number; historyNextRetryAt?: string | null;
+  histories?: Array<{ folder: string; health: Omit<MailSyncHealth, "histories"> }>;
 };
 export const mailSyncInterval: Record<MailSyncKind, number> = { inbox: 15, folder: 120, history: 0, flags: 300, previews: 120, discovery: 3600 };
 export function mailSyncBatchSize(kind: MailSyncKind, attempts: number, previousSize?: number) {
@@ -30,7 +34,16 @@ export function mailSyncHealth(jobs: MailSyncJob[], lastSuccessAt: string | null
   const success = latest?.last_success_at || lastSuccessAt;
   const running = latest?.state === "running" && now - Date.parse(latest.last_attempt_at || "") < 300_000;
   const state = running ? "checking" : latest?.last_error ? (mailboxNeedsReconnect(latest.last_error) ? "reconnect_required" : "retrying") : !success ? "waiting" : now - Date.parse(success) > 180_000 ? "stale" : "up_to_date";
+  const imported = history?.progress?.imported;
+  const total = history?.progress?.totalMessages ?? latest?.progress?.totalMessages;
+  const reachedProviderEnd = history?.state === "idle" && imported !== undefined && total !== undefined && imported >= total;
+  const legacyLimit = imported === 5000 && (total || 0) > 5000;
   return { state, lastSuccessAt: success, nextRetryAt: latest?.last_error ? latest.next_run_at : null,
     history: !history || history.state === "idle" ? "idle" : history.last_error || history.state === "running" && now - Date.parse(history.last_attempt_at || "") >= 300_000 ? "retrying" : history.state,
-    historyImported: history?.progress?.imported, historyTotal: history?.progress?.totalMessages, historyComplete: Boolean(history?.progress?.completed), failures: latest?.attempts || 0 };
+    historyImported: imported, historyTotal: total,
+    historyComplete: reachedProviderEnd || Boolean(history?.progress?.completed) && history?.progress?.completionReason !== "limit" && !legacyLimit,
+    historyTarget: history?.progress?.target ?? 5000,
+    historyReason: reachedProviderEnd ? "complete" : history?.progress?.completionReason || (history?.progress?.completed ? legacyLimit ? "limit" : "complete" : undefined),
+    historyStartedAt: history?.progress?.startedAt, historyElapsedMs: history?.progress?.elapsedMs, historyReceived: history?.progress?.receivedTotal,
+    historyNextRetryAt: history?.last_error ? history.next_run_at : null, failures: latest?.attempts || 0 };
 }

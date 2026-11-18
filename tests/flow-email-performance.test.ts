@@ -8,7 +8,7 @@ import * as analytics from "../lib/flow-analytics.ts";
 import { applyFlowUtm } from "../lib/flow-email-utm.ts";
 import { buildFlowEmail } from "../lib/flow-tracking.ts";
 import { newEmailDesign } from "../lib/email-design.ts";
-import { cloneFlowStep, defaultFlowInput, stepConfigSchemas, withFlowEmailIdentities } from "../lib/flows.ts";
+import { blankStep, cloneFlowStep, defaultFlowInput, stepConfigSchemas, withFlowEmailIdentities } from "../lib/flows.ts";
 
 const now = new Date("2026-11-17T12:00:00Z");
 const log = (id: string, runId: string, action: string, stepId = "email"): performance.EmailPerformanceLog => ({ id, run_id: runId, created_at: "2026-11-15T12:00:00Z", result: { action, stepId } });
@@ -38,7 +38,7 @@ function serviceFixture(options: { missing?: boolean; denied?: boolean; truncate
   const logs = Array.from({ length: 1001 }, (_, index) => log(`l${index}`, `r${index}`, "email_sent"));
   const requests: Array<{ table: string; from: number; to: number }> = [];
   const client = { from(table: string) {
-    const query = { select() { return query; }, eq() { return query; }, in() { return query; }, gte() { return query; }, lte() { return query; }, order() { return query; }, maybeSingle() { return Promise.resolve({ data: options.missing ? null : { id: "flow", trigger_config: options.denied ? { flowScope: "email" } : {} }, error: null }); }, range(from: number, to: number) {
+    const query = { select() { return query; }, eq() { return query; }, in() { return query; }, or() { return query; }, gte() { return query; }, lte() { return query; }, order() { return query; }, maybeSingle() { return Promise.resolve({ data: options.missing ? null : { id: "flow", trigger_config: options.denied ? { flowScope: "email" } : {} }, error: null }); }, range(from: number, to: number) {
       requests.push({ table, from, to });
       const rows = table === "flow_run_logs" ? logs : [];
       return Promise.resolve({ data: options.truncate && from >= 500 ? [] : rows.slice(from, to + 1), count: rows.length, error: null });
@@ -47,12 +47,12 @@ function serviceFixture(options: { missing?: boolean; denied?: boolean; truncate
   } };
   const output: Record<string, (...args: unknown[]) => Promise<performance.EmailPerformanceReport>> = {};
   const code = ts.transpileModule(readFileSync(new URL("../lib/data/flow-email-performance.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  const dependencies: Record<string, unknown> = { "server-only": {}, "../auth.ts": { requireWorkspaceMember: async () => ({ id: "viewer", role: "viewer" }) }, "../supabase/admin.ts": { createSupabaseAdmin: () => client }, "./email-flows.ts": { validateEmailFlowScope: async () => { if (options.denied) throw new Error("Access denied."); } }, "../flow-analytics.ts": analytics, "../flow-email-performance.ts": performance };
+  const dependencies: Record<string, unknown> = { "server-only": {}, "./flow-ai-cost.ts": { reconcileFlowAiCosts: async () => {} }, "../auth.ts": { requireWorkspaceMember: async () => ({ id: "viewer", role: "viewer" }) }, "../supabase/admin.ts": { createSupabaseAdmin: () => client }, "./email-flows.ts": { validateEmailFlowScope: async () => { if (options.denied) throw new Error("Access denied."); } }, "../flow-analytics.ts": analytics, "../flow-email-performance.ts": performance };
   vm.runInNewContext(code, { exports: output, require: (name: string) => { if (!(name in dependencies)) throw new Error(`Unexpected dependency ${name}`); return dependencies[name]; } });
   return { service: output, client, requests };
 }
 
-test("the read-only metrics query reads every page and rejects incomplete totals", async () => {
+test("the metrics query reads every page and rejects incomplete totals", async () => {
   const fixture = serviceFixture();
   const result = await fixture.service.readEmailPerformance(fixture.client, "flow", now);
   assert.equal(result.actions.email.sent, 1001);
@@ -100,4 +100,35 @@ test("saving after root row IDs change retains email metrics identities, while c
   assert.equal(report.actions["stable-email"].openRate, 100);
   assert.equal(report.actions["stable-email"].waiting, 1);
   assert.equal(report.actions["old-row-id"], undefined);
+});
+
+test("AI spend is cumulative, counts retries once, and preserves unknown and historical costs", () => {
+  const usage = (id: string, generation: string | null, cost: number | null, step = "ai") => ({ ...log(id, id, "ai_usage", step), result: { action: "ai_usage", stepId: step, generationId: generation, costUsd: cost } });
+  const known = usage("known", "gen_1", .12);
+  const old = { ...usage("old-usage", "gen_old", .03), created_at: "2026-07-01T00:00:00Z" };
+  const duplicate = { ...usage("duplicate", "gen_1", null), run_id: "known" };
+  const untracked = { ...log("legacy", "old-run", "email_sent", "legacy-ai"), result: { action: "email_sent", stepId: "legacy-ai", aiGenerated: true } };
+  const report = performance.summarizeEmailPerformance([duplicate, known, known, old, usage("pending", "gen_pending", null), untracked, usage("failed", null, null, "failed-ai")], [], now);
+  assert.equal(report.costs!.ai.recordedUsd, .15);
+  assert.equal(report.costs!.ai.requests, 3);
+  assert.equal(report.costs!.ai.pending, 1);
+  assert.equal(performance.emailAiSpend(report.costs!.ai), "$0.15+");
+  assert.equal(performance.emailAiSpend(report.costs!["legacy-ai"]), "Not recorded");
+  assert.equal(performance.emailAiSpend(report.costs!["failed-ai"]), "Not recorded");
+  assert.equal(performance.emailAiSpend({ recordedUsd: .0000001, requests: 1, pending: 0, untracked: false }), "<$0.0001");
+  assert.equal(report.actions.ai, undefined, "Billing attempts are not sent emails");
+});
+
+test("AI action identities and draft status survive edits, including nested copies", () => {
+  const ai = blankStep("ai_auto_reply");
+  const first = withFlowEmailIdentities({ ...defaultFlowInput, steps: [ai] });
+  const id = first.steps[0].config.performanceId;
+  const edited = withFlowEmailIdentities({ ...first, steps: [{ ...first.steps[0], id: "replacement-row" }] });
+  assert.equal(edited.steps[0].config.performanceId, id);
+  assert.equal(stepConfigSchemas.ai_auto_reply.parse({ ...edited.steps[0].config, emailStatus: "draft" }).performanceId, id);
+  assert.notEqual(withFlowEmailIdentities({ ...first, steps: [cloneFlowStep(first.steps[0])] }).steps[0].config.performanceId, id);
+  const split = blankStep("split");
+  split.config.paths = [{ id: "otherwise", condition: null, steps: first.steps }];
+  const nested = cloneFlowStep(split).config.paths as Array<{ steps: Array<{ config: Record<string, unknown> }> }>;
+  assert.equal(nested[0].steps[0].config.performanceId, undefined);
 });

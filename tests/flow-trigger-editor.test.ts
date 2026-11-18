@@ -9,8 +9,8 @@ const companyId = "11111111-1111-4111-8111-111111111111";
 const contactId = "22222222-2222-4222-8222-222222222222";
 const mailboxId = "33333333-3333-4333-8333-333333333333";
 
-test("trigger choices match the six supported entry events and all defaults validate", () => {
-  assert.equal(editableTriggerTypes.length, 6);
+test("trigger choices include inactive customers and all defaults validate", () => {
+  assert.ok(editableTriggerTypes.includes("dormant_customer"));
   assert.ok(!editableTriggerTypes.includes("pipeline_stage_changed" as typeof editableTriggerTypes[number]));
   for (const type of editableTriggerTypes) {
     const config = triggerEventDraft(defaultFlowInput, type, ["Wholesale"]);

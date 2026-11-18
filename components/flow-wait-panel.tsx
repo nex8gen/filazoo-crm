@@ -35,6 +35,7 @@ export function FlowWaitPanel({ config, onChange, onClose, disabled, trail = [],
           {draft.specificTime ? <div className="wf-wait-time"><Label htmlFor="flow-wait-time">Time of day (UTC)</Label><TimePicker id="flow-wait-time" aria-label="Time of day (UTC)" value={draft.resumeAt} disabled={disabled} onValueChange={resumeAt => update({ resumeAt })} /><p>The workflow resumes at this time after the delay. Times use UTC.</p></div> : null}
         </div>
         <div className="wf-wait-option"><label><Checkbox aria-label="Count business days only" checked={draft.businessDays} disabled={disabled} onCheckedChange={checked => update({ businessDays: checked === true })} /><span>Count business days only<small>Monday–Friday. Weekends are skipped.</small></span></label></div>
+        <div className="wf-wait-option"><label><Checkbox aria-label="Count from trigger time" checked={draft.anchor === "trigger"} disabled={disabled} onCheckedChange={checked => update({ anchor: checked === true ? "trigger" : "previous_action" })} /><span>Count from trigger time<small>Use cumulative milestones instead of gaps between messages.</small></span></label></div>
         {changed && !result.ok ? <p role="alert" className="wf-wait-error">{result.error}</p> : null}
       </div>
     </div>

@@ -1,4 +1,7 @@
+import { readMailImportPreferences, type MailImportPreferences } from "./mail-import.ts";
+
 export type MailboxRecordInput = {
+  sync_preferences?: unknown;
   id?: string | null;
   user_id?: string | null;
   type?: string | null;
@@ -21,6 +24,7 @@ export type MailboxRecordInput = {
 };
 
 export type NormalizedMailboxRecord = {
+  syncPreferences: MailImportPreferences;
   id: string;
   userId: string | null;
   type: "workspace" | "personal";
@@ -56,6 +60,7 @@ export function normalizeMailboxRow(row: MailboxRecordInput | null | undefined):
   };
 
   return {
+    syncPreferences: readMailImportPreferences(row.sync_preferences),
     id: typeof row.id === "string" && row.id ? row.id : email,
     userId: typeof row.user_id === "string" && row.user_id ? row.user_id : null,
     type,

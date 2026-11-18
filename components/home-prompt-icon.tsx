@@ -1,7 +1,7 @@
 import Image from "next/image";
-import type { HomePrompt } from "@/lib/home-prompts";
+import type { PromptIconName } from "@/lib/home-prompts";
 
-const promptArtwork: Record<HomePrompt["icon"], string> = {
+const promptArtwork: Record<PromptIconName, string> = {
   megaphone: "reference-megaphone",
   calendar: "reference-calendar",
   package: "reference-package",
@@ -10,9 +10,10 @@ const promptArtwork: Record<HomePrompt["icon"], string> = {
   file: "reference-tag",
   list: "reference-calendar",
   boxes: "reference-package",
+  repair: "workflow-repair",
 };
 
-/** Original artwork from the supplied reference; provenance is recorded in public/icons/home-prompts/SOURCES.txt. */
-export function HomePromptIcon({ name, size = 36 }: { name: HomePrompt["icon"]; size?: number }) {
-  return <Image src={`/icons/home-prompts/${promptArtwork[name]}.png`} width={size} height={size} sizes={`${size}px`} alt="" aria-hidden="true" className="home-prompt-artwork" />;
+/** Serve original transparent artwork without thumbnail recompression; see SOURCES.txt. */
+export function HomePromptIcon({ name, size = 36 }: { name: PromptIconName; size?: number }) {
+  return <Image src={`/icons/home-prompts/${promptArtwork[name]}.png`} width={size} height={size} unoptimized alt="" aria-hidden="true" className="home-prompt-artwork shrink-0 object-contain" />;
 }

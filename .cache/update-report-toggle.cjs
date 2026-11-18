@@ -1,0 +1,13 @@
+const fs=require('node:fs');
+const file='components/flow-builder.tsx';let source=fs.readFileSync(file,'utf8');
+source=source.replace('import { FlowEmailMetrics, FlowEmailPerformanceProvider }','import { FlowEmailPerformanceProvider }');
+source=source.replace('const [inspectorTab, setInspectorTab] = useState("configure");','const [reportsVisible, setReportsVisible] = useState(true);\r\n  const [inspectorTab, setInspectorTab] = useState("configure");');
+source=source.replace('<FlowEmailPerformanceProvider flowId={draft.id}', '<FlowEmailPerformanceProvider reportsVisible={reportsVisible} flowId={draft.id}');
+source=source.split('\n').map(line=>line.includes('aria-label="Workflow analytics"') ? '          <Button className="wf-icon-button wf-reports-toggle" variant="ghost" size="icon-sm" aria-label={reportsVisible ? "Hide action reports" : "Show action reports"} aria-pressed={reportsVisible} title={draft.status === "draft" ? "Reports are available after going live" : reportsVisible ? "Hide action reports" : "Show action reports"} disabled={!draft.id || draft.status === "draft"} onClick={() => setReportsVisible(visible => !visible)}><ChartNoAxesCombined /></Button>' : line).join('\n');
+const duplicate='{selectedStep.type === "ai_auto_reply" && savedEmailIds.includes(String(selectedStep.config.performanceId || selectedStep.id)) && draft.status !== "draft" ? <section className="wf-ai-reply-performance" aria-label="AI reply performance"><h3>Performance</h3><FlowEmailMetrics actionId={String(selectedStep.config.performanceId || selectedStep.id)} ai /></section> : null}';
+if(!source.includes(duplicate))throw new Error('AI sidebar report not found');
+source=source.replace(duplicate,'');
+source=source.replace(' onViewActivity={() => requestNavigation(() => { setInspectorTab("insights"); setEditorPanel("settings"); setMobileBuilderPanel("settings"); })}', '');
+source=source.replace(' actionId={selectedStep.id} onSaveText=', ' onSaveText=');
+source=source.replace('mailboxes={mailboxes} status={draft.status} defaultName=', 'mailboxes={mailboxes} defaultName=');
+fs.writeFileSync(file,source);

@@ -1,5 +1,5 @@
 import { createSupabaseAdmin } from "../supabase/admin.ts";
-import { emailTagMessageKey, isCustomerTag, type CustomerTag } from "../customer-tags.ts";
+import { emailTagMessageKey, normalizeCustomerTag, type CustomerTag } from "../customer-tags.ts";
 
 export async function listSharedEmailTags() {
   return new Map([...(await listSharedEmailTagAssignments())].map(([key, value]) => [key, value.category]));
@@ -13,7 +13,7 @@ export async function listSharedEmailTagAssignments(signal?: AbortSignal) {
     if (signal) query = query.abortSignal(signal);
     const { data, error } = await query;
     if (error) throw new Error(`Unable to load customer tags: ${error.message}`);
-    for (const row of data ?? []) tags.set(row.message_key, { category: isCustomerTag(row.tag) ? row.tag : null, updatedAt: row.updated_at });
+    for (const row of data ?? []) tags.set(row.message_key, { category: normalizeCustomerTag(row.tag), updatedAt: row.updated_at });
     if ((data?.length ?? 0) < 500) break;
   }
   return tags;

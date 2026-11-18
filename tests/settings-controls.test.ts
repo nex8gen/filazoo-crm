@@ -5,6 +5,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import { z } from "zod";
 import { settingsSectionForPath, visibleSettingsSections } from "../lib/settings-sections.ts";
+import * as mailImport from "../lib/mail-import.ts";
 
 test("settings search finds actual controls across categories and languages without exposing admin items", () => {
   assert.deepEqual(visibleSettingsSections(false, "email signature").map(item => item.id), ["email"]);
@@ -46,6 +47,8 @@ function fixture(role = "admin") {
     },
   };
   const dependencies: Record<string, unknown> = {
+    "@/lib/mail-import": mailImport,
+    "@/lib/data/mail-import-connection": { scheduleConnectedMailboxImport: () => {} },
     "./team-actions": { createTeamInvitation: async () => ({ success: "Invitation created." }) },
     "next/cache": { revalidatePath: () => {}, updateTag: () => {} }, zod: { z },
     "@/lib/auth": { requireWorkspaceMember: async (allowed: string[]) => { if (!allowed.includes(role)) throw new Error("Access denied"); return { id: "a0000000-1111-4111-8111-111111111111", role }; } },

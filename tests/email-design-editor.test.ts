@@ -135,7 +135,7 @@ async function mount(initial = { ...designTools.newEmailDesign(), blocks: [] } a
   }
   return { host, click, set, field, findButton, dragStart, snapshot, applied, saved, downloads, drag, closed: () => closed,
     async upload(type = "image/png", size = 4) { const input = host.querySelector<HTMLInputElement>("input[type=file]"); assert.ok(input); const file = new dom.window.File([new Uint8Array(size)], "example.png", { type }); await act(() => { Object.defineProperty(input, "files", { configurable: true, value: [file] }); input.dispatchEvent(new dom.window.Event("change", { bubbles: true })); }); },
-    async finishUpload() { assert.ok(pendingReader); await act(() => { pendingReader!.result = "data:image/png;base64,AAAA"; pendingReader!.onload?.(); }); },
+    async finishUpload(dataUrl = "data:image/png;base64,AAAA") { assert.ok(pendingReader); await act(() => { pendingReader!.result = dataUrl; pendingReader!.onload?.(); }); },
     async dispose() { await act(() => root.unmount()); host.remove(); },
   };
 }
@@ -626,6 +626,26 @@ test("paste inserts plain text and keyboard undo/redo work inside the canvas", a
     assert.equal(editable.querySelector("b"), null); assert.match((await ui.snapshot()).blocks[0].text, /Plain pasted copy/);
     await act(() => editable.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true }))); assert.equal((await ui.snapshot()).blocks[0].text, "Original");
     await act(() => editable.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "z", ctrlKey: true, shiftKey: true, bubbles: true }))); assert.match((await ui.snapshot()).blocks[0].text, /Plain pasted copy/);
+  } finally { await ui.dispose(); }
+});
+
+test("clipboard GIFs become reusable image blocks while preserving animation bytes", async () => {
+  const ui = await mount(designTools.newEmailDesign("Original", "text"), true);
+  try {
+    const file = new dom.window.File(["GIF89a"], "pasted.gif", { type: "image/gif" });
+    await act(async () => {
+      const event = new dom.window.Event("paste", { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "clipboardData", { value: { files: [file], items: [], getData: () => "" } });
+      ui.host.querySelector(".email-designer")!.dispatchEvent(event);
+    });
+    await ui.finishUpload("data:image/gif;base64,R0lGODlh");
+    assert.equal(ui.findButton("Done").disabled, false, ui.host.textContent || "Upload did not finish");
+    const saved = await ui.snapshot();
+    const image = saved.blocks.find(block => block.type === "image")!;
+    assert.equal(image.src, "data:image/gif;base64,R0lGODlh");
+    assert.equal(saved.blocks[0].text, "Original");
+    await ui.click("Save as template");
+    assert.equal(ui.saved[0].design.blocks.find(block => block.type === "image")?.src, image.src);
   } finally { await ui.dispose(); }
 });
 

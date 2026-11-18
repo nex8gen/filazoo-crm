@@ -1,39 +1,64 @@
 "use client";
 
-import { Bell, Building2, CircleStop, Clock3, GitBranch, Mail, Sparkles, Tag, UserRoundCheck, Workflow } from "lucide-react";
-import { useLanguage } from "@/components/language-provider";
-import { flowActionLocations, flowPaths } from "@/lib/flow-tree";
-import { formatTrigger, stepLabels, type FlowInput } from "@/lib/flows";
+import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { FlowConnector } from "@/components/flow-connector";
+import { CANVAS_NODE_WIDTH, FLOW_NODE_GAP, layoutFlowNodes } from "@/lib/flow-canvas";
+import { flowNodeWidth } from "@/lib/flow-tree";
+import type { FlowInput } from "@/lib/flows";
 import "./flow-design-preview.css";
 
-type Step = FlowInput["steps"][number];
-const icons = { ai_auto_reply: Sparkles, send_email: Mail, wait: Clock3, split: GitBranch, if_condition: GitBranch, create_task: UserRoundCheck, internal_alert: Bell, change_category: Tag, update_company: Building2, stop: CircleStop };
+/** Fit the editor's actual cards and complete branch trees into a static thumbnail. */
+export function FlowDesignPreview({ flow, renderTrigger, renderStep, renderEnd }: {
+  flow: FlowInput;
+  renderTrigger: () => ReactNode;
+  renderStep: (step: FlowInput["steps"][number], index: number) => ReactNode;
+  renderEnd: () => ReactNode;
+}) {
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const sceneRef = useRef<HTMLDivElement>(null);
+  const [measurement, setMeasurement] = useState({ width: 0, heights: {} as Record<string, number> });
+  const keys = flow.steps.map((step, index) => step.id || `step-${index}`);
+  const layout = layoutFlowNodes(keys, measurement.heights);
+  const nodes = [layout.trigger, ...layout.steps, layout.end];
+  const width = Math.max(CANVAS_NODE_WIDTH, ...flow.steps.map(step => flowNodeWidth(step)));
+  const height = layout.end.y + layout.end.height - layout.trigger.y;
+  const zoom = Math.min(.7, Math.max(1, measurement.width - 32) / width, 272 / height);
+  const center = layout.trigger.x + CANVAS_NODE_WIDTH / 2;
+  const ready = measurement.width > 0 && nodes.every(node => measurement.heights[node.id] > 0);
 
-/** A compact overview of the saved definition; omitted actions are counted explicitly. */
-export function FlowDesignPreview({ flow }: { flow: FlowInput }) {
-  const { t } = useLanguage();
-  const splitAt = flow.steps.findIndex(step => step.type === "split");
-  const steps = flow.steps.slice(0, splitAt >= 0 && splitAt < 3 ? splitAt + 1 : 3);
-  const shownActions = steps.reduce((count, step) => count + 1 + (step.type === "split" ? flowPaths(step.config).slice(0, 3).filter(path => path.steps.length > 0).length : 0), 0);
-  const remaining = flowActionLocations(flow.steps).length - shownActions;
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current;
+    const scene = sceneRef.current;
+    if (!viewport || !scene) return;
+    const measure = () => {
+      const heights: Record<string, number> = {};
+      scene.querySelectorAll<HTMLElement>("[data-preview-node]").forEach(node => {
+        heights[node.dataset.previewNode!] = node.offsetHeight;
+      });
+      setMeasurement(current => current.width === viewport.clientWidth && JSON.stringify(current.heights) === JSON.stringify(heights)
+        ? current : { width: viewport.clientWidth, heights });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(viewport);
+    scene.querySelectorAll("[data-preview-node]").forEach(node => observer.observe(node));
+    return () => observer.disconnect();
+  }, [flow.steps, flow.triggerType, flow.triggerConfig]);
 
-  return <div className="flow-design-preview" aria-hidden="true">
-    <div className="flow-design-node flow-design-trigger"><Workflow /><span>{t(formatTrigger(flow.triggerType, flow.triggerConfig))}</span></div>
-    {steps.map((step, index) => <div key={step.id || index} className="flow-design-stage">
-      <span className="flow-design-connector" /><PreviewNode step={step} />
-      {step.type === "split" ? <div className="flow-design-branches" style={{ gridTemplateColumns: `repeat(${Math.max(1, Math.min(3, flowPaths(step.config).length))}, minmax(0, 1fr))` }}>
-        {flowPaths(step.config).slice(0, 3).map((path, pathIndex) => <div className="flow-design-branch" key={path.id || pathIndex}><span className="flow-design-path" title={path.name}>{t(path.name)}</span>{path.steps[0] ? <PreviewNode step={path.steps[0]} /> : <span className="flow-design-end">{t("End")}</span>}</div>)}
-      </div> : null}
-      {step.type === "split" && flowPaths(step.config).length > 3 ? <span className="flow-design-more">{t(`+${flowPaths(step.config).length - 3} more paths`)}</span> : null}
-    </div>)}
-    <span className="flow-design-connector" />
-    <span className="flow-design-end">{remaining > 0 ? t(`+${remaining} more actions`) : t("End")}</span>
+  return <div ref={viewportRef} className="flow-design-preview" aria-hidden="true" inert>
+    <div ref={sceneRef} className="wf-canvas flow-design-scene" style={{
+      "--wf-node-width": `${CANVAS_NODE_WIDTH}px`, "--wf-node-gap": `${FLOW_NODE_GAP}px`,
+      visibility: ready ? "visible" : "hidden",
+      transform: `translate(${measurement.width / 2 - center * zoom}px, ${152 - (layout.trigger.y + height / 2) * zoom}px) scale(${zoom})`,
+    } as CSSProperties}>
+      <svg className="flow-design-connections" aria-hidden="true">
+        {nodes.slice(1).map((node, index) => <FlowConnector key={node.id}
+          from={{ x: nodes[index].x + nodes[index].width / 2, y: nodes[index].y + nodes[index].height }}
+          to={{ x: node.x + node.width / 2, y: node.y }} />)}
+      </svg>
+      <div data-preview-node={layout.trigger.id} className="flow-design-position" style={{ left: layout.trigger.x, top: layout.trigger.y, width: CANVAS_NODE_WIDTH }}>{renderTrigger()}</div>
+      {flow.steps.map((step, index) => <div data-preview-node={keys[index]} key={keys[index]} className="flow-design-position" style={{ left: layout.steps[index].x, top: layout.steps[index].y, width: CANVAS_NODE_WIDTH }}>{renderStep(step, index)}</div>)}
+      <div data-preview-node={layout.end.id} className="flow-design-position" style={{ left: layout.end.x, top: layout.end.y, width: layout.end.width }}>{renderEnd()}</div>
+    </div>
   </div>;
-}
-
-function PreviewNode({ step }: { step: Step }) {
-  const { t } = useLanguage();
-  const Icon = icons[step.type];
-  const label = step.type === "wait" ? `${t("Wait")} ${step.config.amount || 1} ${t(String(step.config.unit || "days"))}` : step.type === "split" ? String(step.config.name || t(stepLabels[step.type])) : t(stepLabels[step.type]);
-  return <div className={`flow-design-node flow-design-${step.type}`}><Icon /><span title={label}>{label}</span></div>;
 }

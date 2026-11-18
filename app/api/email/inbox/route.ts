@@ -36,17 +36,19 @@ export async function GET(request: Request) {
     // saved messages first and enqueue receiving in Next's after-response work.
     const syncHealth: Record<string, Awaited<ReturnType<typeof readMailboxSyncHealth>>> = {};
     let syncQueueError: string | null = null;
+    let historyQueued = false;
     {
-      const refreshRequested = params.get("refresh") !== "false" && !data.mailboxSnapshotPartial;
+      const historyPartial = data.mailboxHistoryPartial ?? data.mailboxSnapshotPartial;
+      const refreshRequested = params.get("refresh") !== "false" && !historyPartial;
       const backgroundRefresh = params.get("refresh") === "background";
       const availableMailboxes = company ? await listCompanyEmailMailboxes() : mailboxes;
       const refreshMailboxes = availableMailboxes.filter((item) => (company || item.id === data.selectedMailboxId) && mailboxHasImap(item));
       await Promise.all(refreshMailboxes.map(async (mailbox) => {
         try {
-          if (refreshRequested && !backgroundRefresh) await enqueueMailboxSync(mailbox, { history, folder: params.get("providerFolder") || undefined, refresh: true });
+          if (refreshRequested && !backgroundRefresh) { await enqueueMailboxSync(mailbox, { history, folder: params.get("providerFolder") || undefined, refresh: true }); if (history) historyQueued = true; }
           const folder = params.get("providerFolder") || "INBOX";
           // Switching reads saved mail without another serial status query.
-          if (!data.mailboxSnapshotPartial && ((refreshRequested && !backgroundRefresh) || params.get("health") === "true")) syncHealth[mailbox.id] = await readMailboxSyncHealth(mailbox, folder === "INBOX" ? data.lastMailboxSync || null : null, folder);
+          if (!historyPartial && ((refreshRequested && !backgroundRefresh) || params.get("health") === "true")) syncHealth[mailbox.id] = await readMailboxSyncHealth(mailbox, folder === "INBOX" ? data.lastMailboxSync || null : null, folder);
         } catch (error) {
           console.warn("Mailbox queue unavailable:", error instanceof Error ? error.message : "Unknown error");
           syncQueueError = refreshRequested ? "Mailbox refresh could not be queued. Saved messages are still available." : "Unable to check mailbox updates. Saved messages are still available.";
@@ -78,7 +80,7 @@ export async function GET(request: Request) {
       syncHealth,
     }, { status: 503, headers: { "Cache-Control": "no-store" } });
 
-    return Response.json({ ...data, syncHealth, syncQueueError }, {
+    return Response.json({ ...data, syncHealth, syncQueueError, historyQueued }, {
       headers: { "Cache-Control": "no-store", "Server-Timing": `auth;dur=${(authorizedAt - start).toFixed(1)},inbox;dur=${(performance.now() - authorizedAt).toFixed(1)}` },
       status: 200,
     });

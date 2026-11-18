@@ -5,7 +5,7 @@ import { calculateWaitUntil } from "../lib/flow-engine.ts";
 import { defaultFlowInput, flowInputSchema } from "../lib/flows.ts";
 
 test("time delay editor accepts supported units and schema limits", () => {
-  for (const unit of waitUnits) for (const amount of [1, 525600]) {
+  for (const unit of waitUnits) for (const amount of [1, unit === "months" ? 24 : 525600]) {
     const result = applyWaitDraft({}, { ...waitEditorDraft({}), amount: String(amount), unit });
     assert.ok(result.ok);
     assert.ok(flowInputSchema.safeParse({ ...defaultFlowInput, steps: [{ id: "wait", type: "wait", config: result.config }] }).success);

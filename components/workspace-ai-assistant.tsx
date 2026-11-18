@@ -42,7 +42,7 @@ import { fetchWithSessionRecovery, AssistantSessionError } from "@/lib/ai/sessio
 import { isWorkspaceSessionRetry } from "@/lib/workspace-session-response";
 
 type Mode = "chat" | "agent";
-export type WorkspaceAiLaunchRequest = { id: number; mode: Mode; prompt?: string; submit?: boolean };
+export type WorkspaceAiLaunchRequest = { id: number; mode: Mode; prompt?: string; submit?: boolean; pathname?: string };
 type Message = { id: string; role: "user" | "assistant"; content: string; images?: ChatImage[]; attachmentNames?: string[]; actions?: AgentProposal[]; durationMs?: number; work?: AgentWorkProgress; research?: ResearchResult; presentation?: ResponsePresentation };
 type AssistantReply = { output: string; error?: string; actions?: AgentProposal[]; research?: ResearchResult; presentation?: ResponsePresentation; history?: Parameters<ReturnType<typeof useAiConversation>["accept"]>[0] };
 
@@ -54,6 +54,7 @@ const pageNames: Array<[RegExp, string]> = [
   [/^\/invoices/, "Invoices"],
   [/^\/email(?:\/|$)/, "Email"],
   [/^\/messenger/, "Messenger"],
+  [/^\/workflow\/analytics(?:\/|$)/, "Workflow analytics"],
   [/^\/workflow(?:\/|$)/, "Workflow"],
   [/^\/company-quotations(?:\/|$)/, "Company Quotations"],
   [/^\/products(?:\/|$)/, "Products"],
@@ -184,8 +185,9 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
     void send(queuedLaunch.prompt);
   });
   useEffect(() => {
-    if (open && presentation === "page" && queuedLaunch && !busy && !loadingHistory && !attachments.processing) submitLaunch();
-  }, [open, presentation, queuedLaunch, busy, loadingHistory, attachments.processing, activeMode]);
+    const launchIsCurrent = queuedLaunch?.pathname ? queuedLaunch.pathname === pathname : presentation === "page";
+    if (open && launchIsCurrent && queuedLaunch && !busy && !loadingHistory && !attachments.processing) submitLaunch();
+  }, [open, pathname, presentation, queuedLaunch, busy, loadingHistory, attachments.processing, activeMode]);
   useEffect(() => { if (open && presentation === "page") input.current?.focus(); }, [open, presentation]);
 
   useEffect(() => { visibleChatKey.current = chatKey; }, [chatKey]);
@@ -200,7 +202,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
     };
     readScope();
     const observer = new MutationObserver(readScope);
-    observer.observe(main, { subtree: true, childList: true, attributes: true, attributeFilter: ["style", "hidden", "data-ai-email-id", "data-ai-mailbox-id", "data-ai-invoice-id", "data-ai-company-id", "data-ai-conversation-id", "data-ai-flow-id", "data-ai-flow-draft", "data-ai-flow-unsaved", "data-ai-flow-step-id"] });
+    observer.observe(main, { subtree: true, childList: true, attributes: true, attributeFilter: ["style", "hidden", "data-ai-email-id", "data-ai-mailbox-id", "data-ai-invoice-id", "data-ai-company-id", "data-ai-conversation-id", "data-ai-flow-id", "data-ai-flow-draft", "data-ai-flow-unsaved", "data-ai-flow-step-id", "data-ai-flow-analytics"] });
     return () => observer.disconnect();
   }, [pathname]);
 

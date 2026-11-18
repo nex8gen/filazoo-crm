@@ -25,12 +25,50 @@
 .wf-alert-count { position: absolute; top: -3px; right: -5px; display: grid; height: 17px; min-width: 17px; place-items: center; border: 2px solid var(--background); border-radius: 999px; padding-inline: 3px; background: #356ce8; color: #fff; font-size: 10px; font-weight: 600; line-height: 13px; font-variant-numeric: tabular-nums; }
 .wf-toolbar-actions .wf-text-button[data-slot=button] { display: inline-flex; width: auto; min-width: max-content; max-width: none; height: 32px; flex: 0 0 auto; gap: 7px; padding: 0 12px; border-radius: 7px; white-space: nowrap; font-size: 12px; line-height: 20px; }
 .wf-toolbar-actions .wf-text-button svg { width: 16px; height: 16px; flex-shrink: 0; }
+.wf-toolbar-actions .wf-reports-toggle[aria-pressed=true] { background: var(--brand-soft); color: var(--primary); }
 .wf-toolbar-tools > [title='Tasks and notifications'] { display: inline-flex; min-width: 32px; height: 32px; flex-shrink: 0; gap: 4px; padding: 0 6px; border-color: transparent; background: transparent; }
 .wf-toolbar-actions .wf-audit-button { background: #e9e1fc; color: #4e2bc4; }
 .dark .wf-toolbar-actions .wf-audit-button { background: #3b2d62; color: #d8c7ff; }
 .wf-workbench { display: flex; flex: 1; gap: 16px; min-height: 0; padding: 8px; overflow: hidden; pointer-events: none; }
 .wf-canvas-safe-area { position: relative; flex: 1; min-width: 0; min-height: 0; pointer-events: none; }
 .wf-panel { position: relative; z-index: 2; min-width: 0; min-height: 0; border: 1px solid var(--wf-line); border-radius: 18px; background: var(--background); pointer-events: auto; }
+.wf-history-panel { display: flex; width: 480px; max-width: 100%; flex: 0 0 auto; flex-direction: column; overflow: hidden; }
+.wf-history-heading { display: flex; min-height: 80px; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 24px; }
+.wf-history-heading h2 { font-size: 18px; font-weight: 500; outline: none; }
+.wf-history-heading svg { width: 18px; height: 18px; }
+.wf-history-tabs[data-slot=tabs] { min-height: 0; flex: 1; gap: 0; }
+.wf-history-tabs > [data-slot=tabs-list] { width: 100%; height: 42px; flex-shrink: 0; gap: 0; border-bottom: 1px solid var(--wf-line); padding: 0 24px; overflow: visible; }
+.wf-history-tabs [data-slot=tabs-trigger] { height: 42px; border: 0; border-radius: 0; font-size: 13px; font-weight: 400; }
+.wf-history-tabs [data-slot=tabs-trigger]::after { bottom: 0; }
+.wf-history-tools { display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; gap: 8px; padding: 24px 24px 12px; }
+.wf-history-search { position: relative; min-width: 0; flex: 1; }
+.wf-history-search > svg { position: absolute; top: 10px; left: 10px; width: 14px; height: 14px; color: var(--muted-foreground); }
+.wf-history-search input { height: 34px; padding-left: 32px; border-radius: 8px; font-size: 13px; }
+.wf-history-tools > button { width: 34px; height: 34px; border-radius: 8px; }
+.wf-history-tools > select { width: 100%; height: 34px; border: 1px solid var(--input); border-radius: 8px; padding: 0 8px; background: var(--background); font-size: 13px; }
+.wf-history-content[data-slot=tabs-content] { min-height: 0; overflow-y: auto; padding: 0 24px 24px; scrollbar-width: thin; }
+.wf-history-list { margin: 0; padding: 0; list-style: none; }
+.wf-history-list > li { border-bottom: 1px solid var(--wf-line); padding: 20px 0; }
+.wf-history-meta { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 10px; color: var(--primary); font-size: 11px; line-height: 17px; }
+.wf-history-meta time { flex-shrink: 0; }
+.wf-history-meta > span { min-width: 0; overflow-wrap: anywhere; text-align: right; }
+.wf-history-list ul { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; font-size: 13px; line-height: 21px; overflow-wrap: anywhere; }
+.wf-history-list summary { cursor: pointer; font-size: 14px; font-weight: 500; }
+.wf-history-list summary > span { display: block; margin: 6px 0 12px; color: var(--muted-foreground); font-size: 11px; font-weight: 400; }
+.wf-history-deleted { display: inline-block; margin-left: 6px; border-radius: 8px; padding: 0 6px; background: var(--muted); color: var(--muted-foreground); font-size: 11px; line-height: 18px; }
+.wf-history-message, .wf-history-empty { display: flex; flex-direction: column; gap: 12px; padding: 28px 0; color: var(--muted-foreground); font-size: 13px; line-height: 21px; }
+.wf-history-empty { align-items: center; text-align: center; }
+.wf-history-empty > svg { width: 28px; height: 28px; }
+.wf-history-pagination { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 20px; font-size: 12px; }
+.wf-toolbar-actions .wf-history-toggle[aria-pressed=true] { background: var(--brand-soft); color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
+@media (min-width: 761px) and (max-width: 1440px) { .wf-history-panel { width: 360px; } .wf-workbench[data-history-open] > .wf-inspector { width: 360px; } }
+@media (max-width: 760px) {
+ .workflow-editor .wf-workbench[data-history-open] > .wf-history-panel { display: flex; width: 100%; max-width: 100%; }
+ .workflow-editor .wf-workbench[data-history-open] > aside:not(.wf-history-panel), .workflow-editor .wf-workbench[data-history-open] > .wf-canvas-safe-area { display: none; }
+ .wf-history-heading { padding-inline: 18px; }
+ .wf-history-tools { padding-inline: 18px; }
+ .wf-history-content[data-slot=tabs-content] { padding-inline: 18px; }
+}
 .wf-alerts-panel { display: flex; width: 320px; flex-shrink: 0; flex-direction: column; overflow: hidden; }
 .wf-alerts-heading { display: flex; min-height: 80px; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 12px; padding: 20px; }
 .wf-alerts-heading h2 { font-size: 18px; font-weight: 500; }
@@ -73,8 +111,8 @@
 .wf-settings-heading { display: flex; min-height: 88px; flex-shrink: 0; align-items: center; gap: 14px; padding: 20px 24px; border-bottom: 1px solid var(--wf-line); }
 .wf-settings-heading h2 { flex: 1; min-width: 0; font-size: 18px; font-weight: 500; }
 .wf-settings-heading > button { width: 28px; height: 28px; }
-.wf-settings-icon { display: grid; width: 40px; height: 40px; flex-shrink: 0; place-items: center; border-radius: 50%; background: #626568; color: white; }
-.wf-settings-icon svg { width: 21px; height: 21px; }
+.wf-settings-icon { display: grid; width: 40px; height: 40px; flex: 0 0 40px; place-items: center; border-radius: 12px; background: var(--brand-soft); color: var(--primary); }
+.wf-settings-icon > svg { display: block; width: 22px; height: 22px; flex-shrink: 0; }
 .wf-inspector-content { flex: 1; min-height: 0; overflow-y: auto; padding: 24px; }
 .wf-inspector-content > div > h3 { font-size: 15px; font-weight: 500; }
 .wf-settings-footer { display: flex; min-height: 80px; flex-shrink: 0; align-items: center; justify-content: flex-end; padding: 16px 24px; border-top: 1px solid var(--wf-line); }
@@ -212,8 +250,6 @@
 .wf-canvas [data-flow-group=message] .wf-node-kicker { color: #075de5; }
 .wf-canvas [data-flow-group=data] .wf-node-heading { border-radius: 15px 15px 0 0; background: #fff5e8; }
 .wf-canvas [data-flow-group=data] .wf-node-kicker { color: #9f5400; }
-.wf-canvas [data-flow-kind=ai_auto_reply] .wf-node-heading { background: #eee8fb; }
-.wf-canvas [data-flow-kind=ai_auto_reply] .wf-node-kicker { color: #6240b0; }
 .wf-canvas [data-flow-kind=internal_alert] .wf-node-heading { background: #fff2d9; }
 .wf-canvas [data-flow-kind=if_condition] .wf-node-kicker, .wf-canvas [data-flow-kind=split] .wf-node-kicker { color: var(--muted-foreground); }
 .dark .wf-canvas [data-flow-group] .wf-node-heading { background: var(--muted); }
@@ -267,7 +303,6 @@
 .wf-trigger-filter-footer { display: block; width: 100%; border-top: 1px solid var(--wf-line); padding: 8px 12px; background: var(--background); color: var(--foreground); }
 .wf-trigger-filter-footer [data-slot=badge] { border-radius: 999px; font-size: 11px; font-weight: 400; }
 
-.wf-wait-panel .wf-settings-icon { background: var(--muted); color: var(--muted-foreground); }
 .wf-wait-panel .wf-settings-footer { justify-content: flex-end; }
 .wf-wait-panel .wf-settings-footer > button:last-child { margin-left: 0; }
 .wf-trigger-panel .wf-save-footer, .wf-wait-panel .wf-save-footer { justify-content: space-between; }
@@ -283,8 +318,6 @@
 .wf-wait-error { color: var(--destructive); font-size: 12px; line-height: 19px; }
 
 .wf-email-panel { width: 480px; }
-.wf-email-panel .wf-settings-icon { width: 36px; height: 36px; border-radius: 6px; background: #e0f2ff; color: #065de5; }
-.wf-email-panel .wf-settings-icon svg { width: 20px; height: 20px; }
 .wf-email-panel .wf-settings-heading h2 { font-size: 20px; line-height: 28px; font-weight: 600; }
 .wf-email-panel .wf-inspector-content { padding: 0 24px; }
 .workflow-editor .wf-email-panel .wf-inspector-content { scrollbar-width: thin; }
@@ -328,11 +361,11 @@
 .wf-email-performance-metrics dl > div, .wf-email-card-metrics dl > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; line-height: 22px; }
 .wf-email-performance-metrics dd, .wf-email-card-metrics dd { margin: 0; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .wf-email-performance-metrics { margin: 4px 0 6px; }
+.wf-email-metrics-period { margin-bottom: 9px; color: var(--muted-foreground); font-size: 11px; line-height: 16px; }
+.wf-email-performance-metrics .wf-email-metric-divider { border-top: 1px solid var(--wf-line); margin-top: 3px; padding-top: 12px; }
 .wf-email-metrics-caption { margin-top: 12px; color: var(--muted-foreground); font-size: 13px; line-height: 20px; }
 .wf-email-custom-utm { display: grid; gap: 12px; margin-left: 28px; }
 .wf-email-panel .wf-save-state { font-size: 12px; }
-.wf-email-performance-dialog > p { color: var(--muted-foreground); font-size: 12px; line-height: 20px; }
-.wf-email-performance-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .wf-email-metrics-error { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 11px; color: var(--muted-foreground); }
 .wf-email-metrics-error button { width: 24px; height: 24px; padding: 4px; }
 .wf-email-card-content { padding: 0 12px; }

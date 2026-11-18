@@ -22,10 +22,11 @@ function scheduleLabel(value: string, language: AppLanguage, now: Date) {
 
 /** Badges use the same saved action and completion rules as the follow-up tabs. */
 export function emailFollowupBadge(records: FollowupActionRecord[], language: AppLanguage, now = new Date()): FollowupBadge {
-  const actions = records.filter(action => action.source === "followup").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const actions = records.filter(action => action.source === "followup" || action.source === "workflow").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const action = actions.find(action => followupActionState(action) !== "completed") || actions[0];
   const zh = language === "zh-CN";
   if (!action) return { label: zh ? "未设置" : "Not set", tone: "muted", icon: "unset" };
+  if (action.status === "paused") return { label: zh ? "已暂停" : "Paused", detail: zh ? "在工作流中管理" : "Manage in Workflows", tone: "muted", icon: "stopped" };
   if (followupActionState(action) === "completed") {
     if (action.status === "cancelled" || action.taskStatus === "cancelled") return { label: zh ? "已停止" : "Stopped", tone: "muted", icon: "stopped" };
     return { label: action.status === "sent" ? zh ? "跟进已发送" : "Follow-up sent" : zh ? "跟进已完成" : "Completed", tone: "green", icon: "completed" };
@@ -46,5 +47,6 @@ export function emailFollowupBadge(records: FollowupActionRecord[], language: Ap
     const mode = action.kind === "reminder" ? zh ? "提醒时间" : "Reminder" : zh ? "自动发送时间" : "Auto-send";
     badge.title = `${badge.label} · ${mode}: ${new Date(action.dueAt!).toLocaleString(language)}`;
   }
+  if (action.progress) badge.detail = [badge.detail, action.progress].filter(Boolean).join(" · ");
   return badge;
 }
