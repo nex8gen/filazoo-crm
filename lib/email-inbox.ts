@@ -44,6 +44,7 @@ export type InboxEmailItem = {
   contact: string;
   company: string;
   companyId?: string | null;
+  customerContextStatus?: "pending" | "ready" | "error";
   companyScopeId?: string;
   ownerId?: string | null;
   ownerName?: string;
@@ -109,6 +110,7 @@ function toPreview(text: string | null | undefined) {
 
 type MailboxInboxSource = {
   mailboxId?: string | null;
+  companyId?: string | null;
   demo?: boolean;
   id?: string;
   direction?: "inbound" | "outbound";
@@ -237,6 +239,7 @@ export function buildInboxEmailItems({
       attachments: message.attachments,
       contactName: message.contactName,
       company: message.company || "Unknown company",
+      companyId: message.companyId,
       preview: toPreview(message.preview || message.body),
       body: message.bodyLoaded === false ? "" : message.body || "No email body available.",
       html: message.html ?? null,
@@ -263,6 +266,7 @@ export function buildInboxEmailItems({
     const item: InboxEmailItem = {
       id,
       direction: "inbound",
+      mailboxId: reply.mailboxId,
       messageId: reply.messageId,
       threadId: reply.threadId,
       status: "Received",
@@ -288,6 +292,7 @@ export function buildInboxEmailItems({
     const item: InboxEmailItem = {
       id,
       direction: "outbound",
+      mailboxId: draft.mailboxId,
       status: draft.status,
       subject: draft.subject || "Untitled draft",
       contact: draft.contact || "Unknown contact",
@@ -311,7 +316,7 @@ export function buildInboxEmailItems({
   });
 }
 
-async function readWorkspaceInboxSources(viewer: WorkspaceViewer, interactive = false) {
+async function readWorkspaceInboxSources(viewer: WorkspaceViewer, interactive = false, mailboxId?: string) {
   const { listEmailDrafts, listReplies } = await import("./data/crm.ts");
   const { listMetaLeadInquiries } = await import("./data/lead-inquiries.ts");
   let partial = false;
@@ -320,8 +325,8 @@ async function readWorkspaceInboxSources(viewer: WorkspaceViewer, interactive = 
     try { return await withInboxReadBudget(read); } catch { partial = true; return fallback; }
   };
   const [drafts, replies, shopify, assigned, meta] = await Promise.all([
-    optional(signal => listEmailDrafts(viewer, { signal }), { emails: [], mode: "live" as const }),
-    optional(signal => listReplies(viewer, { signal }), { replies: [], mode: "live" as const }),
+    optional(signal => listEmailDrafts(viewer, { signal, mailboxId }), { emails: [], mode: "live" as const }),
+    optional(signal => listReplies(viewer, { signal, mailboxId }), { replies: [], mode: "live" as const }),
     optional(signal => listShopifyFormInboxMessages(signal).catch(() => []), []), getAssignedEmailContacts(viewer),
     optional(() => listMetaLeadInquiries().catch(() => []), []),
   ]);
@@ -370,7 +375,7 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
     }
   };
   const [workspace, states, sentMessages, mailboxResult] = await Promise.all([
-    personal ? Promise.resolve(null) : context?.workspace ?? readWorkspaceInboxSources(viewer, interactive),
+    personal ? Promise.resolve(null) : context?.workspace ?? readWorkspaceInboxSources(viewer, interactive, defaultMailbox?.id),
     context?.states ?? optional(signal => listEmailInboxStates(viewer.id, signal), new Map()),
     defaultMailbox ? optional(signal => listSentMailboxMessages(viewer.id, defaultMailbox.id, context?.allowedPersonalContacts, signal), []) : Promise.resolve([]),
     loadInbound(),
@@ -381,7 +386,7 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
   const assignedContacts = workspace?.assigned ?? null;
   const { messages: liveInbound, error: inboxError, syncedAt: lastMailboxSync } = mailboxResult;
   const sentIds = new Set(sentMessages.flatMap((item) => item.messageId ? [normalizeMessageId(item.messageId)] : []));
-  const visibleInbox = [...buildInboxEmailItems({ drafts: emails, replies, inbound: [...shopifyMessages, ...liveInbound.filter((item) => !sentIds.has(normalizeMessageId(item.messageId)))] }), ...sentMessages.map((sent) => {
+  const visibleInbox = [...buildInboxEmailItems({ drafts: emails.filter(email => Boolean(defaultMailbox) && email.mailboxId === defaultMailbox?.id), replies: replies.filter(reply => Boolean(defaultMailbox) && reply.mailboxId === defaultMailbox?.id), inbound: [...shopifyMessages, ...liveInbound.filter((item) => !sentIds.has(normalizeMessageId(item.messageId)))] }), ...sentMessages.map((sent) => {
     const provider = liveInbound.find((item) => item.messageId && normalizeMessageId(item.messageId) === normalizeMessageId(sent.messageId));
     return provider ? { ...sent, uid: provider.uid, uidValidity: provider.uidValidity, mailboxKey: provider.mailboxKey, providerFolder: provider.providerFolder, providerKind: provider.providerKind, read: provider.read, starred: provider.starred, folder: provider.folder } : sent;
   })].map(item => {
@@ -391,7 +396,7 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
     .filter((item) => canViewEmail(viewer, item.contact, assignedContacts, defaultMailbox, context?.allowedPersonalContacts));
   // There is nothing to enrich when access rules exclude the saved messages.
   const [companyResult, automation] = await Promise.all([
-    visibleInbox.length ? (interactive ? optional(signal => listInboxCompanies(visibleInbox, assignedContacts, signal), { companies: [] }) : listInboxCompanies(visibleInbox, assignedContacts)) : Promise.resolve({ companies: [] }),
+    visibleInbox.length ? (interactive ? optional(signal => listInboxCompanies([...visibleInbox].sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp)).slice(0, 100), assignedContacts, signal), { companies: [] }) : listInboxCompanies(visibleInbox, assignedContacts)) : Promise.resolve({ companies: [] }),
     optional(signal => getEmailAutomationSettings(viewer.id, visibleInbox.filter((item) => item.direction === "inbound").length, signal), { enabled: false, queueCount: 0, steps: [] }),
   ]);
 
@@ -409,10 +414,11 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
         category: states.get(emailTagMessageKey(item))?.category ?? null,
         ...(item.providerFolder ? { read: item.read, starred: item.starred, folder: item.folder } : {}),
         company: company?.name || item.company,
-        companyId: assignedCompanyId ?? company?.id ?? null,
-        ownerId: assignedCompanyId ? viewer.id : company?.ownerId ?? null,
-        ownerAvatarUrl: company?.ownerAvatarUrl,
-        ownerName: company?.ownerName ?? (assignedCompanyId ? viewer.displayName || "BD Sales Manager" : "Unassigned"),
+        companyId: assignedCompanyId ?? company?.id ?? item.companyId ?? null,
+        customerContextStatus: (company || !interactive ? "ready" : "pending") as InboxEmailItem["customerContextStatus"],
+        ownerId: assignedCompanyId ? viewer.id : company?.ownerId ?? item.ownerId ?? null,
+        ownerAvatarUrl: company?.ownerAvatarUrl ?? item.ownerAvatarUrl,
+        ownerName: company?.ownerName ?? item.ownerName ?? (assignedCompanyId ? viewer.displayName || "BD Sales Manager" : interactive ? "Owner not loaded" : "Unassigned"),
         customerProfile: company ? {
           companyName: company.name,
           contactName: item.contactName || company.contact,
@@ -425,8 +431,8 @@ export async function getEmailInboxBackendData({ syncMailbox = true, history = f
           interests: company.tags,
           fitScore: company.fitScore,
           currency: company.currency,
-        } : undefined,
-        ownerInitials: company?.ownerInitials ?? "—",
+        } : item.customerProfile,
+        ownerInitials: company?.ownerInitials ?? item.ownerInitials ?? "—",
       };
     });
   const defaultMailboxEmail = defaultSender?.email || null;

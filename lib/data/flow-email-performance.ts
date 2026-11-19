@@ -25,7 +25,7 @@ export async function readEmailPerformance(client: ReturnType<typeof createSupab
   }
   const [logs, runs] = await Promise.all([
     read<EmailPerformanceLog>((from, to) => client.from("flow_run_logs").select("id,run_id,step_id,created_at,result,error,flow_runs!inner(flow_id)", { count: "exact" }).eq("flow_runs.flow_id", flowId).or(`created_at.gte.${analyticsStart("30", now)!},result->>action.eq.ai_usage,result->>aiGenerated.eq.true`).lte("created_at", now.toISOString()).order("id").range(from, to)),
-    read<EmailPerformanceRun>((from, to) => client.from("flow_runs").select("id,status,current_step,context", { count: "exact" }).eq("flow_id", flowId).in("status", ["active", "failed"]).order("id").range(from, to)),
+    read<EmailPerformanceRun>((from, to) => client.from("flow_runs").select("id,status,current_step,next_run_at,context", { count: "exact" }).eq("flow_id", flowId).in("status", ["active", "failed"]).order("id").range(from, to)),
   ]);
   await reconcileFlowAiCosts(client, logs, now);
   return summarizeEmailPerformance(logs, runs, now);

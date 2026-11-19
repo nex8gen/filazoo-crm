@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowDownLeft, ArrowUpRight, Bell, BellRing, Bot, Building2, CalendarClock, Check, CheckCheck, CircleCheck, ClipboardCheck, LoaderCircle, Mail, MoreHorizontal, Pencil, Phone, Plus, ReceiptText, RotateCcw, Truck, UserRound, X } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Bell, BellRing, Bot, Building2, CalendarClock, Check, CheckCheck, CircleCheck, ClipboardCheck, LoaderCircle, Mail, MoreHorizontal, Pencil, Phone, Plus, ReceiptText, Reply, RotateCcw, Truck, UserRound, X } from "lucide-react";
 import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -62,6 +62,7 @@ export function TaskItem({ task, now, pending, disabled, canManage, selected, co
           <span className="inline-flex items-center gap-1.5"><Icon className="size-3" aria-hidden="true" /><span>{source}</span></span>
           <span className={`inline-flex items-center gap-1.5 ${group === "Overdue" ? "font-medium text-amber-700 dark:text-amber-400" : ""}`}><CalendarClock className="size-3" aria-hidden="true" /><span>{group}</span>{displayDate && Number.isFinite(Date.parse(displayDate)) ? <time dateTime={displayDate} title={activityTime(displayDate)}>{new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Shanghai", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(displayDate))}</time> : null}</span>
         </div>
+        {task.reply_href && !closed && !task.workflow && !task.automation_id ? <a href={task.reply_href} className="mr-2 mt-3 inline-flex min-h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90"><Reply className="size-3.5" />Reply</a> : null}
         {task.workflow ? <TaskWorkPanel taskId={task.id} summary={task.workflow} selected={selected} /> : !compact && editable ? <Button type="button" size="xs" variant="outline" className="mt-3" disabled={disabled || pending} onClick={onComplete} aria-label={`Mark complete: ${task.title}`}>{pending ? <LoaderCircle className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}Mark complete</Button> : null}
         {!compact && task.automation_id && canManage && !closed ? <div className="mt-3 rounded-lg border border-primary/15 bg-background p-3"><EmailAutoReplyControl automationId={task.automation_id} /></div> : null}
       </div>
@@ -77,7 +78,8 @@ export function TaskItem({ task, now, pending, disabled, canManage, selected, co
 
 export function NotificationItem({ alert, now, pending, disabled, compact = false, onRead, onNavigate }: { alert: ActivityAlert; now: Date; pending?: boolean; disabled?: boolean; compact?: boolean; onRead: () => void; onNavigate?: () => void }) {
   const taskAlert = Boolean(alert.task_id), review = /^(Shipping approval required:|AI reply needs review:)/i.test(alert.message);
-  const action = alert.workflow ? alert.workflow.kind === "invoice_review" || alert.workflow.kind === "payment_follow_up" ? "invoice" : alert.workflow.kind === "email_follow_up" ? "email" : "review" : review ? "review" : activityAction(alert.message, taskAlert ? "task" : "notification");
+  const replyHref = !alert.workflow && !review ? alert.reply_href : null;
+  const action = replyHref ? "email" : alert.workflow ? alert.workflow.kind === "invoice_review" || alert.workflow.kind === "payment_follow_up" ? "invoice" : alert.workflow.kind === "email_follow_up" ? "email" : "review" : review ? "review" : activityAction(alert.message, taskAlert ? "task" : "notification");
   const href = alert.task_id ? `/tasks?task=${encodeURIComponent(alert.task_id)}` : alert.include_thread_link && alert.conversation_id ? flowConversationPath(alert.conversation_id) : null;
   return <article className="group/alert flex items-start gap-3.5 px-4 py-5 transition-colors hover:bg-muted/20 sm:px-6">
     <ActivityAvatar company={alert.company} action={action} />
@@ -86,9 +88,9 @@ export function NotificationItem({ alert, now, pending, disabled, compact = fals
       <div className="mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-muted-foreground"><time dateTime={alert.created_at} title="UTC+8">{activityTime(alert.created_at)}</time><span>{activityRelativeTime(alert.created_at, now)}</span></div>
     </div>
     <div className="rounded-lg bg-muted/60 px-3 py-2.5 text-sm leading-5 tracking-[-0.006em]">
-      {href ? <Link href={href} onClick={onNavigate} data-no-translate className={`block break-words text-sm leading-5 hover:text-primary ${compact ? "line-clamp-2" : "whitespace-pre-wrap"}`}>{alert.message}</Link> : <p data-no-translate className={`break-words text-sm leading-5 ${compact ? "line-clamp-2" : "whitespace-pre-wrap"}`}>{alert.message}</p>}
+      {href ? <Link href={replyHref || href} onClick={onNavigate} data-no-translate className={`block break-words text-sm leading-5 hover:text-primary ${compact ? "line-clamp-2" : "whitespace-pre-wrap"}`}>{alert.message}</Link> : <p data-no-translate className={`break-words text-sm leading-5 ${compact ? "line-clamp-2" : "whitespace-pre-wrap"}`}>{alert.message}</p>}
     </div>
-      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">{alert.workflow && alert.task_id ? <TaskWorkPanel taskId={alert.task_id} summary={alert.workflow} compact /> : href ? <Link href={href} onClick={onNavigate} className="inline-flex min-h-7 items-center gap-1 rounded-md border bg-background px-2 font-medium text-foreground hover:bg-muted">{taskAlert ? "Open task" : "Open conversation"}<ArrowUpRight className="size-3" /></Link> : null}{alert.read_at ? <span className="inline-flex items-center gap-1"><CheckCheck className="size-3" />Read</span> : <button type="button" onClick={onRead} disabled={disabled || pending} aria-label="Mark read" className="inline-flex min-h-7 items-center gap-1 rounded-md px-2 outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40">{pending ? <LoaderCircle className="size-3.5 animate-spin" /> : <CheckCheck className="size-3.5" />}Mark read</button>}</div>
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">{replyHref ? <a href={replyHref} onClick={onNavigate} className="inline-flex min-h-8 items-center gap-1.5 rounded-md bg-primary px-3 font-medium text-primary-foreground hover:bg-primary/90"><Reply className="size-3.5" />Reply</a> : null}{alert.workflow && alert.task_id ? <TaskWorkPanel taskId={alert.task_id} summary={alert.workflow} compact /> : href ? <Link href={href} onClick={onNavigate} className="inline-flex min-h-7 items-center gap-1 rounded-md border bg-background px-2 font-medium text-foreground hover:bg-muted">{taskAlert ? replyHref ? "View task" : "Open task" : "Open conversation"}<ArrowUpRight className="size-3" /></Link> : null}{alert.read_at ? <span className="inline-flex items-center gap-1"><CheckCheck className="size-3" />Read</span> : <button type="button" onClick={onRead} disabled={disabled || pending} aria-label="Mark read" className="inline-flex min-h-7 items-center gap-1 rounded-md px-2 outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40">{pending ? <LoaderCircle className="size-3.5 animate-spin" /> : <CheckCheck className="size-3.5" />}Mark read</button>}</div>
     </div>
   </article>;
 }

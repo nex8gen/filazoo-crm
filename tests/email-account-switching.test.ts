@@ -64,7 +64,7 @@ function mount(signalStatics: unknown = AbortSignal, options: { partial?: boolea
       if (!(index in slots)) { slots[index] = true; cleanups.push(effect()); }
     },
   };
-  type View = { selectedMailboxId: string; switchingMailboxId: string | null; mailboxSwitchError: string | null; onMailboxChange: (id: string) => void; onMailboxSnapshot: (id: string, emails: EmailInboxBackendData["emails"]) => void; initialEmails: EmailInboxBackendData["emails"]; initialThreadId?: string; initialAgentDraft?: string; loadResources?: () => Promise<{ products: unknown[]; catalogs: unknown[] }> };
+  type View = { selectedMailboxId: string; switchingMailboxId: string | null; mailboxSwitchError: string | null; onMailboxChange: (id: string) => void; onMailboxSnapshot: (id: string, emails: EmailInboxBackendData["emails"]) => void; initialEmails: EmailInboxBackendData["emails"]; initialThreadId?: string; initialReplyOpen?: boolean; initialAgentDraft?: string; loadResources?: () => Promise<{ products: unknown[]; catalogs: unknown[] }> };
   const exports = {} as { EmailAccountsWorkspace: (props: unknown) => { props: View } };
   const dependencies: Record<string, unknown> = { react, "@/components/email-inbox": { EmailInboxWorkspace: () => null } };
   const code = ts.transpileModule(readFileSync(new URL("../components/email-accounts-workspace.tsx", import.meta.url), "utf8"), {
@@ -82,7 +82,7 @@ function mount(signalStatics: unknown = AbortSignal, options: { partial?: boolea
   const initialData = { ...snapshot("mine"), mailboxSnapshotPartial: options.partial };
   const render = () => {
     cursor = 0;
-    return exports.EmailAccountsWorkspace({ initialData, resourcesDeferred: options.resourcesDeferred, products: [], catalogs: [], initialThreadId: "original-thread", initialAgentDraft: "original-draft" }).props;
+    return exports.EmailAccountsWorkspace({ initialData, resourcesDeferred: options.resourcesDeferred, products: [], catalogs: [], initialThreadId: "original-thread", initialReplyOpen: true, initialAgentDraft: "original-draft" }).props;
   };
   render();
   const elapse = (milliseconds: number) => {
@@ -103,6 +103,16 @@ test("an inbox recovering from cache failure starts no speculative mailbox reads
   await tick();
   assert.equal(ui.render().selectedMailboxId, "team");
   ui.unmount();
+});
+
+test("a task reply opens only in its original mailbox", async () => {
+  const ui = mount();
+  assert.equal(ui.render().initialReplyOpen, true);
+  ui.render().onMailboxChange("team");
+  ui.requests.find(request => request.url.includes("mailboxId=team"))!.resolve(Response.json(snapshot("team")));
+  await tick();
+  assert.equal(ui.render().initialReplyOpen, false);
+  assert.equal(ui.render().initialThreadId, undefined);
 });
 
 test("catalog data loads only on demand and shares its request across composer actions", async () => {

@@ -33,7 +33,34 @@ export function DashboardSkeleton() {
 }
 
 export function ProductsSkeleton() {
-  return <LoadingRegion label="Loading products"><TableSkeleton /></LoadingRegion>;
+  return <LoadingRegion label="Loading products" className="flex min-w-0 flex-col gap-6 pb-8"><HeaderSkeleton />
+    <div className="flex flex-wrap items-end gap-3"><div className="min-w-0 flex-[1_1_16rem]"><FieldSkeleton /></div><div className="w-40 max-w-full"><FieldSkeleton /></div><div className="w-40 max-w-full"><FieldSkeleton /></div></div>
+    <div className="crm-table-frame crm-table-page-wide"><RowsSkeleton columns={6} image /></div><PaginationSkeleton />
+  </LoadingRegion>;
+}
+
+export function TasksSkeleton() {
+  return <LoadingRegion label="Loading tasks and notifications" className="@container w-full space-y-6 pb-6"><HeaderSkeleton />
+    <div className="overflow-hidden rounded-2xl border border-border/80 bg-card">
+      <div className="flex gap-4 border-b px-5 py-4">{[0, 1, 2].map(index => <Skeleton key={index} className="h-8 w-28" />)}</div>
+      <div className="flex flex-wrap gap-3 border-b p-4"><Skeleton className="h-8 min-w-0 flex-1" /><Skeleton className="h-8 w-36" /><Skeleton className="h-8 w-48 max-w-full" /></div>
+      <div className="border-b bg-muted/20 px-5 py-3"><Skeleton className="h-4 w-24" /></div>
+      {Array.from({ length: 6 }, (_, index) => <div key={index} className="flex items-start gap-3 border-b border-dashed px-5 py-5"><Skeleton className="size-4 shrink-0" /><div className="min-w-0 flex-1 space-y-2"><Skeleton className="h-4 w-3/5" /><Skeleton className="h-3 w-2/5" /></div><Skeleton className="size-7 shrink-0" /></div>)}
+      <div className="flex justify-between gap-3 px-5 py-3"><Skeleton className="h-3 w-32" /><Skeleton className="h-3 w-40" /></div>
+    </div>
+  </LoadingRegion>;
+}
+
+export function WorkflowAnalyticsSkeleton() {
+  return <LoadingRegion label="Loading workflow analytics" className="h-full overflow-hidden bg-background p-5 sm:p-6"><HeaderSkeleton />
+    <div className="space-y-5"><div className="flex flex-wrap gap-2"><Skeleton className="mr-auto h-9 w-72 max-w-full" /><Skeleton className="h-9 w-36" /><Skeleton className="h-9 w-36" /><Skeleton className="h-9 w-28" /></div>
+      <PanelSkeleton><Skeleton className="mt-5 h-64 w-full rounded-lg" /></PanelSkeleton><div><Skeleton className="mb-3 h-5 w-44" /><div className="crm-table-frame"><RowsSkeleton columns={8} /></div><PaginationSkeleton /></div>
+    </div>
+  </LoadingRegion>;
+}
+
+export function PortalDomainSkeleton() {
+  return <LoadingRegion label="Loading portal domain" className="mx-auto w-full max-w-3xl space-y-6"><PanelSkeleton><div className="mt-5 space-y-4"><FieldSkeleton /><Skeleton className="h-9 w-32" /></div></PanelSkeleton><PanelSkeleton><Skeleton className="mt-5 h-24 w-full" /></PanelSkeleton></LoadingRegion>;
 }
 
 export function CatalogsSkeleton() {

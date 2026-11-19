@@ -818,7 +818,7 @@ test("all 100 ordered action pairs execute like the preview through nested route
       await app.exports.processFlowRun(String(run.id));
     }
     assert.ok(["done", "cancelled"].includes(String(run.status)), `${first} -> ${second}: ${JSON.stringify(app.db.flow_run_logs)}`);
-    const actual = app.db.flow_run_logs.filter(log => log.run_id === run.id && (log.result as Row)?.stepId).map(log => (log.result as Row).stepId);
+    const actual = app.db.flow_run_logs.filter(log => log.run_id === run.id && (log.result as Row)?.stepId && (log.result as Row)?.action !== "action_skipped").map(log => (log.result as Row).stepId);
     assert.deepEqual(actual, expected, `${country}: ${first} -> ${second}`);
     assert.equal(new Set(actual).size, actual.length, "No action may execute twice");
     const delivered = app.delivered();

@@ -14,6 +14,10 @@ import type { MailSyncHealth } from "@/lib/mail-sync-jobs";
 import { mergePartialMailboxMessages } from "@/lib/mailbox-sync";
 import { usePreferences } from "@/components/preferences-provider";
 import { useBackgroundRefresh } from "@/components/use-background-refresh";
+import { useEmailReplyLink } from "@/components/use-email-reply-link";
+import { useEmailCustomerContext } from "@/components/use-email-customer-context";
+import { applyEmailCustomerContext } from "@/lib/email-customer-context";
+import { emailDeepLinkSelection } from "@/lib/email-deep-link";
 import { prepareComposerMessage } from "@/lib/email-composer";
 import { EmailBodyEditor, useEmailEditorValue, type EmailBodyEditorHandle } from "@/components/email-body-editor";
 import { useEmailFooter } from "@/components/use-email-footer";
@@ -115,6 +119,7 @@ export type EmailWorkspaceItem = {
   contact: string;
   company: string;
   companyId?: string | null;
+  customerContextStatus?: "pending" | "ready" | "error";
   ownerId?: string | null;
   ownerName?: string;
   ownerInitials?: string;
@@ -241,6 +246,7 @@ function SenderSelect({ mailboxes, value, onChange, disabled, label }: { mailbox
 export function EmailInboxWorkspace({
   initialEmails,
   initialThreadId,
+  initialReplyOpen = false,
   initialComposeTo,
   inboxConfigured,
   inboxError,
@@ -271,6 +277,7 @@ export function EmailInboxWorkspace({
 }: {
   initialEmails: EmailWorkspaceItem[];
   initialThreadId?: string;
+  initialReplyOpen?: boolean;
   initialComposeTo?: string;
   initialAgentDraft?: string;
   initialLibraryItem?: string;
@@ -338,13 +345,15 @@ export function EmailInboxWorkspace({
   const [composeScheduleOpen, setComposeScheduleOpen] = useState(false);
   const [scheduledEmails, setScheduledEmails] = useState<Array<{ id: string; status: string; scheduled_at: string; payload: EmailSendInput; error?: string }>>([]);
   const [scheduledError, setScheduledError] = useState("");
-  const initialTarget = initialThreadId ? sourceEmails.find((email) => threadKeyForEmail(email) === initialThreadId || email.id === initialThreadId) : undefined;
+  const initialSelection = emailDeepLinkSelection(sourceEmails, initialThreadId);
+  const initialTarget = initialSelection?.message;
   const pendingThread = useRef(initialTarget ? null : initialThreadId);
+  const pendingReply = useRef(initialReplyOpen ? initialThreadId : undefined);
   const [emails, setEmails] = useState(sourceEmails);
-  const [folder, setFolder] = useState<Folder>(initialTarget?.folder && initialTarget.folder !== "inbox" ? initialTarget.folder : initialTarget?.direction === "outbound" ? "sent" : companyScope ? "all" : "inbox");
+  const [folder, setFolder] = useState<Folder>(initialSelection?.folder ?? (companyScope ? "all" : "inbox"));
   const [mobileReading, setMobileReading] = useState(Boolean(initialThreadId));
   const [selectedId, setSelectedId] = useState(initialTarget?.id ?? "");
-  const [replyExpanded, setReplyExpanded] = useState(Boolean(companyScope));
+  const [replyExpanded, setReplyExpanded] = useState(Boolean(companyScope) || Boolean(initialReplyOpen && initialTarget));
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -580,12 +589,13 @@ export function EmailInboxWorkspace({
     setCategories(current => ({ ...(partial ? current : {}), ...Object.fromEntries(nextEmails.flatMap((email) => email.category ? [[email.id, email.category]] : [])) }));
     setFollowUps(current => ({ ...(partial ? current : {}), ...Object.fromEntries(nextEmails.flatMap((email) => email.followUpAt ? [[email.id, email.followUpAt]] : [])) }));
     setFolderStates(current => ({ ...(partial ? current : {}), ...Object.fromEntries(nextEmails.map((email) => [email.id, email.folder ?? "inbox"])) }));
-    const target = pendingThread.current ? nextEmails.find((email) => threadKeyForEmail(email) === pendingThread.current || email.id === pendingThread.current) : undefined;
-    if (target) {
+    const selection = emailDeepLinkSelection(nextEmails, pendingThread.current);
+    if (selection) {
       pendingThread.current = undefined;
-      setFolder(target.folder && target.folder !== "inbox" ? target.folder : target.direction === "outbound" ? "sent" : "inbox");
+      setFolder(selection.folder);
+      setMobileReading(true);
     }
-    setSelectedId((current) => target?.id ?? (partial || nextEmails.some((email) => email.id === current) ? current : ""));
+    setSelectedId((current) => selection?.message.id ?? (partial || nextEmails.some((email) => email.id === current) ? current : ""));
   }, [companyScope]);
 
   const syncInbox = useCallback(async (manual = false, refreshRequested = false) => {
@@ -685,7 +695,10 @@ export function EmailInboxWorkspace({
     }, 700);
     return () => { clearTimeout(timer); controller.abort(); };
   }, [search, selectedMailboxId, companyScope, folder]);
-  const conversations = useMemo(() => buildConversations([...new Map([...searchResults, ...emails].map((email) => [email.id, email])).values()]), [emails, searchResults]);
+  const customerTarget = searchResults.find(email => email.id === selectedId) ?? emails.find(email => email.id === selectedId);
+  const customerMailboxId = selectedMailboxId || defaultSenderId;
+  const customerDetails = useEmailCustomerContext(customerMailboxId, customerTarget?.contact, mobileReading && !companyScope);
+  const conversations = useMemo(() => buildConversations([...new Map([...searchResults, ...emails].map((email) => [email.id, email])).values()].map(email => applyEmailCustomerContext(email, customerDetails.entries[`${customerMailboxId}:${email.contact.trim().toLowerCase()}`]))), [emails, searchResults, customerDetails.entries, customerMailboxId]);
   const visibleCategories = useMemo(() => {
     const next = { ...categories };
     for (const email of searchResults) {
@@ -771,7 +784,7 @@ export function EmailInboxWorkspace({
     // Also covers selection changes caused by search, folders, filters and sync.
     setComposerConversationId(draftConversationKey);
     const retained = Object.values(savedDrafts.drafts).find((item) => item.kind === "reply" && item.threadId === draftConversationKey);
-    setReplyExpanded(Boolean(companyScope) || Boolean(retained));
+    setReplyExpanded(Boolean(companyScope) || Boolean(retained) || Boolean(pendingReply.current && selectedConversation?.messages.some(message => threadKeyForEmail(message) === pendingReply.current || message.id === pendingReply.current)));
     editReply(retained?.text || "", retained?.html || "", retained?.bodyText || "");
     setReplyDraftId(retained?.id || crypto.randomUUID());
     setReplyRequestId(retained?.requestId || crypto.randomUUID());
@@ -793,6 +806,7 @@ export function EmailInboxWorkspace({
   const followupIdentity = selected ? followupTarget(conversation, selected, selectedMailboxId, replySenderId) : null;
   const explicitParent = conversation.find((message) => message.id === replyParentId);
   const replyParent = explicitParent || target?.parent;
+  useEmailReplyLink({ pendingThreadRef: pendingReply, messages: conversation, ready: savedDrafts.ready && Boolean(replyParent), setExpanded: setReplyExpanded, input: replyInput });
   const automaticRecipients = replyParent ? replyRecipients(replyParent, mailboxes.map((mailbox) => mailbox.email || ""), replyAll) : { to: [], cc: [] };
   const replyRecipient = replyTo ?? (automaticRecipients.to.join(", ") || target?.recipient || selected?.contact || "");
   const effectiveReplyCc = replyCc ?? automaticRecipients.cc.join(", ");
@@ -808,15 +822,16 @@ export function EmailInboxWorkspace({
   }, [draftsReady, saveDraft, composeDraftId, draftMailboxId, composeSenderId, composeTo, composeCc, composeBcc, composeSubject, composeBody, composeHtml, composeBodyText, composeAttachments, composeRequestId, composeThread, composeProviderDraft, invoiceViewer?.role]);
 
   useEffect(() => {
-    if (folder !== "scheduled") return;
+    const mailboxId = selectedMailboxId || defaultSenderId;
+    if (folder !== "scheduled" || !mailboxId) return;
     let cancelled = false;
     const refresh = async () => {
-      try { const response = await fetch("/api/email/scheduled", { cache: "no-store" }); const result = await response.json(); if (!response.ok) throw new Error(result.error); if (!cancelled) { setScheduledEmails(result.emails); setScheduledError(""); } }
+      try { const response = await fetch(`/api/email/scheduled?mailboxId=${encodeURIComponent(mailboxId)}`, { cache: "no-store" }); const result = await response.json(); if (!response.ok) throw new Error(result.error); if (!cancelled) { setScheduledEmails(result.emails); setScheduledError(""); } }
       catch (reason) { if (!cancelled) setScheduledError(reason instanceof Error ? reason.message : "Unable to load scheduled emails."); }
     };
     void refresh(); const timer = setInterval(() => void refresh(), 10_000);
     return () => { cancelled = true; clearInterval(timer); };
-  }, [folder]);
+  }, [folder, selectedMailboxId, defaultSenderId]);
   const loadMessage = useCallback(async (email: EmailWorkspaceItem) => {
     if ((!email.crmEmailId && (!email.uid || !email.uidValidity || !email.mailboxKey)) || bodyRequests.current.has(email.id)) return;
     bodyRequests.current.add(email.id);
@@ -1782,7 +1797,8 @@ export function EmailInboxWorkspace({
           <div className="flex h-16 items-center justify-between border-b px-5"><h2 className="text-sm font-semibold">Contact & follow-up</h2><button type="button" aria-label="Close contact details" onClick={() => setDetailsOpen(false)} className="rounded p-1 hover:bg-muted"><X className="size-4" /></button></div>
           <div className="min-h-0 flex-1 overflow-y-auto">
             <ContactSummary name={selected.contactName || selected.contact} email={selected.contact} company={selected.company} companyId={selected.companyId} canCreateInvoices={canCreateInvoices} />
-            <EmailAiSummary
+            {selected.customerContextStatus === "pending" && !selected.companyId ? <p role="status" className="mx-6 mb-6 text-xs text-muted-foreground">Loading customer details…</p> : selected.customerContextStatus === "error" ? <div className="mx-6 mb-6 text-xs text-muted-foreground"><p>Customer details unavailable</p><button type="button" onClick={customerDetails.retry} className="mt-2 rounded-md border px-3 py-2 font-medium text-foreground hover:bg-muted">Retry customer details</button></div> : null}
+            {(selected.companyId || !["pending", "error"].includes(selected.customerContextStatus || "")) ? <EmailAiSummary
               key={selectedConversation?.id}
               configured={aiConfigured}
               autoAnalyze={Boolean(selected.companyId)}
@@ -1804,7 +1820,7 @@ export function EmailInboxWorkspace({
                 customerProfile: selected.customerProfile || { companyName: selected.company.slice(0, 300), contactName: selected.contactName?.slice(0, 300) },
                 conversationHistory: conversationContext,
               })}
-            />
+            /> : null}
             <EmailFollowupPanel
               key={`${followupIdentity?.mailboxId}:${selectedConversation?.id}:${followupIdentity?.messageId}`}
               mailboxId={followupIdentity?.mailboxId}

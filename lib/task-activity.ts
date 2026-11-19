@@ -5,6 +5,8 @@ export type ActivityTask = {
   due_at: string | null; company_id: string | null; updated_at: string;
   completed_at?: string | null;
   automation_id?: string | null;
+  flow_run_id?: string | null;
+  reply_href?: string | null;
   status?: string;
   assigned_to?: string | null;
   created_by?: string | null;
@@ -18,6 +20,7 @@ export type ActivityAlert = {
   id: string; message: string; channel: string; conversation_id: string | null;
   include_thread_link: boolean; read_at: string | null; created_at: string;
   task_id?: string | null;
+  reply_href?: string | null;
   workflow?: import("./task-workflows").TaskWorkflowSummary | null;
   company?: ActivityCompany | null;
 };
@@ -52,9 +55,16 @@ export function activitySearchPattern(query: string) {
 
 export function taskSource(task: ActivityTask) {
   if (task.automation_id) return "AI email review";
+  if (task.reply_href) return "Email follow-up";
   if (task.notes?.startsWith("Company purchase analysis:")) return "Purchase follow-up";
   if (task.company_id) return "Company follow-up";
   return "Personal task";
+}
+
+export function taskEmailReplyPath(threadId: string | null | undefined, mailboxId: string | null | undefined) {
+  if (!threadId?.trim() || /^(company:|shopify:)/i.test(threadId) || !mailboxId) return null;
+  const params = new URLSearchParams({ mailbox: mailboxId, thread: threadId, reply: "1" });
+  return `/email?${params}`;
 }
 
 export function taskNotes(task: ActivityTask) {

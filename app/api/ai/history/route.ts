@@ -3,7 +3,7 @@ import { workspaceSessionUnavailableResponse } from "@/lib/workspace-session-res
 import { getWorkspaceViewer } from "@/lib/auth";
 import { withWorkspaceViewer } from "@/lib/workspace-context";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
-import { conversationInputSchema, conversationScope } from "@/lib/ai/chat-history";
+import { conversationInputSchema, conversationScope, historyCutoff, historyPage } from "@/lib/ai/chat-history";
 import { assertConversationAccess, conversationAccessKey, conversationDetail, HistoryError, presentConversation, type ConversationRow } from "@/lib/ai/chat-history-server";
 
 const headers = { "Cache-Control": "private, no-store" };
@@ -14,26 +14,33 @@ export async function GET(request: Request) {
   if (!viewer) return Response.json({ error: "Sign in to view saved conversations." }, { status: 401, headers });
   return withWorkspaceViewer(viewer, async () => {
   const params = new URL(request.url).searchParams;
-  const parsed = z.object({ scope: z.string().min(1).max(3000), view: z.enum(["all", "record"]), search: z.string().max(160), archived: z.enum(["true", "false"]), offset: z.coerce.number().int().min(0).max(10000) }).safeParse({ scope: params.get("scope"), view: params.get("view") || "record", search: params.get("search") || "", archived: params.get("archived") || "false", offset: params.get("offset") || 0 });
+  const parsed = z.object({ scope: z.string().min(1).max(3000), view: z.enum(["all", "page", "record"]), search: z.string().max(160), archived: z.enum(["true", "false"]), offset: z.coerce.number().int().min(0).max(10000) }).safeParse({ scope: params.get("scope"), view: params.get("view") || "record", search: params.get("search") || "", archived: params.get("archived") || "false", offset: params.get("offset") || 0 });
   if (!parsed.success) return Response.json({ error: "Invalid history search." }, { status: 400, headers });
   const { scope, view, search, archived, offset } = parsed.data;
   const all = view === "all" && params.get("resume") !== "true";
+  const page = view === "page" && params.get("resume") !== "true";
+  const pathname = historyPage(scope);
+  if ((all && pathname !== "/") || (page && !pathname)) return Response.json({ error: "Combined history is available only in Home AI. Choose this page's history instead." }, { status: 400, headers });
   let accessKey: string;
   try { accessKey = await conversationAccessKey(viewer); } catch { return Response.json({ error: "Unable to verify access to saved conversations." }, { status: 503, headers }); }
   const db = createSupabaseAdmin();
+  const searchHistory = () => all
+    ? db.rpc("search_workspace_ai_conversations", { p_user_id: viewer.id, p_role: viewer.role, p_access_key: accessKey, p_archived: archived === "true", p_search: search, p_offset: offset })
+    : page
+      ? db.rpc("search_page_ai_conversations", { p_user_id: viewer.id, p_role: viewer.role, p_access_key: accessKey, p_pathname: pathname, p_archived: archived === "true", p_search: search, p_offset: offset })
+      : db.rpc("search_ai_conversations", { p_user_id: viewer.id, p_role: viewer.role, p_access_key: accessKey, p_scope: scope, p_archived: archived === "true", p_search: search, p_offset: offset });
   if (params.get("titles") === "true" && params.get("resume") !== "true") {
     // This is the viewer's own saved title index, authorized by the same fresh
     // owner/role/access fingerprint as transcripts. Do not load source records,
     // messages, summaries or action results until a title is explicitly opened.
-    const fields = "id,mode,pathname,page_context,title,pinned,archived,version,updated_at,active_request";
+    const fields = "id,mode,pathname,page_context,title,pinned,archived,version,created_at,updated_at,active_request";
     let result;
     if (search) {
-      result = await (all
-        ? db.rpc("search_workspace_ai_conversations", { p_user_id: viewer.id, p_role: viewer.role, p_access_key: accessKey, p_archived: archived === "true", p_search: search, p_offset: offset })
-        : db.rpc("search_ai_conversations", { p_user_id: viewer.id, p_role: viewer.role, p_access_key: accessKey, p_scope: scope, p_archived: archived === "true", p_search: search, p_offset: offset })).select(fields);
+      result = await searchHistory().select(fields);
     } else {
-      let query = db.from("ai_conversations").select(fields).eq("user_id", viewer.id).eq("owner_role", viewer.role).eq("access_key", accessKey).eq("archived", archived === "true").gt("version", 0);
-      query = all ? query.in("mode", ["chat", "agent"]) : query.eq("scope", scope);
+      let query = db.from("ai_conversations").select(fields).eq("user_id", viewer.id).eq("owner_role", viewer.role).eq("access_key", accessKey).eq("archived", archived === "true").gt("version", 0).gt("created_at", historyCutoff());
+      if (page) query = query.eq("pathname", pathname).in("mode", ["chat", "agent"]);
+      else if (!all) query = query.eq("scope", scope);
       result = await query.order("pinned", { ascending: false }).order("updated_at", { ascending: false }).order("id").range(offset, offset + 30);
     }
     if (result.error) return Response.json({ error: "Unable to load conversation titles. Please retry." }, { status: 503, headers });
@@ -41,13 +48,11 @@ export async function GET(request: Request) {
     return Response.json({ conversations: titles.slice(0, 30).map(row => ({ ...presentConversation(row), summary: "" })), hasMore: titles.length > 30, offset: offset + 30, unavailable: 0 }, { headers });
   }
   const { data, error } = params.get("resume") === "true"
-    ? await db.from("ai_conversations").select("*").eq("user_id", viewer.id).eq("owner_role", viewer.role).eq("access_key", accessKey).eq("scope", scope).eq("archived", false).gt("version", 0).order("updated_at", { ascending: false }).limit(1)
-    : all
-      ? await db.rpc("search_workspace_ai_conversations", { p_user_id: viewer.id, p_role: viewer.role, p_access_key: accessKey, p_archived: archived === "true", p_search: search, p_offset: offset })
-      : await db.rpc("search_ai_conversations", { p_user_id: viewer.id, p_role: viewer.role, p_access_key: accessKey, p_scope: scope, p_archived: archived === "true", p_search: search, p_offset: offset });
+    ? await db.from("ai_conversations").select("*").eq("user_id", viewer.id).eq("owner_role", viewer.role).eq("access_key", accessKey).eq("scope", scope).eq("archived", false).gt("version", 0).gt("created_at", historyCutoff()).order("updated_at", { ascending: false }).limit(1)
+    : await searchHistory();
   if (error) return Response.json({ error: "Unable to load history. Check the AI history database migration." }, { status: 503, headers });
   const rows = (data ?? []) as ConversationRow[];
-  if (all) {
+  if (all || page) {
     // Recheck each distinct record before exposing even its saved title. A
     // deleted record must not hide unrelated, accessible conversations.
     const scopes = new Map(rows.slice(0, 30).map((row) => [row.scope, row]));

@@ -88,6 +88,7 @@ export type CompanyDetails = {
 
 export type EmailDraft = {
   id: string;
+    mailboxId?: string | null;
   company: string;
   contact: string;
   subject: string;
@@ -122,6 +123,7 @@ export type Catalog = {
 
 export type Reply = {
   id: string;
+    mailboxId?: string | null;
   messageId?: string | null;
   threadId?: string | null;
   company: string;
@@ -132,6 +134,9 @@ export type Reply = {
 };
 
 export type ProductStock = { available: number; onHand: number; locked: number; warehouseIds: string[]; syncedAt: string };
+export type ManualStockLocation = { location: string; quantity: number | null; revision: string; updated_at: string };
+export type SharedManualStock = { locations: ManualStockLocation[]; legacyQuantity?: number | null; readOnly?: boolean };
+export type StockAdjustment = { id: string; location: string; previous_quantity: number | null; quantity: number | null; reason: string; actor_name: string; created_at: string };
 
 export type Product = {
   currency?: string;
@@ -139,6 +144,8 @@ export type Product = {
   sku: string;
   name: string;
   imageUrl: string | null;
+  mediaUrls?: string[];
+  description?: string;
   material: string;
   color: string;
   colors: string[];
@@ -149,6 +156,8 @@ export type Product = {
   priceTiers: { minimumQuantity: number; price: string }[];
   stockStatus: string;
   stock?: ProductStock | null;
+  manualInventory?: number | null;
+  sharedInventory?: SharedManualStock;
   leadTime: string;
   status: string;
   updatedAt: string | null;
@@ -162,6 +171,14 @@ export type ProductVariant = {
   price: string;
   stockStatus: string;
   stock?: ProductStock | null;
+  manualInventory?: number | null;
+  sharedInventory?: SharedManualStock;
+  colorHex?: string | null;
+  options?: { name: string; value: string }[];
+  barcode?: string | null;
+  compareAtPrice?: string | null;
+  costPerItem?: string | null;
+  unitPricing?: { quantity: number; referenceQuantity: number; unit: "g" | "kg" | "ml" | "l" | "cm" | "m" | "item" } | null;
   imageUrl: string | null;
 };
 

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { parseDocument } from "htmlparser2";
 import { emailSafeStyle, escapeEmailHtml } from "./email-markup.ts";
+import { isProductVideo, productLibraryMediaPattern } from "./product-media.ts";
 import { emailSocialDefaults, emailSocialPlatforms, newEmailSocialLink, renderEmailSocial } from "./email-social.ts";
 import { emailFonts, emailPresentationSchema, emailProductConfigSchema, blockPresentation, blockOuterCss } from "./email-block-config.ts";
 
@@ -115,6 +116,7 @@ export function duplicateEmailBlock(design: EmailDesign, id: string): { design: 
 export function emailDesignUrl(value: string, image = false, preview = false) {
   const input = value.trim();
   if (image && isEmailTemplateImage(input)) return preview ? input : publicEmailTemplateImage(input);
+  if (image && preview && productLibraryMediaPattern.test(input) && !isProductVideo(input)) return input;
   if (image && preview && (/^\/api\/product-images\/[\da-f-]{36}\/[\da-f-]{36}\.(?:jpg|png|webp|gif)$/i.test(input) || /^\/(?:quotation-2610\/|catalog-default-product\.)/.test(input) && !input.includes(".."))) return input;
   if (image && /^data:image\/(?:png|jpeg|gif|webp);base64,[a-z\d+/]+=*$/i.test(input)) return input;
   try { const url = new URL(input); return (image ? ["https:", "http:"] : ["https:", "http:", "mailto:", "tel:"]).includes(url.protocol) ? url.toString() : ""; } catch { return ""; }

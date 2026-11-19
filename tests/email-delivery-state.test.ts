@@ -130,6 +130,7 @@ test("scheduling reserves a delivery without contacting SMTP", async () => {
   const response = await mock.send({ ...mock.input, scheduleAt: new Date(Date.now() + 3600_000).toISOString() } as typeof mock.input);
   assert.equal(response.status, 200); assert.equal((await response.json()).scheduled, true);
   assert.equal(mock.tables.email_send_operations[0].status, "scheduled"); assert.equal(mock.sends(), 0);
+  assert.equal((mock.tables.email_send_operations[0].payload as { mailboxId?: string }).mailboxId, "mailbox", "The resolved sender must be pinned even when the request omitted its mailbox ID");
 });
 
 test("due scheduled mail reuses the manual delivery path and repeated ticks cannot resend it", async () => {

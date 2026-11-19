@@ -8,6 +8,7 @@ import { zhCNQuotations } from "./i18n-quotations.ts";
 import { zhCNFlowScenarios } from "./i18n-flow-scenarios.ts";
 import { zhCNFlowEditor } from "./i18n-flow-editor.ts";
 import { zhCNEmailWorkbench } from "./i18n-email-workbench.ts";
+import { zhCNProducts } from "./i18n-products.ts";
 import { zhCNAdditional } from "./i18n-zh-cn.ts";
 import { zhCNSettings } from "./i18n-settings.ts";
 import { zhCNAiSettings } from "./i18n-ai-settings.ts";
@@ -23,6 +24,7 @@ import { zhCNHome } from "./i18n-home.ts";
 import { zhCNAiLeads } from "./i18n-ai-leads.ts";
 import { zhCNEmailCampaigns } from "./i18n-email-campaigns.ts";
 import { zhCNAiLauncher } from "./i18n-ai-launcher.ts";
+import { zhCNInterface } from "./i18n-interface.ts";
 
 import type { AppLanguage } from "./app-language.ts";
 export type { AppLanguage } from "./app-language.ts";
@@ -31,6 +33,7 @@ export { LANGUAGE_STORAGE_KEY } from "./app-language.ts";
 // Product terminology is centralized so sales, catalog, mailbox, and
 // automation screens use consistent professional Chinese wording.
 const zhCN: Record<string, string> = {
+  ...zhCNInterface,
   ...zhCNSalesAutomation,
   ...zhCNFlowEditor,
   "We could not load this company. Please try again.": "无法加载此企业。请重试。",
@@ -72,6 +75,7 @@ const zhCN: Record<string, string> = {
   "Start with a complete journey, customize its audience and actions, then preview and test before turning it on.": "从完整的客户流程开始，自定义受众及操作，预览并测试后再启用。",
   ...zhCNFlowScenarios,
   ...zhCNEmailWorkbench,
+  ...zhCNProducts,
   "Your prices, product details, and photos are private to your account. Your catalogs and AI automations use these saved details.": "您的价格、产品资料和图片仅限本人使用。您的目录和 AI 自动流程会采用这些已保存的资料。",
   "← All products": "← 所有产品",
   "Download saved product PDF": "下载已保存的产品 PDF",

@@ -12,6 +12,15 @@ export function normalizeProductVariants(variants: ProductVariant[], currency: s
   return variants.map((variant) => {
     const before = previous?.variants.find((item) => item.id === variant.id);
     const inherited = previous?.price != null && before && parseCurrencyAmount(before.price) === Number(previous.price) && parseCurrencyAmount(variant.price) === parseCurrencyAmount(before.price);
-    return { id: variant.id, name: variant.name.trim(), sku: variant.sku.trim(), price: money(inherited ? basePrice : parseCurrencyAmount(variant.price)), stockStatus: variant.stockStatus, imageUrl: variant.imageUrl || null };
+    const stockStatus = variant.manualInventory === null ? "Stock unknown" : variant.manualInventory !== undefined ? `${variant.manualInventory.toLocaleString("en")} available` : variant.stockStatus;
+    return { id: variant.id, name: variant.name.trim(), sku: variant.sku.trim(), price: money(inherited ? basePrice : parseCurrencyAmount(variant.price)), stockStatus, imageUrl: variant.imageUrl || null,
+      ...(variant.manualInventory === undefined ? {} : { manualInventory: variant.manualInventory }),
+      ...(variant.colorHex === undefined ? {} : { colorHex: variant.colorHex }),
+      ...(variant.options === undefined ? {} : { options: variant.options.map(option => ({ name: option.name.trim(), value: option.value.trim() })) }),
+      ...(variant.barcode === undefined ? {} : { barcode: variant.barcode?.trim() || null }),
+      ...(variant.compareAtPrice === undefined ? {} : { compareAtPrice: variant.compareAtPrice ? money(parseCurrencyAmount(variant.compareAtPrice)) : null }),
+      ...(variant.costPerItem === undefined ? {} : { costPerItem: variant.costPerItem ? money(parseCurrencyAmount(variant.costPerItem)) : null }),
+      ...(variant.unitPricing === undefined ? {} : { unitPricing: variant.unitPricing }),
+    };
   });
 }

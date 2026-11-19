@@ -40,7 +40,7 @@ const hooks = registerHooks({
   resolve(specifier, context, nextResolve) {
     let source: string | undefined;
     if (specifier === "server-only") source = "export {};";
-    if (specifier === "@/lib/auth" || specifier === "../auth.ts") source = `${runtime} export async function requireWorkspaceMember(roles) { if (roles && !roles.includes(state.role)) throw new Error('Access denied'); return {id: 'actor', role: state.role}; }`;
+    if (specifier === "@/lib/auth" || specifier === "../auth.ts") source = `${runtime} export async function getWorkspaceViewer() { return null; } export async function requireWorkspaceMember(roles) { if (roles && !roles.includes(state.role)) throw new Error('Access denied'); return {id: 'actor', role: state.role}; }`;
     if (specifier === "@/lib/supabase/admin" || specifier === "../supabase/admin.ts") source = `${runtime} export function createSupabaseAdmin() { return admin; }`;
     if (specifier === "next/cache") source = `${runtime} export function revalidatePath(path) { state.paths.push(path); }`;
     if (specifier === "@/lib/data/flow-runtime" || specifier === "./flow-runtime.ts") source = `${runtime} export async function enrollMatchingFlows(event) { state.calls.push(['enroll', event]); } export async function enrollNewLeadFlows(id) { state.calls.push(['new_lead', id]); } export async function validateFlowResources() {} export async function validateFlowSenderAccess() {}`;

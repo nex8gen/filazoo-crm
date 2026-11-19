@@ -2,6 +2,7 @@ import type { Product } from "./types.ts";
 import type { EmailBlock, EmailDesign } from "./email-design.ts";
 import { productConfig, type EmailProductCard } from "./email-block-config.ts";
 import { privateProductImagePattern } from "./product-images.ts";
+import { productLibraryMediaPattern } from "./product-media.ts";
 import { emailDesignUrl } from "./email-design.ts";
 
 export function emailProductSnapshot(product: Product): EmailProductCard {
@@ -32,7 +33,7 @@ export function emailProductIssues(design: EmailDesign) {
 
 export async function inlinePrivateEmailImages(design: EmailDesign, load: (src: string) => Promise<string>): Promise<EmailDesign> {
   const cache = new Map<string, Promise<string>>();
-  function image(src: string) { if (!privateProductImagePattern.test(src) && !/^\/(?:quotation-2610\/|catalog-default-product\.)/.test(src)) return Promise.resolve(src); if (!cache.has(src)) cache.set(src, load(src)); return cache.get(src)!; }
+  function image(src: string) { if (!privateProductImagePattern.test(src) && !productLibraryMediaPattern.test(src) && !/^\/(?:quotation-2610\/|catalog-default-product\.)/.test(src)) return Promise.resolve(src); if (!cache.has(src)) cache.set(src, load(src)); return cache.get(src)!; }
   return { ...design, blocks: await Promise.all(design.blocks.map(async block => ({
     ...block,
     src: await image(block.src),

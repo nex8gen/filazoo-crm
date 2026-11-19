@@ -1,4 +1,9 @@
 export const zhCNAiHistory: Record<string, string> = {
+  "History from all pages": "所有页面的历史记录",
+  "History for this page": "当前页面的历史记录",
+  "Automatically deleted after 7 days, including pinned and archived conversations.": "7 天后自动删除，包括置顶和归档的对话。",
+  "This conversation was deleted after 7 days. Start a new conversation.": "此对话已在 7 天后删除，请开始新对话。",
+  "Open the original page to continue this conversation.": "请打开原页面继续此对话。",
   "Source": "来源",
   "Sources": "来源",
   "Sources found so far": "已找到的来源",

@@ -19,10 +19,12 @@ export default async function EmailsPage({ searchParams }: PageProps<"/email">) 
 
     return (
       <EmailAccountsWorkspace
+        key={`${mailboxId ?? ""}:${typeof params.thread === "string" ? params.thread : ""}:${params.reply === "1"}`}
         initialData={data}
         canCreateInvoices={canCreateInvoices(viewer.role)}
         invoiceViewer={{ id: viewer.id, role: viewer.role }}
         initialThreadId={typeof params.thread === "string" ? params.thread : undefined}
+        initialReplyOpen={params.reply === "1" && viewer.role !== "viewer"}
         initialAgentDraft={typeof params.agentDraft === "string" ? params.agentDraft : undefined}
         initialLibraryItem={typeof params.libraryItem === "string" ? params.libraryItem : undefined}
         initialLibraryRequest={typeof params.libraryRequest === "string" ? params.libraryRequest : undefined}

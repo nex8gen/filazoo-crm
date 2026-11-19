@@ -1,9 +1,12 @@
 import { requireWorkspaceMember } from "@/lib/auth";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { getViewerMailbox } from "@/lib/data/mailboxes";
 
-export async function GET() {
+export async function GET(request: Request) {
   const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
-  const { data, error } = await createSupabaseAdmin().from("email_send_operations").select("id,payload,status,scheduled_at,error,updated_at").eq("user_id", viewer.id).in("status", ["scheduled", "preparing", "submitting", "failed", "uncertain"]).order("scheduled_at", { ascending: true }).limit(100);
+  const mailboxId = new URL(request.url).searchParams.get("mailboxId");
+  if (!mailboxId || !await getViewerMailbox(viewer.id, mailboxId)) return Response.json({ error: "Mailbox unavailable." }, { status: 404 });
+  const { data, error } = await createSupabaseAdmin().from("email_send_operations").select("id,payload,status,scheduled_at,error,updated_at").eq("user_id", viewer.id).eq("payload->>mailboxId", mailboxId).in("status", ["scheduled", "preparing", "submitting", "failed", "uncertain"]).order("scheduled_at", { ascending: true }).limit(100);
   if (error) return Response.json({ error: "Unable to load scheduled emails." }, { status: 503 });
   return Response.json({ emails: data || [] }, { headers: { "Cache-Control": "no-store" } });
 }

@@ -2,10 +2,46 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHistoryListCache, type HistoryListQuery } from "../lib/ai/history-list-cache.ts";
 import type { Conversation } from "../lib/ai/chat-history.ts";
+import { conversationScope, historyRetentionMs } from "../lib/ai/chat-history.ts";
 
 const query: HistoryListQuery = { scope: "scope-a", all: true, search: "", archived: false };
 const conversation = (id: string): Conversation => ({ id, mode: "chat", pathname: "/companies", title: `Title ${id}`, version: 1, summary: "", pinned: false, archived: false, updated_at: "2026-11-06T00:00:00Z" });
 const page = (items = [conversation("a")], hasMore = false, offset = 30) => Response.json({ conversations: items, hasMore, offset });
+
+test("page caches share modes and records while keeping other pages separate", async () => {
+  const scope = (pathname: string, mode: "chat" | "agent", emailId?: string) => conversationScope({ pathname, mode, pageContext: { emailId } });
+  const email = { ...query, all: false, page: true, scope: scope("/email", "chat", "one") };
+  let calls = 0;
+  const cache = createHistoryListCache(async url => {
+    calls++;
+    assert.equal(new URL(String(url), "http://localhost").searchParams.get("view"), "page");
+    return page([]);
+  });
+  await cache.load(email);
+  const agent = { ...email, scope: scope("/email", "agent", "two") };
+  await cache.load(agent);
+  assert.equal(calls, 1);
+  const product = { ...email, scope: scope("/products", "chat") };
+  await cache.load(product);
+  cache.remember({ ...conversation("email"), pathname: "/email" });
+  assert.equal(cache.read(agent).items[0].id, "email");
+  assert.equal(cache.read(product).items.length, 0);
+  cache.dispose();
+});
+
+test("refresh removes expired pinned and archived titles even when recently updated", async () => {
+  let clock = Date.parse("2026-11-19T00:00:00Z");
+  const item = { ...conversation("old"), pinned: true, archived: true, created_at: new Date(clock - historyRetentionMs + 1).toISOString(), updated_at: new Date(clock).toISOString() };
+  const archived = { ...query, archived: true };
+  const cache = createHistoryListCache(async () => page([item]), () => clock);
+  await cache.load(archived);
+  assert.equal(cache.read(archived).items.length, 1);
+  clock++;
+  await cache.load(archived, true);
+  cache.remember(item);
+  assert.equal(cache.read(archived).items.length, 0);
+  cache.dispose();
+});
 
 test("history does no work until requested and deduplicates title reads across modes and remounts", async () => {
   let calls = 0;

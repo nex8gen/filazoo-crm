@@ -1,4 +1,4 @@
-import type { Product, ProductStock } from "./types.ts";
+import type { Product, ProductStock, ProductVariant } from "./types.ts";
 
 export type StockSnapshot = { sku: string; available: number; on_hand: number; locked: number; warehouse_ids: string[]; synced_at: string };
 
@@ -8,6 +8,18 @@ export function stockLabel(stock: ProductStock | null | undefined, now = Date.no
   return `${stock.available.toLocaleString("en")} available${stale ? " · stale" : ""}`;
 }
 
+export function inventoryLabel(product: Pick<Product, "stock" | "manualInventory" | "stockStatus"> & { variants?: Pick<ProductVariant, "stock" | "manualInventory">[] }) {
+  if (product.stock) return stockLabel(product.stock);
+  if (product.manualInventory != null) return `${product.manualInventory.toLocaleString("en")} available`;
+  const quantities = product.variants?.map(variant => variant.stock?.available ?? variant.manualInventory);
+  if (quantities?.length && quantities.every((quantity): quantity is number => quantity != null)) {
+    const total = quantities.reduce((sum, quantity) => sum + quantity, 0);
+    const stale = product.variants?.some(variant => variant.stock && Date.now() - new Date(variant.stock.syncedAt).getTime() > 30 * 60_000);
+    if (Number.isSafeInteger(total)) return `${total.toLocaleString("en")} available${stale ? " · stale" : ""}`;
+  }
+  return product.stock !== undefined ? stockLabel(product.stock) : product.stockStatus || "Stock unknown";
+}
+
 export function applyProductInventory(products: Product[], snapshots: StockSnapshot[], skuMap: Record<string, string> = {}): Product[] {
   const bySku = new Map(snapshots.map(row => [row.sku, row]));
   const stockFor = (sku: string): ProductStock | null => {
@@ -15,7 +27,7 @@ export function applyProductInventory(products: Product[], snapshots: StockSnaps
     return row ? { available: row.available, onHand: row.on_hand, locked: row.locked, warehouseIds: row.warehouse_ids, syncedAt: row.synced_at } : null;
   };
   return products.map(product => {
-    const variants = product.variants.map(variant => { const stock = stockFor(variant.sku); return { ...variant, stock, stockStatus: stockLabel(stock) }; });
+    const variants = product.variants.map(variant => { const stock = stockFor(variant.sku); return { ...variant, stock, stockStatus: inventoryLabel({ ...variant, stock }) }; });
     let stock = stockFor(product.sku);
     // A family total is valid only when every variant is matched. Count each
     // ERP SKU once if multiple CRM aliases point at the same stock item.
@@ -28,6 +40,6 @@ export function applyProductInventory(products: Product[], snapshots: StockSnaps
         if (item.syncedAt < stock.syncedAt) stock.syncedAt = item.syncedAt;
       }
     }
-    return { ...product, stock, stockStatus: stockLabel(stock), variants };
+    return { ...product, stock, stockStatus: inventoryLabel({ ...product, stock, variants }), variants };
   });
 }

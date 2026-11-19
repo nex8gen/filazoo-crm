@@ -57,7 +57,12 @@ for (const surface of ["home", "analytics"] as const) for (const mode of ["chat"
     const dependencies: Record<string, unknown> = {
       react, "next/navigation": { usePathname: () => pathname, useRouter: () => ({}) }, "motion/react": { motion: ui },
       "@/components/language-provider": { useLanguage: () => ({ language: "en", t: (value: string) => value }) },
-      "@/components/use-ai-conversation": { useAiConversation: () => controller },
+      "@/components/use-ai-conversation": { useAiConversation: (_input: unknown, _restore: unknown, _enabled: boolean, all: boolean, resume: boolean, page: boolean) => {
+        assert.equal(all, pathname === "/" && currentPresentation === "page", "only Home's full-page AI combines all history");
+        assert.equal(page, true);
+        assert.equal(resume, false);
+        return controller;
+      } },
       "@/components/home-ai-composer": { HomeAiInput: Composer },
       "@/components/ui/ai-mascot-input": { AiMascotInput: MascotComposer },
       "@/components/column-resize-handle": { ColumnResizeHandle: ResizeHandle },
@@ -87,7 +92,9 @@ for (const surface of ["home", "analytics"] as const) for (const mode of ["chat"
     });
     let launchRequest = { id: 1, mode, prompt: surface === "home" ? "Summarize my sales" : "Review workflow performance", submit: true, ...(surface === "analytics" ? { pathname: originalPathname } : {}) };
     let closes = 0;
+    let currentPresentation: "page" | "sidebar";
     function render(open = true, presentation: "page" | "sidebar" = surface === "home" ? "page" : "sidebar") {
+      currentPresentation = presentation;
       cursor = 0; effects = [];
       const tree = exports.WorkspaceAiAssistant({ open, onOpenChange: () => { closes++; }, launchRequest, presentation });
       for (const effect of effects) effect();

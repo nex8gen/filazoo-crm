@@ -6,6 +6,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import * as jsx from "react/jsx-runtime";
 import { quantityPriceRanges } from "../lib/quantity-pricing.ts";
+import { inventoryLabel } from "../lib/product-inventory.ts";
 import type { Product } from "../lib/types.ts";
 import { notificationToastModule } from "./helpers/notification-toast.ts";
 
@@ -21,7 +22,7 @@ function load(file: string, dependencies: Record<string, unknown>, globals: Reco
   const exports: Record<string, (...args: unknown[]) => unknown> = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const component = () => null;
-  vm.runInNewContext(code, { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => dependencies[name] ?? (name === "react/jsx-runtime" ? jsx : name.startsWith("@/") || name === "lucide-react" ? new Proxy({}, { get: () => component }) : require(name)))(name), Date, Set, Map, Intl, Blob, ...globals });
+  vm.runInNewContext(code, { exports, require: (name: string) => name.endsWith(".css") ? {} : name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => dependencies[name] ?? (name === "react/jsx-runtime" ? jsx : name.startsWith("@/") || name === "lucide-react" ? new Proxy({}, { get: () => component }) : require(name)))(name), Date, Set, Map, Intl, Blob, ...globals });
   return exports;
 }
 function product(sku: string, name: string): Product {
@@ -37,7 +38,7 @@ function productsFixture(selected: string[], query = "") {
     react: { useMemo: (fn: () => unknown) => fn(), useState: (initial: unknown) => [stateIndex++ === 2 ? new Set(selected) : typeof initial === "function" ? initial() : initial, () => {}] },
     "next/navigation": { useRouter: () => ({ push() {}, refresh() {} }) },
     "@/components/workspace-memory": { useWorkspaceState: (key: string, initial: unknown) => [key === "products.query" ? query : initial, () => {}] },
-    "@/lib/quantity-pricing": { quantityPriceRanges }, "sonner": { toast: { success() {}, error: (message: string) => errors.push(message) } },
+    "@/lib/quantity-pricing": { quantityPriceRanges }, "@/lib/product-inventory": { inventoryLabel }, "sonner": { toast: { success() {}, error: (message: string) => errors.push(message) } },
   }, { document: { createElement: () => ({ click() {} }) }, URL: { createObjectURL: (value: Blob) => { csv = value; return "blob:test"; }, revokeObjectURL() {} }, navigator: { clipboard: { writeText: async () => { throw new Error("Clipboard blocked"); } } } });
   const tree = exports.ProductsCatalogV2({ products: [product("A", "Alpha"), product("B", "=Formula name")], canWrite: true, mode: "live" });
   return { nodes: elements(tree), csv: () => csv, errors };
@@ -55,15 +56,14 @@ test("product export follows selected existing products and quotes spreadsheet f
   assert.doesNotMatch(csv, /deleted-sku/);
 });
 
-test("product selection exposes partial selection and clipboard failures stay actionable", async () => {
+test("product selection exposes partial selection and the compact list puts status immediately after product", () => {
   const fixture = productsFixture(["A"]);
   const select = fixture.nodes.find(node => node.props["aria-label"] === "Select visible products")!;
   assert.equal(select.props.checked, false);
   assert.equal(select.props.indeterminate, true);
-  const copy = fixture.nodes.find(node => node.props["aria-label"] === "Copy A")!;
-  await (copy.props.onClick as (event: { stopPropagation(): void }) => Promise<void>)({ stopPropagation() {} });
-  assert.equal(fixture.errors.length, 1);
-  assert.match(fixture.errors[0], /Could not copy/);
+  const headings = fixture.nodes.filter(node => ["Product", "Status", "SKU", "Inventory", "Price"].includes(node.props.children as string)).map(node => node.props.children);
+  assert.deepEqual(headings.slice(0, 5), ["Product", "Status", "SKU", "Inventory", "Price"]);
+  assert.equal(fixture.nodes.some(node => node.props["aria-label"] === "Copy A"), false);
 });
 
 test("an empty product catalog retains its list toolbar and add-product entry point", async () => {

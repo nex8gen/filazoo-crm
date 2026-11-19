@@ -35,7 +35,7 @@ export function CustomerTagBadges({ tags = [], className = "", compactWhenMultip
   const selected = uniqueCustomerTags(tags);
   if (!selected.length) return null;
   const iconOnly = compactWhenMultiple && selected.length > 1;
-  return <span aria-label="Customer tags" className={`flex ${iconOnly ? "flex-nowrap gap-1" : "flex-wrap gap-1.5"} ${className}`}>
+  return <span data-customer-tags aria-label="Customer tags" className={`flex ${iconOnly ? "flex-nowrap gap-1" : "flex-wrap gap-1.5"} ${className}`}>
     {selected.map(tag => <CustomerTagBadge key={tag} tag={tag} iconOnly={iconOnly} />)}
   </span>;
 }

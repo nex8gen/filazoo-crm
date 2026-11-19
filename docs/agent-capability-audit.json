@@ -1,6 +1,6 @@
 {
   "contractVersion": "2026-11-07.2",
-  "generatedOn": "2026-11-17",
+  "generatedOn": "2026-11-18",
   "capabilities": [
     {
       "name": "create_company",
@@ -333,6 +333,12 @@
       "name": "Upload product images",
       "href": "/products",
       "reason": "Select the actual image file in the product editor."
+    },
+    {
+      "domain": "products",
+      "name": "Adjust shared manual inventory",
+      "href": "/products",
+      "reason": "Open the product or variant in its side panel, choose a location, verify the available quantity and enter a reason. Shared stock saves immediately with revision protection and adjustment history."
     },
     {
       "domain": "email",
@@ -980,6 +986,18 @@
       "mode": "guided",
       "tools": [],
       "explanation": "Connection credentials, uploads or connection testing use the relevant settings/file form."
+    },
+    {
+      "surface": "app/product-stock-actions.ts#adjustProductStock",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Use the product side panel's shared inventory controls to choose a saved SKU and location, verify the quantity and enter an adjustment reason. Stock updates immediately for the team with revision checks and an audit trail. General chat must hand off to /products and must not claim it adjusted stock."
+    },
+    {
+      "surface": "app/product-stock-actions.ts#loadProductStock",
+      "mode": "read",
+      "tools": [],
+      "explanation": "Use the product side panel's shared inventory controls to choose a saved SKU and location, verify the quantity and enter an adjustment reason. Stock updates immediately for the team with revision checks and an audit trail. General chat must hand off to /products and must not claim it adjusted stock."
     },
     {
       "surface": "app/purchase-order-actions.ts#createOrderInvoice",

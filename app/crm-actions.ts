@@ -11,9 +11,13 @@ import { ensureCompanyCatalogPdf } from "@/lib/data/catalog-pdfs";
 import { companyProfileChangesSchema } from "@/lib/company-profile-fields";
 import { productEditMetadata } from "@/lib/product-edit-metadata";
 import { userProductRows } from "@/lib/data/product-personalization";
-import { validProductImage, privateProductImagePattern } from "@/lib/product-images";
+import { validProductImage, validProductMedia, privateProductImagePattern, MAX_PRODUCT_MEDIA, productMediaTag } from "@/lib/product-images";
+import { productMediaCover } from "@/lib/product-media";
+import { validateProductMediaReferences } from "@/lib/data/product-media";
+import { productDescriptionImages, sanitizeProductDescription } from "@/lib/product-content";
 import { crmProduct, variantsFromTags } from "@/lib/product-utils";
 import { normalizeProductVariants, validVariantPrice } from "@/lib/product-pricing";
+import { variantOptionsError } from "@/lib/product-variants";
 
 export type CrmActionState = { error?: string; success?: string; companyId?: string } | undefined;
 
@@ -64,8 +68,10 @@ const catalogSchema = z.object({
 const productSchema = z.object({
   sku: z.string().trim().min(2).max(100).regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/),
   name: z.string().trim().min(2).max(160),
+  description: z.string().max(50_000).transform(sanitizeProductDescription).optional(),
+  mediaUrls: z.string().max(30_000).optional(),
   material: z.string().trim().min(1).max(100),
-  colors: z.string().trim().max(2000),
+  colors: z.string().trim().max(40_000),
   diameter: optionalText(50),
   weight: optionalText(50),
   currency: z.enum(["USD", "EUR", "GBP", "CNY"]),
@@ -76,18 +82,26 @@ const productSchema = z.object({
   minimum3: z.union([z.literal(""), z.coerce.number().int().min(1).max(1_000_000)]),
   price3: z.union([z.literal(""), z.coerce.number().min(0).max(1_000_000)]),
   stockStatus: optionalText(100),
+  manualInventory: z.preprocess((value) => value === null || (typeof value === "string" && !value.trim()) ? null : value, z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).nullable().optional()),
   leadTime: optionalText(100),
   imageUrl: z.string().trim().max(1000).refine(validProductImage, "Choose a valid product image").optional(),
   active: z.enum(["true", "false"]).default("true"),
-  variants: z.string().max(50_000),
+  variants: z.string().max(200_000),
 });
 
 const productVariantSchema = z.array(z.object({
   id: z.string().trim().min(1).max(160),
-  name: z.string().trim().min(1).max(120),
+  name: z.string().trim().min(1).max(400),
   sku: z.string().trim().min(1).max(120),
   price: z.string().trim().max(50),
   stockStatus: z.string().trim().max(100),
+  manualInventory: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).nullable().optional(),
+  colorHex: z.string().regex(/^#[a-f\d]{6}$/i).nullable().optional(),
+  options: z.array(z.object({ name: z.string().trim().min(1).max(50), value: z.string().trim().min(1).max(120) }).strict()).min(1).max(3).optional(),
+  barcode: z.string().trim().max(100).nullable().optional(),
+  compareAtPrice: z.string().trim().max(50).refine(value => value === "" || validVariantPrice(value), "Enter a valid compare-at price").nullable().optional(),
+  costPerItem: z.string().trim().max(50).refine(value => value === "" || validVariantPrice(value), "Enter a valid cost per item").nullable().optional(),
+  unitPricing: z.object({ quantity: z.number().min(0.000001).max(1_000_000), referenceQuantity: z.number().min(0.000001).max(1_000_000), unit: z.enum(["g", "kg", "ml", "l", "cm", "m", "item"]) }).strict().nullable().optional(),
   imageUrl: z.string().trim().max(1000).refine(validProductImage, "Choose a valid variant image").nullable(),
 })).min(1).max(100);
 
@@ -97,6 +111,12 @@ function parseProductVariants(value: string) {
   } catch {
     return productVariantSchema.safeParse(null);
   }
+}
+
+function parseProductMedia(value: string | undefined) {
+  const schema = z.array(z.string().trim().min(1).max(1000).refine(validProductMedia)).max(MAX_PRODUCT_MEDIA);
+  try { return schema.safeParse(JSON.parse(value ?? "[]")); }
+  catch { return schema.safeParse(null); }
 }
 
 function normalizeWebsite(value: string | undefined) {
@@ -361,10 +381,12 @@ export async function createCatalog(_state: CrmActionState, formData: FormData):
 }
 
 export async function createProduct(_state: CrmActionState, formData: FormData): Promise<CrmActionState> {
-  await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
+  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager"]);
   const parsed = productSchema.safeParse({
     sku: formData.get("sku"),
     name: formData.get("name"),
+    description: formData.has("description") ? formData.get("description") : undefined,
+    mediaUrls: formData.has("mediaUrls") ? formData.get("mediaUrls") : undefined,
     material: formData.get("material"),
     colors: formData.get("colors") || "",
     diameter: formData.get("diameter"),
@@ -377,6 +399,7 @@ export async function createProduct(_state: CrmActionState, formData: FormData):
     minimum3: formData.get("minimum3") || "",
     price3: formData.get("price3") || "",
     stockStatus: formData.get("stockStatus"),
+    manualInventory: formData.has("manualInventory") ? formData.get("manualInventory") : undefined,
     leadTime: formData.get("leadTime"),
     imageUrl: formData.get("imageUrl"),
     active: formData.get("active") || "true",
@@ -388,6 +411,19 @@ export async function createProduct(_state: CrmActionState, formData: FormData):
 
   const parsedVariants = parseProductVariants(parsed.data.variants);
   if (!parsedVariants.success) return { error: "Add at least one valid product variant." };
+  const optionsError = variantOptionsError(parsedVariants.data);
+  if (optionsError) return { error: optionsError };
+  if (new Set(parsedVariants.data.map(variant => variant.sku.toUpperCase())).size !== parsedVariants.data.length) return { error: "Each variant needs a unique SKU." };
+  if (new Set(parsedVariants.data.map(variant => variant.id)).size !== parsedVariants.data.length) return { error: "Each variant needs a unique identifier." };
+  if (parsedVariants.data.some(variant => !validVariantPrice(variant.price))) return { error: "Enter a valid non-negative price for every variant." };
+  const variants = normalizeProductVariants(parsedVariants.data, parsed.data.currency, parsed.data.price1);
+  const media = parseProductMedia(parsed.data.mediaUrls);
+  if (!media.success) return { error: `Choose up to ${MAX_PRODUCT_MEDIA} valid product media files.` };
+  const mediaUrls = parsed.data.mediaUrls === undefined ? undefined : [...new Set(media.data)];
+  const images = [parsed.data.imageUrl, ...media.data, ...parsedVariants.data.map((variant) => variant.imageUrl), ...productDescriptionImages(parsed.data.description ?? "")];
+  if (images.some((url) => url && privateProductImagePattern.exec(url)?.[1] && privateProductImagePattern.exec(url)?.[1] !== viewer.id)) return { error: "Choose images from your own account." };
+  const mediaError = await validateProductMediaReferences(viewer, images);
+  if (mediaError) return { error: mediaError };
 
   const colors = parsedVariants.data.map((variant) => variant.name);
   const tiers = [
@@ -407,11 +443,11 @@ export async function createProduct(_state: CrmActionState, formData: FormData):
     price: parsed.data.price1,
     currency: parsed.data.currency,
     moq: parsed.data.minimum1,
-    stock_status: parsed.data.stockStatus || "Not specified",
+    stock_status: parsed.data.manualInventory === null ? "Stock unknown" : parsed.data.stockStatus || "Not specified",
     lead_time: parsed.data.leadTime || "Not specified",
-    image_url: parsed.data.imageUrl || null,
-    tags: ["manual", ...tiers.map((tier) => `price-tier:${tier.minimum}:${tier.price}`), variantTag(parsedVariants.data.map((variant) => ({ ...variant, imageUrl: variant.imageUrl || null })))],
-    description: `Volume pricing: ${tiers.map((tier) => `${tier.minimum}+ ${parsed.data.currency} ${tier.price.toFixed(2)}`).join("; ")}.`,
+    image_url: mediaUrls === undefined ? parsed.data.imageUrl || null : productMediaCover(mediaUrls),
+    tags: ["manual", ...(mediaUrls === undefined ? [] : [productMediaTag(mediaUrls)]), ...(parsed.data.manualInventory == null ? [] : [`manual-inventory:${parsed.data.manualInventory}`]), ...tiers.map((tier) => `price-tier:${tier.minimum}:${tier.price}`), variantTag(variants)],
+    description: parsed.data.description ?? `Volume pricing: ${tiers.map((tier) => `${tier.minimum}+ ${parsed.data.currency} ${tier.price.toFixed(2)}`).join("; ")}.`,
     active: parsed.data.active === "true",
     sheet_updated_at: new Date().toISOString(),
   });
@@ -426,9 +462,12 @@ export async function updateProduct(_state: CrmActionState, formData: FormData):
   const originalSku = z.string().trim().min(2).max(100).safeParse(formData.get("originalSku"));
   const parsed = productSchema.safeParse({
     sku: formData.get("sku"), name: formData.get("name"), material: formData.get("material"), colors: formData.get("colors") || "",
+    description: formData.has("description") ? formData.get("description") : undefined,
+    mediaUrls: formData.has("mediaUrls") ? formData.get("mediaUrls") : undefined,
     diameter: formData.get("diameter"), weight: formData.get("weight"), currency: formData.get("currency"),
     minimum1: formData.get("minimum1"), price1: formData.get("price1"), minimum2: formData.get("minimum2") || "", price2: formData.get("price2") || "",
     minimum3: formData.get("minimum3") || "", price3: formData.get("price3") || "", stockStatus: formData.get("stockStatus"), leadTime: formData.get("leadTime"),
+    manualInventory: formData.has("manualInventory") ? formData.get("manualInventory") : undefined,
     imageUrl: formData.get("imageUrl"), active: formData.get("active") || "true", variants: formData.get("variants") || "[]",
   });
   if (!originalSku.success) return { error: "Choose a valid product SKU." };
@@ -436,6 +475,11 @@ export async function updateProduct(_state: CrmActionState, formData: FormData):
   if (parsed.data.sku.toUpperCase() !== originalSku.data) return { error: "The product SKU is its permanent identifier. Edit variant SKUs instead." };
   const parsedVariants = parseProductVariants(parsed.data.variants);
   if (!parsedVariants.success) return { error: "Add at least one valid product variant." };
+  const optionsError = variantOptionsError(parsedVariants.data);
+  if (optionsError) return { error: optionsError };
+  const media = parseProductMedia(parsed.data.mediaUrls);
+  if (!media.success) return { error: `Choose up to ${MAX_PRODUCT_MEDIA} valid product media files.` };
+  const mediaUrls = parsed.data.mediaUrls === undefined ? undefined : [...new Set(media.data)];
   const optionalTiersAreComplete = (parsed.data.minimum2 === "") === (parsed.data.price2 === "") && (parsed.data.minimum3 === "") === (parsed.data.price3 === "");
   if (!optionalTiersAreComplete) return { error: "Each optional pricing tier needs both a minimum quantity and a price." };
   const tiers = [
@@ -450,18 +494,20 @@ export async function updateProduct(_state: CrmActionState, formData: FormData):
   if (!current) return { error: "This product is unavailable. Refresh Products before editing." };
   const expectedVersion = String(formData.get("overrideVersion") || "");
   if (expectedVersion !== (current.override_version ?? "")) return { error: "Your saved product changed in another tab. Reload this page before saving." };
-  const images = [parsed.data.imageUrl, ...parsedVariants.data.map((variant) => variant.imageUrl)];
+  const images = [parsed.data.imageUrl, ...media.data, ...parsedVariants.data.map((variant) => variant.imageUrl), ...productDescriptionImages(parsed.data.description ?? "")];
   if (images.some((url) => url && privateProductImagePattern.exec(url)?.[1] && privateProductImagePattern.exec(url)?.[1] !== viewer.id)) return { error: "Choose images from your own account." };
+  const mediaError = await validateProductMediaReferences(viewer, images);
+  if (mediaError) return { error: mediaError };
   if (new Set(parsedVariants.data.map((variant) => variant.sku.trim().toUpperCase())).size !== parsedVariants.data.length) return { error: "Each variant needs a unique SKU." };
   if (new Set(parsedVariants.data.map((variant) => variant.id)).size !== parsedVariants.data.length) return { error: "Each variant needs a unique identifier. Remove the duplicate and add it again." };
   if (parsedVariants.data.some((variant) => !validVariantPrice(variant.price))) return { error: "Enter a valid non-negative price for every variant." };
   const variants = normalizeProductVariants(parsedVariants.data, parsed.data.currency, tiers[0].price, { price: current.price, variants: variantsFromTags(current.tags ?? [], [], current.sku, String(current.price ?? ""), current.stock_status ?? "") });
-  const metadata = productEditMetadata(current, [...tiers.map((tier) => `price-tier:${tier.minimum}:${tier.price}`), variantTag(variants)], `Volume pricing: ${tiers.map((tier) => `${tier.minimum}+ ${parsed.data.currency} ${tier.price.toFixed(2)}`).join("; ")}.`);
+  const metadata = productEditMetadata(current, [...tiers.map((tier) => `price-tier:${tier.minimum}:${tier.price}`), variantTag(variants)], `Volume pricing: ${tiers.map((tier) => `${tier.minimum}+ ${parsed.data.currency} ${tier.price.toFixed(2)}`).join("; ")}.`, parsed.data.manualInventory, { description: parsed.data.description, mediaUrls });
   const changes = {
     name: parsed.data.name, material: parsed.data.material, color: colors.join(", "),
     diameter: parsed.data.diameter || null, weight: parsed.data.weight || null, price: tiers[0].price, currency: parsed.data.currency,
-    moq: tiers[0].minimum, stock_status: parsed.data.stockStatus || "Not specified", lead_time: parsed.data.leadTime || "Not specified",
-    image_url: parsed.data.imageUrl || null, active: parsed.data.active === "true",
+    moq: tiers[0].minimum, stock_status: parsed.data.manualInventory === null ? "Stock unknown" : parsed.data.stockStatus || "Not specified", lead_time: parsed.data.leadTime || "Not specified",
+    image_url: mediaUrls === undefined ? parsed.data.imageUrl || null : productMediaCover(mediaUrls), active: parsed.data.active === "true",
     ...metadata,
   };
   const values = { user_id: viewer.id, product_sku: originalSku.data, data: changes, updated_at: new Date().toISOString() };

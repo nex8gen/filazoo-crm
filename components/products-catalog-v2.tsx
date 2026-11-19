@@ -4,16 +4,17 @@ import { NotificationToast } from "@/components/ui/notification-toast";
 
 import { PackageSearch } from "lucide-react";
 import { EmptyState } from "@/components/data-state";
-import { useMemo, useState } from "react";
+import { PageActions } from "@/components/page-header";
+import { useEffect, useMemo, useState } from "react";
 import { useWorkspaceState } from "@/components/workspace-memory";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
-import { Box, CheckSquare2, ChevronLeft, ChevronRight, Clipboard, Download, FileDown, ImageIcon, PackagePlus, Plus, Trash2 } from "lucide-react";
+import { CheckSquare2, ChevronLeft, ChevronRight, Download, FileDown, ImageIcon, PackagePlus, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { createProduct, updateProduct } from "@/app/crm-actions";
 import { parseCurrencyAmount } from "@/lib/product-utils";
-import { quantityPriceRanges, quantityPricingError, quantityRangeLabel } from "@/lib/quantity-pricing";
+import { quantityPriceRanges, quantityPricingError } from "@/lib/quantity-pricing";
 import type { DataMode, Product, ProductVariant } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,17 +27,22 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableFilters, TableFilter } from "@/components/ui/table-filters";
 import { TablePagination } from "@/components/ui/table-pagination";
-import { ProductImagePicker } from "@/components/product-image-picker";
-import { stockLabel } from "@/lib/product-inventory";
+import { ProductVariantsEditor } from "@/components/product-variants-editor";
+import { manualStockTotal } from "@/lib/shared-product-inventory";
+import { ProductMediaGallery } from "@/components/product-media-gallery";
+import { ProductVolumePricing } from "@/components/product-volume-pricing";
+import { ProductDescriptionEditor } from "@/components/product-description-editor";
+import { MAX_PRODUCT_MEDIA } from "@/lib/product-images";
+import { isProductVideo, productMediaCover } from "@/lib/product-media";
+import { ProductSheet, useProductProfileSheet } from "@/components/product-profile-sheet";
+import { inventoryLabel } from "@/lib/product-inventory";
+import { validVariantPrice } from "@/lib/product-pricing";
+import "./product-editor.css";
 
 const pageSize = 25;
 const amount = (value: string) => parseCurrencyAmount(value).toFixed(2);
 
-function formatUpdatedAt(value: string | null) {
-  if (!value) return "Not synced";
-  const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat("en", { timeZone: "Asia/Shanghai", month: "short", day: "numeric", year: "numeric" }).format(date) : "Not synced";
-}
+const productStatusLabel = (status: string) => status.toLowerCase() === "active" ? "Active" : "Draft";
 
 function emptyVariant(sku = "NEW"): ProductVariant {
   const id = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
@@ -55,6 +61,9 @@ function productFromForm(form: FormData, variants: ProductVariant[]): Product {
   return {
     sku: String(form.get("sku")).toUpperCase(),
     name: String(form.get("name")),
+    description: String(form.get("description") || ""),
+    mediaUrls: JSON.parse(String(form.get("mediaUrls") || "[]")),
+    currency,
     imageUrl: String(form.get("imageUrl") || "") || null,
     material: String(form.get("material")),
     color: normalizedVariants.length === 1 ? normalizedVariants[0].name : `${normalizedVariants.length} variants`,
@@ -64,7 +73,8 @@ function productFromForm(form: FormData, variants: ProductVariant[]): Product {
     price: priceTiers[0]?.price || money(0),
     moq: priceTiers[0]?.minimumQuantity ?? 1,
     priceTiers,
-    stockStatus: String(form.get("stockStatus") || "Not specified"),
+    stockStatus: String(form.get("manualInventory") ?? "").trim() === "" ? "Stock unknown" : String(form.get("stockStatus") || "Not specified"),
+    manualInventory: String(form.get("manualInventory") ?? "").trim() === "" ? null : Number(form.get("manualInventory")),
     leadTime: String(form.get("leadTime") || "Not specified"),
     status: form.get("active") === "false" ? "Inactive" : "Active",
     updatedAt: new Date().toISOString(),
@@ -76,10 +86,12 @@ function Field({ label, id, children }: { label: string; id: string; children: R
   return <div className="space-y-2"><Label htmlFor={id}>{label}</Label>{children}</div>;
 }
 
-export function ProductEditor({ product, open = true, onOpenChange, canWrite, mode, onSaved, fullPage = false }: {
+export function ProductEditor({ product, open = true, onOpenChange, canWrite, mode, onSaved, fullPage = false, onBusyChange, onDownload }: {
   product: Product | null;
   open?: boolean;
   fullPage?: boolean;
+  onBusyChange?: (busy: boolean) => void;
+  onDownload?: () => void;
   onOpenChange: (open: boolean) => void;
   canWrite: boolean;
   mode: DataMode;
@@ -87,19 +99,26 @@ export function ProductEditor({ product, open = true, onOpenChange, canWrite, mo
 }) {
   const router = useRouter();
   const [variants, setVariants] = useState<ProductVariant[]>(() => product?.variants.length ? product.variants.map((variant) => ({ ...variant })) : [emptyVariant(product?.sku)]);
+  const sharedStock = product?.sharedInventory;
+  const usesSharedInventory = mode === "live" && (!product || Boolean(sharedStock));
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const [imageUrl, setImageUrl] = useState(product?.imageUrl ?? null);
+  const [title, setTitle] = useState(product?.name ?? "");
+  const [sku, setSku] = useState(product?.sku ?? "");
+  const [currency, setCurrency] = useState(product?.currency ?? (product?.price.startsWith("€") ? "EUR" : product?.price.startsWith("£") ? "GBP" : /[¥￥]|CNY|CN¥/.test(product?.price ?? "") ? "CNY" : "USD"));
+  const [active, setActive] = useState(product ? productStatusLabel(product.status) === "Active" : true);
+  const [description, setDescription] = useState(product?.description ?? "");
+  const [mediaUrls, setMediaUrls] = useState(() => product?.mediaUrls ?? [...new Set([product?.imageUrl, ...(product?.variants.map(variant => variant.imageUrl) ?? [])].filter((url): url is string => Boolean(url)))].slice(0, MAX_PRODUCT_MEDIA));
   const [pricing, setPricing] = useState(() => product?.priceTiers.length
     ? [...product.priceTiers].sort((a, b) => a.minimumQuantity - b.minimumQuantity).map((tier) => ({ minimumQuantity: String(tier.minimumQuantity), price: amount(tier.price) }))
     : [{ minimumQuantity: "1", price: amount(product?.price ?? "0") }]);
   const [uploadCount, setUploadCount] = useState(0);
   const uploading = uploadCount > 0;
+  useEffect(() => {
+    onBusyChange?.(saving || uploading);
+    return () => onBusyChange?.(false);
+  }, [onBusyChange, saving, uploading]);
   const onImageBusyChange = (busy: boolean) => setUploadCount((count) => count + (busy ? 1 : -1));
-
-  const updateVariant = (index: number, patch: Partial<ProductVariant>) => {
-    setVariants((current) => current.map((variant, position) => position === index ? { ...variant, ...patch } : variant));
-  };
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -108,14 +127,20 @@ export function ProductEditor({ product, open = true, onOpenChange, canWrite, mo
       setError("Every variant needs a name and SKU.");
       return;
     }
+    if (variants.some(variant => !validVariantPrice(variant.price))) { setError("Enter a valid price for every variant."); return; }
     const form = new FormData(event.currentTarget);
+    if (form.get("productOptionsEditing") === "true") { setError("Choose Done or Cancel option to finish editing product options before saving."); return; }
+    if (sharedStock) form.set("manualInventory", sharedStock.legacyQuantity?.toString() ?? "");
     form.set("colors", variants.map((variant) => variant.name.trim()).join(", "));
     form.set("overrideVersion", product?.overrideVersion ?? "");
     const pricingError = quantityPricingError(pricing.map((tier) => ({ ...tier, minimumQuantity: Number(tier.minimumQuantity) })));
     if (pricingError) { setError(pricingError); return; }
-    if (product?.stock !== undefined) form.set("stockStatus", "ERP managed");
+    if (product?.stock) {
+      form.set("stockStatus", "ERP managed");
+      form.set("manualInventory", product.manualInventory == null ? "" : String(product.manualInventory));
+    }
     const currency = String(form.get("currency") || "USD");
-    form.set("variants", JSON.stringify(variants.map(variant => ({ ...variant, price: new Intl.NumberFormat("en", { style: "currency", currency }).format(parseCurrencyAmount(variant.price)), stockStatus: variant.stock !== undefined ? "ERP managed" : variant.stockStatus }))));
+    form.set("variants", JSON.stringify(variants.map(variant => ({ ...variant, manualInventory: usesSharedInventory ? variant.sharedInventory?.legacyQuantity ?? null : variant.manualInventory, price: new Intl.NumberFormat("en", { style: "currency", currency }).format(parseCurrencyAmount(variant.price)), stockStatus: variant.stock ? "ERP managed" : variant.manualInventory === null ? "Stock unknown" : variant.manualInventory !== undefined ? `${variant.manualInventory.toLocaleString("en")} available` : variant.stockStatus }))));
     if (product) form.set("originalSku", product.sku);
     setSaving(true);
     setError("");
@@ -126,7 +151,7 @@ export function ProductEditor({ product, open = true, onOpenChange, canWrite, mo
         router.refresh();
       }
       const saved = productFromForm(form, variants);
-      onSaved(saved, product?.sku);
+      onSaved(product ? { ...saved, stock: product.stock, ...(sharedStock ? { sharedInventory: sharedStock, manualInventory: manualStockTotal(sharedStock) } : {}) } : saved, product?.sku);
       if (!fullPage) onOpenChange(false);
       toast.success(mode === "demo" ? `${saved.name} saved for this demo session.` : `${saved.name} saved.`);
     } catch (error) {
@@ -136,59 +161,59 @@ export function ProductEditor({ product, open = true, onOpenChange, canWrite, mo
     }
   }
 
-  const contents = <div className="space-y-5">
-      {fullPage ? <div><h2 className="text-xl font-semibold">{product?.name}</h2><p className="mt-1 text-sm text-muted-foreground">Your prices, product details, and photos are private to your account. Your catalogs and AI automations use these saved details.</p></div> : <DialogHeader><DialogTitle>{product ? product.name : "Add product"}</DialogTitle><DialogDescription>{canWrite ? "Edit product details and manage every variant individually." : "View product details and variants."}</DialogDescription></DialogHeader>}
-      <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
+  const contents = <div className="product-editor">
+      <div className="product-editor-heading">
+        <h2 title={title}>
+          <Button type="button" variant="ghost" className="product-title-back variant-workspace-back" data-product-title-back aria-label={`Back from ${title || "Untitled product"}`} disabled={saving || uploading} onClick={() => onOpenChange(false)}>
+            <ChevronLeft aria-hidden="true" />
+            <span className="variant-workspace-back-text" aria-hidden="true">
+              <span className="variant-workspace-back-name">{title || "Untitled product"}</span>
+              <span className="variant-workspace-back-action">Back</span>
+            </span>
+          </Button>
+        </h2>
+        <Select value={active ? "true" : "false"} onValueChange={value => setActive(value !== "false")} disabled={!canWrite || saving || uploading}>
+          <SelectTrigger id="product-status" aria-label="Product status" size="sm" className={`product-status-trigger ${active ? "bg-primary text-primary-foreground hover:bg-primary/90 dark:bg-primary dark:hover:bg-primary/90" : "bg-cyan-200 text-cyan-950 hover:bg-cyan-300 dark:bg-cyan-900 dark:text-cyan-100 dark:hover:bg-cyan-800"}`}><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem value="true">Active</SelectItem><SelectItem value="false">Draft</SelectItem></SelectContent>
+        </Select>
+      </div>
+      <form onSubmit={submit} className="product-editor-form">
         <fieldset disabled={saving || uploading} className="contents">
         <input type="hidden" name="variants" />
-        <Field label="Product name" id="product-name"><Input id="product-name" name="name" defaultValue={product?.name} required disabled={!canWrite} /></Field>
-        <Field label="SKU" id="product-sku"><Input id="product-sku" name="sku" defaultValue={product?.sku} placeholder="PLA-CUSTOM" required readOnly={Boolean(product)} disabled={!canWrite} /></Field>
-        <Field label="Material" id="product-material"><Input id="product-material" name="material" defaultValue={product?.material} placeholder="PLA" required disabled={!canWrite} /></Field>
-        <Field label="Status" id="product-status"><Select name="active" defaultValue={product?.status === "Inactive" ? "false" : "true"} disabled={!canWrite}><SelectTrigger id="product-status" size="sm" className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="true">Active</SelectItem><SelectItem value="false">Inactive</SelectItem></SelectContent></Select></Field>
-        <Field label="Diameter" id="product-diameter"><Input id="product-diameter" name="diameter" defaultValue={product?.diameter === "Not specified" ? "" : product?.diameter} placeholder="1.75 mm" disabled={!canWrite} /></Field>
-        <Field label="Pack weight" id="product-weight"><Input id="product-weight" name="weight" defaultValue={product?.weight === "Not specified" ? "" : product?.weight} placeholder="1 kg" disabled={!canWrite} /></Field>
-        <Field label="Stock status" id="product-stock"><Input id="product-stock" name="stockStatus" defaultValue={product?.stockStatus} placeholder="In stock" disabled={!canWrite || product?.stock !== undefined} />{product?.stock !== undefined ? <p className="text-xs text-muted-foreground">Stock comes from Lingxing ERP. Sync stock to refresh quantities.</p> : null}</Field>
-        <Field label="Lead time" id="product-lead"><Input id="product-lead" name="leadTime" defaultValue={product?.leadTime} placeholder="Ships in 3–5 days" disabled={!canWrite} /></Field>
-        <div className="sm:col-span-2"><input type="hidden" name="imageUrl" value={imageUrl ?? ""} /><ProductImagePicker id="product-image" label="Product image" value={imageUrl} onChange={setImageUrl} disabled={!canWrite || saving || uploading} mode={mode} onBusyChange={onImageBusyChange} /></div>
+        <input type="hidden" name="stockStatus" value={product?.stockStatus ?? "Not specified"} />
+        <input type="hidden" name="manualInventory" value={product?.manualInventory ?? ""} />
+        <input type="hidden" name="active" value={active ? "true" : "false"} />
+        <input type="hidden" name="diameter" value={product?.diameter === "Not specified" ? "" : product?.diameter ?? ""} />
+        <input type="hidden" name="weight" value={product?.weight === "Not specified" ? "" : product?.weight ?? ""} />
+        <input type="hidden" name="leadTime" value={product?.leadTime ?? ""} />
+        <Card role="region" className="product-editor-card product-content-card" aria-label="Product content">
+          <Field label="Title" id="product-name"><Input id="product-name" name="name" value={title} onChange={event => setTitle(event.target.value)} maxLength={160} required disabled={!canWrite} /></Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="SKU" id="product-sku"><Input id="product-sku" name="sku" value={sku} onChange={event => setSku(event.target.value)} placeholder="PLA-CUSTOM" required readOnly={Boolean(product)} disabled={!canWrite} /></Field>
+            <Field label="Material" id="product-material"><Input id="product-material" name="material" defaultValue={product?.material} placeholder="PLA" required disabled={!canWrite} /></Field>
+          </div>
+          <div className="space-y-2"><Label>Description</Label><input type="hidden" name="description" value={description} /><ProductDescriptionEditor value={description} onChange={setDescription} disabled={!canWrite || saving || uploading} /></div>
+          <div className="space-y-3"><Label>Media</Label><input type="hidden" name="imageUrl" value={productMediaCover(mediaUrls) ?? ""} /><input type="hidden" name="mediaUrls" value={JSON.stringify(mediaUrls)} /><ProductMediaGallery value={mediaUrls} onChange={setMediaUrls} disabled={!canWrite || saving || uploading} mode={mode} onBusyChange={onImageBusyChange} /></div>
+        </Card>
 
-        <section className="space-y-3 border-t pt-4 sm:col-span-2">
-          <div className="flex items-center justify-between gap-3"><div><p className="font-medium">Volume pricing</p><p className="text-xs text-muted-foreground">Set quantity ranges for this product.</p></div><label className="text-xs text-muted-foreground">Currency <Select name="currency" defaultValue={product?.currency ?? (product?.price.startsWith("€") ? "EUR" : product?.price.startsWith("£") ? "GBP" : /[¥￥]|CNY|CN¥/.test(product?.price ?? "") ? "CNY" : "USD")} disabled={!canWrite}><SelectTrigger size="sm" className="ml-2"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="USD">USD</SelectItem><SelectItem value="EUR">EUR</SelectItem><SelectItem value="GBP">GBP</SelectItem><SelectItem value="CNY">CNY</SelectItem></SelectContent></Select></label></div>
-          <div className="grid gap-3 sm:grid-cols-3">{pricing.map((tier, index) => <div key={index} className="space-y-3 rounded-lg border bg-muted/20 p-3">
-            <div className="flex h-8 items-center justify-between gap-1"><p className="text-sm font-medium" aria-live="polite">{quantityRangeLabel(Number(tier.minimumQuantity) || 1, pricing[index + 1] ? Number(pricing[index + 1].minimumQuantity) : undefined)}</p>{canWrite && index === pricing.length - 1 && index > 0 ? <Button type="button" variant="ghost" size="icon-sm" aria-label="Remove quantity range" onClick={() => setPricing((current) => current.slice(0, -1))}><Trash2 /></Button> : null}</div>
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="From qty" id={`minimum-${index + 1}`}><Input id={`minimum-${index + 1}`} name={`minimum${index + 1}`} type="number" min={index > 0 ? Number(pricing[index - 1].minimumQuantity) + 1 : 1} step="1" value={tier.minimumQuantity} onChange={(event) => setPricing((current) => current.map((item, position) => position === index ? { ...item, minimumQuantity: event.target.value } : item))} required disabled={!canWrite} /></Field>
-              {pricing[index + 1] ? <Field label="To qty" id={`maximum-${index + 1}`}><Input id={`maximum-${index + 1}`} type="number" min={Number(tier.minimumQuantity) || 1} step="1" value={pricing[index + 1].minimumQuantity === "" ? "" : Number(pricing[index + 1].minimumQuantity) - 1} onChange={(event) => setPricing((current) => current.map((item, position) => position === index + 1 ? { ...item, minimumQuantity: event.target.value === "" ? "" : String(Number(event.target.value) + 1) } : item))} required disabled={!canWrite} /></Field> : <div className="space-y-2"><Label>To qty</Label><p className="flex h-9 items-center text-xs text-muted-foreground">No upper limit</p></div>}
-            </div>
-            <Field label="Unit price" id={`price-${index + 1}`}><Input id={`price-${index + 1}`} name={`price${index + 1}`} type="number" min="0" step="0.01" value={tier.price} onChange={(event) => setPricing((current) => current.map((item, position) => position === index ? { ...item, price: event.target.value } : item))} required disabled={!canWrite} /></Field>
-          </div>)}</div>
-          {canWrite && pricing.length < 3 ? <Button type="button" variant="outline" size="sm" onClick={() => setPricing((current) => [...current, { minimumQuantity: String(Number(current[current.length - 1].minimumQuantity) + 100), price: "" }])}><Plus />Add quantity range</Button> : null}
-        </section>
+        <ProductVolumePricing tiers={pricing} onChange={setPricing} currency={currency} onCurrencyChange={setCurrency} canWrite={canWrite} disabled={!canWrite || saving || uploading} />
 
-        <section className="space-y-3 border-t pt-4 sm:col-span-2">
-          <div className="flex items-center justify-between"><div><p className="font-medium">Variants <Badge variant="secondary" className="ml-1">{variants.length}</Badge></p><p className="text-xs text-muted-foreground">Each variant has its own SKU, price, availability, and image.</p></div>{canWrite ? <Button type="button" variant="outline" size="sm" onClick={() => setVariants((current) => [...current, emptyVariant(product?.sku)])}><Plus />Add variant</Button> : null}</div>
-          <div className={fullPage ? "space-y-3" : "max-h-80 space-y-2 overflow-y-auto pr-1"}>{variants.map((variant, index) => <div key={variant.id} className="grid gap-2 rounded-lg border p-3 sm:grid-cols-[1.2fr_1fr_.7fr_1fr_auto]">
-            <Input value={variant.name} onChange={(event) => updateVariant(index, { name: event.target.value })} placeholder="Name / color" aria-label={`Variant ${index + 1} name`} disabled={!canWrite} />
-            <Input value={variant.sku} onChange={(event) => updateVariant(index, { sku: event.target.value })} placeholder="Variant SKU" aria-label={`Variant ${index + 1} SKU`} disabled={!canWrite} />
-            <Input value={variant.price.replace(/[^0-9.-]/g, "")} onChange={(event) => updateVariant(index, { price: event.target.value })} type="number" min="0" step="0.01" placeholder="Price" aria-label={`Variant ${index + 1} price`} disabled={!canWrite} />
-            <Input value={variant.stock !== undefined ? stockLabel(variant.stock) : variant.stockStatus} onChange={(event) => updateVariant(index, { stockStatus: event.target.value })} placeholder="Availability" aria-label={`Variant ${index + 1} availability`} disabled={!canWrite || variant.stock !== undefined} />
-            {canWrite ? <Button type="button" variant="ghost" size="icon-sm" disabled={variants.length === 1 || saving || uploading} onClick={() => setVariants((current) => current.filter((_, position) => position !== index))} aria-label={`Remove ${variant.name || "variant"}`}><Trash2 /></Button> : null}
-            <div className="sm:col-span-full"><ProductImagePicker id={`variant-image-${variant.id}`} label={`Variant ${index + 1} image (optional)`} value={variant.imageUrl} onChange={(imageUrl) => updateVariant(index, { imageUrl })} disabled={!canWrite || saving || uploading} mode={mode} onBusyChange={onImageBusyChange} /></div>
-          </div>)}</div>
-        </section>
+        <ProductVariantsEditor variants={variants} onChange={setVariants} sku={sku} productName={title} productImage={productMediaCover(mediaUrls)} sharedInventory={usesSharedInventory} savedVariants={product?.variants ?? []} currency={currency} basePrice={pricing[0]?.price ?? "0"} mediaUrls={mediaUrls.filter(url => !isProductVideo(url))} disabled={!canWrite || saving || uploading} mode={mode} onBusyChange={onImageBusyChange} />
         </fieldset>
         {error ? <NotificationToast>{error}</NotificationToast> : null}
-        <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" disabled={saving || uploading} onClick={() => onOpenChange(false)}>Close</Button>{canWrite ? <Button type="submit" disabled={saving || uploading}>{uploading ? "Uploading image…" : saving ? "Saving…" : product ? "Save changes" : "Add product"}</Button> : null}</DialogFooter>
+        <div className="product-editor-footer">{onDownload ? <Button type="button" variant="outline" disabled={saving || uploading} onClick={onDownload}><FileDown />Download saved product PDF</Button> : null}<div className="flex items-center gap-2"><Button type="button" variant="outline" disabled={saving || uploading} onClick={() => onOpenChange(false)}>Close</Button>{canWrite ? <Button type="submit" disabled={saving || uploading}>{uploading ? "Uploading image…" : saving ? "Saving…" : product ? "Save changes" : "Add product"}</Button> : null}</div></div>
       </form>
   </div>;
-  return fullPage ? contents : <Dialog open={open} onOpenChange={(nextOpen) => { if (!saving && !uploading) onOpenChange(nextOpen); }}><DialogContent className="max-h-[92svh] overflow-y-auto sm:max-w-4xl">{contents}</DialogContent></Dialog>;
+  return fullPage ? contents : <ProductSheet title={product?.name ?? "Add product"} open={open} onOpenChange={(nextOpen) => { if (!saving && !uploading) onOpenChange(nextOpen); }}>{contents}</ProductSheet>;
 }
 
 export function ProductDetail({ product, mode }: { product: Product; mode: DataMode }) {
   const router = useRouter();
+  const panel = useProductProfileSheet();
   const [downloadOpen, setDownloadOpen] = useState(false);
-  return <div className="mx-auto w-full max-w-5xl space-y-5 pb-8">
-    <div className="flex items-center justify-between gap-3"><Link href="/products" className="text-sm text-muted-foreground hover:text-foreground">← All products</Link><Button variant="outline" onClick={() => setDownloadOpen(true)}><FileDown />Download saved product PDF</Button></div>
-    <ProductEditor key={`${product.sku}-${product.overrideVersion ?? "base"}`} product={product} canWrite mode={mode} fullPage onSaved={() => router.refresh()} onOpenChange={() => router.push("/products")} />
+  return <div className="product-detail mx-auto w-full max-w-5xl space-y-5 pb-8">
+    <Link href="/products" data-product-back className="text-sm text-muted-foreground hover:text-foreground">← All products</Link>
+    <ProductEditor key={`${product.sku}-${product.overrideVersion ?? "base"}`} product={product} canWrite mode={mode} fullPage onBusyChange={panel?.setBusy} onDownload={() => setDownloadOpen(true)} onSaved={() => router.refresh()} onOpenChange={() => panel ? panel.close() : router.push("/products")} />
     {downloadOpen ? <CatalogDownloadDialog products={[product]} open onOpenChange={setDownloadOpen} /> : null}
   </div>;
 }
@@ -224,7 +249,7 @@ export function ProductsCatalogV2({ products: initialProducts, canWrite, mode }:
   const materials = useMemo(() => [...new Set(products.map((product) => product.material))].sort(), [products]);
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return products.filter((product) => (!needle || [product.name, product.sku, product.material, ...product.colors].some((value) => value.toLowerCase().includes(needle))) && (material === "all" || product.material === material) && (status === "all" || product.status === status));
+    return products.filter((product) => (!needle || [product.name, product.sku, product.material, ...product.colors].some((value) => value.toLowerCase().includes(needle))) && (material === "all" || product.material === material) && (status === "all" || productStatusLabel(product.status) === productStatusLabel(status)));
   }, [material, products, query, status]);
   const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, pages);
@@ -243,7 +268,7 @@ export function ProductsCatalogV2({ products: initialProducts, canWrite, mode }:
   function exportCsv() {
     const exported = selectedProducts.length ? selectedProducts : filtered;
     const fields = ["Name", "SKU", "Material", "Variants", "Currency", "Volume pricing", "Stock", "Lead time", "Status", "Image URL"];
-    const rows = exported.map((product) => [product.name, product.sku, product.material, product.variants.map((variant) => `${variant.name} (${variant.sku})`).join(" | "), product.currency || "", quantityPriceRanges(product.priceTiers).map((tier) => `${tier.label} ${tier.price}`).join(" | "), product.stock !== undefined ? stockLabel(product.stock) : product.stockStatus, product.leadTime, product.status, product.imageUrl || ""]);
+    const rows = exported.map((product) => [product.name, product.sku, product.material, product.variants.map((variant) => `${variant.name} (${variant.sku})`).join(" | "), product.currency || "", quantityPriceRanges(product.priceTiers).map((tier) => `${tier.label} ${tier.price}`).join(" | "), inventoryLabel(product), product.leadTime, productStatusLabel(product.status), product.imageUrl || ""]);
     const escape = (value: string) => `"${(/^[=+@\-\t\r]/.test(value) ? "'" + value : value).replaceAll('"', '""')}"`;
     const csv = [fields, ...rows].map((row) => row.map(escape).join(",")).join("\r\n");
     const url = URL.createObjectURL(new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" }));
@@ -251,24 +276,37 @@ export function ProductsCatalogV2({ products: initialProducts, canWrite, mode }:
     toast.success(`${exported.length} products exported.`);
   }
 
-  return <><div className="crm-products-catalog flex min-w-0 flex-col gap-6">
-    <TableFilters actions={<><Button type="button" variant="outline" onClick={exportCsv} disabled={!filtered.length && !selectedProducts.length} title={selectedProducts.length ? "Export selected products" : "Export all matching products"}><Download />Export CSV</Button><Button type="button" onClick={() => { setEditingProduct(null); setEditorOpen(true); }} disabled={!canWrite}><Plus />Add product</Button></>}>
+  return <>
+    <PageActions>
+      <Button type="button" variant="outline" onClick={exportCsv} disabled={!filtered.length && !selectedProducts.length} title={selectedProducts.length ? "Export selected products" : "Export all matching products"}><Download />Export CSV</Button>
+      <Button type="button" onClick={() => { setEditingProduct(null); setEditorOpen(true); }} disabled={!canWrite}><Plus />Add product</Button>
+    </PageActions>
+    <div className="crm-products-catalog flex min-w-0 flex-col gap-6">
+    <TableFilters>
       <TableFilter label="Search product" search><Input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Name, SKU, material, or variant" /></TableFilter>
       <TableFilter label="Material"><Select value={material} onValueChange={(value) => { setMaterial(value ?? "all"); setPage(1); }}><SelectTrigger><SelectValue>{material === "all" ? "All materials" : material}</SelectValue></SelectTrigger><SelectContent><SelectItem value="all">All materials</SelectItem>{materials.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select></TableFilter>
-      <TableFilter label="Status"><Select value={status} onValueChange={(value) => { setStatus(value ?? "all"); setPage(1); }}><SelectTrigger><SelectValue>{status === "all" ? "All statuses" : status}</SelectValue></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem><SelectItem value="Active">Active</SelectItem><SelectItem value="Inactive">Inactive</SelectItem></SelectContent></Select></TableFilter>
+      <TableFilter label="Status"><Select value={status} onValueChange={(value) => { setStatus(value ?? "all"); setPage(1); }}><SelectTrigger><SelectValue>{status === "all" ? "All statuses" : productStatusLabel(status)}</SelectValue></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem><SelectItem value="Active">Active</SelectItem><SelectItem value="Inactive">Draft</SelectItem></SelectContent></Select></TableFilter>
     </TableFilters>
     {selectedProducts.length ? <div className="flex flex-col gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-2"><CheckSquare2 className="size-4 text-primary" /><p className="text-sm font-medium" role="status">{selectedProducts.length} product{selectedProducts.length === 1 ? "" : "s"} selected</p><Button variant="ghost" size="xs" onClick={() => setSelected(new Set())}>Clear</Button></div><Button size="sm" onClick={() => setDownloadOpen(true)}><PackagePlus />Create custom catalog</Button></div> : null}
-    <Card className="crm-table-frame crm-table-page-wide gap-0 overflow-hidden py-0 shadow-none"><div className="crm-product-desktop"><Table className="min-w-[1180px] table-fixed"><caption className="sr-only">Products with specifications, volume pricing, stock, status and last update</caption><colgroup><col className="w-10" /><col className="w-[280px]" /><col className="w-[280px]" /><col className="w-[250px]" /><col className="w-[165px]" /><col className="w-[85px]" /><col className="w-[120px]" /></colgroup><TableHeader><TableRow className="hover:bg-transparent"><TableHead className="pl-4"><Checkbox checked={visibleSelected} indeterminate={visibleSelectedCount > 0 && !visibleSelected} disabled={!visibleProducts.length} onCheckedChange={() => setSelected((current) => { const next = new Set(current); visibleProducts.forEach((product) => visibleSelected ? next.delete(product.sku) : next.add(product.sku)); return next; })} aria-label="Select visible products" /></TableHead><TableHead>Product</TableHead><TableHead>Specifications</TableHead><TableHead>EXW volume pricing</TableHead><TableHead>Availability</TableHead><TableHead>Status</TableHead><TableHead className="pr-4 text-right">Updated</TableHead></TableRow></TableHeader><TableBody>
+    <Card className="crm-table-frame crm-table-page-wide gap-0 overflow-hidden py-0 shadow-none"><div className="crm-product-desktop"><Table className="min-w-[1140px] table-auto"><caption className="sr-only">Products with images, names, Active or Draft status, SKUs, inventory and prices</caption><colgroup><col className="w-10" /><col /><col className="w-[100px]" /><col className="w-[160px]" /><col className="w-[160px]" /><col className="w-[480px]" /></colgroup><TableHeader><TableRow className="hover:bg-transparent"><TableHead className="pl-4"><Checkbox checked={visibleSelected} indeterminate={visibleSelectedCount > 0 && !visibleSelected} disabled={!visibleProducts.length} onCheckedChange={() => setSelected((current) => { const next = new Set(current); visibleProducts.forEach((product) => visibleSelected ? next.delete(product.sku) : next.add(product.sku)); return next; })} aria-label="Select visible products" /></TableHead><TableHead>Product</TableHead><TableHead>Status</TableHead><TableHead>SKU</TableHead><TableHead>Inventory</TableHead><TableHead className="pr-4">Price</TableHead></TableRow></TableHeader><TableBody>
       {visibleProducts.map((product) => <TableRow key={product.sku} data-state={selected.has(product.sku) ? "selected" : undefined} className="cursor-pointer" onClick={() => router.push(`/products/${encodeURIComponent(product.sku)}`)}>
         <TableCell className="pl-4" onClick={(event) => event.stopPropagation()}><Checkbox checked={selected.has(product.sku)} onCheckedChange={() => toggleSelected(product.sku)} aria-label={`Select ${product.name}`} /></TableCell>
-        <TableCell className="overflow-hidden"><Link href={`/products/${encodeURIComponent(product.sku)}`} onClick={(event) => event.stopPropagation()} className="flex w-full min-w-0 items-center gap-3 overflow-hidden text-left"><div className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-md border bg-muted/50">{product.imageUrl ? <Image src={product.imageUrl} alt="" width={36} height={36} unoptimized className="size-full object-cover" /> : <ImageIcon className="size-4 text-muted-foreground" />}</div><div className="min-w-0 overflow-hidden"><p className="truncate font-medium hover:text-primary" title={product.name}>{product.name}</p><p className="truncate font-mono text-xs text-muted-foreground" title={product.sku}>{product.sku}</p></div></Link></TableCell>
-        <TableCell className="overflow-hidden whitespace-normal"><div className="min-w-0 overflow-hidden"><p className="truncate font-medium">{[product.material, product.diameter, product.weight].filter(value => value && !["Not specified", "—"].includes(value)).join(" · ")}</p><p className="truncate text-xs text-muted-foreground" title={product.colors.join(", ")}>{product.variants.length} variant{product.variants.length === 1 ? "" : "s"}{product.colors.length ? ` · ${product.colors.join(" · ")}` : ""}</p></div></TableCell>
-        <TableCell className="overflow-hidden whitespace-normal">{product.priceTiers.length ? <><div className="flex max-w-full flex-wrap gap-1.5">{quantityPriceRanges(product.priceTiers).map((tier) => <span key={`${tier.minimumQuantity}-${tier.price}`} className="shrink-0 rounded-md border bg-muted/40 px-2 py-0.5 text-xs"><span className="text-muted-foreground">{tier.label}</span> <span className="font-medium">{tier.price}</span></span>)}</div>{product.currency ? <p className="mt-1 text-xs text-muted-foreground">{product.currency}</p> : null}</> : <span className="text-muted-foreground">Price unavailable</span>}</TableCell>
-        <TableCell className="overflow-hidden whitespace-normal"><div className="flex min-w-0 items-start gap-2"><Box className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" /><div className="min-w-0"><p className="truncate" title={product.stock !== undefined ? stockLabel(product.stock) : product.stockStatus}>{product.stock !== undefined ? stockLabel(product.stock) : product.stockStatus}</p>{product.stock ? <p className="mt-0.5 text-xs text-muted-foreground" title={product.stock.syncedAt}>{product.stock.onHand.toLocaleString("en")} on hand · {product.stock.locked.toLocaleString("en")} locked</p> : null}<p className="mt-0.5 truncate text-xs text-muted-foreground" title={product.leadTime}>{product.leadTime}</p></div></div></TableCell>
-        <TableCell><Badge variant={product.status === "Active" ? "secondary" : "outline"}>{product.status}</Badge></TableCell>
-        <TableCell className="overflow-hidden pr-4"><div className="flex items-center justify-end gap-1"><span className="truncate text-xs text-muted-foreground">{formatUpdatedAt(product.updatedAt)}</span><Button className="shrink-0" variant="ghost" size="icon-sm" aria-label={`Copy ${product.sku}`} onClick={async (event) => { event.stopPropagation(); try { await navigator.clipboard.writeText(product.sku); toast.success(`${product.sku} copied.`); } catch { toast.error("Could not copy the SKU. Select and copy it from the product details."); } }}><Clipboard /></Button></div></TableCell>
+        <TableCell className="overflow-hidden"><Link href={`/products/${encodeURIComponent(product.sku)}`} onClick={(event) => event.stopPropagation()} className="flex w-full min-w-0 items-center gap-3 overflow-hidden text-left"><div className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-md border bg-muted/50">{product.imageUrl ? <Image src={product.imageUrl} alt="" width={40} height={40} unoptimized className="size-full object-cover" /> : <ImageIcon className="size-4 text-muted-foreground" />}</div><span className="truncate font-medium hover:text-primary" title={product.name}>{product.name}</span></Link></TableCell>
+        <TableCell><Badge variant="secondary" className={productStatusLabel(product.status) === "Active" ? "bg-primary text-primary-foreground" : "bg-cyan-200 text-cyan-950 dark:bg-cyan-900 dark:text-cyan-100"}>{productStatusLabel(product.status)}</Badge></TableCell>
+        <TableCell className="overflow-hidden"><p className="truncate font-mono text-xs text-muted-foreground" title={product.sku}>{product.sku || "—"}</p></TableCell>
+        <TableCell className="overflow-hidden"><p className="truncate" title={inventoryLabel(product)}>{inventoryLabel(product)}</p></TableCell>
+        <TableCell className="whitespace-nowrap pr-4">
+          <div className="flex items-center gap-2">
+          {product.priceTiers.length ? <div className="flex flex-nowrap gap-1.5">
+            {quantityPriceRanges(product.priceTiers).map((tier) => <span key={`${tier.minimumQuantity}-${tier.price}`} className="shrink-0 rounded-md border bg-muted/40 px-2 py-0.5 text-xs">
+              <span className="text-muted-foreground">{tier.label}</span>{" "}<span className="font-medium tabular-nums">{tier.price}</span>
+            </span>)}
+          </div> : <p className="font-medium tabular-nums">{product.price || "Price unavailable"}</p>}
+          {product.currency ? <span className="shrink-0 text-xs text-muted-foreground">{product.currency}</span> : null}
+          </div>
+        </TableCell>
       </TableRow>)}
-      {!visibleProducts.length ? <TableRow><TableCell colSpan={7} className="h-32 text-center text-muted-foreground"><EmptyState compact icon={PackageSearch} title="No products match these filters." description="Try another search or adjust your filters." className="border-0 bg-transparent" /></TableCell></TableRow> : null}
+      {!visibleProducts.length ? <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground"><EmptyState compact icon={PackageSearch} title="No products match these filters." description="Try another search or adjust your filters." className="border-0 bg-transparent" /></TableCell></TableRow> : null}
     </TableBody></Table></div>
 
     

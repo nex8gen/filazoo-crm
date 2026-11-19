@@ -11,6 +11,7 @@ import * as imageLayout from "../lib/catalog-image-layout.ts";
 import { b2bProducts } from "../lib/data/b2b-products.ts";
 import type { Product } from "../lib/types.ts";
 import * as productImages from "../lib/product-images.ts";
+import * as productMedia from "../lib/product-media.ts";
 
 const require = createRequire(import.meta.url);
 async function fixture() {
@@ -34,6 +35,8 @@ async function fixture() {
     } }, "node:path": path, sharp,
     "./catalog-pdf.ts": catalogPdf, "./catalog-image-layout.ts": imageLayout,
     "./product-images.ts": productImages,
+    "./product-media.ts": productMedia,
+    "./data/product-media.ts": { readProductLibraryImage: async () => new Blob([blue]) },
   };
   const code = ts.transpileModule(readFileSync(new URL("../lib/catalog-pdf-server.ts", import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
@@ -91,4 +94,13 @@ test("image loading rejects untrusted URLs and paths outside public", async () =
   assert.deepEqual(app.fetched, []);
   assert.deepEqual(app.files, [catalogPdf.DEFAULT_CATALOG_IMAGE]);
   assert.equal(images.size, 1);
+});
+
+test("catalog exports render selected company library images through the workspace loader", async () => {
+  const app = await fixture();
+  const url = productMedia.productLibraryMediaUrl("a1111111-1111-4111-8111-111111111111", "image/png")!;
+  const product = { ...app.product, imageUrl: url, variants: [{ ...app.product.variants[0], imageUrl: url }] };
+  const images = await app.loadCatalogImages([product]);
+  assert.ok(images.has(url));
+  assert.equal(app.files.includes(url), false, "company files are never treated as public filesystem paths");
 });

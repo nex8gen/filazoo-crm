@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
-import { conversationScope, type Conversation, type ConversationInput, type HistoryDetail, type HistoryReference } from "@/lib/ai/chat-history";
+import { conversationScope, historyExpired, type Conversation, type ConversationInput, type HistoryDetail, type HistoryReference } from "@/lib/ai/chat-history";
 import { HistoryHttpError, requestHistoryJson } from "@/lib/ai/history-http";
 
 const jsonRequest = (url: string, init?: RequestInit) => requestHistoryJson(url, init, fetch);
 
-export function useAiConversation(input: ConversationInput, onRestore: (detail: HistoryDetail, prepend?: boolean, preserveDraft?: boolean) => void, enabled = true, browseAll = false, autoResume = true) {
+export function useAiConversation(input: ConversationInput, onRestore: (detail: HistoryDetail, prepend?: boolean, preserveDraft?: boolean) => void, enabled = true, browseAll = false, autoResume = true, browsePage = false) {
   const encoded = JSON.stringify(input);
   const scope = conversationScope(input);
   const choices = useRef(new Map<string, Conversation | null>());
@@ -57,7 +57,8 @@ export function useAiConversation(input: ConversationInput, onRestore: (detail: 
     try {
       const detail: HistoryDetail = await jsonRequest(`/api/ai/history/${id}`, { signal: controller.signal });
       if (generation !== selection.current) return false;
-      if ((!browseAll || detail.conversation.mode === "customer") && conversationScope(detail.conversation) !== scope) throw new Error("Open the original page and AI mode to continue this conversation.");
+      const allowed = browseAll || (browsePage && detail.conversation.mode !== "customer" && detail.conversation.pathname === input.pathname) || conversationScope(detail.conversation) === scope;
+      if (!allowed) throw new Error("Open the original page to continue this conversation.");
       choices.current.set(scope, detail.conversation);
       onRestore(detail);
       setState({ scope, conversation: detail.conversation, loading: false, error: null, hasMore: detail.hasMore, before: detail.before });
@@ -71,6 +72,7 @@ export function useAiConversation(input: ConversationInput, onRestore: (detail: 
     if (current.loading) throw new Error("Wait for saved history to load.");
     if (current.error) throw new Error(current.error);
     let conversation = choices.current.get(scope);
+    if (conversation && historyExpired(conversation)) throw new Error("This conversation was deleted after 7 days. Start a new conversation.");
     if (!conversation) {
       const result = await jsonRequest("/api/ai/history", { method: "POST", headers: { "Content-Type": "application/json" }, body: encoded });
       conversation = result.conversation as Conversation;
@@ -119,6 +121,6 @@ export function useAiConversation(input: ConversationInput, onRestore: (detail: 
     } catch (error) { if (generation === selection.current) setState((s) => ({ ...s, loading: false, error: error instanceof Error ? error.message : "Unable to load older messages.", errorStatus: error instanceof HistoryHttpError ? error.status : undefined })); }
   }
   const retry = () => { if (!autoResume && lastOpened.current?.scope === scope) void open(lastOpened.current.id); else setReload(value => value + 1); };
-  return { ...current, scope, browseAll, open, ensure, accept, update, forget, newConversation, loadOlder, retry };
+  return { ...current, scope, browseAll, browsePage, open, ensure, accept, update, forget, newConversation, loadOlder, retry };
 }
 export type AiConversationController = ReturnType<typeof useAiConversation>;

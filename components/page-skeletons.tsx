@@ -60,9 +60,11 @@ export function FlowsSkeleton() {
 export function SegmentsSkeleton() {
   return <LoadingRegion label="Loading segments">
     <HeaderSkeleton />
+    <Skeleton className="mb-5 h-6 w-full max-w-xl" />
     <div className="mb-6 grid grid-cols-2 gap-3 xl:grid-cols-4">{Array.from({ length: 4 }, (_, index) => <SummarySkeleton key={index} />)}</div>
-    <div className="mb-6 flex gap-3"><Skeleton className="h-9 w-80 max-w-full" /><Skeleton className="h-9 w-32" /></div>
-    <TableSkeleton />
+    <div className="mb-4 flex flex-wrap gap-3"><Skeleton className="h-9 w-72 max-w-full" />{[0, 1, 2].map(index => <Skeleton key={index} className="h-9 w-36 max-w-full" />)}</div>
+    <div className="mb-3 flex flex-wrap justify-between gap-3"><Skeleton className="h-4 w-28" /><Skeleton className="h-4 w-72 max-w-full" /></div>
+    <TableSkeleton flow />
   </LoadingRegion>;
 }
 

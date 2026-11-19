@@ -294,7 +294,7 @@
 .wf-trigger-checkbox { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; line-height: 20px; }
 .wf-trigger-checkbox > [data-slot=checkbox] { flex-shrink: 0; margin-top: 2px; }
 .wf-trigger-checkbox small { display: block; margin-top: 3px; color: var(--muted-foreground); font-size: 12px; line-height: 19px; }
-.wf-trigger-editor > [aria-label='Customer enrollment'] { border: 0; padding-top: 0; }
+.wf-trigger-editor > .flow-customer-enrollment { border: 0; padding-top: 0; }
 .wf-trigger-clear { justify-self: start; padding-inline: 0; color: var(--muted-foreground); }
 .wf-trigger-panel .wf-settings-footer { justify-content: flex-end; }
 .wf-trigger-panel .wf-settings-footer > button:last-child { margin-left: 0; }
@@ -369,6 +369,7 @@
 .wf-email-metrics-error { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 11px; color: var(--muted-foreground); }
 .wf-email-metrics-error button { width: 24px; height: 24px; padding: 4px; }
 .wf-email-card-content { padding: 0 12px; }
+.wf-action-card-content { padding: 12px; }
 .wf-email-card-subject { padding: 10px 0 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; line-height: 22px; }
 .wf-email-card-metrics { border-radius: 9px; padding: 12px; background: color-mix(in srgb, var(--muted) 48%, var(--background)); }
 .wf-email-card-metrics .wf-email-metric-divider { border-top: 1px solid var(--wf-line); margin-top: 3px; padding-top: 12px; }

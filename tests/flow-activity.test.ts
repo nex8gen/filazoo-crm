@@ -13,6 +13,7 @@ function fixture(role = "operator") {
   const db: Record<string, Row[]> = {
     email_auto_replies: [],
     crm_task_workflows: [],
+    flow_runs: [],
     companies: [],
     workspace_members: [{ user_id: "viewer", display_name: "Current user" }, { user_id: "other", display_name: "Teammate" }],
     crm_tasks: [{ id: "mine", assigned_to: "viewer", status: "open" }, { id: "theirs", assigned_to: "other", status: "open" }],
@@ -60,6 +61,7 @@ function fixture(role = "operator") {
   const exports = {} as { listFlowActivity: (summary?: boolean, pages?: activity.ActivityListOptions) => Promise<Row>; updateFlowActivity: (kind: string, id: string) => Promise<void> };
   const deps: Record<string, unknown> = { "server-only": {}, "../task-activity.ts": activity, "../auth.ts": { requireWorkspaceMember: async () => ({ id: "viewer", role }) }, "../supabase/admin.ts": { createSupabaseAdmin: () => ({ from }) } };
   deps["../email-auto-reply.ts"] = autoReply;
+  deps["./mailboxes.ts"] = { getViewerMailboxes: async () => [{ id: "mailbox-mine" }] };
   vm.runInNewContext(code, { exports, require: (name: string) => deps[name] ?? require(name), Date });
   return { db, exports };
 }
@@ -71,6 +73,39 @@ test("tasks and notifications are visible only to their assigned recipient", asy
   assert.equal((result.alerts as Row[]).length, 1);
   const summary = await app.exports.listFlowActivity(true);
   assert.equal(summary.openTasks, 1); assert.equal(summary.unreadAlerts, 1);
+});
+
+test("existing email task notifications open their authorized mailbox and workflow thread", async () => {
+  const app = fixture();
+  app.db.crm_tasks[0].flow_run_id = "run-mine";
+  app.db.flow_runs.push({ id: "run-mine", conversation_id: "original-thread", email_thread_id: "latest-thread:<buyer@example.com>", receiving_mailbox_id: "mailbox-mine" });
+  app.db.internal_notifications[0].task_id = "mine";
+  app.db.internal_notifications[0].task = { flow_run_id: "run-mine", company: null };
+  const result = await app.exports.listFlowActivity();
+  const task = (result.tasks as activity.ActivityTask[])[0];
+  const alert = (result.alerts as activity.ActivityAlert[])[0];
+  assert.equal(task.reply_href, alert.reply_href);
+  const url = new URL(task.reply_href!, "https://crm.example.com");
+  assert.equal(url.pathname, "/email");
+  assert.equal(url.searchParams.get("mailbox"), "mailbox-mine");
+  assert.equal(url.searchParams.get("thread"), "latest-thread:<buyer@example.com>");
+  assert.equal(url.searchParams.get("reply"), "1");
+});
+
+test("email task links do not expose another member's mailbox or company-only journeys", async () => {
+  const app = fixture();
+  app.db.crm_tasks[0].flow_run_id = "run";
+  const run = { id: "run", conversation_id: "thread", receiving_mailbox_id: "private-mailbox" };
+  app.db.flow_runs.push(run);
+  assert.equal(((await app.exports.listFlowActivity()).tasks as activity.ActivityTask[])[0].reply_href, null);
+  run.receiving_mailbox_id = "mailbox-mine";
+  run.conversation_id = "company:11111111-1111-4111-8111-111111111111";
+  assert.equal(((await app.exports.listFlowActivity()).tasks as activity.ActivityTask[])[0].reply_href, null);
+  run.conversation_id = "thread";
+  const readOnly = fixture("viewer");
+  readOnly.db.crm_tasks[0].flow_run_id = "run";
+  readOnly.db.flow_runs.push(run);
+  assert.equal(((await readOnly.exports.listFlowActivity()).tasks as activity.ActivityTask[])[0].reply_href, null);
 });
 
 test("prepared work is batched into visible tasks and alerts without including its private payload", async () => {

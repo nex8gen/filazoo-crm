@@ -60,6 +60,7 @@ type CompanyRow = {
 
 type EmailRow = {
   id: string;
+    mailbox_id?: string | null;
   subject: string | null;
   body: string | null;
   step: number;
@@ -97,6 +98,7 @@ type CatalogRow = {
 
 type ReplyRow = {
   id: string;
+    mailbox_id?: string | null;
   message_id: string | null;
   thread_id: string | null;
   subject: string | null;
@@ -440,17 +442,18 @@ function emailStatus(status: string): EmailDraft["status"] {
 }
 
 
-export async function listEmailDrafts(authorizedViewer?: WorkspaceViewer, options: { signal?: AbortSignal } = {}): Promise<{ mode: DataMode; emails: EmailDraft[] }> {
+export async function listEmailDrafts(authorizedViewer?: WorkspaceViewer, options: { signal?: AbortSignal; mailboxId?: string } = {}): Promise<{ mode: DataMode; emails: EmailDraft[] }> {
   const mode = getCrmDataMode();
   if (mode === "demo") return { mode, emails: [] };
   if (!authorizedViewer) await authorizeLiveRead();
 
   let query = createSupabaseAdmin()
     .from("emails")
-    .select("id,subject,body,step,scheduled_for,status,contacts(name,companies(name))")
+    .select("id,mailbox_id,subject,body,step,scheduled_for,status,contacts(name,email,companies(name))")
     .in("status", ["draft", "pending_approval", "approved", "scheduled"])
     .order("created_at", { ascending: false })
     .limit(200);
+  if (options.mailboxId) query = query.eq("mailbox_id", options.mailboxId);
   if (options.signal) query = query.abortSignal(options.signal);
   const { data, error } = await query;
   if (error) throw new Error(`Unable to load email queue: ${error.message}`);
@@ -460,8 +463,9 @@ export async function listEmailDrafts(authorizedViewer?: WorkspaceViewer, option
     const company = first(contact?.companies ?? null);
     return {
       id: row.id,
+      mailboxId: row.mailbox_id ?? null,
       company: company?.name || "Unknown company",
-      contact: contact?.name || "Unknown contact",
+      contact: contact?.email || contact?.name || "Unknown contact",
       subject: row.subject || "Untitled draft",
       preview: row.body || "No email body has been generated yet.",
       step: row.step,
@@ -529,17 +533,18 @@ export async function listCatalogs(): Promise<{ mode: DataMode; catalogs: Catalo
   };
 }
 
-export async function listReplies(authorizedViewer?: WorkspaceViewer, options: { signal?: AbortSignal } = {}): Promise<{ mode: DataMode; replies: Reply[] }> {
+export async function listReplies(authorizedViewer?: WorkspaceViewer, options: { signal?: AbortSignal; mailboxId?: string } = {}): Promise<{ mode: DataMode; replies: Reply[] }> {
   const mode = getCrmDataMode();
   if (mode === "demo") return { mode, replies: [] };
   if (!authorizedViewer) await authorizeLiveRead();
 
   let query = createSupabaseAdmin()
     .from("emails")
-    .select("id,subject,body,sent_at,created_at,message_id,thread_id,contacts(name,email,companies(name))")
+    .select("id,mailbox_id,subject,body,sent_at,created_at,message_id,thread_id,contacts(name,email,companies(name))")
     .eq("direction", "received")
     .order("created_at", { ascending: false })
     .limit(200);
+  if (options.mailboxId) query = query.eq("mailbox_id", options.mailboxId);
   if (options.signal) query = query.abortSignal(options.signal);
   const { data, error } = await query;
   if (error) throw new Error(`Unable to load replies: ${error.message}`);
@@ -550,6 +555,7 @@ export async function listReplies(authorizedViewer?: WorkspaceViewer, options: {
       const contact = first(row.contacts);
       return {
         id: row.id,
+        mailboxId: row.mailbox_id ?? null,
         company: first(contact?.companies ?? null)?.name || "Unknown company",
         contact: contact?.email || "Unknown contact",
         subject: row.subject || "Untitled reply",
@@ -567,9 +573,10 @@ export async function listProducts(skus?: string[], options: { requireComplete?:
   if (mode === "demo") return { mode, products: [] };
   const viewer = await requireWorkspaceMember();
 
-  const query = createSupabaseAdmin()
-    .from("products")
-    .select("sku,name,image_url,material,color,diameter,weight,price,currency,moq,stock_status,lead_time,tags,active,sheet_updated_at")
+  const source = createSupabaseAdmin().from("products");
+  const query = (skus
+    ? source.select("sku,name,image_url,material,color,diameter,weight,price,currency,moq,stock_status,lead_time,tags,description,active,sheet_updated_at")
+    : source.select("sku,name,image_url,material,color,diameter,weight,price,currency,moq,stock_status,lead_time,tags,active,sheet_updated_at"))
     .order("name")
     .limit(options.requireComplete ? 501 : 500);
   const inventoryModule = await import("./inventory.ts");
@@ -580,5 +587,6 @@ export async function listProducts(skus?: string[], options: { requireComplete?:
   if (error) throw new Error(`Unable to load products: ${error.message}`);
   if (options.requireComplete && (data?.length ?? 0) > 500) throw new Error("The complete product catalog exceeds the lookup limit. Choose products in the inbox catalog picker.");
   const syncedProducts = (await withPersonalProducts(data ?? [], viewer.id)).filter((row) => !row.sku.startsWith("SAMPLE-") && !row.name.toLowerCase().startsWith("[sample]")).map(crmProduct);
-  return { mode, products: await inventoryModule.withErpInventory(syncedProducts, inventory) };
+  const { withSharedManualStock } = await import("./shared-product-inventory.ts");
+  return { mode, products: await inventoryModule.withErpInventory(await withSharedManualStock(syncedProducts), inventory) };
 }

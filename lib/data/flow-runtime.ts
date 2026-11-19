@@ -138,8 +138,10 @@ async function* flowSegmentMembers(config: JsonConfig, companyId?: string) {
   }
 }
 
-async function logRun(runId: string, stepId: string | null, result?: Record<string, unknown>, error?: string) {
-  await createSupabaseAdmin().from("flow_run_logs").insert({ run_id: runId, result: result ? { ...result, stepId } : null, error: error ?? null }).throwOnError();
+async function logRun(runId: string, step: FlowStep | string | null, result?: Record<string, unknown>, error?: string) {
+  const stepId = typeof step === "object" ? step?.id ?? null : step;
+  const performanceId = step && typeof step === "object" ? String(step.config.performanceId || step.id) : undefined;
+  await createSupabaseAdmin().from("flow_run_logs").insert({ run_id: runId, result: result ? { ...result, stepId, ...(performanceId ? { performanceId } : {}) } : null, error: error ?? null }).throwOnError();
 }
 
 async function finishRun(runId: string, status: "done" | "cancelled" | "failed", error?: string) {
@@ -264,7 +266,7 @@ async function currentEmailStatus(flowId: string, step: FlowStep) {
 
 async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: FlowFacts) {
   const performanceId = String(step.config.performanceId || step.id);
-  const logEmail = (result: JsonConfig) => logRun(run.id, step.id, { ...result, performanceId });
+  const logEmail = (result: JsonConfig) => logRun(run.id, step, { ...result, performanceId });
   if (step.type === "send_email" || step.type === "ai_auto_reply") {
     const status = await currentEmailStatus(flow.id, step);
     if (status === "draft") { await logEmail({ action: "email_skipped", reason: "This email is draft or was removed from the workflow." }); return; }
@@ -329,7 +331,7 @@ async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: F
     if (resumeAt) {
       await Promise.all([
         admin.from("flow_runs").update({ next_run_at: resumeAt.toISOString(), locked_at: null }).eq("id", run.id).throwOnError(),
-        logRun(run.id, step.id, { action: "waiting_for_send_window", nextRunAt: resumeAt.toISOString() }),
+        logRun(run.id, step, { action: "waiting_for_send_window", nextRunAt: resumeAt.toISOString() }),
       ]);
       return "waiting" as const;
     }
@@ -525,21 +527,21 @@ async function executeAction(run: RunRow, flow: FlowRow, step: FlowStep, facts: 
     const assignee = String(step.config.assigneeType === "user" ? step.config.assigneeId : pipeline?.owner_id || flow.user_id);
     await requireActionMember(assignee, true);
     await insertActionOnce("crm_tasks", run, step, { flow_run_id: run.id, company_id: run.company_id, contact_id: run.contact_id, assigned_to: assignee, follows_company_owner: step.config.assigneeType !== "user", title: step.config.title, notes: step.config.notes || null, priority: step.config.priority || "normal", due_at: new Date(Date.now() + Number(step.config.dueInDays || 0) * 86_400_000).toISOString() });
-    await logRun(run.id, step.id, { action: "task_created", title: step.config.title });
+    await logRun(run.id, step, { action: "task_created", title: step.config.title });
   } else if (step.type === "change_category") {
     const messageKey = String(run.context?.messageKey || run.conversation_id);
     if (isCustomerTag(step.config.category)) {
       const { data: contact } = run.contact_id ? await admin.from("contacts").select("email").eq("id", run.contact_id).maybeSingle().throwOnError() : { data: null };
       const saved = await saveSharedEmailTag({ messageKey, tag: step.config.category, companyId: run.company_id, contactEmail: contact?.email, source: "flow",
         ...(!/^(company:|shopify:)/.test(run.conversation_id) ? { conversationKeys: [`conversation:${run.conversation_id}`] } : {}) });
-      await logRun(run.id, step.id, { action: "category_changed", category: step.config.category, reason: step.config.reason || null });
+      await logRun(run.id, step, { action: "category_changed", category: step.config.category, reason: step.config.reason || null });
       if (saved.categoryChanged) await enrollMatchingFlows({ type: "category_changed", conversationId: run.conversation_id, messageKey,
         contactId: run.contact_id, companyId: run.company_id, category: step.config.category, eventKey: `category:${run.id}:${step.id}` }, { deferExecution: true });
       return;
     }
     const { data: previous } = await admin.from("email_inbox_state").select("category").eq("user_id", flow.user_id).eq("message_key", messageKey).maybeSingle().throwOnError();
     await admin.from("email_inbox_state").upsert({ user_id: flow.user_id, message_key: messageKey, category: step.config.category, updated_at: new Date().toISOString() }, { onConflict: "user_id,message_key", ignoreDuplicates: false }).throwOnError();
-    await logRun(run.id, step.id, { action: "category_changed", category: step.config.category, reason: step.config.reason || null });
+    await logRun(run.id, step, { action: "category_changed", category: step.config.category, reason: step.config.reason || null });
     if (previous?.category !== step.config.category) await enrollMatchingFlows({ type: "category_changed", conversationId: run.conversation_id, messageKey,
       contactId: run.contact_id, companyId: run.company_id, category: String(step.config.category), eventKey: `category:${run.id}:${step.id}` }, { deferExecution: true });
   } else if (step.type === "update_company") {
@@ -555,7 +557,7 @@ async function executeAction(run: RunRow, flow: FlowRow, step: FlowStep, facts: 
     const failed = results.find((result) => result.error);
     if (failed?.error) throw failed.error;
     await insertActionOnce("events", run, step, { company_id: run.company_id, actor_id: flow.user_id, type: "flow_company_updated", data: { summary: step.config.note || "Company fields updated by automation.", flow_id: flow.id } });
-    await logRun(run.id, step.id, { action: "company_updated", companyStatus: step.config.companyStatus || null, segment: step.config.segment || null });
+    await logRun(run.id, step, { action: "company_updated", companyStatus: step.config.companyStatus || null, segment: step.config.segment || null });
     if (step.config.segment && previous.segment !== step.config.segment) await enrollMatchingFlows({
       type: "company_segment_changed", conversationId: run.conversation_id, contactId: run.contact_id, companyId: run.company_id,
       segment: String(step.config.segment), eventKey: `segment:${run.id}:${step.id}`,
@@ -577,7 +579,7 @@ async function executeAction(run: RunRow, flow: FlowRow, step: FlowStep, facts: 
         delivery = "email_sent";
       }
     }
-    await logRun(run.id, step.id, { action: "alert_created", delivery });
+    await logRun(run.id, step, { action: "alert_created", delivery });
   }
   return "continue" as const;
 }
@@ -644,7 +646,7 @@ export async function processFlowRun(runId: string, options: { deadline?: number
       currentStep = step;
       const { data: liveState } = await admin.from("flows").select("status").eq("id", flow.id).maybeSingle().throwOnError();
       if (liveState?.status !== "live") throw new FlowPreparationRetry("Workflow paused or stopped. This action is waiting for it to resume.", 60_000, "configuration");
-      run.context = { ...run.context, executionCheckpoint: { stepId: step.id, type: step.type, phase: "preparing" } };
+      run.context = { ...run.context, executionCheckpoint: { stepId: step.id, performanceId: String(step.config.performanceId || step.id), type: step.type, phase: "preparing" } };
       await admin.from("flow_runs").update({ context: run.context }).eq("id", run.id).throwOnError();
       const facts = await loadRunFacts(run, flow);
       if (step.type === "split") {
@@ -660,7 +662,7 @@ export async function processFlowRun(runId: string, options: { deadline?: number
         run.context = { ...(run.context ?? {}), definition: JSON.stringify(expanded) };
         await Promise.all([
           admin.from("flow_runs").update({ context: run.context, current_step: index, next_run_at: null }).eq("id", run.id).throwOnError(),
-          logRun(run.id, step.id, { action: "split_evaluated", pathId: selectedPath?.id || null, pathName: selectedPath?.name || "Everyone else" }),
+          logRun(run.id, step, { action: "split_evaluated", pathId: selectedPath?.id || null, pathName: selectedPath?.name || "Everyone else" }),
         ]);
         steps.splice(0, steps.length, ...expanded);
         processed += 1;
@@ -674,23 +676,24 @@ export async function processFlowRun(runId: string, options: { deadline?: number
         const nextRunAt = calculateWaitUntil(step.config, waitFrom);
         await Promise.all([
           admin.from("flow_runs").update({ current_step: index + 1, next_run_at: nextRunAt.toISOString(), locked_at: null }).eq("id", run.id).throwOnError(),
-          logRun(run.id, step.id, { action: "waiting", nextRunAt: nextRunAt.toISOString() }),
+          logRun(run.id, step, { action: "waiting", nextRunAt: nextRunAt.toISOString() }),
         ]);
         return { status: "waiting", processed: processed + 1, nextRunAt: nextRunAt.toISOString() };
       }
       if (step.type === "if_condition") {
         const matched = await matchesRunCondition(step.config, run, flow, facts);
         const action = String(matched ? step.config.action || "continue" : step.config.unmatchedAction || "continue");
-        await logRun(run.id, step.id, { action: "condition_evaluated", matched, branch: action });
+        await logRun(run.id, step, { action: "condition_evaluated", matched, branch: action });
         processed += 1;
         if (action === "stop_flow") { await finishRun(run.id, "done"); return { status: "done", processed }; }
         if (step.config.field === "customer_replied" && !matched && step.config.action === "stop_flow") run.context = { ...run.context, noReplyGuard: true };
+        if (action === "skip_next" && steps[index + 1]) await logRun(run.id, steps[index + 1], { action: "action_skipped", reason: "Skipped by the preceding condition." });
         index += action === "skip_next" ? 2 : 1;
         await admin.from("flow_runs").update({ current_step: index, next_run_at: null, context: run.context }).eq("id", run.id).throwOnError();
         continue;
       }
       if (step.type === "stop") {
-        await logRun(run.id, step.id, { action: "stopped", reason: step.config.reason || null });
+        await logRun(run.id, step, { action: "stopped", reason: step.config.reason || null });
         await finishRun(run.id, step.config.outcome === "cancelled" ? "cancelled" : "done");
         return { status: step.config.outcome === "cancelled" ? "cancelled" : "done", processed: processed + 1 };
       }
@@ -725,7 +728,7 @@ export async function processFlowRun(runId: string, options: { deadline?: number
       const blocked = recovery.category === "configuration" || recovery.category === "data" || attempt > 5;
       run.context = { ...run.context, executionState: blocked ? "blocked" : "retrying", preparationRetry: { stepId: step?.id ?? null, attempt, reason: message, category: recovery.category, nextRunAt } };
       await admin.from("flow_runs").update({ current_step: index, status: "active", next_run_at: nextRunAt, locked_at: null, context: run.context }).eq("id", run.id).throwOnError();
-      await logRun(run.id, step?.id ?? null, { action: blocked ? "action_blocked" : "retry_scheduled", attempt, reason: message, nextRunAt, category: recovery.category });
+      await logRun(run.id, step ?? null, { action: blocked ? "action_blocked" : "retry_scheduled", attempt, reason: message, nextRunAt, category: recovery.category });
       return { status: "retrying", processed, error: message, nextRunAt };
     }
     await finishRun(run.id, "failed", message);

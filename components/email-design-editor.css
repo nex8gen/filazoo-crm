@@ -196,8 +196,8 @@
 .email-designer-uploadButtons > button { min-height:32px; padding:5px 10px; border:1px solid var(--editor-control-border); border-radius:7px; background:var(--background); font-size:14px; font-weight:500; }
 .email-designer-uploadButtons > button:last-of-type { background:linear-gradient(110deg,#f0e5ff,#d9cdf5); border-color:transparent; color:#4636b4; }
 .email-designer-sidebarTitle > [data-slot=dropdown-menu-trigger] { margin-left:auto; }
-.email-designer-propertyBody:has(> [aria-label="Text formatting"]) { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px 10px; }
-.email-designer-propertyBody:has(> [aria-label="Text formatting"]) > .editor-propertyField:has(.editor-select-trigger) { grid-column:1 / -1; }
+.email-designer-propertyBody:has(> .email-designer-textFormat) { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px 10px; }
+.email-designer-propertyBody:has(> .email-designer-textFormat) > .editor-propertyField:has(.editor-select-trigger) { grid-column:1 / -1; }
 .email-designer-propertyBody .editor-propertyField { gap:8px; }
 .email-designer-propertyBody .editor-propertyField > label { font-size:.875rem; font-weight:400; }
 .email-designer-linkCard { border:1px solid var(--editor-control-border); border-radius:8px; }

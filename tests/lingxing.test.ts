@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createDecipheriv, createHash } from "node:crypto";
 import { fetchLingxingInventory, lingxingConfig, lingxingSign } from "../lib/lingxing.ts";
-import { applyProductInventory, stockLabel } from "../lib/product-inventory.ts";
+import { applyProductInventory, inventoryLabel, stockLabel } from "../lib/product-inventory.ts";
 import { b2bProducts } from "../lib/data/b2b-products.ts";
 
 const config = lingxingConfig({ LINGXING_APP_ID: "1234567890123456", LINGXING_APP_SECRET: "private-secret", LINGXING_WAREHOUSE_IDS: "2,1,2" })!;
@@ -91,4 +91,28 @@ test("zero stock is known, missing SKUs are unknown, and family totals require e
   assert.equal(output.stock?.available, 8);
   assert.match(stockLabel(b && { available: 0, onHand: 1, locked: 1, warehouseIds: ["1"], syncedAt: synced_at }, new Date(synced_at).getTime()), /^0 available$/);
   assert.match(stockLabel(output.stock, new Date(synced_at).getTime() + 31 * 60_000), /stale/);
+});
+
+test("manual inventory is used for disconnected and unmatched products, while connected stock takes priority", () => {
+  const product = { ...b2bProducts[0], manualInventory: 25 };
+  assert.equal(inventoryLabel(product), "25 available");
+  assert.equal(inventoryLabel({ ...product, manualInventory: 0 }), "0 available");
+  assert.equal(applyProductInventory([product], [])[0].stockStatus, "25 available");
+
+  const snapshot = { sku: product.sku, available: 0, on_hand: 10, locked: 10, warehouse_ids: ["1"], synced_at: new Date().toISOString() };
+  const connected = applyProductInventory([product], [snapshot])[0];
+  assert.equal(inventoryLabel(connected), "0 available");
+  assert.equal(connected.manualInventory, 25);
+  assert.equal(applyProductInventory([connected], [])[0].stockStatus, "25 available");
+});
+
+test("family inventory sums complete variant quantities without treating partial inventory as a total", () => {
+  const variants = b2bProducts[0].variants.slice(0, 2).map((variant, index) => ({ ...variant, manualInventory: index === 0 ? 5 : 0 }));
+  const product = { ...b2bProducts[0], manualInventory: null, variants };
+  assert.equal(inventoryLabel(product), "5 available");
+  assert.equal(applyProductInventory([product], [])[0].stockStatus, "5 available");
+  const snapshot = { sku: variants[0].sku, available: 2, on_hand: 2, locked: 0, warehouse_ids: ["1"], synced_at: new Date().toISOString() };
+  assert.equal(applyProductInventory([product], [snapshot])[0].stockStatus, "2 available");
+  const partial = { ...product, variants: [variants[0], { ...variants[1], manualInventory: null }] };
+  assert.equal(applyProductInventory([partial], [])[0].stockStatus, "Stock unknown");
 });

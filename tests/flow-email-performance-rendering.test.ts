@@ -7,6 +7,7 @@ import * as React from "react";
 import { JSDOM } from "jsdom";
 import ts from "typescript";
 import * as performance from "../lib/flow-email-performance.ts";
+import * as flows from "../lib/flows.ts";
 
 const dom = new JSDOM("<!doctype html><body></body>", { url: "https://crm.test/workflow", pretendToBeVisual: true });
 for (const key of ["window", "document", "navigator", "HTMLElement", "Element", "HTMLButtonElement", "HTMLInputElement", "Node", "Event", "MouseEvent", "MutationObserver", "DOMRect", "getComputedStyle"] as const) Object.defineProperty(globalThis, key, { configurable: true, value: key === "window" ? dom.window : dom.window[key] });
@@ -24,25 +25,30 @@ test("mounted performance controls load real totals, open the actual status menu
     if (modules.has(file)) return modules.get(file)!;
     const exports: Record<string, unknown> = {}; modules.set(file, exports);
     const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-    vm.runInNewContext(code, { exports, window: dom.window, document, AbortController, console, require: (name: string) => name === "@/lib/flow-email-performance" ? performance : name.startsWith("@/components/ui/") ? load(`../components/ui/${name.split("/").at(-1)}.tsx`) : require(name), fetch: async (_url: string, init: { signal: AbortSignal }) => {
+    vm.runInNewContext(code, { exports, window: dom.window, document, AbortController, console, require: (name: string) => name === "@/lib/flow-email-performance" ? performance : name === "@/lib/flows" ? flows : name.startsWith("@/components/") ? load(`../components/${name.slice("@/components/".length)}.tsx`) : require(name), fetch: async (_url: string, init: { signal: AbortSignal }) => {
       requests++;
       if (mode === "pending") return new Promise((_resolve, reject) => { init.signal.addEventListener("abort", () => reject(new Error("aborted"))); });
       if (mode === "error") return Response.json({ ok: false, error: "Temporary query failure" }, { status: 503 });
-      return Response.json({ ok: true, report: { asOf: "2026-11-17T12:00:00Z", from: "2026-10-19T00:00:00Z", actions: mode === "empty" ? {} : { email: { sent: 13, opens: 7, clicks: 1, openRate: 7 / 13 * 100, clickRate: 1 / 13 * 100, waiting: 2, review: 1, skipped: 3 } } } });
+      return Response.json({ ok: true, report: { asOf: "2026-11-17T12:00:00Z", from: "2026-10-19T00:00:00Z", actions: mode === "empty" ? {} : { email: { sent: 13, opens: 7, clicks: 1, openRate: 7 / 13 * 100, clickRate: 1 / 13 * 100, waiting: 2, review: 1, skipped: 3 } }, stepActions: mode === "empty" ? {} : { task: { completed: 9, waiting: 2, review: 1, skipped: 3 } } } });
     } });
     return exports;
   };
   const controls = load("../components/flow-email-performance.tsx") as unknown as typeof import("../components/flow-email-performance.tsx");
+  const { FlowReportedActionCard } = load("../components/flow-reported-action-card.tsx") as unknown as typeof import("../components/flow-reported-action-card.tsx");
   const host = document.createElement("div"); document.body.append(host);
   const root = createRoot(host);
   let version = 0;
   const render = async (flowId = "one", status: "live" | "draft" = "live", disabled = false, reportsVisible = true) => {
-    await React.act(async () => root.render(React.createElement(controls.FlowEmailPerformanceProvider, { flowId, status, reportsVisible, version: String(++version), savedIds: ["email"], disabled, onEmailStatusChange: (_id, value) => changes.push(value) }, React.createElement(React.Fragment, null, React.createElement(controls.FlowEmailMetrics, { actionId: "email" }), React.createElement(controls.FlowEmailMetrics, { actionId: "email", card: true }), React.createElement(controls.FlowEmailStatus, { status, disabled, onChange: value => changes.push(value) })))));
+    await React.act(async () => root.render(React.createElement(controls.FlowEmailPerformanceProvider, { flowId, status, reportsVisible, version: String(++version), savedIds: ["email", "task"], disabled, onEmailStatusChange: (_id, value) => changes.push(value) }, React.createElement(React.Fragment, null, React.createElement(controls.FlowEmailMetrics, { actionId: "email" }), React.createElement(controls.FlowEmailMetrics, { actionId: "email", card: true }), React.createElement(controls.FlowEmailStatus, { status, disabled, onChange: value => changes.push(value) }), React.createElement(FlowReportedActionCard, { actionId: "task", config: flows.blankStep("create_task").config, kind: "create_task", label: "Create CRM task", summary: "Follow up", icon: null, tone: "", index: 0, selected: false, disabled: true, last: true, onSelect() {}, onMove() {}, onRemove() {}, onPointerDown() {} })))));
   };
   try {
     await render("one", "live", false, false);
     assert.equal(requests, 0, "Hidden reports must not load performance");
+    assert.equal(host.querySelector('[aria-label="Create CRM task analytics"]'), null);
     await render();
+    const taskMetrics = () => host.querySelector('[aria-label="Create CRM task analytics"]')!;
+    assert.deepEqual([...taskMetrics().querySelectorAll("dt")].map(node => node.textContent), ["Completed", "Waiting", "Needs attention", "Skipped"]);
+    assert.deepEqual([...taskMetrics().querySelectorAll("dd")].map(node => node.textContent), ["9", "2", "1", "3"]);
     assert.match(host.textContent!, /53\.8% \(7\)/); assert.match(host.textContent!, /7\.7% \(1\)/);
     const trigger = host.querySelector<HTMLButtonElement>('button[aria-label^="Email status"]')!;
     await React.act(async () => trigger.click());
@@ -52,11 +58,13 @@ test("mounted performance controls load real totals, open the actual status menu
     assert.deepEqual(changes, ["draft"]);
     mode = "error"; await render();
     assert.match(host.textContent!, /Performance unavailable/); assert.doesNotMatch(host.textContent!, /53\.8%/);
+    assert.deepEqual([...taskMetrics().querySelectorAll("dd")].map(node => node.textContent), ["—", "—", "—", "—"]);
     mode = "ready";
     await React.act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Retry email performance"]')!.click());
     assert.match(host.textContent!, /53\.8% \(7\)/);
     mode = "empty"; await render();
     assert.match(host.textContent!, /No sends recorded/);
+    assert.deepEqual([...taskMetrics().querySelectorAll("dd")].map(node => node.textContent), ["0", "0", "0", "0"]);
     mode = "pending"; await render("two");
     assert.match(host.textContent!, /Loading performance/); assert.doesNotMatch(host.textContent!, /53\.8%/);
     const before = requests;

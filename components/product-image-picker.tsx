@@ -11,6 +11,25 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+export async function uploadProductImage(file: File, mode: DataMode) {
+  const validationError = productImageError(file.type, file.size);
+  if (validationError) throw new Error(validationError);
+  const bitmap = await createImageBitmap(file);
+  bitmap.close();
+  if (mode === "demo") return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("Could not read this image."));
+    reader.readAsDataURL(file);
+  });
+  const result = await prepareProductImageUpload(file.type, file.size);
+  if (result.error || !result.token || !result.path || !result.imageUrl) throw new Error(result.error || "Could not start the upload.");
+  const { createClient } = await import("@/lib/supabase/client");
+  const { error } = await createClient().storage.from(PRODUCT_IMAGE_BUCKET).uploadToSignedUrl(result.path, result.token, file, { contentType: file.type });
+  if (error) throw new Error("Image upload failed. Please try again.");
+  return result.imageUrl;
+}
+
 export function ProductImagePicker({ id, label, value, onChange, disabled, mode, onBusyChange }: {
   id: string; label: string; value: string | null; onChange: (value: string | null) => void;
   disabled: boolean; mode: DataMode; onBusyChange: (busy: boolean) => void;
@@ -25,26 +44,7 @@ export function ProductImagePicker({ id, label, value, onChange, disabled, mode,
     setBusy(true);
     onBusyChange(true);
     try {
-      // Decode before uploading so corrupt files do not replace the current image.
-      const bitmap = await createImageBitmap(file);
-      bitmap.close();
-      if (mode === "demo") {
-        const image = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(String(reader.result));
-          reader.onerror = () => reject(new Error("Could not read this image."));
-          reader.readAsDataURL(file);
-        });
-        onChange(image);
-      } else {
-        const result = await prepareProductImageUpload(file.type, file.size);
-        if (result.error || !result.token || !result.path || !result.imageUrl) throw new Error(result.error || "Could not start the upload.");
-        const { createClient } = await import("@/lib/supabase/client");
-        const { error: uploadError } = await createClient().storage.from(PRODUCT_IMAGE_BUCKET)
-          .uploadToSignedUrl(result.path, result.token, file, { contentType: file.type });
-        if (uploadError) throw new Error("Image upload failed. Please try again.");
-        onChange(result.imageUrl);
-      }
+      onChange(await uploadProductImage(file, mode));
     } catch (error) {
       setError(error instanceof Error ? error.message : "Could not upload this image. Please try again.");
     } finally {

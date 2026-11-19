@@ -27,7 +27,7 @@ export function AiHistoryMenu({ history, disabled, onNew, onRetry, onClose, onSe
   const [search, setSearch] = useState("");
   const [archived, setArchived] = useState(false);
   const all = history.browseAll;
-  const list = useAiHistoryList({ scope: history.scope, all, search, archived }, open, cache, history.conversation);
+  const list = useAiHistoryList({ scope: history.scope, all, page: history.browsePage, search, archived }, open, cache, history.conversation);
   const { items, loading, unavailable } = list;
   const [mutationError, setMutationError] = useState<Error | null>(null);
   const error = mutationError ?? list.error;
@@ -75,6 +75,7 @@ export function AiHistoryMenu({ history, disabled, onNew, onRetry, onClose, onSe
     {history.error ? <><HistoryFailure message={history.error} signIn={history.errorStatus === 401} disabled={disabled || history.loading} onRetry={() => { onRetry?.(); history.retry(); setMutationError(null); list.refresh(); }} />{history.errorStatus !== 401 ? <button type="button" className="mt-1 text-xs underline" disabled={disabled} onClick={() => { history.newConversation(); onNew(); }}>Start a new conversation</button> : null}</> : null}
     {error && !open ? <HistoryFailure message={error.message} signIn={error instanceof HistoryHttpError && error.status === 401} disabled={disabled || loading} onRetry={() => { setOpen(true); setMutationError(null); list.refresh(); onRetry?.(); history.retry(); }} /> : null}
     {open ? <section aria-label="Saved conversation history" className="mt-3 max-h-[45dvh] space-y-3 overflow-y-auto pb-2">
+      <p className="text-xs text-muted-foreground"><span>{all ? "History from all pages" : "History for this page"}</span>{" · "}<span>Automatically deleted after 7 days, including pinned and archived conversations.</span></p>
       <label className="block"><span className="sr-only">Search saved conversations</span><Input value={search} maxLength={160} onChange={(e) => setSearch(e.target.value)} placeholder="Search titles and messages…" /></label>
       <div className="flex items-center gap-2"><Button type="button" size="xs" variant={!archived ? "secondary" : "ghost"} onClick={() => setArchived(false)}>Recent</Button><Button type="button" size="xs" variant={archived ? "secondary" : "ghost"} onClick={() => setArchived(true)}>Archived</Button></div>
       {error ? <HistoryFailure message={error.message} signIn={error instanceof HistoryHttpError && error.status === 401} disabled={disabled || loading} onRetry={() => { setMutationError(null); list.refresh(); onRetry?.(); history.retry(); }} /> : null}

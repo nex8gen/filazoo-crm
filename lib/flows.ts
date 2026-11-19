@@ -158,6 +158,7 @@ export const stepConfigSchemas: Record<FlowStepType, z.ZodType<JsonConfig>> = {
     if (value.leadIntake && (!value.attachCatalog || !value.useProducts || value.usePrices)) context.addIssue({ code: "custom", message: "New-lead intake needs product information and the catalog, with automatic pricing disabled." });
   }),
   wait: z.object({
+    performanceId: z.string().trim().min(1).max(100).optional(),
     amount: z.number().int().min(1).max(525600),
     unit: z.enum(["minutes", "hours", "days", "months"]),
     anchor: z.enum(["previous_action", "trigger"]).optional(),
@@ -167,6 +168,7 @@ export const stepConfigSchemas: Record<FlowStepType, z.ZodType<JsonConfig>> = {
     if (value.unit === "months" && value.amount > 24) context.addIssue({ code: "custom", path: ["amount"], message: "Choose a delay of 24 months or less." });
   }),
   split: z.object({
+    performanceId: z.string().trim().min(1).max(100).optional(),
     name: z.string().trim().min(1).max(120),
     paths: z.array(z.object({
       id: z.string().trim().min(1).max(100),
@@ -189,6 +191,7 @@ export const stepConfigSchemas: Record<FlowStepType, z.ZodType<JsonConfig>> = {
     });
   }).transform((value) => ({ ...value, paths: value.paths.map((path) => ({ ...path, steps: path.steps.map((step) => ({ ...step, config: stepConfigSchemas[step.type].parse(step.config) })) })) })),
   if_condition: z.object({
+    performanceId: z.string().trim().min(1).max(100).optional(),
     field: z.enum(["customer_replied", "category_is", "opened_email", "clicked_link", "company_status_is", "pipeline_stage_is", "segment_is", "country_is", "fit_score_at_least"]),
     category: z.enum(compatibleEmailCategories).optional(),
     companyStatus: z.enum(companyStatuses).optional(),
@@ -230,7 +233,7 @@ export const stepConfigSchemas: Record<FlowStepType, z.ZodType<JsonConfig>> = {
     trackClicks: z.boolean().optional(),
     utmTracking: z.boolean().optional(),
     stopOnReply: z.boolean().optional(),
-    sendWindow: z.enum(["anytime", "business_hours"]).default("business_hours"),
+    sendWindow: z.enum(["anytime", "business_hours"]).default("anytime"),
   }).superRefine((value, context) => {
     if (value.emailStatus === "draft") return;
     if (!value.templateId) context.addIssue({ code: "custom", path: ["templateId"], message: "Complete the email template settings." });
@@ -239,6 +242,7 @@ export const stepConfigSchemas: Record<FlowStepType, z.ZodType<JsonConfig>> = {
     if (value.templateId === "custom" && !(value.emailDesign ? emailDesignText(value.emailDesign).trim() : value.body?.trim())) context.addIssue({ code: "custom", path: ["body"], message: "Add content to your email template." });
   }),
   create_task: z.object({
+    performanceId: z.string().trim().min(1).max(100).optional(),
     assigneeType: z.enum(["owner", "user"]),
     assigneeId: z.string().trim().nullable().optional(),
     dueInDays: z.number().int().min(0).max(365),
@@ -248,15 +252,16 @@ export const stepConfigSchemas: Record<FlowStepType, z.ZodType<JsonConfig>> = {
   }).superRefine((value, context) => {
     if (value.assigneeType === "user" && !value.assigneeId) context.addIssue({ code: "custom", path: ["assigneeId"], message: "Choose a user." });
   }),
-  change_category: z.object({ category: z.enum(compatibleEmailCategories), reason: z.string().trim().max(300).optional() }),
+  change_category: z.object({ performanceId: z.string().trim().min(1).max(100).optional(), category: z.enum(compatibleEmailCategories), reason: z.string().trim().max(300).optional() }),
   update_company: z.object({
+    performanceId: z.string().trim().min(1).max(100).optional(),
     companyStatus: z.enum(companyStatuses).optional(),
     pipelineStage: z.enum(pipelineStages).optional(),
     segment: z.string().trim().min(1).max(120).optional(),
     note: z.string().trim().max(500).optional(),
   }).refine((value) => Boolean(value.companyStatus || value.pipelineStage || value.segment), "Choose at least one company field to update."),
-  internal_alert: z.object({ userId: z.string().trim().min(1), message: z.string().trim().min(1).max(500), includeThreadLink: z.boolean().optional(), channel: z.enum(["in_app", "email"]).optional(), mailboxId: z.string().trim().min(1).optional() }),
-  stop: z.object({ reason: z.string().trim().max(300).optional(), outcome: z.enum(["completed", "cancelled"]).optional() }),
+  internal_alert: z.object({ performanceId: z.string().trim().min(1).max(100).optional(), userId: z.string().trim().min(1), message: z.string().trim().min(1).max(500), includeThreadLink: z.boolean().optional(), channel: z.enum(["in_app", "email"]).optional(), mailboxId: z.string().trim().min(1).optional() }),
+  stop: z.object({ performanceId: z.string().trim().min(1).max(100).optional(), reason: z.string().trim().max(300).optional(), outcome: z.enum(["completed", "cancelled"]).optional() }),
 };
 
 /** Validate a split's own settings separately from the actions inside its paths. */
@@ -354,7 +359,7 @@ export const defaultFlowInput: FlowInput = {
   status: "draft",
   steps: [
     { id: "wait-2d", type: "wait", config: { amount: 2, unit: "days", businessDays: true, resumeAt: "09:00" } },
-    { id: "send-reminder", type: "send_email", config: { templateId: "helpful_reminder", mailboxId: "default", replyInThread: true, subject: "Just checking in", preheader: "A quick follow-up from Filazoo", trackOpens: true, trackClicks: true, utmTracking: true, stopOnReply: true, sendWindow: "business_hours" } },
+    { id: "send-reminder", type: "send_email", config: { templateId: "helpful_reminder", mailboxId: "default", replyInThread: true, subject: "Just checking in", preheader: "A quick follow-up from Filazoo", trackOpens: true, trackClicks: true, utmTracking: true, stopOnReply: true, sendWindow: "anytime" } },
     { id: "create-task", type: "create_task", config: { assigneeType: "owner", assigneeId: null, dueInDays: 0, title: "Follow up with customer", priority: "high", notes: "Review the thread and call if the customer has not replied." } },
   ],
 };
@@ -366,7 +371,7 @@ export function blankStep(type: FlowStepType = "wait"): FlowInput["steps"][numbe
     wait: { amount: 1, unit: "days", businessDays: true, resumeAt: "09:00" },
     split: { name: "Customer path", paths: [{ id: `${id}-match`, name: "Path 1", condition: { field: "customer_replied", lookbackDays: 7 }, steps: [] }, { id: `${id}-otherwise`, name: "Everyone else", condition: null, steps: [] }] },
     if_condition: { field: "customer_replied", action: "stop_flow", unmatchedAction: "continue", lookbackDays: 7 },
-    send_email: { templateId: "", mailboxId: "default", replyInThread: true, subject: "", preheader: "", smartSendingHours: 16, trackOpens: true, trackClicks: true, utmTracking: false, stopOnReply: true, sendWindow: "business_hours" },
+    send_email: { templateId: "", mailboxId: "default", replyInThread: true, subject: "", preheader: "", smartSendingHours: 16, trackOpens: true, trackClicks: true, utmTracking: false, stopOnReply: true, sendWindow: "anytime" },
     create_task: { assigneeType: "owner", assigneeId: null, dueInDays: 1, title: "Follow up with customer", priority: "normal", notes: "" },
     change_category: { category: "Quotation Follow-up", reason: "" },
     update_company: { companyStatus: "engaged", note: "Updated by automation" },
@@ -379,7 +384,7 @@ export function blankStep(type: FlowStepType = "wait"): FlowInput["steps"][numbe
 /** Copies must have independent canvas/tracking identities, including actions inside split paths. */
 export function cloneFlowStep(step: FlowInput["steps"][number]): FlowInput["steps"][number] {
   const copy = { ...step, id: blankStep(step.type).id, config: structuredClone(step.config) };
-  if (copy.type === "send_email" || copy.type === "ai_auto_reply") delete copy.config.performanceId;
+  delete copy.config.performanceId;
   if (copy.type === "split" && Array.isArray(copy.config.paths)) {
     copy.config.paths = copy.config.paths.map((value) => {
       if (!value || typeof value !== "object" || Array.isArray(value) || !Array.isArray(value.steps)) return value;
@@ -389,10 +394,10 @@ export function cloneFlowStep(step: FlowInput["steps"][number]): FlowInput["step
   return copy;
 }
 
-/** The database replaces root step rows on save. Preserve email metrics across those row IDs. */
+/** The database replaces root step rows on save. Preserve every action's metrics across those row IDs. */
 export function withFlowEmailIdentities<T extends FlowInput>(flow: T): T {
   const normalize = (steps: FlowInput["steps"]): FlowInput["steps"] => steps.map(step => {
-    if (step.type === "send_email" || step.type === "ai_auto_reply") return { ...step, config: { ...step.config, performanceId: step.config.performanceId || (step.id && step.id.length <= 100 ? step.id : blankStep(step.type).id!) } };
+    step = { ...step, config: { ...step.config, performanceId: step.config.performanceId || (step.id && step.id.length <= 100 ? step.id : blankStep(step.type).id!) } };
     if (step.type !== "split" || !Array.isArray(step.config.paths)) return step;
     return { ...step, config: { ...step.config, paths: step.config.paths.map(path => path && typeof path === "object" && !Array.isArray(path) && Array.isArray(path.steps) ? { ...path, steps: normalize(path.steps as FlowInput["steps"]) } : path) } };
   });

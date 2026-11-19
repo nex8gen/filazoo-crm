@@ -55,7 +55,7 @@ export function FlowCustomerPicker({ config, onChange, disabled }: { config: Jso
   const companyOptions = companies.data?.companies ?? [];
   const selectedById = new Map([...(selected.data?.customers ?? []), ...(customers.data?.customers ?? [])].map((customer) => [customer.id, customer]));
 
-  return <section className="space-y-3 border-t pt-4" aria-label="Customer enrollment">
+  return <section className="flow-customer-enrollment space-y-3 border-t pt-4" aria-label="Customer enrollment">
     <div><p className="text-xs font-semibold">Customers in this workflow</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Choose who can enter this workflow. Company filters must also match.</p></div>
     <Select value={restricted ? "selected" : "all"} onValueChange={setMode} disabled={disabled}>
       <SelectTrigger className="w-full" aria-label="Customer enrollment scope"><SelectValue>{restricted ? "Selected customers only" : "All matching customers"}</SelectValue></SelectTrigger>

@@ -55,10 +55,10 @@ export function itemIsActive(pathname: string, item: NavigationItem) {
   return pathname === item.href || pathname.startsWith(`${item.href}/`);
 }
 
-function SidebarItemLabel({ item }: { item: NavigationItem }) {
+function SidebarItemLabel({ item, label = item.label }: { item: NavigationItem; label?: string }) {
   return (
-    <span className="flex items-center gap-2">
-      <span>{item.label}</span>
+    <span className="flex min-w-0 items-center gap-2">
+      <span className="truncate">{label}</span>
       {item.badge ? <span className="shrink-0 rounded-md bg-brand-soft px-1.5 py-0.5 text-xs font-medium leading-4 text-primary">{item.badge}</span> : null}
     </span>
   );
@@ -97,15 +97,15 @@ function SidebarGroup({ group, pathname, expanded }: { group: NavigationGroup; p
   }
 
   const link = (
-    <Link href={group.items[0].href} aria-label={group.label} aria-current={itemIsActive(pathname, group.items[0]) ? "page" : undefined} className={rowClass}>
+    <Link href={group.items[0].href} aria-label={[group.label, group.items[0].badge].filter(Boolean).join(" ")} aria-current={itemIsActive(pathname, group.items[0]) ? "page" : undefined} className={rowClass}>
       {icon}
-      {expanded ? <span className="truncate">{group.label}</span> : null}
+      {expanded ? <SidebarItemLabel item={group.items[0]} label={group.label} /> : null}
     </Link>
   );
 
   return (
     <li data-sidebar-section-start={group.sectionStart || undefined}>
-      {expanded ? link : <Tooltip><TooltipTrigger render={link} /><TooltipContent side="right" sideOffset={20}>{group.label}</TooltipContent></Tooltip>}
+      {expanded ? link : <Tooltip><TooltipTrigger render={link} /><TooltipContent side="right" sideOffset={20}><SidebarItemLabel item={group.items[0]} label={group.label} /></TooltipContent></Tooltip>}
       {expanded && active && !group.direct ? (
         <ul className="workspace-sidebar-submenu">
           {group.items.filter(item => item.href !== group.items[0].href).map(item => (

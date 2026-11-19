@@ -1,4 +1,8 @@
 export const zhCNEmailWorkbench: Record<string, string> = {
+  "Loading customer details…": "正在加载客户信息…",
+  "Owner not loaded": "负责人信息尚未加载",
+  "Customer details unavailable": "暂时无法加载客户信息",
+  "Retry customer details": "重新加载客户信息",
   "Controls how often this screen refreshes. New mail and history imports keep running in the background. Active import progress updates automatically.": "控制此页面的刷新频率。新邮件同步和历史邮件导入会在后台继续运行，正在导入时进度会自动更新。",
   "On open or return": "打开或返回时刷新",
   "Import settings are unavailable.": "暂时无法获取导入设置。",

@@ -152,10 +152,11 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
   }
   // Start fresh; saved messages load only after a title is selected in History.
   const historyReady = historyContext.pathname === pathname;
-  const chatHistory = useAiConversation({ mode: "chat", pathname, pageContext: historyContext.context }, (detail, prepend, preserveDraft) => restoreHistory("chat", detail, prepend, preserveDraft), historyReady, true, false);
-  const agentHistory = useAiConversation({ mode: "agent", pathname, pageContext: historyContext.context }, (detail, prepend, preserveDraft) => restoreHistory("agent", detail, prepend, preserveDraft), historyReady, true, false);
+  const browseAll = pathname === "/" && presentation === "page";
+  const chatHistory = useAiConversation({ mode: "chat", pathname, pageContext: historyContext.context }, (detail, prepend, preserveDraft) => restoreHistory("chat", detail, prepend, preserveDraft), historyReady, browseAll, false, true);
+  const agentHistory = useAiConversation({ mode: "agent", pathname, pageContext: historyContext.context }, (detail, prepend, preserveDraft) => restoreHistory("agent", detail, prepend, preserveDraft), historyReady, browseAll, false, true);
   const history = mode === "agent" ? agentHistory : chatHistory;
-  const activeMode = history.conversation?.mode === "agent" ? "agent" : history.conversation?.mode === "chat" ? "chat" : mode;
+  const activeMode = history.conversation ? history.conversation.mode === "agent" ? "agent" : "chat" : mode;
   const restoredElsewhere = Boolean(history.conversation && conversationScope(history.conversation) !== history.scope);
   const busy = pending || Boolean(animation) || Boolean(applying);
   const loadingHistory = history.loading || historyContext.pathname !== pathname;
@@ -263,10 +264,14 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
     try {
       const reference = await history.ensure(next.at(-1)!.id);
       if (controller.signal.aborted) return;
-      const response = await fetchWithSessionRecovery("/api/ai/assistant", {
+      const customerChat = history.conversation?.mode === "customer";
+      const response = await fetchWithSessionRecovery(customerChat ? `/api/companies/${history.conversation!.pageContext!.companyId}/chat` : "/api/ai/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: researchStreamType },
-        body: JSON.stringify({
+        body: JSON.stringify(customerChat ? {
+          language, history: reference, webSearch: requestWebSearch,
+          messages: [{ role: "user", content, images: sentImages }],
+        } : {
           language,
           history: reference,
           webSearch: requestWebSearch,

@@ -2,11 +2,12 @@ import "server-only";
 import { requireWorkspaceMember } from "../auth.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 import { isAutoReplySchemaMissing } from "../email-auto-reply.ts";
-import { activityPageSize, activityDayBounds, activitySearchPattern, type ActivityListOptions, type ActivityCompany, type ActivityTask, type ActivityAlert } from "../task-activity.ts";
+import { activityPageSize, activityDayBounds, activitySearchPattern, taskEmailReplyPath, type ActivityListOptions, type ActivityCompany, type ActivityTask, type ActivityAlert } from "../task-activity.ts";
+import { getViewerMailboxes } from "./mailboxes.ts";
 
 type Relation<T> = T | T[] | null;
 type TaskRow = Omit<ActivityTask, "company"> & { company: Relation<ActivityCompany> };
-type AlertRow = ActivityAlert & { task: Relation<{ company: Relation<ActivityCompany> }>; run: Relation<{ company: Relation<ActivityCompany> }> };
+type AlertRow = ActivityAlert & { task: Relation<{ flow_run_id?: string | null; company: Relation<ActivityCompany> }>; run: Relation<{ company: Relation<ActivityCompany> }> };
 const first = <T,>(value: Relation<T>): T | null => Array.isArray(value) ? value[0] ?? null : value;
 
 export async function listFlowActivity(summary = false, pages: ActivityListOptions = { taskPage: 0, alertPage: 0 }) {
@@ -24,7 +25,7 @@ export async function listFlowActivity(summary = false, pages: ActivityListOptio
   const taskView = pages.taskView ?? "all", alertView = pages.alertView ?? "all", query = pages.query?.trim().slice(0, 120) ?? "";
   const pageSize = pages.preview ? 5 : activityPageSize;
   const taskScope = pages.taskScope ?? "mine";
-  const fields = "id,title,notes,priority,status,due_at,company_id,completed_at,updated_at,assigned_to,created_by,assigned_by,follows_company_owner,company:companies(id,name)";
+  const fields = "id,title,notes,priority,status,due_at,company_id,completed_at,updated_at,assigned_to,created_by,assigned_by,follows_company_owner,flow_run_id,company:companies(id,name)";
   let taskQuery = admin.from("crm_tasks").select(fields, { count: "exact" }).eq("status", taskView === "completed" ? "done" : "open");
   taskQuery = taskScope === "delegated" ? taskQuery.or(`created_by.eq.${viewer.id},assigned_by.eq.${viewer.id}`) : taskQuery.eq("assigned_to", viewer.id);
   if (taskView === "overdue") taskQuery = taskQuery.lt("due_at", now.toISOString());
@@ -32,7 +33,7 @@ export async function listFlowActivity(summary = false, pages: ActivityListOptio
   if (taskView === "upcoming") taskQuery = taskQuery.gte("due_at", day.end);
   if (query) taskQuery = taskQuery.ilike("title", activitySearchPattern(query));
   taskQuery = taskView === "completed" ? taskQuery.order("completed_at", { ascending: false, nullsFirst: false }) : taskQuery.order("due_at", { ascending: true, nullsFirst: false });
-  let alertQuery = admin.from("internal_notifications").select("id,message,channel,conversation_id,include_thread_link,read_at,created_at,task_id,task:crm_tasks(company:companies(id,name)),run:flow_runs(company:companies(id,name))", { count: "exact" }).eq("user_id", viewer.id);
+  let alertQuery = admin.from("internal_notifications").select("id,message,channel,conversation_id,include_thread_link,read_at,created_at,task_id,task:crm_tasks(flow_run_id,company:companies(id,name)),run:flow_runs(company:companies(id,name))", { count: "exact" }).eq("user_id", viewer.id);
   if (alertView === "unread") alertQuery = alertQuery.is("read_at", null);
   if (query) alertQuery = alertQuery.ilike("message", activitySearchPattern(query));
   const [tasks, alerts, counts] = await Promise.all([
@@ -53,12 +54,27 @@ export async function listFlowActivity(summary = false, pages: ActivityListOptio
   const members = userIds.length ? await admin.from("workspace_members").select("user_id,display_name").in("user_id", userIds) : { data: [], error: null };
   const names = new Map((members.data ?? []).map(member => [member.user_id, member.display_name]));
   const alertRows = (alerts.data ?? []) as unknown as AlertRow[];
+  const visibleTasks = [...(tasks.data ?? []), ...(focused.data ? [focused.data] : [])];
+  const runIds = [...new Set([...visibleTasks.map(task => task.flow_run_id), ...alertRows.map(alert => first(alert.task)?.flow_run_id)].filter((id): id is string => Boolean(id)))];
+  const replyByRun = new Map<string, string>();
+  if (runIds.length && viewer.role !== "viewer") {
+    const [runs, mailboxes] = await Promise.all([
+      admin.from("flow_runs").select("id,conversation_id,email_thread_id:context->>emailThreadId,receiving_mailbox_id:context->>receivingMailboxId").in("id", runIds).throwOnError(),
+      getViewerMailboxes(viewer.id, true),
+    ]);
+    const allowedMailboxes = new Set(mailboxes.map(mailbox => mailbox.id));
+    for (const run of runs.data ?? []) {
+      if (!allowedMailboxes.has(run.receiving_mailbox_id)) continue;
+      const href = taskEmailReplyPath(run.email_thread_id || run.conversation_id, run.receiving_mailbox_id);
+      if (href) replyByRun.set(run.id, href);
+    }
+  }
   const conversationCompanyId = (value: string | null) => /^company:([\da-f-]{36})(?::pipeline|:lead:[\da-f-]{36})?$/i.exec(value ?? "")?.[1];
   const companyIds = [...new Set(alertRows.map(alert => conversationCompanyId(alert.conversation_id)).filter((id): id is string => Boolean(id)))];
   const companies = companyIds.length ? await admin.from("companies").select("id,name").in("id", companyIds).throwOnError() : { data: [] };
   const companyNames = new Map((companies.data ?? []).map(company => [company.id, company as ActivityCompany]));
-  const present = (task: TaskRow): ActivityTask => ({ ...task, company: first(task.company), workflow: workByTask.get(task.id) ?? null, automation_id: byTask.get(task.id) ?? null, assignee_name: task.assigned_to ? names.get(task.assigned_to) ?? null : null });
-  const presentAlert = ({ task, run, ...alert }: AlertRow): ActivityAlert => ({ ...alert, workflow: alert.task_id ? workByTask.get(alert.task_id) ?? null : null, company: first(first(task)?.company ?? null) ?? first(first(run)?.company ?? null) ?? companyNames.get(conversationCompanyId(alert.conversation_id) ?? "") ?? null });
+  const present = (task: TaskRow): ActivityTask => ({ ...task, reply_href: replyByRun.get(task.flow_run_id ?? "") ?? null, company: first(task.company), workflow: workByTask.get(task.id) ?? null, automation_id: byTask.get(task.id) ?? null, assignee_name: task.assigned_to ? names.get(task.assigned_to) ?? null : null });
+  const presentAlert = ({ task, run, ...alert }: AlertRow): ActivityAlert => ({ ...alert, reply_href: replyByRun.get(first(task)?.flow_run_id ?? "") ?? null, workflow: alert.task_id ? workByTask.get(alert.task_id) ?? null : null, company: first(first(task)?.company ?? null) ?? first(first(run)?.company ?? null) ?? companyNames.get(conversationCompanyId(alert.conversation_id) ?? "") ?? null });
   return { tasks: ((tasks.data ?? []) as unknown as TaskRow[]).map(present), alerts: alertRows.map(presentAlert), focusedTask: focused.data ? present(focused.data as unknown as TaskRow) : null, taskCount: tasks.count ?? 0, alertCount: alerts.count ?? 0, taskPage: pages.taskPage, alertPage: pages.alertPage, summary: counts, asOf: now.toISOString(), taskView, alertView, query, taskScope, viewerId: viewer.id };
 }
 

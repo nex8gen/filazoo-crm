@@ -60,7 +60,7 @@ export async function deliverEmail(viewer: WorkspaceViewer, input: unknown, alre
     if (parsed.data.requestId) {
       const { reserveEmailSend } = await import("@/lib/data/email-delivery");
       if (!alreadyReserved) {
-        const reservation = await reserveEmailSend(viewer, parsed.data);
+        const reservation = await reserveEmailSend(viewer, { ...parsed.data, mailboxId: mailbox.id });
         if (reservation.scheduled) return Response.json({ ok: true, scheduled: true, id: parsed.data.requestId, scheduleAt: parsed.data.scheduleAt });
         if (!reservation.reserved) {
           operationId = undefined;

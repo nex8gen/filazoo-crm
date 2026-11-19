@@ -131,6 +131,7 @@ export function EmailAccountsWorkspace({ initialData, resourcesDeferred = false,
   return <EmailInboxWorkspace
     {...props}
     initialThreadId={hasSwitched ? undefined : props.initialThreadId}
+    initialReplyOpen={!hasSwitched && props.initialReplyOpen}
     initialAgentDraft={hasSwitched ? undefined : props.initialAgentDraft}
     initialLibraryItem={hasSwitched ? undefined : props.initialLibraryItem}
     initialLibraryRequest={hasSwitched ? undefined : props.initialLibraryRequest}

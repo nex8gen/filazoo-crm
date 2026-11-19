@@ -1,3 +1,3 @@
-export default function Loading() {
-  return <div className="p-8" role="status">Loading your portal builder…</div>;
-}
+import "@/components/portal-theme-library.css";
+
+export { PortalLibrarySkeleton as default } from "@/components/library-skeletons";

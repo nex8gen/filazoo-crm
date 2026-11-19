@@ -4,6 +4,8 @@ import path from "node:path";
 import sharp from "sharp";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 import { privateProductImagePattern, PRODUCT_IMAGE_BUCKET } from "../product-images.ts";
+import { productLibraryMediaPattern } from "../product-media.ts";
+import { readProductLibraryImage } from "./product-media.ts";
 import { inlinePrivateEmailImages } from "../email-products.ts";
 import type { EmailDesign } from "../email-design.ts";
 
@@ -16,6 +18,8 @@ export async function embedPrivateProductImages(design: EmailDesign, viewerId: s
       const { data, error } = await createSupabaseAdmin().storage.from(PRODUCT_IMAGE_BUCKET).download(`${viewerId}/${privateImage[2]}`);
       if (error || !data) throw new Error("A selected product image is no longer available. Replace it before sending.");
       input = Buffer.from(await data.arrayBuffer());
+    } else if (productLibraryMediaPattern.test(src)) {
+      input = Buffer.from(await (await readProductLibraryImage(src, viewerId)).arrayBuffer());
     } else {
       const target = path.resolve(process.cwd(), "public", src.replace(/^\//, ""));
       if (!target.startsWith(path.resolve(process.cwd(), "public") + path.sep)) throw new Error("Invalid product image path.");

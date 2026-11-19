@@ -152,7 +152,7 @@ export async function savedProviderFolders(mailbox: WorkspaceMailboxRecord, sign
   if (signal) query = query.abortSignal(signal);
   const { data, error } = await query.maybeSingle();
   if (error) return [];
-  return (data?.folders || []) as ProviderFolder[];
+  return ((data?.folders || []) as ProviderFolder[]).map(folder => folder.path.toUpperCase() === "INBOX" ? { ...folder, path: "INBOX", kind: "inbox" } : folder);
 }
 
 /** Read saved messages only. Refresh requests enqueue durable work. */
@@ -189,11 +189,12 @@ export async function loadMailboxWorkspace(mailbox: WorkspaceMailboxRecord, opti
   const cached = await readMailboxSnapshots(db, [...byKey.keys()], options.signal);
   const snapshots = (cached || []).map((row) => {
     const folder = byKey.get(row.mailbox_key)!;
-    return { messages: (row.messages as InboxEmailItem[]).filter((message) => !message.providerRemoved).map((message) => presentMailboxMessage({ ...message, mailboxId: mailbox.id, providerFolder: folder.path, providerKind: folder.kind }, row.mailbox_key)), error: row.last_error, syncedAt: row.synced_at };
+    return { kind: folder.kind, messages: (row.messages as InboxEmailItem[]).filter((message) => !message.providerRemoved).map((message) => presentMailboxMessage({ ...message, mailboxId: mailbox.id, providerFolder: folder.path, providerKind: folder.kind }, row.mailbox_key)), error: row.last_error, syncedAt: row.synced_at };
   });
   const messages = new Map<string, InboxEmailItem>();
   // Inbox/Sent win over All Mail copies; keep one representation per Message-ID.
-  for (const snapshot of snapshots.sort((a, b) => Number(b.messages[0]?.providerKind === "sent") - Number(a.messages[0]?.providerKind === "sent"))) {
+  const folderPriority: Record<string, number> = { sent: 5, inbox: 4, drafts: 3, spam: 2, trash: 2, custom: 1, archive: 0 };
+  for (const snapshot of snapshots.sort((a, b) => (folderPriority[b.kind] ?? 0) - (folderPriority[a.kind] ?? 0))) {
     for (const message of snapshot.messages) {
       const location = { folder: message.providerFolder!, kind: message.providerKind!, mailboxKey: message.mailboxKey!, uid: message.uid!, validity: message.uidValidity! };
       const existing = messages.get(message.id);

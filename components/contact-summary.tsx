@@ -24,7 +24,7 @@ export function ContactSummary({ name, email, company, companyId, canCreateInvoi
       </div>
     </div>
     <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-[#3ecf8e]/20 pt-2 dark:border-[#3ecf8e]/15">
-      <p className="flex min-w-0 flex-1 basis-24 items-start gap-1.5 text-xs leading-5 text-muted-foreground"><Building2 aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" /><span className="min-w-0 break-words [overflow-wrap:anywhere]">{companyLabel}</span></p>
+      <div className="flex min-w-0 flex-1 basis-24 items-start gap-1.5 text-xs leading-5 text-muted-foreground"><Building2 aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />{companyId ? <Link href={`/companies/${companyId}`} className="min-w-0 break-words hover:text-primary hover:underline [overflow-wrap:anywhere]">{companyLabel}</Link> : <span className="min-w-0 break-words [overflow-wrap:anywhere]">{companyLabel}</span>}</div>
       {companyId && canCreateInvoices && <Link href={`/companies/${companyId}?tab=purchase-orders`} target="_blank" rel="noreferrer" title="Open purchase orders in a new tab" className="inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-md px-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"><ReceiptText aria-hidden="true" className="size-3.5" /><span>Purchase orders</span><ArrowUpRight aria-hidden="true" className="size-3" /></Link>}
     </div>
   </section>;

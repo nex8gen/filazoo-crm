@@ -67,7 +67,13 @@ function usageHarness(request: (url: string, init: RequestInit) => Promise<unkno
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   const hookExports = {};
-  vm.runInNewContext(hookCode, { exports: hookExports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => dependencies[name] ?? require(name))(name), setTimeout, clearTimeout });
+  vm.runInNewContext(hookCode, {
+    exports: hookExports,
+    require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => dependencies[name] ?? require(name))(name),
+    setTimeout, clearTimeout,
+    setInterval: (callback: () => void) => { ticks.add(callback); return callback; },
+    clearInterval: (callback: () => void) => ticks.delete(callback),
+  });
   dependencies["@/components/use-ai-history-list"] = hookExports;
   const code = ts.transpileModule(readFileSync(new URL("../components/ai-history-menu.tsx", import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },

@@ -160,6 +160,9 @@ async function setupInbox(role = "operator", assignedContacts: Map<string, strin
   const counts = { auth: 0, mailboxes: 0 };
   const knownCompanies: { id: string; name: string; email: string }[] = [];
   const received: Partial<InboxEmailItem> = {};
+  const crmDrafts = [{ id: "workspace-draft", mailboxId: "team" as string | null, subject: "Outreach", contact: "lead@example.com", preview: "Hello", step: 1, status: "Draft" }];
+  const crmReplies = [{ id: "workspace-reply", mailboxId: "team" as string | null, contact: "lead@example.com", body: "Shared reply" }];
+  const sourceScopes: Array<{ kind: string; mailboxId?: string }> = [];
   const failures = { replies: false, enrichment: false };
   const viewer: WorkspaceViewer = { id: "actor", role: role as WorkspaceViewer["role"], email: null, displayName: null };
   const backend = loadModule<{ getEmailInboxBackendData: (options?: { mailboxId?: string; syncMailbox?: boolean; interactive?: boolean; context?: { viewer: WorkspaceViewer; mailboxes: WorkspaceMailboxRecord[] } }) => Promise<EmailInboxBackendData> }>("../lib/email-inbox.ts", {
@@ -176,8 +179,8 @@ async function setupInbox(role = "operator", assignedContacts: Map<string, strin
     "./data/inbox-companies.ts": { listInboxCompanies: async () => { reads.push("companies"); if (failures.enrichment) throw new Error("CRM context unavailable"); return { companies: knownCompanies }; } },
     "./data/crm.ts": {
       listCompanies: async () => { reads.push("companies"); return { companies: [] }; },
-      listEmailDrafts: async (authorizedViewer: WorkspaceViewer) => { assert.equal(authorizedViewer, viewer); reads.push("drafts"); return { emails: [{ id: "workspace-draft", subject: "Outreach", contact: "lead@example.com", preview: "Hello", step: 1, status: "Draft" }], mode: "live" }; },
-      listReplies: async (authorizedViewer: WorkspaceViewer) => { assert.equal(authorizedViewer, viewer); reads.push("replies"); if (failures.replies) throw new Error("Database timeout"); return { replies: [{ id: "workspace-reply", contact: "lead@example.com", body: "Shared reply" }] }; },
+      listEmailDrafts: async (authorizedViewer: WorkspaceViewer, options: { mailboxId?: string }) => { assert.equal(authorizedViewer, viewer); reads.push("drafts"); sourceScopes.push({ kind: "drafts", mailboxId: options.mailboxId }); return { emails: crmDrafts, mode: "live" }; },
+      listReplies: async (authorizedViewer: WorkspaceViewer, options: { mailboxId?: string }) => { assert.equal(authorizedViewer, viewer); reads.push("replies"); sourceScopes.push({ kind: "replies", mailboxId: options.mailboxId }); if (failures.replies) throw new Error("Database timeout"); return { replies: crmReplies }; },
     },
     "./data/email-state.ts": {
       listEmailInboxStates: async () => new Map(),
@@ -194,17 +197,44 @@ async function setupInbox(role = "operator", assignedContacts: Map<string, strin
     } },
     "./supabase/admin.ts": { createSupabaseAdmin: () => ({ from: () => ({ select: () => ({ eq: () => ({ order: () => ({ range: async () => ({ data: [], error: null }) }) }) }) }) }) },
   });
-  return { backend, synced, sentScopes, reads, counts, knownCompanies, received, failures, context: { viewer, mailboxes } };
+  return { backend, synced, sentScopes, reads, counts, knownCompanies, received, failures, crmDrafts, crmReplies, sourceScopes, context: { viewer, mailboxes } };
 }
+
+test("CRM replies and queued drafts never appear in a different or unknown mailbox", async () => {
+  const app = await setupInbox();
+  for (const mailboxId of ["mine", "someone-else", "another-team", null]) {
+    app.crmReplies.push({ ...app.crmReplies[0], id: `reply-${mailboxId}`, mailboxId });
+    app.crmDrafts.push({ ...app.crmDrafts[0], id: `draft-${mailboxId}`, mailboxId });
+  }
+  const data = await app.backend.getEmailInboxBackendData({ mailboxId: "team", syncMailbox: false });
+  assert.deepEqual(Array.from(data.emails, email => email.id).sort(), ["received-team", "sent-team", "workspace-draft", "workspace-reply"]);
+  assert.deepEqual(app.sourceScopes, [{ kind: "drafts", mailboxId: "team" }, { kind: "replies", mailboxId: "team" }]);
+  assert.ok(data.emails.filter(email => email.id.startsWith("workspace-")).every(email => email.mailboxId === "team"));
+  const sharedContext = { ...app.context, workspace: Promise.resolve({ drafts: { emails: app.crmDrafts, mode: "live" }, replies: { replies: app.crmReplies }, shopify: [], meta: [], assigned: null, partial: false }) };
+  const preloaded = await app.backend.getEmailInboxBackendData({ mailboxId: "team", syncMailbox: false, context: sharedContext });
+  assert.deepEqual(Array.from(preloaded.emails, email => email.id).sort(), ["received-team", "sent-team", "workspace-draft", "workspace-reply"], "Shared company-history reads must still filter each mailbox snapshot");
+  const personal = await app.backend.getEmailInboxBackendData({ mailboxId: "mine", syncMailbox: false });
+  assert.deepEqual(Array.from(personal.emails, email => email.id).sort(), ["received-mine", "sent-mine"]);
+});
 
 test("interactive mailbox messages remain visible when CRM replies and enrichment fail", async () => {
   const { backend, context, failures } = await setupInbox();
   failures.replies = true; failures.enrichment = true;
   const data = await backend.getEmailInboxBackendData({ interactive: true, syncMailbox: false, mailboxId: "team", context });
+  assert.ok(data.emails.every(email => email.customerContextStatus === "pending"));
+  assert.ok(data.emails.every(email => email.ownerName !== "Unassigned"), "A failed context read is not proof that the company is unassigned");
   assert.equal(data.mailboxReadFailed, false);
   assert.equal(data.mailboxSnapshotPartial, true);
   assert.ok(data.emails.some(message => message.id === "received-team"));
   assert.ok(data.emails.some(message => message.id === "sent-team"));
+});
+
+test("known company IDs survive inbox enrichment timeouts", async () => {
+  const app = await setupInbox();
+  app.failures.enrichment = true;
+  app.received.companyId = "verified-company";
+  const data = await app.backend.getEmailInboxBackendData({ interactive: true, syncMailbox: false, mailboxId: "mine", context: app.context });
+  assert.equal(data.emails.find(message => message.id === "received-mine")?.companyId, "verified-company");
 });
 
 test("company-scoped admin reads a colleague's CC customer mail while ordinary personal access still denies it", async () => {

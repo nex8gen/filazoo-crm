@@ -89,14 +89,14 @@ export const navigation: NavigationGroup[] = [
     eyebrow: "Customer experience",
     icon: PanelsTopLeft,
     direct: true,
-    items: [{ label: "Customer portal", href: "/customer-portal", icon: PanelsTopLeft, description: "Customize your customer portal design, sections and customer permissions" }],
+    items: [{ label: "Customer portal", href: "/customer-portal", icon: PanelsTopLeft, badge: "Beta", description: "Customize your customer portal design, sections and customer permissions" }],
   },
   {
     label: "Messenger",
     eyebrow: "Engagement",
     icon: MessageSquare,
     direct: true,
-    items: [{ label: "Messenger", href: "/messenger", icon: MessageSquare, description: "Facebook ad leads and Page Messenger replies" }],
+    items: [{ label: "Messenger", href: "/messenger", icon: MessageSquare, badge: "Beta", description: "Facebook ad leads and Page Messenger replies" }],
   },
   {
     label: "Workflow",

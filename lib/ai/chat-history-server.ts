@@ -4,7 +4,7 @@ import type { WorkspaceViewer } from "../auth";
 import { createSupabaseAdmin } from "../supabase/admin";
 import { getViewerMailboxes } from "../data/mailboxes";
 import { getAssignedEmailContacts } from "../data/email-access";
-import { conversationMemory, conversationScope, type ConversationInput, type HistoryReference, type HistoryMessage } from "./chat-history";
+import { conversationMemory, conversationScope, historyCutoff, type ConversationInput, type HistoryReference, type HistoryMessage } from "./chat-history";
 import type { AiUsage } from "./chat-usage";
 import type { AgentActionResult } from "./agent-actions";
 import type { EmailInboxBackendData } from "../email-inbox";
@@ -15,9 +15,9 @@ export class HistoryError extends Error {
 export type ConversationRow = {
   id: string; user_id: string; owner_role: string; access_key: string; mode: ConversationInput["mode"]; pathname: string;
   page_context: NonNullable<ConversationInput["pageContext"]>; scope: string; title: string;
-  pinned: boolean; archived: boolean; version: number; summary: string; updated_at: string; active_request: string | null;
+  pinned: boolean; archived: boolean; version: number; summary: string; created_at: string; updated_at: string; active_request: string | null;
 };
-export const presentConversation = (row: ConversationRow) => ({ id: row.id, mode: row.mode, pathname: row.pathname, pageContext: row.page_context, title: row.title, pinned: row.pinned, archived: row.archived, version: row.version, summary: row.summary, updated_at: row.updated_at, pending: Boolean(row.active_request) });
+export const presentConversation = (row: ConversationRow) => ({ id: row.id, mode: row.mode, pathname: row.pathname, pageContext: row.page_context, title: row.title, pinned: row.pinned, archived: row.archived, version: row.version, summary: row.summary, created_at: row.created_at, updated_at: row.updated_at, pending: Boolean(row.active_request) });
 
 // Histories can include emails discovered by an agent away from an open record.
 // Changed mailbox grants or sales assignments invalidate the whole transcript.
@@ -70,7 +70,7 @@ export async function conversationDetail(row: ConversationRow, viewer: Workspace
 
 export async function ownedConversation(id: string, viewer: WorkspaceViewer) {
   const accessKey = await conversationAccessKey(viewer);
-  const { data, error } = await createSupabaseAdmin().from("ai_conversations").select("*").eq("id", id).eq("user_id", viewer.id).eq("owner_role", viewer.role).eq("access_key", accessKey).maybeSingle();
+  const { data, error } = await createSupabaseAdmin().from("ai_conversations").select("*").eq("id", id).eq("user_id", viewer.id).eq("owner_role", viewer.role).eq("access_key", accessKey).gt("created_at", historyCutoff()).maybeSingle();
   if (error) throw new HistoryError("Unable to load saved conversations. Check the AI history migration.", 503);
   if (!data) throw new HistoryError("Conversation unavailable for your current account and role.", 404);
   const row = data as ConversationRow;

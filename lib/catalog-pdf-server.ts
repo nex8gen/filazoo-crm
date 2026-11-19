@@ -6,6 +6,7 @@ import { buildCatalogPdf, catalogVariantImage, DEFAULT_CATALOG_IMAGE, type Catal
 import { catalogImageCrop } from "./catalog-image-layout.ts";
 import type { Product } from "./types.ts";
 import { privateProductImagePattern, PRODUCT_IMAGE_BUCKET } from "./product-images.ts";
+import { productLibraryMediaPattern } from "./product-media.ts";
 
 export async function loadCatalogImages(products: Product[]) {
   const urls = [...new Set([DEFAULT_CATALOG_IMAGE, ...products.flatMap(product => [catalogVariantImage(product), ...product.variants.map(variant => catalogVariantImage(product, variant))])])];
@@ -20,6 +21,10 @@ export async function loadCatalogImages(products: Product[]) {
           const { data, error } = await createSupabaseAdmin().storage.from(PRODUCT_IMAGE_BUCKET).download(`${privateImage[1]}/${privateImage[2]}`);
           if (error || !data) return;
           input = Buffer.from(await data.arrayBuffer());
+          if (input.length > 10_000_000) return;
+        } else if (productLibraryMediaPattern.test(url)) {
+          const { readProductLibraryImage } = await import("./data/product-media.ts");
+          input = Buffer.from(await (await readProductLibraryImage(url)).arrayBuffer());
           if (input.length > 10_000_000) return;
         } else if (url.startsWith("/") && !url.startsWith("//")) {
           const root = path.resolve(process.cwd(), "public");

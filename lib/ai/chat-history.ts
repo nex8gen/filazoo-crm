@@ -21,12 +21,26 @@ export type HistoryMessage = {
   durationMs?: number; research?: unknown;
   presentation?: ResponsePresentation;
 };
-export type Conversation = ConversationInput & { id: string; title: string; pinned: boolean; archived: boolean; updated_at: string; version: number; summary: string; pending?: boolean };
+export type Conversation = ConversationInput & { id: string; title: string; pinned: boolean; archived: boolean; created_at?: string; updated_at: string; version: number; summary: string; pending?: boolean };
 export type HistoryDetail = { conversation: Conversation; messages: HistoryMessage[]; actionResults: Record<string, AgentActionResult>; hasMore: boolean; before?: number };
 
 export function conversationScope(input: ConversationInput) {
   const c = input.pageContext ?? {};
   return JSON.stringify([input.pathname, input.mode, c.companyId ?? null, c.invoiceId ?? null, c.mailboxId ?? null, c.emailId ?? null, c.conversationId ?? null, c.flowId ?? null, ...(c.flowAnalytics ? [c.flowAnalytics] : [])]);
+}
+
+export const historyRetentionMs = 7 * 24 * 60 * 60 * 1000;
+export const historyCutoff = (now = Date.now()) => new Date(now - historyRetentionMs).toISOString();
+export const historyExpired = (conversation: Pick<Conversation, "created_at">, now = Date.now()) => Boolean(conversation.created_at && Date.parse(conversation.created_at) <= now - historyRetentionMs);
+
+/** The page part of a saved scope; record identifiers and AI mode stay separate. */
+export function historyPage(scope: string): string | null {
+  try {
+    const value: unknown = JSON.parse(scope);
+    if (!Array.isArray(value)) return null;
+    const parsed = conversationInputSchema.safeParse({ pathname: value[0], mode: value[1] });
+    return parsed.success ? parsed.data.pathname : null;
+  } catch { return null; }
 }
 
 /** Retain record identifiers and analytics filters; never metric facts or unsaved editor contents. */

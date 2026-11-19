@@ -1,4 +1,5 @@
 export const zhCNTaskActivity: Record<string, string> = {
+  "View task": "查看任务",
   "Loading PDF…": "正在加载 PDF…",
   "Task type": "任务类型",
   "General to-do": "普通待办",

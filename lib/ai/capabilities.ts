@@ -13,6 +13,7 @@ export const guidedAgentFeatures = [
   { domain: "settings", name: "Connect mailboxes, OAuth or ERP", href: "/settings/apps", reason: "Credentials and account authorization stay in the connection form." },
   { domain: "settings", name: "Password, sessions, avatar, workspace membership and ownership", href: "/settings", reason: "Use the account/team security controls for identity or ownership changes and binary uploads." },
   { domain: "products", name: "Upload product images", href: "/products", reason: "Select the actual image file in the product editor." },
+  { domain: "products", name: "Adjust shared manual inventory", href: "/products", reason: "Open the product or variant in its side panel, choose a location, verify the available quantity and enter a reason. Shared stock saves immediately with revision protection and adjustment history." },
   { domain: "email", name: "Upload attachments or schedule a new email", href: "/email", reason: "Use the composer for file selection and scheduling. Agent can draft the message and cancel an existing scheduled send." },
   { domain: "email", name: "Schedule a mailbox reminder or one-time AI follow-up", href: "/email", reason: "Select the conversation, open Contact & follow-up, choose Remind me or AI follow-up, and review the time and message before confirming. Edit or cancel from its follow-up status card." },
   { domain: "workflows", name: "Preview/test workflow and send test email", href: "/flows", reason: "Use the workflow's test controls to inspect the preview or explicitly send a test." },

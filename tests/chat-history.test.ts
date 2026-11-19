@@ -40,6 +40,47 @@ test("conversation identities isolate records, modes and delimiter-containing em
   assert.equal(history.conversationPatchSchema.safeParse({ version: 0 }).success, false);
 });
 
+test("history expires exactly seven days after creation regardless of later activity", () => {
+  const created_at = "2026-11-01T00:00:00.000Z";
+  const boundary = Date.parse(created_at) + history.historyRetentionMs;
+  assert.equal(history.historyExpired({ created_at }, boundary - 1), false);
+  assert.equal(history.historyExpired({ created_at }, boundary), true);
+  assert.equal(history.historyCutoff(boundary), created_at);
+  assert.equal(history.historyPage(history.conversationScope(scopeInput)), "/companies");
+  for (const invalid of ["invalid", "{}", '["//evil","chat"]', '["/email","unknown"]']) assert.equal(history.historyPage(invalid), null);
+});
+
+test("combined history rejects non-Home scopes before reading storage", async () => {
+  const routes = load("../app/api/ai/history/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer },
+    "@/lib/supabase/admin": { createSupabaseAdmin: () => { throw new Error("Must not read storage"); } },
+    "@/lib/ai/chat-history": history, "@/lib/ai/chat-history-server": {},
+  });
+  for (const scope of [history.conversationScope(scopeInput), "invalid"]) {
+    const response = await (routes.GET as Handler)(req("GET", undefined, `http://localhost:3000/api/ai/history?${new URLSearchParams({ scope, view: "all" })}`));
+    assert.equal(response.status, 400);
+  }
+});
+
+test("page titles use the current pathname across modes and records with a retention cutoff", async () => {
+  const reads: Array<[string, unknown[]]> = [];
+  const query: Record<string, unknown> = {};
+  for (const method of ["select", "eq", "gt", "in", "order", "range"]) query[method] = (...args: unknown[]) => { reads.push([method, args]); return query; };
+  query.then = (resolve: (value: unknown) => void) => Promise.resolve({ data: [], error: null }).then(resolve);
+  const routes = load("../app/api/ai/history/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer },
+    "@/lib/supabase/admin": { createSupabaseAdmin: () => ({ from: () => query }) },
+    "@/lib/ai/chat-history": history,
+    "@/lib/ai/chat-history-server": { conversationAccessKey: async () => "fresh-access" },
+  });
+  const response = await (routes.GET as Handler)(req("GET", undefined, `http://localhost:3000/api/ai/history?${new URLSearchParams({ scope: history.conversationScope({ mode: "agent", pathname: "/email", pageContext: { emailId: "email-one" } }), view: "page", titles: "true" })}`));
+  assert.equal(response.status, 200);
+  assert.ok(reads.some(([method, args]) => method === "eq" && args[0] === "pathname" && args[1] === "/email"));
+  assert.ok(reads.some(([method, args]) => method === "in" && args[0] === "mode" && JSON.stringify(args[1]) === '["chat","agent"]'));
+  assert.ok(reads.some(([method, args]) => method === "gt" && args[0] === "created_at"));
+  assert.ok(!reads.some(([method, args]) => method === "eq" && args[0] === "scope"));
+});
+
 test("saved record context excludes unsaved editor data and authorization cannot be supplied by a client", () => {
   const saved = history.savedPageContext({ flowUnsaved: true, flowStepId: "step", companyId: conversationId });
   assert.equal(saved.companyId, conversationId);
@@ -156,7 +197,7 @@ test("title-only history uses a bounded owner/role/access index without reading 
       conversationDetail: () => { throw new Error("Do not read messages, summaries or actions for titles"); },
     },
   });
-  const result = await (routes.GET as Handler)(req("GET", undefined, `http://localhost:3000/api/ai/history?${new URLSearchParams({ scope: "test", view: "all", titles: "true" })}`));
+  const result = await (routes.GET as Handler)(req("GET", undefined, `http://localhost:3000/api/ai/history?${new URLSearchParams({ scope: history.conversationScope({ mode: "chat", pathname: "/" }), view: "all", titles: "true" })}`));
   assert.equal(result.status, 200);
   const body = await result.json();
   assert.equal(body.conversations[0].title, "Saved title");
@@ -227,7 +268,7 @@ test("all workspace history finds other pages and modes, rechecks each record an
       },
     },
   });
-  const response = await (routes.GET as Handler)(req("GET", undefined, `http://localhost:3000/api/ai/history?${new URLSearchParams({ scope: history.conversationScope(scopeInput), view: "all", search: "filament", offset: "30" })}`));
+  const response = await (routes.GET as Handler)(req("GET", undefined, `http://localhost:3000/api/ai/history?${new URLSearchParams({ scope: history.conversationScope({ mode: "chat", pathname: "/" }), view: "all", search: "filament", offset: "30" })}`));
   assert.equal(response.status, 200);
   assert.equal(rpc, "search_workspace_ai_conversations");
   assert.equal(args.p_user_id, viewer.id); assert.equal(args.p_role, viewer.role); assert.equal(args.p_access_key, "current-access");
@@ -260,9 +301,11 @@ test("an inbox can restore and continue a saved agent conversation from another 
     "@/lib/ai/chat-history": history,
   });
   type Controller = { open: (id: string) => Promise<boolean>; ensure: (id: string) => Promise<unknown>; conversation: typeof detail.conversation | null; newConversation: () => void };
-  const render = (all: boolean) => { cursor = 0; return (hook.useAiConversation as (...args: unknown[]) => Controller)(scopeInput, (value: unknown) => { restored = value; }, false, all); };
+  const render = (all: boolean, page = false, pathname = "/companies") => { cursor = 0; return (hook.useAiConversation as (...args: unknown[]) => Controller)({ ...scopeInput, pathname }, (value: unknown) => { restored = value; }, false, all, false, page); };
   assert.equal(await render(false).open(conversationId), false);
   assert.equal(restored, undefined);
+  assert.equal(await render(false, true).open(conversationId), false, "page browsing cannot open another page's conversation");
+  assert.equal(await render(false, true, "/email").open(conversationId), true, "the same page can open another record and AI mode");
   assert.equal(await render(true).open(conversationId), true);
   assert.deepEqual(restored, detail);
   const controller = render(true);
@@ -275,7 +318,7 @@ test("an inbox can restore and continue a saved agent conversation from another 
 
 test("ownership and current role are checked before transcripts are returned", async () => {
   const filters: unknown[] = [];
-  const db = { from: () => ({ select() { return this; }, eq(...args: unknown[]) { filters.push(args); return this; }, async maybeSingle() { return { data: null, error: null }; } }) };
+  const db = { from: () => ({ select() { return this; }, eq(...args: unknown[]) { filters.push(args); return this; }, gt(...args: unknown[]) { filters.push(args); return this; }, async maybeSingle() { return { data: null, error: null }; } }) };
   const server = load("../lib/ai/chat-history-server.ts", {
     "../supabase/admin": { createSupabaseAdmin: () => db }, "../data/crm": {}, "../data/invoices": {}, "../data/mailboxes": { getViewerMailboxes: async () => [] }, "../data/email-access": { getAssignedEmailContacts: async () => null }, "./agent-records": {}, "./agent-page-records": {}, "./chat-history": history,
   });

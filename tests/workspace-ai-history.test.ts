@@ -78,7 +78,7 @@ test("sidebar history stays enabled across close and reopen while drafts remain 
   assert.equal(clears, 1);
 });
 
-test("continuing history from the inbox sends the saved page, record, AI mode and version", async () => {
+for (const savedMode of ["agent", "customer"] as const) test(`Home continues saved ${savedMode} history with its original page, record and version`, async () => {
   const companyId = "15693adc-0bdf-4617-b214-71b1861764a9";
   const conversationId = "a37acc59-4a11-47db-ad1e-aa9fe5d72e74";
   const slots: unknown[] = [];
@@ -87,8 +87,8 @@ test("continuing history from the inbox sends the saved page, record, AI mode an
     useRef(initial: unknown) { const index = cursor++; return slots[index] ??= { current: initial }; },
     useState(initial: unknown) {
       const index = cursor++;
-      // The page observer has already read the visible inbox in this fixture.
-      slots[index] ??= initial && typeof initial === "object" && "pathname" in initial ? { pathname: "/email", context: {} } : initial;
+      // The page observer has already read Home in this fixture.
+      slots[index] ??= initial && typeof initial === "object" && "pathname" in initial ? { pathname: "/", context: {} } : initial;
       return [slots[index], (value: unknown) => { slots[index] = typeof value === "function" ? value(slots[index]) : value; }];
     },
     useMemo: (read: () => unknown) => read(), useEffect: () => {}, useEffectEvent: (callback: unknown) => callback, useId: () => "composer",
@@ -100,8 +100,8 @@ test("continuing history from the inbox sends the saved page, record, AI mode an
   let finish: () => void = () => {};
   const completed = new Promise<void>((resolve) => { finish = resolve; });
   const controller = {
-    scope: history.conversationScope({ mode: "chat", pathname: "/email", pageContext: {} }),
-    conversation: { id: conversationId, mode: "agent", pathname: "/companies", pageContext: { companyId }, version: 3, title: "Saved analysis" },
+    scope: history.conversationScope({ mode: "chat", pathname: "/", pageContext: {} }),
+    conversation: { id: conversationId, mode: savedMode, pathname: savedMode === "customer" ? `/companies/${companyId}` : "/companies", pageContext: { companyId }, version: 3, title: "Saved analysis" },
     loading: false, browseAll: true,
     ensure: async () => ({ conversationId, requestId: "e5555555-5555-4555-8555-555555555555", version: 3 }),
     accept: () => finish(),
@@ -109,11 +109,12 @@ test("continuing history from the inbox sends the saved page, record, AI mode an
   const dependencies: Record<string, unknown> = {
     ...sessionDependencies,
     react,
-    "next/navigation": { usePathname: () => "/email", useRouter: () => ({}) },
+    "next/navigation": { usePathname: () => "/", useRouter: () => ({}) },
     "motion/react": { motion: ui },
     "@/components/language-provider": { useLanguage: () => ({ language: "en", t: (text: string) => text }) },
     "@/components/use-ai-conversation": { useAiConversation: () => controller },
     "@/components/ui/ai-mascot-input": { AiMascotInput: Composer },
+    "@/components/home-ai-composer": { HomeAiInput: Composer },
     "@/components/ui/ai-image-attachments": { useAiImageAttachments: () => ({ images: [], processing: false, clear: () => {} }) },
     "@/lib/ai/chat-history": history, "@/lib/ai/research-request": researchRequest, "@/lib/ai/research-progress": researchProgress,
     "@/lib/ai/image-input": { chatImageLimitError: () => null },
@@ -127,7 +128,7 @@ test("continuing history from the inbox sends the saved page, record, AI mode an
     exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => name === "react/jsx-runtime" ? require(name) : dependencies[name] ?? ui)(name),
     AbortController, performance, crypto,
     fetch: async (url: string, init: RequestInit) => {
-      assert.equal(url, "/api/ai/assistant");
+      assert.equal(url, savedMode === "customer" ? `/api/companies/${companyId}/chat` : "/api/ai/assistant");
       sent = JSON.parse(init.body as string);
       return Response.json({ output: "New saved reply", history: { conversationId, version: 4 } });
     },
@@ -139,17 +140,19 @@ test("continuing history from the inbox sends the saved page, record, AI mode an
     const element = value as Element;
     return element.type === Composer ? element : findComposer(element.props?.children);
   }
-  function render() { cursor = 0; return exports.WorkspaceAiAssistant({ open: true, onOpenChange: () => {} }); }
+  function render() { cursor = 0; return exports.WorkspaceAiAssistant({ open: true, onOpenChange: () => {}, presentation: "page" }); }
   const composer = findComposer(render());
   assert.ok(composer, "restored Agent mode selects the agent composer");
   composer.props!.onChange!("Continue the saved analysis");
   findComposer(render())!.props!.onSend!();
   await completed;
-  assert.equal(sent.mode, "work");
-  assert.equal(sent.pathname, "/companies");
-  assert.equal(sent.pageLabel, "Companies");
-  assert.equal(sent.pageText, "");
-  assert.deepEqual(sent.pageContext, { companyId });
+  if (savedMode === "agent") {
+    assert.equal(sent.mode, "work");
+    assert.equal(sent.pathname, "/companies");
+    assert.equal(sent.pageLabel, "Companies");
+    assert.equal(sent.pageText, "");
+    assert.deepEqual(sent.pageContext, { companyId });
+  } else assert.deepEqual(Object.keys(sent).sort(), ["history", "language", "messages", "webSearch"]);
   assert.deepEqual(sent.history, { conversationId, requestId: "e5555555-5555-4555-8555-555555555555", version: 3 });
   assert.match(JSON.stringify(render()), /New saved reply/);
 });

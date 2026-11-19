@@ -3,10 +3,12 @@ import { analyticsStart } from "./flow-analytics.ts";
 
 export type EmailPerformance = { sent: number; opens: number; clicks: number; openRate: number | null; clickRate: number | null; skipped: number; waiting: number; review: number };
 export type EmailAiSpend = { recordedUsd: number | null; requests: number; pending: number; untracked: boolean };
-export type EmailPerformanceReport = { asOf: string; from: string; actions: Record<string, EmailPerformance>; costs?: Record<string, EmailAiSpend> };
+export type ActionPerformance = { completed: number; waiting: number; review: number; skipped: number };
+export type EmailPerformanceReport = { asOf: string; from: string; actions: Record<string, EmailPerformance>; costs?: Record<string, EmailAiSpend>; stepActions?: Record<string, ActionPerformance> };
 export type EmailPerformanceLog = { id: string; run_id: string; step_id?: string | null; created_at: string; error?: string | null; result: JsonConfig | null };
-export type EmailPerformanceRun = { id: string; status: string; current_step: number; context: JsonConfig | null };
+export type EmailPerformanceRun = { id: string; status: string; current_step: number; next_run_at?: string | null; context: JsonConfig | null };
 export function emptyEmailPerformance(): EmailPerformance { return { sent: 0, opens: 0, clicks: 0, openRate: null, clickRate: null, skipped: 0, waiting: 0, review: 0 }; }
+export function emptyActionPerformance(): ActionPerformance { return { completed: 0, waiting: 0, review: 0, skipped: 0 }; }
 
 /** Use the durable cursor in the run's expanded branch snapshot, rather than today's root indices. */
 function currentEmailAction(run: EmailPerformanceRun): string | null {
@@ -78,7 +80,54 @@ export function summarizeEmailPerformance(logs: EmailPerformanceLog[], runs: Ema
     const id = stepId(log);
     if (id && log.result?.action === "email_sent" && log.result.aiGenerated === true && !usageRuns.has(key(id, log.run_id))) spend(id).untracked = true;
   }
-  return { from, asOf: now.toISOString(), actions, costs };
+  return { from, asOf: now.toISOString(), actions, costs, stepActions: summarizeActionPerformance(logs, runs, now) };
+}
+
+/** Count each run/action once; retries and later failures cannot undo a recorded success. */
+export function summarizeActionPerformance(logs: EmailPerformanceLog[], runs: EmailPerformanceRun[], now = new Date()): Record<string, ActionPerformance> {
+  const from = Date.parse(analyticsStart("30", now)!);
+  const actions: Record<string, ActionPerformance> = Object.create(null);
+  const row = (id: string) => actions[id] ??= emptyActionPerformance();
+  const key = (id: string, runId: string) => JSON.stringify([id, runId]);
+  const completed = new Set<string>(), skipped = new Set<string>();
+  const successes = new Set(["task_created", "category_changed", "company_updated", "alert_created", "split_evaluated", "condition_evaluated", "stopped"]);
+  const waits = new Map<string, { id: string; runId: string; until: number }>();
+  for (const log of logs) {
+    const time = Date.parse(log.created_at);
+    if (!(time >= from && time <= now.getTime())) continue;
+    const id = typeof log.result?.performanceId === "string" ? log.result.performanceId : typeof log.result?.stepId === "string" ? log.result.stepId : log.step_id;
+    if (!id) continue;
+    const action = log.result?.action, identity = key(id, log.run_id);
+    if (successes.has(String(action))) completed.add(identity);
+    if (action === "action_skipped") skipped.add(identity);
+    if (action === "waiting" && typeof log.result?.nextRunAt === "string") waits.set(identity, { id, runId: log.run_id, until: Date.parse(log.result.nextRunAt) });
+  }
+  const runMap = new Map(runs.map(run => [run.id, run]));
+  const delayed = new Set<string>();
+  for (const [identity, wait] of waits) {
+    if (wait.until <= now.getTime()) completed.add(identity);
+    else if (runMap.get(wait.runId)?.status === "active") {
+      row(wait.id).waiting++;
+      delayed.add(wait.runId);
+    }
+  }
+  for (const identity of completed) { const [id] = JSON.parse(identity); row(id).completed++; }
+  for (const identity of skipped) { if (!completed.has(identity)) { const [id] = JSON.parse(identity); row(id).skipped++; } }
+  for (const run of runMap.values()) {
+    if (!["active", "failed"].includes(run.status) || delayed.has(run.id)) continue;
+    // The runtime advances the cursor before a delay finishes. Its checkpoint
+    // still identifies the waiting action, including waits older than 30 days.
+    const checkpoint = run.context?.executionCheckpoint;
+    if (run.status === "active" && run.next_run_at && Date.parse(run.next_run_at) > now.getTime() && checkpoint && typeof checkpoint === "object" && !Array.isArray(checkpoint) && checkpoint.type === "wait" && typeof checkpoint.stepId === "string") {
+      row(typeof checkpoint.performanceId === "string" ? checkpoint.performanceId : checkpoint.stepId).waiting++;
+      continue;
+    }
+    const id = currentEmailAction(run);
+    if (!id || completed.has(key(id, run.id)) || skipped.has(key(id, run.id))) continue;
+    if (run.status === "failed" || run.context?.executionState === "blocked") row(id).review++;
+    else row(id).waiting++;
+  }
+  return actions;
 }
 
 export function emailAiSpend(value?: EmailAiSpend): string {

@@ -1,11 +1,11 @@
-import { conversationScope, type Conversation } from "./chat-history.ts";
+import { conversationScope, historyExpired, historyPage, type Conversation } from "./chat-history.ts";
 import { HistoryHttpError, requestHistoryJson } from "./history-http.ts";
 
-export type HistoryListQuery = { scope: string; all?: boolean; search: string; archived: boolean };
+export type HistoryListQuery = { scope: string; all?: boolean; page?: boolean; search: string; archived: boolean };
 export type HistoryListSnapshot = { items: Conversation[]; more: boolean; offset: number; unavailable: number; loading: boolean; loaded: boolean; error: Error | null };
 const empty: HistoryListSnapshot = { items: [], more: false, offset: 0, unavailable: 0, loading: false, loaded: false, error: null };
 type Entry = { query: HistoryListQuery; snapshot: HistoryListSnapshot; updatedAt: number; request?: { controller: AbortController; promise: Promise<void> } };
-export const historyListKey = (query: HistoryListQuery) => JSON.stringify([query.all ? "all" : query.scope, query.search, query.archived]);
+export const historyListKey = (query: HistoryListQuery) => JSON.stringify([query.all ? "all" : query.page ? ["page", historyPage(query.scope)] : query.scope, query.search, query.archived]);
 
 /** One mounted workspace's title metadata only. Never shared globally or persisted. */
 export function createHistoryListCache(fetcher: typeof fetch = fetch, now = Date.now) {
@@ -28,6 +28,11 @@ export function createHistoryListCache(fetcher: typeof fetch = fetch, now = Date
   }
   function load(query: HistoryListQuery, force = false, append = false): Promise<void> {
     const value = entry(query);
+    const unexpired = value.snapshot.items.filter(item => !historyExpired(item, now()));
+    if (unexpired.length !== value.snapshot.items.length) {
+      value.snapshot = { ...value.snapshot, items: unexpired };
+      emit(historyListKey(query));
+    }
     if (value.request && !force) return value.request.promise;
     if (!force && !append && value.snapshot.loaded && now() - value.updatedAt < 30_000) return Promise.resolve();
     value.request?.controller.abort();
@@ -37,10 +42,10 @@ export function createHistoryListCache(fetcher: typeof fetch = fetch, now = Date
     value.snapshot = { ...value.snapshot, loading: true, error: null }; emit(key);
     const promise = (async () => {
       try {
-        const data = await requestHistoryJson(`/api/ai/history?${new URLSearchParams({ scope: query.scope, view: query.all ? "all" : "record", titles: "true", search: query.search, archived: String(query.archived), offset: String(offset) })}`, { signal: controller.signal }, fetcher);
+        const data = await requestHistoryJson(`/api/ai/history?${new URLSearchParams({ scope: query.scope, view: query.all ? "all" : query.page ? "page" : "record", titles: "true", search: query.search, archived: String(query.archived), offset: String(offset) })}`, { signal: controller.signal }, fetcher);
         if (controller.signal.aborted) return;
         const items = append ? [...new Map([...value.snapshot.items, ...data.conversations as Conversation[]].map(item => [item.id, item])).values()] : data.conversations as Conversation[];
-        value.snapshot = { items, more: data.hasMore, offset: data.offset, unavailable: (append ? value.snapshot.unavailable : 0) + (data.unavailable ?? 0), loading: false, loaded: true, error: null };
+        value.snapshot = { items: items.filter(item => !historyExpired(item, now())), more: data.hasMore, offset: data.offset, unavailable: (append ? value.snapshot.unavailable : 0) + (data.unavailable ?? 0), loading: false, loaded: true, error: null };
         value.updatedAt = now();
       } catch (error) {
         if (controller.signal.aborted) return;
@@ -67,9 +72,10 @@ export function createHistoryListCache(fetcher: typeof fetch = fetch, now = Date
     },
     load,
     remember(conversation: Conversation) {
-      if (conversation.version < 1) return;
+      if (conversation.version < 1 || historyExpired(conversation, now())) return;
       for (const [key, value] of entries) {
-        if (value.query.search || value.query.archived !== conversation.archived || (!value.query.all && value.query.scope !== conversationScope(conversation))) continue;
+        const matches = value.query.all || (value.query.page ? historyPage(value.query.scope) === conversation.pathname : value.query.scope === conversationScope(conversation));
+        if (value.query.search || value.query.archived !== conversation.archived || !matches) continue;
         const prior = value.snapshot.items.find(item => item.id === conversation.id);
         if (prior && prior.version === conversation.version && prior.updated_at === conversation.updated_at && prior.title === conversation.title) continue;
         value.request?.controller.abort(); value.request = undefined; value.updatedAt = 0;
