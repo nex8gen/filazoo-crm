@@ -5,6 +5,15 @@ import { sessionFetch } from "../lib/supabase/session-fetch.ts";
 const url = "https://test.supabase.co/rest/v1/rpc/read_workspace_session";
 const options = { method: "POST", body: "{}" };
 
+test("subscription-aware authorization is a read-only retry while settlement and checkout are never replayed", async () => {
+  for (const [name, expected] of [["read_subscribed_workspace_session",2],["create_subscription_order",1],["confirm_subscription_payment",1]] as const) {
+    let calls = 0;
+    const request = sessionFetch(async () => { calls++; throw new TypeError("fetch failed"); });
+    await assert.rejects(request(`https://test.supabase.co/rest/v1/rpc/${name}`, options), /fetch failed/);
+    assert.equal(calls, expected);
+  }
+});
+
 test("session reads recover when the connection drops after response headers", async () => {
   let calls = 0;
   const request = sessionFetch(async () => {

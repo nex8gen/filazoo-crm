@@ -87,7 +87,7 @@ test("verification rate limits and provider outages offer safe retry guidance", 
 test("verification supports a restored session without pending cookies and rejects external continuations", async () => {
   const f = fixture({ pending: null });
   f.form.set("email", " ALEX@example.test "); f.form.set("next", "//attacker.test");
-  await assert.rejects(f.verify(), /redirect:\/workspaces\/new/);
+  await assert.rejects(f.verify(), /redirect:\/subscribe/);
   assert.equal(f.calls[0].email, "alex@example.test");
 });
 

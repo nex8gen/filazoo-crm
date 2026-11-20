@@ -1,0 +1,25 @@
+{
+  "releasedAt": "2026-11-20",
+  "version": "rules-first-v1",
+  "deploymentId": "dpl_2Xx9M9ywEAAuUsz5h9j21Y9bMQbV",
+  "productionUrl": "https://crm.filazoosupply.com",
+  "baseCommit": "cdc29d5ec31cf3b29eeccbdf3caa5c05416b3f7e",
+  "unrelatedWorkingChangesExcluded": true,
+  "migrations": ["20261120062853_customer_tag_rules_and_queue", "20261120063535_customer_tag_freshness"],
+  "validation": {
+    "focusedTests": 59,
+    "fullReleaseSuite": {"passed": 2606, "failed": 0},
+    "finalRouteTests": {"passed": 6, "failed": 0},
+    "lint": "passed",
+    "typescript": "passed",
+    "localProductionBuild": "passed",
+    "vercelProductionBuild": "passed",
+    "rollbackDatabaseIntegration": "passed",
+    "securityAdvisors": "No new findings; one pre-existing workspace_invitations INFO notice",
+    "bundleAudit": {"companiesListGzipBytes": 410542, "companiesListBudget": 420000, "otherBudgetFailures": 5},
+    "customDomain": {"deploymentState": "READY", "unauthenticatedCompaniesPage": "Redirects to sign-in; HTTP 200"}
+  },
+  "legacyWorkspaceReconciliation": {"relevantHeaderFacts": 940, "companiesWithContactedFact": 88, "companiesWithLaterBuyerReplyFact": 5, "aiCallsForHeaderBackfill": 0},
+  "realCompanySmoke": {"company": "Albert", "processedRevision": 5, "processingStatus": "current", "communicationTag": "Contacted — waiting for customer", "analyzed": 1, "failed": 0, "model": "anthropic/claude-haiku-5.5", "providerCalls": 1, "escalated": false, "inputTokens": 1973, "outputTokens": 175, "unchangedRerunProviderCalls": 0},
+  "limitations": ["Historical semantic jobs remain queued for bounded processing", "All mailbox sources must load before combined-history interpretation", "Oversized or missing history requires review or recovery", "Small synthetic benchmark does not measure production accuracy", "Zero failures cannot be guaranteed"]
+}

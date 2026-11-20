@@ -8,8 +8,11 @@ export async function GET(request: NextRequest) {
 
   if (code) {
     const supabase = await createClient();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) return NextResponse.redirect(new URL(next, request.url));
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+    if (!error && data.user) {
+      if (!data.user.email || !data.user.email_confirmed_at) return NextResponse.redirect(new URL(`/auth/email?next=${encodeURIComponent(next)}`, request.url));
+      return NextResponse.redirect(new URL(next, request.url));
+    }
   }
 
   return NextResponse.redirect(new URL("/auth/error?reason=invalid-link", request.url));

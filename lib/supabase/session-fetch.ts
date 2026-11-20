@@ -31,7 +31,7 @@ export function sessionFetch(fetcher: typeof fetch = fetch): typeof fetch {
     const url = new URL(input instanceof Request ? input.url : String(input));
     const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
     const read = method === "POST" && typeof init?.body === "string"
-      && ["/rest/v1/rpc/read_workspace_session", "/rest/v1/rpc/read_crm_session"].includes(url.pathname);
+      && ["/rest/v1/rpc/read_subscribed_workspace_session", "/rest/v1/rpc/read_workspace_session", "/rest/v1/rpc/read_crm_session"].includes(url.pathname);
     if (read) return readSession(input, init!, fetcher);
     if (url.pathname.startsWith("/rest/v1/") && ["GET", "HEAD"].includes(method)) return fetchRead(input, init, fetcher);
     return fetcher(input, init);

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import * as customerTags from "../lib/customer-tags.ts";
+import * as customerTagRules from "../lib/customer-tag-rules.ts";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
@@ -50,6 +51,7 @@ function load(options: { demo?: boolean; denied?: boolean; failure?: boolean; ro
   } };
   const deps: Record<string, unknown> = {
     "../customer-tags.ts": customerTags,
+    "../customer-tag-rules.ts": customerTagRules,
     "../auth.ts": { requireWorkspaceMember: async () => { if (options.denied) throw new Error("Unauthorized"); authorized = true; return { id: "owner-1", role: options.role ?? "admin" }; } },
     "../env.ts": { env: { authRequired: true }, hasSupabaseConfig: () => !options.demo },
     "../supabase/admin.ts": { createSupabaseAdmin: () => client },

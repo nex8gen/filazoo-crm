@@ -1,6 +1,10 @@
 export const companyTabs = ["profile", "email", "purchase-orders", "analyse", "customer-portal", "history"] as const;
 export type CompanyTab = typeof companyTabs[number];
 
+export function isCompanyProfilePath(pathname: string | null) {
+  return /^\/companies\/[^/]+\/?$/.test(pathname ?? "");
+}
+
 export function companyTab(value: unknown): CompanyTab {
   if (value === "invoices") return "purchase-orders";
   return typeof value === "string" && companyTabs.some(tab => tab === value) ? value as CompanyTab : "profile";

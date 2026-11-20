@@ -11,7 +11,7 @@ export async function CompanyEmails({ company, viewer, composeTo }: { company: C
     listCatalogs().catch(() => ({ catalogs: [] })),
   ]);
 
-  return <div className="space-y-3">
+  return <div className="company-email-section flex min-h-0 flex-col gap-3">
     {!company.emails.some((email) => email.trim()) ? <p className="text-sm text-muted-foreground">Add a contact email in the company profile to see this customer&apos;s messages.</p> : null}
     <EmailInboxWorkspace
       mailboxes={data.mailboxes}

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
+import { isCompanyProfilePath } from "../lib/company-tabs.ts";
 
 type Element = { props?: Record<string, unknown> & { children?: Element | Element[] } };
 
@@ -19,7 +20,7 @@ function frame(tree: Element): Element | undefined {
 
 test("Home backdrop follows the active route even when cached Home children remain mounted", () => {
   let pathname = "/";
-  let companyPopupOpen = false;
+  let companySegment: string | null = null;
   let segments: string[] = [];
   const noop = () => null;
   const react = {
@@ -32,10 +33,11 @@ test("Home backdrop follows the active route even when cached Home children rema
     react, "react/jsx-runtime": { jsx, jsxs: jsx }, "next/dynamic": { default: noop },
     "next/navigation": {
       usePathname: () => pathname, useRouter: () => ({}),
-      useSelectedLayoutSegment: () => companyPopupOpen ? "(.)companies" : null,
+      useSelectedLayoutSegment: () => companySegment,
       useSelectedLayoutSegments: () => segments,
     },
     "@/lib/navigation": { navigation: [] },
+    "@/lib/company-tabs": { isCompanyProfilePath },
     "@/lib/standalone-routes": { isStandaloneRoute: () => false },
     "@/components/workspace-sidebar": { useWorkspaceSidebar: () => ({ expanded: false, isDesktop: true }) },
   };
@@ -53,10 +55,17 @@ test("Home backdrop follows the active route even when cached Home children rema
     assert.equal(page.props?.["data-home"], path === "/" ? true : undefined, path);
   }
   pathname = "/companies/customer-id";
-  companyPopupOpen = true;
+  companySegment = "(.)companies";
   for (const background of [[], ["companies"]]) {
     segments = background;
     assert.equal(frame(exports.AppShell({ children: cachedHome }))?.props?.["data-home"], background.length ? undefined : true,
       "intercepted profiles must use the originating page's backdrop");
   }
+  companySegment = "companies";
+  segments = ["companies", "customer-id"];
+  assert.equal(frame(exports.AppShell({ children: cachedHome }))?.props?.["data-home"], undefined,
+    "reloaded profiles must use the company list's backdrop");
+  pathname = "/";
+  assert.equal(frame(exports.AppShell({ children: cachedHome }))?.props?.["data-home"], true,
+    "a retained company segment cannot override the actual page after closing");
 });

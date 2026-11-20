@@ -4,12 +4,13 @@
   background: rgb(0 0 0 / 8%);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
+  transition: opacity 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .company-profile-sheet[data-slot="sheet-content"][data-side="right"] {
   inset: 0 0 0 auto;
   z-index: 70;
-  width: min(1280px, calc(100vw - 64px));
+  width: min(1120px, calc(100vw - 64px));
   max-width: none;
   height: 100vh;
   height: 100dvh;
@@ -18,7 +19,7 @@
   overflow: hidden;
   border-radius: 20px 0 0 20px;
   border-left: 1px solid var(--border);
-  background: var(--background);
+  background: var(--workspace-frame);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   box-shadow: -12px 0 48px rgb(0 0 0 / 10%);
@@ -28,9 +29,99 @@
   transition: none;
 }
 
-.company-profile-header[data-slot="sheet-header"] { flex-shrink: 0; padding: 20px 60px 18px 28px; border-bottom: 1px solid var(--border); }
-.company-profile-scroll { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
-.company-profile-content { width: 100%; max-width: 1680px; margin-inline: auto; padding: 0 28px max(28px, env(safe-area-inset-bottom)); }
+.company-profile-scroll { display: flex; flex: 1; min-height: 0; flex-direction: column; overflow: hidden; }
+.company-profile-content {
+  --company-profile-padding: 0.375rem;
+  container: company-profile / inline-size;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  width: 100%;
+  padding: var(--company-profile-padding) var(--company-profile-padding) max(var(--company-profile-padding), env(safe-area-inset-bottom));
+}
+.company-profile-sheet > [data-slot="sheet-close"] { z-index: 40; }
+.company-profile-content .company-workspace-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  margin-top: calc(-1 * var(--company-profile-padding));
+  margin-inline: calc(-1 * var(--company-profile-padding));
+  padding: 12px var(--company-profile-padding) 0;
+  border: 0;
+  background: var(--workspace-frame);
+}
+.company-profile-content .company-workspace-toolbar {
+  order: 1;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 0 44px 0 8px;
+}
+.company-profile-content .company-workspace-toolbar > div:first-child { flex: 1 1 240px; }
+.company-profile-content .company-workspace-title {
+  max-width: min(48vw, 440px);
+  font-size: 22px;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+.company-profile-content .company-workspace-navigation { order: 2; width: 100%; padding: 0; }
+.company-profile-content .company-workspace-tabs[data-slot="tabs-list"] {
+  height: 46px;
+  gap: 4px;
+  padding: 5px 0 0;
+}
+.company-profile-content .company-workspace-tabs [data-slot="tabs-trigger"] { padding-inline: 10px; }
+.company-profile-content .company-workspace-tab-label { display: inline; }
+/* The frame padding stays outside every tab's scrolling area. */
+.company-profile-content > [data-ai-company-id] {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+.company-profile-content .company-workspace { flex: 1; min-height: 0; }
+.company-profile-content .company-workspace > .company-workspace-header { flex-shrink: 0; }
+.company-profile-content .company-workspace > [data-slot="tabs-content"] {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Keep scrolling without a visible bar or extra space on the right. */
+  scrollbar-width: none;
+  scrollbar-gutter: auto;
+}
+.company-profile-content .company-workspace > [data-slot="tabs-content"]::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+.company-profile-content .company-workspace[data-company-tab="email"] > .company-workspace-email {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+.company-profile-content .company-email-section { flex: 1; height: auto; }
+.company-profile-content .company-email-workspace { flex: 1; height: auto; min-height: 0; }
+/* Let short lists and empty states use the space above their footer. */
+.company-profile-content .po-register-company { min-height: 100%; }
+.company-profile-content .po-register-company .po-register-content { display: flex; flex: 1; flex-direction: column; }
+.company-profile-content .po-register-company .crm-table-viewport { flex: 1; }
+.company-profile-content .po-register-company .crm-table-viewport:has(> .po-register-empty) { display: flex; flex-direction: column; }
+.company-profile-content .po-register-company .po-register-empty { flex: 1; min-height: 220px; }
+.company-profile-content .po-register-company .crm-table-pagination { flex-shrink: 0; margin-top: auto; }
+.company-profile-content :is(.company-portal-workspace, .company-timeline)[data-empty="true"] {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  gap: 20px;
+}
+.company-profile-content :is(.company-portal-workspace, .company-timeline)[data-empty="true"] > * { margin-block: 0; }
+.company-profile-content .company-portal-empty { display: flex; flex: 1; min-height: 240px; flex-direction: column; align-items: center; justify-content: center; }
+.company-profile-content .company-timeline[data-empty="true"] > .company-timeline-events { display: flex; flex: 1; flex-direction: column; padding-top: 0; }
+.company-profile-content .company-timeline-empty { flex: 1; }
+.company-profile-sheet [data-slot="card"] { border: 0; background: var(--card); box-shadow: none; }
 .company-profile-sheet [data-company-back] { display: none; }
 
 /* Profile controls portal outside the sheet; keep their menus and dialogs above it. */
@@ -38,8 +129,19 @@ body:has(.company-profile-sheet) :is([data-slot="dialog-overlay"], [data-slot="s
 body:has(.company-profile-sheet) :is([data-slot="dialog-content"], [data-slot="sheet-content"]):not(.company-profile-sheet) { z-index: 80; }
 body:has(.company-profile-sheet) :has(> :is([data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="select-content"], [data-slot="popover-content"], [data-slot="tooltip-content"])) { z-index: 81; }
 
+@container company-profile (max-width: 680px) {
+  .company-profile-content .company-workspace-tab-label { display: none; }
+  .company-profile-content .company-workspace-title { font-size: 20px; }
+}
+
+@media (min-width: 1024px) {
+  .company-profile-content { --company-profile-padding: 0.5rem; }
+}
+
 @media (max-width: 640px) {
   .company-profile-sheet[data-slot="sheet-content"][data-side="right"] { width: 100%; border-radius: 0; border-left: 0; }
-  .company-profile-header[data-slot="sheet-header"] { padding: 18px 56px 16px 16px; }
-  .company-profile-content { padding-inline: 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .company-profile-overlay[data-slot="sheet-overlay"] { transition: none; }
 }

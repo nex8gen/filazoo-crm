@@ -1,0 +1,195 @@
+{
+  "checkedAt": "2026-11-20T14:40:19+08:00",
+  "scope": "Read-only unit-cost analysis for filazoo-crm; costs support subscription pricing, not a final subscription offer.",
+  "window": {
+    "from": "2026-11-01T00:00:00Z",
+    "to": "2026-11-20T06:40:19Z",
+    "partialMonth": true
+  },
+  "currency": {
+    "source": "https://wise.com/gb/currency-converter/usd-to-cny-rate/history/20-11-2026",
+    "usdToCny": 6.692,
+    "meaning": "Reference conversion for planning, not card settlement or historical FX."
+  },
+  "ai": {
+    "usd": 11.97715979,
+    "rmb": 80.15115331468,
+    "calls": 7362,
+    "input": 30407631,
+    "output": 1559228,
+    "usdPer1000": 1.6268894036946482,
+    "rmbPer1000": 10.887143889524586,
+    "source": "Vercel AI Gateway usage connector, project prj_8FpTI4sEU5vUDrochgFpT3IjCXCn",
+    "byModel": [
+      {
+        "dimensions": {
+          "aiModel": "google/gemini-2.5-flash-lite"
+        },
+        "values": {
+          "cost": 7.94367693,
+          "count": 6770,
+          "input_tokens": 12206056,
+          "output_tokens": 1399709
+        }
+      },
+      {
+        "dimensions": {
+          "aiModel": "google/gemini-3.5-flash-lite"
+        },
+        "values": {
+          "cost": 3.02824766,
+          "count": 333,
+          "input_tokens": 9174793,
+          "output_tokens": 67870
+        }
+      },
+      {
+        "dimensions": {
+          "aiModel": "anthropic/claude-haiku-5.5"
+        },
+        "values": {
+          "cost": 1.0052352,
+          "count": 259,
+          "input_tokens": 9026782,
+          "output_tokens": 91649
+        }
+      }
+    ],
+    "teamCrossCheck": [
+      {
+        "dimensions": {
+          "projectId": "prj_8FpTI4sEU5vUDrochgFpT3IjCXCn"
+        },
+        "values": {
+          "cost": 11.97715979,
+          "count": 7362,
+          "input_tokens": 30407631,
+          "output_tokens": 1559228
+        }
+      }
+    ],
+    "limitation": "Billed provider-call cost reflects the observed model/tool mix; it is not a fixed price per chat message, customer action, or user. A task may make multiple calls."
+  },
+  "hosting": {
+    "billed": 54.17790461867,
+    "effective": 74.566993518611,
+    "credits": 20.389088899941,
+    "records": 15960,
+    "billedRmb": 362.5585377081396,
+    "effectiveRmb": 499.0023206265448,
+    "source": "Vercel FOCUS billing charges, four adjacent successful windows; cross-checked with vercel usage --group-by project --json",
+    "rawCliEvidence": "C:/Users/Administrator/AppData/Local/Temp/filazoo-cost-usage-20261120.json",
+    "meteredCategoriesUsd": {
+      "observability": 37.9502136,
+      "proLicenseAllocated": 12.666666666666663,
+      "memory": 11.411870489486217,
+      "cpu": 9.151951028333333,
+      "builds": 1.764
+    },
+    "limitations": [
+      "The billing-charge export uses reported service-day boundaries from 2026-10-31T07:00:00Z through 2026-11-19T08:00:00Z; periods differ slightly from the exact AI window.",
+      "These are team-wide billing records and include a negligible USD 0.000117 from an older shopify-agency project.",
+      "Effective/resource cost differs from billed cost because credits/adjustments apply. Neither is a final settled bank invoice."
+    ]
+  },
+  "database": {
+    "bytes": 570095283,
+    "decimalGB": 0.570095283,
+    "storageBytes": 128465373,
+    "proBaseRmb": 167.3,
+    "confirmedOrganizationPlan": "pro",
+    "source": "Supabase get_organization plus read-only SQL against project hukbmbicpdmhoxpkvljz",
+    "pricingSource": "https://supabase.com/pricing",
+    "baseMinimumUsdMonthly": 25,
+    "includes": {
+      "databaseGB": 8,
+      "fileStorageGB": 100,
+      "monthlyActiveUsers": 100000,
+      "egressGB": 250
+    },
+    "overageUsd": {
+      "databaseGBMonth": 0.125,
+      "fileGBMonth": 0.0213,
+      "egressGB": 0.09,
+      "authMonthlyActiveUser": 0.00325
+    },
+    "limitation": "The exact Supabase invoice, compute instance size, egress and add-ons were not available. USD 25 is the published base/minimum, not a verified final invoice."
+  },
+  "attribution": {
+    "currentRegisteredAccounts": 8,
+    "chatUsageLogCalls": 484,
+    "chatUsageLogCallsWithoutCost": 421,
+    "chatUsageLogUsersIncludingDeleted": 7,
+    "budgetLedgerLastRecord": "2026-11-09T02:13:01.61356Z",
+    "limitation": "User-level tables have different coverage from provider billing. Do not divide total provider spend by currently registered accounts and label it actual customer unit cost."
+  },
+  "calculation": {
+    "aiCnyPer1000ProviderCalls": 10.887143889524586,
+    "minimumSharedPlatformCnyPerMonth": 301.14,
+    "illustration100Users1000CallsEach": {
+      "databaseBaseShare": 1.673,
+      "vercelBaseShare": 1.3384,
+      "ai": 10.887143889524586,
+      "subtotalBeforeHostingOveragesOtherCosts": 13.898543889524586
+    },
+    "formula": "user AI provider spend + allocated shared database/hosting costs + incremental compute/storage/egress + payment fees + allocated external services/support"
+  },
+  "unknowns": [
+    "Supabase exact invoice and compute size",
+    "Mailbox subscription and sender-service charges",
+    "Mail-sync worker compute outside Vercel",
+    "Domain renewal",
+    "SMS/WhatsApp usage and subscription charges",
+    "Alipay merchant transaction rate (not yet configured)",
+    "Customer support and ongoing development labor"
+  ],
+  "sources": [
+    "https://vercel.com/pricing",
+    "https://vercel.com/docs/ai-gateway/pricing",
+    "https://ai-gateway.vercel.sh/v1/models",
+    "https://supabase.com/pricing"
+  ],
+  "currentPublishedTokenRates": {
+    "source": "https://ai-gateway.vercel.sh/v1/models",
+    "checkedAt": "2026-11-20",
+    "units": "USD per one million tokens; base context tiers; tool charges extra",
+    "models": [
+      {
+        "model": "google/gemini-2.5-flash-lite",
+        "input": 0.1,
+        "output": 0.4,
+        "cachedInput": 0.01
+      },
+      {
+        "model": "anthropic/claude-haiku-5.5",
+        "input": 0.1,
+        "output": 0.5,
+        "cachedInput": 0.01,
+        "longContextThresholdInputTokens": 100001,
+        "longContextInput": 0.5,
+        "longContextOutput": 2.5
+      },
+      {
+        "model": "google/gemini-3.5-flash-lite",
+        "input": 0.3,
+        "output": 2.5,
+        "cachedInput": 0.03
+      },
+      {
+        "model": "openai/gpt-4.1-mini",
+        "input": 0.4,
+        "output": 1.6,
+        "cachedInput": 0.1
+      },
+      {
+        "model": "openai/gpt-6.2-sol",
+        "input": 2,
+        "output": 10,
+        "cachedInput": 0.1,
+        "longContextThresholdInputTokens": 272001,
+        "longContextInput": 4,
+        "longContextOutput": 20
+      }
+    ]
+  }
+}

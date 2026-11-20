@@ -3,8 +3,8 @@
 import { Activity, type ReactNode, useOptimistic, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Building2, ChartNoAxesCombined, ClipboardList, History, Mail, MessageCircle } from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CompanyBillingSkeleton } from "@/components/workspace-skeletons";
+import { Tabs, TabsContent, TabsIndicator, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { CompanySectionSkeleton } from "@/components/company-section-skeleton";
 import { companyTab, companyTabHref, type CompanyTab } from "@/lib/company-tabs";
 import "./company-workspace.css";
 
@@ -18,6 +18,7 @@ const sections = [
 ] as const;
 
 type Panels = Partial<Record<CompanyTab, ReactNode>>;
+const detailTabs: readonly CompanyTab[] = ["analyse", "customer-portal", "history"];
 
 /** Server sends only the selected section. Visited panels stay mounted for drafts. */
 export function CompanyWorkspace({ companyId, initialTab, toolbar, profile, section }: {
@@ -45,18 +46,19 @@ export function CompanyWorkspace({ companyId, initialTab, toolbar, profile, sect
     });
   }
 
-  return <Tabs value={activeTab} onValueChange={select} className="min-w-0 gap-6">
-    <div className="sticky top-0 z-30 flex min-w-0 flex-col gap-3 border-b bg-background py-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-5">
+  return <Tabs value={activeTab} onValueChange={select} data-company-tab={activeTab} className="company-workspace min-w-0 gap-6">
+    <div className="company-workspace-header sticky top-0 z-30 flex min-w-0 flex-col gap-3 border-b bg-background py-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-5">
       <div className="company-workspace-navigation order-2 min-w-0 pb-1 sm:order-1">
         <TabsList variant="line" aria-label="Customer profile sections" className="company-workspace-tabs">
           {sections.map(({ value, label, icon: Icon }) => <TabsTrigger key={value} id={value === "profile" || value === "history" ? `company-${value}-tab` : undefined} value={value} aria-label={label} title={label} className="gap-2 px-3"><Icon aria-hidden="true" /><span className="company-workspace-tab-label">{label}</span></TabsTrigger>)}
+          <TabsIndicator className="company-workspace-tab-background" aria-hidden="true" renderBeforeHydration />
         </TabsList>
       </div>
       {toolbar}
     </div>
     <TabsContent value="profile" keepMounted><Activity mode={activeTab === "profile" ? "visible" : "hidden"}>{profile}</Activity></TabsContent>
-    {sections.filter(({ value }) => value !== "profile").map(({ value }) => <TabsContent key={value} value={value} keepMounted aria-busy={pending && activeTab === value}>
-      <Activity mode={activeTab === value ? "visible" : "hidden"}>{panels[value] ?? (activeTab === value ? <CompanyBillingSkeleton /> : null)}</Activity>
+    {sections.filter(({ value }) => value !== "profile").map(({ value }) => <TabsContent key={value} value={value} keepMounted className={value === "email" ? "company-workspace-email" : detailTabs.includes(value) ? "company-workspace-detail" : undefined} aria-busy={pending && activeTab === value}>
+      <Activity mode={activeTab === value ? "visible" : "hidden"}>{panels[value] ?? (activeTab === value ? <CompanySectionSkeleton tab={value} /> : null)}</Activity>
     </TabsContent>)}
   </Tabs>;
 }

@@ -38,6 +38,7 @@ export function CompaniesSkeleton() {
   return <LoadingRegion label="Loading companies" className="flex min-w-0 flex-col pb-8">
     <HeaderSkeleton />
     <div className="flex min-w-0 flex-col gap-6">
+      <div className="-mb-3 flex h-28 items-center gap-5 overflow-hidden rounded-xl border bg-card px-4" aria-hidden="true"><Skeleton className="h-8 w-24 shrink-0" />{Array.from({ length: 6 }, (_, index) => <div key={index} className="min-w-36 flex-1 space-y-3"><Skeleton className="h-3 w-24" /><Skeleton className="h-6 w-16" /></div>)}</div>
       <TableSkeleton  />
     </div>
   </LoadingRegion>;

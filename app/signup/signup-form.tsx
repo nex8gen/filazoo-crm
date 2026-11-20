@@ -10,7 +10,7 @@ import { AuthSocialButtons } from "@/components/auth-social-buttons";
 import type { AuthProvider } from "@/lib/auth-providers";
 import { signup } from "./actions";
 
-export function SignupForm({ next = "/workspaces/new", providers = [] }: { next?: string; providers?: AuthProvider[] }) {
+export function SignupForm({ next = "/subscribe", providers = [] }: { next?: string; providers?: AuthProvider[] }) {
   const [state, action, pending] = useActionState(signup, undefined);
   return <><AuthHeading title="Create an account">{next.startsWith("/join/") ? "Join your team and keep everything connected." : "Your customers. Your conversations. Your next chapter."}</AuthHeading>
     <AuthSocialButtons providers={providers} next={next} signup />

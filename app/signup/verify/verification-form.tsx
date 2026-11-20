@@ -7,7 +7,7 @@ import { resendVerification } from "../actions";
 import { AuthField, authButtonClass } from "@/components/auth-fields";
 import { requestVerification, verifySignupCode, type VerificationState } from "./actions";
 
-export function VerificationForm({ email, next = "/workspaces/new" }: { email?: string; next?: string }) {
+export function VerificationForm({ email, next = "/subscribe" }: { email?: string; next?: string }) {
   const [cooldown, setCooldown] = useState(email ? 60 : 0);
   const coolingDown = cooldown > 0;
   const [state, action, pending] = useActionState(verifySignupCode, undefined);

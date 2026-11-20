@@ -1,78 +1,72 @@
 "use client";
-import { NotificationToast } from "@/components/ui/notification-toast";
 
-
-import { useActionState, useState, useSyncExternalStore } from "react";
-import { Clock3, Save, Workflow } from "lucide-react";
-import { updateCompany, type CrmActionState } from "@/app/crm-actions";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { DatePicker } from "@/components/ui/date-picker";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import Link from "next/link";
+import { Building2, Copy, Mail, NotebookPen, UserRound } from "lucide-react";
+import { toast } from "sonner";
 import { CompanyCommerceFields } from "@/components/company-commerce-fields";
-import { followupInstant, followupLocalTime } from "@/lib/company-followup";
-import { type CompanyDetails as CompanyDetailsType } from "@/lib/types";
-
-const subscribeToHydration = () => () => {};
-const clientSnapshot = () => true;
-const serverSnapshot = () => false;
-
-function Field({ label, id, children, hint }: { label: string; id: string; children: React.ReactNode; hint?: string }) {
-  return <div className="space-y-2"><Label htmlFor={id}>{label}</Label>{children}{hint ? <p className="text-xs leading-5 text-muted-foreground">{hint}</p> : null}</div>;
-}
+import { CompanyFollowupBar } from "@/components/company-followup-bar";
+import { CompanyInlineField, CompanyProfileSection } from "@/components/company-profile-fields";
+import { Button, buttonVariants } from "@/components/ui/button";
+import type { CompanyDetails as CompanyDetailsType } from "@/lib/types";
+import "./company-details.css";
 
 export function CompanyDetails({ details, canWrite }: { details: CompanyDetailsType; canWrite: boolean }) {
   const company = details.company;
-  const updateWithId = updateCompany.bind(null, company.id);
-  const [state, action, pending] = useActionState<CrmActionState, FormData>(updateWithId, undefined);
-  const clientReady = useSyncExternalStore(subscribeToHydration, clientSnapshot, serverSnapshot);
-  const [editedFollowup, setNextFollowup] = useState<string | null>(null);
-  const nextFollowup = editedFollowup ?? (clientReady ? followupLocalTime(company.nextFollowupAt) : "");
+  const contactName = company.contact === "No contact yet" ? "" : company.contact;
+  const contactRole = company.contactRole === "Role not confirmed" ? "" : company.contactRole;
+  const summary = company.summary === "This company has not been profiled yet." ? "" : company.summary;
+  const initials = contactName.trim().split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join("").toUpperCase();
+  const fieldProps = { companyId: company.id, canWrite };
 
-  return <div className="space-y-6">
-    <form action={action}>
-      <input type="hidden" name="nextFollowupAt" value={editedFollowup === null ? company.nextFollowupAt || "" : followupInstant(editedFollowup)} />
-      <fieldset disabled={!canWrite || pending} className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,.65fr)] disabled:opacity-70">
-        <div className="space-y-6">
-          <Card>
-            <CardHeader><CardTitle>Company & primary contact</CardTitle><CardDescription>Business information and the person to contact about orders.</CardDescription></CardHeader>
-            <CardContent className="grid gap-4 sm:grid-cols-2">
-              <Field label="Company name" id="company-name"><Input id="company-name" name="name" defaultValue={company.name} required /></Field>
-              <Field label="Website" id="company-website"><Input id="company-website" name="website" defaultValue={company.website} inputMode="url" /></Field>
-              <Field label="Country" id="company-country"><Input id="company-country" name="country" defaultValue={company.country === "Unknown" ? "" : company.country} required /></Field>
-              <Field label="City" id="company-city"><Input id="company-city" name="city" defaultValue={company.city} /></Field>
-              <div className="sm:col-span-2"><Field label="Business segment" id="company-segment"><Input id="company-segment" name="segment" defaultValue={company.segment} required /></Field></div>
-              <Field label="Primary contact" id="contact-name"><Input id="contact-name" name="contactName" defaultValue={company.contact === "No contact yet" ? "" : company.contact} /></Field>
-              <Field label="Job title" id="contact-role"><Input id="contact-role" name="contactRole" defaultValue={company.contactRole === "Role not confirmed" ? "" : company.contactRole} /></Field>
-              <div className="sm:col-span-2"><Field label="Business email" id="contact-email" hint="Incoming and outgoing messages using this email are matched to the company timeline."><Input id="contact-email" name="contactEmail" type="email" defaultValue={company.email} /></Field></div>
-            </CardContent>
-          </Card>
+  async function copyEmail() {
+    try {
+      await navigator.clipboard.writeText(company.email);
+      toast.success("Email copied.");
+    } catch {
+      toast.error("Could not copy the email. Please select and copy it manually.");
+    }
+  }
 
-          <CompanyCommerceFields profile={details.commerce} />
-          <Card>
-            <CardHeader><CardTitle>Account notes</CardTitle><CardDescription>Keep useful customer preferences and profile notes together.</CardDescription></CardHeader>
-            <CardContent className="grid gap-4 sm:grid-cols-2">
-              <details className="sm:col-span-2 rounded-lg border p-3"><summary className="cursor-pointer text-sm font-medium">Optional qualification</summary><div className="mt-4 grid gap-4 sm:grid-cols-2">              <Field label="Fit score (1–10)" id="company-fit"><Input id="company-fit" name="fitScore" type="number" min="1" max="10" defaultValue={company.fitScore || ""} /></Field>
-              <div className="sm:col-span-2"><Field label="Product interests (comma separated)" id="company-tags"><Input id="company-tags" name="tags" defaultValue={company.tags.join(", ")} /></Field></div>
-</div></details>
-              <div className="sm:col-span-2"><Field label="Profile notes" id="company-summary"><Textarea id="company-summary" name="summary" className="min-h-28" defaultValue={company.summary === "This company has not been profiled yet." ? "" : company.summary} placeholder="Add a durable summary of customer needs, preferences, objections, and buying intent." /></Field></div>
-            </CardContent>
-          </Card>
-
-          <div className="flex items-center justify-between gap-4"><div>{state?.error && <NotificationToast>{state.error}</NotificationToast>}{state?.success && <NotificationToast tone="success">{state.success}</NotificationToast>}</div><Button type="submit" disabled={!canWrite || pending}><Save />{pending ? "Saving…" : "Save company profile"}</Button></div>
+  return <div className="company-details-overview">
+    <div className="company-overview-surface">
+      <CompanyFollowupBar {...fieldProps} nextFollowupAt={company.nextFollowupAt} />
+      <section className="company-overview-section" aria-labelledby="company-details-title">
+        <h3 id="company-details-title" className="company-overview-heading"><Building2 aria-hidden="true" />Company details</h3>
+        <div className="company-properties">
+          <CompanyInlineField {...fieldProps} name="name" label="Company name" value={company.name} important />
+          <CompanyInlineField {...fieldProps} name="website" label="Website" value={company.website} placeholder="+ Add website" />
+          <CompanyInlineField {...fieldProps} name="country" label="Country" value={company.country === "Unknown" ? "" : company.country} important />
+          <CompanyInlineField {...fieldProps} name="city" label="City" value={company.city} />
+          <CompanyInlineField {...fieldProps} name="segment" label="Business segment" value={company.segment} className="company-property-wide" important />
         </div>
+      </section>
 
-        <div className="space-y-6">
-          <Card>
-            <CardHeader><CardTitle className="flex items-center gap-2"><Clock3 className="size-4" />Follow-up schedule</CardTitle><CardDescription>Set the confirmed follow-up date here.</CardDescription></CardHeader>
-            <CardContent className="space-y-4"><Field label="Scheduled date and time" id="company-followup"><DatePicker id="company-followup" includeTime value={nextFollowup} onValueChange={setNextFollowup} /></Field><div className="flex gap-2 rounded-lg border bg-background/80 p-3 text-xs leading-5 text-muted-foreground"><Workflow className="mt-0.5 size-4 shrink-0 text-primary" /><span>A saved follow-up date creates a reminder for the account owner.</span></div></CardContent>
-          </Card>
-
+      <section className="company-overview-section" aria-labelledby="company-contact-title">
+        <h3 id="company-contact-title" className="company-overview-heading"><UserRound aria-hidden="true" />Primary contact</h3>
+        <div className="company-contact-layout">
+          <div className="company-contact-person">
+            <span className="company-contact-initials" aria-hidden="true">{initials || <UserRound />}</span>
+            <div className="company-contact-identity">
+              <CompanyInlineField {...fieldProps} name="contactName" label="Primary contact" value={contactName} placeholder="+ Add contact name" hideLabel className="company-contact-name" />
+              <CompanyInlineField {...fieldProps} name="contactRole" label="Job title" value={contactRole} placeholder="+ Add job title" hideLabel className="company-contact-role" />
+            </div>
+          </div>
+          <div className="company-contact-email">
+            <CompanyInlineField {...fieldProps} name="contactEmail" label="Business email" value={company.email} placeholder="+ Add email" important />
+            {company.email ? <div className="company-contact-actions">
+              <Button type="button" variant="outline" size="icon-xs" aria-label="Copy business email" title="Copy email" onClick={copyEmail}><Copy /></Button>
+              {canWrite ? <Link href={`/companies/${encodeURIComponent(company.id)}?tab=email&compose=1`} className={buttonVariants({ variant: "outline", size: "icon-xs" })} aria-label="Compose email to primary contact" title="Compose email"><Mail /></Link> : null}
+            </div> : null}
+          </div>
         </div>
-      </fieldset>
-    </form>
-
+      </section>
+    </div>
+    <CompanyCommerceFields companyId={company.id} canWrite={canWrite} profile={details.commerce} />
+    <CompanyProfileSection title="Account notes" icon={NotebookPen}>
+      <CompanyInlineField {...fieldProps} name="summary" label="Profile notes" value={summary} placeholder="+ Add profile notes" className="company-property-wide" />
+      <CompanyInlineField {...fieldProps} name="fitScore" label="Fit score (1–10)" value={company.fitScore ? String(company.fitScore) : ""} />
+      <CompanyInlineField {...fieldProps} name="tags" label="Product interests" value={company.tags.join(", ")} />
+    </CompanyProfileSection>
+    <p className="company-overview-hint">{canWrite ? "Click a detail to edit. Confirm each change to save it." : "You have read-only access to this profile."}</p>
   </div>;
 }

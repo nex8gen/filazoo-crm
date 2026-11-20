@@ -17,6 +17,8 @@ import { CompanyAvatar } from "@/components/company-avatar";
 import { CompanyOrderBadge } from "@/components/company-order-badge";
 import { CustomerTagBadge } from "@/components/customer-tag-badges";
 import { CompanyListTags } from "@/components/company-list-tags";
+import { CustomerTagHealth } from "@/components/customer-tag-health";
+import { CompanyListAnalytics } from "@/components/company-list-analytics";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card } from "@/components/ui/card";
@@ -49,6 +51,7 @@ function CompanyIdentity({ company }: { company: Company }) {
       <div className="min-w-0">
         <p className="truncate text-sm font-semibold leading-5 text-primary">{company.name}</p>
         <CompanyListTags key={(company.customerTags ?? []).join("|")} tags={company.customerTags} className="mt-1" />
+        <CustomerTagHealth status={company.tagProcessingStatus} reason={company.tagProcessingReason} />
       </div>
     </div>
   );
@@ -63,7 +66,7 @@ function CountryFlag({ country }: { country: string }) {
   </span>;
 }
 
-export function CompaniesTable({ companies, mode, canDelete, viewKey = "all" }: { companies: Company[]; mode: DataMode; canWrite: boolean; canDelete: boolean; viewKey?: string }) {
+export function CompaniesTable({ companies, mode, canDelete, analyticsAsOf, viewKey = "all" }: { companies: Company[]; mode: DataMode; canWrite: boolean; canDelete: boolean; analyticsAsOf: string; viewKey?: string }) {
   const { preferences } = usePreferences();
   const memoryKey = `companies.${viewKey}`;
   const [pagination, setPagination] = useWorkspaceState(`${memoryKey}.pagination`, { pageIndex: 0, pageSize: preferences.tablePageSize as number });
@@ -126,6 +129,7 @@ export function CompaniesTable({ companies, mode, canDelete, viewKey = "all" }: 
       setSelectedIds(new Set());
       router.refresh();
     }} />
+    <div className="-mb-3"><CompanyListAnalytics companies={filtered} asOf={analyticsAsOf} /></div>
     <TableFilters actions={
       <DropdownMenu>
         <TableColumnsTrigger />

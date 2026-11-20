@@ -132,14 +132,14 @@ test("temporary authentication failures are not reported as incorrect credential
 
 
 test("workspace authorization validates the session once even where React.cache is inactive", async () => {
-  for (const [signedIn, member, allowed, expected] of [[true, true, ["admin"], "ok"], [false, true, ["admin"], "/login"], [true, false, ["admin"], "/workspaces"], [true, true, ["viewer"], "/access-denied"]] as const) {
+  for (const [signedIn, member, allowed, expected] of [[true, true, ["admin"], "ok"], [false, true, ["admin"], "/login"], [true, false, ["admin"], "/subscribe"], [true, true, ["viewer"], "/access-denied"]] as const) {
     let authReads = 0, memberReads = 0;
     const api = load("../lib/auth.ts", {
       ...supabaseSessionDependencies,
       "react": { cache: (fn: unknown) => fn },
       "./env.ts": { env: { NEXT_PUBLIC_SUPABASE_URL: "https://test.supabase.co" }, hasSupabaseAuthConfig: () => true, hasSupabaseConfig: () => true },
       "./supabase/server.ts": { createClient: async () => ({ auth: { getClaims: async () => { authReads++; return { data: { claims: signedIn ? { sub: "aaaaaaaa-1111-2222-3333-444444444444", session_id: "bbbbbbbb-1111-2222-3333-444444444444", aud: "authenticated", role: "authenticated", iss: "https://test.supabase.co/auth/v1" } : null }, error: null }; } } }) },
-      "./supabase/control.ts": { createSupabaseControl: () => ({ rpc: () => { memberReads++; return chain({ data: { id: "aaaaaaaa-1111-2222-3333-444444444444", email: "staff@example.com", role: member ? "admin" : null, display_name: "Staff", activated_at: member ? "2026-01-01" : null, workspace_id: "cccccccc-1111-4222-8333-444444444444", workspace_name: "Test", owner_id: "aaaaaaaa-1111-2222-3333-444444444444" }, error: null }); } }) },
+      "./supabase/control.ts": { createSupabaseControl: () => ({ rpc: () => { memberReads++; return chain({ data: { id: "aaaaaaaa-1111-2222-3333-444444444444", email: "staff@example.com", role: member ? "admin" : null, display_name: "Staff", activated_at: member ? "2026-01-01" : null, workspace_id: "cccccccc-1111-4222-8333-444444444444", subscription_active: true, workspace_name: "Test", owner_id: "aaaaaaaa-1111-2222-3333-444444444444" }, error: null }); } }) },
       "./workspaces.ts": { workspaceIdSchema, workspaceCookie },
       "next/headers": { cookies: async () => ({ get: () => undefined }) },
       "./profile-avatar.ts": { isAvatarPreset: () => false }, "./user-preferences.ts": { readUserPreferences: () => ({}) },

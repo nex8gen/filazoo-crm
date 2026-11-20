@@ -423,10 +423,22 @@
       "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
     },
     {
+      "surface": "app/api/alipay/notify/route.ts#POST",
+      "mode": "internal",
+      "tools": [],
+      "explanation": "Alipay's signed server callback validates app, merchant, order and amount before transactional settlement. General chat cannot invoke, simulate or mark payments as successful."
+    },
+    {
       "surface": "app/api/automation/diagnose/route.ts#POST",
       "mode": "internal",
       "tools": [],
       "explanation": "Agent/history infrastructure, inbound integration, customer-only identity or background worker; not an employee feature to invoke arbitrarily."
+    },
+    {
+      "surface": "app/api/billing/orders/[id]/complete/route.ts#POST",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "The authenticated workspace owner chooses a plan at /subscribe, reviews the recipient and price, and authorizes payment directly in Alipay. The application checks provider evidence before granting access. General chat must hand off to these controls and cannot claim a payment or subscription is active."
     },
     {
       "surface": "app/api/catalogs/[id]/quotation/route.ts#PATCH",
@@ -812,6 +824,36 @@
       "mode": "internal",
       "tools": [],
       "explanation": "Agent/history infrastructure, inbound integration, customer-only identity or background worker; not an employee feature to invoke arbitrarily."
+    },
+    {
+      "surface": "app/auth/alipay/link-actions.ts#connectAlipay",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Alipay authentication, identity linking and email verification use the account's sign-in/profile controls. The user authorizes Alipay directly. Signed provider identity, browser state, one-use grants and PKCE are verified on the server; general chat cannot grant identity or workspace access."
+    },
+    {
+      "surface": "app/auth/alipay/token/route.ts#POST",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Alipay authentication, identity linking and email verification use the account's sign-in/profile controls. The user authorizes Alipay directly. Signed provider identity, browser state, one-use grants and PKCE are verified on the server; general chat cannot grant identity or workspace access."
+    },
+    {
+      "surface": "app/auth/email/actions.ts#confirmAccountEmail",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Alipay authentication, identity linking and email verification use the account's sign-in/profile controls. The user authorizes Alipay directly. Signed provider identity, browser state, one-use grants and PKCE are verified on the server; general chat cannot grant identity or workspace access."
+    },
+    {
+      "surface": "app/auth/email/actions.ts#sendAccountEmail",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Alipay authentication, identity linking and email verification use the account's sign-in/profile controls. The user authorizes Alipay directly. Signed provider identity, browser state, one-use grants and PKCE are verified on the server; general chat cannot grant identity or workspace access."
+    },
+    {
+      "surface": "app/auth/email/actions.ts#switchAccount",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Alipay authentication, identity linking and email verification use the account's sign-in/profile controls. The user authorizes Alipay directly. Signed provider identity, browser state, one-use grants and PKCE are verified on the server; general chat cannot grant identity or workspace access."
     },
     {
       "surface": "app/auth/signout/route.ts#POST",
@@ -1256,6 +1298,12 @@
       "mode": "guided",
       "tools": [],
       "explanation": "Identity, workspace or ownership flow uses the authenticated account controls."
+    },
+    {
+      "surface": "app/subscribe/actions.ts#startCheckout",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "The authenticated workspace owner chooses a plan at /subscribe, reviews the recipient and price, and authorizes payment directly in Alipay. The application checks provider evidence before granting access. General chat must hand off to these controls and cannot claim a payment or subscription is active."
     },
     {
       "surface": "app/table-column-actions.ts#saveTableColumns",

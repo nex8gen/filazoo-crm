@@ -21,7 +21,7 @@ export const conversationTagOutputTokens = 1_000;
 export const conversationTagCooldownMs = 60_000;
 export const conversationTagHistoryCharacters = 256_000;
 // Reassess old rule skips after the combined-history and long-message repair.
-const conversationTagAnalysisVersion = "workspace-history-v5";
+const conversationTagAnalysisVersion = "rules-first-history-v6";
 
 export const conversationTagInstruction = [
   "Classify ONE B2B customer email conversation from its subject, messages, chronology, sender direction and current situation.",
@@ -122,7 +122,7 @@ export function conversationTagPrompt(context: ReturnType<typeof conversationTag
   return JSON.stringify({ currentTag: context.currentTag, ...(Object.keys(workspaceGuidance).length ? { workspaceGuidance } : {}), messages });
 }
 
-export function parseConversationTagDecision(output: string, context: ReturnType<typeof conversationTagContext>): ConversationTagDecision {
+export function parseConversationTagDecision(output: string, context: ReturnType<typeof conversationTagContext>, options: { semanticPostponement?: boolean } = {}): ConversationTagDecision {
   const decision = conversationTagWireSchema.parse(JSON.parse(output.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")));
   if (decision.tag === null) return { ...decision, evidence: [] };
   if (decision.confidence < 0.85 || !decision.evidence.length) return { ...decision, tag: null, evidence: [] };
@@ -136,7 +136,7 @@ export function parseConversationTagDecision(output: string, context: ReturnType
     const excerpt = match[0].slice(0, 240).replace(/[\uD800-\uDBFF]$/, "").trimEnd();
     return { messageKey: evidence.messageKey, quote: excerpt };
   });
-  if (decision.tag === "Inactive Customers" && !decision.evidence.some(evidence => {
+  if (decision.tag === "Inactive Customers" && !options.semanticPostponement && !decision.evidence.some(evidence => {
     const message = context.messages.find(message => message.messageKey === evidence.messageKey);
     return message?.direction === "inbound" && /\b(?:paus(?:e[ds]?|ing)|postpon(?:e[ds]?|ing)|defer(?:red|ring)?|delay(?:ed|ing)?)\b[^.!?\n]{0,80}\b(?:purchas\w*|buy\w*|order\w*|procurement)\b|\b(?:purchas\w*|buy\w*|order\w*|procurement)\b[^.!?\n]{0,80}\b(?:paused?|postponed?|deferred?|delayed?|on hold)\b|(?:暂缓|暂停|推迟|延期)[^。！？\n]{0,30}(?:采购|购买|订单)|(?:采购|购买|订单)[^。！？\n]{0,30}(?:暂缓|暂停|推迟|延期)/i.test(evidence.quote);
   })) throw new Error("Inactivity requires configured thresholds and company-wide activity, or explicit buyer postponement.");

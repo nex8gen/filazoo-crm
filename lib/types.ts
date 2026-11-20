@@ -49,6 +49,8 @@ export type Company = {
   nextAction: string;
   tags: string[];
   customerTags?: import("./customer-tags").CustomerTag[];
+  tagProcessingStatus?: import("./customer-tag-rules").TagProcessingStatus;
+  tagProcessingReason?: string;
   contact: string;
   contactRole: string;
   email: string;

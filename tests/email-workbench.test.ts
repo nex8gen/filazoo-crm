@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { emailAddresses, replyRecipients, emailSubject } from "../lib/email-addresses.ts";
-import { emailSendSchema, hasEmailDraft } from "../lib/email-workbench.ts";
+import { emailSendSchema, emailDraftSchema, hasEmailDraft } from "../lib/email-workbench.ts";
 import { splitQuotedEmailHtml, emailDocument } from "../lib/email-content.ts";
 import { providerFolderKind } from "../lib/email-provider.ts";
 import { buildMailboxMime } from "../lib/mailer.ts";
@@ -34,6 +34,28 @@ test("HTML quote collapsing retains current formatting, links and CID images wit
   const outlook = splitQuotedEmailHtml('<div>My answer</div><div id="divRplyFwdMsg">From: old@example.test</div><div>Old body</div>');
   assert.doesNotMatch(outlook.current, /Old body|From:/);
   assert.match(emailDocument(html, false), /img-src 'self' data: blob:;/);
+});
+
+test("image and document attachments can be sent without body text, while empty mail is rejected", () => {
+  for (const [filename, contentType] of [["photo.png", "image/png"], ["catalog.pdf", "application/pdf"]]) {
+    const message = { to: "buyer@example.test", text: "", attachments: [{ filename, contentType, content: "AAAA" }] };
+    assert.equal(emailSendSchema.safeParse(message).success, true);
+    assert.equal(emailSendSchema.safeParse({ ...message, attachments: [] }).success, false);
+    assert.equal(emailSendSchema.safeParse({ ...message, attachments: Array(11).fill(message.attachments[0]) }).success, false);
+  }
+});
+
+test("drafts retain pasted images above the old HTML limit and remain sendable after MIME conversion", async () => {
+  const { prepareComposerMessage } = await import("../lib/email-composer.ts");
+  const content = Buffer.alloc(1_200_000, 1).toString("base64");
+  for (const kind of ["compose", "reply"] as const) {
+    const draft = { id: "image-draft", mailboxId: "mailbox", kind, to: "buyer@example.test", subject: "Photo", text: "", html: `<img src="data:image/png;base64,${content}">`, attachments: [], requestId: crypto.randomUUID(), revision: 1 };
+    const restored = emailDraftSchema.parse(JSON.parse(JSON.stringify(draft)));
+    const message = prepareComposerMessage(restored.text, restored.html, "");
+    assert.equal(message.attachments[0].content, content);
+    assert.equal(emailSendSchema.safeParse({ to: draft.to, subject: draft.subject, ...message }).success, true);
+    assert.equal(emailDraftSchema.safeParse({ ...draft, html: "a".repeat(1_500_001) }).success, false);
+  }
 });
 
 test("footer-only replies do not become drafts but image-only and attachment drafts are retained", () => {

@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { selectAiModel, SIMPLE_AI_MODEL, STANDARD_AI_MODEL, COMPLEX_AI_MODEL, RESEARCH_AI_MODEL } from "../lib/ai/model-routing.ts";
+import { selectAiModel, SIMPLE_AI_MODEL, STANDARD_AI_MODEL, COMPLEX_AI_MODEL, RESEARCH_AI_MODEL, TAGGING_REVIEW_AI_MODEL } from "../lib/ai/model-routing.ts";
 import { generateGatewayText } from "../lib/ai/gateway.ts";
 import { parseAiUsage, trackAiUsage } from "../lib/ai/chat-usage.ts";
 import { gatewayTokenUsage } from "../lib/ai/usage.ts";
 
-test("writing and tagging are cheap, routine actions use Haiku, financial planning and repairs use Gemini 3.5", () => {
-  for (const task of ["email", "tagging"] as const) assert.deepEqual(selectAiModel({ task }, {}), { model: SIMPLE_AI_MODEL, tier: "simple", reasoningEffort: "none" });
+test("tagging uses the evaluated Haiku route with explicit Sol escalation; other task defaults are preserved", () => {
+  assert.deepEqual(selectAiModel({ task: "email" }, {}), { model: SIMPLE_AI_MODEL, tier: "simple", reasoningEffort: "none" });
+  assert.deepEqual(selectAiModel({ task: "tagging" }, {}), { model: STANDARD_AI_MODEL, tier: "tagging", reasoningEffort: "none" });
+  assert.equal(selectAiModel({ task: "tagging", complex: true }, {}).model, TAGGING_REVIEW_AI_MODEL);
   for (const task of ["chat", "agent"] as const) assert.equal(selectAiModel({ task, userText: "Attach a catalog to an email draft" }, {}).model, STANDARD_AI_MODEL);
   for (const userText of ["Create an invoice", "Prepare a quotation", "Record this payment", "创建发票"]) assert.equal(selectAiModel({ task: "agent", userText }, {}).model, COMPLEX_AI_MODEL);
   for (const task of ["reply", "workflow"] as const) assert.equal(selectAiModel({ task }, {}).model, COMPLEX_AI_MODEL);

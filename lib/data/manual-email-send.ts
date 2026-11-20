@@ -30,7 +30,7 @@ export async function deliverEmail(viewer: WorkspaceViewer, input: unknown, alre
     const inReplyTo = parsed.data.inReplyTo;
     const references = referenceHeaderIds(parsed.data.references);
     const threadId = parsed.data.threadId;
-    if (!parsed.data.text.trim() && !parsed.data.html?.trim()) {
+    if (!parsed.data.text.trim() && !parsed.data.html?.trim() && !attachments.length) {
       return Response.json({ ok: false, error: "Enter a message before sending." }, { status: 400 });
     }
     if (/\battach(?:ed|ing)?\b[^.!?\n]{0,80}\bcatalog\b|\bcatalog\b[^.!?\n]{0,80}\battach(?:ed|ing)?\b/i.test(parsed.data.text) && !attachments.some((attachment) => attachment.contentType === "application/pdf")) {

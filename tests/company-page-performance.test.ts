@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import * as customerTags from "../lib/customer-tags.ts";
+import * as customerTagRules from "../lib/customer-tag-rules.ts";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -14,6 +15,7 @@ const id = "4913b683-bcec-4079-b424-6fd559ed0c2a";
 const baseRow = { id, name: "Acme", domain: "acme.test", source: "manual", status: "new", pipeline: [{ stage: "new", owner_id: "owner-1" }], meta_leads: [], company_profiles: [] };
 const contact = { id: "contact-1", name: "Primary", role: "Buyer", email: "buyer@acme.test", verification_status: "verified" };
 function load(file: string, deps: Record<string, unknown>) {
+  deps["../customer-tag-rules.ts"] = customerTagRules;
   const exports: Record<string, (...args: unknown[]) => Promise<unknown>> = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   vm.runInNewContext(code, { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => name === "../customer-tags.ts" ? customerTags : name in deps ? deps[name] : name.startsWith("react") ? require(name) : {})(name), process: { env: { NODE_ENV: "test" } }, Date, Intl, console });
@@ -136,11 +138,11 @@ async function renderPage(tab?: string, role = "admin", compose?: string, invoic
     "@/components/company-order-badge": { CompanyOrderBadge: leaf("CompanyOrderBadge") },
     "@/components/company-workspace": { CompanyWorkspace: (props: Record<string, unknown>) => { rendered.push({ name: "CompanyWorkspace", props }); return [props.toolbar, props.profile, props.section]; } },
     "@/components/page-skeletons": { CompanyDetailsSkeleton: leaf("skeleton") },
-    "@/components/workspace-skeletons": { CompanyBillingSkeleton: leaf("skeleton") },
+    "@/components/company-section-skeleton": { CompanySectionSkeleton: leaf("skeleton") },
     "lucide-react": { ArrowLeft: leaf("icon") },
   };
   for (const [file, name] of Object.entries({ "company-analysis": "CompanyAnalysis", "company-invoices": "CompanyInvoices", "company-customer-portal": "CompanyCustomerPortal", "company-emails": "CompanyEmails", "company-purchase-orders": "CompanyPurchaseOrders", "company-timeline": "CompanyTimeline", "company-details": "CompanyDetails", "assigned-owner": "AssignedOwner", "company-avatar": "CompanyAvatar", "company-actions-menu": "CompanyActionsMenu" })) deps["@/components/" + file] = { [name]: leaf(name) };
-  const page = load("../app/companies/[id]/page.tsx", deps);
+  const page = load("../components/company-page.tsx", deps);
   async function visit(node: unknown): Promise<void> {
     if (Array.isArray(node)) { for (const child of node) await visit(child); return; }
     if (!node || typeof node !== "object") return;
@@ -164,6 +166,8 @@ test("opening the default or unknown company tab does not execute history or any
 
 for (const [tab, name] of Object.entries(sectionNames)) test(`company tab ${tab} renders only its requested section`, async () => {
   const { rendered, reads } = await renderPage(tab);
+  const section = rendered.find(item => item.name === "CompanyWorkspace")!.props.section as { props: { fallback: { props: { tab: string } } } };
+  assert.equal(section.props.fallback.props.tab, companyTab(tab), "the streaming fallback matches the selected tab");
   assert.deepEqual(rendered.filter(item => Object.values(sectionNames).includes(item.name)).map(item => item.name), [name]);
   assert.deepEqual(reads, tab === "history" ? ["profile", "history"] : ["profile"]);
 });

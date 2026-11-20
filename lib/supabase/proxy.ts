@@ -6,6 +6,11 @@ import { workspaceSessionUnavailableResponse } from "../workspace-session-respon
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
+  // Alipay authenticates this callback with RSA2, without a browser session.
+  if (request.nextUrl.pathname === "/api/alipay/notify") {
+    response.headers.set("Cache-Control", "no-store");
+    return response;
+  }
   // Customer access is validated by its own invoice-scoped cookie and QR key.
   // Never run the staff session gate (or refresh staff cookies) for this surface.
   const customerRoute = request.nextUrl.pathname.startsWith("/customer/") || request.nextUrl.pathname.startsWith("/api/customer/");

@@ -3,7 +3,7 @@
 import { useRef, useState, type MouseEvent } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, ChevronsUpDown, Plus, Search, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, ChevronsUpDown, ClipboardList, Clock3, Factory, FileText, Plus, Search, Truck, X } from "lucide-react";
 import { PageActions } from "@/components/page-header";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -37,12 +37,12 @@ function StatusBadge({ badge }: { badge: RegisterBadge }) {
 
 function Summary({ summary, companyId }: { summary: OrderSummary; companyId?: string }) {
   const metrics = [
-    { label: "All purchase orders", value: summary.orders, href: purchaseOrdersHref({}, false, companyId) },
-    { label: "In production", value: summary.inProduction, href: purchaseOrdersHref({ status: "in_production" }, false, companyId) },
-    { label: "Shipped", value: summary.shipped, href: purchaseOrdersHref({ status: "shipped" }, false, companyId) },
-    { label: "Overdue delivery", value: summary.overdue, href: purchaseOrdersHref({ overdue: true }, false, companyId) },
+    { label: "All purchase orders", value: summary.orders, icon: ClipboardList, href: purchaseOrdersHref({}, false, companyId) },
+    { label: "In production", value: summary.inProduction, icon: Factory, href: purchaseOrdersHref({ status: "in_production" }, false, companyId) },
+    { label: "Shipped", value: summary.shipped, icon: Truck, href: purchaseOrdersHref({ status: "shipped" }, false, companyId) },
+    { label: "Overdue delivery", value: summary.overdue, icon: Clock3, href: purchaseOrdersHref({ overdue: true }, false, companyId) },
   ];
-  return <section aria-label="Current purchase order overview" className="po-register-summary">{metrics.map(metric => <Link key={metric.label} href={metric.href} className="po-register-metric"><p className="po-register-metric-label">{metric.label}</p><p className="po-register-metric-value">{metric.value.toLocaleString("en-US")}</p></Link>)}</section>;
+  return <section aria-label="Current purchase order overview" className="po-register-summary">{metrics.map(metric => <Link key={metric.label} href={metric.href} className="po-register-metric"><p className="po-register-metric-label">{companyId ? <metric.icon aria-hidden="true" /> : null}{metric.label}</p><p className="po-register-metric-value">{metric.value.toLocaleString("en-US")}</p></Link>)}</section>;
 }
 
 function csvCell(value: string | number) {
@@ -124,15 +124,16 @@ export function PurchaseOrderRegister({ rows, filters, count, pageSize, today, d
       {canWrite ? company ? <Button type="button" size="sm" aria-haspopup="dialog" aria-expanded={createOpen} onClick={openCreate}><Plus className="size-4" />New purchase order</Button> : <Link href="/purchase-orders/new" className={buttonVariants({ size: "sm" })}><Plus className="size-4" />New purchase order</Link> : null}
     </>;
   return <div className={`po-register ${drafts ? "po-register-drafts" : "po-register-orders"}${company ? " po-register-company" : ""}`}>
-    {company ? <>
-      <header className="po-register-company-header"><div><h2>Purchase orders</h2><p data-no-translate>{company.name}</p></div><div className="po-register-company-actions">{actions}</div></header>
-      <nav className="po-register-company-views" aria-label="Customer order views">
-        <Link href={href({}, false)} aria-current={!drafts ? "page" : undefined}>Orders{summary ? <span>{summary.orders}</span> : null}</Link>
-        <Link href={href({}, true)} aria-current={drafts ? "page" : undefined}>Drafts<span>{draftCount}</span></Link>
-      </nav>
-    </> : <PageActions>{actions}</PageActions>}
+    {company ? <header className="po-register-company-header"><div><h2><ClipboardList aria-hidden="true" />Purchase orders</h2><p>Track orders, production, and deliveries in one place.</p></div><div className="po-register-company-actions">{actions}</div></header> : <PageActions>{actions}</PageActions>}
     {company && draftSaved ? <p role="status" className="mb-4 flex items-center gap-3 rounded-lg border bg-muted/30 px-4 py-3 text-sm">Draft saved.<Link href={href({}, true)} className="font-medium underline underline-offset-4">View drafts</Link></p> : null}
-    {!drafts && summary ? <Summary summary={summary} companyId={company?.id} /> : null}
+    {(!drafts || company) && summary ? <Summary summary={summary} companyId={company?.id} /> : null}
+    <div className="po-register-content">
+    {company ?
+      <nav className="po-register-company-views" aria-label="Customer order views">
+        <Link href={href({}, false)} aria-current={!drafts ? "page" : undefined}><ClipboardList aria-hidden="true" />Orders{summary ? <span>{summary.orders}</span> : null}</Link>
+        <Link href={href({}, true)} aria-current={drafts ? "page" : undefined}><FileText aria-hidden="true" />Drafts<span>{draftCount}</span></Link>
+      </nav>
+    : null}
     <div className="crm-table-toolbar po-register-toolbar">
       {!drafts ? <DropdownMenu><DropdownMenuTrigger className="po-register-view-trigger" aria-label="Filter orders">{filterLabel}<ChevronsUpDown className="size-3.5" /></DropdownMenuTrigger><DropdownMenuContent>
         <DropdownMenuGroup><DropdownMenuLabel>Orders</DropdownMenuLabel><DropdownMenuItem render={<Link href={href({ search: filters.search, sort: filters.sort })} />}>All</DropdownMenuItem>
@@ -152,17 +153,26 @@ export function PurchaseOrderRegister({ rows, filters, count, pageSize, today, d
       <DropdownMenu><TableColumnsTrigger className="po-register-columns" /><DropdownMenuContent align="end"><DropdownMenuGroup><DropdownMenuLabel>Columns</DropdownMenuLabel>{columns.map(column => <DropdownMenuCheckboxItem key={column.key} checked={column.key === "order" || columnVisibility[column.key] !== false} disabled={column.key === "order"} closeOnClick={false} onCheckedChange={checked => setColumnVisibility(current => ({ ...current, [column.key]: checked }))}>{column.label}</DropdownMenuCheckboxItem>)}</DropdownMenuGroup></DropdownMenuContent></DropdownMenu>
     </div>
     <div className="crm-table-viewport" tabIndex={0} role="region" aria-label={drafts ? "Draft purchase orders" : "Purchase orders"}>
-      <table className="crm-table po-register-table">
+      {company && !rows.length ? null : <table className="crm-table po-register-table">
         <caption className="sr-only">{drafts ? "Draft purchase orders awaiting confirmation" : "Purchase orders, production stages, scheduled delivery, and invoice balances"}</caption>
         <thead><tr><th scope="col" className="po-register-check"><Checkbox aria-label="Select all orders on this page" checked={allSelected} indeterminate={selectedRows.length > 0 && !allSelected} disabled={!rows.length} onCheckedChange={checked => setSelected(checked ? new Set(rows.map(row => row.id)) : new Set())} /></th>{visibleColumns.map(column => <th key={column.key} scope="col" data-column={column.key} className={column.align === "right" ? "po-register-number" : undefined} aria-sort={column.key === "date" ? filters.sort === "oldest" ? "ascending" : "descending" : undefined}>{column.key === "date" ? <Link className="po-register-sort" href={href({ ...filters, sort: filters.sort === "oldest" ? undefined : "oldest", page: 1 })} aria-label={`Sort by date ${filters.sort === "oldest" ? "newest" : "oldest"} first`}>{column.label}{filters.sort === "oldest" ? <ArrowUp className="size-3.5" /> : <ArrowDown className="size-3.5" />}</Link> : column.label}</th>)}</tr></thead>
         <tbody>{rows.map(row => <tr key={row.id} data-selected={selected.has(row.id) || undefined} data-closed={!drafts && row.closed || undefined}>
           <td className="po-register-check"><Checkbox aria-label={`Select order ${row.label}`} checked={selected.has(row.id)} onCheckedChange={checked => toggleRow(row.id, checked)} /></td>
           {visibleColumns.map(column => <td key={column.key} data-column={column.key} className={column.align === "right" ? "po-register-number" : undefined}>{cell(row, column.key)}</td>)}
         </tr>)}</tbody>
-      </table>
-      {!rows.length ? <div className="po-register-empty"><h2>{filtered ? "No orders found" : drafts ? "Your drafts will appear here" : "Your orders will appear here"}</h2><p>{filtered ? "Try a different search or clear your filters." : drafts ? "Create an order and save it as a draft. When confirmed, it moves to PO." : "Confirm a draft to add it to your purchase orders."}</p>{!filtered && drafts && canWrite && company ? <button type="button" aria-haspopup="dialog" aria-expanded={createOpen} onClick={openCreate}>Create order</button> : <Link href={filtered ? baseHref : drafts && canWrite ? "/purchase-orders/new" : href({}, true)}>{filtered ? "Clear filters" : drafts && canWrite ? "Create order" : "View drafts"}</Link>}</div> : null}
+      </table>}
+      {!rows.length && company ? <div className="po-register-empty">
+        <span className="po-register-empty-icon" aria-hidden="true">{filtered ? <Search /> : drafts ? <FileText /> : <ClipboardList />}</span>
+        <h3>{filtered ? "No matching orders" : drafts ? "No drafts yet" : "No purchase orders yet"}</h3>
+        <p>{filtered ? "Try another PO number or reference, or clear your filters." : drafts ? "Save an order as a draft to review the details before confirming it." : "Create a purchase order for this customer. Confirmed orders and their progress will appear here."}</p>
+        <div className="po-register-empty-actions">{filtered ? <Link href={baseHref} className={buttonVariants({ variant: "outline", size: "sm" })}>Clear filters</Link> : <>
+          {canWrite ? <Button type="button" size="sm" aria-haspopup="dialog" aria-expanded={createOpen} onClick={openCreate}><Plus className="size-4" />New purchase order</Button> : null}
+          {!drafts ? <Link href={href({}, true)} className={buttonVariants({ variant: "outline", size: "sm" })}>View drafts{draftCount ? ` (${draftCount})` : ""}</Link> : null}
+        </>}</div>
+      </div> : !rows.length ? <div className="po-register-empty"><h2>{filtered ? "No orders found" : drafts ? "Your drafts will appear here" : "Your orders will appear here"}</h2><p>{filtered ? "Try a different search or clear your filters." : drafts ? "Create an order and save it as a draft. When confirmed, it moves to PO." : "Confirm a draft to add it to your purchase orders."}</p><Link href={filtered ? baseHref : drafts && canWrite ? "/purchase-orders/new" : href({}, true)}>{filtered ? "Clear filters" : drafts && canWrite ? "Create order" : "View drafts"}</Link></div> : null}
     </div>
     <footer className="crm-table-pagination"><nav aria-label="Order pagination"><span className="crm-table-page-controls">{filters.page > 1 ? <Link href={href({ ...filters, page: filters.page - 1 })} aria-label="Previous page"><ChevronLeft className="size-4" /></Link> : <button type="button" disabled aria-label="Previous page"><ChevronLeft className="size-4" /></button>}<span>{count ? `${(filters.page - 1) * pageSize + 1}–${Math.min(filters.page * pageSize, count)}` : "0–0"}</span>{filters.page < pages ? <Link href={href({ ...filters, page: filters.page + 1 })} aria-label="Next page"><ChevronRight className="size-4" /></Link> : <button type="button" disabled aria-label="Next page"><ChevronRight className="size-4" /></button>}</span></nav><span>{count} {drafts ? count === 1 ? "draft" : "drafts" : count === 1 ? "order" : "orders"}</span></footer>
+    </div>
     {company && canWrite && createOpen ? <CompanyPurchaseOrderCreate company={company} finalFocus={createTriggerRef} onClose={() => setCreateOpen(false)} onSaved={() => { setCreateOpen(false); setDraftSaved(true); }} /> : null}
   </div>;
 }

@@ -16,6 +16,8 @@ import { isStandaloneRoute } from "@/lib/standalone-routes";
 import { WorkspacePageHeader } from "@/components/workspace-page-header";
 import { WorkspaceTableHeaders } from "@/components/workspace-table-headers";
 import { PageHeaderProvider } from "@/components/page-header";
+import { CompanyProfileReturnContext } from "@/components/company-profile-navigation";
+import { isCompanyProfilePath } from "@/lib/company-tabs";
 import { workspaceAiLaunchEvent, type WorkspaceAiLaunchDetail } from "@/lib/ai/launch";
 
 const loadAiAssistant = () => import("@/components/workspace-ai-assistant");
@@ -32,10 +34,12 @@ const FlowActivityBell = dynamic(() => import("@/components/flow-activity-bell")
 
 export function AppShell({ children, userMenu }: { children: React.ReactNode; userMenu?: React.ReactNode }) {
   const currentPathname = usePathname();
-  const companyPopupOpen = useSelectedLayoutSegment("company") === "(.)companies";
+  const companySegment = useSelectedLayoutSegment("company");
+  const companyPopupOpen = isCompanyProfilePath(currentPathname) && (companySegment === "(.)companies" || companySegment === "companies");
   const backgroundSegments = useSelectedLayoutSegments();
-  // Intercepted profiles change the URL while the originating workspace stays mounted.
-  const pathname = companyPopupOpen ? `/${backgroundSegments.filter(segment => !segment.startsWith("(")).join("/")}` : currentPathname;
+  const companyListBackground = backgroundSegments[0] === "companies" && backgroundSegments.length > 1;
+  // Soft navigation preserves its originating workspace; hard loads use the company list.
+  const pathname = companyPopupOpen ? companyListBackground ? "/companies" : `/${backgroundSegments.filter(segment => !segment.startsWith("(")).join("/")}` : currentPathname;
   const isHome = pathname === "/";
   const router = useRouter();
   const isPurchaseOrders = pathname === "/purchase-orders" || pathname.startsWith("/purchase-orders/");
@@ -145,7 +149,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
       <PageHeaderProvider key={isSettings ? "settings" : "workspace"}>
         <div data-home={isHome || undefined} hidden={pageAiOpen} inert={pageAiOpen || undefined} className={`workspace-page flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background transition-transform duration-300 ease-out lg:ml-[var(--workspace-sidebar-width)] ${sidebarAiOpen ? "max-lg:-translate-x-full lg:mr-[var(--workspace-ai-width)]" : "translate-x-0 lg:mr-0"}`}>
           {!isSettings && !isPortalEditor ? <WorkspacePageHeader pathname={pathname} /> : null}
-          <main id="workspace-content" tabIndex={-1} className={`${isHome ? "scrollbar-hidden " : ""}${isEmails || isDocuments || isSettings ? "" : "crm-workspace-content"} min-h-0 w-full flex-1 outline-none ${usesViewportCanvas ? "overflow-hidden p-0" : isSettings ? "overflow-y-auto p-0 lg:overflow-hidden" : "overflow-y-auto overscroll-y-contain px-5 pb-6 pt-4 sm:px-6"}`}><WorkspaceTableHeaders />{children}</main>
+          <main id="workspace-content" tabIndex={-1} className={`${isHome ? "scrollbar-hidden " : ""}${isEmails || isDocuments || isSettings ? "" : "crm-workspace-content"} min-h-0 w-full flex-1 outline-none ${usesViewportCanvas ? "overflow-hidden p-0" : isSettings ? "overflow-y-auto p-0 lg:overflow-hidden" : "overflow-y-auto overscroll-y-contain px-5 pb-6 pt-4 sm:px-6"}`}><WorkspaceTableHeaders /><CompanyProfileReturnContext value={companyListBackground ? "/companies" : undefined}>{children}</CompanyProfileReturnContext></main>
         </div>
       </PageHeaderProvider>
 

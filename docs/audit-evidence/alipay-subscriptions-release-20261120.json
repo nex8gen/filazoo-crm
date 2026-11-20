@@ -1,0 +1,173 @@
+{
+  "releasedAt": "2026-11-20T08:20:30.485Z",
+  "productionUrl": "https://crm.filazoosupply.com",
+  "deploymentId": "dpl_5BhDz1wiyL7D5V8nYDNDb2kwc9nS",
+  "baseCommit": "cdc29d5ec31cf3b29eeccbdf3caa5c05416b3f7e",
+  "previousProduction": "dpl_2Xx9M9ywEAAuUsz5h9j21Y9bMQbV",
+  "unrelatedWorkingChangesExcluded": true,
+  "existingProductionFeaturesPreserved": true,
+  "plans": [
+    {
+      "id": "starter",
+      "monthlyCny": 99,
+      "members": 1
+    },
+    {
+      "id": "team",
+      "monthlyCny": 299,
+      "members": 5
+    }
+  ],
+  "freeTrial": false,
+  "automaticRenewal": false,
+  "exemptWorkspaces": [
+    {
+      "id": "80e30a20-fe11-4b78-9b38-ce59414ab31d",
+      "name": "Filazoo"
+    },
+    {
+      "id": "c793452e-3088-4588-8a7a-279c944d471b",
+      "name": "Filazoo Innovations Inc"
+    }
+  ],
+  "exemption": "Permanent; no subscription payment, subscription expiry restriction, or subscription member cap",
+  "validation": {
+    "fullReleaseSuite": {
+      "passed": 2619,
+      "failed": 0
+    },
+    "finalFocusedSuite": {
+      "passed": 48,
+      "failed": 0
+    },
+    "lint": "passed",
+    "typescript": "passed",
+    "productionBuild": "passed",
+    "databaseRollbackIntegration": "passed",
+    "newSecurityAdvisorFindings": 0,
+    "signedInHttpChecks": {
+      "createdAt": "2026-11-20T08:06:55.884Z",
+      "origin": "https://crm.filazoosupply.com",
+      "checks": [
+        "Unauthenticated Alipay callback reaches signature verification and rejects forgery",
+        "Subscription page requires login",
+        "Fresh verified account sees real subscription plans and the activation-pending state",
+        "Owner can open the persisted RMB checkout order; disabled merchant cannot show a payable cashier",
+        "Pending, unknown and cross-origin requests cannot unlock access or start disabled payments",
+        "Both the CRM page and database REST boundary reject the unpaid workspace",
+        "Disposable account, workspace, sessions and orders removed"
+      ],
+      "merchantActivation": "pending",
+      "realPaymentPerformed": false
+    },
+    "finalPublicDomainChecks": [
+      {
+        "path": "/api/alipay/notify",
+        "status": 400,
+        "reason": "unsigned request rejected"
+      },
+      {
+        "path": "/subscribe",
+        "status": 307,
+        "reason": "login required"
+      },
+      {
+        "path": "/api/billing/orders/unknown/status",
+        "status": 401,
+        "reason": "login required"
+      }
+    ],
+    "clientBundles": {
+      "preExistingBudgetFailures": [
+        {
+          "route": "/company-quotations",
+          "gzipBytes": 431419,
+          "maxGzipBytes": 420000
+        },
+        {
+          "route": "/workflow\\analytics",
+          "gzipBytes": 477360,
+          "maxGzipBytes": 420000
+        },
+        {
+          "route": "/products\\[sku]",
+          "gzipBytes": 512376,
+          "maxGzipBytes": 420000
+        },
+        {
+          "route": "/companies\\[id]",
+          "gzipBytes": 455950,
+          "maxGzipBytes": 420000
+        }
+      ]
+    }
+  },
+  "migrations": [
+    "20261120072531_workspace_subscriptions_alipay",
+    "20261120074058_subscription_confirmation_integrity"
+  ],
+  "alipay": {
+    "appId": "2021007121675450",
+    "rsa2Registered": true,
+    "livePaymentsEnabled": false,
+    "lastReadinessCode": "40003 / isv.not-online-app / 应用未上线",
+    "consoleState": "审核中",
+    "appDescriptionSaved": true,
+    "goLiveReviewSubmitted": true,
+    "statedReviewTime": "within one day",
+    "currentDeveloperAccount": {
+      "type": "personal",
+      "realNameVerified": true
+    },
+    "businessMerchantAccountIdentified": false,
+    "required": [
+      "Application go-live approval",
+      "电脑网站支付 merchant activation",
+      "Verified business merchant seller PID"
+    ],
+    "realPaymentPerformed": false
+  },
+  "taskSourceSha256": {
+    "package.json": "f2c06a87f528cc29d1a39bce8ecd677479287ba60b8f3e3116a2655fbc5579e2",
+    "package-lock.json": "0f77126c21f8c89bea7a9381f1aa79261490489c43eb3a10cebddcbb54a80595",
+    "lib/auth.ts": "97d5fc719bf3ebffc4cc90ff40a615e15e3cb9e80cffe76fce62324c865671e2",
+    "lib/signup.ts": "6f98c9f1439ecb8ee796ef4f3f8a05a67627bf44ecf6e0c473d5c20d8eea9858",
+    "lib/login-destination.ts": "9aac8c84dcb31664e8a256c543b2621685a8d9e6cd84ca868fc6da02c7d6c2cd",
+    "lib/standalone-routes.ts": "9e39312dfe68f0e682978d332ade020e82f79d057fa464e67c21a13ee036ec5c",
+    "app/workspaces/actions.ts": "a0bfd6835c2c2add7b51460103c5ceb6ca1a65222524e84366bdb93eb5fdd6f5",
+    "app/workspaces/new/page.tsx": "35544b849053937a0c574324be88295465928e607607f4e560b7702f1254f80d",
+    "components/user-menu-client.tsx": "9a9c921166c76a3b95f74029a3b9f857f32524a81b52e097a5c79e9bc4867983",
+    "app/signup/signup-form.tsx": "62209a4f207a092114dd202c48645c14fa139d8f0f86c7b2744098bcaeb5925b",
+    "app/signup/verify/verification-form.tsx": "9bafff3aaa4ff1c93ea270a4d90bd1c59ba3a91ab28ec1111d8b7067547bbfd1",
+    "app/auth/confirm/route.ts": "19f93867c34c72f6dc7e6aba00216e4c043387bcc16d0c95e335d1e7f921b68d",
+    "tests/auth-session-performance.test.ts": "cbf80add59b52eb135d38aa3de6bc5a68d1c47a2e651b4913299de6322251f00",
+    "tests/signup.test.ts": "3f30f282f3bde6fcf536ed24ddb4e3e99fc6be80ee763d618befb82f8a32c369",
+    "tests/signup-verification.test.ts": "dfa6555a336a969cffde05c1818dcc53484cdcb6dfd117d037f34cdf052d1327",
+    "tests/alipay-billing.test.ts": "3ca7becd7183f920fcb3463de8e4b56be2594e5407c4b8e006b4436d093b846b",
+    "tests/billing-api.test.ts": "d56236d572b173ce8af5396c1746b162066ee244554bd9620f197ed0199fcfc5",
+    "tests/session-fetch.test.ts": "1f461283e0197b8a537993cc363bc661c5744b30b99259c8858b65ccc7b02a49",
+    "tests/subscriptions-database.sql": "8eaf8c97df8525ba2c994f2c410c5184036c1a5c91c21315481147a5ba35d142",
+    "docs/alipay-subscriptions.md": "d5b30766872b5fec77a2124756c5345d25f1c5e62de6dcb284ec0818adc9177d",
+    "lib/supabase/proxy.ts": "cb72155084771e166436caaf8464f7932e5a895a6a288d827f376c3c56b8721a",
+    "lib/supabase/session-fetch.ts": "5fccc18691e1f9a4cfe035c9f6219ef02abd452f8ea816816047e64317bee758",
+    "lib/i18n.ts": "c316e73ffd878759754bc2a30f724929da7cfddfca4b372fcdd3ec9450eea26d",
+    "lib/i18n-billing.ts": "6bb81b03ec474f24ae30acb3465d87c144612510bcd70b9dadf0ed305624aaee",
+    "scripts/audit-agent-capabilities.ts": "e953a9c57f25d076f8f2a0c7db299ae4819a1e9f1ec0a5c645b029b283659487",
+    "docs/agent-capability-audit.json": "d4404327f28985f8e3056e634a8e52dd4ad27090117c29c2c59f7703ab5b8ed5",
+    "tests/performance-audit.test.ts": "0cdd766bab641826c089de728d818de6f5b001827d13e4f9fa4dae256043727b",
+    "supabase/migrations/20261120072531_workspace_subscriptions_alipay.sql": "4bce801af7dc72c3330368f7cbef8120ed26b08bc958609c86a1852584eff49f",
+    "supabase/migrations/20261120074058_subscription_confirmation_integrity.sql": "1815cc3602c7a12a3af8a9fd675ad8389fa7b5085d132befe0b050fc71b32ca4",
+    "lib\\billing\\alipay.ts": "6b6e05ef5cdd19367e7b2a31e082f865c644b8c0a5e42b0ce5131f2637dfa00c",
+    "lib\\billing\\data.ts": "10f78dc944481672e4ed48ec5a56bbb467bbe98de63ecfb18f32148a0e07e39a",
+    "lib\\billing\\plans.ts": "75c4a9d5e2b7b017a8425e7ab1d8484f1b267a5e6616c7b2dd27051c85cf0819",
+    "app\\subscribe\\actions.ts": "151d9802ed35d5ffaf468a02431cc676d65a60798a93e10fa99e7cdeefebc8b2",
+    "app\\subscribe\\orders\\[id]\\page.tsx": "8e53d12de3686db20f982f359b1f402cd695a336490cdb8d4817d01482a0a80e",
+    "app\\subscribe\\orders\\[id]\\payment-status.tsx": "a791d2671d103c585cb6c6a0e59318ada3201c8aac4300019b9ef09d8b32f303",
+    "app\\subscribe\\page.tsx": "3dc477597ec16245baff71594b8e7b4ed7727c6fc0114b47f7aea8ef1314fead",
+    "app\\subscribe\\plan-form.tsx": "6a8604d637f46c6f297ce8021445080f7688c5fa5cbdfac2caa40e1240cdf0d6",
+    "app\\api\\billing\\orders\\[id]\\checkout\\route.ts": "6c84ca8ff98400744410265f5ddb5baf16a0a5c5fe682807f5dec9abd0a30b14",
+    "app\\api\\billing\\orders\\[id]\\complete\\route.ts": "d4cf7b433c95940690a8250aa711e27cf831daa3bffbdf81f2aae80ae66e838a",
+    "app\\api\\billing\\orders\\[id]\\status\\route.ts": "8a16ea9c6dfcdb6a8732129c72104ff7152b0c5fa97b745b9b5014c3efbb6e1e",
+    "app\\api\\alipay\\notify\\route.ts": "61d393b785824f055be6aaa3962babbbdbc805fe1b403be4bf5b7be1cd8cd1e6"
+  }
+}

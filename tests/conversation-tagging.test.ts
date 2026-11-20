@@ -8,6 +8,8 @@ import { z } from "zod";
 import * as tagging from "../lib/ai/conversation-tagging.ts";
 import * as credentials from "../lib/ai/provider-credentials.ts";
 import * as tags from "../lib/customer-tags.ts";
+import * as tagRules from "../lib/customer-tag-rules.ts";
+import * as automaticTags from "../lib/ai/automatic-customer-tags.ts";
 import * as threading from "../lib/email-threading.ts";
 import { mergeAutoReplyHistory } from "../lib/email-auto-reply.ts";
 import { normalizeMailboxRows } from "../lib/mailbox-utils.ts";
@@ -133,8 +135,8 @@ test("ordinary long replies retain their complete text instead of permanently sk
   assert.deepEqual(context.messages.map(message => message.body), messages.map(message => message.body));
 });
 
-function workerFixture(options: { denied?: boolean; current?: string; manual?: boolean; providerFails?: boolean; stale?: boolean; cached?: boolean; revoke?: boolean; cooldown?: boolean; messages?: InboxEmailItem[]; noCustomer?: boolean; folderMessages?: InboxEmailItem[]; otherMessages?: InboxEmailItem[]; otherFails?: boolean; otherStale?: boolean; hydrate?: boolean; staffContact?: boolean } = {}) {
-  const calls = { provider: 0, policy: 0, finish: [] as Record<string, unknown>[], claim: 0, history: 0, prompt: "", bodyDownloads: 0, outputBudget: 0 };
+function workerFixture(options: { denied?: boolean; current?: string; manual?: boolean; providerFails?: boolean; stale?: boolean; cached?: boolean; revoke?: boolean; cooldown?: boolean; messages?: InboxEmailItem[]; noCustomer?: boolean; folderMessages?: InboxEmailItem[]; otherMessages?: InboxEmailItem[]; otherFails?: boolean; otherStale?: boolean; hydrate?: boolean; staffContact?: boolean; noWork?: boolean; automaticIds?: string[]; outputs?: Record<string, unknown>[]; budgetDenied?: boolean; revokeAt?: number } = {}) {
+  const calls = { provider: 0, policy: 0, finish: [] as Record<string, unknown>[], claim: 0, history: 0, prompt: "", bodyDownloads: 0, outputBudget: 0, marked: [] as string[] };
   const original = options.messages?.[0] ?? message();
   const bodyMailboxes: string[] = [];
   const historyReads = new Map<string, number>();
@@ -143,7 +145,7 @@ function workerFixture(options: { denied?: boolean; current?: string; manual?: b
     workspace_mailboxes: [{ id: "mailbox", user_id: "owner", type: "personal", email: "sales@seller.test", is_active: true, imap_host: "imap.test", imap_username: "sales", imap_password: "never-expose-this-secret" }],
     workspace_members: [{ user_id: "owner", role: "bd_manager" }],
     contacts: options.noCustomer ? [] : [{ email: "buyer@example.test", company_id: "company-a" }],
-    crm_conversation_tag_analysis: options.cached || options.cooldown ? [{ conversation_key: input.key, input_hash: options.cooldown ? "older-input" : input.fingerprint, latest_message_at: original.timestamp, message_count: 1, status: "done", lease_until: null, retry_at: null, checked_at: new Date(options.cooldown ? Date.now() : Date.now() - 120_000).toISOString() }] : [],
+    crm_conversation_tag_analysis: options.cached || options.cooldown ? [{ conversation_key: input.key, input_hash: options.cooldown ? "older-input" : automaticTags.automaticCustomerTagFingerprint(input.fingerprint, defaultAiPolicy(), {}), latest_message_at: original.timestamp, message_count: 1, status: "done", lease_until: null, retry_at: null, checked_at: new Date(options.cooldown ? Date.now() : Date.now() - 120_000).toISOString() }] : [],
     crm_email_tags: options.current ? [{ message_key: input.key, tag: options.current, source: options.manual ? "manual" : "ai", updated_at: "2026-10-31T03:00:00Z" }] : [],
   };
   if (options.staffContact) tables.contacts.push({ email: "sales@seller.test", company_id: "staff-company" });
@@ -167,11 +169,16 @@ function workerFixture(options: { denied?: boolean; current?: string; manual?: b
     "node:crypto": crypto, zod: { z }, "../supabase/admin": { createSupabaseAdmin: () => db },
     "../mailbox-utils": { normalizeMailboxRows }, "../email-threading": threading, "../customer-tags": tags,
     "../ai/conversation-tagging": tagging,
+    "../customer-tag-rules.ts": tagRules,
+    "../ai/automatic-customer-tags.ts": automaticTags,
+    "../ai/budget-server.ts": { budgetedAiFetch: (_user: string, fetcher: typeof fetch) => fetcher },
+    "./customer-tag-runtime": { beginCustomerTagRun: async () => options.noWork ? null : ({ companyIds: ["company-a"],
+      automaticMessageIds: async () => new Set(options.automaticIds), record: async () => {}, fence: () => ({}), mark(_company: string, status: string) { calls.marked.push(status); }, finish: async () => {} }) },
     "../email-auto-reply": { mergeAutoReplyHistory },
     "./lead-inquiries": { withLeadInquiryOrigins: async (messages: InboxEmailItem[]) => messages },
     "./ai-settings": { requireAiAutomation: async (actions: string[], data: string[]) => {
       calls.policy++; assert.equal(actions.join(), "tagging"); assert.equal(data.join(), "emails,customers");
-      if (options.denied || (options.revoke && calls.policy >= 3)) throw new Error("Paused");
+      if (options.denied || (options.revoke && calls.policy >= 3) || options.revokeAt && calls.policy >= options.revokeAt) throw new Error("Paused");
       return defaultAiPolicy();
     } },
     "./email-auto-reply": { mailboxHistory: async (id: string) => {
@@ -187,9 +194,12 @@ function workerFixture(options: { denied?: boolean; current?: string; manual?: b
       throw new Error("No body download expected");
     } },
 
-    "../ai/gateway": { generateGatewayText: async (input: { prompt: string; maxOutputTokens: number; onUsage: (value: unknown) => void }) => {
+    "../ai/gateway": { generateGatewayText: async (input: { prompt: string; maxOutputTokens: number; onRequest: (model: string) => void; onUsage: (value: unknown) => void }) => {
+      input.onRequest("anthropic/claude-haiku-5.5");
       calls.provider++; calls.prompt = input.prompt; calls.outputBudget = input.maxOutputTokens; input.onUsage({ inputTokens: 250, outputTokens: 80, cachedInputTokens: 100 });
-      if (options.providerFails) throw new Error("Provider unavailable"); return JSON.stringify(decision());
+      if (options.budgetDenied) throw Object.assign(new Error("AI allowance is exhausted."), { name: "AiBudgetError" });
+      if (options.providerFails) throw new Error("Provider unavailable");
+      return JSON.stringify(options.outputs?.[calls.provider - 1] ?? { ...decision(), outcome: "apply", buyerPostponedPurchasing: false });
     } },
   };
   const exports = {} as typeof import("../lib/data/conversation-tagging.ts");
@@ -215,6 +225,38 @@ test("background classifier reads subject and body, then writes the shared conve
   assert.equal(metrics.usage.inputTokens, 250);
 });
 
+test("an empty durable outbox skips mailbox scans, provider setup and classification", async () => {
+  const worker = workerFixture({ noWork: true });
+  await worker.run();
+  assert.equal(worker.calls.history, 0); assert.equal(worker.calls.policy, 0); assert.equal(worker.calls.provider, 0);
+});
+
+test("known intake workflow replies update through rules without a paid classifier", async () => {
+  const worker = workerFixture({ automaticIds: ["<welcome@seller>"], messages: [
+    message({ id: "shopify-lead-1", messageId: null, threadId: "shopify:lead-1" }),
+    message({ id: "sent-welcome", messageId: "<welcome@seller>", threadId: "shopify:lead-1", direction: "outbound", timestamp: "2026-10-31T02:00:00Z" }),
+  ] });
+  assert.equal((await worker.run()).ruleSkipped, 1); assert.equal(worker.calls.provider, 0);
+});
+
+test("uncertain interpretation escalates only once and retains an explicit review outcome", async () => {
+  const uncertain = { ...decision(), confidence: 0.7, tag: null, outcome: "review", buyerPostponedPurchasing: false };
+  const worker = workerFixture({ outputs: [uncertain, uncertain] });
+  await worker.run();
+  assert.equal(worker.calls.provider, 2); assert.equal(worker.calls.finish[0].p_action, "review");
+  assert.equal((worker.calls.finish[0].p_metrics as { escalated: boolean }).escalated, true);
+});
+
+test("invalid primary evidence gets one validated retry, but budget denial cannot trigger escalation", async () => {
+  const invalid = { ...decision({ evidence: [{ messageKey: "imap-root@buyer.test", quote: "The buyer never said these invented words" }] }), outcome: "apply", buyerPostponedPurchasing: false };
+  const worker = workerFixture({ outputs: [invalid] });
+  assert.equal((await worker.run()).analyzed, 1); assert.equal(worker.calls.provider, 2);
+  const blocked = workerFixture({ budgetDenied: true });
+  assert.equal((await blocked.run()).failed, 1); assert.equal(blocked.calls.provider, 1);
+  const revoked = workerFixture({ revokeAt: 5, outputs: [{ ...decision(), tag: null, outcome: "review", buyerPostponedPurchasing: false }] });
+  assert.equal((await revoked.run()).failed, 1); assert.equal(revoked.calls.provider, 1);
+});
+
 test("a staff CRM contact cannot steal a CC customer's tag or turn the seller's copied reply into buyer activity", async () => {
   const worker = workerFixture({ staffContact: true, hydrate: true, messages: [message({ contact: "sales@seller.test", from: "sales@seller.test", cc: [{ address: "buyer@example.test" }], bodyLoaded: false, uid: 42, uidValidity: 7 })] });
   assert.equal((await worker.run()).analyzed, 1);
@@ -232,6 +274,7 @@ test("preview hydration and unsent drafts do not create new paid conversation ac
 
 test("a burst of replies is coalesced and incomplete history is rejected before downloads", async () => {
   const cooldown = workerFixture({ cooldown: true }); await cooldown.run(); assert.equal(cooldown.calls.claim, 0); assert.equal(cooldown.calls.provider, 0);
+  assert.ok(cooldown.calls.marked.includes("pending"), "Changed input must stay queued after the conversation cooldown");
   const missing = workerFixture({ messages: [message({ bodyLoaded: false, references: ["missing@customer"] })] });
   assert.equal((await missing.run()).ruleSkipped, 1);
   assert.equal(missing.calls.provider, 0); assert.equal(missing.calls.bodyDownloads, 0);

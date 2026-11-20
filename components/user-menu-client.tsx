@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Building2, ChevronRight, LogOut, Settings, UserRound } from "lucide-react";
+import { Building2, ChevronRight, CreditCard, LogOut, Settings, UserRound } from "lucide-react";
 import { UserAvatar } from "@/components/user-avatar";
 import type { AvatarPreset } from "@/lib/profile-avatar";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,7 @@ export function UserMenuClient({ userId, name, email, role, imageUrl, preset, wo
         <DropdownMenuItem className="min-h-10 px-3" onClick={() => router.push("/workspaces")}><Building2 /><span className="min-w-0"><span className="block truncate">{workspaceName || "Workspace"}</span><span className="block text-xs text-muted-foreground">Switch or create workspace</span></span></DropdownMenuItem>
         <DropdownMenuItem className="min-h-10 px-3" onClick={() => router.push("/settings/profile")}><UserRound />Profile</DropdownMenuItem>
         <DropdownMenuItem className="min-h-10 px-3" onClick={() => router.push("/settings")}><Settings />Settings</DropdownMenuItem>
+        <DropdownMenuItem className="min-h-10 px-3" onClick={() => router.push("/subscribe")}><CreditCard />Subscription</DropdownMenuItem>
         <DropdownMenuSeparator className="mx-2 my-2" />
         <DropdownMenuItem className="min-h-10 px-3" onClick={signOut}><LogOut />Log out</DropdownMenuItem>
       </DropdownMenuContent>

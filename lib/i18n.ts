@@ -25,6 +25,8 @@ import { zhCNAiLeads } from "./i18n-ai-leads.ts";
 import { zhCNEmailCampaigns } from "./i18n-email-campaigns.ts";
 import { zhCNAiLauncher } from "./i18n-ai-launcher.ts";
 import { zhCNInterface } from "./i18n-interface.ts";
+import { zhCNBilling } from "./i18n-billing.ts";
+import { zhCNAlipayAuth } from "./i18n-alipay-auth.ts";
 
 import type { AppLanguage } from "./app-language.ts";
 export type { AppLanguage } from "./app-language.ts";
@@ -33,6 +35,8 @@ export { LANGUAGE_STORAGE_KEY } from "./app-language.ts";
 // Product terminology is centralized so sales, catalog, mailbox, and
 // automation screens use consistent professional Chinese wording.
 const zhCN: Record<string, string> = {
+  ...zhCNBilling,
+  ...zhCNAlipayAuth,
   ...zhCNInterface,
   ...zhCNSalesAutomation,
   ...zhCNFlowEditor,

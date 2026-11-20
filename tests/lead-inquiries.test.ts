@@ -52,6 +52,24 @@ test("form origins require an explicit matching thread and contact; company/sour
   assert.equal((await exports.withLeadInquiryOrigins([{ ...linked, contact: "someone-else@example.test" }])).length, 1);
 });
 
+test("legacy workflow threads link only a unique frozen inquiry origin for the same contact", async () => {
+  const thread = "company:customer:lead:contact";
+  const runs = [{ conversation_id: thread, context: { inquiryOrigin: { source: "shopify", id: shopify.webhook_id } }, contacts: { email: shopify.email } }];
+  const db = { from(table: string) { const query = { select() { return query; }, eq() { return query; }, in() { return query; },
+    throwOnError: async () => ({ data: table === "flow_runs" ? runs : table === "shopify_leads" ? [shopify] : [] }) }; return query; } };
+  const exports = {} as typeof import("../lib/data/lead-inquiries.ts");
+  const code = ts.transpileModule(readFileSync(new URL("../lib/data/lead-inquiries.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  vm.runInNewContext(code, { exports, require: (name: string) => name === "server-only" ? {} : name === "../lead-inquiries.ts" ? leads : { createSupabaseAdmin: () => db }, Set });
+  const sent = { ...leads.buildShopifyFormInboxItems([shopify])[0], id: "sent-reply", direction: "outbound" as const, threadId: thread };
+  const linked = await exports.withLeadInquiryOrigins([sent]);
+  assert.equal(linked[0].threadId, `shopify:${shopify.webhook_id}`);
+  assert.equal(linked[0].tagThreadAliases?.[0], thread);
+  assert.equal(linked.length, 2);
+  assert.equal((await exports.withLeadInquiryOrigins([{ ...sent, contact: "other@example.test" }]))[0].threadId, thread);
+  runs.push({ ...runs[0], context: { inquiryOrigin: { source: "shopify", id: "second-inquiry" } } });
+  assert.equal((await exports.withLeadInquiryOrigins([sent]))[0].threadId, thread, "Competing form origins must not merge independent inquiries");
+});
+
 test("optional usage callbacks record actual provider counters without changing existing response contracts", async () => {
   let gatewayUsage: unknown;
   assert.equal(await generateGatewayText({ token: "synthetic", model: "alibaba/qwen-3-14b", systemInstruction: "test", prompt: "test", onUsage: usage => { gatewayUsage = usage; },

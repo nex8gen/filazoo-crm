@@ -1,4 +1,4 @@
-import { FileClock, Handshake, MessageCirclePlus, Moon, PackageCheck, Repeat2, Sprout, Wallet, type LucideIcon } from "lucide-react";
+import { FileClock, Handshake, MessageCirclePlus, MessageCircleReply, Send, Moon, PackageCheck, Repeat2, Sprout, Wallet, type LucideIcon } from "lucide-react";
 import { customerTags, uniqueCustomerTags, type CustomerTag } from "@/lib/customer-tags";
 
 const tagIcons: Record<CustomerTag, LucideIcon> = {
@@ -10,6 +10,8 @@ const tagIcons: Record<CustomerTag, LucideIcon> = {
   "Orders in Fulfillment": PackageCheck,
   "Repeat Customers": Repeat2,
   "Inactive Customers": Moon,
+  "Contacted — waiting for customer": Send,
+  "Customer replied": MessageCircleReply,
 };
 
 export function CustomerTagIcon({ tag }: { tag: CustomerTag }) {

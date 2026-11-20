@@ -42,9 +42,9 @@ function fixture() {
   return { data, state: exports as typeof import("../lib/data/email-state.ts"), db, writes };
 }
 
-test("the eight named tags have unique colors; company aggregation retains every distinct tag", () => {
-  assert.equal(vocabulary.customerTags.length, 8);
-  assert.equal(new Set(vocabulary.customerTags.map(tag => tag.className)).size, 8);
+test("situation and communication tags have unique colors; company aggregation retains every distinct tag", () => {
+  assert.equal(vocabulary.customerTags.length, 10);
+  assert.equal(new Set(vocabulary.customerTags.map(tag => tag.className)).size, vocabulary.customerTags.length);
   assert.equal(vocabulary.customerTags[0].name, "Prospect Nurturing");
   assert.equal(vocabulary.customerTags[7].name, "Inactive Customers");
   assert.deepEqual(vocabulary.uniqueCustomerTags(["Repeat Customers", "New Inquiries", "Repeat Customers", "PLA", null]), ["New Inquiries", "Repeat Customers"]);

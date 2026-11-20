@@ -5,13 +5,14 @@ import vm from "node:vm";
 import ts from "typescript";
 import { supabaseSessionDependencies } from "./helpers/supabase-session.ts";
 
-function setup(secret: string | undefined = "fixture-secret") {
+function setup(secret: string | undefined = "fixture-secret", workspaceCount = 1) {
   let calls = 0;
+  let tagOptions: { budgetMs?: number } | undefined;
   const background: Array<() => Promise<void>> = [];
   const exports = {} as { GET: (request: Request) => Promise<Response> };
   vm.runInNewContext(ts.transpileModule(readFileSync(new URL("../app/api/cron/mail-sync/route.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText,
-    { exports, Request, Response, URL, console, process: { env: { CRON_SECRET: secret } }, require: (name: string) => name === "@/lib/data/workspace-runtime" ? { forEachWorkspace: async (run: (id: string, count: number) => Promise<unknown>) => [await run("test-workspace", 1)] } : name === "next/server" ? { after: (run: () => Promise<void>) => background.push(run) } : name === "@/lib/data/conversation-tagging" ? { processAutomaticConversationTags: async () => ({ analyzed: 1, failed: 0, paused: false }) } : { withMailSyncWorkerLease: async (run: () => Promise<unknown>) => run(), runMailSyncWorker: async () => { calls++; return { processed: 2, failed: 0 }; } } });
-  return { ...exports, calls: () => calls, flush: async () => { for (const run of background) await run(); } };
+    { exports, Request, Response, URL, console, process: { env: { CRON_SECRET: secret } }, require: (name: string) => name === "@/lib/data/workspace-runtime" ? { forEachWorkspace: async (run: (id: string, count: number) => Promise<unknown>) => [await run("test-workspace", workspaceCount)] } : name === "next/server" ? { after: (run: () => Promise<void>) => background.push(run) } : name === "@/lib/data/conversation-tagging" ? { processAutomaticConversationTags: async (options: { budgetMs?: number }) => { tagOptions = options; return { analyzed: 1, failed: 0, paused: false }; } } : { withMailSyncWorkerLease: async (run: () => Promise<unknown>) => run(), runMailSyncWorker: async () => { calls++; return { processed: 2, failed: 0 }; } } });
+  return { ...exports, calls: () => calls, tagOptions: () => tagOptions, flush: async () => { for (const run of background) await run(); } };
 }
 test("public or incorrectly authenticated cron requests cannot touch the mailbox queue", async () => {
   for (const authorization of ["", "Bearer wrong"]) {
@@ -40,10 +41,11 @@ test("the explicit diagnostic waits for sync and bounded context tagging", async
 });
 
 test("the authenticated tag diagnostic runs no mail sync or sending workflow", async () => {
-  const worker = setup();
+  const worker = setup("fixture-secret", 4);
   const response = await worker.GET(new Request("https://crm.test/api/cron/mail-sync?task=tags", { headers: { authorization: "Bearer fixture-secret" } }));
   assert.equal(response.status, 200); assert.equal(worker.calls(), 0);
   assert.equal((await response.json()).tags[0].analyzed, 1);
+  assert.equal(worker.tagOptions()?.budgetMs, 220_000, "Parallel tenants must not divide away the safe history and inference window");
 });
 
 test("the session gate delegates mail sync authentication to its bearer guard while keeping staff pages gated", async () => {

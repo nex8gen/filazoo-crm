@@ -12,8 +12,8 @@ export const signupSchema = z.object({
 
 // Auth screens are not valid post-auth destinations: they can create loops.
 export function signupDestination(value: unknown) {
-  const path = safeInternalPath(value, "/workspaces/new");
-  return /^\/(?:login|signup|auth|forgot-password|update-password)(?:[/?#]|$)/.test(path) ? "/workspaces/new" : path;
+  const path = safeInternalPath(value, "/subscribe");
+  return /^\/(?:login|signup|auth|forgot-password|update-password)(?:[/?#]|$)/.test(path) ? "/subscribe" : path;
 }
 
 export const pendingSignupCookie = "filazoo-pending-signup";

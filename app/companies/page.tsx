@@ -25,7 +25,7 @@ export default async function CompaniesPage({ searchParams }: { searchParams: Pr
       <div>
         <PageActions>{segmentName ? <><span className="mr-auto text-sm text-muted-foreground">{segmentName}</span><Link href="/segments" className="inline-flex min-h-9 items-center px-3 text-sm text-primary underline-offset-4 hover:underline">Segments</Link><Link href="/companies" className="inline-flex min-h-9 items-center px-3 text-sm text-primary underline-offset-4 hover:underline">All companies</Link></> : null}<ExportCompaniesButton companies={visibleCompanies} /><AddCompanyButton canWrite={viewer.role !== "viewer"} existingSegments={[...new Set(companies.map((company) => company.segment).filter((segment) => segment && segment !== "Unclassified"))].sort()} /></PageActions>
       </div>
-      <CompaniesTable key={savedSegment?.id ?? selectedSegment ?? "all"} viewKey={savedSegment?.id ?? selectedSegment ?? "all"} companies={visibleCompanies} mode={mode} canWrite={viewer.role !== "viewer"} canDelete={viewer.role === "admin"} />
+      <CompaniesTable key={savedSegment?.id ?? selectedSegment ?? "all"} viewKey={savedSegment?.id ?? selectedSegment ?? "all"} companies={visibleCompanies} mode={mode} canWrite={viewer.role !== "viewer"} canDelete={viewer.role === "admin"} analyticsAsOf={new Date().toISOString()} />
     </div>
   );
 }

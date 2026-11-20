@@ -7,23 +7,26 @@ import { AuthGradient } from "@/components/ui/auth-gradient";
 
 // Shared frame adapted from the supplied AuthSectionOne design. Forms remain
 // separate so account, recovery, invitation and onboarding actions stay native.
-export default function AuthSectionOne({ children, footer, step }: { children: ReactNode; footer?: string; step?: number }) {
+export default function AuthSectionOne({ children, footer, step, variant }: { children: ReactNode; footer?: string; step?: number; variant?: "signin" }) {
+  const isSignIn = variant === "signin";
   return (
-    <main className="min-h-svh bg-white p-3 text-black antialiased dark:bg-[#050505] dark:text-white">
+    <main className="min-h-svh bg-[var(--workspace-frame)] p-3 text-black antialiased dark:text-white">
       <div className="grid min-h-[calc(100svh-1.5rem)] gap-3 lg:grid-cols-[0.94fr_1.06fr]">
-        <section className="flex min-w-0 flex-col rounded-md border border-black/20 bg-white px-6 py-7 sm:px-10 dark:border-white/15 dark:bg-[#0a0a0a] lg:px-12 xl:px-20">
-          <header className="flex items-center justify-between gap-4">
-            <Link href="/login" aria-label="Filazoo sign in" className="flex items-center gap-2.5 font-semibold tracking-tight"><BrandMarkIcon className="h-7 w-auto text-brand-foreground" /><span>Filazoo</span></Link>
+        <section className="flex min-w-0 flex-col rounded-md bg-background px-6 py-7 sm:px-10 lg:px-12 xl:px-20">
+          <header className={`flex items-center gap-4 ${isSignIn ? "justify-end" : "justify-between"}`}>
+            {!isSignIn ? <Link href="/login" aria-label="Filazoo sign in" className="flex items-center gap-2.5 font-semibold tracking-tight"><BrandMarkIcon className="h-7 w-auto text-brand-foreground" /><span>Filazoo</span></Link> : null}
             <LanguageSwitcher />
           </header>
-          <div className="mx-auto flex w-full max-w-[590px] flex-1 flex-col justify-center py-12 sm:py-16">
+          <div className={`mx-auto flex w-full flex-1 flex-col justify-center py-12 sm:py-16 ${isSignIn ? "max-w-[360px]" : "max-w-[590px]"}`}>
+            {isSignIn ? <Link href="/login" aria-label="Filazoo sign in" className="mb-10 flex items-center justify-center gap-3 self-center text-3xl font-semibold tracking-tight"><BrandMarkIcon className="h-10 w-auto text-brand-foreground" /><span>Filazoo</span></Link> : null}
             {step ? <AuthSteps current={step} /> : null}
             {children}
+            {isSignIn ? <footer className="mt-4 flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs text-primary"><Link href="/terms" className="hover:underline">Terms</Link><span aria-hidden="true" className="text-black/40 dark:text-white/40">|</span><Link href="/privacy" className="hover:underline">Privacy</Link></footer> : null}
           </div>
-          <footer className="flex flex-wrap items-center justify-between gap-3 text-xs text-black/55 dark:text-white/55">
+          {!isSignIn ? <footer className="flex flex-wrap items-center justify-between gap-3 text-xs text-black/55 dark:text-white/55">
             <span>{footer || "Your business. Your team. Your workspace."}</span>
             <span className="flex gap-4"><Link href="/terms" className="hover:underline">Terms</Link><Link href="/privacy" className="hover:underline">Privacy</Link></span>
-          </footer>
+          </footer> : null}
         </section>
         <aside className="relative isolate hidden min-w-0 overflow-hidden rounded-md bg-[#052e20] p-12 text-white lg:flex xl:p-16" aria-label="About Filazoo">
           <AuthGradient />

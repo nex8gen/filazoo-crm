@@ -19,7 +19,7 @@ export async function createWorkspace(_state: WorkspaceActionState, formData: Fo
   if (error?.code === "PGRST202" || error?.code === "42883") return { error: "Workspace creation is awaiting the database upgrade. Your account is ready." };
   if (error || !workspaceIdSchema.safeParse(data).success) return { error: "Unable to create your workspace. Verify your email and try again. Each account can own up to 10 workspaces." };
   (await cookies()).set(workspaceCookie, data, workspaceCookieOptions());
-  redirect("/workspaces/setup");
+  redirect(`/subscribe?workspace=${data}`);
 }
 
 export async function switchWorkspace(_state: WorkspaceActionState, formData: FormData): Promise<WorkspaceActionState> {

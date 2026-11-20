@@ -2,6 +2,7 @@ export type EmailThreadMetadata = {
   companyId?: string | null;
   id: string;
   threadId?: string | null;
+  tagThreadAliases?: string[];
   messageId?: string | null;
   inReplyTo?: string | null;
   references?: string[] | null;

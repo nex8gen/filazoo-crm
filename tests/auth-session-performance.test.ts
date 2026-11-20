@@ -12,7 +12,7 @@ import { isTransientAuthError } from "../lib/supabase/auth-error.ts";
 const id = "aaaaaaaa-1111-2222-3333-444444444444";
 const sessionId = "bbbbbbbb-1111-2222-3333-444444444444";
 const claims = { sub: id, session_id: sessionId, aud: "authenticated", role: "authenticated", iss: "https://test.supabase.co/auth/v1", user_metadata: { avatar_preset: "male", role: "admin" } };
-const member = { id, email: "staff@example.com", user_metadata: { avatar_preset: "female" }, role: "operator", display_name: "Staff", activated_at: "2026-01-01", workspace_id: "cccccccc-1111-4222-8333-444444444444", workspace_name: "Test workspace", owner_id: id };
+const member = { id, email: "staff@example.com", user_metadata: { avatar_preset: "female" }, role: "operator", display_name: "Staff", activated_at: "2026-01-01", workspace_id: "cccccccc-1111-4222-8333-444444444444", workspace_name: "Test workspace", owner_id: id, subscription_active: true };
 const source = ts.transpileModule(readFileSync(new URL("../lib/auth.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 type Options = { claims?: unknown; claimError?: unknown; row?: unknown; rpcError?: { code: string; message: string }; cache?: boolean; legacySignedIn?: boolean };
 function load(options: Options = {}) {
@@ -35,8 +35,8 @@ function load(options: Options = {}) {
     "./supabase/control.ts": { createSupabaseControl: () => ({
       rpc: (name: string, params: unknown) => {
         calls.rpc++;
-        assert.ok(name === "read_workspace_session" || name === "read_crm_session");
-        assert.deepEqual(JSON.parse(JSON.stringify(params)), { p_user_id: id, p_session_id: sessionId, ...(name === "read_workspace_session" ? { p_workspace_id: null } : {}) });
+        assert.ok(name === "read_subscribed_workspace_session" || name === "read_crm_session");
+        assert.deepEqual(JSON.parse(JSON.stringify(params)), { p_user_id: id, p_session_id: sessionId, ...(name === "read_subscribed_workspace_session" ? { p_workspace_id: null } : {}) });
         return { maybeSingle: async () => ({ data: name === "read_crm_session" && options.legacySignedIn === false ? null : state.row, error: name === "read_crm_session" ? null : options.rpcError ?? null }) };
       },
       from: (table: string) => { calls.membership++; assert.equal(table, "workspace_members"); const query = { select: () => query, eq: () => query, maybeSingle: async () => ({ data: state.row, error: null }) }; return query; },
@@ -83,7 +83,7 @@ test("revoked sessions, banned/deleted users, and identity mismatches fail close
 test("inactive, missing or unknown roles and denied operations cannot inherit JWT metadata roles", async () => {
   for (const row of [{ ...member, activated_at: null }, { ...member, role: null }, { ...member, role: "superuser" }, member]) {
     const { api } = load({ row });
-    await assert.rejects(api.requireWorkspaceMember(["admin"]), /\/access-denied|\/workspaces/);
+    await assert.rejects(api.requireWorkspaceMember(["admin"]), /\/access-denied|\/subscribe/);
   }
   const { api } = load({ row: { ...member, role: null, activated_at: null } });
   assert.equal((await api.requireViewer() as { id: string }).id, id); // Invitation/account activation flow.
@@ -104,6 +104,15 @@ test("render-scoped memoization shares a snapshot between shell, page and data h
   const { api, calls } = load({ cache: true });
   await Promise.all([api.getViewer(), api.getWorkspaceViewer(), api.requireWorkspaceMember(["operator"])]);
   assert.deepEqual(calls, { claims: 1, rpc: 1, getUser: 0, membership: 0 });
+});
+
+test("unpaid or missing subscription state sends a member to billing without denying their account", async () => {
+  for (const subscription_active of [false, undefined]) {
+    const { api, calls } = load({ row: { ...member, subscription_active } });
+    await assert.rejects(api.requireWorkspaceMember(), /\/subscribe\?workspace=/);
+    assert.equal(calls.rpc, 1);
+    assert.equal((await api.requireViewer() as { id: string }).id, id);
+  }
 });
 
 test("rolling upgrades use only the existing live-session-validated legacy reader", async () => {

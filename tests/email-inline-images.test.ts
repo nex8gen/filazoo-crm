@@ -100,4 +100,15 @@ test("sending and reloading Sent mail retain HTML, CID metadata and private imag
   const reloaded = await listSentMailboxMessages("actor");
   assert.equal(reloaded[0].body, "Asher Xu");
   assert.equal(reloaded[0].html, result.email.html);
+
+  // Both new-email and reply composers use this endpoint. An attached photo
+  // must also work with no HTML, no body text and no personal footer.
+  const photoOnly = await POST(new Request("http://localhost/api/email/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to: "customer@example.test", subject: "Photo only", text: "", attachments: [{ filename: "photo.png", contentType: "image/png", content: png.toString("base64") }] }) }));
+  assert.equal(photoOnly.status, 200);
+  assert.equal((await photoOnly.json()).ok, true);
+  assert.equal(delivered.text, "");
+  assert.deepEqual(uploads.at(-1), png);
+
+  const empty = await POST(new Request("http://localhost/api/email/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to: "customer@example.test", text: "", attachments: [] }) }));
+  assert.equal(empty.status, 400);
 });

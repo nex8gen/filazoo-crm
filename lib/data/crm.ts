@@ -13,7 +13,7 @@ import { readActivityHistory } from "./activity-history.ts";
 import { literalInvoiceEmail } from "../invoice-related.ts";
 import { resolveMemberAvatars } from "./cached-member-avatars.ts";
 import { readCompanyPaidOrderCounts } from "./company-orders.ts";
-import { uniqueCustomerTags } from "../customer-tags.ts";
+import { projectCustomerTags, type CustomerTagRuleState, type CustomerTagAssignment } from "../customer-tag-rules.ts";
 
 type Relation<T> = T | T[] | null;
 
@@ -29,7 +29,8 @@ type CompanyRow = {
   status: string;
   discovered_at: string;
   created_at: string;
-  crm_email_tags?: { tag: string | null }[];
+  crm_email_tags?: CustomerTagAssignment[];
+  crm_customer_tag_state?: Relation<CustomerTagRuleState>;
   meta_leads: Relation<{ created_at: string; field_data: unknown }>;
   company_profiles: Relation<{
     summary: string | null;
@@ -179,7 +180,9 @@ function mapCompany(row: CompanyRow, ownerNames = new Map<string, string>(), own
     nextFollowupAt: pipeline?.next_followup_at || null,
     nextAction: pipeline?.next_followup_at ? `Follow up ${formatRelativeDate(pipeline.next_followup_at).toLowerCase()}` : "Review company",
     tags: profile?.interest_tags ?? [],
-    customerTags: uniqueCustomerTags((row.crm_email_tags ?? []).map(item => item.tag)),
+    customerTags: projectCustomerTags(row.crm_email_tags ?? [], first(row.crm_customer_tag_state ?? null)),
+    tagProcessingStatus: first(row.crm_customer_tag_state ?? null)?.processing_status,
+    tagProcessingReason: first(row.crm_customer_tag_state ?? null)?.processing_reason ?? undefined,
     contact: contact?.name || "No contact yet",
     contactRole: contact?.role || "Role not confirmed",
     email: contact?.email || "",
@@ -241,7 +244,7 @@ async function queryCompanies(id?: string, options: { ids?: string[]; maxCompani
   for (let offset = 0; ; offset += 500) {
     const query = createSupabaseAdmin()
       .from("companies")
-      .select(`id,name,website,domain,country,city,segment,source,status,discovered_at,created_at,crm_email_tags(tag),company_profiles(summary,fit_score,interest_tags),contacts(id,name,role,email,verification_status,emails(status,direction,created_at)),${viewer?.role === "bd_manager" ? "pipeline!inner" : "pipeline"}(next_followup_at,currency,owner_id)`)
+      .select(`id,name,website,domain,country,city,segment,source,status,discovered_at,created_at,crm_email_tags(tag,source,message_key),crm_customer_tag_state(tags,communication,facts,processing_status,processing_reason),company_profiles(summary,fit_score,interest_tags),contacts(id,name,role,email,verification_status,emails(status,direction,created_at)),${viewer?.role === "bd_manager" ? "pipeline!inner" : "pipeline"}(next_followup_at,currency,owner_id)`)
       // Outreach displays one latest status, not every contact's email history.
       .order("created_at", { referencedTable: "contacts.emails", ascending: false })
       .order("id", { referencedTable: "contacts.emails", ascending: false })
@@ -280,7 +283,7 @@ export async function getCompanyProfile(id: string): Promise<{ mode: DataMode; d
   if (!/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(id)) return { mode, details: null };
   const admin = createSupabaseAdmin();
   const query = admin.from("companies")
-    .select(`id,name,website,domain,country,city,segment,source,status,discovered_at,created_at,crm_email_tags(tag),meta_leads(created_at,field_data),company_profiles(summary,fit_score,interest_tags),${viewer?.role === "bd_manager" ? "pipeline!inner" : "pipeline"}(next_followup_at,currency,owner_id),contacts(id,name,role,email,verification_status),customer_billing_profiles(profile)`);
+    .select(`id,name,website,domain,country,city,segment,source,status,discovered_at,created_at,crm_email_tags(tag,source,message_key),crm_customer_tag_state(tags,communication,facts,processing_status,processing_reason),meta_leads(created_at,field_data),company_profiles(summary,fit_score,interest_tags),${viewer?.role === "bd_manager" ? "pipeline!inner" : "pipeline"}(next_followup_at,currency,owner_id),contacts(id,name,role,email,verification_status),customer_billing_profiles(profile)`);
   if (viewer?.role === "bd_manager") query.eq("pipeline.owner_id", viewer.id);
   const companyResult = await query
     .eq("id", id).order("created_at", { referencedTable: "contacts" }).order("id", { referencedTable: "contacts" }).maybeSingle();
@@ -319,7 +322,7 @@ export async function getCompanyDetails(id: string): Promise<{ mode: DataMode; d
     if (!data) return { mode, details: null };
   }
   const [companyResult, contactsResult, eventsResult, emailsResult, catalogsResult, commerceResult] = await Promise.all([
-    admin.from("companies").select("id,name,website,domain,country,city,segment,source,status,discovered_at,created_at,crm_email_tags(tag),meta_leads(created_at,field_data),company_profiles(summary,fit_score,interest_tags),contacts(id,name,role,email,verification_status,emails(status,direction,created_at)),pipeline(next_followup_at,currency,owner_id)").eq("id", id).maybeSingle(),
+    admin.from("companies").select("id,name,website,domain,country,city,segment,source,status,discovered_at,created_at,crm_email_tags(tag,source,message_key),crm_customer_tag_state(tags,communication,facts,processing_status,processing_reason),meta_leads(created_at,field_data),company_profiles(summary,fit_score,interest_tags),contacts(id,name,role,email,verification_status,emails(status,direction,created_at)),pipeline(next_followup_at,currency,owner_id)").eq("id", id).maybeSingle(),
     admin.from("contacts").select("id,name,role,email,verification_status").eq("company_id", id).order("created_at").order("id"),
     readActivityHistory((from, to) => admin.from("events").select("id,type,data,actor_id,created_at").eq("company_id", id).order("created_at", { ascending: false }).order("id").range(from, to)),
     readActivityHistory((from, to) => admin.from("emails").select("id,message_id,subject,body,status,direction,approved_by,sent_at,created_at,contacts!inner(name,email,company_id)").eq("contacts.company_id", id).order("created_at", { ascending: false }).order("id").range(from, to)),

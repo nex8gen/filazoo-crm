@@ -32,7 +32,7 @@ export const emailSendSchema = z.object({
 }).superRefine((value, context) => {
   if ((value.campaign ? value.attachments.filter(file => !file.cid).length : value.attachments.length) > 10) context.addIssue({ code: "custom", path: ["attachments"], message: "An email supports up to 10 attachments." });
   if (new Set([...value.to, ...value.cc, ...value.bcc]).size > 50) context.addIssue({ code: "custom", message: "An email supports up to 50 recipients." });
-  if (!value.text.trim() && !value.html?.trim()) context.addIssue({ code: "custom", message: "Enter a message before sending." });
+  if (!value.text.trim() && !value.html?.trim() && !value.attachments.length) context.addIssue({ code: "custom", message: "Enter a message or attach a file before sending." });
 });
 export type EmailSendInput = z.infer<typeof emailSendSchema>;
 
@@ -42,7 +42,10 @@ export const emailDraftSchema = z.object({
   providerDraft: providerDraftSchema.optional(),
   kind: z.enum(["reply", "compose"]), threadId: z.string().max(1_100).optional(),
   to: z.string().max(4000), cc: z.string().max(4000).default(""), bcc: z.string().max(4000).default(""),
-  subject: z.string().max(300), text: z.string().max(1_000_000), html: z.string().max(1_500_000),
+  subject: z.string().max(300), text: z.string().max(1_000_000),
+  // Drafts retain data URLs until send converts them into MIME attachments.
+  // Allow ten 7.5 MB images in base64, plus the existing markup allowance.
+  html: z.string().max(101_500_000).refine(html => html.replace(/src="data:image\/[a-z0-9.+-]+;base64,[a-z\d+/]+=*"/gi, 'src=""').length <= 1_500_000, "Email markup is too large."),
   bodyText: z.string().max(1_000_000).default(""),
   parentId: z.string().max(1100).optional(), replyAll: z.boolean().default(false),
   inReplyTo: z.string().max(1000).optional(), references: z.array(z.string().max(1000)).max(100).optional(),

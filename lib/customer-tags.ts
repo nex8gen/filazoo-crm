@@ -4,6 +4,7 @@ import { normalizeMessageId, normalizeReferences, threadKeyForEmail, groupEmailC
 export const customerTagValues = [
   "Prospect Nurturing", "New Inquiries", "Quotation Follow-up", "Active Negotiations",
   "Payment Follow-up", "Orders in Fulfillment", "Repeat Customers", "Inactive Customers",
+  "Contacted — waiting for customer", "Customer replied",
 ] as const;
 
 export type CustomerTag = (typeof customerTagValues)[number];
@@ -18,7 +19,7 @@ export function emailTagMessageKey(email: { id: string; messageId?: string | nul
 export function conversationTagKeys(messages: readonly (EmailThreadMetadata & { timestamp: string })[]): string[] {
   return [...new Set([...messages].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp)).flatMap(email => {
     const root = normalizeReferences(email.references)[0] || normalizeMessageId(email.inReplyTo) || normalizeMessageId(email.messageId);
-    return [`conversation:${threadKeyForEmail(email)}`, ...(root ? [`conversation:message:${root}`] : [])];
+    return [`conversation:${threadKeyForEmail(email)}`, ...(email.tagThreadAliases ?? []).map(key => `conversation:${key}`), ...(root ? [`conversation:message:${root}`] : [])];
   }))];
 }
 
@@ -45,10 +46,12 @@ export const customerTags = customerTagValues.map((name, index) => ({
     "An opportunity is in requirements qualification.",
     "A valid quotation has been sent; customer feedback is pending.",
     "Specifications, pricing, samples, or delivery terms are being discussed.",
-    "Purchasing terms are confirmed and a documented payment arrangement exists.",
+    "An issued invoice has been sent and still has an outstanding balance.",
     "At least one active, incomplete order exists.",
-    "At least two qualifying purchases exist.",
+    "At least two distinct completed, fully settled purchases exist.",
     "The customer is inactive or has postponed purchasing; record any agreed next contact date.",
+    "A linked sales reply was sent; the customer has not replied since.",
+    "The customer replied after our last linked sales message; review the conversation for the next action.",
   ][index],
   className: [
     "bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300",
@@ -59,6 +62,8 @@ export const customerTags = customerTagValues.map((name, index) => ({
     "bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300",
     "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
     "bg-slate-100 text-slate-600 dark:bg-slate-500/15 dark:text-slate-300",
+    "bg-teal-50 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300",
+    "bg-fuchsia-50 text-fuchsia-700 dark:bg-fuchsia-500/15 dark:text-fuchsia-300",
   ][index],
 }));
 

@@ -1,3 +1,3 @@
-export { default } from "@/app/companies/[id]/page";
+export { default } from "@/components/company-page";
 
 export const instant = false;

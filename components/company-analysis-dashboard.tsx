@@ -113,7 +113,7 @@ export function CompanyAnalysisDashboard({ companyId, canWrite, preferredCurrenc
     });
   }
 
-  return <section data-no-translate aria-label={copy("Company purchase analysis", "客户采购分析")} className="space-y-5 pb-6">
+  return <section data-no-translate aria-label={copy("Company purchase analysis", "客户采购分析")} className="space-y-5">
     <header className="flex flex-wrap items-start justify-between gap-4">
       <div><h2 className="text-lg font-semibold tracking-tight">{copy("Customer purchase overview", "客户采购概览")}</h2><p className="mt-1.5 max-w-2xl text-xs leading-5 text-muted-foreground">{copy("Confirmed order line amounts · Drafts and cancelled orders excluded · Order-date basis", "按确认订单商品金额统计 · 不计草稿及取消订单 · 按下单日期筛选")}</p></div>
       <div className="flex flex-wrap items-center gap-2">

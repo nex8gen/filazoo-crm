@@ -11,9 +11,11 @@ export async function GET(request: Request) {
   const task = new URL(request.url).searchParams.get("task");
   const companyId = new URL(request.url).searchParams.get("companyId");
   if (companyId && !/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(companyId)) return Response.json({ error: "Invalid company." }, { status: 400 });
-  if (task === "health") return Response.json({ ok: true, version: "mail-sync-fast-v4", taggingVersion: "workspace-history-v5" }, { headers: { "Cache-Control": "no-store" } });
+  if (task === "health") return Response.json({ ok: true, version: "mail-sync-fast-v4", taggingVersion: "rules-first-v1" }, { headers: { "Cache-Control": "no-store" } });
   if (task === "tags") {
-    const tags = await forEachWorkspace((_id, count) => processAutomaticConversationTags({ ...(companyId ? { companyIds: [companyId] } : {}), maxConversations: 10, budgetMs: Math.max(5_000, Math.floor(220_000 / count)) }));
+    // Workspaces execute in parallel batches. Dividing by the total tenant count
+    // can leave no time to interpret even one safely loaded conversation.
+    const tags = await forEachWorkspace(() => processAutomaticConversationTags({ ...(companyId ? { companyIds: [companyId] } : {}), maxConversations: 10, budgetMs: 220_000 }), { rotate: true, deadline: Date.now() + 280_000 });
     return Response.json({ ok: true, tags }, { headers: { "Cache-Control": "no-store" } });
   }
   if (task === "once") {

@@ -1,1 +1,1 @@
-export { CompanyDetailsSkeleton as default } from "@/components/page-skeletons";
+export { CompaniesSkeleton as default } from "@/components/page-skeletons";

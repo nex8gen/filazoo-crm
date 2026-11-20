@@ -1,4 +1,7 @@
 export const zhCNCustomerTags: Record<string, string> = {
+  "Contacted — waiting for customer": "已联系，等待客户回复", "Customer replied": "客户已回复",
+  "Tag update pending": "标签更新中", "Tag needs email history": "标签需要完整邮件记录",
+  "Tag needs review": "标签需要审核", "Tag update retrying": "标签更新重试中", "AI tagging paused": "AI 标签已暂停",
   "Add tag": "添加标签", "Remove tag": "移除标签", "Conversation tag": "会话标签",
   "Customer tags are combined from this company's conversations. Update the tag beside each email subject.": "客户标签汇总自该公司的会话。请在邮件主题旁更新标签。",
   "Prospect Nurturing": "潜客培育", "New Inquiries": "新询盘", "Quotation Follow-up": "报价跟进",

@@ -55,6 +55,7 @@ export type InboxEmailItem = {
   body: string;
   html?: string | null;
   threadId?: string | null;
+  tagThreadAliases?: string[];
   messageId?: string | null;
   inReplyTo?: string | null;
   references?: string[];

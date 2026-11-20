@@ -20,9 +20,9 @@ async function getConnection() {
 
 export type AuthViewer = { id: string; email: string | null; avatarPath?: string; avatarPreset?: AvatarPreset; preferences?: UserPreferences; tableColumns?: TableColumnPreferences };
 export type WorkspaceRole = "admin" | "operator" | "bd_manager" | "viewer";
-export type WorkspaceViewer = AuthViewer & { role: WorkspaceRole; displayName: string | null; workspaceId: string; workspaceName: string; ownerId: string };
+export type WorkspaceViewer = AuthViewer & { role: WorkspaceRole; displayName: string | null; workspaceId: string; workspaceName: string; ownerId: string; subscriptionActive?: boolean };
 
-type MemberRow = { role: string | null; display_name: string | null; activated_at: string | null; workspace_id: string | null; workspace_name: string | null; owner_id: string | null };
+type MemberRow = { role: string | null; display_name: string | null; activated_at: string | null; workspace_id: string | null; workspace_name: string | null; owner_id: string | null; subscription_active?: boolean };
 type SessionRow = MemberRow & { id: string; email: string | null; user_metadata: Record<string, unknown> | null };
 type AuthSnapshot = { viewer: AuthViewer; member: WorkspaceViewer | null };
 const workspaceRoles = new Set<string>(["admin", "operator", "bd_manager", "viewer"]);
@@ -42,7 +42,7 @@ function toViewer(user: { id: string; email?: string | null; user_metadata?: Rec
 
 function toMember(viewer: AuthViewer, row: MemberRow | null): WorkspaceViewer | null {
   if (!row?.activated_at || !row.role || !workspaceRoles.has(row.role) || !row.workspace_id || !row.owner_id) return null;
-  return { ...viewer, role: row.role as WorkspaceRole, displayName: row.display_name, workspaceId: row.workspace_id, workspaceName: row.workspace_name || "Workspace", ownerId: row.owner_id };
+  return { ...viewer, role: row.role as WorkspaceRole, displayName: row.display_name, workspaceId: row.workspace_id, workspaceName: row.workspace_name || "Workspace", ownerId: row.owner_id, subscriptionActive: row.subscription_active === true };
 }
 
 const getAuthSnapshot = cache(async (): Promise<AuthSnapshot | null> => {
@@ -66,7 +66,7 @@ const getAuthSnapshot = cache(async (): Promise<AuthSnapshot | null> => {
   // a shared cache; React.cache only deduplicates a single Server Component render.
   const { cookies } = await import("next/headers");
   const selected = workspaceIdSchema.safeParse((await cookies()).get(workspaceCookie)?.value);
-  const result = await createSupabaseControl().rpc("read_workspace_session", {
+  const result = await createSupabaseControl().rpc("read_subscribed_workspace_session", {
     p_user_id: claims.sub, p_session_id: claims.session_id, p_workspace_id: selected.success ? selected.data : null,
   }).maybeSingle();
   let sessionData: unknown = result.data;
@@ -76,7 +76,7 @@ const getAuthSnapshot = cache(async (): Promise<AuthSnapshot | null> => {
     // This reader never authorizes a new tenant or trusts JWT metadata for membership.
     const legacy = await createSupabaseControl().rpc("read_crm_session", { p_user_id: claims.sub, p_session_id: claims.session_id }).maybeSingle();
     const legacyRow = legacy.data as Omit<SessionRow,"workspace_id"|"workspace_name"|"owner_id"> | null;
-    sessionData = legacyRow ? { ...legacyRow, workspace_id: "legacy", workspace_name: "Filazoo", owner_id: legacyRow.role === "admin" ? legacyRow.id : "legacy" } : null;
+    sessionData = legacyRow ? { ...legacyRow, workspace_id: "legacy", workspace_name: "Filazoo", owner_id: legacyRow.role === "admin" ? legacyRow.id : "legacy", subscription_active: true } : null;
     sessionError = legacy.error;
   }
   if (sessionError) {
@@ -124,13 +124,18 @@ export async function requireWorkspaceMember(allowedRoles?: readonly WorkspaceRo
   const member = snapshot.member;
   if (!member) {
     const redirect = await getRedirect();
-    redirect("/workspaces");
+    redirect("/subscribe");
     throw new Error("Access denied.");
   }
   if (allowedRoles && !allowedRoles.includes(member.role)) {
     const redirect = await getRedirect();
     redirect("/access-denied");
     throw new Error("Access denied.");
+  }
+  if (!member.subscriptionActive) {
+    const redirect = await getRedirect();
+    redirect(`/subscribe?workspace=${member.workspaceId}`);
+    throw new Error("An active subscription is required.");
   }
   return member;
 }

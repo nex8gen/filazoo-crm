@@ -1369,7 +1369,7 @@ export function EmailInboxWorkspace({
     }
     if (footerError || footerLoading) { setNotice(footerError || "Your email footer is loading. Please try again."); return; }
     if (invoiceViewer?.role === "viewer") { setNotice("Viewer access is read-only"); return; }
-    if (!selected || (!replyBodyText.trim() && !replyHasImages) || sending || (aiWriting && !replyHasImages) || replyMediaBusy) return;
+    if (!selected || !replyHasContent || sending || (aiWriting && !replyHasImages) || replyMediaBusy) return;
     const session = replySession.current;
     if (attachmentBusy) return;
     const useAiDraft = aiReplyOn && !replyHasImages && aiDraft && aiDraftSource === draft.trim();
@@ -1532,8 +1532,8 @@ export function EmailInboxWorkspace({
       setComposeError("Choose an active sender with SMTP configured, or update your mailbox in Settings.");
       return;
     }
-    if (!to || (!composeBodyText.trim() && !composeHasImages)) {
-      setComposeError("Enter a recipient, subject, and message.");
+    if (!to || !composeHasContent) {
+      setComposeError("Add a recipient and write a message or attach a file.");
       return;
     }
 
@@ -1579,9 +1579,11 @@ export function EmailInboxWorkspace({
     }
   }
 
+  const replyHasContent = Boolean(replyBodyText.trim() || replyHasImages || replyAttachments.length);
+  const composeHasContent = Boolean(composeBodyText.trim() || composeHasImages || composeAttachments.length);
   const replyEditorDisabled = aiReplyBusy || sending || footerLoading || !savedDrafts.ready;
   const replyDraftNeedsRetry = savedDrafts.status !== "Draft saved" && !/^(Saving|Loading) drafts?/.test(savedDrafts.status);
-  const replySendHint = !savedDrafts.ready ? "Loading your draft…" : footerLoading ? "Loading your email footer…" : aiReplyBusy ? "Preparing your reply…" : attachmentBusy || replyMediaBusy ? "Preparing attachments…" : !replySender?.sendConfigured ? "Choose a configured sender." : !replyRecipient.trim() ? "Add a recipient to send." : !replyBodyText.trim() && !replyHasImages ? "Write a message to send." : replyScheduleOpen && !scheduleAt ? "Choose a send date and time." : "";
+  const replySendHint = !savedDrafts.ready ? "Loading your draft…" : footerLoading ? "Loading your email footer…" : aiReplyBusy ? "Preparing your reply…" : attachmentBusy || replyMediaBusy ? "Preparing attachments…" : !replySender?.sendConfigured ? "Choose a configured sender." : !replyRecipient.trim() ? "Add a recipient to send." : !replyHasContent ? "Write a message or attach a file to send." : replyScheduleOpen && !scheduleAt ? "Choose a send date and time." : "";
   const folderItems: Array<{ id: Folder; label: string; icon: typeof Inbox }> = [
     { id: "inbox", label: "Inbox", icon: Inbox }, { id: "followup", label: "Needs follow-up", icon: CalendarClock }, { id: "unread", label: "Unread", icon: MailOpen }, { id: "all", label: "All mail", icon: Mail },
     { id: "drafts", label: "Drafts", icon: FileText }, { id: "scheduled", label: "Scheduled", icon: Clock3 },
@@ -1597,7 +1599,7 @@ export function EmailInboxWorkspace({
 
   for (const item of providerFolders.filter((item) => item.kind === "custom")) folderItems.push({ id: `provider:${item.path}`, label: item.name, icon: Inbox });
   return (
-    <div data-ai-mailbox-id={selectedMailboxId || undefined} data-ai-email-id={reading ? selected?.id : undefined} data-ai-company-id={reading ? selected?.companyId || undefined : companyScope?.id} className={`email-workspace flex min-w-0 flex-col overflow-hidden bg-background ${companyScope ? "company-email-workspace h-[clamp(520px,calc(100dvh-14rem),900px)] rounded-xl border" : "h-full min-h-0 border-t"}`}>
+    <div data-ai-mailbox-id={selectedMailboxId || undefined} data-ai-email-id={reading ? selected?.id : undefined} data-ai-company-id={reading ? selected?.companyId || undefined : companyScope?.id} className={`email-workspace flex min-w-0 flex-col overflow-hidden bg-background ${companyScope ? "company-email-workspace min-h-0 flex-1" : "h-full min-h-0 border-t"}`}>
       {companyScope ? <h3 className="sr-only">Customer mailbox</h3> : null}
       {!companyScope ? <><PageHeaderDetails>
         <nav aria-label="Email accounts" className="flex min-w-0 items-center gap-5 overflow-x-auto">
@@ -1622,7 +1624,7 @@ export function EmailInboxWorkspace({
 
       <div className="mail-layout" data-reading={reading} data-details={detailsOpen} data-folders={!companyScope} inert={Boolean(switchingMailboxId)} aria-busy={Boolean(switchingMailboxId)}>
         {!companyScope ? <ColumnResizeHandle label="Email folders width" variable="--mail-folder-width" container=".mail-layout" panel=".mail-folders" min={160} max={360} className="mail-folder-resize" /> : null}
-        <ColumnResizeHandle label="Conversation list width" variable="--mail-list-width" container=".mail-layout" panel=".mail-list" min={220} max={600} storageKey={companyScope ? "company-mail-list" : "mail-list"} className="mail-list-resize" />
+        {!companyScope ? <ColumnResizeHandle label="Conversation list width" variable="--mail-list-width" container=".mail-layout" panel=".mail-list" min={220} max={600} storageKey="mail-list" className="mail-list-resize" /> : null}
         {selected && !companyScope ? <ColumnResizeHandle label="Contact details width" variable="--mail-details-width" container=".mail-layout" panel=".mail-details" min={280} max={560} reverse className="mail-details-resize" /> : null}
         {!companyScope ? <aside className="mail-folders min-h-0 flex-col border-r bg-muted/20" aria-label="Email folders">
           <div className="p-3"><Tooltip><TooltipTrigger render={<button type="button" aria-label="New email" onClick={openComposer} className="mail-folder-compose flex h-10 w-full items-center gap-2 rounded-md bg-foreground text-xs font-semibold text-background hover:bg-foreground/90"><Plus aria-hidden="true" className="size-4" /><span className="mail-folder-label">New email</span></button>} /><TooltipContent side="right" sideOffset={12}>New email</TooltipContent></Tooltip></div>
@@ -1634,7 +1636,7 @@ export function EmailInboxWorkspace({
           <Tooltip><TooltipTrigger render={<Link href="/workflow?flow=default" aria-label="Follow-up workflow" className="mail-folder-workflow-shortcut mx-auto size-10 shrink-0 items-center justify-center rounded-md text-violet-600 hover:bg-muted dark:text-violet-300"><Workflow aria-hidden="true" className="size-4" /></Link>} /><TooltipContent side="right" sideOffset={12}>Follow-up workflow</TooltipContent></Tooltip>
         </aside> : null}
 
-        <section className="mail-list" aria-label="Email list">
+        <section className="mail-list" aria-label="Email list" aria-hidden={companyScope && reading ? true : undefined} inert={Boolean(companyScope && reading)}>
           {showFollowupFilters ? <>
             <EmailFollowupFilters value={folder === "followup" ? followupFilter : null} counts={followupFilterCounts} loading={followupFiltersLoading} onChange={value => { changeFolder("followup"); setFollowupFilter(value); }} />
             {folder === "followup" && followupFilter === "nurture" ? <div className="border-b bg-violet-50/70 px-4 py-3 text-xs leading-5 text-violet-800 dark:bg-violet-500/10 dark:text-violet-200"><div className="flex flex-wrap items-center justify-between gap-2"><p className="font-semibold">Dormant customer nurture</p><Link href="/workflow" className="font-medium underline underline-offset-2">Manage workflows</Link></div><p>Includes one-time AI follow-ups and inactive-customer workflows. Stops when the customer replies.</p></div> : null}
@@ -1664,9 +1666,9 @@ export function EmailInboxWorkspace({
           {companyScope && inboxConfigured ? <div className="flex shrink-0 items-center justify-end border-b px-3 py-1"><EmailSyncStatus health={Object.values(syncHealth)} lastSuccessAt={lastSuccessfulSync} error={syncError} partialSnapshot={partialSnapshot} /></div> : null}
           {searchStatus ? <p role="status" className="border-b px-3 py-2 text-xs text-muted-foreground">{searchStatus}</p> : null}
           {notice ? <NotificationToast tone="message">{notice}</NotificationToast> : null}
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
+          <div className="mail-message-list min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
 {folder === "drafts" ? <div className="divide-y">{Object.values(savedDrafts.drafts).length ? Object.values(savedDrafts.drafts).map((value) => <div key={value.id} className="flex items-center gap-3 px-4 py-4"><button type="button" onClick={() => resumeDraft(value)} className="min-w-0 flex-1 text-left"><span className="block truncate text-sm font-medium">{value.subject || "(No subject)"}</span><span className="block truncate text-xs text-muted-foreground">{value.to || "No recipient"} · {value.bodyText.slice(0, 100)}</span></button><button type="button" onClick={() => { savedDrafts.remove(value); if (value.id === composeDraftId) { setComposeDraftId(""); setComposeTo(""); setComposeCc(""); setComposeBcc(""); setComposeBody(""); setComposeSubject(""); setComposeAttachments([]); setComposeProviderDraft(undefined); } }} aria-label={"Discard draft " + value.subject} className="rounded p-2 text-muted-foreground"><Trash2 className="size-4" /></button></div>) : <p className="p-5 text-sm text-muted-foreground">No saved drafts.</p>}<EmailMessageList emptyIcon={FileText} conversations={pageItems} categories={visibleCategories} compact={reading} activeId={selectedConversation?.id} checked={checkedIds} readMessages={readMessages} starred={starred} onCheck={() => undefined} onOpen={openConversation} onStar={toggleStar} /></div> : folder === "scheduled" ? <div className="divide-y">{scheduledError ? <NotificationToast>{scheduledError}</NotificationToast> : null}{scheduledEmails.map((value) => <div key={value.id} className="p-4"><p className="font-medium">{value.payload.subject || "(No subject)"}</p><p className="mt-1 text-xs text-muted-foreground">{value.payload.to?.join(", ")} · {new Date(value.scheduled_at).toLocaleString()} · {value.status}</p>{value.error ? <p className="mt-2 text-xs text-red-600">{value.error}</p> : null}{value.status === "scheduled" ? <button type="button" className="mt-2 text-xs underline" onClick={async () => { const response = await fetch("/api/email/scheduled", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: value.id }) }); const result = await response.json(); if (response.ok) setScheduledEmails((current) => current.filter((item) => item.id !== value.id)); else setScheduledError(result.error); }}>Cancel scheduled send</button> : null}{["scheduled", "failed"].includes(value.status) ? <button type="button" className="ml-4 mt-2 text-xs underline" onClick={() => void editScheduledEmail(value)}>Edit scheduled email</button> : null}</div>)}{!scheduledEmails.length && !scheduledError ? <p className="p-5 text-sm text-muted-foreground">No scheduled emails.</p> : null}</div> : <>
-            <EmailMessageList unavailable={mailboxUnavailable} followups={selectedMailboxId && followupActions?.mailboxId === selectedMailboxId ? conversationActions : undefined} emptyIcon={folderItems.find((item) => item.id === folder)?.icon} conversations={pageItems} categories={visibleCategories} compact={Boolean(companyScope) || reading} simple={Boolean(companyScope)} activeId={reading ? selectedConversation?.id : undefined} checked={checkedIds} readMessages={readMessages} starred={starred} onCheck={(id) => setCheckedIds((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; })} onOpen={openConversation} onStar={toggleStar} /></>}
+            <EmailMessageList unavailable={mailboxUnavailable} followups={selectedMailboxId && followupActions?.mailboxId === selectedMailboxId ? conversationActions : undefined} emptyIcon={folderItems.find((item) => item.id === folder)?.icon} conversations={pageItems} categories={visibleCategories} compact={reading} simple={Boolean(companyScope)} activeId={reading ? selectedConversation?.id : undefined} checked={checkedIds} readMessages={readMessages} starred={starred} onCheck={(id) => setCheckedIds((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; })} onOpen={openConversation} onStar={toggleStar} /></>}
 
           </div>
           <div className="flex min-h-12 items-center justify-end gap-3 border-t px-3 text-xs text-muted-foreground">
@@ -1675,7 +1677,7 @@ export function EmailInboxWorkspace({
           </div>
         </section>
 
-        <main className="mail-reader" aria-label="Email reader" aria-hidden={!reading && !companyScope ? true : undefined} inert={!reading && !companyScope}>
+        <main className="mail-reader" aria-label="Email reader" aria-hidden={!reading ? true : undefined} inert={!reading}>
           <div className="flex h-11 shrink-0 items-center gap-1 border-b px-3">
             <button type="button" onClick={() => { setMobileReading(false); setDetailsOpen(false); }} className="mr-auto inline-flex items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-muted"><ArrowLeft className="size-4" />{companyScope ? "Conversations" : "Mailbox"}</button>
 {companyScope ? <button type="button" aria-pressed={translationOn} onClick={() => setTranslationOn((value) => !value)} className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted"><Languages className="size-3.5" />{translationOn ? "Show original" : "Translate"}</button> : <>
@@ -1774,7 +1776,7 @@ export function EmailInboxWorkspace({
                     {!replyDraftNeedsRetry ? <div className="mail-reply-save-status min-w-0 flex-1"><EmailDraftStatus status={savedDrafts.status} onRetry={() => void savedDrafts.retry()} disabled={sending} /></div> : <span className="flex-1" />}
                     {replySendHint ? <span id="reply-send-help" className="sr-only">{replySendHint}</span> : null}
                     <div className="ml-auto inline-flex shrink-0 items-stretch">
-                      <button type="button" onClick={saveReply} title={replySendHint || (replyScheduleOpen ? "Schedule send" : "Send email")} aria-describedby={replySendHint ? "reply-send-help" : undefined} disabled={(!replyBodyText.trim() && !replyHasImages) || !replyRecipient.trim() || sending || (aiWriting && !replyHasImages) || attachmentBusy || replyMediaBusy || replyEditorDisabled || Boolean(footerError) || !replySender?.sendConfigured || (replyScheduleOpen && !scheduleAt)} className="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-l-md bg-foreground px-3 text-xs font-semibold text-background hover:bg-foreground/90 disabled:opacity-40">{sending ? <LoaderCircle className="size-4 animate-spin" /> : replyScheduleOpen ? <CalendarClock className="size-4" /> : <Send className="size-4" />}{sending ? "Sending…" : aiWriting ? "Writing…" : replyScheduleOpen ? "Schedule send" : !replyHasImages && aiDraft && aiDraftSource === draft.trim() ? "Send AI draft" : "Send email"}</button>
+                      <button type="button" onClick={saveReply} title={replySendHint || (replyScheduleOpen ? "Schedule send" : "Send email")} aria-describedby={replySendHint ? "reply-send-help" : undefined} disabled={!replyHasContent || !replyRecipient.trim() || sending || (aiWriting && !replyHasImages) || attachmentBusy || replyMediaBusy || replyEditorDisabled || Boolean(footerError) || !replySender?.sendConfigured || (replyScheduleOpen && !scheduleAt)} className="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-l-md bg-foreground px-3 text-xs font-semibold text-background hover:bg-foreground/90 disabled:opacity-40">{sending ? <LoaderCircle className="size-4 animate-spin" /> : replyScheduleOpen ? <CalendarClock className="size-4" /> : <Send className="size-4" />}{sending ? "Sending…" : aiWriting ? "Writing…" : replyScheduleOpen ? "Schedule send" : !replyHasImages && aiDraft && aiDraftSource === draft.trim() ? "Send AI draft" : "Send email"}</button>
                       <Popover>
                         <PopoverTrigger aria-label="Send options" title="Send later" disabled={sending} className="flex w-8 items-center justify-center rounded-r-md border-l border-background/25 bg-foreground text-background hover:bg-foreground/90 disabled:opacity-40"><ChevronRight className="size-3.5 rotate-90" /></PopoverTrigger>
                         <PopoverContent align="end" side="top" className="w-72 max-w-[calc(100vw-2rem)] p-3">
@@ -1889,10 +1891,10 @@ export function EmailInboxWorkspace({
               <div className="mb-3"><EmailDraftStatus status={savedDrafts.status} onRetry={() => void savedDrafts.retry()} disabled={composeSending} /></div>
               {composeError || footerError ? <NotificationToast>{composeError || footerError}</NotificationToast> : null}
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <span id="compose-send-help" className="text-xs text-muted-foreground">{!savedDrafts.ready ? "Loading your draft…" : footerLoading ? "Loading your email footer…" : attachmentBusy || composeMediaBusy ? "Preparing attachments…" : !composeSender?.sendConfigured ? "Choose a configured sender." : !composeTo.trim() ? "Add a recipient to send." : !composeBodyText.trim() && !composeHasImages ? "Write a message to send." : composeScheduleOpen && !composeScheduleAt ? "Choose a send date and time." : ""}</span>
+                <span id="compose-send-help" className="text-xs text-muted-foreground">{!savedDrafts.ready ? "Loading your draft…" : footerLoading ? "Loading your email footer…" : attachmentBusy || composeMediaBusy ? "Preparing attachments…" : !composeSender?.sendConfigured ? "Choose a configured sender." : !composeTo.trim() ? "Add a recipient to send." : !composeHasContent ? "Write a message or attach a file to send." : composeScheduleOpen && !composeScheduleAt ? "Choose a send date and time." : ""}</span>
                 <div className="ml-auto flex items-center gap-2">
                   <button type="button" onClick={() => setComposeOpen(false)} disabled={composeSending} className="inline-flex h-10 items-center justify-center whitespace-nowrap rounded-md border bg-background px-4 text-xs font-semibold hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50">Close draft</button>
-                  <button type="submit" aria-describedby="compose-send-help" disabled={composeSending || attachmentBusy || !composeTo.trim() || (!composeBodyText.trim() && !composeHasImages) || composeMediaBusy || footerLoading || Boolean(footerError) || !savedDrafts.ready || !composeSender?.sendConfigured || (composeScheduleOpen && !composeScheduleAt)} className="inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md bg-foreground px-4 text-xs font-semibold text-background hover:bg-foreground/90 focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40">{composeSending ? <LoaderCircle className="size-4 animate-spin" /> : composeScheduleOpen ? <CalendarClock className="size-4" /> : <Send className="size-4" />}{composeSending ? "Sending…" : composeScheduleOpen ? "Schedule send" : "Send email"}</button>
+                  <button type="submit" aria-describedby="compose-send-help" disabled={composeSending || attachmentBusy || !composeTo.trim() || !composeHasContent || composeMediaBusy || footerLoading || Boolean(footerError) || !savedDrafts.ready || !composeSender?.sendConfigured || (composeScheduleOpen && !composeScheduleAt)} className="inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md bg-foreground px-4 text-xs font-semibold text-background hover:bg-foreground/90 focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40">{composeSending ? <LoaderCircle className="size-4 animate-spin" /> : composeScheduleOpen ? <CalendarClock className="size-4" /> : <Send className="size-4" />}{composeSending ? "Sending…" : composeScheduleOpen ? "Schedule send" : "Send email"}</button>
                 </div>
               </div>
             </div>

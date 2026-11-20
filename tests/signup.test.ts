@@ -21,13 +21,13 @@ test("signup keeps invitation destinations and rejects external destinations and
   assert.equal(signupDestination("/join/safe-token"), "/join/safe-token");
   assert.equal(signupDestination("/companies?view=all"), "/companies?view=all");
   for (const path of [undefined, "https://attacker.test", "//attacker.test", "/\\attacker.test", "/signup/verify", "/login?next=/signup", "/auth/callback", "/forgot-password"]) {
-    assert.equal(signupDestination(path), "/workspaces/new");
+    assert.equal(signupDestination(path), "/subscribe");
   }
 });
 
 test("pending email state rejects malformed cookies and sanitizes its continuation", () => {
   for (const value of [undefined, "bad-json", "null", "{}", '{"email":"invalid","next":"/"}']) assert.equal(readPendingSignup(value), null);
-  assert.deepEqual(readPendingSignup(JSON.stringify({ email: "alex@example.test", next: "//attacker.test" })), { email: "alex@example.test", next: "/workspaces/new" });
+  assert.deepEqual(readPendingSignup(JSON.stringify({ email: "alex@example.test", next: "//attacker.test" })), { email: "alex@example.test", next: "/subscribe" });
 });
 
 function fixture({ session = false, error = null, throws = false }: { session?: boolean; error?: { status: number }; throws?: boolean } = {}) {
@@ -70,7 +70,7 @@ test("signup sends confirmation to the application and takes an unverified user 
 
 test("signup with an immediate session continues to workspace creation", async () => {
   const f = fixture({ session: true });
-  await assert.rejects(f.run(), /redirect:\/workspaces\/new/);
+  await assert.rejects(f.run(), /redirect:\/subscribe/);
 });
 
 test("invalid signup never contacts the provider or saves a password in form state", async () => {

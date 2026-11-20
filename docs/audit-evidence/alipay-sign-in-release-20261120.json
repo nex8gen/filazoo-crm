@@ -1,0 +1,221 @@
+{
+  "at": "2026-11-20T09:11:21.626Z",
+  "deployment": "dpl_E2DA9SvsrfkHcUkNVU5mRQoMx32D",
+  "productionUrl": "https://crm.filazoosupply.com",
+  "baseline": "dpl_5BhDz1wiyL7D5V8nYDNDb2kwc9nS",
+  "releaseDirectory": "C:/Users/Administrator/filazoo-subscriptions-release",
+  "status": "App implementation deployed; Alipay activation pending",
+  "tests": {
+    "fullReleaseSuite": {
+      "passed": 2634,
+      "failed": 0
+    },
+    "finalFocusedAuthSuite": {
+      "passed": 16,
+      "failed": 0
+    },
+    "typescript": "passed",
+    "lint": "passed",
+    "cloudProductionBuild": "READY",
+    "hostedSql": "PKCE, one-use redemption, expiry and denied client privileges passed in a rolled-back transaction",
+    "securityAdvisors": "No finding on new OAuth objects; existing workspace_invitations information-level advisory remains"
+  },
+  "publicHttp": {
+    "at": "2026-11-20T09:10:48.804Z",
+    "url": "https://crm.filazoosupply.com/login",
+    "status": 200,
+    "alipayVisible": true,
+    "pendingActivation": true,
+    "disabledAlipay": true
+  },
+  "deployedEndpoints": {
+    "authorize": {
+      "status": 400,
+      "invalidClientRejected": true
+    },
+    "token": {
+      "status": 400,
+      "invalidGrantRejected": true
+    },
+    "userinfo": {
+      "status": 401,
+      "unauthorizedRequestRejected": true
+    },
+    "errorPage": {
+      "status": 200
+    }
+  },
+  "verificationLimitations": {
+    "alipayOwnerConsentCompleted": false,
+    "realAlipaySignInCompleted": false,
+    "alipayCallbackConfigured": false,
+    "browserVisualCheck": "Unavailable: computer control stopped with physical Escape",
+    "batchHttpScript": "Timed out before its first response; replaced with successful connector GET checks and direct authenticated CLI POST"
+  },
+  "configuration": {
+    "provider": "custom:alipay",
+    "providerEnabled": false,
+    "pkce": true,
+    "emailOptional": true,
+    "manualIdentityLinking": true,
+    "loginEnabled": false,
+    "paymentsEnabled": false,
+    "siteUrl": "https://crm.filazoosupply.com",
+    "emailChangeOtpTemplateConfigured": true,
+    "secrets": "Server-only Vercel Secrets; local restricted directory outside repository"
+  },
+  "workspaceAccess": [
+    {
+      "name": "Filazoo",
+      "grandfathered": true,
+      "subscriptionAccess": true
+    },
+    {
+      "name": "Filazoo Innovations Inc",
+      "grandfathered": true,
+      "subscriptionAccess": true
+    }
+  ],
+  "providerProbe": {
+    "at": "2026-11-20T08:58:47.399Z",
+    "method": "alipay.system.oauth.token",
+    "invalidProbeCode": true,
+    "responseSignatureVerified": false,
+    "name": "AlipayRequestError",
+    "code": "40002",
+    "subCode": "isv.code-invalid",
+    "message": "Invalid Arguments",
+    "detail": "授权码code无效",
+    "realSignIn": false
+  },
+  "sourceFiles": [
+    {
+      "file": "lib/auth-providers.ts",
+      "sha256": "cd623393e01eadd35e1389077016c75d59529838ed60605f137e8620adc9e601"
+    },
+    {
+      "file": "app/auth/social-actions.ts",
+      "sha256": "2581bca3cde927af03f26da49a09bc824a40f73c53f39150a3fc712915045506"
+    },
+    {
+      "file": "components/auth-social-buttons.tsx",
+      "sha256": "d70dfd0a201e54c8586ebaf0efb907ee269ce745581bc89f6d4b833e81ad9c67"
+    },
+    {
+      "file": "app/auth/callback/route.ts",
+      "sha256": "91fd6263af3e28a034571192e5ed63c668bbb980fea107dedd9371151b12a9f9"
+    },
+    {
+      "file": "lib/login-destination.ts",
+      "sha256": "e2024e82b06dd2be8f71f0f8cbd578f42ca1ed7c5e4b5356d5d89d7cfed106aa"
+    },
+    {
+      "file": "app/settings/sections/profile.tsx",
+      "sha256": "3e3264af34376532eb61c98d9254cc101391e641ef0f055342ae6311171eabee"
+    },
+    {
+      "file": "app/settings/alipay-connection.tsx",
+      "sha256": "ea9ef19bdeb5ec28faeb226ac847a474f57bfacf47091759db113b95bf56cf57"
+    },
+    {
+      "file": "lib/i18n.ts",
+      "sha256": "e769bb996cfe104e6487b2469b058d4c4dc34784cd08ba8a715f6cc7ef328d1e"
+    },
+    {
+      "file": "lib/i18n-alipay-auth.ts",
+      "sha256": "4014e993b125cd363d2d191d9675a58abff93c42e697ce88127476540c1fc609"
+    },
+    {
+      "file": "scripts/audit-agent-capabilities.ts",
+      "sha256": "95f578f1b8f02854ea17370e78f0eb93942729213caf060dcb833419bd71f882"
+    },
+    {
+      "file": "tests/alipay-auth.test.ts",
+      "sha256": "14cda12d0e9e2a0bade7d638d8058d58342e313deaa9b2ae7cb28d7ba9a09c55"
+    },
+    {
+      "file": "tests/alipay-auth-database.sql",
+      "sha256": "6cc9d5d71a55ce70c98b5e859e66880b198703deaa6fedf30f915f7bf8c94f24"
+    },
+    {
+      "file": "supabase/migrations/20261120083937_alipay_oauth_bridge.sql",
+      "sha256": "eae867d7ceef288f7c2a344970ab33c4af0616e8835908c600a0480fb44ca170"
+    },
+    {
+      "file": "supabase/migrations/20261120084909_alipay_login_service_policy.sql",
+      "sha256": "88353872795ad2d48c02a4d05976383ee77334ba3eaee5144b81acfef16991c9"
+    },
+    {
+      "file": "supabase/templates/email-change.html",
+      "sha256": "ec1280781f7d960653746df649c744e5ef95cb921e00825b4b68142c493490c3"
+    },
+    {
+      "file": ".env.example",
+      "sha256": "405f1ab24a00a2f34fb114ec8cc0ac265887e82ee55f65936e8bb16b93b5656c"
+    },
+    {
+      "file": "lib/alipay-auth/protocol.ts",
+      "sha256": "711dfa178e8c97a41d005bf3fe0208926d7b21658d7e2788603a4188dd8adbd0"
+    },
+    {
+      "file": "lib/alipay-auth/server.ts",
+      "sha256": "847e482dd472db651e00cb7af93befb99df9e35092255af3d074cebb1190229f"
+    },
+    {
+      "file": "app/auth/alipay/authorize/route.ts",
+      "sha256": "978f25b519b212d524139007ab7221e42f53fadda32140f9ddbc0904d17c8faa"
+    },
+    {
+      "file": "app/auth/alipay/callback/route.ts",
+      "sha256": "a3530aefaa2c3fcc23528cb47d8e324e8fd39bc0d71d45ad36affcd3388bf130"
+    },
+    {
+      "file": "app/auth/alipay/connected/page.tsx",
+      "sha256": "c4d591b020191b87f2afe1328f471b31de4c93ca2285bdbe10eb0c427c918d8b"
+    },
+    {
+      "file": "app/auth/alipay/error/page.tsx",
+      "sha256": "d46b64fe3a5bb8f7c28a654389a0d2a74b284efb3a81a0e255fc13f790c01457"
+    },
+    {
+      "file": "app/auth/alipay/link-actions.ts",
+      "sha256": "35c2fc76207a1109aba40676379cae8e96d87cf1d5628577ea3af96ec936e5c5"
+    },
+    {
+      "file": "app/auth/alipay/token/route.ts",
+      "sha256": "8d738cc8789a2e8a9961e5d552496a4201bbac97eeea19c42d78cbe64e371e7a"
+    },
+    {
+      "file": "app/auth/alipay/userinfo/route.ts",
+      "sha256": "ccc08ed9d4bd290e7fc063c5c31c5fb90e7c2b7167826f2729deaf95c4e83adc"
+    },
+    {
+      "file": "app/auth/email/actions.ts",
+      "sha256": "f937979040891e1c29ea678f0fefdf2995d6e9509de2cb295afa6234c5d32dd4"
+    },
+    {
+      "file": "app/auth/email/email-form.tsx",
+      "sha256": "58e3753e66a7e263f442be5733a01308dab05dfb02678211db42a8d7ed25d449"
+    },
+    {
+      "file": "app/auth/email/page.tsx",
+      "sha256": "56321c3f1339aa3a5901e42b04235ff967df23ca0f3a3a714358342874d3b1b6"
+    },
+    {
+      "file": "docs/alipay-sign-in.md",
+      "sha256": "2a36c6c1c60470d5c4d10562508965b87257d475e0229319f5b5e5052108098d"
+    },
+    {
+      "file": "tests/alipay-auth-routes.test.ts",
+      "sha256": "7c58ca008efe68e55466ccdd53bc1b4b610a50e6851eb1151c09819e28c89537"
+    },
+    {
+      "file": "tests/alipay-auth-sdk.test.ts",
+      "sha256": "e40c3007fa88436b0359ccd5a7ca78ef848e52239505d1818508b860fc7a4fac"
+    },
+    {
+      "file": "tests/alipay-email.test.ts",
+      "sha256": "0660003188a36fdbc25f2b0a262060feea304132bbb9a2189c83d5420b5f3a51"
+    }
+  ]
+}

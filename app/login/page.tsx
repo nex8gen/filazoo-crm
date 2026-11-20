@@ -15,6 +15,6 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const [{ next, message }, viewer] = await Promise.all([searchParams, getViewer()]);
   if (viewer) redirect(loginDestination(next));
   return (
-    <AuthShell><LoginForm next={loginDestination(next)} message={message} providers={await getAuthProviders()} /></AuthShell>
+    <AuthShell variant="signin"><LoginForm next={loginDestination(next)} message={message} providers={await getAuthProviders()} /></AuthShell>
   );
 }

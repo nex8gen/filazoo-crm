@@ -25,6 +25,8 @@ export type GenerateGatewayTextOptions = {
   fetcher?: typeof fetch;
   onUsage?: (usage: AiTokenUsage) => void;
   onGeneration?: (generation: GatewayGeneration) => Promise<void>;
+  onRequest?: (model: string) => void;
+  strictSchema?: boolean;
   task?: AiTask;
   userText?: string;
   complex?: boolean;
@@ -45,6 +47,8 @@ export async function generateGatewayText({
   fetcher = fetch,
   onUsage,
   onGeneration,
+  onRequest,
+  strictSchema = false,
   task,
   userText,
   complex,
@@ -63,6 +67,7 @@ export async function generateGatewayText({
     const attemptSignal = AbortSignal.any([deadline, AbortSignal.timeout(35_000)]);
     let response: Response;
     try {
+      onRequest?.(selectedModel);
       response = await fetcher("https://ai-gateway.vercel.sh/v1/responses", {
           method: "POST",
           headers: {
@@ -82,7 +87,7 @@ export async function generateGatewayText({
             max_output_tokens: maxOutputTokens,
             ...(routing.reasoningEffort ? { reasoning: { effort: routing.reasoningEffort } } : {}),
             store: false,
-            ...(responseJsonSchema ? { text: { format: { type: "json_schema", name: "crm_result", strict: false, schema: responseJsonSchema } } } : {}),
+            ...(responseJsonSchema ? { text: { format: { type: "json_schema", name: "crm_result", strict: strictSchema, schema: responseJsonSchema } } } : {}),
           }),
           cache: "no-store",
           signal: attemptSignal,
