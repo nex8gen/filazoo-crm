@@ -42,7 +42,7 @@ export function checkoutUrl(order: SubscriptionOrder) {
     notifyUrl: `${origin}/api/alipay/notify`, returnUrl: `${origin}/subscribe/orders/${order.id}`,
     bizContent: {
       outTradeNo: order.out_trade_no, totalAmount: yuan(order.amount_fen),
-      subject: `Filazoo ${plan.name}${order.kind === "credits" ? "" : " – 1 month"}`, productCode: "FAST_INSTANT_TRADE_PAY",
+      subject: `Filazoo ${plan.name}${order.kind === "credits" ? "" : ` – ${order.period_months === 12 ? "12 months" : "1 month"}`}`, productCode: "FAST_INSTANT_TRADE_PAY",
       sellerId: process.env.ALIPAY_SELLER_ID, qrPayMode: 4, qrcodeWidth: 230,
       timeExpire: new Date(Date.parse(order.expires_at) + 8 * 3600000).toISOString().slice(0, 19).replace("T", " "),
     },

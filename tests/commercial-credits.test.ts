@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { formatCredits } from "../lib/billing/credits.ts";
-import { orderProduct } from "../lib/billing/plans.ts";
+import { orderProduct, plans, seatPlans, planPrice } from "../lib/billing/plans.ts";
 import { createBudgetedAiFetch } from "../lib/ai/budget-fetch.ts";
 import { AiBudgetError } from "../lib/ai/budget.ts";
 
@@ -21,6 +21,27 @@ test("fractional credits preserve ledger precision rather than rounding every ca
   assert.equal(formatCredits(1000), "1");
   assert.equal(formatCredits(1234567), "1,234.567");
   assert.equal(formatCredits(0), "0");
+});
+
+test("package pricing includes its fixed users and preserves historical annual orders", () => {
+  for (const plan of plans) {
+    const annual = planPrice(plan, "annual"), monthly = planPrice(plan, "monthly");
+    assert.equal(annual.amountFen, plan.annualMonthlyFen * 12);
+    assert.equal(monthly.amountFen, plan.amountFen);
+    assert.equal(annual.savingsFen, monthly.amountFen * 12 - annual.amountFen);
+    assert.equal(orderProduct({ plan_id: plan.id, catalog_version: 4, kind: "subscription", period_months: 12, seats: plan.members })?.amountFen, annual.amountFen);
+    for (const seats of [0, plan.members + 1, 100]) assert.equal(orderProduct({ plan_id: plan.id, catalog_version: 4, kind: "subscription", period_months: 1, seats }), undefined);
+  }
+  assert.deepEqual(plans.map(p => p.members), [1, 2, 5]);
+  assert.deepEqual(plans.map(p => p.credits), [2000, 6000, 15000]);
+  assert.deepEqual(plans.map(p => p.amountCents), [1900, 5900, 12900]);
+  assert.deepEqual(plans.map(p => planPrice(p, "annual").amountCents), [18000, 58800, 130800]);
+  for (const plan of seatPlans) {
+    assert.equal(orderProduct({ plan_id: plan.id, catalog_version: 3, period_months: 12, seats: 3 })?.amountFen, plan.amountFen * 36);
+    assert.equal(orderProduct({ plan_id: plan.id, catalog_version: 3, period_months: 1, seats: 3 })?.amountFen, plan.amountFen * 6 / 5 * 3);
+  }
+  for (const period_months of [0, 6, 13, NaN]) assert.equal(orderProduct({ plan_id: "pro", catalog_version: 4, kind: "subscription", period_months, seats: 2 }), undefined);
+  assert.equal(orderProduct({ plan_id: "pro", catalog_version: 2, period_months: 12 }), undefined);
 });
 
 test("an exhausted commercial wallet blocks paid calls even when local safety caps are raised", async () => {

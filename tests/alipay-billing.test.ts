@@ -95,4 +95,15 @@ test("commercial checkout validates seat totals and credit packs against their o
   const packOrder = { ...base, kind: "credits", plan_id: "credits_3000", seats: 1, amount_fen: 6900 };
   assert.equal(JSON.parse(new URL(api.checkoutUrl(packOrder) as string).searchParams.get("biz_content")!).total_amount, "69.00");
   assert.throws(() => api.checkoutUrl({ ...packOrder, amount_fen: 100 }), /Invalid order/);
+  const annual = { ...seatOrder, catalog_version: 3, period_months: 12, amount_fen: 1004400 };
+  const annualBiz = JSON.parse(new URL(api.checkoutUrl(annual) as string).searchParams.get("biz_content")!);
+  assert.equal(annualBiz.total_amount, "10044.00");
+  assert.match(annualBiz.subject, /12 months/);
+  assert.throws(() => api.checkoutUrl({ ...annual, amount_fen: 100440 }), /Invalid order/);
+  const fixed = { ...base, catalog_version: 4, kind: "subscription", plan_id: "business", seats: 5, period_months: 1, amount_fen: 92900 };
+  assert.equal(JSON.parse(new URL(api.checkoutUrl(fixed) as string).searchParams.get("biz_content")!).total_amount, "929.00");
+  assert.throws(() => api.checkoutUrl({ ...fixed, seats: 1 }), /Invalid order/);
+  assert.throws(() => api.checkoutUrl({ ...fixed, amount_fen: 92900 * 5 }), /Invalid order/);
+  const fixedAnnual = { ...fixed, period_months: 12, amount_fen: 934800 };
+  assert.equal(JSON.parse(new URL(api.checkoutUrl(fixedAnnual) as string).searchParams.get("biz_content")!).total_amount, "9348.00");
 });

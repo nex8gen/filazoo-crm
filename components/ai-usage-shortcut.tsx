@@ -18,8 +18,6 @@ export function AiUsageShortcut({ expanded = false }: { expanded?: boolean }) {
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();
-    setLoading(true);
-    setError(false);
     void (async () => {
       try {
         const response = await fetch("/api/ai/credits", { cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]) });
@@ -42,6 +40,9 @@ export function AiUsageShortcut({ expanded = false }: { expanded?: boolean }) {
     if (next) { setResult(null); setError(false); setLoading(true); }
     setOpen(next);
   }
+  function refresh() {
+    setLoading(true); setError(false); setRevision(value => value + 1);
+  }
 
   return <Popover open={open} onOpenChange={changeOpen}>
     <PopoverTrigger aria-label="AI usage" title="AI usage" className="workspace-sidebar-row">
@@ -49,8 +50,8 @@ export function AiUsageShortcut({ expanded = false }: { expanded?: boolean }) {
       {expanded ? <span>AI usage</span> : null}
     </PopoverTrigger>
     <PopoverContent side="right" align="end" sideOffset={12} className="w-80 max-w-[calc(100vw-24px)] gap-4 rounded-xl p-4">
-      <div className="flex items-center justify-between gap-3"><PopoverTitle>AI usage</PopoverTitle><button type="button" aria-label="Refresh usage" disabled={loading} onClick={() => setRevision(value => value + 1)} className="grid size-7 place-items-center rounded-md text-muted-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"><RefreshCw aria-hidden="true" className={`size-3.5${loading ? " animate-spin motion-reduce:animate-none" : ""}`} /></button></div>
-      {loading && !result ? <p role="status" className="py-3 text-xs text-muted-foreground">Loading usage…</p> : error ? <div role="alert" className="space-y-2"><p className="text-xs text-muted-foreground">Unable to load AI usage. Please try again.</p><button type="button" onClick={() => setRevision(value => value + 1)} className="rounded text-xs text-primary underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring">Retry loading usage</button></div> : credits ? <div aria-busy={loading} className="space-y-4">
+      <div className="flex items-center justify-between gap-3"><PopoverTitle>AI usage</PopoverTitle><button type="button" aria-label="Refresh usage" disabled={loading} onClick={refresh} className="grid size-7 place-items-center rounded-md text-muted-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"><RefreshCw aria-hidden="true" className={`size-3.5${loading ? " animate-spin motion-reduce:animate-none" : ""}`} /></button></div>
+      {loading && !result ? <p role="status" className="py-3 text-xs text-muted-foreground">Loading usage…</p> : error ? <div role="alert" className="space-y-2"><p className="text-xs text-muted-foreground">Unable to load AI usage. Please try again.</p><button type="button" onClick={refresh} className="rounded text-xs text-primary underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring">Retry loading usage</button></div> : credits ? <div aria-busy={loading} className="space-y-4">
         <div><p className="text-xs text-muted-foreground">Shared workspace balance</p><p className="mt-1 flex flex-wrap items-baseline gap-2"><strong className="text-3xl font-semibold tracking-tight tabular-nums" data-no-translate>{formatCredits(credits.remainingMicros)}</strong><span className="text-xs text-muted-foreground">available credits</span></p></div>
         <div role="progressbar" aria-label="AI credits available" aria-valuemin={0} aria-valuemax={100} aria-valuenow={100 - used} className="h-1.5 overflow-hidden rounded-full bg-muted"><div className={`h-full rounded-full ${used >= 80 ? "bg-destructive" : "bg-primary"}`} style={{ width: `${100 - used}%` }} /></div>
         <dl className="grid grid-cols-3 gap-2 text-xs"><div><dt className="min-h-8 text-muted-foreground">Credits used</dt><dd className="mt-1 font-medium tabular-nums" data-no-translate>{formatCredits(credits.usedMicros)}</dd></div><div><dt className="min-h-8 text-muted-foreground">Monthly allowance</dt><dd className="mt-1 font-medium tabular-nums" data-no-translate>{formatCredits(credits.includedMicros)}</dd></div><div><dt className="min-h-8 text-muted-foreground">Additional credits</dt><dd className="mt-1 font-medium tabular-nums" data-no-translate>{formatCredits(credits.topupMicros)}</dd></div></dl>

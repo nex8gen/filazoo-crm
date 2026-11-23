@@ -1,26 +1,41 @@
-﻿# Plans and AI credits
+# Plans and AI credits
 
-Prices apply per paid seat per month. Capacity and AI credits are pooled within
-one workspace. All plans include existing CRM features, subject to existing role
-permissions and these quotas. There are no automatic renewals or top-ups.
+Catalog v4 uses fixed workspace packages. Included users count the owner.
+There is no seat selector or separate subscription charge for an included teammate.
+Credits and capacity are shared package totals and are never multiplied by users.
+All plans include CRM tools subject to existing role permissions.
 
-| Per-seat allowance | Starter | Pro | Business |
+| Workspace package | Starter | Pro | Business |
 | --- | ---: | ---: | ---: |
-| USD reference price | $19 | $39 | $79 |
-| Alipay CNY checkout | 楼139 | 楼279 | 楼559 |
-| AI credits / subscription month | 2,000 | 5,000 | 12,000 |
+| Included users | 1 | 2 | 5 |
+| USD monthly reference | $19 | $59 | $129 |
+| USD annual reference, paid upfront | $180 | $588 | $1,308 |
+| Alipay CNY monthly checkout | CNY 139 | CNY 429 | CNY 929 |
+| Alipay CNY annual checkout | CNY 1,308 | CNY 4,308 | CNY 9,348 |
+| Shared AI credits / subscription month | 2,000 | 6,000 | 15,000 |
 | Customer companies | 1,000 | 10,000 | 50,000 |
-| Products (parent SKU records) | 500 | 5,000 | 25,000 |
-| Connected mailboxes (including paused) | 1 | 3 | 5 |
-| Saved workflows (including drafts) | 3 | 20 | 100 |
+| Products | 500 | 5,000 | 25,000 |
+| Connected mailboxes | 1 | 3 | 5 |
+| Saved workflows | 3 | 20 | 100 |
 | New workflow runs / calendar month | 1,000 | 10,000 | 50,000 |
 | Document-library storage | 1 GB | 5 GB | 20 GB |
 
-Seats are purchased up front, from 1 to 100. All members, including the owner,
-count toward seat capacity. Renewals preserve the current plan and seat count;
-changes are accepted after expiry. Reducing capacity never deletes existing
-records. It prevents additional allocation above the new quota. Existing daily
-email sending and provider limits still apply separately.
+CNY amounts are fixed regional checkout prices, not a live FX conversion.
+Annual USD monthly equivalents are $15, $49 and $109. Annual CNY monthly
+equivalents are CNY 109, CNY 359 and CNY 779. Annual access lasts twelve
+months; its credit grants unlock monthly and expire monthly.
+
+The server derives the included user count from the package. The database rejects
+arbitrary quantities, forged prices, underpayments and teams larger than capacity.
+Invitations and membership retain the existing atomic member limit. Records are
+never deleted by a downgrade. Renewals preserve the active package and extend
+access after the current paid period. Package changes are allowed after expiry.
+
+Existing v1, v2 and v3 orders keep their quoted price, seats and credit rules.
+Active v2/v3 subscriptions renew through a separate server-validated renewal
+form with their existing plan, quantity and billing period. Complimentary grants
+retain their original capacity and credits, including Filazoo's six Business
+users and 72,000 shared monthly credits.
 
 The current payment integration is Alipay in CNY. USD prices are reference
 prices; there is no USD card checkout. Merchant payment activation is still
@@ -91,13 +106,16 @@ session and returns only credit totals and account availability. It reads on
 open or manual refresh, aborts when closed and does not poll while idle.
 
 Complimentary subscriptions are private, server-managed grants rather than paid
-orders. They apply the selected plan's per-seat capacity and monthly credits,
+orders. Catalog v4 grants apply the selected workspace package's shared capacity
+and monthly credits once, without multiplying them by included users. Older
+catalog v2 grants retain their existing per-seat terms. Complimentary credits
 renew on the China calendar month, and block subscription checkout. Existing
 beta credit usage is preserved when its allowance is upgraded. Only the original internal Filazoo workspace
-has been granted six complimentary Business seats; other workspaces retain
+uses the current complimentary Business package: five included users, 15,000
+shared monthly AI credits and the standard Business capacity; other workspaces retain
 their existing terms. This does not waive hosting or AI provider bills.
 
-Filazoo uses plan-credit-only AI billing: 72,000 shared monthly Business credits,
+Filazoo uses plan-credit-only AI billing: 15,000 shared monthly Business credits,
 without the previous $30 cap, daily division or member spending overrides.
 The settings editor shows plan credits instead of legacy dollar controls, and
 stale editors cannot reintroduce the old caps. Existing usage and reservations
@@ -129,3 +147,21 @@ active member count and non-admin isolation are covered by the rolled-back
 `tests/credit-only-ai-usage-database.sql` fixture. The page calculates fractional
 usage from ledger totals, handles exhausted balances and warns at capacity.
 Checkout is shown only to owners when payments and the subscription are active.
+
+Fixed package migration: `supabase/migrations/20261123081854_fixed_workspace_packages.sql`.
+The private v4 catalog is frozen; future prices require a new catalog version.
+Regression coverage: `tests/package-subscriptions-database.sql`, exercised in a
+transaction ending in rollback along with annual and credit-mode coverage.
+
+The subscription comparison lists 30 verified capabilities in
+`lib/billing/features.ts`. Categories can be expanded individually or together;
+products, orders and billing are open initially. Features are shared across plans,
+with explicit labels for AI credit usage, required external accounts and beta tools.
+The comparison preserves pricing and quota values from the package catalog.
+
+Social messaging and Shopify/Meta lead capture currently use original-workspace
+integration credentials (`lib/data/app-connections.ts` and
+`lib/data/workspace-runtime.ts`). They are listed as limited access for existing
+enabled workspaces, not as general paid-plan entitlements. Planned integrations
+such as calendar connections and Microsoft sign-in are excluded. Lingxing ERP
+supports workspace-specific saved credentials and is listed as requiring an account.

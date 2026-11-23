@@ -55,7 +55,7 @@ export default async function CreditsSettingsPage() {
         <div className="billing-card-heading"><h2 id="current-plan-title">Current plan</h2><span className={`billing-status${overview.active ? "" : " billing-status-inactive"}`}>{overview.active ? "Active" : "Inactive"}</span></div>
         <div className="billing-plan-name"><span className="billing-plan-icon"><Layers aria-hidden="true" /></span><h3>{overview.grandfathered ? "Beta" : findPlan(overview.plan)?.name ?? overview.plan}</h3></div>
         <p className="billing-plan-description">{overview.complimentary ? "Complimentary plan" : overview.grandfathered ? "Existing workspace terms" : "Monthly subscription"}</p>
-        <div className="billing-seats"><Users aria-hidden="true" /><strong data-no-translate>{overview.seats}</strong><span>{overview.seats === 1 ? "seat" : "seats"}</span>{overview.memberCount != null ? <><span className="billing-separator">·</span><span data-no-translate>{overview.memberCount}</span><span>active members</span></> : null}</div>
+        <div className="billing-seats"><Users aria-hidden="true" /><strong data-no-translate>{overview.seats}</strong><span>{overview.seats === 1 ? "user included" : "users included"}</span>{overview.memberCount != null ? <><span className="billing-separator">·</span><span data-no-translate>{overview.memberCount}</span><span>active members</span></> : null}</div>
         {!overview.active ? <p className="billing-small">Renew your workspace subscription to use AI credits.</p> : null}
         <Link href={subscriptionUrl} className="billing-button billing-plan-action"><span>Manage plan</span><ArrowUpRight aria-hidden="true" /></Link>
       </section>

@@ -66,14 +66,19 @@ test("checkout action ignores client prices, authenticates ownership through the
     "@/lib/billing/alipay": { alipayReady: () => true },
     "@/lib/billing/plans": plans,
     "@/lib/billing/data": {},
-    "@/lib/supabase/control": { createSupabaseControl: () => ({ rpc: async (name: string, args: Record<string, unknown>) => { assert.equal(name, "create_commercial_order"); input = args; return { data: { id, workspace_id: workspaceId }, error: null }; } }) },
+    "@/lib/supabase/control": { createSupabaseControl: () => ({ rpc: async (name: string, args: Record<string, unknown>) => { assert.equal(name, "create_package_subscription_order"); input = args; return { data: { id, workspace_id: workspaceId }, error: null }; } }) },
   });
-  const form = new FormData(); form.set("plan", "starter"); form.set("name", "My company"); form.set("amount", "0.01"); form.set("userId", "attacker");
+  const form = new FormData(); form.set("plan", "starter"); form.set("seats", "100"); form.set("name", "My company"); form.set("amount", "0.01"); form.set("userId", "attacker");
   await assert.rejects(api.startCheckout({}, form), new RegExp(`redirect:/subscribe/orders/${id}`));
   assert.equal(input!.p_user_id, id); assert.equal(input!.p_plan_id, "starter");
-  assert.equal(input!.p_seats, 1); assert.equal(input!.p_kind, "subscription");
+  assert.equal(input!.p_period_months, 1); assert.equal(input!.p_seats, 1); assert.equal(input!.p_kind, "subscription");
   assert.ok(!("p_amount" in input!)); assert.ok(!JSON.stringify(input).includes("0.01"));
   assert.equal(writes[0][0], workspaceCookie); assert.equal(writes[0][1], workspaceId);
+  form.set("billingPeriod", "annual");
+  await assert.rejects(api.startCheckout({}, form), /redirect:/);
+  assert.equal(input!.p_period_months, 12);
+  form.set("billingPeriod", "weekly");
+  assert.match(JSON.stringify(await api.startCheckout({}, form)), /Choose monthly or annual billing/);
 });
 
 test("legacy prices can renew an expired legacy contract but cannot be selected by a new customer", async () => {
@@ -91,6 +96,29 @@ test("legacy prices can renew an expired legacy contract but cannot be selected 
     if (eligible) await assert.rejects(api.startCheckout({},form),/redirect:/);
     else assert.match(JSON.stringify(await api.startCheckout({},form)),/only available for renewal/);
     assert.equal(writes,eligible ? 1 : 0);
+  }
+});
+
+test("existing seat contracts renew using trusted contract details rather than submitted package fields", async () => {
+  for (const version of [2, 3, 4]) {
+    let calls = 0;
+    const api = load("../app/subscribe/actions.ts", {
+      "node:crypto": { randomUUID: () => id }, "next/navigation": { redirect: () => { throw Error("redirect:renewal"); } },
+      "next/headers": { cookies: async () => ({ set() {} }) }, "@/lib/auth": { requireViewer: async () => ({ id }) },
+      "@/lib/workspaces": { workspaceCookie, workspaceCookieOptions, workspaceIdSchema, workspaceNameSchema },
+      "@/lib/billing/alipay": { alipayReady: () => true }, "@/lib/billing/plans": plans,
+      "@/lib/billing/data": { workspaceSubscription: async () => ({ catalogVersion: version, activePlan: "business", seats: 7, billingPeriod: version === 3 ? "annual" : "monthly" }) },
+      "@/lib/supabase/control": { createSupabaseControl: () => ({ rpc: async (name: string, args: Record<string, unknown>) => {
+        calls++; assert.equal(name, version === 2 ? "create_commercial_order" : "create_period_subscription_order");
+        assert.equal(args.p_user_id, id); assert.equal(args.p_plan_id, "business"); assert.equal(args.p_seats, 7);
+        assert.equal(args.p_period_months, version === 3 ? 12 : undefined);
+        return { data: { id, workspace_id: workspaceId }, error: null };
+      } }) },
+    });
+    const form = new FormData(); form.set("workspaceId", workspaceId); form.set("renewExisting", "1"); form.set("plan", "starter"); form.set("seats", "100"); form.set("billingPeriod", "monthly");
+    if (version < 4) await assert.rejects(api.startCheckout({}, form), /redirect:renewal/);
+    else assert.match(JSON.stringify(await api.startCheckout({}, form)), /existing subscription/);
+    assert.equal(calls, version < 4 ? 1 : 0);
   }
 });
 
