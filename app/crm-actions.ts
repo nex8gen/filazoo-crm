@@ -179,6 +179,7 @@ export async function createCompany(_state: CrmActionState, formData: FormData):
     .select("id")
     .single();
   if (companyError || !company) {
+    if (companyError?.code === "P0001" && companyError.message.startsWith("Plan limit reached:")) return { error: companyError.message };
     return { error: companyError?.code === "23505" ? "A company with this domain already exists." : "The company could not be created." };
   }
 
@@ -451,7 +452,7 @@ export async function createProduct(_state: CrmActionState, formData: FormData):
     active: parsed.data.active === "true",
     sheet_updated_at: new Date().toISOString(),
   });
-  if (error) return { error: error.code === "23505" ? "A product with this SKU already exists." : "The product could not be added." };
+  if (error) return { error: error.code === "23505" ? "A product with this SKU already exists." : error.code === "P0001" && error.message.startsWith("Plan limit reached:") ? error.message : "The product could not be added." };
   revalidatePath("/products");
   revalidatePath("/company-quotations");
   return { success: `${parsed.data.name} was added.` };

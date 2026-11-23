@@ -3,7 +3,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
-import { findPlan } from "../lib/billing/plans.ts";
+import * as plans from "../lib/billing/plans.ts";
 import { workspaceCookie, workspaceCookieOptions, workspaceIdSchema, workspaceNameSchema } from "../lib/workspaces.ts";
 
 function load(file: string, dependencies: Record<string, unknown>) {
@@ -64,14 +64,34 @@ test("checkout action ignores client prices, authenticates ownership through the
     "@/lib/auth": { requireViewer: async () => ({ id }) },
     "@/lib/workspaces": { workspaceCookie, workspaceCookieOptions, workspaceIdSchema, workspaceNameSchema },
     "@/lib/billing/alipay": { alipayReady: () => true },
-    "@/lib/billing/plans": { findPlan },
-    "@/lib/supabase/control": { createSupabaseControl: () => ({ rpc: async (name: string, args: Record<string, unknown>) => { assert.equal(name, "create_subscription_order"); input = args; return { data: { id, workspace_id: workspaceId }, error: null }; } }) },
+    "@/lib/billing/plans": plans,
+    "@/lib/billing/data": {},
+    "@/lib/supabase/control": { createSupabaseControl: () => ({ rpc: async (name: string, args: Record<string, unknown>) => { assert.equal(name, "create_commercial_order"); input = args; return { data: { id, workspace_id: workspaceId }, error: null }; } }) },
   });
   const form = new FormData(); form.set("plan", "starter"); form.set("name", "My company"); form.set("amount", "0.01"); form.set("userId", "attacker");
   await assert.rejects(api.startCheckout({}, form), new RegExp(`redirect:/subscribe/orders/${id}`));
   assert.equal(input!.p_user_id, id); assert.equal(input!.p_plan_id, "starter");
+  assert.equal(input!.p_seats, 1); assert.equal(input!.p_kind, "subscription");
   assert.ok(!("p_amount" in input!)); assert.ok(!JSON.stringify(input).includes("0.01"));
   assert.equal(writes[0][0], workspaceCookie); assert.equal(writes[0][1], workspaceId);
+});
+
+test("legacy prices can renew an expired legacy contract but cannot be selected by a new customer", async () => {
+  for (const eligible of [true, false]) {
+    let writes = 0;
+    const api = load("../app/subscribe/actions.ts", {
+      "node:crypto": { randomUUID: () => id }, "next/navigation": { redirect: (path: string) => { throw new Error(`redirect:${path}`); } },
+      "next/headers": { cookies: async () => ({ set() {} }) }, "@/lib/auth": { requireViewer: async () => ({ id }) },
+      "@/lib/workspaces": { workspaceCookie, workspaceCookieOptions, workspaceIdSchema, workspaceNameSchema },
+      "@/lib/billing/alipay": { alipayReady: () => true }, "@/lib/billing/plans": plans,
+      "@/lib/billing/data": { workspaceSubscription: async () => ({ legacyRenewalPlan: eligible ? "starter" : undefined }) },
+      "@/lib/supabase/control": { createSupabaseControl: () => ({ rpc: async (name: string) => { writes++; assert.equal(name,"create_subscription_order"); return { data:{id,workspace_id:workspaceId},error:null }; } }) },
+    });
+    const form = new FormData(); form.set("workspaceId",workspaceId); form.set("plan","starter"); form.set("legacy","1");
+    if (eligible) await assert.rejects(api.startCheckout({},form),/redirect:/);
+    else assert.match(JSON.stringify(await api.startCheckout({},form)),/only available for renewal/);
+    assert.equal(writes,eligible ? 1 : 0);
+  }
 });
 
 test("completion verifies browser origin against its actual host, owner and active payment before selecting a workspace", async () => {

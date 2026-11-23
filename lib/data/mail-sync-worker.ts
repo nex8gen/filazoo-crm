@@ -168,6 +168,9 @@ async function drainMailSyncWorker(options: { budgetMs?: number; maxJobs?: numbe
         accounts.set(mailboxSyncKey(mailbox), { mailbox, folders, loadedAt: Date.now() });
       }
     }
+    // Empty workspaces have no receiving work. Do not keep four drain loops
+    // alive waiting for jobs that cannot exist for an active mailbox.
+    if (!accounts.size) return { processed: 0, failed: 0 };
   }
   let processed = 0, failed = 0, started = 0;
   async function releaseFinishedOperation(token: string) {

@@ -170,6 +170,35 @@ function runtime(options: { dormantState?: { eligible: boolean; baseline: string
   return { db, env, contactId, companyId, flowId, exports, deliveries, aiCalls, failures, delivered: () => delivered };
 }
 
+test("accepted email records persist sequentially without trigger lock collisions or duplicate SMTP", async () => {
+  let writing = false;
+  const app: ReturnType<typeof runtime> = runtime({ beforeQuery: async (table, operation) => {
+    if (!app.delivered() || operation === "select" || !["flow_runs", "mailbox_sent_messages", "emails", "flow_run_logs"].includes(table)) return;
+    if (writing) throw { code: "40P01", message: "deadlock detected" };
+    writing = true;
+    await new Promise(resolve => setTimeout(resolve, 1));
+    writing = false;
+  } });
+  await app.exports.enrollMatchingFlows({ type: "new_lead", contactId: app.contactId, companyId: app.companyId, conversationId: "accepted-email-fixture" }, { deferExecution: true });
+  const run = app.db.flow_runs[0];
+  await app.exports.processFlowRun(String(run.id));
+  assert.equal(run.status, "done");
+  assert.equal(app.delivered(), 1);
+  assert.equal(app.db.mailbox_sent_messages.length, 1);
+  assert.equal(app.db.emails.length, 1);
+  assert.equal(app.db.flow_run_logs.filter(log => (log.result as Row)?.action === "email_sent").length, 1);
+});
+
+test("30 overlapping workflow processors claim one run and submit only one email", async () => {
+  const app = runtime();
+  await app.exports.enrollMatchingFlows({ type: "new_lead", contactId: app.contactId, companyId: app.companyId, conversationId: "concurrent-processors-fixture" }, { deferExecution: true });
+  const run = app.db.flow_runs[0];
+  await Promise.all(Array.from({ length: 30 }, () => app.exports.processFlowRun(String(run.id))));
+  assert.equal(run.status, "done");
+  assert.equal(app.delivered(), 1);
+  assert.equal(app.db.mailbox_sent_messages.length, 1);
+});
+
 test("inactive customer cycles enroll once, keep cumulative milestones, and stop during a wait after new activity", async () => {
   const state = { eligible: true, baseline: new Date(Date.now() - 45 * 86400_000).toISOString() };
   const app = runtime({ dormantState: state, businessWindow: null });

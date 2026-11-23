@@ -18,7 +18,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const order = await ownerOrder(viewer.id, (await context.params).id);
   if (!order) return Response.json({ error: "Payment not found." }, { status: 404, headers });
   const subscription = await workspaceSubscription(order.workspace_id);
-  if (order.status !== "paid" || !subscription.activePlan) return Response.json({ error: "Payment is not active." }, { status: 409, headers });
+  if (order.status !== "paid" || !(subscription.activePlan || subscription.grandfathered)) return Response.json({ error: "Payment is not active." }, { status: 409, headers });
   const response = NextResponse.json({ success: true }, { headers });
   response.cookies.set(workspaceCookie, order.workspace_id, workspaceCookieOptions());
   return response;

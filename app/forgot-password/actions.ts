@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { env } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
+import { loginDestination } from "@/lib/login-destination";
 
 export type ForgotPasswordState = { error?: string; success?: string; email?: string } | undefined;
 
@@ -15,7 +16,9 @@ export async function requestPasswordReset(_state: ForgotPasswordState, formData
 
   try {
     const supabase = await createClient();
-    const redirectTo = new URL("/auth/callback?next=/update-password", env.NEXT_PUBLIC_APP_URL).toString();
+    const next = loginDestination(formData.get("next"));
+    const updatePath = `/update-password?${new URLSearchParams({ next })}`;
+    const redirectTo = new URL(`/auth/callback?${new URLSearchParams({ next: updatePath })}`, env.NEXT_PUBLIC_APP_URL).toString();
     const { error } = await supabase.auth.resetPasswordForEmail(parsed.data.email, { redirectTo });
     if (error && error.code !== "user_not_found") return { error: error.status === 429 ? "Please wait a minute before requesting another recovery email." : "Password recovery is temporarily unavailable. Try again shortly.", email };
   } catch {

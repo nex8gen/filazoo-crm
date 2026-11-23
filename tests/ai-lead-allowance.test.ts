@@ -21,6 +21,14 @@ test("preflight respects disabled and workspace/monthly limits and the latest bl
   const blocked=leadAllowance(limits,68000);
   assert.equal(blocked.scope,"monthly");assert.equal(blocked.availableMicros,50000);assert.equal(blocked.resetsAt,"2026-11-30T16:00:00Z");
 });
+
+test("commercial credits constrain research even with large administrator safety limits",()=>{
+  const limits=summary(200000);
+  limits.credits={includedMicros:2000000,topupMicros:0,usedMicros:1999999,remainingMicros:1,percent:100,resetsAt:"2026-12-05T16:00:00Z"};
+  const blocked=leadAllowance(limits,68000);
+  assert.equal(blocked.availableMicros,1);assert.equal(leadAllowanceBlocked(blocked),true);assert.equal(blocked.resetsAt,limits.credits.resetsAt);
+  assert.equal(leadSearchFailureState({status:"failed",error:"There are not enough AI credits for this task."} as LeadSearch)?.kind,"allowance");
+});
 test("failed and cancelled searches never present as completed zero-result research",()=>{
   const base={status:"failed",error:"Your remaining daily AI allowance is too low for this request."} as LeadSearch;
   assert.equal(leadSearchFailureState(base)?.kind,"allowance");

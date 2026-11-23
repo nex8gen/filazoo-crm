@@ -2,7 +2,7 @@ import "server-only";
 import { readFileSync } from "node:fs";
 import { AlipaySdk } from "alipay-sdk";
 import { env } from "../env.ts";
-import { amountFen, findPlan, yuan, type SubscriptionOrder } from "./plans.ts";
+import { amountFen, orderProduct, yuan, type SubscriptionOrder } from "./plans.ts";
 
 let sdk: AlipaySdk | undefined;
 function key(name: string) {
@@ -35,14 +35,14 @@ export function checkoutUrl(order: SubscriptionOrder) {
   if (order.status !== "pending" || Date.parse(order.expires_at) <= Date.now()) throw new Error("Checkout has expired.");
   const origin = new URL(env.NEXT_PUBLIC_APP_URL).origin;
   if (process.env.NODE_ENV === "production" && !origin.startsWith("https://")) throw new Error("HTTPS is required for payments.");
-  const plan = findPlan(order.plan_id);
+  const plan = orderProduct(order);
   if (!plan || plan.amountFen !== order.amount_fen || order.currency !== "CNY") throw new Error("Invalid order.");
   // Mode 4 is Alipay's embeddable website cashier with an official payment QR.
   return getAlipay().pageExecute("alipay.trade.page.pay", "GET", {
     notifyUrl: `${origin}/api/alipay/notify`, returnUrl: `${origin}/subscribe/orders/${order.id}`,
     bizContent: {
       outTradeNo: order.out_trade_no, totalAmount: yuan(order.amount_fen),
-      subject: `Filazoo ${plan.name} — 1 month`, productCode: "FAST_INSTANT_TRADE_PAY",
+      subject: `Filazoo ${plan.name}${order.kind === "credits" ? "" : " – 1 month"}`, productCode: "FAST_INSTANT_TRADE_PAY",
       sellerId: process.env.ALIPAY_SELLER_ID, qrPayMode: 4, qrcodeWidth: 230,
       timeExpire: new Date(Date.parse(order.expires_at) + 8 * 3600000).toISOString().slice(0, 19).replace("T", " "),
     },

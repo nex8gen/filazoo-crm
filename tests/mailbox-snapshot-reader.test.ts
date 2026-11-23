@@ -8,7 +8,7 @@ function fixture() {
     messages: [{ id: "saved", subject: "Original", attachments: [{ filename: "original.pdf" }] } as MailboxSnapshotRow["messages"][number]],
     uid_validity: 1, last_uid: 100, synced_at: "2026-11-17T00:00:00Z", last_error: null, reconciled_at: null }];
   const reads: { fields: string; full: boolean; keys: string[] }[] = [];
-  let beforePayload: (() => void) | undefined;
+  let beforePayload: (() => void | Promise<void>) | undefined;
   const db = { from(table: string) {
     assert.equal(table, "mailbox_sync_state");
     return { select(fields: string) { return { in(_column: string, keys: string[]) {
@@ -16,7 +16,7 @@ function fixture() {
       const run = async () => {
         reads.push({ fields, full, keys });
         if (error && (!full || error.code !== "42703")) return { data: null, error };
-        if (full) beforePayload?.();
+        if (full) await beforePayload?.();
         const data = rows.filter(row => row.workspace_id === workspace && keys.includes(row.mailbox_key)).map(row => {
           const copy = structuredClone(row);
           if (!full) delete (copy as Partial<MailboxSnapshotRow>).messages;
@@ -30,7 +30,7 @@ function fixture() {
   } };
   return { db: db as unknown as Parameters<ReturnType<typeof createMailboxSnapshotReader>>[0], rows, reads,
     fail: (value: typeof error) => { error = value; }, workspace: (value: string) => { workspace = value; },
-    race: (work: () => void) => { beforePayload = work; } };
+    race: (work: () => void | Promise<void>) => { beforePayload = work; } };
 }
 
 test("unchanged mailbox polls check live metadata without downloading the message payload again", async () => {
@@ -99,4 +99,34 @@ test("empty and cancelled reads do not contact the database", async () => {
   assert.deepEqual(await read(f.db, []), []);
   await assert.rejects(read(f.db, ["mailbox-a"], AbortSignal.abort()), { name: "AbortError" });
   assert.equal(f.reads.length, 0);
+});
+
+test("30 simultaneous cold inbox readers share the payload but independently verify live metadata", async () => {
+  const f = fixture(), read = createMailboxSnapshotReader();
+  const results = await Promise.all(Array.from({ length: 30 }, () => read(f.db, ["mailbox-a"])));
+  assert.equal(f.reads.filter(row => !row.full).length, 30);
+  assert.equal(f.reads.filter(row => row.full).length, 1);
+  results[0][0].messages[0].attachments![0].filename = "changed-by-one-reader";
+  for (const result of results.slice(1)) assert.equal(result[0].messages[0].attachments![0].filename, "original.pdf");
+  f.rows[0].messages_revision = "next-revision";
+  f.rows[0].messages[0].subject = "New mail";
+  const next = await Promise.all(Array.from({ length: 30 }, () => read(f.db, ["mailbox-a"])));
+  assert.equal(f.reads.filter(row => row.full).length, 2, "A new revision fetches one fresh payload");
+  assert.ok(next.every(rows => rows[0].messages[0].subject === "New mail"));
+});
+
+test("cancelling one inbox reader preserves another reader's shared download", async () => {
+  const f = fixture(), read = createMailboxSnapshotReader();
+  let release!: () => void, started!: () => void;
+  const ready = new Promise<void>(resolve => { started = resolve; });
+  f.race(() => { started(); return new Promise<void>(resolve => { release = resolve; }); });
+  const controller = new AbortController();
+  const cancelled = read(f.db, ["mailbox-a"], controller.signal);
+  const kept = read(f.db, ["mailbox-a"], new AbortController().signal);
+  await ready;
+  controller.abort();
+  await assert.rejects(cancelled, { name: "AbortError" });
+  release();
+  assert.equal((await kept)[0].messages[0].id, "saved");
+  assert.equal(f.reads.filter(row => row.full).length, 1);
 });

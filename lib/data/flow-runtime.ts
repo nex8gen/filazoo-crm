@@ -510,12 +510,14 @@ async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: F
     throw error;
   }
   run.context = { ...run.context, emailThreadId: threadId, replySince: new Date().toISOString(), executionCheckpoint: { stepId: step.id, type: step.type, phase: "accepted", messageId: sent.messageId || null } };
-  await Promise.all([
-    admin.from("flow_runs").update({ context: run.context }).eq("id", run.id).throwOnError(),
-    admin.from("mailbox_sent_messages").insert({ id: sentRecordId, user_id: flow.user_id, mailbox_id: mailbox.id, message_id: sent.messageId || null, thread_key: threadId, in_reply_to: inReplyTo || null, reference_ids: inReplyTo ? [inReplyTo] : [], from_email: mailbox.email, to_email: contact.email, subject, body, body_html: content.html || null, status: "sent", attachments: storedAttachments }).throwOnError(),
-    admin.from("emails").insert({ contact_id: contact.id, direction: "sent", subject, body, thread_id: threadId, owner_id: flow.user_id, message_id: sent.messageId || null, status: "sent", step: run.current_step + 1, sent_at: new Date().toISOString() }).throwOnError(),
-    logEmail({ action: "email_sent", to: contact.email, subject, messageId: sent.messageId || null, aiGenerated: Boolean(aiReply), catalogAttached: Boolean(attachments.length) }),
-  ]);
+  // These tables' triggers update the same customer-tag facts in different
+  // orders. Parallel requests deadlocked after SMTP had already accepted mail.
+  // Save the accepted checkpoint first, then persist each projection in order.
+  // Database-only rollback retries must never encompass SMTP submission.
+  await admin.from("flow_runs").update({ context: run.context }).eq("id", run.id).throwOnError();
+  await admin.from("mailbox_sent_messages").insert({ id: sentRecordId, user_id: flow.user_id, mailbox_id: mailbox.id, message_id: sent.messageId || null, thread_key: threadId, in_reply_to: inReplyTo || null, reference_ids: inReplyTo ? [inReplyTo] : [], from_email: mailbox.email, to_email: contact.email, subject, body, body_html: content.html || null, status: "sent", attachments: storedAttachments }).throwOnError();
+  await admin.from("emails").insert({ contact_id: contact.id, direction: "sent", subject, body, thread_id: threadId, owner_id: flow.user_id, message_id: sent.messageId || null, status: "sent", step: run.current_step + 1, sent_at: new Date().toISOString() }).throwOnError();
+  await logEmail({ action: "email_sent", to: contact.email, subject, messageId: sent.messageId || null, aiGenerated: Boolean(aiReply), catalogAttached: Boolean(attachments.length) });
   return "continue" as const;
 }
 

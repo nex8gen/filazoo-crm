@@ -5,7 +5,7 @@ import type { WorkspaceAiLaunchRequest } from "@/components/workspace-ai-assista
 import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSelectedLayoutSegment, useSelectedLayoutSegments } from "next/navigation";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
-import { Menu, Search } from "lucide-react";
+import { Gauge, Menu, Search } from "lucide-react";
 import { navigation } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -142,6 +142,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
               </li>)}</ul>
             </div>)}
           </nav>
+          <Link href="/settings/credits" onClick={() => setMobileOpen(false)} className="mx-4 mb-4 flex min-h-11 items-center gap-3 rounded-lg px-3 py-2 text-sm outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"><Gauge aria-hidden="true" className="size-4" />AI usage</Link>
           <div className="mt-auto flex items-center justify-between gap-3 border-t p-4"><div className="flex items-center gap-2">{userMenu}<span className="text-sm">Your account</span></div>{!isDesktop ? <FlowActivityBell /> : null}</div>
         </SheetContent>
       </Sheet>

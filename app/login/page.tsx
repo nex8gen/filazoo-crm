@@ -11,10 +11,10 @@ export const metadata: Metadata = { title: "Sign in" };
 // prerendering so Cache Components does not treat the blocking read as an error.
 export const instant = false;
 
-export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string; message?: string }> }) {
-  const [{ next, message }, viewer] = await Promise.all([searchParams, getViewer()]);
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string; message?: string; email?: string }> }) {
+  const [{ next, message, email }, viewer] = await Promise.all([searchParams, getViewer()]);
   if (viewer) redirect(loginDestination(next));
   return (
-    <AuthShell variant="signin"><LoginForm next={loginDestination(next)} message={message} providers={await getAuthProviders()} /></AuthShell>
+    <AuthShell variant="signin"><LoginForm next={loginDestination(next)} message={message} email={email} providers={await getAuthProviders()} /></AuthShell>
   );
 }

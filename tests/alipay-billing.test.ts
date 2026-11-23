@@ -85,3 +85,14 @@ test("checkout signs the server price, exact expiry, merchant, webhook, and embe
   assert.throws(() => api.checkoutUrl({ ...order, expires_at: "2000-01-01" }), /expired/);
   assert.throws(() => api.checkoutUrl({ ...order, status: "paid" }), /expired/);
 });
+
+test("commercial checkout validates seat totals and credit packs against their own versioned price", () => {
+  const api = load();
+  const base = { id: "order-id", status: "pending", currency: "CNY", catalog_version: 2, out_trade_no: `FZ${"b".repeat(32)}`, expires_at: new Date(Date.now() + 600000).toISOString() };
+  const seatOrder = { ...base, kind: "subscription", plan_id: "pro", seats: 3, amount_fen: 83700 };
+  assert.equal(JSON.parse(new URL(api.checkoutUrl(seatOrder) as string).searchParams.get("biz_content")!).total_amount, "837.00");
+  assert.throws(() => api.checkoutUrl({ ...seatOrder, amount_fen: 27900 }), /Invalid order/);
+  const packOrder = { ...base, kind: "credits", plan_id: "credits_3000", seats: 1, amount_fen: 6900 };
+  assert.equal(JSON.parse(new URL(api.checkoutUrl(packOrder) as string).searchParams.get("biz_content")!).total_amount, "69.00");
+  assert.throws(() => api.checkoutUrl({ ...packOrder, amount_fen: 100 }), /Invalid order/);
+});

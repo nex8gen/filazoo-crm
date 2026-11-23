@@ -30,7 +30,7 @@ test("pending email state rejects malformed cookies and sanitizes its continuati
   assert.deepEqual(readPendingSignup(JSON.stringify({ email: "alex@example.test", next: "//attacker.test" })), { email: "alex@example.test", next: "/subscribe" });
 });
 
-function fixture({ session = false, error = null, throws = false }: { session?: boolean; error?: { status: number }; throws?: boolean } = {}) {
+function fixture({ session = false, error = null, throws = false, user = { id: "new-user", identities: [{ provider: "email" }] } }: { session?: boolean; error?: { status: number; code?: string } | null; throws?: boolean; user?: { id: string; identities?: { provider: string }[]; invited_at?: string } | null } = {}) {
   const writes: { name: string; value: string; options: Record<string, unknown> }[] = [];
   let sent: Record<string, unknown> | undefined;
   const exports: Record<string, (state: undefined, form?: FormData) => Promise<unknown>> = {};
@@ -42,7 +42,7 @@ function fixture({ session = false, error = null, throws = false }: { session?: 
     "@/lib/supabase/server": { createClient: async () => ({ auth: { signUp: async (input: Record<string, unknown>) => {
       if (throws) throw new Error("secret provider details");
       sent = input;
-      return { data: { session: session ? {} : null }, error };
+      return { data: { session: session ? {} : null, user }, error };
     } } }) },
   };
   const code = ts.transpileModule(readFileSync(new URL("../app/signup/actions.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -71,6 +71,48 @@ test("signup sends confirmation to the application and takes an unverified user 
 test("signup with an immediate session continues to workspace creation", async () => {
   const f = fixture({ session: true });
   await assert.rejects(f.run(), /redirect:\/subscribe/);
+});
+
+test("existing accounts receive sign-in guidance rather than a pending verification screen", async () => {
+  for (const options of [
+    { user: { id: "masked-user", identities: [] } },
+    { user: { id: "masked-invited-user", identities: [], invited_at: "2026-11-01T00:00:00Z" } },
+    { error: { status: 422, code: "user_already_exists" } },
+    { error: { status: 422, code: "email_exists" } },
+  ]) {
+    const f = fixture(options);
+    const state = await f.run() as { error: string; existingAccount: boolean; next: string; email: string };
+    assert.equal(state.existingAccount, true);
+    assert.match(state.error, /Sign in to create a new workspace/);
+    assert.equal(state.next, "/workspaces/new");
+    assert.equal(state.email, "alex@example.test");
+    assert.ok(!JSON.stringify(state).includes(account.password));
+    assert.equal(f.writes.length, 1);
+    assert.equal(f.writes[0].value, "");
+    assert.equal(f.writes[0].options.maxAge, 0);
+  }
+});
+
+test("existing accounts preserve workspace creation and invitation continuations", async () => {
+  for (const next of ["/workspaces/new", "/join/team-token", "/subscribe?new=1&plan=team"]) {
+    const f = fixture({ user: { id: "masked-user", identities: [] } });
+    f.form.set("next", next);
+    const state = await f.run() as { next: string; error: string };
+    assert.equal(state.next, next);
+    if (next.startsWith("/join/")) assert.match(state.error, /Sign in to join your team/);
+  }
+});
+
+test("an immediate session is not treated as a masked duplicate signup", async () => {
+  const signedIn = fixture({ session: true, user: { id: "signed-in-user", identities: [] } });
+  signedIn.form.set("next", "/workspaces/new");
+  await assert.rejects(signedIn.run(), /redirect:\/workspaces\/new/);
+});
+
+test("an incomplete provider response cannot claim that a verification email was sent", async () => {
+  const f = fixture({ user: null });
+  assert.match(JSON.stringify(await f.run()), /temporarily unavailable/);
+  assert.equal(f.writes.length, 0);
 });
 
 test("invalid signup never contacts the provider or saves a password in form state", async () => {

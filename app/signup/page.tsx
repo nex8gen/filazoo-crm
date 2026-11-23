@@ -9,6 +9,6 @@ export const metadata = { title: "Create account" };
 export const instant = false;
 export default async function SignupPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
   const next = signupDestination((await searchParams).next);
-  if (await getViewer()) redirect(next);
+  if (await getViewer()) redirect(next === "/subscribe" ? "/workspaces/new" : next);
   return <AuthShell step={1}><SignupForm next={next} providers={await getAuthProviders()} /></AuthShell>;
 }

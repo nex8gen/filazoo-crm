@@ -215,6 +215,7 @@ export async function saveWorkspaceMailbox(_state: SettingsActionState, formData
       : admin.from("workspace_mailboxes").insert(record);
     const { data: saved, error: saveError } = await mutation.select("id").maybeSingle();
     if (saveError?.code === "23505") return { error: "This email address is already connected. Manage the existing connection instead." };
+    if (saveError?.code === "P0001" && saveError.message.startsWith("Plan limit reached:")) return { error: saveError.message };
     if (saveError || !saved) return { error: "The mailbox could not be saved. Refresh and check your access." };
     if (!existing.data || importPreferences) scheduleConnectedMailboxImport(saved.id, viewer);
 
@@ -308,6 +309,7 @@ export async function savePersonalMailbox(_state: SettingsActionState, formData:
       : admin.from("workspace_mailboxes").insert(record);
     const { data: saved, error: saveError } = await mutation.select("id").maybeSingle();
     if (saveError?.code === "23505") return { error: "This email address is already connected. Manage the existing connection instead." };
+    if (saveError?.code === "P0001" && saveError.message.startsWith("Plan limit reached:")) return { error: saveError.message };
     if (saveError || !saved) return { error: "The mailbox could not be saved. Refresh and check your access." };
     if (!existing.data || importPreferences) scheduleConnectedMailboxImport(saved.id, viewer);
 

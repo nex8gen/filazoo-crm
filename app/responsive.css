@@ -63,7 +63,7 @@
   color: var(--workspace-rail-text);
 }
 
-.workspace-sidebar[data-expanded="true"] :is(.workspace-sidebar-header, .workspace-sidebar-search-frame, .workspace-sidebar-navigation, .workspace-sidebar-footer) {
+.workspace-sidebar[data-expanded="true"] :is(.workspace-sidebar-header, .workspace-sidebar-search-frame, .workspace-sidebar-navigation, .workspace-sidebar-utility, .workspace-sidebar-footer) {
   padding-inline: 0.875rem;
 }
 

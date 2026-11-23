@@ -6,11 +6,13 @@ import vm from "node:vm";
 import ts from "typescript";
 import * as budget from "../lib/ai/budget.ts";
 import * as budgetFetch from "../lib/ai/budget-fetch.ts";
+import * as credits from "../lib/billing/credits.ts";
 import { generateGatewayText } from "../lib/ai/gateway.ts";
 import { policyTestDependency } from "./helpers/ai-policy.ts";
 import { notificationToastModule } from "./helpers/notification-toast.ts";
 const require = createRequire(import.meta.url);
 function load(file: string, deps: Record<string, unknown>, fetcher: typeof fetch = fetch) {
+  deps = { "@/lib/billing/credits": credits, ...deps };
   const exports: Record<string, unknown> = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   vm.runInNewContext(code, { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => deps[name] ?? policyTestDependency(name) ?? require(name))(name), fetch: fetcher, Response, Request, AbortSignal, URL, Date, console });
@@ -46,6 +48,31 @@ test("usage API authenticates before reading totals and returns no allowance lim
   const body = await response.json(); assert.equal(body.calls, 5); assert.equal("limits" in body, false);
   assert.match(response.headers.get("cache-control") ?? "", /no-store/);
   failure = true; assert.equal((await get()).status, 503);
+});
+
+test("credit shortcut authenticates, scopes the workspace read and returns only customer credit totals", async () => {
+  let viewer: { id: string; workspaceId: string } | null = null;
+  let scoped = false, reads = 0, fail = false;
+  const balance = { includedMicros: 72000000, topupMicros: 0, usedMicros: 1000, remainingMicros: 71999000, percent: 1, resetsAt: "2026-12-01T00:00:00+08:00" };
+  const loaded = load("../app/api/ai/credits/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer },
+    "@/lib/workspace-context": { withWorkspaceViewer: async (actor: unknown, run: () => unknown) => { assert.equal(actor, viewer); scoped = true; try { return await run(); } finally { scoped = false; } } },
+    "@/lib/ai/budget-server": { readAiBudget: async (actor: string) => {
+      reads++; assert.equal(scoped, true); assert.equal(actor, "signed-in-member");
+      if (fail) throw Error("private provider configuration");
+      return { credits: { ...balance, internalLedger: "private" }, enabled: false, daily: { limitMicros: 123 }, history: [{ model: "private-provider" }] };
+    } },
+  });
+  const get = loaded.GET as () => Promise<Response>;
+  assert.equal((await get()).status, 401); assert.equal(reads, 0);
+  viewer = { id: "signed-in-member", workspaceId: "trusted-workspace" };
+  const response = await get();
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { credits: balance, enabled: false });
+  assert.match(response.headers.get("cache-control") ?? "", /private, no-store/);
+  fail = true;
+  const failure = await get(); assert.equal(failure.status, 503);
+  assert.doesNotMatch(await failure.text(), /private provider/);
 });
 
 test("reservation configuration errors explain repair steps and never call the provider", async () => {
@@ -108,6 +135,16 @@ test("usage panels explain paused accounts, zero caps and exhausted workspace da
   limits.enabled = false;
   assert.match(render(), /paused for your account/);
   assert.doesNotMatch(render(), /paused by a zero allowance|allowance reached/);
+});
+
+test("plan-credit mode shows the wallet without legacy dollar or daily allowance editors", () => {
+  const loaded = load("../components/ai-usage-panel.tsx", {});
+  const { renderToStaticMarkup } = require("react-dom/server");
+  const { createElement } = require("react");
+  const meter = budget.budgetMeter(0,72000000,"2026-11-30T16:00:00Z");
+  const markup = renderToStaticMarkup(createElement(loaded.AiUsagePanel,{limits:{timezone:"Asia/Shanghai",members:6,enabled:true,creditOnly:true,daily:meter,workspaceDaily:meter,monthly:meter,credits:{includedMicros:72000000,topupMicros:0,usedMicros:0,remainingMicros:72000000,percent:0,resetsAt:meter.resetsAt}}}));
+  assert.match(markup,/72,000/); assert.match(markup,/AI usage follows your plan credit balance/);
+  assert.doesNotMatch(markup,/Additional spending controls|Your daily AI usage|Workspace monthly AI usage| USD|\$30/);
 });
 
 test("a denied reservation reads the trusted member's balance to distinguish insufficient credit", async () => {

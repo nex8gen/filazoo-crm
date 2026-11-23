@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { NotificationToast } from "@/components/ui/notification-toast";
 
 
@@ -41,8 +42,10 @@ export function AiUsageSettingsForm({ initial, viewerId }: { initial: AiUsageSet
       finally { saving.current = false; }
     });
   }
+  if (saved.creditOnly) return <section id="ai-usage-controls" aria-labelledby="ai-usage-heading" className="space-y-3 rounded-xl border bg-background p-5"><h2 id="ai-usage-heading" className="text-base font-semibold">Plan credit allowance</h2><p className="text-sm text-muted-foreground">AI usage follows your plan credit balance. Legacy dollar caps and daily member allowances do not apply.</p><Link className="text-sm text-primary underline underline-offset-4" href="/settings/credits">View plan credits and usage</Link></section>;
   return <section id="ai-usage-controls" aria-labelledby="ai-usage-heading" className="rounded-xl border bg-background p-5">
     <h2 id="ai-usage-heading" className="text-base font-semibold">AI usage & spending limits</h2>
+    <p className="mt-2 text-sm text-muted-foreground">These are additional safety limits. Raising them does not add AI credits or increase your subscription allowance. Review your balance in Plan and AI credits.</p>
     <p className="mt-1 text-sm leading-6 text-muted-foreground">Manage AI for every active member, including your own administrator account. All amounts are in USD.</p>
     <p className="mt-2 text-xs text-muted-foreground">This month: ${(saved.monthlyUsedMicros / 1e6).toFixed(3)} used. Daily allowances reset at midnight China time. Changes apply to new requests across chat, agents, email and background AI.</p>
     <form onSubmit={event => { event.preventDefault(); save(); }} className="mt-5 space-y-5">

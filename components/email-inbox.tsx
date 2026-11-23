@@ -825,12 +825,19 @@ export function EmailInboxWorkspace({
     const mailboxId = selectedMailboxId || defaultSenderId;
     if (folder !== "scheduled" || !mailboxId) return;
     let cancelled = false;
+    let pending = false;
+    const controller = new AbortController();
     const refresh = async () => {
-      try { const response = await fetch(`/api/email/scheduled?mailboxId=${encodeURIComponent(mailboxId)}`, { cache: "no-store" }); const result = await response.json(); if (!response.ok) throw new Error(result.error); if (!cancelled) { setScheduledEmails(result.emails); setScheduledError(""); } }
+      if (pending || cancelled || document.visibilityState === "hidden") return;
+      pending = true;
+      try { const response = await fetch(`/api/email/scheduled?mailboxId=${encodeURIComponent(mailboxId)}`, { cache: "no-store", signal: controller.signal }); const result = await response.json(); if (!response.ok) throw new Error(result.error); if (!cancelled) { setScheduledEmails(result.emails); setScheduledError(""); } }
       catch (reason) { if (!cancelled) setScheduledError(reason instanceof Error ? reason.message : "Unable to load scheduled emails."); }
+      finally { pending = false; }
     };
-    void refresh(); const timer = setInterval(() => void refresh(), 10_000);
-    return () => { cancelled = true; clearInterval(timer); };
+    const onVisible = () => { void refresh(); };
+    void refresh(); const timer = setInterval(onVisible, 10_000);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { cancelled = true; controller.abort(); clearInterval(timer); document.removeEventListener("visibilitychange", onVisible); };
   }, [folder, selectedMailboxId, defaultSenderId]);
   const loadMessage = useCallback(async (email: EmailWorkspaceItem) => {
     if ((!email.crmEmailId && (!email.uid || !email.uidValidity || !email.mailboxKey)) || bodyRequests.current.has(email.id)) return;

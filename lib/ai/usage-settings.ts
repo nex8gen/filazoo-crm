@@ -18,6 +18,7 @@ export const aiUsageSettingsSchema = z.object({
 }).strict().refine(value => new Set(value.members.map(member => member.userId)).size === value.members.length, "Choose each member only once.");
 export type AiUsageSettingsInput = z.infer<typeof aiUsageSettingsSchema>;
 export type AiUsageSettingsView = Omit<AiUsageSettingsInput, "members"> & {
+  creditOnly?: boolean;
   workspaceDailyMicros: number;
   monthlyUsedMicros: number;
   members: Array<AiUsageSettingsInput["members"][number] & { name: string; role: string; usedMicros: number; effectiveDailyMicros: number }>;

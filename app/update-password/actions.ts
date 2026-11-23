@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { passwordRequirementsError, passwordSchema } from "@/lib/password";
 import { createClient } from "@/lib/supabase/server";
+import { loginDestination } from "@/lib/login-destination";
 
 export type UpdatePasswordState = { error?: string } | undefined;
 
@@ -21,5 +22,5 @@ export async function updatePassword(_state: UpdatePasswordState, formData: Form
   if (error) return { error: error.message };
 
   await supabase.auth.signOut();
-  redirect("/login?message=Password%20updated.%20Sign%20in%20with%20your%20new%20password.");
+  redirect(`/login?${new URLSearchParams({ next: loginDestination(formData.get("next")), message: "Password updated. Sign in with your new password." })}`);
 }

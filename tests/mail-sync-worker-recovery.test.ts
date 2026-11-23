@@ -6,6 +6,27 @@ import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import * as jobs from "../lib/mail-sync-jobs.ts";
 
+test("an empty workspace exits before claiming or waiting for mailbox jobs", async () => {
+  let claims = 0;
+  const db = {
+    from(table: string) {
+      assert.equal(table, "workspace_mailboxes");
+      return { select: () => ({ eq: () => ({ throwOnError: async () => ({ data: [] }) }) }) };
+    },
+    rpc() { claims++; throw new Error("Empty workspaces must not drain"); },
+  };
+  const exports = {} as { runMailSyncWorker: (options: unknown) => Promise<unknown> };
+  const dependencies: Record<string, unknown> = {
+    "node:crypto": { randomUUID }, "../supabase/admin.ts": { createSupabaseAdmin: () => db },
+    "../mailbox-utils.ts": {}, "../mail-sync-jobs.ts": jobs, "./mailbox-sync.ts": {},
+    "../mailbox-imap.ts": { withMailboxSyncSessions: async (run: () => Promise<unknown>) => run() },
+  };
+  vm.runInNewContext(ts.transpileModule(readFileSync(new URL("../lib/data/mail-sync-worker.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText,
+    { exports, require: (name: string) => dependencies[name], Map, Date, setTimeout, setInterval, clearInterval });
+  assert.equal(JSON.stringify(await exports.runMailSyncWorker({ waitForWork: true })), JSON.stringify({ processed: 0, failed: 0 }));
+  assert.equal(claims, 0);
+});
+
 test("overlapping cron ticks share one warm worker and release only their own lease", async () => {
   let owner: string | null = null;
   const db = { from: (table: string) => {

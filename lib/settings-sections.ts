@@ -1,4 +1,5 @@
 export const settingsSections = [
+  { id: "credits", title: "Plan and AI credits", group: "Billing", href: "/settings/credits", icon: "receipt", description: "Review your subscription, AI credits and workspace usage limits.", keywords: "subscription plan billing credits allowance usage limits topup pricing" },
   { id: "general", title: "General", group: "Personal", href: "/settings", icon: "settings", description: "Choose your language, start page, and list preferences. These choices apply only to you.", keywords: "language english chinese rows page list preferences landing home login 语言 中文 常规 列表 首页" },
   { id: "appearance", title: "Appearance", group: "Personal", href: "/settings/appearance", icon: "sun", description: "Choose your theme, table spacing, and motion preferences.", keywords: "theme light dark system density compact motion animation accessibility 外观 主题 深色 动画" },
   { id: "profile", title: "Profile", group: "Personal", href: "/settings/profile", icon: "user", description: "Choose how you appear to people in your workspace.", keywords: "avatar photo name account 头像 姓名 个人资料" },

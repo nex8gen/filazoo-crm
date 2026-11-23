@@ -1,4 +1,5 @@
 import { fetchRead } from "./read-fetch.ts";
+import { fetchTableWrite } from "./write-fetch.ts";
 
 type Scope = { workspaceId: string; userId?: string };
 
@@ -29,12 +30,12 @@ export function workspaceFetch(resolve: () => Promise<Scope | null>, fetcher: ty
     const legacyConflict = (!scope || scope.workspaceId === "legacy") && method.toUpperCase() === "POST"
       && conflict && !conflict.split(",").includes("workspace_id");
     const retryInput = legacyConflict && input instanceof Request ? input.clone() : input;
-    const response = await fetcher(input instanceof Request ? new Request(url, input) : url, options);
+    const response = await fetchTableWrite(input instanceof Request ? new Request(url, input) : url, options, fetcher);
     if (!legacyConflict || response.status !== 400) return response;
     const error: unknown = await response.clone().json().catch(() => null);
     if (!error || typeof error !== "object" || !("code" in error) || error.code !== "42P10") return response;
     url.searchParams.set("on_conflict", `workspace_id,${conflict}`);
     await response.body?.cancel().catch(() => {});
-    return fetcher(retryInput instanceof Request ? new Request(url, retryInput) : url, options);
+    return fetchTableWrite(retryInput instanceof Request ? new Request(url, retryInput) : url, options, fetcher);
   };
 }

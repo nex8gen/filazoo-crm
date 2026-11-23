@@ -15,7 +15,7 @@ async function UsageLimits({ viewer }: { viewer: WorkspaceViewer }) {
 export async function AiSection({ viewer }: { viewer: WorkspaceViewer }) {
   const settings = await withWorkspaceViewer(viewer, () => getAiSettings());
   return <div className="settings-content settings-section-enter !max-w-3xl space-y-5">
-    {viewer.role === "admin" ? <nav aria-label="AI settings sections" className="flex flex-wrap gap-4 text-sm"><a href="#ai-policy" className="text-primary underline underline-offset-4">Access and behavior</a><a href="#ai-usage-controls" className="text-primary underline underline-offset-4">Usage and spending limits</a></nav> : null}
+    {viewer.role === "admin" ? <nav aria-label="AI settings sections" className="flex flex-wrap gap-4 text-sm"><a href="#ai-policy" className="text-primary underline underline-offset-4">Access and behavior</a><a href="#ai-usage-controls" className="text-primary underline underline-offset-4">AI credits and usage</a></nav> : null}
     <section id="ai-policy" aria-label="AI access and behavior"><AiSettingsForm initial={settings} canManage={viewer.role === "admin"} /></section>
     {viewer.role === "admin" ? <Suspense fallback={<p role="status">Loading AI usage limits…</p>}><UsageLimits viewer={viewer} /></Suspense> : null}
   </div>;

@@ -27,11 +27,12 @@ function find(tree: unknown, match: (element: Element) => boolean): Element | un
 function savedView(input: settings.AiUsageSettingsInput): settings.AiUsageSettingsView {
   return { ...initial, ...input, revision: input.revision + 1, members: initial.members.map(member => ({ ...member, ...input.members.find(value => value.userId === member.userId) })) };
 }
-function formHarness(save: (input: settings.AiUsageSettingsInput) => Promise<unknown>) {
+function formHarness(save: (input: settings.AiUsageSettingsInput) => Promise<unknown>, initialView = initial) {
   const slots: unknown[] = [];
   let cursor = 0, busy = false;
   let work: Promise<void> = Promise.resolve();
   const dependencies: Record<string, unknown> = {
+    "next/link": { default: "a" },
     react: {
       useState(initial: unknown) {
         const index = cursor++;
@@ -54,7 +55,7 @@ function formHarness(save: (input: settings.AiUsageSettingsInput) => Promise<unk
   }).outputText;
   const exports: { AiUsageSettingsForm?: (props: unknown) => unknown } = {};
   vm.runInNewContext(code, { exports, require: (name: string) => name === "@/components/ui/notification-toast" ? notificationToastModule : ((name: string) => dependencies[name] ?? require(name))(name), Error, Number, JSON });
-  const render = () => { cursor = 0; return exports.AiUsageSettingsForm!({ initial, viewerId: userId }); };
+  const render = () => { cursor = 0; return exports.AiUsageSettingsForm!({ initial: initialView, viewerId: userId }); };
   const control = (id: string) => find(render(), element => element.props?.id === id)!;
   return {
     render, control,
@@ -65,6 +66,14 @@ function formHarness(save: (input: settings.AiUsageSettingsInput) => Promise<unk
     done: () => work,
   };
 }
+
+test("credit-only workspaces show the new plan allowance without legacy editors", () => {
+  const form = formHarness(async () => assert.fail("No legacy policy write"), { ...initial, creditOnly: true });
+  const tree = form.render();
+  assert.ok(find(tree, element => element.props?.children === "Plan credit allowance"));
+  assert.ok(find(tree, element => element.props?.href === "/settings/credits"));
+  assert.equal(find(tree, element => element.type === "form" || element.type === "input" || element.type === "switch"), undefined);
+});
 
 test("all budget fields and every member's toggle and cap reach the save action exactly", async () => {
   const writes: settings.AiUsageSettingsInput[] = [];

@@ -1,4 +1,5 @@
 import { ROUTED_AI_MODELS } from "./model-routing.ts";
+import type { CreditBalance } from "../billing/credits.ts";
 export const USD_MICROS = 1_000_000;
 // Retain nano while an earlier local/server worker is being restarted. Its
 // existing reservations must still settle against the same allowance ledger.
@@ -8,7 +9,7 @@ function tokenRate(rate: BudgetRate, input: number) {
   return (rate.tiers ?? []).filter(tier => input >= tier.min).sort((a,b) => b.min-a.min)[0] ?? rate;
 }
 export type BudgetMeter = { usedMicros: number; limitMicros: number; remainingMicros: number; percent: number; resetsAt: string };
-export type AiBudgetSummary = { timezone: string; members: number; enabled?: boolean; daily: BudgetMeter; workspaceDaily: BudgetMeter; monthly: BudgetMeter };
+export type AiBudgetSummary = { timezone: string; members: number; enabled?: boolean; creditOnly?: boolean; daily: BudgetMeter; workspaceDaily: BudgetMeter; monthly: BudgetMeter; credits?: CreditBalance };
 export class AiBudgetError extends Error {
   status: number;
   constructor(message: string, status = 429) { super(message); this.name = "AiBudgetError"; this.status = status; }
@@ -17,6 +18,8 @@ export function budgetMeter(used: number, limit: number, resetsAt: string): Budg
   return { usedMicros: used, limitMicros: limit, remainingMicros: Math.max(0, limit - used), percent: limit === 0 ? 100 : Math.min(100, Math.max(0, Math.ceil(used / Math.max(1, limit) * 100))), resetsAt };
 }
 export function budgetFailure(reason: string, limits?: AiBudgetSummary) {
+  if (reason === "credits_exhausted") return new AiBudgetError("There are not enough AI credits for this task. Try a smaller task, wait for your allowance to renew, or ask the workspace owner to buy credits. Your CRM remains available.");
+  if (reason === "subscription_inactive") return new AiBudgetError("Renew your workspace subscription to use AI credits.", 403);
   if (reason === "user_disabled") return new AiBudgetError("AI is paused for your account. Ask an administrator to enable it in Settings → AI access & behavior.", 403);
   const meter = reason === "user_daily" ? limits?.daily : reason === "workspace_daily" ? limits?.workspaceDaily : reason === "workspace_monthly" ? limits?.monthly : undefined;
   if (meter?.limitMicros === 0) return new AiBudgetError("AI spending is paused by a zero allowance. Ask an administrator to review Settings → AI access & behavior.", 403);

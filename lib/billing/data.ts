@@ -41,12 +41,15 @@ export async function refreshPayment(order: SubscriptionOrder) {
 }
 export async function workspaceSubscription(workspaceId: string) {
   const db = createSupabaseControl();
-  const [subscription, payments] = await Promise.all([
+  const [subscription, payments, complimentary] = await Promise.all([
     db.from("workspace_subscriptions").select("grandfathered").eq("workspace_id", workspaceId).single(),
-    db.from("subscription_orders").select("plan_id,period_end,period_start").eq("workspace_id", workspaceId).eq("status", "paid").order("period_end", { ascending: false }),
+    db.from("subscription_orders").select("plan_id,period_end,period_start,catalog_version,seats").eq("workspace_id", workspaceId).eq("kind", "subscription").eq("status", "paid").order("period_end", { ascending: false }),
+    db.rpc("read_complimentary_subscription", { p_workspace_id: workspaceId }),
   ]);
-  if (subscription.error || payments.error) throw new Error("Unable to load your subscription.");
+  if (subscription.error || payments.error || complimentary.error) throw new Error("Unable to load your subscription.");
   const now = Date.now();
   const active = payments.data.find(p => Date.parse(p.period_start) <= now && Date.parse(p.period_end) > now);
-  return { grandfathered: subscription.data.grandfathered as boolean, activePlan: active?.plan_id as string | undefined, paidUntil: payments.data[0]?.period_end as string | undefined };
+  const latest = payments.data[0];
+  const gift = complimentary.data as { plan: string; seats: number; expiresAt: string | null } | null;
+  return { grandfathered: !gift && subscription.data.grandfathered as boolean, complimentary: Boolean(gift), activePlan: gift?.plan ?? active?.plan_id as string | undefined, seats: gift?.seats ?? active?.seats as number | undefined, catalogVersion: gift ? 2 : active?.catalog_version as number | undefined, legacyRenewalPlan: !gift && latest?.catalog_version === 1 ? latest.plan_id as string : undefined, paidUntil: latest?.period_end as string | undefined };
 }

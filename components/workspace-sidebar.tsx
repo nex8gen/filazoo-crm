@@ -7,6 +7,7 @@ import { BrandMarkIcon } from "@/components/brand-mark";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { navigation, type NavigationGroup, type NavigationItem } from "@/lib/navigation";
+import { AiUsageShortcut } from "@/components/ai-usage-shortcut";
 
 const sidebarStorageKey = "filazoo:sidebar-expanded:v1";
 const sidebarChangeEvent = "filazoo:sidebar-changed";
@@ -161,6 +162,7 @@ export function WorkspaceSidebar({ pathname, expanded, onToggle, onSearch, userM
           {navigation.filter(group => group.label !== "Settings").map(group => <SidebarGroup key={`${group.label}:${pathname}:${expanded}`} group={group} pathname={pathname} expanded={expanded} />)}
         </ul>
       </nav>
+      <div className="workspace-sidebar-utility shrink-0 px-2 pb-2"><AiUsageShortcut expanded={expanded} /></div>
       <div className="workspace-sidebar-footer shrink-0 space-y-1 border-t border-[var(--workspace-frame-border)] px-2 pb-2 pt-2">
         {settings ? <nav aria-label="Settings navigation"><ul><SidebarGroup group={settings} pathname={pathname} expanded={expanded} /></ul></nav> : null}
         {activity}
