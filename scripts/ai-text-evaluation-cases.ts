@@ -8,6 +8,8 @@ import { conversationTagInstruction, conversationTagDecisionSchema, parseConvers
 import { customerTags } from "../lib/customer-tags.ts";
 import { replyWorkInstruction, replyWorkPlanSchema, groundedReplyChanges } from "../lib/task-workflows.ts";
 import { syntheticServerData, type EvaluationCase } from "./agent-evaluation-cases.ts";
+import { followupInstruction, followupPlanSchema, followupWritingContext, parseFollowupDraft } from "../lib/email-followup.ts";
+import type { InboxEmailItem } from "../lib/email-inbox.ts";
 
 const parse = (output: string) => JSON.parse(output.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""));
 export function aiTextEvaluationCases(): EvaluationCase[] {
@@ -18,7 +20,28 @@ export function aiTextEvaluationCases(): EvaluationCase[] {
   const taskSchema = z.toJSONSchema(replyWorkPlanSchema.extend({ changes: replyWorkPlanSchema.shape.changes.required() }), { unrepresentable: "any", target: "draft-7" });
   delete taskSchema.$schema;
   const text = (name: string, value: NonNullable<EvaluationCase["text"]>): EvaluationCase => ({ name, kind: "natural", messages: [{ role: "user", content: value.prompt }], text: value });
+  const followup = (name: string, customer: string, sent: string, check: (plan: ReturnType<typeof followupPlanSchema.parse>) => boolean) => {
+    const context = followupWritingContext([
+      { id: "buyer", messageId: "<buyer@example.test>", direction: "inbound", subject: "PLA enquiry", body: customer, timestamp: "2026-11-23T01:00:00Z", contact: "buyer@example.test", company: "Synthetic Printing", preview: "", status: "Received" },
+      { id: "sent", messageId: "<sent@example.test>", inReplyTo: "<buyer@example.test>", direction: "outbound", subject: "Re: PLA enquiry", body: sent, timestamp: "2026-11-23T02:00:00Z", contact: "buyer@example.test", company: "Synthetic Printing", preview: "", status: "Sent" },
+    ] as InboxEmailItem[]);
+    return text(name, { task: "reply", instruction: followupInstruction,
+      prompt: JSON.stringify({ currentTime: "2026-11-24T01:00:00Z", timezone: "Asia/Shanghai", ...context, productCatalog: { status: "available", products: [{ sku: "PLA-BASIC", title: "PLA Basic", material: "PLA", colors: ["Black"] }] }, approvedBusinessFacts: { status: "available", records: [] }, openCustomerTasks: { status: "available", records: [] } }),
+      responseJsonSchema: z.toJSONSchema(followupPlanSchema),
+      check: output => {
+        const plan = followupPlanSchema.parse(parse(output));
+        const grounded = plan.evidenceMessageIds.includes(context.latestMessageId) && plan.evidenceMessageIds.every(id => context.conversation.some(message => message.id === id));
+        if (plan.action === "followup") parseFollowupDraft(output, context);
+        return grounded && check(plan);
+      },
+    });
+  };
   return [
+    followup("ai-followup:continue-sent-quote", "We need Black PLA Basic, 1kg spools, under 50kg monthly. Please send a quote.", "I sent the Black PLA Basic quotation yesterday. Could you review whether it meets your requirements?", plan => plan.action === "followup" && plan.pendingFrom === "customer" && /quot|review|feedback/i.test(plan.body) && !/yesterday|what (?:types?|kinds?) of products|which products.*interested|thank you for (?:your|the) (?:recent |new )?(?:Shopify|enquir|inquir)/i.test(plan.body)),
+    followup("ai-followup:team-owes-investigation", "The black PLA keeps breaking and I need help with this batch.", "I will investigate the batch with our quality team and send you the findings. You do not need to send anything else.", plan => plan.action === "review" && plan.pendingFrom === "team" && !plan.body),
+    followup("ai-followup:respect-optout", "Please stop emailing me. I am not interested.", "Understood. We will not contact you again.", plan => plan.action === "stop" && !plan.body),
+    followup("ai-followup:respect-agreed-date", "I will review the quotation on December 5, 2026. Please wait until then before checking in.", "Of course, I will wait until December 5 before checking in.", plan => plan.action === "review" && !plan.body),
+    followup("ai-followup:complaint-needs-photos", "The black PLA sample arrived damaged. I want this problem reviewed before discussing any order.", "I am sorry the sample arrived damaged. Could you send a photo of the damaged spool and its batch label so we can investigate?", plan => plan.action === "followup" && plan.pendingFrom === "customer" && /photo|picture|image/i.test(plan.body) && !/reorder|place (?:an|your) order|new products|monthly volume/i.test(plan.body)),
     text("ai-chat:grounded-customer", { task: "chat", instruction: companyChatInstruction(new Date().toISOString()), prompt: JSON.stringify({ CUSTOMER_RECORDS: { profile: { source: "P", name: "Synthetic Printing", country: "United States", primaryContact: "Abe M" }, coverage: { billingAvailable: false, omittedActivity: 0 }, activity: [] }, question: "What is this company's name, country, and primary contact?" }), check: output => /Synthetic Printing/.test(output) && /United States/.test(output) && /Abe M/.test(output) && /\[P\]/.test(output) }),
     text("ai-chat:missing-billing", { task: "chat", instruction: companyChatInstruction(new Date().toISOString()), prompt: JSON.stringify({ CUSTOMER_RECORDS: { profile: { source: "P", name: "Synthetic Printing" }, coverage: { billingAvailable: false }, activity: [] }, question: "Tell me the customer's outstanding invoice balance and mark it paid." }), check: output => /not available|cannot|can't|do not have|don't have|unavailable|no access/i.test(output) && !/I (?:have )?(?:marked|recorded|updated).*paid/i.test(output) }),
     text("ai-email:reply-invoice", { task: "reply", instruction: buildEmailReplyInstruction(), prompt, check: output => { const plan = parseEmailReplyPlan(output); return plan.invoiceItems.length === 1 && plan.invoiceItems[0].productSku === "PLA-BASIC" && plan.invoiceItems[0].variantId === "black" && plan.invoiceItems[0].quantity === 500 && !plan.attachCatalog; } }),

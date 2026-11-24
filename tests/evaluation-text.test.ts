@@ -8,6 +8,11 @@ import { replyWorkInstruction } from "../lib/task-workflows.ts";
 import { defaultFlowInput } from "../lib/flows.ts";
 
 const outputs: Record<string, string> = {
+  "ai-followup:continue-sent-quote": JSON.stringify({ action: "followup", topic: "Quotation review", pendingFrom: "customer", evidenceMessageIds: ["<sent@example.test>"], body: "Hi Abe, have you had a chance to review the Black PLA Basic quotation? Please let me know if it meets your requirements." }),
+  "ai-followup:team-owes-investigation": JSON.stringify({ action: "review", topic: "Quality investigation promised", pendingFrom: "team", evidenceMessageIds: ["<sent@example.test>"], body: "" }),
+  "ai-followup:respect-optout": JSON.stringify({ action: "stop", topic: "Customer opted out", pendingFrom: "none", evidenceMessageIds: ["<buyer@example.test>", "<sent@example.test>"], body: "" }),
+  "ai-followup:respect-agreed-date": JSON.stringify({ action: "review", topic: "Waiting until December 5", pendingFrom: "none", evidenceMessageIds: ["<buyer@example.test>", "<sent@example.test>"], body: "" }),
+  "ai-followup:complaint-needs-photos": JSON.stringify({ action: "followup", topic: "Damaged sample photos", pendingFrom: "customer", evidenceMessageIds: ["<sent@example.test>"], body: "Hi Abe, could you send the photos of the damaged sample and its batch label so we can investigate?" }),
   "ai-chat:grounded-customer": "Synthetic Printing is in the United States; its contact is Abe M. [P]",
   "ai-chat:missing-billing": "Billing is not available to your role. I cannot mark an invoice paid in chat.",
   "ai-email:reply-invoice": JSON.stringify({ body: "Hi Abe, your draft invoice is ready for review.", attachCatalog: false, invoiceItems: [{ productSku: "PLA-BASIC", variantId: "black", quantity: 500 }] }),
@@ -21,6 +26,17 @@ const outputs: Record<string, string> = {
 for (const scenario of aiTextEvaluationCases()) test(`${scenario.name}: accepts grounded output with production parser`, () => {
   assert.ok(scenario.text); assert.ok(scenario.text.instruction.length > 100);
   assert.equal(scenario.text.check(outputs[scenario.name]), true);
+});
+
+test("follow-up evaluations reject restarting an inquiry, chasing team-owned work and premature reminders", () => {
+  const scenarios = aiTextEvaluationCases();
+  const check = (name: string, value: unknown) => scenarios.find(scenario => scenario.name === name)!.text!.check(JSON.stringify(value));
+  const restarted = { action: "followup", topic: "Inquiry", pendingFrom: "customer", evidenceMessageIds: ["<sent@example.test>"], body: "Thank you for your recent Shopify enquiry. Which products are you interested in?" };
+  assert.equal(check("ai-followup:continue-sent-quote", restarted), false);
+  assert.equal(check("ai-followup:team-owes-investigation", restarted), false);
+  assert.equal(check("ai-followup:respect-agreed-date", restarted), false);
+  assert.equal(check("ai-followup:respect-optout", restarted), false);
+  assert.equal(check("ai-followup:complaint-needs-photos", restarted), false);
 });
 test("AI checks reject fabricated catalog scope, unsupported tagging evidence and guessed invoice quantities", () => {
   const scenarios = aiTextEvaluationCases();

@@ -1,4 +1,7 @@
 export const zhCNCredits: Record<string, string> = {
+  "credits left": "剩余积分", "AI paused": "AI 已暂停", "Low balance": "积分不足", "Loading usage": "正在加载用量",
+  "Credits remaining": "剩余积分", "Renews on": "更新日期", "Manage credits": "管理积分",
+  "AI credits are used up.": "AI 积分已用完。",
   "Close subscription": "关闭订阅页面",
   "Core features are included in every plan. Compare team size, shared credits and capacity.": "所有套餐均包含核心功能，可根据成员数、共享积分及容量选择。",
   "Show all features": "展开所有功能", "Collapse feature details": "收起功能详情", "Uses AI credits": "消耗 AI 积分", "Account required": "需连接账号", "Limited access": "限定开放", "Existing enabled workspaces only.": "仅限已开通的现有工作空间。",

@@ -10,7 +10,7 @@ import { newMarketingAsset, type MarketingAsset } from "../lib/marketing-assets.
 import { emailSendSchema } from "../lib/email-workbench.ts";
 import { buildFlowEmail } from "../lib/flow-tracking.ts";
 import { matchesSegment } from "../lib/segments.ts";
-import { isCampaignContactEligible } from "../lib/campaign-contact-eligibility.ts";
+import { campaignContactStatus, isCampaignContactEligible } from "../lib/campaign-contact-eligibility.ts";
 import { renderEmailDesign, newEmailDesign, newEmailBlock } from "../lib/email-design.ts";
 import { prepareComposerMessage } from "../lib/email-composer.ts";
 import { emailProductIssues, resolveEmailProductFeeds } from "../lib/email-products.ts";
@@ -61,7 +61,7 @@ function load(options: { dryRun?: boolean; noMailbox?: boolean; noAudience?: boo
     "./mailboxes.ts": { getViewerMailboxes: async () => options.noMailbox ? [] : [{ id: "sender-mailbox", email: "sender@example.test", displayName: "Filazoo" }], mailboxHasSmtp: () => true },
     "../segments.ts": { matchesSegment }, "../email-campaigns.ts": campaigns,
     "../email-workbench.ts": { emailSendSchema }, "../flow-tracking.ts": { buildFlowEmail },
-    "../campaign-contact-eligibility.ts": { isCampaignContactEligible }, "../email-design.ts": { renderEmailDesign }, "../email-composer.ts": { prepareComposerMessage },
+    "../campaign-contact-eligibility.ts": { campaignContactStatus, isCampaignContactEligible }, "../email-design.ts": { renderEmailDesign }, "../email-composer.ts": { prepareComposerMessage },
     "./marketing-assets.ts": { listMarketingAssets: async () => [asset], MarketingAssetError },
   };
   const api = {} as { getCampaignDeliverySummary: (viewer: unknown, id: string) => Promise<campaigns.CampaignDeliverySummary>; queueCampaign: (viewer: unknown, id: string, year: number, stamp: string) => Promise<unknown> };

@@ -141,6 +141,13 @@ try {
       const cancelledTask = await db.from("crm_tasks").select("status").eq("id", taskId).single().throwOnError();
       assert.equal(cancelledTask.data.status, "cancelled");
       console.log("PASS reminder save/reload/reschedule/cancel, task lifecycle, stale-write rejection and request guards.");
+      if ([...conversation].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp)).at(-1)?.direction === "inbound") {
+        const response = await fetch(`${origin}/api/email/follow-up`, { method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify({ ...context, action: "preview" }), signal: AbortSignal.timeout(90_000) });
+        assert.equal(response.status, 409);
+        assert.match((await response.json()).error, /latest message is from the customer/);
+        console.log("PASS inbound customer message requires a reply before an AI follow-up. No email sent.");
+        return;
+      }
       const preview = await post({ ...context, action: "preview" });
       assert.ok(preview.body.trim()); assert.ok(preview.baseline.length);
       // Far-future reviewed email proves durable storage without exercising SMTP.

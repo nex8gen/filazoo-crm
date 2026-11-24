@@ -99,7 +99,7 @@ export function EmailFollowupPanel({ mailboxId, messageId, subject, recipient, c
     pending.current = true; setGenerating(true); setError("");
     const controller = new AbortController(); generation.current = controller;
     try {
-      const result = await requestFollowup("/api/email/follow-up", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "preview", mailboxId, messageId }) }, 65_000);
+      const result = await requestFollowup("/api/email/follow-up", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "preview", mailboxId, messageId }) }, 90_000);
       if (alive.current) { setBody(result.body); setDraftSubject(result.subject); setBaseline(result.baseline); }
     } catch (cause) { if (alive.current && !controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Unable to generate follow-up."); }
     finally { if (generation.current === controller) { generation.current = null; pending.current = false; if (alive.current) setGenerating(false); } }

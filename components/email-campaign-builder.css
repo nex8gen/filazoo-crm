@@ -28,11 +28,43 @@
 .campaign-builder-audiences > label:hover { background: var(--muted); }
 .campaign-builder-audiences small { margin-left: auto; color: var(--muted-foreground); font-size: .8125rem; }
 .campaign-builder-audiences input, .campaign-builder-sendOptions input[type="radio"] { accent-color: var(--primary); }
-.campaign-audience-search { position: relative; }.campaign-audience-search > svg { position:absolute;left:10px;top:10px;width:15px;height:15px;color:var(--muted-foreground); }.campaign-audience-search input { padding-left:32px; }
+.campaign-audience-input { display:flex;align-items:stretch;min-height:38px;border:1px solid var(--input);border-radius:var(--radius);background:var(--background); }
+.campaign-audience-input:focus-within { border-color:var(--ring);box-shadow:0 0 0 1px var(--ring); }
+.campaign-audience-input[data-disabled] { opacity:.5; }
+.campaign-audience-chips { display:flex;flex:1;flex-wrap:wrap;align-items:center;gap:5px;min-width:0;max-height:160px;overflow-y:auto;padding:5px 6px;scrollbar-width:thin; }
+.campaign-audience-chips > input { flex:1 1 170px;width:0;min-width:min(100%,120px);min-height:26px;padding:2px 4px;border:0;font-size:.875rem;background:transparent;outline:none;box-shadow:none;text-overflow:ellipsis; }
+.campaign-audience-chips > input::placeholder { color:var(--muted-foreground); }
+.campaign-audience-chip { display:inline-flex;align-items:center;gap:5px;max-width:100%;min-width:0;min-height:26px;padding:3px 4px 3px 8px;border:1px solid var(--border);border-radius:5px;background:var(--muted);font-size:.8125rem;line-height:18px;cursor:default; }
+.campaign-audience-chip > span { min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.campaign-audience-chip:focus { background:color-mix(in srgb,var(--primary) 12%,var(--background));outline:2px solid var(--ring);outline-offset:-1px; }
+.campaign-audience-chip > button { display:grid;place-items:center;flex-shrink:0;width:20px;height:20px;border-radius:3px;color:var(--muted-foreground); }
+.campaign-audience-chip > button:hover { background:var(--background);color:var(--foreground); }
+.campaign-audience-chip > button svg { width:12px;height:12px; }
+.campaign-audience-chip[data-disabled] { opacity:.5; }
+.campaign-audience-input > button { display:grid;place-items:center;align-self:stretch;width:36px;flex-shrink:0;color:var(--muted-foreground); }
+.campaign-audience-input > button svg { width:14px;height:14px; }
+.campaign-audience-input > button:is(:focus,:focus-visible), .campaign-audience-chips > input:is(:focus,:focus-visible) { outline:none !important;box-shadow:none !important; }
 .campaign-audience-tabs { display:flex;align-items:center;gap:5px;border-bottom:1px solid var(--border);padding-bottom:8px; }.campaign-audience-tabs > button:last-child { margin-left:auto; }.campaign-audience-tabs button span { color:var(--muted-foreground);font-size: .8125rem; }
 .campaign-audience-group { font-size: .8125rem;font-weight:500;color:var(--muted-foreground);padding:9px 7px 5px; }
 .campaign-audience-options { max-height:340px; }.campaign-audience-option { display:flex;align-items:center;gap:9px;padding:9px 7px;font-size: .875rem;border-radius:var(--radius);cursor:pointer; }.campaign-audience-option:hover { background:var(--muted); }.campaign-audience-option > span { flex:1;min-width:0;overflow-wrap:anywhere; }.campaign-audience-option > span small { display:block;line-height:18px; }.campaign-audience-option > small { font-size: .8125rem;flex-shrink:0; }
-.campaign-audience-empty { padding:20px 8px;font-size: .875rem;color:var(--muted-foreground);text-align:center; }.campaign-audience-note { border-top:1px solid var(--border);padding:8px 6px 2px;font-size: .8125rem;color:var(--muted-foreground); }.campaign-audience-note span { display:block;font-size: .8125rem;margin-top:4px; }
+.campaign-audience-empty { padding:20px 8px;font-size: .875rem;color:var(--muted-foreground);text-align:center; }
+.campaign-audience-popover { max-height:min(680px,var(--available-height,calc(100dvh - 32px)));overflow-y:auto; }
+.campaign-audience-popover > .campaign-audience-options { min-height:80px;flex:1 1 auto;overscroll-behavior:contain;scrollbar-gutter:stable; }
+.campaign-audience-popover > .campaign-audience-options[data-search="true"] { min-height:0; }
+.campaign-audience-match { background:color-mix(in srgb,#facc15 40%,transparent);color:inherit;font-weight:600;border-radius:2px;padding:0; }
+.campaign-audience-popover > :not(.campaign-audience-options) { flex-shrink:0; }
+.campaign-audience-filters { display:flex;flex-wrap:wrap;gap:4px; }
+.campaign-audience-filters span { color:var(--muted-foreground); }
+.campaign-audience-row { display:flex;align-items:center;gap:4px; }
+.campaign-audience-row > .campaign-audience-option { flex:1;min-width:0; }
+.campaign-audience-option[data-highlighted] { background:var(--muted);outline:none; }
+.campaign-audience-option > .campaign-audience-check { display:grid;place-items:center;width:13px;height:13px;flex:0 0 13px;border:1px solid var(--muted-foreground);border-radius:3px; }
+.campaign-audience-check > svg { width:11px;height:11px; }
+.campaign-audience-option[data-selected] > .campaign-audience-check { color:var(--primary-foreground);background:var(--primary);border-color:var(--primary); }
+.campaign-audience-row > button { flex-shrink:0; }
+.campaign-audience-reason { padding:0 7px 9px 29px;color:var(--muted-foreground);font-size:.75rem;line-height:1.5; }
+.campaign-audience-pagination { display:flex;align-items:center;justify-content:flex-end;gap:4px;border-top:1px solid var(--border);padding-top:6px; }
+.campaign-audience-pagination > span { margin-right:auto;font-size:.8125rem;color:var(--muted-foreground); }
 .campaign-builder-toggle { display: flex; align-items: center; gap: 9px; font-size: .875rem; cursor: pointer; }
 .campaign-builder-toggle > input { appearance: none; position: relative; width: 32px; height: 18px; flex-shrink: 0; border-radius: 10px; background: var(--muted-foreground); transition: background 150ms; cursor: pointer; }
 .campaign-builder-toggle > input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; border-radius: 50%; background: var(--background); transition: transform 150ms; }

@@ -9,7 +9,8 @@ import { mergeAutoReplyHistory } from "../email-auto-reply";
 import { getEmailInboxBackendData } from "../email-inbox";
 import { loadSyncedMailbox } from "./mailbox-sync";
 import { normalizeMessageId, referenceHeaderIds, threadKeyForEmail } from "../email-threading";
-import { followupAnchors, followupConversation, followupChanged, followupMailboxFresh, followupMessageKey, followupSubject, followupInstruction, validateFollowupTime, type EmailFollowup, type FollowupSave } from "../email-followup";
+import { followupAnchors, followupConversation, followupChanged, followupMailboxFresh, followupMessageKey, followupSubject, followupInstruction, followupWritingContext, parseFollowupDraft, validateFollowupTime, type EmailFollowup, type FollowupSave } from "../email-followup";
+import { loadEmailWritingResources } from "./email-writing-resources";
 import { requireAiFeature } from "./ai-settings";
 import { aiBehaviorInstruction } from "../ai-policy";
 import { resolveGatewayTokenAsync } from "../ai/provider-credentials";
@@ -32,9 +33,8 @@ async function authorizeMailbox(viewer: WorkspaceViewer, mailboxId: string, reci
   return mailbox;
 }
 export async function followupContext(viewer: WorkspaceViewer, mailboxId: string, messageId: string) {
-  let { mailbox, messages } = await mailboxHistory(mailboxId, viewer.id, false, false);
+  const { mailbox, messages } = await loadFollowupHistory(viewer, mailboxId, false, true);
   const matches = (message: (typeof messages)[number]) => message.id === messageId || Boolean(message.messageId && normalizeMessageId(message.messageId) === normalizeMessageId(messageId));
-  if (!messages.some(matches)) ({ mailbox, messages } = await loadFollowupHistory(viewer, mailboxId, false, true));
   const message = messages.find(matches);
   if (!message) throw new Error("This message is unavailable in this mailbox.");
   const conversation = followupConversation(messages, [messageId]);
@@ -51,7 +51,9 @@ async function loadFollowupHistory(viewer: WorkspaceViewer, mailboxId: string, i
   if (!includeCrm) return saved;
   // Use the same authorized records displayed in this mailbox, including CRM and
   // store inquiries. Caller-provided bodies, recipients and thread IDs are ignored.
-  const inbox = await getEmailInboxBackendData({ syncMailbox: false, mailboxId, context: { viewer, mailboxes: [saved.mailbox] } });
+  const inbox = await getEmailInboxBackendData({ syncMailbox: false, history: true, mailboxId, context: { viewer, mailboxes: [saved.mailbox] } });
+  if (includeContent && (inbox.mailboxReadFailed || inbox.mailboxHistoryPartial))
+    throw new Error("Mailbox history is incomplete. Load the conversation history before generating an AI follow-up, or write the follow-up manually.");
   const messages = inbox.emails.filter(message => message.direction === "inbound" || /^sent$/i.test(message.status));
   return { mailbox: saved.mailbox, messages: mergeAutoReplyHistory(messages, saved.messages) };
 }
@@ -70,17 +72,22 @@ export async function previewFollowup(viewer: WorkspaceViewer, mailboxId: string
   if (!token) throw new Error("Configure an AI provider before generating a follow-up.");
   // Preview never opens competing IMAP sessions or waits for uncached old mail.
   // The reader's normal message load persists original bodies in this cache.
-  const { messages } = await loadFollowupHistory(viewer, mailboxId, true, context.anchors.some(id => id.startsWith("local:")));
-  const history = followupConversation(messages, context.anchors).slice(-12);
-  const latest = history.at(-1);
-  if (!latest || latest.bodyLoaded === false || !latest.body.trim()) throw new Error("Load the latest message in the mailbox before generating an AI follow-up. You can also write the follow-up manually.");
-  const body = (await generateGatewayText({ token, task: "email", usageUserId: viewer.id,
+  const { messages } = await loadFollowupHistory(viewer, mailboxId, true, true);
+  const history = followupConversation(messages, context.anchors);
+  const writing = followupWritingContext(history);
+  const resources = await loadEmailWritingResources(viewer, mailboxId, context.recipient, policy);
+  const prompt = JSON.stringify({ currentTime: new Date().toISOString(), timezone: "Asia/Shanghai", ...writing, ...resources });
+  if (prompt.length > 250_000) throw new Error("This conversation and its resources are too large for a reliable follow-up. Review it manually; earlier commitments have not been discarded.");
+  const output = await generateGatewayText({ token, task: "reply", usageUserId: viewer.id,
     systemInstruction: followupInstruction + aiBehaviorInstruction(policy, true),
-    prompt: JSON.stringify({ conversation: history.map(({ direction, subject, body, timestamp, bodyLoaded }) => ({ direction, subject, body: bodyLoaded === false ? "[Original email body is unavailable]" : body.slice(0, 6000), timestamp })) }),
-    maxOutputTokens: 1600, signal: AbortSignal.timeout(55_000),
-  })).trim();
-  if (!body || body.length > 20000) throw new Error("AI could not prepare a follow-up. Review the conversation and write a message manually.");
-  return { subject: followupSubject(latest.subject), body, baseline: context.conversation.map(followupMessageKey) };
+    prompt, maxOutputTokens: 2400, signal: AbortSignal.timeout(55_000),
+  });
+  const body = parseFollowupDraft(output, writing);
+  const baseline = history.map(followupMessageKey);
+  const refreshed = await loadFollowupHistory(viewer, mailboxId, false, true);
+  if (followupChanged(followupConversation(refreshed.messages, context.anchors), baseline, history.at(-1)!.timestamp))
+    throw new Error("The conversation changed while AI was writing. Review the latest message and regenerate the follow-up.");
+  return { subject: followupSubject(history.at(-1)!.subject), body, baseline };
 }
 export async function saveFollowup(viewer: WorkspaceViewer, input: FollowupSave, baseline: string[]) {
   validateFollowupTime(input.dueAt);

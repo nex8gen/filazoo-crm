@@ -8,7 +8,7 @@ import { listSegmentCompanies, listProducts } from "./crm.ts";
 import { listSavedSegments } from "./segments.ts";
 import { getViewerMailboxes, mailboxHasSmtp } from "./mailboxes.ts";
 import { matchesSegment } from "../segments.ts";
-import { isCampaignContactEligible } from "../campaign-contact-eligibility.ts";
+import { campaignContactStatus, isCampaignContactEligible } from "../campaign-contact-eligibility.ts";
 import { campaignConfigSchema, campaignMessageIssues, personalizeCampaign, selectCampaignRecipients, type CampaignConfig, type CampaignOptions, type CampaignDeliverySummary } from "../email-campaigns.ts";
 import { emailSendSchema } from "../email-workbench.ts";
 import { buildFlowEmail } from "../flow-tracking.ts";
@@ -36,20 +36,33 @@ async function audienceData(viewer: WorkspaceViewer) {
   const suppressed = new Set<string>();
   for (let offset = 0; ; offset += 1000) {
     const { data } = await db.from("suppression").select("email").order("email").range(offset, offset + 999).throwOnError();
-    for (const item of data ?? []) suppressed.add(String(item.email).toLowerCase());
+    for (const item of data ?? []) suppressed.add(String(item.email).trim().toLowerCase());
     if ((data?.length ?? 0) < 1000) break;
   }
   const names = new Map(companies.map(company => [company.id, company.name]));
-  const normalized = contacts.map(contact => ({ id: contact.id, companyId: contact.company_id, companyName: names.get(contact.company_id) ?? "", name: contact.name ?? "", email: contact.email ?? "", unsubscribed: contact.unsubscribed, sourceEligible: isCampaignContactEligible(contact.verification_status, contact.consent_source), eligible: isCampaignContactEligible(contact.verification_status, contact.consent_source) && !suppressed.has(String(contact.email).toLowerCase()) }));
+  const unsubscribedEmails = new Set(contacts.filter(contact => contact.unsubscribed).map(contact => String(contact.email).trim().toLowerCase()));
+  const normalized = contacts.map(contact => {
+    const status = campaignContactStatus({ email: contact.email ?? "", verificationStatus: contact.verification_status, consentSource: contact.consent_source, unsubscribed: unsubscribedEmails.has(String(contact.email).trim().toLowerCase()), suppressed: suppressed.has(String(contact.email).trim().toLowerCase()) });
+    return { id: contact.id, companyId: contact.company_id, companyName: names.get(contact.company_id) ?? "", name: contact.name ?? "", email: contact.email ?? "", unsubscribed: contact.unsubscribed, sourceEligible: isCampaignContactEligible(contact.verification_status, contact.consent_source), eligible: isCampaignContactEligible(contact.verification_status, contact.consent_source) && !suppressed.has(String(contact.email).trim().toLowerCase()), campaignEligible: status.eligible, eligibilityStatus: status.status, eligibilityReason: status.reason, verificationStatus: contact.verification_status, consentSource: contact.consent_source ?? "" };
+  });
   const memberships = new Map(segments.map(segment => [segment.id, new Set(companies.filter(company => matchesSegment(company, segment.rules)).map(company => company.id))]));
   const businessSegments = [...new Set(companies.map(company => company.segment))].sort((a, b) => a.localeCompare(b));
   for (const name of businessSegments) memberships.set(`business:${name}`, new Set(companies.filter(company => company.segment === name).map(company => company.id)));
   memberships.set("all", new Set(companies.map(company => company.id)));
+  const companyAudiences = new Map<string, string[]>();
+  for (const [audienceId, companyIds] of memberships) {
+    if (audienceId === "all") continue;
+    for (const companyId of companyIds) {
+      const ids = companyAudiences.get(companyId) ?? [];
+      ids.push(audienceId);
+      companyAudiences.set(companyId, ids);
+    }
+  }
   const count = (ids: Set<string>) => new Set(normalized.filter(contact => ids.has(contact.companyId) && contact.email.trim()).map(contact => contact.email.trim().toLowerCase())).size;
   const options: CampaignOptions = {
     mailboxes: mailboxes.map(mailbox => ({ id: mailbox.id, email: mailbox.email, name: mailbox.displayName ?? "", available: mailboxHasSmtp(mailbox) })),
-    audiences: [{ id: "all", name: "All contacts", kind: "all", count: count(memberships.get("all")!) }, ...segments.map(segment => ({ id: segment.id, name: segment.name, kind: "saved" as const, count: count(memberships.get(segment.id)!) })), ...businessSegments.map(name => ({ id: `business:${name}`, name, kind: "business" as const, count: count(memberships.get(`business:${name}`)!) }))],
-    contacts: contacts.map(contact => ({ id: `contact:${contact.id}`, name: contact.name || contact.email || "Unnamed contact", email: contact.email ?? "", companyName: names.get(contact.company_id) ?? "", verificationStatus: contact.verification_status, consentSource: contact.consent_source ?? "", eligible: isCampaignContactEligible(contact.verification_status, contact.consent_source) && !contact.unsubscribed && !suppressed.has(String(contact.email).toLowerCase()) })).sort((a, b) => a.name.localeCompare(b.name)),
+    audiences: [{ id: "all", name: "All contacts", kind: "all", count: count(memberships.get("all")!), companyCount: companies.length }, ...segments.map(segment => ({ id: segment.id, name: segment.name, kind: "saved" as const, count: count(memberships.get(segment.id)!), companyCount: memberships.get(segment.id)!.size })), ...businessSegments.map(name => ({ id: `business:${name}`, name, kind: "business" as const, count: count(memberships.get(`business:${name}`)!), companyCount: memberships.get(`business:${name}`)!.size }))],
+    contacts: normalized.map(contact => ({ id: `contact:${contact.id}`, name: contact.name || contact.email || "Unnamed contact", email: contact.email, companyName: contact.companyName, audienceIds: companyAudiences.get(contact.companyId) ?? [], verificationStatus: contact.verificationStatus, consentSource: contact.consentSource, eligible: contact.campaignEligible, eligibilityStatus: contact.eligibilityStatus, eligibilityReason: contact.eligibilityReason })).sort((a, b) => a.name.localeCompare(b.name)),
     sendingEnabled: !env.dryRun,
   };
   return { options, normalized, memberships };

@@ -95,6 +95,16 @@ test("company and segment reads retain mixed source history without changing the
   }
 });
 
+test("email-based segments consider every company contact, including a later email after an empty first contact", async () => {
+  const { api } = load({ rows: [
+    { ...row, id: "later-email", contacts: [{ email: " " }, { email: "buyer@example.test" }] },
+    { ...row, id: "no-email", contacts: [{ email: "" }, { email: " " }] },
+    { ...row, id: "no-contacts", contacts: null },
+  ] });
+  const { companies } = await api.listSegmentCompanies();
+  assert.deepEqual(Array.from(companies, company => [company.id, company.hasEmail]), [["later-email", true], ["no-email", false], ["no-contacts", false]]);
+});
+
 test("company listings bound embedded email history without limiting companies or dropping outreach status", async () => {
   const latest = { status: "sent", direction: "outbound", created_at: "2026-10-31T01:00:00Z" };
   const older = { status: "draft", direction: "outbound", created_at: "2026-10-01T01:00:00Z" };

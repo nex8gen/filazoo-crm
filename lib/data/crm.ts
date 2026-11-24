@@ -224,7 +224,7 @@ export async function listSegmentCompanies(): Promise<{ mode: DataMode; companie
       id: row.id, name: row.name, segment: row.segment || "Unclassified", country: row.country || "Unknown",
       source: row.source || "imported", sourceLabel: companySourcePresentation(row.source).label,
       fitScore: first(row.company_profiles)?.fit_score ?? 0,
-      hasEmail: Boolean(first(row.contacts)?.email?.trim()),
+      hasEmail: (Array.isArray(row.contacts) ? row.contacts : row.contacts ? [row.contacts] : []).some(contact => Boolean(contact.email?.trim())),
     });
     if ((data?.length ?? 0) < 500) break;
   }

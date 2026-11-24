@@ -57,6 +57,14 @@ test("CRM inquiry anchors track subsequent replies without joining unrelated sub
   assert.deepEqual(history.map(message => message.id), ["crm-record", "sent", "customer"]);
   assert.equal(followups.followupChanged(history, [inquiry.id], inquiry.timestamp), true);
 });
+
+test("follow-up parser strips a generated sign-off before the saved footer is added", () => {
+  const context = followups.followupWritingContext([message("sent", "outbound")]);
+  const body = "Hi, have you had a chance to review the quotation?";
+  for (const signoff of ["Best regards,", "Kind regards,\nSynthetic Manager\nFilazoo"]) {
+    assert.equal(followups.parseFollowupDraft(JSON.stringify({ action: "followup", topic: "Quote feedback", pendingFrom: "customer", evidenceMessageIds: [context.latestMessageId], body: `${body}\n\n${signoff}` }), context), body);
+  }
+});
 function route() {
   let role = "admin";
   const calls: string[] = [];

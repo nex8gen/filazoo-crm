@@ -19,6 +19,10 @@ function setup() {
   let fresh = true, failure = false, paused = false, sends = 0;
   let beforeDelivery: (() => void) | undefined;
   let afterClaim: (() => void) | undefined;
+  let duringGeneration: (() => void) | undefined;
+  let generatedPlan: Record<string, unknown> = {};
+  const generations: Array<{ prompt: string; task: string }> = [];
+  const resources = { customerProfile: { contactName: "Buyer" }, productCatalog: { status: "available", products: [{ sku: "PLA", title: "PLA Basic" }] }, approvedBusinessFacts: { status: "available", records: [] }, openCustomerTasks: { status: "available", records: [] } };
   const db = { from(table: string) {
     let action = "select", values: Row = {}, one = false;
     const filters: Array<(row: Row) => boolean> = [];
@@ -51,9 +55,15 @@ function setup() {
     "../email-inbox": { getEmailInboxBackendData: async () => ({ emails: crmMessages }) },
     "./mailbox-sync": { loadSyncedMailbox: async () => ({ messages, syncedAt: fresh ? new Date().toISOString() : new Date(Date.now() - 600_000).toISOString() }) },
     "./ai-settings": { requireAiFeature: async () => ({ actions: { sending: "ask" } }) },
+    "./email-writing-resources": { loadEmailWritingResources: async () => resources },
     "../ai-policy": { aiBehaviorInstruction: () => "" },
     "../ai/provider-credentials": { resolveGatewayTokenAsync: async () => "test-token" },
-    "../ai/gateway": { generateGatewayText: async () => "Hi, do you have any questions about the quotation?" },
+    "../ai/gateway": { generateGatewayText: async (input: { prompt: string; task: string }) => {
+      generations.push(input);
+      const context = JSON.parse(input.prompt);
+      duringGeneration?.();
+      return JSON.stringify({ action: "followup", topic: "Quotation feedback", pendingFrom: "customer", evidenceMessageIds: [context.latestMessageId], body: "Hi, do you have any questions about the quotation?", ...generatedPlan });
+    } },
     "./manual-email-send": { deliverEmail: async (_viewer: unknown, input: { requestId: string; inReplyTo?: string; references: string[] }, _reserved: boolean, gate: () => Promise<void>) => {
       assert.equal(input.requestId, row.delivery_id); assert.equal(input.inReplyTo, threading.referenceHeaderIds(String(row.message_id))[0]);
       assert.deepEqual([...input.references], threading.referenceHeaderIds(row.anchors as string[]));
@@ -69,7 +79,7 @@ function setup() {
   vm.runInNewContext(ts.transpileModule(readFileSync(new URL("../lib/data/email-followups.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText,
     { exports, require: (key: string) => { assert.ok(key in dependencies, key); return dependencies[key]; }, Response, URLSearchParams, AbortSignal, process: { env: {} }, crypto, Date, console });
   const reply = (direction: "inbound" | "outbound" = "inbound") => { messages = [...messages, { ...source, id: "new", messageId: "<new@example.test>", inReplyTo: source.messageId, timestamp: new Date().toISOString(), direction }]; };
-  return { row, tables, tick: exports.processEmailFollowups, context: (key: string) => exports.followupContext({ id: "actor", role: "operator" }, "mailbox", key), crm: (items: InboxEmailItem[]) => { crmMessages = items; }, sentOnly: () => { messages = [{ ...source, direction: "outbound" }]; }, save: () => exports.saveFollowup({ id: "actor", role: "operator" }, { action: "save", id: row.id, revision: row.revision, kind: "reminder", mailboxId: "mailbox", messageId: source.messageId, dueAt: new Date(Date.now() + 3600_000).toISOString(), subject: "Reminder", body: "" }, [source.messageId!]), preview: (key = source.messageId!) => exports.previewFollowup({ id: "actor", role: "operator" }, "mailbox", key), unload: () => { messages = [{ ...source, bodyLoaded: false, body: "" }]; }, reply, sends: () => sends, stale: () => { fresh = false; }, pause: () => { paused = true; }, fail: () => { failure = true; }, before: (action: () => void) => { beforeDelivery = action; }, claimed: (action: () => void) => { afterClaim = action; } };
+  return { row, tables, generations, resources, setMessages: (items: InboxEmailItem[]) => { messages = items; }, plan: (value: Record<string, unknown>) => { generatedPlan = value; }, generating: (action: () => void) => { duringGeneration = action; }, tick: exports.processEmailFollowups, context: (key: string) => exports.followupContext({ id: "actor", role: "operator" }, "mailbox", key), crm: (items: InboxEmailItem[]) => { crmMessages = items; }, sentOnly: () => { messages = [{ ...source, direction: "outbound" }]; }, save: () => exports.saveFollowup({ id: "actor", role: "operator" }, { action: "save", id: row.id, revision: row.revision, kind: "reminder", mailboxId: "mailbox", messageId: source.messageId, dueAt: new Date(Date.now() + 3600_000).toISOString(), subject: "Reminder", body: "" }, [source.messageId!]), preview: (key = source.messageId!) => exports.previewFollowup({ id: "actor", role: "operator" }, "mailbox", key), unload: () => { messages = [{ ...source, bodyLoaded: false, body: "" }]; }, reply, sends: () => sends, stale: () => { fresh = false; }, pause: () => { paused = true; }, fail: () => { failure = true; }, before: (action: () => void) => { beforeDelivery = action; }, claimed: (action: () => void) => { afterClaim = action; } };
 }
 test("a CRM inquiry without RFC metadata supports context loading, AI preview and reply cancellation", async () => {
   const app = setup();
@@ -77,7 +87,7 @@ test("a CRM inquiry without RFC metadata supports context loading, AI preview an
   app.crm([inquiry]);
   const context = await app.context(inquiry.id);
   assert.equal(context.message.id, inquiry.id); assert.equal(context.recipient, source.contact);
-  const preview = await app.preview(inquiry.id); assert.match(preview.body, /quotation/);
+  await assert.rejects(app.preview(inquiry.id), /latest message is from the customer/);
   app.row.anchors = context.anchors; app.row.message_id = inquiry.id; app.row.baseline = [inquiry.id]; app.row.kind = "reminder";
   await app.tick(); assert.equal(app.row.status, "reminded");
   app.row.status = "scheduled";
@@ -105,10 +115,56 @@ test("editing cannot reset the reply baseline after a customer answers in the op
   assert.equal(app.row.revision, 1); assert.equal(app.row.status, "scheduled");
 });
 test("preview uses saved message bodies without opening IMAP or submitting email", async () => {
-  const app = setup(); const result = await app.preview();
+  const app = setup(); app.sentOnly(); const result = await app.preview();
   assert.match(result.body, /quotation/); assert.equal(result.subject, "Re: Quotation");
   assert.deepEqual([...result.baseline], [source.messageId]); assert.equal(app.sends(), 0);
-  app.unload(); await assert.rejects(app.preview(), /Load the latest message/);
+  app.unload(); await assert.rejects(app.preview(), /Load the complete conversation/);
+});
+
+test("preview includes early requirements, full bodies, CRM sent messages and authorized resources", async () => {
+  const app = setup();
+  const history = Array.from({ length: 16 }, (_, index) => ({ ...source, id: `history-${index}`, messageId: `<history-${index}@example.test>`, inReplyTo: source.messageId, direction: index % 2 ? "outbound" as const : "inbound" as const, timestamp: new Date(Date.parse(source.timestamp) + index + 1).toISOString(), body: index === 0 ? `PLA black only ${"x".repeat(6500)} LAST REQUIREMENT` : "Details" }));
+  app.setMessages([source, ...history]);
+  const sent = { ...source, id: "crm-sent", messageId: "<crm-sent@example.test>", inReplyTo: source.messageId, direction: "outbound" as const, status: "Sent", body: "I sent the revised quotation. Does it meet your requirements?", timestamp: new Date().toISOString() };
+  app.crm([sent]);
+  const preview = await app.preview();
+  const prompt = JSON.parse(app.generations[0].prompt);
+  assert.equal(prompt.conversation.length, 18);
+  assert.match(prompt.conversation[1].body, /LAST REQUIREMENT$/);
+  assert.equal(prompt.latestMessageId, sent.messageId);
+  assert.equal(prompt.conversation.at(-1).body, sent.body);
+  assert.deepEqual(prompt.productCatalog, app.resources.productCatalog);
+  assert.deepEqual(prompt.customerProfile, app.resources.customerProfile);
+  assert.equal(app.generations[0].task, "reply");
+  assert.equal(preview.baseline.length, 18);
+  assert.equal(app.sends(), 0);
+});
+
+test("preview never chases an unanswered customer message or works around missing earlier content", async () => {
+  const app = setup();
+  await assert.rejects(app.preview(), /latest message is from the customer/);
+  app.setMessages([{ ...source, bodyLoaded: false }, { ...source, id: "sent", messageId: "<sent@example.test>", inReplyTo: source.messageId, direction: "outbound", timestamp: new Date().toISOString() }]);
+  await assert.rejects(app.preview(), /complete conversation/);
+  assert.equal(app.generations.length, 0);
+});
+
+test("preview rejects stale evidence, team-owned problems, resolved threads and oversized context", async () => {
+  for (const plan of [{ evidenceMessageIds: ["invented"] }, { pendingFrom: "team", action: "review" }, { pendingFrom: "none", action: "stop" }, { action: "followup", body: "" }]) {
+    const app = setup(); app.sentOnly(); app.plan(plan);
+    await assert.rejects(app.preview(), /ground|review|no appropriate|could not prepare/i);
+    assert.equal(app.sends(), 0);
+  }
+  const app = setup(); app.setMessages([{ ...source, direction: "outbound", body: "x".repeat(250001) }]);
+  await assert.rejects(app.preview(), /too large/);
+  assert.equal(app.generations.length, 0);
+});
+
+test("a new inbound or outbound message while generating invalidates the preview", async () => {
+  for (const direction of ["inbound", "outbound"] as const) {
+    const app = setup(); app.sentOnly(); app.generating(() => app.reply(direction));
+    await assert.rejects(app.preview(), /changed while AI was writing/);
+    assert.equal(app.sends(), 0);
+  }
 });
 test("concurrent scheduler ticks claim one follow-up and send exactly once", async () => {
   const app = setup(); await Promise.all([app.tick(), app.tick()]); await app.tick();

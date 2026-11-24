@@ -99,6 +99,14 @@
 .workspace-sidebar-search { height: 2rem; min-height: 2rem; padding: 0 0.625rem; font-weight: 400; }
 .workspace-sidebar[data-expanded="true"] .workspace-sidebar-search { border: 1px solid color-mix(in srgb, var(--foreground) 22%, var(--background)); background: var(--background); }
 .workspace-sidebar-search:hover { background: var(--workspace-rail-hover); }
+
+.workspace-ai-usage { overflow: hidden; border: 1px solid var(--workspace-frame-border); border-radius: .75rem; background: var(--workspace-rail-hover); color: var(--foreground); }
+.workspace-ai-usage-link { display: block; padding: .875rem; outline: none; transition: background-color 150ms; }
+.workspace-ai-usage-link:hover { background-color: var(--workspace-rail-active); }
+.workspace-ai-usage-link:focus-visible { outline: 2px solid var(--ring); outline-offset: -3px; border-radius: .75rem; }
+.workspace-ai-usage-caption { opacity: .75; }
+.workspace-ai-usage-track { background: color-mix(in srgb, var(--foreground) 12%, transparent); }
+@media (prefers-reduced-motion: reduce) { .workspace-ai-usage-link { transition: none; } }
 .workspace-sidebar[data-expanded="false"] .workspace-sidebar-row { width: 2rem; min-height: 2rem; margin-inline: auto; justify-content: center; padding-inline: 0; }
 
 .workspace-sidebar-brand-toggle {
