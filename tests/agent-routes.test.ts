@@ -18,7 +18,7 @@ import * as crmTools from "../lib/ai/crm-tools.ts";
 import * as assistantIntent from "../lib/ai/assistant-intent.ts";
 import * as documentIntent from "../lib/ai/document-intent.ts";
 import { webSearchForRequest } from "../lib/ai/research-request.ts";
-import { readResearchResponse, researchStreamType, type ResearchProgress } from "../lib/ai/research-progress.ts";
+import { readResearchResponse, researchStreamType, type ResearchProgress, type AssistantActivity } from "../lib/ai/research-progress.ts";
 import { blankInvoiceDocument } from "../lib/invoices.ts";
 import { agentOrderFromInvoice } from "../lib/ai/order-actions.ts";
 import { workflowAnalyticsPrompts } from "../lib/flow-analytics-prompts.ts";
@@ -57,6 +57,35 @@ const id = "15693adc-0bdf-4617-b214-71b1861764a9";
 const company = { type: "create_company", company: { name: "Acme", country: "US", segment: "Retail" } };
 const request = (body: unknown, origin = "http://localhost:3000") => new Request("http://localhost:3000/api/ai/assistant/action", { method: "POST", headers: { "Content-Type": "application/json", origin }, body: JSON.stringify(body) });
 const decision = { id, decision: "approve", approval: "manual" };
+
+test("native Agent streams context, record and email lookups and saves its actual activity with the reply", async () => {
+  let saved: Record<string, unknown> | undefined;
+  const post = route("../app/api/ai/assistant/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
+    "@/lib/ai/gateway": { generateGatewayText: async () => assert.fail("Native Agent must use its tool loop") },
+    "@/lib/ai/assistant-provider-error": providerError,
+    "@/lib/ai/chat-session": { startChatSession: async () => ({ messages: [{ role: "user", content: "Find Acme and check their email history" }], completedActionIds: [], complete: async (payload: Record<string, unknown>) => { saved = payload; return payload; }, flush: async () => {} }) },
+    "@/lib/ai/agent-context": { loadAgentContext: async () => ({}), searchAgentEmails: async () => ({ emails: [] }) },
+    "@/lib/ai/crm-records": { readCrmRecords: async () => ({ records: [], coverage: { matching: 0, nextOffset: null } }) },
+    "@/lib/ai/native-agent": { nativeGatewayModels: () => ({ model: {} }), generateCrmPlan: async (options: { read: (lookup: unknown) => Promise<unknown>; searchEmails: (lookup: unknown) => Promise<unknown> }) => {
+      await options.read({ resource: "companies", query: "Acme" });
+      await options.searchEmails({ query: "Acme" });
+      return { output: "No matching records.", actions: [] };
+    } },
+    "@/lib/ai/agent-execution": { prepareAgentActions: async () => [] },
+  }, { AI_AGENT_RUNTIME: "sdk", AI_GATEWAY_API_KEY: "synthetic" });
+  const input = request({ mode: "work", pathname: "/", pageLabel: "Home", pageText: "", messages: [{ role: "user", content: "Find Acme and check their email history" }] });
+  input.headers.set("Accept", researchStreamType);
+  const updates: AssistantActivity[][] = [];
+  await readResearchResponse(await post(input), () => assert.fail("No web research was requested"), steps => updates.push(steps));
+  const latest = updates.at(-1)!;
+  assert.ok(latest.every(step => step.status === "complete"));
+  for (const label of ["Loading workspace context", "Looking up saved records", "Searching customer emails", "Preparing the action plan"]) {
+    assert.ok(updates.some(steps => steps.some(step => step.label === label && step.status === "active")), label);
+  }
+  assert.match(latest.find(step => step.label === "Looking up saved records")!.detail!, /companies.*Acme/);
+  assert.deepEqual(JSON.parse(JSON.stringify(saved!.activity)), latest);
+});
 
 test("Gateway credentials select native tools by default, with no legacy text-parser fallback", async () => {
   let native = 0, google = 0;

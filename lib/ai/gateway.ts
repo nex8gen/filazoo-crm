@@ -1,6 +1,7 @@
 import type { ProviderImage } from "./image-input.ts";
 import { gatewayTokenUsage, type AiTokenUsage } from "./usage.ts";
 import { selectAiModel, type AiTask } from "./model-routing.ts";
+import { workspaceAiFetch } from "./provider-fetch.ts";
 
 type GatewayResponse = {
   id?: string;
@@ -55,12 +56,14 @@ export async function generateGatewayText({
   standard,
   responseJsonSchema,
   signal,
+  usageUserId,
 }: GenerateGatewayTextOptions) {
   let expiresAt: unknown;
   try { if (token.split(".").length === 3) expiresAt = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString()).exp; } catch { /* Opaque API keys need no JWT inspection. */ }
   if (typeof expiresAt === "number" && expiresAt * 1000 <= Date.now()) throw new Error("AI Gateway authentication has expired. Refresh the linked project's local development token with vercel env pull, then reload the server environment.");
   const routing = selectAiModel({ model, task, userText, complex, standard, prompt, hasImages: images.length > 0, visionModel });
   const selectedModel = routing.model;
+  fetcher = await workspaceAiFetch(usageUserId, fetcher);
   const deadline = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(55_000)]);
   for (let attempt = 0; attempt < 2; attempt++) {
     deadline.throwIfAborted();

@@ -81,6 +81,7 @@ const configValue: z.ZodType<JsonValue> = z.lazy(() => z.union([z.string(), z.nu
 const configSchema: z.ZodType<JsonConfig> = z.record(z.string(), configValue);
 
 const profileFilters = {
+  senderRouting: z.enum(["step", "assigned_user_or_team"]).optional(),
   flowScope: z.enum(["email", "company"]).optional(),
   scopeCompanyId: z.uuid().optional(),
   scopeContactId: z.uuid().optional(),

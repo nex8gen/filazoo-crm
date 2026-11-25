@@ -11,8 +11,12 @@ import { quoteAiBudget } from "../lib/ai/budget.ts";
 import { portableToolSchema } from "../lib/ai/tool-schema.ts";
 import { groundInvoiceEmailIntent } from "../lib/ai/agent-actions.ts";
 import { assertWorkflowCoverage } from "../lib/ai/workflow-contract.ts";
+import { createBudgetedAiFetch } from "../lib/ai/budget-fetch.ts";
 
 const id = "15693adc-0bdf-4617-b214-71b1861764a9";
+const metered = (fetcher: typeof fetch) => createBudgetedAiFetch(id, {
+  reserve: async () => ({ allowed: true, reservationId: "synthetic" }), settle: async () => {},
+}, async () => ({ input: .0000002, output: .00000075, context: 1000000, webSearch: .01 }), fetcher);
 const result = (...calls: Array<[string, unknown]>): LanguageModelV4GenerateResult => ({ content: calls.map(([toolName, input], index) => ({ type: "tool-call", toolName, toolCallId: `call-${index}`, input: JSON.stringify(input) })), finishReason: { unified: "tool-calls", raw: "tool_calls" }, usage: { inputTokens: { total: 20, noCache: 20, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 10, text: 10, reasoning: 0 } }, warnings: [] });
 const options = (model: MockLanguageModelV4, text = "create a quotation for this customer") => ({ model, prompt: text, messages: [{ role: "user", content: text }], pathname: "/companies", language: "en", read: async () => ({ records: [{ id, name: "Synthetic Company" }] }), searchEmails: async () => ({ records: [] }), validateAction: () => {} });
 
@@ -61,7 +65,8 @@ test("catalog is an alias for quotation, and neither can silently become an invo
 test("native SDK reads real records then stages a quotation without a business write", async () => {
   const model = new MockLanguageModelV4({ doGenerate: [result(["read_records", { resource: "companies", query: "Abe" }]), result(["create_quotation", { op: "create_quotation", companyId: id }])] });
   let reads = 0, validations = 0;
-  const plan = await generateCrmPlan({ ...options(model), read: async () => { reads++; return { records: [{ id, name: "Synthetic" }] }; }, validateAction: () => { validations++; } });
+  const activity: string[] = [];
+  const plan = await generateCrmPlan({ ...options(model), track: async (label, run) => { activity.push(label); return run(); }, read: async () => { reads++; return { records: [{ id, name: "Synthetic" }] }; }, validateAction: () => { validations++; } });
   assert.equal(reads, 1); assert.equal(validations, 1); assert.equal(plan.actions.length, 1);
   assert.equal(model.doGenerateCalls.length, 2);
   assert.equal(plan.actions[0].type, "crm_action");
@@ -70,6 +75,17 @@ test("native SDK reads real records then stages a quotation without a business w
   assert.equal(model.doGenerateCalls[0].providerOptions?.openai?.store, false);
   assert.match(JSON.stringify(model.doGenerateCalls[0].prompt), /REQUEST CONTEXT PRIORITY/);
   assert.match(JSON.stringify(model.doGenerateCalls[0].prompt), /The page is context, not a restriction/);
+  assert.deepEqual(activity, ["Checking proposed action"]);
+});
+
+test("capability discovery and clarification report actual tool activity without extra model calls", async () => {
+  const model = new MockLanguageModelV4({ doGenerate: [result(["discover_capabilities", { domain: "quotations" }]), result(["ask_question", { question: "Which saved color should I use?" }])] });
+  const activity: string[] = [];
+  const plan = await generateCrmPlan({ ...options(model), track: async (label, run) => { activity.push(label); return run(); } });
+  assert.deepEqual(activity, ["Checking available actions", "Preparing a follow-up question"]);
+  assert.equal(model.doGenerateCalls.length, 2);
+  assert.equal(plan.clarification?.question, "Which saved color should I use?");
+  assert.deepEqual(plan.actions, []);
 });
 
 test("failed or mixed native tool batches cannot leak partial proposals", async () => {
@@ -143,14 +159,14 @@ test("native function schemas are metered; provider-side tools remain blocked", 
   assert.throws(() => quoteAiBudget({ ...body, tools: [{ type: "computer_use" }] }, rate));
 });
 
-test("Gateway SDK ignores legacy allowances and keeps storage off, bounded output and real function schemas", async () => {
+test("Gateway SDK uses the wallet and keeps storage off, bounded output and real function schemas", async () => {
   const previous = process.env.AI_BUDGET_ENFORCEMENT; process.env.AI_BUDGET_ENFORCEMENT = "true";
   try {
     let payload: Record<string, unknown> = {};
-    const models = await nativeGatewayModels({ token: "synthetic", userId: id, userText: "create a quotation", fetcher: async (_url, init) => {
+    const models = await nativeGatewayModels({ token: "synthetic", userId: id, userText: "create a quotation", fetcher: metered(async (_url, init) => {
       payload = JSON.parse(String(init?.body));
       return Response.json({ id: "resp-synthetic", created_at: 1, model: "google/gemini-3.5-flash-lite", status: "completed", output: [{ type: "function_call", id: "fc_1", call_id: "call_1", name: "create_quotation", arguments: JSON.stringify({ op: "create_quotation", companyId: id }) }], usage: { input_tokens: 20, output_tokens: 10, total_tokens: 30, input_tokens_details: { cached_tokens: 0 } } });
-    } });
+    }) });
     const plan = await generateCrmPlan({ ...options(new MockLanguageModelV4()), ...models });
     assert.equal(plan.actions.length, 1); assert.equal(payload.store, false); assert.equal(payload.max_output_tokens, 5000);
     assert.ok(Array.isArray(payload.tools)); assert.equal(payload.stream, undefined);
@@ -160,12 +176,12 @@ test("Gateway SDK ignores legacy allowances and keeps storage off, bounded outpu
 
 test("Gateway order planning uses native action tools and shared authentication", async () => {
   let payload: Record<string, unknown> = {};
-  const models = await nativeGatewayModels({ token: "synthetic", userId: id, userText: "create an order", fetcher: async (url, init) => {
+  const models = await nativeGatewayModels({ token: "synthetic", userId: id, userText: "create an order", fetcher: metered(async (url, init) => {
     assert.equal(String(url), "https://ai-gateway.vercel.sh/v1/responses");
     assert.equal(new Headers(init?.headers).get("authorization"), "Bearer synthetic");
     payload = JSON.parse(String(init?.body));
     return Response.json({ id: "resp-order", created_at: 1, status: "completed", model: "google/gemini-3.5-flash-lite", output: [{ type: "function_call", id: "fc-order", call_id: "call-order", name: "create_order", arguments: JSON.stringify({ companyId: id, items: [{ productSku: "PLA", variantId: "black", quantity: 100 }] }) }], usage: { input_tokens: 20, output_tokens: 10 } });
-  } });
+  }) });
   const plan = await generateCrmPlan({ ...options(new MockLanguageModelV4(), "create an order with 100 black PLA"), ...models });
   assert.equal(plan.actions[0]?.type, "create_order");
   assert.ok(Array.isArray(payload.tools));

@@ -1,0 +1,133 @@
+.email-followup-overlay[data-slot="sheet-overlay"] {
+  background: rgb(0 0 0 / 8%);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  transition-duration: 300ms;
+}
+
+.email-followup-sheet[data-slot="sheet-content"][data-side="right"] {
+  inset: 0 0 0 auto;
+  width: min(560px, calc(100vw - 64px));
+  max-width: none;
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100dvh;
+  gap: 0;
+  overflow: hidden;
+  border: 0;
+  border-left: 1px solid var(--border);
+  border-radius: 20px 0 0 20px;
+  background: var(--card);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: -12px 0 48px rgb(0 0 0 / 10%);
+  transition-property: translate, opacity;
+  transition-duration: 300ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.email-followup-sheet[data-slot="sheet-content"][data-side="right"]:is([data-starting-style], [data-ending-style]) {
+  translate: 100% 0;
+}
+
+.email-followup-sheet > [data-slot="sheet-close"] {
+  top: 24px;
+  right: 20px;
+  border-radius: 50%;
+  color: var(--muted-foreground);
+}
+
+.email-followup-writing-status {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.email-followup-writing-sparkle { display: inline-flex; color: #8b5cf6; animation: email-followup-breathe 2.4s ease-in-out infinite; }
+.email-followup-writing-label {
+  background: linear-gradient(100deg, var(--muted-foreground) 25%, var(--foreground) 50%, var(--muted-foreground) 75%);
+  background-size: 250% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: email-followup-label-shimmer 2.8s linear infinite;
+}
+
+.email-followup-composer[data-writing] {
+  border-color: color-mix(in srgb, #8b5cf6 14%, var(--border));
+}
+
+.email-followup-draft-preview .email-ai-typewriter { font-family: inherit; font-size: 14px; line-height: 2; }
+.email-followup-draft-preview .email-ai-cursor {
+  height: 1em;
+  margin-left: 2px;
+  border-radius: 1px;
+  animation: email-followup-caret 1s ease-in-out infinite;
+}
+.email-followup-draft-loading { position: relative; overflow: hidden; padding-block: 9px; }
+.email-followup-draft-loading::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+  background: linear-gradient(100deg, transparent 20%, color-mix(in srgb, var(--background) 80%, transparent) 50%, transparent 80%);
+  animation: email-followup-shimmer 2s ease-in-out infinite;
+}
+.email-followup-draft-lines { display: grid; gap: 17px; }
+.email-followup-draft-lines span {
+  height: 8px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--foreground) 7%, transparent);
+}
+.email-followup-draft-lines span:nth-child(1) { width: 26%; margin-bottom: 13px; }
+.email-followup-draft-lines span:nth-child(2) { width: 92%; }
+.email-followup-draft-lines span:nth-child(3) { width: 100%; }
+.email-followup-draft-lines span:nth-child(4) { width: 72%; }
+.email-followup-draft-lines span:nth-child(5) { width: 86%; margin-top: 13px; }
+.email-followup-draft-lines span:nth-child(6) { width: 44%; }
+
+@keyframes email-followup-breathe {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+@keyframes email-followup-shimmer {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+
+@keyframes email-followup-label-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+@keyframes email-followup-caret {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.15; }
+}
+
+@media (max-width: 640px) {
+  .email-followup-sheet[data-slot="sheet-content"][data-side="right"] {
+    width: 100%;
+    border-radius: 0;
+    border-left: 0;
+  }
+
+  .email-followup-sheet > [data-slot="sheet-close"] { right: 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .email-followup-sheet[data-slot="sheet-content"][data-side="right"],
+  .email-followup-overlay[data-slot="sheet-overlay"] { transition: none; }
+  .email-followup-writing-sparkle,
+  .email-followup-writing-label,
+  .email-followup-draft-loading::after,
+  .email-followup-draft-preview .email-ai-cursor { animation: none; }
+  .email-followup-draft-loading::after { display: none; }
+  .email-followup-writing-label { background: none; color: var(--muted-foreground); }
+}

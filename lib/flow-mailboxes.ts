@@ -2,6 +2,15 @@ import { defaultMailboxForType, defaultViewerMailbox, type NormalizedMailboxReco
 
 type FlowSenderMailbox = Pick<NormalizedMailboxRecord, "id" | "userId" | "type" | "isDefault" | "isActive">;
 
+type RoutableMailbox = FlowSenderMailbox & { sendConfigured?: boolean; smtpHost?: string | null; smtpUsername?: string | null; smtpPassword?: string | null };
+
+/** Explicit workflow routing may use another ready account when a default is stopped. */
+export function resolveAssignedOrTeamSender<T extends RoutableMailbox>(mailboxes: T[], assignedUserId: string | null): T | null {
+  const ready = mailboxes.filter(mailbox => mailbox.isActive && (mailbox.sendConfigured ?? Boolean(mailbox.smtpHost && mailbox.smtpUsername && mailbox.smtpPassword)));
+  const personal = assignedUserId ? defaultMailboxForType(ready.filter(mailbox => mailbox.userId === assignedUserId), "personal") : null;
+  return personal ?? defaultMailboxForType(ready, "workspace");
+}
+
 /** The default follows the owner; shared senders require a team choice or ID. */
 export function resolveFlowSender<T extends FlowSenderMailbox>(mailboxes: T[], ownerId: string, choice: unknown): T | null {
   const available = mailboxes.filter((mailbox) => mailbox.type === "workspace" || mailbox.userId === ownerId);

@@ -74,12 +74,12 @@ try {
   console.log("PASS generation reads email received during the wait, current products/prices, real PDF and reply headers");
 
   await admin.from("flow_run_logs").insert({ run_id: run.id, result: { action: "email_sent", catalogAttached: true } }).throwOnError();
-  expectedCatalog = false;
   const secondReply = await prepareFlowAiReply(args);
-  assert.equal(secondReply.attachments.length, 0);
+  assert.equal(secondReply.attachments.length, 1, "A log flag without an actual delivered catalog PDF must not suppress the first catalog.");
+  expectedCatalog = false;
   expectedProducts = false;
   await prepareFlowAiReply({ ...args, config: { ...aiStep.config, useProducts: false, usePrices: false, attachCatalog: false } });
-  console.log("PASS later replies omit the catalog and disabled product/price lookup supplies no product data");
+  console.log("PASS a log flag alone cannot suppress the first catalog; disabled catalog/product lookup supplies neither attachment nor product data");
 
   await admin.from("flow_runs").update({ next_run_at: new Date(Date.now() - 1000).toISOString() }).eq("id", run.id).throwOnError();
   const requestsBefore = providerRequests;

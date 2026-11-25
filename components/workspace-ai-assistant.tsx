@@ -37,14 +37,15 @@ import { HomeAiInput } from "@/components/home-ai-composer";
 import { createHistoryListCache, type HistoryListCache } from "@/lib/ai/history-list-cache";
 import { isInvoiceCreationRequest } from "@/lib/ai/assistant-intent";
 import { webSearchForRequest, type WebSearchPreference } from "@/lib/ai/research-request";
-import { readResearchResponse, researchStreamType, type ResearchProgress } from "@/lib/ai/research-progress";
+import { readResearchResponse, researchStreamType, type ResearchProgress, type AssistantActivity } from "@/lib/ai/research-progress";
 import { fetchWithSessionRecovery, AssistantSessionError } from "@/lib/ai/session-recovery-fetch";
 import { isWorkspaceSessionRetry } from "@/lib/workspace-session-response";
+import { notifyAiCreditsChanged } from "@/lib/billing/credit-events";
 
 type Mode = "chat" | "agent";
 export type WorkspaceAiLaunchRequest = { id: number; mode: Mode; prompt?: string; submit?: boolean; pathname?: string };
-type Message = { id: string; role: "user" | "assistant"; content: string; images?: ChatImage[]; attachmentNames?: string[]; actions?: AgentProposal[]; durationMs?: number; work?: AgentWorkProgress; research?: ResearchResult; presentation?: ResponsePresentation };
-type AssistantReply = { output: string; error?: string; actions?: AgentProposal[]; research?: ResearchResult; presentation?: ResponsePresentation; history?: Parameters<ReturnType<typeof useAiConversation>["accept"]>[0] };
+type Message = { id: string; role: "user" | "assistant"; content: string; images?: ChatImage[]; attachmentNames?: string[]; actions?: AgentProposal[]; durationMs?: number; activity?: AssistantActivity[]; work?: AgentWorkProgress; research?: ResearchResult; presentation?: ResponsePresentation };
+type AssistantReply = { output: string; error?: string; actions?: AgentProposal[]; activity?: AssistantActivity[]; research?: ResearchResult; presentation?: ResponsePresentation; history?: Parameters<ReturnType<typeof useAiConversation>["accept"]>[0] };
 
 const pageNames: Array<[RegExp, string]> = [
   [/^\/$/, "Home"],
@@ -113,6 +114,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
   const setWebSearch = (enabled: boolean) => setWebSearchPreference(enabled ? "on" : "off");
   const [chats, setChats] = useState<Record<string, Message[]>>({});
   const [pending, setPending] = useState(false);
+  const [requestActivity, setRequestActivity] = useState<{ chatKey: string; steps: AssistantActivity[] } | null>(null);
   const [activeResearch, setActiveResearch] = useState<{ chatKey: string; progress?: ResearchProgress } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sessionProblem, setSessionProblem] = useState<number | null>(null);
@@ -235,6 +237,10 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
     void readProgress();
     return () => { controller.abort(); clearTimeout(timer); };
   }, [applying]);
+  useEffect(() => {
+    const viewport = log.current;
+    if (pending && viewport && viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 160) viewport.scrollTop = viewport.scrollHeight;
+  }, [requestActivity, pending]);
   async function send(value = question) {
     const content = value.trim();
     if ((!content && !attachments.images.length) || attachments.processing || busy || loadingHistory || abort.current || actionLock.current) return;
@@ -257,6 +263,8 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
     setActiveWork(work ?? null);
     setWorkPage(requestPageLabel);
     setPending(true);
+    setRequestActivity({ chatKey: requestChatKey, steps: [] });
+    let activity: AssistantActivity[] = [];
     setActiveResearch(requestWebSearch ? { chatKey: requestChatKey } : null);
     const controller = new AbortController();
     abort.current = controller;
@@ -289,6 +297,8 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
       setReconnecting(false);
       const result = await readResearchResponse<AssistantReply>(response, progress => {
         if (!controller.signal.aborted) setActiveResearch({ chatKey: requestChatKey, progress });
+      }, steps => {
+        if (!controller.signal.aborted) { activity = steps; setRequestActivity({ chatKey: requestChatKey, steps }); }
       });
       if (controller.signal.aborted) return;
       if (response.status === 401 || isWorkspaceSessionRetry(response, result)) throw new AssistantSessionError(response.status);
@@ -298,7 +308,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
       for (const proposal of (result.actions ?? []) as AgentProposal[]) proposalContexts.current.set(proposal.id, pageContext);
       setChats((current) => ({
         ...current,
-        [requestChatKey]: [...(current[requestChatKey] ?? next), { id, role: "assistant", content: result.output, actions: result.actions, durationMs: performance.now() - started, work, research: result.research, presentation: parseResponsePresentation(result.presentation) }],
+        [requestChatKey]: [...(current[requestChatKey] ?? next), { id, role: "assistant", content: result.output, actions: result.actions, durationMs: performance.now() - started, work, activity: result.activity ?? activity, research: result.research, presentation: parseResponsePresentation(result.presentation) }],
       }));
       if (visibleChatKey.current === requestChatKey) setAnimation({ id, run: 1 });
       // Auto approval applies only to proposals created by this request. Changing
@@ -316,12 +326,14 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
           : reason && typeof reason === "object" && "status" in reason && reason.status === 401 ? new AssistantSessionError(401) : null;
         setError(sessionFailure?.message ?? (reason instanceof Error ? reason.message : "Unable to reach Filazoo AI."));
         setSessionProblem(sessionFailure?.status ?? null);
+        setRequestActivity({ chatKey: requestChatKey, steps: activity.map(step => step.status === "active" ? { ...step, status: "failed" } : step) });
         setChats((current) => ({ ...current, [requestChatKey]: (current[requestChatKey] ?? []).filter((message) => message.id !== next.at(-1)?.id) }));
         setQuestion(content);
         attachments.setImages(sentImages);
       }
     } finally {
       if (abort.current === controller) abort.current = null;
+      notifyAiCreditsChanged();
       setPending(false);
       setReconnecting(false);
       setActiveResearch(current => current?.chatKey === requestChatKey ? null : current);
@@ -330,6 +342,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
 
   function newChat() {
     history.newConversation();
+    setRequestActivity(null);
     abort.current?.abort();
     abort.current = null;
     setPending(false);
@@ -480,7 +493,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
             {activeMode === "chat" ? <motion.button type="button" aria-label="Focus the AI message box" onClick={() => input.current?.focus()} animate={{ y: [0, 5, 0], opacity: [0.45, 1, 0.45] }} transition={{ duration: 1.8, ease: "easeInOut", repeat: Infinity }} className="mt-7 grid size-8 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"><ChevronDown className="size-5" /></motion.button> : null}
           </div> : <div className="space-y-5">{messages.map((message, index) => <div key={message.id} className={message.role === "user" ? "ml-auto max-w-[88%] rounded-2xl rounded-br-md bg-muted px-4 py-3" : "group max-w-full"}>
             {message.role === "user" ? <><AiImagePreviews images={message.images} />{message.attachmentNames?.length ? <p className="mb-2 text-xs text-muted-foreground">Attached: {message.attachmentNames.join(", ")}. Images are not retained; reattach to inspect them again.</p> : null}<p data-no-translate className="whitespace-pre-wrap text-sm leading-6">{message.content}</p></> : <>
-              <ThinkingState working={false} writing={animation?.id === message.id} durationMs={message.durationMs} scope={t(pageLabel)} activity={message.work} className="mb-2" />
+              <ThinkingState working={false} writing={animation?.id === message.id} durationMs={message.durationMs} scope={t(pageLabel)} steps={message.activity} activity={message.work} className="mb-2" />
               <StreamingText key={`${message.id}-${animation?.id === message.id ? animation.run : 0}`} text={message.content} sources={message.research?.sources} animate={animation?.id === message.id} onProgress={() => { const viewport = log.current; if (viewport && viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 120) viewport.scrollTop = viewport.scrollHeight; }} onComplete={() => setAnimation((current) => current?.id === message.id ? null : current)} />
               <CustomerResearchSources research={message.research} />
               <AiResponsePresentation presentation={message.presentation} legacyText={message.content} />
@@ -491,7 +504,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
               {message.actions?.length ? <div className="mt-4 space-y-3">{message.actions.map((proposal) => <AgentActionCard key={proposal.id} proposal={proposal} result={currentActionResult(proposal.id)} executing={applying === proposal.id} progress={applying === proposal.id ? activeWork ?? undefined : undefined} disabled={pending || Boolean(applying)} onApprove={() => void applyAction(proposal)} onDecline={() => void applyAction(proposal, "decline")} onCheck={() => void checkAction(proposal)} onResume={() => void applyAction(proposal, "resume")} onChildApprove={child => void applyAction(child)} onChildDecline={child => void applyAction(child, "decline")} onChildCheck={child => void checkAction(child)} onChildResume={child => void applyAction(child, "resume")} />)}</div> : null}
             </>}
           </div>)}</div>}
-          {pending && activeMode === "chat" ? <div className="mt-5"><ThinkingState working scope={t(pageLabel)} /></div> : null}
+          {(pending || error) && requestActivity?.chatKey === chatKey ? <div className="mt-5"><ThinkingState key={messages.at(-1)?.id} working={pending} failed={!pending && Boolean(error)} scope={t(workPage || pageLabel)} steps={requestActivity.steps} activity={activeMode === "agent" ? activeWork ?? undefined : undefined} /></div> : null}
           {reconnecting ? <p role="status" className="mt-3 text-sm text-muted-foreground">Reconnecting to your workspace… Your request will continue automatically.</p> : null}
           {pending && activeResearch?.chatKey === chatKey ? <ResearchSearching progress={activeResearch.progress} /> : null}
           {error && error !== history.error ? <NotificationToast>{error}</NotificationToast> : null}
@@ -500,7 +513,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
         </div>
 
         <div className={presentation === "page" ? "workspace-ai-page-composer home-ai !mt-0 !shrink-0 px-5 sm:px-6" : "shrink-0 bg-background px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]"}>
-          {activeMode === "agent" && (pending || applying) && activeWork ? <div role="status" aria-live="polite" className="mb-3 rounded-xl border border-violet-500/15 bg-violet-500/[0.04] px-3 py-2"><ThinkingState key={applying || "preparing"} working scope={t(workPage)} activity={activeWork} /></div> : null}
+          {activeMode === "agent" && applying && activeWork ? <div className="mb-3 rounded-xl border border-violet-500/15 bg-violet-500/[0.04] px-3 py-2"><ThinkingState key={applying} working scope={t(workPage)} activity={activeWork} /></div> : null}
           {presentation === "sidebar" ? <div className="mb-2.5 flex min-h-7 min-w-0 items-center justify-between gap-3 px-1">
             <div id={`${composerId}-context`} className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
               <AgentWorkIcon area={pageWorkArea(pageLabel)} className="size-3.5 shrink-0" />

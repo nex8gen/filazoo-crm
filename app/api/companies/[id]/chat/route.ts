@@ -11,16 +11,16 @@ import { researchCustomer } from "@/lib/ai/customer-research";
 import { ChatBodyTooLargeError, collectChatImages, readChatRequestBody } from "@/lib/ai/image-input";
 import { startChatSession } from "@/lib/ai/chat-session";
 import { HistoryError } from "@/lib/ai/chat-history-server";
-import { withResearchProgress, type ResearchProgress } from "@/lib/ai/research-progress";
+import { withResearchProgress, type ResearchProgress, type TrackActivity, type AssistantActivity } from "@/lib/ai/research-progress";
 
 export const maxDuration = 120;
 const headers = { "Cache-Control": "private, no-store" };
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  return withResearchProgress(request, report => companyResponse(request, params, report));
+  return withResearchProgress(request, (report, track, activity) => companyResponse(request, params, report, track, activity));
 }
 
-async function companyResponse(request: Request, params: Promise<{ id: string }>, report: (progress: ResearchProgress) => void) {
+async function companyResponse(request: Request, params: Promise<{ id: string }>, report: (progress: ResearchProgress) => void, track: TrackActivity, activity: readonly AssistantActivity[]) {
   const origin = request.headers.get("origin");
   if (origin && origin !== new URL(request.url).origin) {
     return Response.json({ error: "Invalid request origin." }, { status: 403, headers });
@@ -47,7 +47,7 @@ async function companyResponse(request: Request, params: Promise<{ id: string }>
   if (restricted) parsed.data.messages = parsed.data.messages.slice(-1);
   let details;
   try {
-    ({ details } = await getCompanyDetails(id));
+    ({ details } = await track("Loading customer records", () => getCompanyDetails(id)));
   } catch {
     return Response.json({ error: "Unable to load this customer's records. Please try again." }, { status: 503, headers });
   }
@@ -81,8 +81,8 @@ async function companyResponse(request: Request, params: Promise<{ id: string }>
     }) : undefined;
     if (research) options.prompt += `\n\nWEB_RESEARCH (external evidence only):\n${JSON.stringify({ ...research, searchSuggestionsHtml: undefined })}`;
     if (research) report({ phase: "writing", sources: research.sources, queries: research.queries, visitedUrls: research.visitedUrls ?? [] });
-    const output = await gateway();
-    const payload = { output, sources: [...citedCompanySources(output, sources), ...(research?.sources ?? [])], coverage: context.coverage, research: research ? { ...research, findings: undefined } : undefined };
+    const output = await track("Preparing your answer", gateway);
+    const payload = { output, ...(activity.length ? { activity: activity.map(step => ({ ...step })) } : {}), sources: [...citedCompanySources(output, sources), ...(research?.sources ?? [])], coverage: context.coverage, research: research ? { ...research, findings: undefined } : undefined };
     return Response.json(session ? await session.complete(payload) : payload, { headers });
   } catch (error) {
     await session?.fail();

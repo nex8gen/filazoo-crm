@@ -7,6 +7,7 @@ import { publicResearchUrl, researchIdentity, type CustomerResearch, type Resear
 import { SIMPLE_AI_MODEL } from "./model-routing.ts";
 import { publicCompanyResearchInstruction, researchQueries, researchTopics } from "./research-plan.ts";
 import type { ResearchProgress } from "./research-progress.ts";
+import { workspaceAiFetch } from "./provider-fetch.ts";
 
 export { researchQueries } from "./research-plan.ts";
 
@@ -20,7 +21,7 @@ function metadata(value: unknown): Metadata[] {
   return [providers.google, providers.googleVertex, providers.vertex].filter(value => value && typeof value === "object") as Metadata[];
 }
 /** Discovery and URL reading are separate, bounded provider operations, not CRM tools. */
-export async function researchWithGateway({ identity, language, checkedAt, fetcher, questions = [], signal, onProgress, generate = async options => generateText(options) }: {
+export async function researchWithGateway({ identity, language, checkedAt, fetcher, usageUserId, questions = [], signal, onProgress, generate = async options => generateText(options) }: {
   identity: ResearchIdentity; language: AppLanguage; checkedAt: string; usageUserId?: string; fetcher: typeof fetch; questions?: string[]; signal?: AbortSignal; onProgress?: (progress: ResearchProgress) => void; generate?: ResearchGenerator;
 }): Promise<CustomerResearch> {
   const empty = { checkedAt, findings: "", sources: [], queries: [], visitedUrls: [] };
@@ -60,7 +61,7 @@ export async function researchWithGateway({ identity, language, checkedAt, fetch
     if (!searches.length) return { ...empty, status: "no_results", warning: "Choose a company with a name, contact email or public website before researching it." };
     // Let the SDK resolve request-scoped OIDC when there is no explicit API key.
     // Passing an OIDC token as apiKey incorrectly labels its authentication method.
-    const model = createGateway({ apiKey: process.env.AI_GATEWAY_API_KEY?.trim() || undefined, fetch: fetcher })(GOOGLE_WEB_RESEARCH_MODEL);
+    const model = createGateway({ apiKey: process.env.AI_GATEWAY_API_KEY?.trim() || undefined, fetch: await workspaceAiFetch(usageUserId, fetcher) })(GOOGLE_WEB_RESEARCH_MODEL);
     const deadline = AbortSignal.any([AbortSignal.timeout(55_000), ...(signal ? [signal] : [])]);
     // Vertex returned an unrelated executableCode call in the failing CRM turn.
     // Prefer Google's native endpoint; keep the existing provider as failover.

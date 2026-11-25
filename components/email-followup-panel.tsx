@@ -7,11 +7,14 @@ import Link from "next/link";
 import { Bell, CalendarClock, CheckCircle2, ChevronRight, Clock3, Info, LoaderCircle, Mail, RefreshCw, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { EmailAiTypewriter } from "@/components/email-ai-typewriter";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { followupInstant, followupLocalTime } from "@/lib/company-followup";
 import { followupSubject, validateFollowupTime, type EmailFollowup } from "@/lib/email-followup";
 import { requestFollowup } from "@/lib/email-followup-request";
+import "./email-followup-panel.css";
+import "./email-ai-writing.css";
 
 const labels: Record<EmailFollowup["status"], string> = {
   scheduled: "Follow-up scheduled", processing: "Sending follow-up…", reminded: "Reminder due",
@@ -41,6 +44,8 @@ export function EmailFollowupPanel({ mailboxId, messageId, subject, recipient, c
   const [reviewBaseline, setReviewBaseline] = useState<string[]>(visibleBaseline || (messageId ? [messageId] : []));
   const [busy, setBusy] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [writingDraft, setWritingDraft] = useState<string | null>(null);
+  const drafting = generating || writingDraft !== null;
   const [notice, setNotice] = useState("");
   const [requestId, setRequestId] = useState("");
   const [draftRevision, setDraftRevision] = useState(0);
@@ -95,16 +100,19 @@ export function EmailFollowupPanel({ mailboxId, messageId, subject, recipient, c
     setDueAt(followupLocalTime(date.toISOString()));
   }
   async function generate() {
-    if (pending.current) return;
+    if (pending.current || writingDraft !== null) return;
     pending.current = true; setGenerating(true); setError("");
     const controller = new AbortController(); generation.current = controller;
     try {
       const result = await requestFollowup("/api/email/follow-up", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "preview", mailboxId, messageId }) }, 90_000);
-      if (alive.current) { setBody(result.body); setDraftSubject(result.subject); setBaseline(result.baseline); }
+      if (alive.current && !controller.signal.aborted && generation.current === controller) {
+        setBody(result.body); setDraftSubject(result.subject); setBaseline(result.baseline); setWritingDraft(result.body);
+      }
     } catch (cause) { if (alive.current && !controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Unable to generate follow-up."); }
     finally { if (generation.current === controller) { generation.current = null; pending.current = false; if (alive.current) setGenerating(false); } }
   }
   function begin(nextKind: "reminder" | "ai", editing = false) {
+    setWritingDraft(null);
     setNurture(nextKind === "ai" && followup?.purpose === "nurture");
     setKind(nextKind); setError(""); setNotice(""); setRequestId(followup?.id || crypto.randomUUID());
     awaitingStatus.current = !loaded;
@@ -117,7 +125,7 @@ export function EmailFollowupPanel({ mailboxId, messageId, subject, recipient, c
     if (nextKind === "ai" && !editing && aiConfigured) void generate();
   }
   async function mutate(action: "save" | "cancel") {
-    if (pending.current) return;
+    if (pending.current || writingDraft !== null) return;
     if (action === "save" && (!loaded || loadError || followup?.status === "processing" || followup?.status === "uncertain")) return;
     setError("");
     let instant = "";
@@ -139,7 +147,7 @@ export function EmailFollowupPanel({ mailboxId, messageId, subject, recipient, c
     finally { pending.current = false; if (alive.current) setBusy(false); }
   }
   const active = followup && ["scheduled", "processing", "reminded"].includes(followup.status);
-  const locked = busy || generating || !canManage || !query || followup?.status === "processing" || followup?.status === "uncertain";
+  const locked = busy || drafting || !canManage || !query || followup?.status === "processing" || followup?.status === "uncertain";
   return <section className="mx-6 mb-6 space-y-3" aria-label="Follow up on this email">
     {followup ? <div className="rounded-xl border bg-muted/20 p-3.5" aria-live="polite">
       <h3 className="flex items-center gap-2 text-xs font-semibold"><CalendarClock className="size-4 text-muted-foreground" />Follow-up status</h3>
@@ -183,27 +191,50 @@ export function EmailFollowupPanel({ mailboxId, messageId, subject, recipient, c
     </div>
     {notice ? <NotificationToast tone="message">{notice}</NotificationToast> : null}
     {error && !open ? <NotificationToast>{error}</NotificationToast> : null}
-    <Dialog open={open} onOpenChange={value => { if (!busy) { if (!value) generation.current?.abort(); setOpen(value); setError(""); } }}>
-      <DialogContent className="gap-5 sm:max-w-lg" showCloseButton={!busy}>
-        <DialogHeader><DialogTitle className="flex items-center gap-2">{kind === "ai" ? <Sparkles className="size-5 text-indigo-600" /> : <Bell className="size-5 text-rose-600" />}{kind === "ai" ? "AI follow-up" : "Remind me"}</DialogTitle><DialogDescription>{kind === "ai" ? "Review the message and choose when to send it." : "Choose a time. We will create a task and notify you."}</DialogDescription></DialogHeader>
-        <div className="flex items-center gap-3 rounded-xl bg-blue-50 p-3 dark:bg-blue-500/10"><Mail className="size-5 shrink-0 text-blue-500" /><div className="min-w-0"><p className="truncate text-xs font-semibold" data-no-translate>{recipient}</p><p className="mt-1 truncate text-xs text-muted-foreground" data-no-translate>{subject}</p></div></div>
-        <div><h4 className="mb-2 flex items-center gap-2 text-xs font-semibold"><CalendarClock className="size-4" />When should we follow up?</h4><div className="grid grid-cols-4 gap-1.5">{["5 minutes", "1 hour", "Tomorrow", "Custom"].map(value => <button key={value} type="button" aria-pressed={preset === value} disabled={busy || generating} onClick={() => chooseTime(value)} className={`rounded-lg border px-1 py-2 text-xs focus-visible:outline-2 focus-visible:outline-ring ${preset === value ? "border-blue-400 bg-blue-50 text-blue-600 dark:bg-blue-500/10" : "bg-muted/30 text-muted-foreground"}`}>{value}</button>)}</div>
-          <DatePicker includeTime required aria-label="Follow-up date and time" value={dueAt} disabled={busy || generating} onValueChange={value => { setDueAt(value); setPreset("Custom"); }} className="mt-3 w-full rounded-lg border bg-background px-3 py-2 text-xs" />
-          <p className="mt-1.5 text-xs text-muted-foreground">Your local time. Delivery runs on the next scheduler check.</p>
+    <Sheet open={open} onOpenChange={value => { if (!busy) { if (!value) { generation.current?.abort(); setWritingDraft(null); } setOpen(value); setError(""); } }}>
+      <SheetContent side="right" className="email-followup-sheet" overlayClassName="email-followup-overlay" showCloseButton={!busy}>
+        <SheetHeader className="shrink-0 gap-4 border-b px-5 py-6 pr-14 sm:px-7 sm:pr-16">
+          <div className="flex items-center gap-3">
+            <span aria-hidden="true" className={`flex size-11 shrink-0 items-center justify-center rounded-2xl ${kind === "ai" ? "bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300" : "bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300"}`}>{kind === "ai" ? <Sparkles className="size-5" /> : <Bell className="size-5" />}</span>
+            <div className="space-y-1"><SheetTitle className="text-xl font-semibold tracking-tight">{kind === "ai" ? "AI follow-up" : "Remind me"}</SheetTitle><SheetDescription className="text-xs leading-5">{kind === "ai" ? "A thoughtful follow-up, at the right time." : "Make time for your next conversation."}</SheetDescription></div>
+          </div>
+        </SheetHeader>
+        <div className="min-h-0 flex-1 space-y-7 overflow-y-auto overscroll-contain px-5 py-6 sm:px-7">
+          <div className="flex items-start gap-3 rounded-2xl border bg-muted/20 p-4">
+            <Mail aria-hidden="true" className="mt-1 size-4 shrink-0 text-muted-foreground" />
+            <div className="min-w-0 space-y-1"><p className="text-[11px] font-medium text-muted-foreground">Following up with</p><p className="break-all text-sm font-medium" data-no-translate>{recipient}</p><p className="line-clamp-2 break-words text-xs leading-5 text-muted-foreground" title={subject} data-no-translate>{subject}</p></div>
+          </div>
+          <div className="space-y-3">
+            <h4 className="flex items-center gap-2 text-sm font-semibold"><CalendarClock aria-hidden="true" className="size-4 text-muted-foreground" />When should we follow up?</h4>
+            <div className="grid grid-cols-4 gap-1 rounded-xl bg-muted/60 p-1">{["5 minutes", "1 hour", "Tomorrow", "Custom"].map(value => <button key={value} type="button" aria-pressed={preset === value} disabled={busy || drafting} onClick={() => chooseTime(value)} className={`min-h-10 rounded-lg px-1 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50 ${preset === value ? "bg-background text-foreground shadow-sm ring-1 ring-border" : "text-muted-foreground hover:bg-background/60 hover:text-foreground"}`}>{value}</button>)}</div>
+            <DatePicker includeTime required aria-label="Follow-up date and time" value={dueAt} disabled={busy || drafting} onValueChange={value => { setDueAt(value); setPreset("Custom"); }} className="min-h-11 rounded-xl text-sm" />
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><Clock3 aria-hidden="true" className="size-3.5" />Your local time</p>
+          </div>
+          {kind === "ai" ? <div className="space-y-3">
+            <div className="flex min-h-8 items-center justify-between gap-2"><h4 className="text-sm font-semibold">Follow-up message</h4>{drafting ? <div role="status" className="email-followup-writing-status"><span aria-hidden="true" className="email-followup-writing-sparkle"><Sparkles className="size-3.5" /></span><span className="email-followup-writing-label">AI is writing</span></div> : <button type="button" disabled={busy || !aiConfigured} onClick={() => void generate()} className="inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-indigo-600 transition-colors hover:bg-indigo-50 focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50 dark:text-indigo-300 dark:hover:bg-indigo-500/10"><RefreshCw aria-hidden="true" className="size-3.5" />{body ? "Regenerate" : "Generate draft"}</button>}</div>
+            {!aiConfigured ? <p className="text-xs text-muted-foreground">Connect an AI provider in Settings, or write your follow-up below.</p> : null}
+            <div className="email-followup-composer overflow-hidden rounded-2xl border bg-background transition-shadow focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/15" data-writing={drafting || undefined} aria-busy={drafting}>
+              <label className="flex items-center gap-3 border-b px-4 py-3 text-xs text-muted-foreground">Subject<input required maxLength={300} disabled={busy || drafting} value={draftSubject} onChange={event => setDraftSubject(event.target.value)} className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none disabled:opacity-60" data-no-translate /></label>
+              <div className="relative">
+                <label className={`block ${drafting ? "invisible" : ""}`}><span className="sr-only">Message</span><textarea aria-label="Follow-up message" rows={8} maxLength={20000} disabled={busy || drafting} value={body} onChange={event => setBody(event.target.value)} placeholder="Write your follow-up…" className="block min-h-48 w-full resize-y bg-transparent p-4 text-sm leading-7 text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-60" data-no-translate /></label>
+                {drafting ? <div className="email-followup-draft-preview absolute inset-0 overflow-y-auto p-4">
+                  {writingDraft !== null ? <EmailAiTypewriter text={writingDraft} updating={false} onComplete={() => setWritingDraft(null)} /> : <div aria-hidden="true" className="email-followup-draft-loading"><div className="email-followup-draft-lines"><span /><span /><span /><span /><span /><span /></div></div>}
+                </div> : null}
+              </div>
+            </div>
+            <p className="text-xs leading-5 text-muted-foreground">Your saved email footer is added automatically.</p>
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-dashed p-4 text-xs leading-5 transition-colors hover:bg-muted/30"><input type="checkbox" checked={nurture} disabled={busy || drafting} onChange={event => setNurture(event.target.checked)} className="mt-0.5 size-4 shrink-0 accent-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" /><span><span className="block font-medium text-foreground">Add to dormant customer nurture</span><span className="mt-0.5 block text-muted-foreground">Track in the dormant tab and send this message once if there’s no reply.</span></span></label>
+          </div> : <p className="text-sm leading-6 text-muted-foreground">We’ll create a task and notify you when it’s time to follow up.</p>}
+          <div className="flex items-start gap-2.5 border-t pt-5 text-xs leading-5"><CheckCircle2 aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" /><div><p className="font-medium">Stops automatically when the customer replies</p><p className="mt-0.5 text-muted-foreground">A newer message from your team also stops this follow-up.</p></div></div>
+          {error ? <NotificationToast>{error}</NotificationToast> : null}
+          {!loaded && !loadError ? <p role="status" className="text-xs text-muted-foreground">Checking saved follow-up…</p> : null}
+          {loadError ? <NotificationToast>{loadError} <button type="button" onClick={() => setRetry(value => value + 1)} className="font-medium underline">Retry</button></NotificationToast> : null}
         </div>
-        {kind === "ai" ? <div className="space-y-3"><div className="flex items-center justify-between gap-2"><h4 className="text-xs font-semibold">Follow-up message</h4><button type="button" disabled={busy || generating || !aiConfigured} onClick={() => void generate()} className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 disabled:opacity-40">{generating ? <LoaderCircle className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}{generating ? "Generating…" : body ? "Regenerate" : "Generate draft"}</button></div>
-          <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-violet-100 bg-violet-50/40 p-3 text-xs leading-5 dark:border-violet-500/20 dark:bg-violet-500/5"><input type="checkbox" checked={nurture} disabled={busy || generating} onChange={event => setNurture(event.target.checked)} className="mt-1 accent-primary" /><span><span className="block font-medium">Add to dormant customer nurture</span><span className="text-muted-foreground">Track this conversation in the dormant tab. Sends this approved message once if there is no reply.</span></span></label>
-          {!aiConfigured ? <p className="text-xs text-muted-foreground">Connect an AI provider in Settings, or write your follow-up below.</p> : null}
-          <label className="grid gap-1 text-xs text-muted-foreground">Subject<input required maxLength={300} disabled={busy || generating} value={draftSubject} onChange={event => setDraftSubject(event.target.value)} className="rounded-lg border bg-background px-3 py-2 text-sm text-foreground" data-no-translate /></label>
-          <label className="grid gap-1 text-xs text-muted-foreground">Message<textarea aria-label="Follow-up message" rows={7} maxLength={20000} disabled={busy || generating} value={body} onChange={event => setBody(event.target.value)} placeholder={generating ? "Preparing a follow-up from this conversation…" : "Write your follow-up…"} className="w-full resize-y rounded-lg border bg-background p-3 text-sm leading-6 text-foreground focus-visible:outline-2 focus-visible:outline-ring" data-no-translate /></label>
-          <p className="text-xs text-muted-foreground">Your saved email footer will be added when this message sends.</p>
-        </div> : null}
-        <div className="flex gap-2 rounded-lg bg-emerald-50 p-3 text-xs leading-5 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"><CheckCircle2 className="mt-0.5 size-4 shrink-0" /><p>Stops automatically when the customer replies. A newer message from your team also stops this follow-up.</p></div>
-        {error ? <NotificationToast>{error}</NotificationToast> : null}
-        {!loaded && !loadError ? <p role="status" className="text-xs text-muted-foreground">Checking saved follow-up…</p> : null}
-        {loadError ? <NotificationToast>{loadError} <button type="button" onClick={() => setRetry(value => value + 1)} className="font-medium underline">Retry</button></NotificationToast> : null}
-        <div className="flex items-center justify-between gap-3 border-t pt-4"><p className="text-xs text-muted-foreground">{kind === "ai" ? "One email, only after you confirm" : "A reminder for you"}</p><div className="flex gap-2"><Button variant="outline" size="sm" disabled={busy || generating} onClick={() => setOpen(false)}>Close</Button><Button size="sm" disabled={busy || generating || !loaded || Boolean(loadError) || followup?.status === "processing" || followup?.status === "uncertain" || !dueAt || (kind === "ai" && (!body.trim() || !draftSubject.trim()))} onClick={() => void mutate("save")}>{busy ? <LoaderCircle className="size-3.5 animate-spin" /> : null}{busy ? "Saving…" : kind === "ai" ? "Confirm follow-up" : "Save reminder"}</Button></div></div>
-      </DialogContent>
-    </Dialog>
+        <div className="shrink-0 space-y-3 border-t bg-muted/15 px-5 py-4 sm:px-7">
+          <p className="text-center text-xs text-muted-foreground">{kind === "ai" ? "One email. Sent only after you confirm." : "A reminder just for you."}</p>
+          <div className="flex gap-2.5"><Button variant="outline" className="min-h-11 rounded-xl px-6" disabled={busy} onClick={() => { generation.current?.abort(); setWritingDraft(null); setOpen(false); }}>Close</Button><Button className="min-h-11 min-w-0 flex-1 rounded-xl" disabled={busy || drafting || !loaded || Boolean(loadError) || followup?.status === "processing" || followup?.status === "uncertain" || !dueAt || (kind === "ai" && (!body.trim() || !draftSubject.trim()))} onClick={() => void mutate("save")}>{busy ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : null}{busy ? "Saving…" : kind === "ai" ? "Confirm follow-up" : "Save reminder"}</Button></div>
+        </div>
+      </SheetContent>
+    </Sheet>
   </section>;
 }

@@ -25,6 +25,7 @@ import * as threading from "../lib/email-threading.ts";
 import { createFlowRecipe } from "../lib/flow-recipes.ts";
 import { newEmailDesign } from "../lib/email-design.ts";
 import { applyFlowEmailTemplate } from "../lib/flow-email-editor.ts";
+import { FlowReplyNotNeeded, flowCatalogAttached } from "../lib/ai/flow-reply.ts";
 
 type Row = Record<string, unknown>;
 const require = createRequire(import.meta.url);
@@ -34,7 +35,7 @@ const code = ts.transpileModule(readFileSync(new URL("../lib/data/flow-runtime.t
 
 // Execute the real enrollment and email runtime against an in-memory database.
 // SMTP is intercepted even when testing live-send mode.
-function runtime(options: { dormantState?: { eligible: boolean; baseline: string }; businessWindow?: Date | null; beforeQuery?: (table: string, operation: string) => Promise<void>; aiReplyError?: unknown; smtpError?: unknown; onAiPrepare?: () => Promise<void>; projectionError?: Error; projectionComplete?: boolean; targetedProjectionComplete?: boolean; freshnessError?: Error } = {}) {
+function runtime(options: { dormantState?: { eligible: boolean; baseline: string }; footerImages?: boolean; businessWindow?: Date | null; beforeQuery?: (table: string, operation: string) => Promise<void>; aiReplyError?: unknown; smtpError?: unknown; onAiPrepare?: () => Promise<void>; projectionError?: Error; projectionComplete?: boolean; targetedProjectionComplete?: boolean; freshnessError?: Error } = {}) {
   const contactId = randomUUID(), companyId = randomUUID(), flowId = randomUUID();
   const createdAt = new Date().toISOString();
   const db: Record<string, Row[]> = {
@@ -112,7 +113,16 @@ function runtime(options: { dormantState?: { eligible: boolean; baseline: string
     };
     return query;
   }
+  const senderExports: Record<string, unknown> = {};
+  vm.runInNewContext(ts.transpileModule(readFileSync(new URL("../lib/data/flow-sender.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, {
+    exports: senderExports, require: (name: string) => ({
+      "server-only": {}, "../supabase/admin.ts": { createSupabaseAdmin: () => ({ from }) }, "../flow-execution-errors.ts": executionErrors,
+      "../mailbox-utils.ts": { normalizeMailboxRows: (rows: Row[]) => mailboxUtils.normalizeMailboxRows(rows.map(row => ({ ...row, smtp_host: row.smtpHost ?? row.smtp_host, smtp_username: row.smtpUsername ?? row.smtp_username, smtp_password: row.smtpPassword ?? row.smtp_password }))) },
+      "../flow-mailboxes.ts": flowMailboxes,
+    })[name],
+  });
   const dependencies: Record<string, unknown> = {
+    "../ai/flow-reply.ts": { FlowReplyNotNeeded, flowCatalogAttached },
     "./dormant-customers.ts": {
       dormantCustomers: async (_user: string, _months: number, input: { after?: string }) => input.after ? [] : [{ company_id: companyId, contact_id: contactId, last_activity_at: options.dormantState?.baseline, eligible: options.dormantState?.eligible }],
       dormantRunEligible: async (_user: string, _months: number, _company: string, baseline: string) => options.dormantState?.eligible && baseline === options.dormantState.baseline,
@@ -140,12 +150,12 @@ function runtime(options: { dormantState?: { eligible: boolean; baseline: string
     "../mailbox-utils.ts": { ...mailboxUtils, normalizeMailboxRows: (rows: Row[]) => mailboxUtils.normalizeMailboxRows(rows.map((row) => ({ ...row, smtp_host: row.smtpHost as string, smtp_port: row.smtpPort as number, smtp_username: row.smtpUsername as string, smtp_password: row.smtpPassword as string }))) },
     "../flow-mailboxes.ts": flowMailboxes,
     "../flow-tracking.ts": tracking,
-    "./email-footers.ts": { getUserEmailFooter: async () => null, prepareUserEmail: async (_id: string, mail: unknown) => mail },
+    "./email-footers.ts": { getUserEmailFooter: async () => null, prepareUserEmail: async (_id: string, mail: Row) => options.footerImages ? { ...mail, attachments: [...((mail.attachments as Row[] | undefined) ?? []), { filename: "footer.png", contentType: "image/png", content: Buffer.from("image"), cid: "footer" }] } : mail },
     "../email-footer.ts": { removeStandardSignoff: (text: string) => text },
     "../mailer.ts": { verifyMailboxSmtp: async () => { if (failures.smtp) throw failures.smtp; }, sendMailboxEmail: async (mailbox: Row, mail: Row) => { if (failures.smtp) throw failures.smtp; delivered++; deliveries.push({ mailbox, mail }); return { messageId: `<test-${delivered}@example.com>` }; } },
     "./flow-mail-sync.ts": { syncFlowMailboxMessages: async (input?: { mailboxId?: string }) => { if (options.projectionError) throw options.projectionError; return { complete: input?.mailboxId ? (options.targetedProjectionComplete ?? options.projectionComplete) !== false : options.projectionComplete !== false, projected: 0 }; } },
     "./flow-mail-context.ts": { requireFreshFlowMailbox: async () => { if (options.freshnessError) throw options.freshnessError; } },
-    "./flow-sender.ts": { assignedFlowActor: async (_author: string, company: string, pinned?: string) => {
+    "./flow-sender.ts": { ...senderExports, assignedFlowActor: async (_author: string, company: string, pinned?: string) => {
       const owner = db.pipeline.find(row => row.company_id === company)?.owner_id;
       if (!owner || pinned && pinned !== owner) throw new executionErrors.FlowPreparationRetry("Assigned salesperson changed or missing", 60_000, "data");
       return owner;
@@ -187,6 +197,118 @@ test("accepted email records persist sequentially without trigger lock collision
   assert.equal(app.db.mailbox_sent_messages.length, 1);
   assert.equal(app.db.emails.length, 1);
   assert.equal(app.db.flow_run_logs.filter(log => (log.result as Row)?.action === "email_sent").length, 1);
+});
+
+test("a no-reply-needed AI decision completes without SMTP, attachments or retrying the acknowledgment", async () => {
+  const app = runtime({ aiReplyError: new FlowReplyNotNeeded() });
+  steps(app, [flows.blankStep("ai_auto_reply")]);
+  await app.exports.enrollNewLeadFlows(app.contactId);
+  assert.equal(app.db.flow_runs[0].status, "done");
+  assert.equal(app.delivered(), 0);
+  assert.equal(app.db.mailbox_sent_messages.length, 0);
+  assert.ok(app.db.flow_run_logs.some(log => (log.result as Row)?.action === "email_skipped"));
+});
+
+test("signature image parts never set the catalog-attached delivery flag", async () => {
+  const app = runtime({ footerImages: true });
+  steps(app, [flows.blankStep("ai_auto_reply")]);
+  await app.exports.enrollNewLeadFlows(app.contactId);
+  assert.equal(app.delivered(), 1);
+  assert.equal((app.db.mailbox_sent_messages[0].attachments as Row[])[0].filename, "footer.png");
+  const sent = app.db.flow_run_logs.find(log => (log.result as Row)?.action === "email_sent")!;
+  assert.equal((sent.result as Row).catalogAttached, false);
+});
+
+test("trigger routing sends customer email as the assigned user and prepares AI with that user's identity", async () => {
+  const app = runtime();
+  app.db.flows[0].trigger_config = { senderRouting: "assigned_user_or_team" };
+  app.db.workspace_mailboxes.push({ ...app.db.workspace_mailboxes[0], id: "assigned-personal", type: "personal", user_id: "sales-owner", email: "assigned@example.com" });
+  steps(app, [flows.blankStep("ai_auto_reply")]);
+  await app.exports.enrollNewLeadFlows(app.contactId);
+  assert.equal(app.delivered(), 1, JSON.stringify(app.db.flow_run_logs));
+  assert.equal(app.deliveries[0].mailbox.from, "assigned@example.com");
+  assert.equal(app.db.mailbox_sent_messages[0].mailbox_id, "assigned-personal");
+  assert.equal(app.db.mailbox_sent_messages[0].user_id, "sales-owner");
+  assert.equal(app.aiCalls[0].userId, "sales-owner");
+});
+
+test("trigger routing falls back to the team for missing, stopped or incomplete personal mailboxes and unassigned customers", async () => {
+  for (const state of ["missing", "stopped", "incomplete", "unassigned", "inactive-assignee"]) {
+    const app = runtime();
+    app.db.flows[0].trigger_config = { senderRouting: "assigned_user_or_team" };
+    if (state !== "missing") app.db.workspace_mailboxes.push({ ...app.db.workspace_mailboxes[0], id: "assigned-personal", type: "personal", user_id: "sales-owner", email: "assigned@example.com", is_active: state !== "stopped", smtpPassword: state === "incomplete" ? "" : "test" });
+    if (state === "unassigned") app.db.pipeline[0].owner_id = null;
+    if (state === "inactive-assignee") app.db.workspace_members[1].activated_at = null;
+    steps(app, [flows.blankStep("ai_auto_reply")]);
+    await app.exports.enrollNewLeadFlows(app.contactId);
+    assert.equal(app.delivered(), 1, state + JSON.stringify(app.db.flow_run_logs));
+    assert.equal(app.deliveries[0].mailbox.from, "sales@example.com", state);
+  }
+});
+
+test("reassignment or mailbox changes during AI preparation stop submission and queue preparation again", async () => {
+  for (const change of ["owner", "mailbox", "mode"]) {
+    const app = runtime({ onAiPrepare: async () => {
+      if (change === "owner") app.db.pipeline[0].owner_id = "specific-user";
+      if (change === "mailbox") app.db.workspace_mailboxes[1].is_active = false;
+      if (change === "mode") app.db.flows[0].trigger_config = { senderRouting: "step" };
+    } });
+    app.db.flows[0].trigger_config = { senderRouting: "assigned_user_or_team" };
+    app.db.workspace_mailboxes.push({ ...app.db.workspace_mailboxes[0], id: "assigned-personal", type: "personal", user_id: "sales-owner", email: "assigned@example.com" });
+    steps(app, [flows.blankStep("ai_auto_reply")]);
+    await app.exports.enrollNewLeadFlows(app.contactId);
+    assert.equal(app.delivered(), 0, change);
+    assert.equal(app.db.flow_runs[0].status, "active", change);
+    assert.ok(app.db.flow_run_logs.some(log => ["action_blocked", "retry_scheduled"].includes(String((log.result as Row)?.action))), change);
+  }
+});
+
+test("workspace routing permission does not allow a BD user to use another member's personal sender", async () => {
+  const app = runtime();
+  app.db.workspace_members[0].role = "bd_manager";
+  app.db.flows[0].trigger_config = { senderRouting: "assigned_user_or_team" };
+  steps(app, [flows.blankStep("ai_auto_reply")]);
+  await app.exports.enrollNewLeadFlows(app.contactId);
+  assert.equal(app.delivered(), 0);
+  assert.equal(app.db.flow_runs[0].status, "active");
+  const input = flows.flowInputSchema.parse({ ...flows.defaultFlowInput, triggerConfig: { ...flows.defaultFlowInput.triggerConfig, senderRouting: "assigned_user_or_team" } });
+  await assert.rejects(app.exports.validateFlowSenderAccess("owner", input), /administrator or operator/);
+  app.db.pipeline[0].owner_id = "owner";
+  const scoped = { ...input, triggerConfig: { ...input.triggerConfig, scopeCompanyId: app.companyId } };
+  await app.exports.validateFlowSenderAccess("owner", scoped);
+});
+
+test("template emails honor trigger routing and unavailable senders wait without submission", async () => {
+  for (const ready of [true, false]) {
+    const app = runtime();
+    app.db.flows[0].trigger_config = { senderRouting: "assigned_user_or_team" };
+    app.db.workspace_mailboxes[0].is_active = ready;
+    const action = flows.blankStep("send_email"); action.config.templateId = "welcome_intro";
+    steps(app, [action]);
+    await app.exports.enrollNewLeadFlows(app.contactId);
+    assert.equal(app.delivered(), ready ? 1 : 0);
+    assert.equal(app.db.flow_runs[0].status, ready ? "done" : "active");
+    if (ready) assert.equal(app.deliveries[0].mailbox.from, "sales@example.com");
+  }
+});
+
+test("a customer reply to the assigned user's personal mailbox stops the next follow-up", async () => {
+  const app = runtime();
+  app.db.flows[0].trigger_config = { senderRouting: "assigned_user_or_team" };
+  app.db.workspace_mailboxes.push({ ...app.db.workspace_mailboxes[0], id: "assigned-personal", type: "personal", user_id: "sales-owner", email: "assigned@example.com" });
+  const followup = flows.blankStep("send_email"); followup.config.templateId = "welcome_intro";
+  steps(app, [flows.blankStep("ai_auto_reply"), { type: "wait", config: { amount: 1, unit: "minutes" } }, followup]);
+  await app.exports.enrollNewLeadFlows(app.contactId);
+  assert.equal(app.delivered(), 1);
+  const run = app.db.flow_runs[0];
+  const context = run.context as Row;
+  assert.equal(context.receivingMailboxId, "assigned-personal");
+  assert.equal(context.lastSenderUserId, "sales-owner");
+  app.db.emails.push({ id: "personal-reply", contact_id: app.contactId, direction: "received", owner_id: "sales-owner", thread_id: context.emailThreadId, created_at: new Date(Date.now() + 1000).toISOString() });
+  run.next_run_at = new Date(Date.now() - 1000).toISOString();
+  await app.exports.processFlowRun(String(run.id));
+  assert.equal(app.delivered(), 1);
+  assert.equal(run.status, "cancelled");
 });
 
 test("30 overlapping workflow processors claim one run and submit only one email", async () => {

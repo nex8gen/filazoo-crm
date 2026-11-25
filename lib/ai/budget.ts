@@ -29,7 +29,7 @@ export function budgetFailure(reason: string, limits?: AiBudgetSummary) {
   if (reason === "workspace_monthly") return new AiBudgetError(exhausted ? "The workspace monthly AI budget is used up. It resets on the first day of next month." : "The workspace remaining monthly AI budget is too low for this request. Try a smaller task or ask an administrator to review the workspace budget.");
   return new AiBudgetError("This request needs more AI allowance than is available. Try a smaller task or wait for the allowance to reset.");
 }
-export function quoteAiBudget(body: Record<string, unknown>, rate: BudgetRate) {
+export function quoteAiBudget(body: Record<string, unknown>, rate: BudgetRate, fullContext = false) {
   const model = String(body.model ?? "");
   if (body.background || body.stream || body.previous_response_id || body.conversation || body.service_tier && body.service_tier !== "default") throw new AiBudgetError("This AI request cannot be priced safely within the workspace allowance.", 503);
   if (!(BUDGET_MODELS as readonly string[]).includes(model)) throw new AiBudgetError("This AI model is not configured for workspace spending limits.", 503);
@@ -46,15 +46,15 @@ export function quoteAiBudget(body: Record<string, unknown>, rate: BudgetRate) {
   // UTF-8 bytes bound text tokenization. OpenAI caps search context at 128k.
   // Image tokenization is opaque, so retain the full model-context bound.
   const textBound = new TextEncoder().encode(encoded).length + 4096;
-  const input = /"(?:input_image|image_url)"/.test(encoded) ? rate.context : Math.min(rate.context, textBound + (webCalls ? 128000 : 0));
+  const input = fullContext || /"(?:input_image|image_url)"/.test(encoded) ? rate.context : Math.min(rate.context, textBound + (webCalls ? 128000 : 0));
   const prices = tokenRate(rate, input + output);
   return { reservedMicros: Math.ceil((input * prices.input + output * prices.output + webCalls * rate.webSearch) * USD_MICROS), output, webCalls };
 }
 export function chargedAiBudget(payload: unknown, rate: BudgetRate, quote: ReturnType<typeof quoteAiBudget>, status: number) {
   const result = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
   const usage = result.usage as Record<string, unknown> | undefined;
-  const input = usage?.input_tokens ?? usage?.prompt_tokens;
-  const output = usage?.output_tokens ?? usage?.completion_tokens;
+  const input = usage?.input_tokens ?? usage?.prompt_tokens ?? (usage?.inputTokens as { total?: unknown } | undefined)?.total;
+  const output = usage?.output_tokens ?? usage?.completion_tokens ?? (usage?.outputTokens as { total?: unknown } | undefined)?.total;
   if (typeof input === "number" && Number.isSafeInteger(input) && input >= 0 && typeof output === "number" && Number.isSafeInteger(output) && output >= 0) {
     // Maximum published context-tier prices; cached input discounts are not
     // assumed. Search is charged at its full reserved tool-call allowance.

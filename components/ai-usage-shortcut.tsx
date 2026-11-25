@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ArrowUpRight, Gauge } from "lucide-react";
 import { MICROS_PER_CREDIT, usagePercent, type CreditBalance } from "@/lib/billing/credits";
+import { AI_CREDITS_CHANGED } from "@/lib/billing/credit-events";
 
 type Usage = { credits: CreditBalance; enabled: boolean };
 
@@ -14,8 +15,10 @@ export function AiUsageShortcut({ expanded = false }: { expanded?: boolean }) {
   useEffect(() => {
     const controller = new AbortController();
     let pending = false;
+    let refreshQueued = false;
     async function refresh() {
-      if (pending || controller.signal.aborted) return;
+      if (controller.signal.aborted) return;
+      if (pending) { refreshQueued = true; return; }
       pending = true;
       try {
         const response = await fetch("/api/ai/credits", { cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]) });
@@ -26,6 +29,7 @@ export function AiUsageShortcut({ expanded = false }: { expanded?: boolean }) {
         if (!controller.signal.aborted) setError(true);
       } finally {
         pending = false;
+        if (refreshQueued && !controller.signal.aborted) { refreshQueued = false; void refresh(); }
       }
     }
     function refreshVisible() {
@@ -34,11 +38,13 @@ export function AiUsageShortcut({ expanded = false }: { expanded?: boolean }) {
     void refresh();
     const interval = window.setInterval(refreshVisible, 60_000);
     window.addEventListener("focus", refreshVisible);
+    window.addEventListener(AI_CREDITS_CHANGED, refreshVisible);
     document.addEventListener("visibilitychange", refreshVisible);
     return () => {
       controller.abort();
       window.clearInterval(interval);
       window.removeEventListener("focus", refreshVisible);
+      window.removeEventListener(AI_CREDITS_CHANGED, refreshVisible);
       document.removeEventListener("visibilitychange", refreshVisible);
     };
   }, []);
@@ -49,9 +55,9 @@ export function AiUsageShortcut({ expanded = false }: { expanded?: boolean }) {
   const used = credits ? usagePercent(credits.usedMicros, credits.includedMicros + credits.topupMicros) ?? 0 : 0;
   const warning = result?.enabled === false ? "AI paused" : credits && remaining <= 0 ? "AI credits are used up." : credits && used >= 80 ? "Low balance" : null;
 
-  if (!expanded) return <Link href="/settings/credits" aria-label="AI usage" title="AI usage" className="workspace-sidebar-row"><Gauge aria-hidden="true" className="size-[18px] shrink-0" /></Link>;
-
-  return <section aria-label="AI usage" className="workspace-ai-usage">
+  return <>
+    <div className="workspace-ai-usage-compact" inert={expanded || undefined} aria-hidden={expanded || undefined}><Link href="/settings/credits" aria-label="AI usage" title="AI usage" className="workspace-sidebar-row"><Gauge aria-hidden="true" className="size-[18px] shrink-0" /></Link></div>
+    <div className="workspace-ai-usage-reveal" inert={!expanded || undefined} aria-hidden={!expanded || undefined}><div className="workspace-ai-usage-clip"><section aria-label="AI usage" className="workspace-ai-usage">
     <Link href="/settings/credits" aria-label="AI usage" className="workspace-ai-usage-link">
       <span className="flex items-center gap-2 text-xs font-medium"><Gauge aria-hidden="true" className="size-3.5" /><span>AI usage</span><ArrowUpRight aria-hidden="true" className="ml-auto size-3.5 opacity-60" /></span>
       {credits ? <>
@@ -65,5 +71,6 @@ export function AiUsageShortcut({ expanded = false }: { expanded?: boolean }) {
         <span aria-hidden="true" className="mt-3 block h-1 rounded-full bg-current/10" />
       </span>}
     </Link>
-  </section>;
+  </section></div></div>
+  </>;
 }

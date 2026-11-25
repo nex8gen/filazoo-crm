@@ -1,4 +1,5 @@
 "use client";
+import { notifyAiCreditsChanged } from "@/lib/billing/credit-events";
 import { NotificationToast } from "@/components/ui/notification-toast";
 
 
@@ -12,7 +13,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { StreamingText, ThinkingState } from "@/components/ui/ai-agent-response";
 import { AiChatInput } from "@/components/ui/ai-chat-input";
 import { CustomerResearchSources, ResearchSearching, SourceList, type ResearchResult } from "@/components/ui/customer-research";
-import { readResearchResponse, researchStreamType, type ResearchProgress } from "@/lib/ai/research-progress";
+import { readResearchResponse, researchStreamType, type ResearchProgress, type AssistantActivity } from "@/lib/ai/research-progress";
 import type { AppLanguage } from "@/lib/i18n";
 import type { Company } from "@/lib/types";
 import type { CompanyChatMessage, CompanyChatSource } from "@/lib/ai/company-chat";
@@ -30,17 +31,17 @@ const shortcuts = [
   { label: "Follow-up plan", icon: Clock3, prompt: "Suggest a follow-up plan for this customer, including timing in Shanghai time, talking points, and questions to ask. Distinguish the existing schedule from your suggestions." },
 ];
 
-type ChatEntry = CompanyChatMessage & { id: string; attachmentNames?: string[]; sources?: CompanyChatSource[]; omittedActivity?: number; durationMs?: number; research?: ResearchResult };
-type CustomerReply = { output: string; error?: string; sources?: CompanyChatSource[]; coverage?: { omittedActivity?: number }; research?: ResearchResult; history?: Parameters<ReturnType<typeof useAiConversation>["accept"]>[0] };
+type ChatEntry = CompanyChatMessage & { id: string; attachmentNames?: string[]; sources?: CompanyChatSource[]; omittedActivity?: number; durationMs?: number; activity?: AssistantActivity[]; research?: ResearchResult };
+type CustomerReply = { output: string; error?: string; sources?: CompanyChatSource[]; activity?: AssistantActivity[]; coverage?: { omittedActivity?: number }; research?: ResearchResult; history?: Parameters<ReturnType<typeof useAiConversation>["accept"]>[0] };
 
-async function requestCustomerReply(companyId: string, messages: ChatEntry[], signal: AbortSignal, language: AppLanguage, webSearch: boolean, history: HistoryReference, onProgress: (progress: ResearchProgress) => void) {
+async function requestCustomerReply(companyId: string, messages: ChatEntry[], signal: AbortSignal, language: AppLanguage, webSearch: boolean, history: HistoryReference, onProgress: (progress: ResearchProgress) => void, onActivity: (steps: AssistantActivity[]) => void) {
   const started = performance.now();
   const response = await fetch(`/api/companies/${companyId}/chat`, {
     method: "POST", headers: { "Content-Type": "application/json", Accept: researchStreamType },
     body: JSON.stringify({ language, webSearch, history, messages: messages.slice(-1).map(({ role, content, images }) => ({ role, content, images })) }),
     signal,
   });
-  const result = await readResearchResponse<CustomerReply>(response, onProgress);
+  const result = await readResearchResponse<CustomerReply>(response, onProgress, onActivity);
   if (!response.ok || typeof result?.output !== "string") throw new Error(result?.error || "Unable to reach the assistant. Check your connection and sign in again if needed.");
   return { ...result, durationMs: performance.now() - started };
 }
@@ -52,6 +53,7 @@ export function CompanyAi({ company }: { company: Company }) {
   const attachments = useAiImageAttachments();
   const [webSearch, setWebSearch] = useState(false);
   const [pending, setPending] = useState(false);
+  const [activity, setActivity] = useState<AssistantActivity[]>([]);
   const [researchProgress, setResearchProgress] = useState<ResearchProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -69,7 +71,7 @@ export function CompanyAi({ company }: { company: Company }) {
   const busy = pending || Boolean(animation) || history.loading;
 
   function newChat() {
-    history.newConversation(); setMessages([]); setError(null); setRetryMessages(null); setAnimation(null); setQuestion(""); attachments.clear(); input.current?.focus();
+    history.newConversation(); setActivity([]); setMessages([]); setError(null); setRetryMessages(null); setAnimation(null); setQuestion(""); attachments.clear(); input.current?.focus();
   }
 
   useEffect(() => () => { request.current?.abort(); }, [language]);
@@ -81,6 +83,10 @@ export function CompanyAi({ company }: { company: Company }) {
     }
     thread.current?.scrollTo({ top: thread.current.scrollHeight, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   }, [messages, pending, error]);
+  useEffect(() => {
+    const viewport = thread.current;
+    if (pending && viewport && viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 160) viewport.scrollTop = viewport.scrollHeight;
+  }, [activity, pending]);
 
   async function generate(next: ChatEntry[]) {
     if (request.current) return;
@@ -89,6 +95,8 @@ export function CompanyAi({ company }: { company: Company }) {
     setRetryMessages(next);
     setPending(true);
     setResearchProgress(null);
+    setActivity([]);
+    let requestActivity: AssistantActivity[] = [];
     setError(null);
     const timeout = setTimeout(() => controller.abort(), webSearch ? 110_000 : 55_000);
     try {
@@ -96,18 +104,22 @@ export function CompanyAi({ company }: { company: Company }) {
       if (controller.signal.aborted) return;
       const result = await requestCustomerReply(company.id, next, controller.signal, language, webSearch, reference, progress => {
         if (!controller.signal.aborted) setResearchProgress(progress);
+      }, steps => {
+        if (!controller.signal.aborted) { requestActivity = steps; setActivity(steps); }
       });
       if (controller.signal.aborted) return;
       history.accept(result.history);
       const id = crypto.randomUUID();
-      setMessages([...next, { id, role: "assistant", content: result.output, sources: result.sources, omittedActivity: result.coverage?.omittedActivity, durationMs: result.durationMs, research: result.research }]);
+      setMessages([...next, { id, role: "assistant", content: result.output, sources: result.sources, omittedActivity: result.coverage?.omittedActivity, durationMs: result.durationMs, activity: result.activity ?? requestActivity, research: result.research }]);
       setAnimation({ id, run: 1 });
       setRetryMessages(null);
     } catch (error) {
       if (request.current !== controller) return;
+      setActivity(requestActivity.map(step => step.status === "active" ? { ...step, status: "failed" } : step));
       setError(controller.signal.aborted ? "The assistant took too long to respond. Please retry." : error instanceof Error ? error.message : "Unable to reach the assistant.");
     } finally {
       clearTimeout(timeout);
+      notifyAiCreditsChanged();
       if (request.current === controller) { request.current = null; setPending(false); setResearchProgress(null); }
     }
   }
@@ -148,7 +160,7 @@ export function CompanyAi({ company }: { company: Company }) {
             <div className="mt-6 grid w-full max-w-lg gap-2 sm:grid-cols-2">{shortcuts.map(({ label, icon: Icon, prompt }) => <button key={label} type="button" onClick={() => send(t(prompt))} className="flex items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm transition-colors hover:border-primary/40 hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"><Icon className="size-4 text-muted-foreground" />{label}</button>)}</div>
           </div> : <div className="space-y-6">{messages.map((entry) => <div key={entry.id} className={entry.role === "user" ? "ml-auto max-w-[90%] rounded-2xl rounded-br-md bg-muted px-4 py-3 sm:max-w-[80%]" : "max-w-full"}>
             {entry.role === "assistant" ? <>
-              <ThinkingState working={false} writing={animation?.id === entry.id} durationMs={entry.durationMs} scope={company.name} steps={(entry.sources ?? []).map((source) => ({ id: source.id, label: `[${source.id}] ${t(source.label)}`, detail: source.recordedAt ? new Date(source.recordedAt).toLocaleDateString(language, { timeZone: "Asia/Shanghai" }) : undefined }))} className="mb-2" />
+              <ThinkingState working={false} writing={animation?.id === entry.id} durationMs={entry.durationMs} scope={company.name} steps={[...(entry.activity ?? []), ...(entry.sources ?? []).map((source) => ({ id: source.id, label: `[${source.id}] ${t(source.label)}`, detail: source.recordedAt ? new Date(source.recordedAt).toLocaleDateString(language, { timeZone: "Asia/Shanghai" }) : undefined }))]} className="mb-2" />
               <StreamingText key={`${entry.id}-${animation?.id === entry.id ? animation.run : 0}`} text={entry.content} sources={[...(entry.sources ?? []), ...(entry.research?.sources ?? [])]} animate={animation?.id === entry.id} onProgress={followReply} onComplete={() => setAnimation((current) => current?.id === entry.id ? null : current)} />
               <CustomerResearchSources research={entry.research} />
               {animation?.id === entry.id ? <Button type="button" variant="ghost" size="xs" className="mt-2" onClick={() => setAnimation(null)}>Show full reply</Button> : <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -157,7 +169,7 @@ export function CompanyAi({ company }: { company: Company }) {
               </div>}
             </> : <><p className="mb-2 text-xs font-medium text-muted-foreground">You</p><AiImagePreviews images={entry.images} />{entry.attachmentNames?.length ? <p className="mb-2 text-xs text-muted-foreground">Attached: {entry.attachmentNames.join(", ")}. Images are not retained; reattach to inspect them again.</p> : null}<p data-no-translate className="whitespace-pre-wrap break-words text-sm leading-7 [overflow-wrap:anywhere]">{entry.content}</p></>}
           </div>)}</div>}
-          {pending ? <div className="mt-6"><ThinkingState working scope={company.name} />{webSearch ? <ResearchSearching progress={researchProgress} /> : null}</div> : null}
+          {pending || (error && activity.length) ? <div className="mt-6"><ThinkingState key={messages.at(-1)?.id} working={pending} failed={!pending && Boolean(error)} scope={company.name} steps={activity} />{webSearch ? <ResearchSearching progress={researchProgress} /> : null}</div> : null}
           {error ? <NotificationToast><p className="text-sm leading-6">{error}</p>{retryMessages ? <div className="mt-3 flex gap-2"><Button type="button" variant="outline" size="sm" disabled={pending} onClick={() => void generate(retryMessages)}>Try again</Button><Button type="button" variant="ghost" size="sm" disabled={pending} onClick={() => { const last = retryMessages.at(-1); setQuestion(last?.content || ""); attachments.setImages(last?.images ?? []); setMessages((current) => current.slice(0, -1)); setRetryMessages(null); setError(null); input.current?.focus(); }}>Edit question</Button></div> : null}</NotificationToast> : null}
         </div>
         <div className="sticky bottom-0 z-10 shrink-0 border-t bg-card px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-5 sm:px-6">

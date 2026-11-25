@@ -7,12 +7,14 @@ export type ResearchProgress = {
   visitedUrls: string[];
 };
 
-type ResearchEvent = { type: "progress"; progress: ResearchProgress } | { type: "result"; status: number; data: unknown };
+export type AssistantActivity = { id: string; label: string; detail?: string; status: "active" | "complete" | "failed"; durationMs?: number };
+export type TrackActivity = <T>(label: string, run: () => Promise<T>, detail?: string) => Promise<T>;
+type ResearchEvent = { type: "progress"; progress: ResearchProgress } | { type: "activity"; activity: AssistantActivity[] } | { type: "result"; status: number; data: unknown };
 export const researchStreamType = "application/x-ndjson";
 
 /** Opt-in progress streaming; ordinary callers and early HTTP errors keep JSON. */
-export async function withResearchProgress(request: Request, run: (report: (progress: ResearchProgress) => void) => Promise<Response>): Promise<Response> {
-  if (!request.headers.get("accept")?.includes(researchStreamType)) return run(() => {});
+export async function withResearchProgress(request: Request, run: (report: (progress: ResearchProgress) => void, track: TrackActivity, activity: readonly AssistantActivity[]) => Promise<Response>): Promise<Response> {
+  if (!request.headers.get("accept")?.includes(researchStreamType)) return run(() => {}, (_label, work) => work(), []);
   let controller: ReadableStreamDefaultController<Uint8Array>;
   let closed = false, started = false;
   const encoder = new TextEncoder();
@@ -28,7 +30,40 @@ export async function withResearchProgress(request: Request, run: (report: (prog
     }
     controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
   };
-  void run(progress => emit({ type: "progress", progress })).then(async result => {
+  const activity: AssistantActivity[] = [];
+  const update = () => emit({ type: "activity", activity });
+  const track: TrackActivity = async (label, work, detail) => {
+    const step: AssistantActivity = { id: `activity-${activity.length}`, label, detail, status: "active" };
+    const start = Date.now();
+    activity.push(step); update();
+    try {
+      const result = await work();
+      step.status = "complete";
+      return result;
+    } catch (error) {
+      step.status = "failed";
+      throw error;
+    } finally { step.durationMs = Date.now() - start; update(); }
+  };
+  let researchStep: AssistantActivity | undefined;
+  let researchPhase: ResearchProgress["phase"] | undefined;
+  const report = (progress: ResearchProgress) => {
+    if (researchPhase !== progress.phase) {
+      if (researchStep) researchStep.status = "complete";
+      researchStep = undefined;
+      if (progress.phase !== "writing") {
+        researchStep = { id: `activity-${activity.length}`, label: progress.phase === "searching" ? "Searching the web" : "Reading company websites", status: "active" };
+        activity.push(researchStep);
+      }
+      researchPhase = progress.phase;
+    }
+    if (researchStep) researchStep.detail = progress.phase === "searching" ? progress.queries.at(-1) : progress.visitedUrls.at(-1);
+    update();
+    emit({ type: "progress", progress });
+  };
+  void run(report, track, activity).then(async result => {
+    for (const step of activity) if (step.status === "active") step.status = result.ok ? "complete" : "failed";
+    if (activity.length) update();
     if (!started) resolveResponse(result);
     else if (!closed) emit({ type: "result", status: result.status, data: await result.json() });
     if (!closed) { closed = true; controller.close(); }
@@ -40,7 +75,7 @@ export async function withResearchProgress(request: Request, run: (report: (prog
 }
 
 /** Decode real source updates while retaining compatibility with saved JSON replies. */
-export async function readResearchResponse<T>(response: Response, onProgress: (progress: ResearchProgress) => void): Promise<T> {
+export async function readResearchResponse<T>(response: Response, onProgress: (progress: ResearchProgress) => void, onActivity?: (activity: AssistantActivity[]) => void): Promise<T> {
   if (!response.headers.get("content-type")?.includes(researchStreamType)) return response.json() as Promise<T>;
   if (!response.body) throw new Error("The research connection ended. Please retry.");
   const reader = response.body.getReader(), decoder = new TextDecoder();
@@ -49,6 +84,7 @@ export async function readResearchResponse<T>(response: Response, onProgress: (p
     if (!line.trim()) return;
     const event = JSON.parse(line) as ResearchEvent;
     if (event.type === "progress") onProgress(event.progress);
+    if (event.type === "activity") onActivity?.(event.activity);
     if (event.type === "result") {
       if (event.status >= 400) throw new Error((event.data as { error?: string })?.error || "Unable to complete research. Please retry.");
       result = event.data as T; completed = true;

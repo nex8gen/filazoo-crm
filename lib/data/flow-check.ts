@@ -5,7 +5,8 @@ import { env } from "../env.ts";
 import { flowActionLocations } from "../flow-tree.ts";
 import { calculateWaitUntil } from "../flow-engine.ts";
 import { normalizeMailboxRows } from "../mailbox-utils.ts";
-import { resolveFlowSender } from "../flow-mailboxes.ts";
+import { resolveFlowSender, resolveAssignedOrTeamSender } from "../flow-mailboxes.ts";
+import { validateAssignedCustomerSending } from "./flow-sender.ts";
 import { verifyMailboxSmtp } from "../mailer.ts";
 import { verifyGatewayAccess } from "../ai/gateway-health.ts";
 import { requireAiAutomation } from "./ai-settings.ts";
@@ -60,12 +61,14 @@ export async function checkFlow(input: FlowCheckInput, viewer: WorkspaceViewer):
     return { status: "passed", detail: "The workflow and every action's required tables are reachable. No records were changed." };
   })];
   if (senderActions.length) jobs.push(add("senders", "Sender authentication", async () => {
+    const assignedRouting = input.flow.triggerConfig.senderRouting === "assigned_user_or_team";
+    if (assignedRouting) await validateAssignedCustomerSending(ownerId, typeof input.flow.triggerConfig.scopeCompanyId === "string" ? input.flow.triggerConfig.scopeCompanyId : undefined);
     const { data } = await admin.from("workspace_mailboxes").select("*").or(`type.eq.workspace,user_id.eq.${ownerId}`).abortSignal(signal).throwOnError();
     const mailboxes = normalizeMailboxRows(data);
     const senders = new Map<string, { mailbox: (typeof mailboxes)[number]; paths: number[][] }>();
     const failures: Array<{ message: string; paths: number[][] }> = [];
     for (const { action: step, path } of locations.filter(location => senderActions.includes(location.action))) {
-      const mailbox = resolveFlowSender(mailboxes, ownerId, step.config.mailboxId);
+      const mailbox = assignedRouting && ["send_email", "ai_auto_reply"].includes(step.type) ? resolveAssignedOrTeamSender(mailboxes, null) : resolveFlowSender(mailboxes, ownerId, step.config.mailboxId);
       if (mailbox?.type === "personal" && mailbox.userId !== viewer.id) {
         failures.push({ message: "This action uses the workflow owner's personal email account. Only that owner can verify its connection. Choose a shared team email in Subject and sender to use a team account.", paths: [path] });
         continue;
@@ -83,7 +86,7 @@ export async function checkFlow(input: FlowCheckInput, viewer: WorkspaceViewer):
       catch (cause) { failures.push({ message: workflowErrorMessage(cause), paths }); }
     }));
     if (failures.length) return { status: failures.every(failure => /timeout|timed out|aborted/i.test(failure.message)) ? "unverified" : "blocked", detail: failures[0].message, actionPaths: failures.flatMap(failure => failure.paths) };
-    return { status: "passed", detail: `${senders.size} sender connections authenticated with their mail servers. No email was sent.` };
+    return { status: "passed", detail: assignedRouting ? "The team fallback is authenticated. The customer's assignment and available personal mailbox are resolved again before each customer email. No email was sent." : `${senders.size} sender connections authenticated with their mail servers. No email was sent.` };
   }));
   if (hasAi) jobs.push(add("ai", "AI authentication and access", async () => {
     await requireAiAutomation(["sending", ...(actions.some(step => step.type === "ai_auto_reply" && step.config.attachCatalog) ? ["catalogs"] as const : [])], ["emails", "customers", "team", ...(actions.some(step => step.type === "ai_auto_reply" && (step.config.useProducts || step.config.attachCatalog)) ? ["products"] as const : [])]);

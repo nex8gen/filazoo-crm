@@ -11,6 +11,7 @@ import { portalPreviewData } from "../lib/portal-preview.ts";
 import { formatMoney } from "../lib/invoices.ts";
 import * as themeTools from "../lib/portal-themes.ts";
 import * as domainTools from "../lib/portal-domains.ts";
+import * as websiteTools from "../lib/portal-website.ts";
 
 const dom = new JSDOM("<!doctype html><body></body>", { url: "https://crm.test/customer-portal" });
 for (const key of ["window", "document", "navigator", "HTMLElement", "HTMLInputElement", "Node", "Event", "MouseEvent", "KeyboardEvent"] as const) {
@@ -26,6 +27,13 @@ const native = (tag: string) => function NativeControl({ children, ...props }: R
   return React.createElement(tag, props, children as React.ReactNode);
 };
 const controls = {
+  "@/components/portal-vvveb-editor": { PortalVvvebEditor: function EmbeddedEditor({ captureRef, onDirty }: { captureRef: React.RefObject<(() => Promise<{ html: string; css: string } | null>) | null>; onDirty: () => void }) {
+    const changed = React.useRef(false);
+    React.useEffect(() => { captureRef.current = async () => { if (!changed.current) return null; changed.current = false; return { html: "<h1>My website</h1>", css: "h1{color:green}" }; }; return () => { captureRef.current = null; }; }, [captureRef]);
+    return React.createElement("section", { "aria-label": "Embedded website designer" }, React.createElement("button", { onClick: () => { changed.current = true; onDirty(); } }, "Edit canvas content"));
+  } },
+  "@/components/portal-website-content": { PortalWebsiteContent: () => React.createElement("iframe", { title: "Website content" }) },
+  "@/lib/email-markup": { escapeEmailHtml: (value: string) => value.replace(/[<>&"]/g, "") },
   "@/components/ui/card": { Card: native("div"), CardFooter: native("div"), CardHeader: native("div"), CardTitle: native("h2") },
   "@/components/ui/badge": { Badge: native("span") },
   "@/components/ui/label": { Label: native("label") },
@@ -39,7 +47,7 @@ const controls = {
 function load(file: string, deps: Record<string, unknown>) {
   const exports = {} as Record<string, React.ComponentType<Record<string, unknown>>>;
   const code = ts.transpileModule(readFileSync(file, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-  vm.runInNewContext(code, { exports, window, document, crypto, console, require: (name: string) => name.endsWith(".css") ? {} : deps[name] ?? controls[name as keyof typeof controls] ?? require(name) });
+  vm.runInNewContext(code, { exports, window, document, crypto, console, setTimeout, clearTimeout, require: (name: string) => name.endsWith(".css") ? {} : deps[name] ?? controls[name as keyof typeof controls] ?? require(name) });
   return exports;
 }
 const { PortalLocalTime } = load("components/portal-local-time.tsx", {});
@@ -80,7 +88,7 @@ test("custom domain settings connect, show DNS records, verify HTTPS, and requir
     await click("Disconnect domain"); await click("Confirm disconnect"); assert.ok(host.querySelector("#portal-custom-domain"));
   } finally { await React.act(async () => root.unmount()); host.remove(); }
 });
-async function mount(canWrite = true) {
+async function mount(canWrite = true, preview = true) {
   let state: designTools.PortalDesignView = { draft: designTools.defaultPortalDesign(), published: null, revision: 0, updatedAt: null, publishedAt: null };
   const calls: { publish: boolean; design: designTools.PortalDesign; revision: number }[] = [];
   const { PortalBuilder } = load("components/portal-builder.tsx", {
@@ -103,8 +111,59 @@ async function mount(canWrite = true) {
     assert.ok(node, label); return node;
   };
   const click = async (label: string) => { await React.act(async () => button(label).click()); };
+  if (preview) { if (canWrite) await click("Preview portal"); await click("Editor settings"); }
   return { host, button, click, calls, close: async () => { await React.act(async () => root.unmount()); host.remove(); } };
 }
+
+test("inline editor validates its bridge, captures current HTML and keeps its session across brand changes", async () => {
+  const { PortalVvvebEditor } = load("components/portal-vvveb-editor.tsx", { "@/lib/portal-website": websiteTools });
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  const captureRef: { current: (() => Promise<websiteTools.PortalWebsite | null>) | null } = { current: null };
+  let dirtyCalls = 0;
+  const props = { initial: { html: "<h1>My brand</h1>", css: "" }, accent: "#25865b", title: "Home", captureRef, onDirty: () => { dirtyCalls++; }, onSaveRequest: () => {} };
+  try {
+    await React.act(async () => root.render(React.createElement(PortalVvvebEditor, props)));
+    assert.equal(host.querySelector("dialog"), null);
+    const frame = host.querySelector("iframe")!;
+    const sent: { type: string; requestId?: string }[] = [];
+    frame.contentWindow!.postMessage = (message: { type: string }) => { sent.push(message); };
+    const receive = (data: object, origin = window.location.origin) => window.dispatchEvent(new window.MessageEvent("message", { data, origin, source: frame.contentWindow }));
+    await React.act(async () => { receive({ type: "filazoo:ready" }); receive({ type: "filazoo:loaded" }); });
+    assert.ok(sent.some(message => message.type === "filazoo:init"));
+    await React.act(async () => receive({ type: "filazoo:dirty" }, "https://untrusted.test"));
+    assert.equal(dirtyCalls, 0);
+    await React.act(async () => receive({ type: "filazoo:dirty" }));
+    assert.equal(dirtyCalls, 1);
+    await React.act(async () => {
+      const result = captureRef.current!();
+      const requestId = sent.at(-1)!.requestId;
+      receive({ type: "filazoo:result", requestId, website: { html: '<h1 onclick="alert(1)">Saved layout</h1>', css: "h1{color:green}" } });
+      assert.equal((await result)?.html, "<h1>Saved layout</h1>");
+    });
+    await React.act(async () => root.render(React.createElement(PortalVvvebEditor, { ...props, accent: "#5261d8" })));
+    assert.equal(host.querySelector("iframe"), frame);
+    assert.equal(sent.filter(message => message.type === "filazoo:init").length, 1);
+    assert.equal(sent.at(-1)?.type, "filazoo:brand");
+    assert.equal(await captureRef.current!(), null);
+  } finally { await React.act(async () => root.unmount()); host.remove(); }
+});
+
+test("website editor opens directly and captures its canvas before draft save and publish", async () => {
+  const ui = await mount(true, false);
+  try {
+    assert.ok(ui.host.querySelector('[aria-label="Embedded website designer"]'));
+    assert.equal(ui.host.querySelector(".portal-app"), null);
+    await ui.click("Edit canvas content");
+    assert.equal(ui.calls.length, 0);
+    await ui.click("Save");
+    assert.equal(ui.calls[0].publish, false);
+    assert.equal(ui.calls[0].design.sections[0].website?.html, "<h1>My website</h1>");
+    await ui.click("Publish");
+    assert.equal(ui.calls[1].publish, true);
+    assert.equal(ui.calls[1].design.features.sendMessages, true);
+  } finally { await ui.close(); }
+});
 
 test("builder previews styles and devices and saves a draft separately from publishing", async () => {
   const ui = await mount();

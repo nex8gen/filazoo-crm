@@ -3,11 +3,12 @@
 import { useEffect, useImperativeHandle, useState, type ReactNode, type Ref } from "react";
 import { flowEditorEqual, type FlowPanelEditor } from "@/lib/flow-editor-session";
 import Link from "next/link";
-import { ArrowLeft, LockKeyhole, X, Zap } from "lucide-react";
+import { ArrowLeft, Info, LockKeyhole, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FlowCustomerPicker } from "@/components/flow-customer-picker";
 import { companyStatuses, emailCategories, flowLeadLists, triggerLabels, type FlowInput, type JsonConfig, type TriggerType } from "@/lib/flows";
@@ -96,6 +97,25 @@ export function FlowTriggerPanel({ flow, onChange, onClose, onPreview, disabled,
           <div className="wf-trigger-event-summary"><small>{triggerLabels[flow.triggerType]}</small><div><strong data-no-translate={flow.triggerType === "company_segment_changed" || flow.triggerType === "lead_added_to_list" || undefined}>{eventDetail}</strong>{!fixedSegment ? <Button variant="ghost" size="sm" disabled={disabled} onClick={() => open("event")}>Change</Button> : null}</div></div>
           {scopeNote}
           {fixedSegment ? <div className="wf-trigger-segment-note"><p>This segment defines the audience. Existing and newly matching companies can enter after activation.</p><Link href={segmentCompaniesHref(flow.triggerConfig)}>View customers in this segment</Link></div> : null}
+        </section>
+        <section className="wf-trigger-section">
+          <div className="flex items-center gap-1.5">
+            <h3 style={{ fontSize: 12 }}>Email sender</h3>
+            <Popover>
+              <PopoverTrigger aria-label="Email sender details" title="Email sender details" className="flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"><Info aria-hidden="true" className="size-3.5" /></PopoverTrigger>
+              <PopoverContent align="start" className="w-64 max-w-[calc(100vw-2rem)] gap-2 p-3 text-xs leading-5">
+                <PopoverTitle className="text-xs">Email sender</PopoverTitle>
+                <p className="text-muted-foreground">Use the assigned user&apos;s personal email, otherwise team email</p>
+                <p className="text-muted-foreground">Applies to Email and AI auto-reply actions. Uses an active, connected personal mailbox when available. Customers without an assigned user use the team email.</p>
+              </PopoverContent>
+            </Popover>
+          </div>
+          <label className="mt-2 flex cursor-pointer items-start gap-3 text-xs">
+            <Checkbox className="mt-0.5" checked={flow.triggerConfig.senderRouting === "assigned_user_or_team"} disabled={disabled} onCheckedChange={checked => {
+              if (!disabled) onChange({ ...flow, triggerConfig: { ...flow.triggerConfig, senderRouting: checked === true ? "assigned_user_or_team" : "step" } });
+            }} />
+            <span>Use assigned user</span>
+          </label>
         </section>
         <section className="wf-trigger-section">
           <h3>Re-entry criteria</h3><p className="wf-trigger-description">Set whether contacts can enter this workflow more than once.</p>

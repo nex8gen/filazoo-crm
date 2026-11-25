@@ -21,12 +21,13 @@ function text(value: unknown): string {
   if (value && typeof value === "object" && "props" in value) return text((value as Element).props.children);
   return typeof value === "string" ? value : "";
 }
-function panel(options: { delayStatus?: boolean; saved?: Record<string, unknown>; failSave?: boolean } = {}) {
+function panel(options: { delayStatus?: boolean; delayPreview?: boolean; saved?: Record<string, unknown>; failSave?: boolean } = {}) {
   const values: unknown[] = [], effects: Array<() => unknown> = [], deps: unknown[][] = [];
   let cursor = 0;
   let saved: Record<string, unknown> | null = options.saved || null;
   let statusReads = 0;
   let releaseStatus: (() => void) | undefined;
+  let releasePreview: (() => void) | undefined;
   const calls: Array<Record<string, unknown>> = [];
   let actions: FollowupActionRecord[] = [];
   const react = {
@@ -39,7 +40,10 @@ function panel(options: { delayStatus?: boolean; saved?: Record<string, unknown>
   const dependencies: Record<string, unknown> = {
     react, "react/jsx-runtime": { jsx, jsxs: jsx }, "next/link": { default: "link" }, "lucide-react": {},
     "@/components/ui/button": { Button: "button" }, "@/components/ui/date-picker": { DatePicker: "date-picker" },
-    "@/components/ui/dialog": { Dialog: "dialog", DialogContent: "dialog-content", DialogTitle: "dialog-title", DialogHeader: "dialog-header", DialogDescription: "dialog-description" },
+    "@/components/ui/sheet": { Sheet: "sheet", SheetContent: "sheet-content", SheetTitle: "sheet-title", SheetHeader: "sheet-header", SheetDescription: "sheet-description" },
+    "./email-followup-panel.css": {},
+    "./email-ai-writing.css": {},
+    "@/components/email-ai-typewriter": { EmailAiTypewriter: "ai-typewriter" },
     "@/components/ui/popover": { Popover: "popover", PopoverContent: "popover-content", PopoverTitle: "popover-title", PopoverTrigger: "popover-trigger" },
     "@/lib/company-followup": dates, "@/lib/email-followup": rules,
   };
@@ -57,7 +61,10 @@ function panel(options: { delayStatus?: boolean; saved?: Record<string, unknown>
         return Response.json({ followup: saved });
       }
       calls.push(input);
-      if (input.action === "preview") return Response.json({ subject: "Re: Quote", body: "Do you have any questions about the quote?", baseline: ["crm-inquiry"] });
+      if (input.action === "preview") {
+        if (options.delayPreview) await new Promise<void>(resolve => { releasePreview = resolve; });
+        return Response.json({ subject: "Re: Quote", body: "Do you have any questions about the quote?", baseline: ["crm-inquiry"] });
+      }
       if (input.action === "save" && options.failSave) return Response.json({ error: "The reminder could not be saved." }, { status: 409 });
       saved = input.action === "cancel" ? { ...saved, status: "cancelled", revision: input.revision + 1 }
         : { id: input.id, kind: input.kind, purpose: input.purpose, due_at: input.dueAt, subject: input.subject, body: input.body, status: "scheduled", revision: input.revision + 1 };
@@ -75,7 +82,12 @@ function panel(options: { delayStatus?: boolean; saved?: Record<string, unknown>
   } }); };
   const flush = async () => { for (const effect of effects.splice(0)) effect(); await setImmediate(); };
   const button = (tree: Element, label: string) => { const result = elements(tree).find(node => node.type === "button" && text(node).startsWith(label)); assert.ok(result, label); return result; };
-  return { render, flush, button, calls, filters: () => [...followupConversationFilters(messages, indexFollowupActions(actions))], reads: () => statusReads, releaseStatus: () => releaseStatus?.() };
+  const finishWriting = () => {
+    const preview = elements(render()).find(node => node.type === "ai-typewriter");
+    assert.ok(preview, "A generated draft should animate before editing");
+    (preview.props.onComplete as () => void)();
+  };
+  return { render, flush, button, calls, finishWriting, filters: () => [...followupConversationFilters(messages, indexFollowupActions(actions))], reads: () => statusReads, releaseStatus: () => releaseStatus?.(), releasePreview: () => releasePreview?.() };
 }
 test("dialogs open immediately during a slow status read, then save the actual existing revision", async () => {
   const app = panel({ delayStatus: true, saved: { id: "existing-followup", revision: 7, kind: "reminder", status: "scheduled", due_at: new Date(Date.now() + 3600_000).toISOString() } });
@@ -83,7 +95,7 @@ test("dialogs open immediately during a slow status read, then save the actual e
   assert.equal(Boolean(app.button(tree, "Remind me").props.disabled), false);
   assert.equal(Boolean(app.button(tree, "AI follow-up").props.disabled), false);
   (app.button(tree, "Remind me").props.onClick as () => void)(); await app.flush(); tree = app.render();
-  assert.equal(elements(tree).find(node => node.type === "dialog")?.props.open, true);
+  assert.equal(elements(tree).find(node => node.type === "sheet")?.props.open, true);
   assert.equal(Boolean(app.button(tree, "Save reminder").props.disabled), true);
   assert.equal(app.reads(), 1, "Opening a dialog must not abort or restart its status read");
   app.releaseStatus(); await app.flush(); tree = app.render();
@@ -96,6 +108,7 @@ test("AI generation during the first status read cannot leave saving stuck in lo
   (app.button(tree, "AI follow-up").props.onClick as () => void)(); await app.flush(); tree = app.render();
   assert.equal(app.reads(), 1);
   app.releaseStatus(); await app.flush(); tree = app.render();
+  app.finishWriting(); tree = app.render();
   assert.equal(Boolean(app.button(tree, "Confirm follow-up").props.disabled), false);
 });
 test("a CRM message without an RFC ID enables Remind me and supports save and cancellation", async () => {
@@ -104,7 +117,7 @@ test("a CRM message without an RFC ID enables Remind me and supports save and ca
   let tree = app.render(); const remind = app.button(tree, "Remind me");
   assert.equal(Boolean(remind.props.disabled), false);
   (remind.props.onClick as () => void)(); tree = app.render();
-  assert.equal(elements(tree).find(node => node.type === "dialog")?.props.open, true);
+  assert.equal(elements(tree).find(node => node.type === "sheet")?.props.open, true);
   assert.deepEqual(app.filters(), [], "Opening the reminder dialog does not enroll the conversation");
   (app.button(tree, "Save reminder").props.onClick as () => void)(); await app.flush(); tree = app.render();
   assert.equal(app.calls.at(-1)?.messageId, "crm-inquiry");
@@ -122,6 +135,8 @@ test("a CRM message without an RFC ID enables AI follow-up, loads its draft, and
   const editor = elements(tree).find(node => node.type === "textarea");
   assert.match(String(editor?.props.value), /questions about the quote/);
   assert.deepEqual(app.filters(), [], "Generating a preview does not start AI follow-up");
+  assert.equal(Boolean(app.button(tree, "Confirm follow-up").props.disabled), true, "The entire draft must be revealed before confirming");
+  app.finishWriting(); tree = app.render();
   const confirm = app.button(tree, "Confirm follow-up"); assert.equal(Boolean(confirm.props.disabled), false);
   (confirm.props.onClick as () => void)(); await app.flush();
   assert.equal(app.calls.at(-1)?.messageId, "crm-inquiry"); assert.equal(app.calls.at(-1)?.kind, "ai");
@@ -131,6 +146,7 @@ test("a CRM message without an RFC ID enables AI follow-up, loads its draft, and
 test("dormant nurture is off by default and requires an explicit selection before confirming", async () => {
   const app = panel(); app.render(); await app.flush();
   let tree = app.render(); (app.button(tree, "AI follow-up").props.onClick as () => void)(); await app.flush(); tree = app.render();
+  app.finishWriting(); tree = app.render();
   const checkbox = elements(tree).find(node => node.type === "input" && node.props.type === "checkbox");
   assert.ok(checkbox); assert.equal(checkbox.props.checked, false);
   (checkbox.props.onChange as (event: unknown) => void)({ target: { checked: true } }); tree = app.render();
@@ -145,5 +161,31 @@ test("a failed reminder save does not enroll the conversation in a follow-up tab
   (app.button(tree, "Save reminder").props.onClick as () => void)(); await app.flush(); tree = app.render();
   assert.deepEqual(app.filters(), []);
   assert.match(text(tree), /reminder could not be saved/);
-  assert.equal(elements(tree).find(node => node.type === "dialog")?.props.open, true);
+  assert.equal(elements(tree).find(node => node.type === "sheet")?.props.open, true);
+});
+
+test("AI writing shows progress during the request and preserves the full draft after its reveal", async () => {
+  const app = panel({ delayPreview: true }); app.render(); await app.flush();
+  let tree = app.render(); (app.button(tree, "AI follow-up").props.onClick as () => void)(); tree = app.render();
+  assert.match(text(tree), /AI is writing/);
+  assert.doesNotMatch(text(tree), /Drafting your follow-up|Using this conversation for context/);
+  assert.equal(elements(tree).find(node => node.props["aria-busy"] === true)?.props["data-writing"], true);
+  assert.equal(Boolean(app.button(tree, "Confirm follow-up").props.disabled), true);
+  app.releasePreview(); await app.flush(); tree = app.render();
+  const preview = elements(tree).find(node => node.type === "ai-typewriter");
+  assert.equal(preview?.props.text, "Do you have any questions about the quote?");
+  app.finishWriting(); tree = app.render();
+  assert.equal(elements(tree).find(node => node.type === "textarea")?.props.disabled, false);
+  (app.button(tree, "Confirm follow-up").props.onClick as () => void)(); await app.flush();
+  assert.equal(app.calls.at(-1)?.body, "Do you have any questions about the quote?");
+});
+
+test("closing during AI generation prevents a late response from starting a writing animation", async () => {
+  const app = panel({ delayPreview: true }); app.render(); await app.flush();
+  let tree = app.render(); (app.button(tree, "AI follow-up").props.onClick as () => void)(); tree = app.render();
+  (app.button(tree, "Close").props.onClick as () => void)();
+  app.releasePreview(); await app.flush(); tree = app.render();
+  assert.equal(elements(tree).find(node => node.type === "sheet")?.props.open, false);
+  assert.equal(elements(tree).some(node => node.type === "ai-typewriter"), false);
+  assert.equal(elements(tree).find(node => node.type === "textarea")?.props.value, "");
 });

@@ -25,13 +25,13 @@ function SettingSwitch({ label, detail, checked, onChange, disabled }: { label: 
   </div>;
 }
 
-export function AiReplyInspector({ config, onChange, mailboxes, disabled }: { config: JsonConfig; onChange: (config: JsonConfig) => void; mailboxes: { id: string; label: string }[]; disabled: boolean }) {
+export function AiReplyInspector({ config, onChange, mailboxes, disabled, assignedSender = false }: { config: JsonConfig; onChange: (config: JsonConfig) => void; mailboxes: { id: string; label: string }[]; disabled: boolean; assignedSender?: boolean }) {
   const id = useId();
   const set = (key: string, value: JsonConfig[string]) => onChange({ ...config, [key]: value });
   const qualify = config.leadIntake === true;
 
   return <div className="ai-reply-settings">
-    <FlowSenderField compact value={String(config.mailboxId || "default")} onChange={value => set("mailboxId", value)} options={mailboxes} disabled={disabled} />
+    <FlowSenderField assignedSender={assignedSender} compact value={String(config.mailboxId || "default")} onChange={value => set("mailboxId", value)} options={mailboxes} disabled={disabled} />
 
     <fieldset className="ai-reply-purpose"><legend>Reply goal</legend><div className="ai-reply-purpose-grid">
       {[{ value: false, title: "Answer questions", icon: MessageSquare }, { value: true, title: "Collect requirements", icon: UserRoundCheck }].map(({ value, title, icon: Icon }) => <label key={title} className="ai-reply-purpose-card" data-selected={qualify === value} data-disabled={disabled || undefined}>

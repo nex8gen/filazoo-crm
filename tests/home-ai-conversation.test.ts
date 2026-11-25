@@ -43,6 +43,7 @@ for (const surface of ["home", "analytics"] as const) for (const mode of ["chat"
     function MascotComposer() {}
     function ResizeHandle() {}
     function StreamingText() {}
+    function ThinkingState() {}
     function HistoryMenu() {}
     const ui = new Proxy({}, { get: () => () => null });
     const requests: Record<string, unknown>[] = [];
@@ -67,7 +68,7 @@ for (const surface of ["home", "analytics"] as const) for (const mode of ["chat"
       "@/components/ui/ai-mascot-input": { AiMascotInput: MascotComposer },
       "@/components/column-resize-handle": { ColumnResizeHandle: ResizeHandle },
       "@/components/ai-history-menu": { AiHistoryMenu: HistoryMenu },
-      "@/components/ui/ai-agent-response": { StreamingText, ThinkingState: () => null },
+      "@/components/ui/ai-agent-response": { StreamingText, ThinkingState },
       "@/components/ui/ai-image-attachments": { useAiImageAttachments: () => ({ images: [], processing: false, clear() {}, setImages() {} }) },
       "@/lib/ai/chat-history": history, "@/lib/ai/research-request": researchRequest, "@/lib/ai/research-progress": researchProgress,
       "@/lib/ai/response-presentation": responsePresentation,
@@ -87,7 +88,12 @@ for (const surface of ["home", "analytics"] as const) for (const mode of ["chat"
         assert.equal(url, "/api/ai/assistant", "opening Home must never execute an agent action");
         if (outcome === "reconnect" && sessionInterruptions === 0) { sessionInterruptions++; return sessionResponse.workspaceSessionUnavailableResponse(); }
         requests.push(JSON.parse(init.body as string));
-        return Response.json(fail ? { error: "Temporarily unavailable" } : { output: "Here is your sales summary." }, { status: fail ? 503 : 200 });
+        if (fail) return Response.json({ error: "Temporarily unavailable" }, { status: 503 });
+        return researchProgress.withResearchProgress(new Request("https://crm.test", { headers: { Accept: researchProgress.researchStreamType } }), async (_report, track, activity) => {
+          await track("Loading workspace context", async () => {});
+          await track("Preparing your answer", async () => {});
+          return Response.json({ output: "Here is your sales summary.", activity });
+        });
       },
     });
     let launchRequest = { id: 1, mode, prompt: surface === "home" ? "Summarize my sales" : "Review workflow performance", submit: true, ...(surface === "analytics" ? { pathname: originalPathname } : {}) };
@@ -125,7 +131,12 @@ for (const surface of ["home", "analytics"] as const) for (const mode of ["chat"
     assert.equal((requests[0].messages as { content: string }[])[0].content, launchRequest.prompt);
     const result = render();
     if (fail) assert.equal(find(result, surface === "home" ? Composer : mode === "agent" ? MascotComposer : "textarea")?.props?.value, launchRequest.prompt, "failed sends remain editable for retry");
-    else assert.equal(find(result, StreamingText)?.props?.text, "Here is your sales summary.");
+    else {
+      assert.equal(find(result, StreamingText)?.props?.text, "Here is your sales summary.");
+      const activity = find(result, ThinkingState)?.props?.steps as researchProgress.AssistantActivity[];
+      assert.deepEqual(activity.map(step => step.label), ["Loading workspace context", "Preparing your answer"]);
+      assert.ok(activity.every(step => step.status === "complete"));
+    }
     (find(result, HistoryMenu)?.props?.onClose as () => void)();
     assert.equal(closes, 1, "back to overview closes the page view");
     render(false); render();

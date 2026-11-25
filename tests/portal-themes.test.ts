@@ -67,9 +67,11 @@ test("themes save independently, publishing selects one snapshot, and draft edit
   const studio = second.saved.themes!.find(theme => theme.id === first.themeId)!;
   const live = await api.savePortalDesign(studio.design, second.saved.revision, true, "admin", studio.id, "Studio live");
   assert.equal(live.liveThemeId, studio.id);
-  const edited = { ...studio.design, heading: "An unpublished change" };
+  const edited = { ...studio.design, heading: "An unpublished change", sections: studio.design.sections.map((section, index) => index ? section : { ...section, website: { html: "<h1>My website</h1>", css: "h1{color:green}" } }) };
   const saved = await api.savePortalDesign(edited, live.revision, false, "admin", studio.id, "Studio live");
   assert.notEqual(saved.published?.heading, "An unpublished change");
+  assert.equal(saved.draft.sections[0].website?.html, "<h1>My website</h1>");
+  assert.equal(saved.published?.sections[0].website, undefined);
   assert.equal((await api.getPublishedPortalDesign()).heading, studio.design.heading);
   const bloom = saved.themes!.find(theme => theme.id === second.themeId)!;
   assert.equal(bloom.design.theme, "soft");

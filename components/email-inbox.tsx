@@ -1,4 +1,5 @@
 "use client";
+import { notifyAiCreditsChanged } from "@/lib/billing/credit-events";
 import { NotificationToast } from "@/components/ui/notification-toast";
 
 import { CustomerTagSelect } from "@/components/customer-tag-select";
@@ -905,11 +906,14 @@ export function EmailInboxWorkspace({
             ...current,
             [message.id]: error instanceof Error ? error.message : "Unable to translate this email.",
           }));
-        }).finally(() => setTranslating((current) => {
-          const next = new Set(current);
-          next.delete(message.id);
-          return next;
-        }));
+        }).finally(() => {
+          notifyAiCreditsChanged();
+          setTranslating((current) => {
+            const next = new Set(current);
+            next.delete(message.id);
+            return next;
+          });
+        });
       }
     }, 0);
     return () => window.clearTimeout(timer);
@@ -954,6 +958,7 @@ export function EmailInboxWorkspace({
         }
       }).finally(() => {
         if (aiRequestId.current === requestId) setAiWriting(false);
+        notifyAiCreditsChanged();
       });
     }, 700);
     return () => {
@@ -1364,6 +1369,7 @@ export function EmailInboxWorkspace({
       if (isCurrent()) setNotice(error instanceof Error ? error.message : "Unable to prepare this AI reply. Please retry.");
     } finally {
       aiReplyInProgress.current = false;
+      notifyAiCreditsChanged();
       setAiReplyBusy(false);
       setAttachmentBusy(false);
     }

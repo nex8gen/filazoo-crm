@@ -54,7 +54,7 @@ export async function startFlowEmailDeliveryTest(input: FlowEmailDeliveryTestInp
   for (const action of plan) {
     const step = flowStepAtPath(input.flow, action.stepPath ?? [action.step - 1]);
     if (!step) throw new Error("The test action no longer exists.");
-    const mailbox = await getFlowTestMailbox(userId, step.config.mailboxId);
+    const mailbox = await getFlowTestMailbox(userId, step.config.mailboxId, input.flow.triggerConfig);
     if (!mailbox?.smtpHost || !mailbox.smtpUsername || !mailbox.smtpPassword) throw new Error("The test sender needs an active mailbox with complete SMTP settings.");
     if (step.type === "ai_auto_reply" && !hasFlowReplyProvider() && !await resolveGatewayTokenAsync()) throw new Error("Configure an AI provider before sending an AI test reply.");
   }
@@ -101,7 +101,7 @@ export async function processFlowEmailDeliveryTest(id: string, userId: string) {
     const action = row.plan[row.current_action];
     const step = flowStepAtPath(input.flow, action.stepPath ?? [action.step - 1]);
     if (!step) throw new Error("The test action no longer exists.");
-    const mailbox = await getFlowTestMailbox(userId, step.config.mailboxId);
+    const mailbox = await getFlowTestMailbox(userId, step.config.mailboxId, input.flow.triggerConfig);
     if (!mailbox?.smtpHost || !mailbox.smtpUsername || !mailbox.smtpPassword) throw new Error("The selected test sender mailbox is unavailable.");
     const today = new Date(); today.setUTCHours(0, 0, 0, 0);
     const [{ count: sentToday }, { count: suppressed }, { count: unsubscribed }] = await Promise.all([

@@ -1,6 +1,38 @@
 import "server-only";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 import { FlowPreparationRetry } from "../flow-execution-errors.ts";
+import { normalizeMailboxRows } from "../mailbox-utils.ts";
+import { resolveAssignedOrTeamSender } from "../flow-mailboxes.ts";
+
+/** Trigger delegation never grants access to an arbitrary personal account. */
+export async function validateAssignedCustomerSending(authorId: string, companyId?: string) {
+  const db = createSupabaseAdmin();
+  const { data: author } = await db.from("workspace_members").select("role,activated_at").eq("user_id", authorId).maybeSingle().throwOnError();
+  if (!author?.activated_at || !["admin", "operator", "bd_manager"].includes(author.role)) throw new Error("The workflow owner cannot send customer emails.");
+  if (["admin", "operator"].includes(author.role)) return;
+  const { data: pipeline } = companyId ? await db.from("pipeline").select("owner_id").eq("company_id", companyId).maybeSingle().throwOnError() : { data: null };
+  if (pipeline?.owner_id !== authorId) throw new Error("Workspace-wide assigned-user sending requires an administrator or operator. You can enable it for a workflow scoped to your own assigned customer.");
+}
+
+export async function assignedCustomerSender(authorId: string, companyId: string | null) {
+  const db = createSupabaseAdmin();
+  const [{ data: author }, { data: pipeline }] = await Promise.all([
+    db.from("workspace_members").select("user_id,role,activated_at").eq("user_id", authorId).maybeSingle().throwOnError(),
+    companyId ? db.from("pipeline").select("owner_id").eq("company_id", companyId).maybeSingle().throwOnError() : Promise.resolve({ data: null }),
+  ]);
+  if (!author?.activated_at || !["admin", "operator", "bd_manager"].includes(author.role)) throw new FlowPreparationRetry("The workflow owner can no longer send customer emails.", 3_600_000, "configuration");
+  const assignedUserId: string | null = pipeline?.owner_id ?? null;
+  const { data: assigned } = assignedUserId && assignedUserId !== authorId ? await db.from("workspace_members").select("user_id,role,activated_at").eq("user_id", assignedUserId).maybeSingle().throwOnError() : { data: assignedUserId ? author : null };
+  if (assignedUserId && assignedUserId !== authorId && !["admin", "operator"].includes(author.role))
+    throw new FlowPreparationRetry("This customer is assigned to another user. An administrator or operator must authorize assigned-user sending.", 3_600_000, "configuration");
+  const eligibleAssignee = assigned?.activated_at && ["admin", "operator", "bd_manager"].includes(assigned.role) ? assignedUserId : null;
+  let query = db.from("workspace_mailboxes").select("*").order("created_at", { ascending: false });
+  query = eligibleAssignee ? query.or(`type.eq.workspace,user_id.eq.${eligibleAssignee}`) : query.eq("type", "workspace");
+  const { data } = await query.throwOnError();
+  const mailbox = resolveAssignedOrTeamSender(normalizeMailboxRows(data), eligibleAssignee);
+  if (!mailbox) throw new FlowPreparationRetry("Connect an active team sending email or the assigned user's personal email to resume this workflow.", 3_600_000, "configuration");
+  return { mailbox, actorId: eligibleAssignee ?? authorId, assignedUserId };
+}
 
 export async function assignedFlowActor(authorId: string, companyId: string | null, pinned?: string) {
   if (!companyId) throw new FlowPreparationRetry("Assign this customer to a salesperson before sending.", 60_000, "data");

@@ -37,7 +37,7 @@ function fixture(options: { smtpFailure?: Error; providerStatus?: number; missin
     return query;
   } };
   const dependencies: Record<string, unknown> = {
-    "./flow-sender.ts": { assignedFlowCandidates: async () => ["owner"], assignedFlowActor: async () => "owner" },
+    "./flow-sender.ts": { validateAssignedCustomerSending: async () => {}, assignedFlowCandidates: async () => ["owner"], assignedFlowActor: async () => "owner" },
     "../outreach-policy.ts": outreach,
     "server-only": {}, "../supabase/admin.ts": { createSupabaseAdmin: () => admin }, "../env.ts": { env: { dryRun: true, DAILY_SEND_LIMIT: 20, BOUNCE_PAUSE_PERCENT: 3 } },
     "../flow-tree.ts": tree, "../flow-engine.ts": engine, "../mailbox-utils.ts": mailboxes, "../flow-mailboxes.ts": senders,
@@ -70,6 +70,17 @@ test("quick checks cover all action types and authenticate dependencies without 
   assert.ok(report.checks.some(check => check.id === "sending" && check.status === "warning"));
   assert.ok(!JSON.stringify(report).includes("private-password"));
   assert.ok(!JSON.stringify(report).includes("private-token"));
+});
+
+test("assigned-user trigger routing checks the team fallback instead of a fixed private sender", async () => {
+  const app = fixture();
+  app.db.workspace_mailboxes.push({ ...app.db.workspace_mailboxes[0], id: "team", type: "workspace", user_id: null, email: "team@example.com" });
+  app.flow.triggerConfig.senderRouting = "assigned_user_or_team";
+  const report = await app.check({ flow: app.flow, flowId: id }, viewer);
+  const senders = report.checks.find(check => check.id === "senders")!;
+  assert.equal(senders.status, "passed");
+  assert.match(senders.detail, /team fallback is authenticated/);
+  assert.ok(!JSON.stringify(senders).includes("private-password"));
 });
 
 test("a draft AI action does not require a live AI provider or sender check", async () => {

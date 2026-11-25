@@ -1,5 +1,7 @@
 import type { AppLanguage } from "../i18n.ts";
 import type { ResearchProgress } from "./research-progress.ts";
+import { publicResearchUrl } from "./public-research-url.ts";
+export { publicResearchUrl } from "./public-research-url.ts";
 
 export type ResearchSource = { id: string; label: string; url: string; recordedAt: string };
 export type CustomerResearch = {
@@ -13,20 +15,6 @@ export type CustomerResearch = {
   warning?: string;
 };
 export type ResearchIdentity = { name?: string; website?: string; email?: string; contact?: string; country?: string; city?: string };
-
-/** Only public web addresses may be passed to the browsing provider or rendered as links. */
-export function publicResearchUrl(value: string | undefined) {
-  if (!value?.trim() || value.length > 2_000) return undefined;
-  try {
-    const url = new URL(/^[a-z][a-z\d+.-]*:/i.test(value.trim()) ? value.trim() : `https://${value.trim()}`);
-    const host = url.hostname.toLowerCase().replace(/\.$/, "");
-    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || (url.port && !['80', '443'].includes(url.port))) return undefined;
-    // Exclude IP literals and non-public/internal names, including unusual numeric IPv4 forms normalized by URL.
-    if (!host.includes('.') || /^[\d.]+$/.test(host) || host.includes(':') || /(?:^|\.)(?:localhost|local|localdomain|internal|lan|onion|test|invalid|example|home\.arpa)$/.test(host)) return undefined;
-    url.hash = '';
-    return url.href;
-  } catch { return undefined; }
-}
 
 export function researchIdentity(identity: ResearchIdentity): ResearchIdentity {
   const website = publicResearchUrl(identity.website);

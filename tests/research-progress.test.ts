@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readResearchResponse, researchStreamType, withResearchProgress, type ResearchProgress } from "../lib/ai/research-progress.ts";
+import { readResearchResponse, researchStreamType, withResearchProgress, type ResearchProgress, type AssistantActivity } from "../lib/ai/research-progress.ts";
 
 const source = { id: "W1", label: "Official site", url: "https://3dnearyou.com/", recordedAt: "2026-11-06T08:00:00Z" };
 const progress: ResearchProgress = { phase: "reading", sources: [source], queries: ['"3D Near You"'], visitedUrls: [] };
@@ -54,4 +54,62 @@ test("closing the browser stream does not turn final research completion into an
   const response = await withResearchProgress(req(), async report => { report(progress); await finished; report({ ...progress, phase: "writing" }); return Response.json({ output: "Complete" }); });
   await response.body!.cancel(); finish();
   await finished;
+});
+
+test("ordinary chat exposes the active work before the provider finishes and retains completed stages", async () => {
+  let finish: () => void = () => {};
+  const waiting = new Promise<void>(resolve => { finish = resolve; });
+  let finished = false;
+  const response = await withResearchProgress(req(), async (_report, track, activity) => {
+    await track("Loading workspace context", async () => ({ loaded: true }));
+    const output = await track("Preparing your answer", async () => { await waiting; finished = true; return "Answer"; });
+    return Response.json({ output, activity });
+  });
+  const seen: AssistantActivity[][] = [];
+  const result = await readResearchResponse<{ output: string; activity: AssistantActivity[] }>(response, () => assert.fail("Chat must not invent web research"), steps => {
+    seen.push(steps);
+    if (steps.some(step => step.label === "Preparing your answer" && step.status === "active")) {
+      assert.equal(finished, false);
+      finish();
+    }
+  });
+  assert.equal(result.output, "Answer");
+  assert.deepEqual(seen.at(-1)?.map(step => step.status), ["complete", "complete"]);
+  assert.deepEqual(result.activity.map(step => step.label), ["Loading workspace context", "Preparing your answer"]);
+  assert.ok(result.activity.every(step => typeof step.durationMs === "number"));
+});
+
+test("parallel record lookups keep independent statuses and failures never expose internal exception text", async () => {
+  let finish: () => void = () => {};
+  const waiting = new Promise<void>(resolve => { finish = resolve; });
+  const response = await withResearchProgress(req(), async (_report, track) => {
+    await Promise.allSettled([
+      track("Looking up saved records", async () => { await waiting; return []; }, "companies"),
+      track("Looking up saved records", async () => { throw new Error("PRIVATE_DATABASE_ERROR"); }, "products"),
+    ]);
+    return Response.json({ error: "Unable to load records" }, { status: 503 });
+  });
+  const seen: AssistantActivity[][] = [];
+  await assert.rejects(readResearchResponse(response, () => {}, steps => {
+    seen.push(steps);
+    if (steps.some(step => step.status === "failed")) finish();
+  }), /Unable to load records/);
+  assert.equal(new Set(seen.at(-1)?.map(step => step.id)).size, 2);
+  assert.deepEqual(seen.at(-1)?.map(step => step.status), ["complete", "failed"]);
+  assert.doesNotMatch(JSON.stringify(seen), /PRIVATE_DATABASE_ERROR/);
+});
+
+test("web research adds real search and reading stages without duplicating phase updates", async () => {
+  const response = await withResearchProgress(req(), async report => {
+    report({ ...progress, phase: "searching" });
+    report({ ...progress, phase: "searching", queries: ["Another query"] });
+    report(progress);
+    report({ ...progress, phase: "writing" });
+    return Response.json({ output: "Answer" });
+  });
+  let latest: AssistantActivity[] = [];
+  await readResearchResponse(response, () => {}, steps => { latest = steps; });
+  assert.deepEqual(latest.map(step => step.label), ["Searching the web", "Reading company websites"]);
+  assert.equal(latest[0].detail, "Another query");
+  assert.ok(latest.every(step => step.status === "complete"));
 });

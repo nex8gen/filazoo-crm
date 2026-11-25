@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { flowMailboxOptions, flowSenderOptions, resolveFlowSender, selectedFlowSender, visibleFlowSender } from "../lib/flow-mailboxes.ts";
+import { flowMailboxOptions, flowSenderOptions, resolveFlowSender, selectedFlowSender, visibleFlowSender, resolveAssignedOrTeamSender } from "../lib/flow-mailboxes.ts";
 import { normalizeMailboxRows } from "../lib/mailbox-utils.ts";
 
 function inventory() {
@@ -10,6 +10,20 @@ function inventory() {
     { id: "other", type: "personal", user_id: "other-owner", email: "other@example.com", is_default: true },
   ].map((row) => ({ ...row, is_active: true, smtp_host: "smtp.example.com", smtp_username: row.email, smtp_password: "secret" }))));
 }
+
+test("explicit assigned-user routing prefers a ready personal sender and otherwise uses the team", () => {
+  const mailboxes = inventory();
+  assert.equal(resolveAssignedOrTeamSender(mailboxes, "owner")?.id, "mine");
+  assert.equal(resolveAssignedOrTeamSender(mailboxes, "other-owner")?.id, "other");
+  assert.equal(resolveAssignedOrTeamSender(mailboxes, null)?.id, "team");
+  assert.equal(resolveAssignedOrTeamSender(mailboxes, "unassigned")?.id, "team");
+  mailboxes[1].isActive = false;
+  assert.equal(resolveAssignedOrTeamSender(mailboxes, "owner")?.id, "team");
+  mailboxes[1].isActive = true; mailboxes[1].sendConfigured = false;
+  assert.equal(resolveAssignedOrTeamSender(mailboxes, "owner")?.id, "team");
+  mailboxes[0].isActive = false;
+  assert.equal(resolveAssignedOrTeamSender(mailboxes, "owner"), null);
+});
 
 test("flow sender choices show each own or team account once, without other users or sender rules", () => {
   const mailboxes = inventory();

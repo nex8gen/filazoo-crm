@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { blankStep, flowInputSchema, defaultFlowInput } from "../lib/flows.ts";
 import { calculateWaitUntil, simulateFlow, triggerMatches, type FlowFacts } from "../lib/flow-engine.ts";
-import { flowReplyInstruction, resolveFlowReply, shouldAttachFlowCatalog, resolveFlowCatalog, flowReplyContainsChinese } from "../lib/ai/flow-reply.ts";
+import { flowReplyInstruction, resolveFlowReply, shouldAttachFlowCatalog, resolveFlowCatalog, flowReplyContainsChinese, flowAuthoredText, explicitFlowCatalogRequest, FlowReplyNotNeeded, flowCatalogAttached } from "../lib/ai/flow-reply.ts";
 import type { InvoiceProduct } from "../lib/invoice-links.ts";
 
 const facts: FlowFacts = { customerReplied: true, openedEmail: false, clickedLink: false, category: null, segment: "Reseller", country: "US", companyStatus: "new", pipelineStage: "new", fitScore: 5 };
@@ -106,4 +106,25 @@ test("Chinese prose is detected while supplied proper names are preserved", () =
   assert.equal(flowReplyContainsChinese({ subject: "Hello", body: "您好，请确认数量。" }, []), true);
   assert.equal(flowReplyContainsChinese({ subject: "产品目录", body: "Hello" }, []), true);
   assert.equal(flowReplyContainsChinese({ subject: "Hello", body: "Hi 李明, here is the PLA catalog." }, ["李明"]), false);
+});
+
+test("catalog requests use authored text and ignore Tencent, Gmail and mobile-signature quotes", () => {
+  const current = "OK\n\nSent&nbsp;from&nbsp;my&nbsp;iPhone\n\n------------------ Original ------------------\nFrom: sales@example.test\nDate: Yesterday\nPlease send me the PLA catalog.";
+  assert.equal(flowAuthoredText(current), "OK");
+  assert.equal(explicitFlowCatalogRequest(current), false);
+  assert.equal(explicitFlowCatalogRequest("Thanks\n\nOn Tuesday, Sales wrote:\nPlease send the catalog."), false);
+  for (const text of ["Can you send me the PLA catalog?", "Please resend your catelog", "I need your product list.", "The catalog again please"]) assert.equal(explicitFlowCatalogRequest(text), true, text);
+  for (const text of ["Don't send a catalog", "No catalog please", "Do not attach the catalog", "Thanks for the catalog"]) assert.equal(explicitFlowCatalogRequest(text), false, text);
+});
+
+test("flow decisions stop unneeded replies, hand unsupported work to review and reject questionnaires", () => {
+  assert.throws(() => resolveFlowReply(JSON.stringify({ action: "skip", subject: "Acknowledgment", body: "", quotes: [] }), [], false), FlowReplyNotNeeded);
+  assert.throws(() => resolveFlowReply(JSON.stringify({ action: "review", subject: "Invoice request", body: "", quotes: [] }), [], false), /manual review/);
+  assert.throws(() => resolveFlowReply(output("Which product? Which color? What quantity?"), [], false), /too many customer questions/);
+  assert.throws(() => resolveFlowReply(output(""), [], false), /empty reply/);
+});
+
+test("catalog delivery evidence distinguishes PDFs from signature images and other attachments", () => {
+  for (const attachments of [null, [], [{ filename: "footer.png", cid: "footer" }], [{ filename: "invoice.pdf" }], [{ filename: "catalog.pdf", cid: "inline" }]]) assert.equal(flowCatalogAttached(attachments), false);
+  assert.equal(flowCatalogAttached([{ filename: "Filazoo-product-catalog.pdf" }, { filename: "footer.png", cid: "footer" }]), true);
 });

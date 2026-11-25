@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { publicResearchUrl } from "./ai/customer-research.ts";
+import { publicResearchUrl } from "./ai/public-research-url.ts";
 import { buyerRoles, buyerRoleLabels, leadAudienceSchema, qualificationFromChecks, type LeadCheck, type QualificationStatus } from "./lead-prospecting.ts";
 
 const text = (max: number) => z.string().trim().max(max);

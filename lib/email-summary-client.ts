@@ -1,4 +1,5 @@
 import { parseEmailSummary } from "./ai/email-summary.ts";
+import { notifyAiCreditsChanged } from "./billing/credit-events.ts";
 
 const pending = new Map<string, Promise<{ summary: ReturnType<typeof parseEmailSummary>; cached: boolean; generatedAt?: string }>>();
 
@@ -35,6 +36,6 @@ export function requestEmailSummary(body: string, refresh = false, fetcher: type
     }
   })();
   pending.set(key, work);
-  void work.finally(() => { if (pending.get(key) === work) pending.delete(key); }).catch(() => {});
+  void work.finally(() => { notifyAiCreditsChanged(); if (pending.get(key) === work) pending.delete(key); }).catch(() => {});
   return work;
 }

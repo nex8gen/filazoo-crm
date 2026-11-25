@@ -54,6 +54,22 @@ test("trigger overview contains summaries and preview, with filters kept out of 
   assert.equal(app.previews, 1);
 });
 
+test("trigger sender routing is opt-in, persists without changing action senders, and respects read-only mode", () => {
+  const app = harness();
+  const sender = elements(app.render()).find(node => node.type === "Checkbox")!;
+  assert.equal(sender.props.checked, false);
+  (sender.props.onCheckedChange as (value: boolean) => void)(true);
+  assert.equal(app.flow.triggerConfig.senderRouting, "assigned_user_or_team");
+  assert.equal(app.writes, 1);
+  assert.deepEqual(app.flow.steps, flows.defaultFlowInput.steps);
+  const disabled = harness(app.flow, true);
+  const locked = elements(disabled.render()).find(node => node.type === "Checkbox")!;
+  assert.equal(locked.props.disabled, true);
+  (locked.props.onCheckedChange as (value: boolean) => void)(false);
+  assert.equal(disabled.flow.triggerConfig.senderRouting, "assigned_user_or_team");
+  assert.equal(disabled.writes, 0);
+});
+
 test("the navigation guard includes pending profile filters before the trigger is applied", () => {
   const app = harness();
   click(app.render(), "Add");

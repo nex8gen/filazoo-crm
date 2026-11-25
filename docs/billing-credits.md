@@ -100,10 +100,20 @@ ledger or checkout controls. The overview uses a summary-only database response;
 it does not query or return internal AI request history. Active team membership
 is counted separately from subscription seats. Refresh is user initiated, with
 loading and retry states rather than background polling.
-The sidebar's AI usage shortcut opens a compact balance popover. Its member-safe
+The sidebar's AI usage shortcut shows whole credits rounded down, with no decimal
+points, and links to the credit settings. A positive balance below one credit
+shows `<1`; fractional usage remains precise in the ledger. Its member-safe
 `/api/ai/credits` endpoint derives the actor and workspace from the signed-in
-session and returns only credit totals and account availability. It reads on
-open or manual refresh, aborts when closed and does not poll while idle.
+session and returns only credit totals and account availability. It refreshes
+after interactive chat and email AI tasks, on focus, and once per minute while
+the page is visible. Pending reads are aborted on unmount; a completion during
+an in-flight read queues another read so the new deduction is not missed.
+
+Text generation, native Agent tools and native Google web research all enforce
+the wallet before contacting the provider, including requests with an injected
+history-tracking transport. Already metered transports are reused to avoid
+double charging. Native research reserves for opaque search/URL context and
+settles SDK token totals plus the reserved search fee.
 
 Complimentary subscriptions are private, server-managed grants rather than paid
 orders. Catalog v4 grants apply the selected workspace package's shared capacity

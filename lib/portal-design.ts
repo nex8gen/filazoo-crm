@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { PortalInvoice, PortalMessage, PortalShipment } from "./customer-portal.ts";
 import { invoiceLabel } from "./invoices.ts";
+import { sanitizePortalWebsite } from "./portal-website.ts";
 
 export const portalSectionTypes = ["overview", "tracking", "invoice", "messages", "content"] as const;
 export const portalSectionSchema = z.object({
@@ -9,6 +10,7 @@ export const portalSectionSchema = z.object({
   title: z.string().trim().min(1).max(80),
   body: z.string().trim().max(2000),
   enabled: z.boolean(),
+  website: z.object({ html: z.string().max(60000), css: z.string().max(20000) }).strict().transform(sanitizePortalWebsite).optional(),
 }).strict();
 export const portalDesignSchema = z.object({
   brandName: z.string().trim().min(1).max(80),

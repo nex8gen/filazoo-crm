@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { publicResearchUrl, researchCustomer, researchIdentity } from "../lib/ai/customer-research.ts";
 import { companyChatSchema, companyChatInstruction } from "../lib/ai/company-chat.ts";
 import { workspaceAssistantSchema, workspaceAssistantInstruction } from "../lib/ai/workspace-assistant.ts";
+import * as publicUrls from "../lib/ai/public-research-url.ts";
 
 const identity = { name: "Example Print", website: "example.com", email: "buyer@example.com", country: "US" };
 test("customer research always delegates to Gateway with public identity and request context", async () => {
@@ -14,6 +15,7 @@ test("customer research always delegates to Gateway with public identity and req
   const exports: { researchCustomer?: typeof researchCustomer } = {};
   const code = ts.transpileModule(readFileSync(new URL("../lib/ai/customer-research.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   vm.runInNewContext(code, { exports, URL, Date, fetch, require: (name: string) => {
+    if (name === "./public-research-url.ts") return publicUrls;
     assert.equal(name, "./gateway-research.ts");
     return { researchWithGateway: async (input: Record<string, unknown>) => { captured = input; return expected; } };
   } });

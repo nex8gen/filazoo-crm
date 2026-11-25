@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useEffectEvent, useRef, useState } from "react";
 
 function sharedPrefix(previous: string, next: string) {
   let length = 0;
@@ -8,10 +8,11 @@ function sharedPrefix(previous: string, next: string) {
   return next.slice(0, length);
 }
 
-export const EmailAiTypewriter = memo(function EmailAiTypewriter({ text, updating }: { text: string; updating: boolean }) {
+export const EmailAiTypewriter = memo(function EmailAiTypewriter({ text, updating, onComplete }: { text: string; updating: boolean; onComplete?: () => void }) {
   const [revealed, setRevealed] = useState("");
   const revealedRef = useRef("");
   const visible = text.startsWith(revealed) ? revealed : sharedPrefix(revealed, text);
+  const complete = useEffectEvent(() => onComplete?.());
 
   useEffect(() => {
     const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -29,6 +30,7 @@ export const EmailAiTypewriter = memo(function EmailAiTypewriter({ text, updatin
       revealedRef.current = next;
       setRevealed(next);
       if (progress < 1) frame = window.requestAnimationFrame(tick);
+      else complete();
     };
     frame = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(frame);

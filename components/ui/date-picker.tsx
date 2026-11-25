@@ -12,7 +12,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
-const MultiMonthCalendar = dynamic(() => import("@/components/ui/calendar").then(module => module.MultiMonthCalendar));
+const MultiMonthCalendar = dynamic(() => import("@/components/ui/calendar").then(module => module.MultiMonthCalendar), {
+  // Next's App Router only adds a local Suspense boundary when loading is set.
+  // Keep a first calendar download from suspending the surrounding page/drawer.
+  loading: () => <div role="status" aria-label="Loading calendar" className="h-80 w-[min(34rem,calc(100vw-3rem))] animate-pulse rounded-lg bg-muted/40 motion-reduce:animate-none" />,
+});
 
 export type DatePickerProps = {
   value: string;

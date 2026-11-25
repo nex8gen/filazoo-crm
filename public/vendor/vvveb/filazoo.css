@@ -1,0 +1,8 @@
+:root{--bs-primary:#25865b;--bs-primary-rgb:37,134,91;--bs-border-radius:10px;--bs-body-font-family:Arial,sans-serif}
+body{font-family:Arial,sans-serif!important;--builder-sidebar-width:0px;--builder-bottom-panel-height:0px}.sidebar{display:none!important}#container>.main{margin-left:0!important;width:100%!important}#vvveb-builder{--builder-left-panel-width:260px;--builder-right-panel-width:280px}
+#top-panel{background:var(--bs-body-bg)!important;border-bottom:1px solid var(--bs-border-color);box-shadow:none!important}
+#top-panel .btn{border-radius:8px}#left-panel,#right-panel{background:var(--bs-body-bg)!important}
+#filemanager,#toggle-file-manager-btn,.menu-toggle,#download-btn,.save-btn,.btn-preview-url,#new-file-btn,#designer-mode-btn,#toggle-hidden,#code-editor-btn,#bottom-panel,.btn-dark-mode,[data-vvveb-action="saveReusable"],[data-bs-target="#ai-assistant-modal"],[data-bs-target="#media-modal"],#styles-tab,input[type="file"]{display:none!important}
+#vvveb-builder #iframe-layer{bottom:0!important}#vvveb-builder #canvas{bottom:0!important}
+.btn-primary{background-color:#25865b!important;border-color:#25865b!important}.components-list li ol li,.blocks-list li ol li{border-radius:12px!important}
+@media(max-width:900px){#vvveb-builder{--builder-left-panel-width:200px;--builder-right-panel-width:240px}}
