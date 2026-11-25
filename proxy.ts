@@ -13,9 +13,9 @@ export async function proxy(request: NextRequest) {
     catch { return new NextResponse("This portal is temporarily unavailable.", { status: 503, headers: customerHeaders }); }
     if (!domain || domain.status !== "connected") return new NextResponse("This portal domain is not connected.", { status: 404, headers: customerHeaders });
     if (request.nextUrl.pathname.startsWith("/customer/legacy/")) return new NextResponse("Page not found.", { status: 404, headers: customerHeaders });
-    if (request.nextUrl.pathname === "/") {
+    if (request.nextUrl.pathname === "/" || /^\/(account|pages\/[A-Za-z0-9_-]{1,64})$/.test(request.nextUrl.pathname)) {
       const url = request.nextUrl.clone();
-      url.pathname = "/customer/domain";
+      url.pathname = `/customer/domain${request.nextUrl.pathname === "/" ? "" : request.nextUrl.pathname}`;
       return NextResponse.rewrite(url, { headers: customerHeaders });
     }
     if (!request.nextUrl.pathname.startsWith("/customer/") && !request.nextUrl.pathname.startsWith("/api/customer/")) return new NextResponse("Page not found.", { status: 404, headers: customerHeaders });

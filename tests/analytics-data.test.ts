@@ -31,7 +31,6 @@ function load(options: { denied?: boolean; failed?: string; total?: number; page
     "../analytics-dashboard.ts": analytics,
     "../auth.ts": { requireWorkspaceMember: async () => { if (options.denied) throw new Error("Denied"); authorized = true; return { id: "viewer" }; } },
     "../supabase/admin.ts": { createSupabaseAdmin: () => client },
-    "./inventory.ts": { getInventoryState: async () => ({ status: { configured: false, stale: false, lastSyncedAt: null }, snapshots: [] }) },
   };
   const exports = {} as { getAnalyticsDashboardData: () => Promise<analytics.AnalyticsDashboardData> };
   const code = ts.transpileModule(readFileSync(new URL("../lib/data/analytics.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -50,14 +49,14 @@ test("analytics paginates past 5000 rows, including a smaller Data API page cap"
   assert.equal("estimatedValue" in result.companies[0], false);
   assert.equal("stage" in result.companies[0], false);
 });
-test("private catalogs, assigned tasks and personal AI usage stay scoped to the viewer", async () => {
+test("the dashboard loads only its visible reports and scopes private catalogs to the viewer", async () => {
   const { api, calls } = load();
   await api.getAnalyticsDashboardData();
-  for (const [table, field] of [["catalogs", "user_id"], ["crm_tasks", "assigned_to"], ["ai_usage_events", "user_id"]]) {
-    assert.ok(calls.some(call => call.table === table && call.method === "eq" && call.args[0] === field && call.args[1] === "viewer"));
-  }
+  assert.deepEqual(new Set(calls.map(call => call.table)), new Set([
+    "catalogs", "companies", "products", "purchase_orders", "invoices", "invoice_payments", "workspace_members",
+  ]));
+  assert.ok(calls.some(call => call.table === "catalogs" && call.method === "eq" && call.args[0] === "user_id" && call.args[1] === "viewer"));
   assert.ok(calls.some(call => call.table === "companies" && call.method === "or" && call.args[0] === "source.is.null,source.neq.sample_seed"));
-  assert.ok(calls.some(call => call.table === "flow_runs" && call.method === "is" && call.args[0] === "flows.trigger_config->>flowScope"));
 });
 test("one backend failure marks the source unavailable and preserves other reports", async () => {
   const data = await load({ failed: "invoices" }).api.getAnalyticsDashboardData();

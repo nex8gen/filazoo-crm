@@ -1,0 +1,22 @@
+.dashboard { container-type: inline-size; display: grid; align-content: start; gap: 14px; min-width: 0; }
+.charts, .details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; min-width: 0; }
+.trend { min-width: 0; padding-block: 18px 10px; }
+.chartHeader { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 0 20px 12px; }
+.chartValue { display: block; margin-top: 7px; font-size: 1.7rem; font-weight: 450; letter-spacing: -.035em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.switcher { display: flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 9px; background: color-mix(in srgb, var(--border) 45%, transparent); }
+.switcher button { padding: 5px 8px; border-radius: 6px; color: var(--muted-foreground); font-size: .7rem; cursor: pointer; }
+.switcher button[aria-pressed="true"] { background: var(--card); color: var(--foreground); box-shadow: 0 1px 3px #00000008; }
+.switcher button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.products { display: grid; gap: 17px; margin-top: 22px; }
+.productLabel { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 6px; font-size: .75rem; }
+.productLabel > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.productLabel > span:last-child { flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.productLabel small { margin-left: 5px; color: var(--muted-foreground); }
+.productTrack { height: 7px; overflow: hidden; border-radius: 4px; background: color-mix(in srgb, var(--border) 55%, transparent); }
+.productTrack i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #fa937c, #e65596 43%, #5886de); }
+.sourceNotice { margin: 0; color: var(--muted-foreground); font-size: .75rem; }
+.unavailable { display: grid; place-items: center; min-height: 256px; font-size: .8rem; color: var(--muted-foreground); }
+@container (max-width: 700px) {
+  .charts, .details { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .chartHeader { padding-inline: 16px; }
+}

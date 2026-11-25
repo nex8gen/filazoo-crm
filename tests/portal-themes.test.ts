@@ -6,6 +6,8 @@ import vm from "node:vm";
 import ts from "typescript";
 import * as designTools from "../lib/portal-design.ts";
 import * as themeTools from "../lib/portal-themes.ts";
+import { portalWebsiteDesign } from "../lib/portal-website-design.ts";
+import { createWebsiteBlock, websiteSectionBlocks } from "../lib/portal-website-blocks.ts";
 
 test("every library template is valid and older saved portals retain their draft and live theme", () => {
   assert.equal(themeTools.portalTemplates.length, 6);
@@ -67,11 +69,9 @@ test("themes save independently, publishing selects one snapshot, and draft edit
   const studio = second.saved.themes!.find(theme => theme.id === first.themeId)!;
   const live = await api.savePortalDesign(studio.design, second.saved.revision, true, "admin", studio.id, "Studio live");
   assert.equal(live.liveThemeId, studio.id);
-  const edited = { ...studio.design, heading: "An unpublished change", sections: studio.design.sections.map((section, index) => index ? section : { ...section, website: { html: "<h1>My website</h1>", css: "h1{color:green}" } }) };
+  const edited = { ...studio.design, heading: "An unpublished change" };
   const saved = await api.savePortalDesign(edited, live.revision, false, "admin", studio.id, "Studio live");
   assert.notEqual(saved.published?.heading, "An unpublished change");
-  assert.equal(saved.draft.sections[0].website?.html, "<h1>My website</h1>");
-  assert.equal(saved.published?.sections[0].website, undefined);
   assert.equal((await api.getPublishedPortalDesign()).heading, studio.design.heading);
   const bloom = saved.themes!.find(theme => theme.id === second.themeId)!;
   assert.equal(bloom.design.theme, "soft");
@@ -91,4 +91,38 @@ test("duplicating a theme creates an independent draft and missing theme IDs can
   const edited = await api.savePortalDesign({ ...source.design, heading: "Changed copy" }, copy.saved.revision, false, "admin", copy.themeId);
   assert.equal(edited.themes!.find(theme => theme.id === first.themeId)?.design.heading, source.design.heading);
   await assert.rejects(api.savePortalDesign(source.design, edited.revision, false, "admin", "missing"), /no longer/);
+});
+
+test("website page edits persist with the selected theme and only reach the published site after publishing", async () => {
+  const { api } = dataModule();
+  const added = await api.addPortalTheme(0, "admin", { templateId: "studio" });
+  const theme = added.saved.themes!.find(item => item.id === added.themeId)!;
+  const website = portalWebsiteDesign(theme.design);
+  website.pages[0].sections[0].title = "Our business homepage";
+  const draft = await api.savePortalDesign({ ...theme.design, website }, added.saved.revision, false, "admin", theme.id);
+  assert.equal(draft.themes!.find(item => item.id === theme.id)?.design.website?.pages[0].sections[0].title, "Our business homepage");
+  assert.equal((await api.getPublishedPortalDesign()).website, undefined);
+  const live = await api.savePortalDesign({ ...theme.design, website }, draft.revision, true, "admin", theme.id);
+  assert.equal((await api.getPublishedPortalDesign()).website?.pages[0].sections[0].title, "Our business homepage");
+  const nextWebsite = structuredClone(website);
+  nextWebsite.pages[0].sections[0].title = "Unpublished homepage";
+  await api.savePortalDesign({ ...theme.design, website: nextWebsite }, live.revision, false, "admin", theme.id);
+  assert.equal((await api.getPublishedPortalDesign()).website?.pages[0].sections[0].title, "Our business homepage");
+});
+
+test("nested element settings survive saving and publication while later drafts stay private", async () => {
+  const { api } = dataModule();
+  const added = await api.addPortalTheme(0, "admin", { templateId: "studio" });
+  const theme = added.saved.themes!.find(item => item.id === added.themeId)!;
+  const website = portalWebsiteDesign(theme.design);
+  website.pages[0].sections[0].blocks = websiteSectionBlocks(website.pages[0].sections[0], { brandName: theme.design.brandName, supportEmail: "", pages: website.pages, pageId: "home" });
+  website.pages[0].sections[0].blocks.push({ ...createWebsiteBlock("group", "group"), style: { columns: 2, padding: 20 }, children: [{ ...createWebsiteBlock("heading", "child"), text: "Published nested heading", style: { fontSize: 42, color: "#123456" } }] });
+  const live = await api.savePortalDesign({ ...theme.design, website }, added.saved.revision, true, "admin", theme.id);
+  const stored = await api.getPublishedPortalDesign();
+  assert.equal(stored.website?.pages[0].sections[0].blocks?.at(-1)?.children?.[0].text, "Published nested heading");
+  assert.equal(stored.website?.pages[0].sections[0].blocks?.at(-1)?.children?.[0].style?.fontSize, 42);
+  const next = structuredClone(website);
+  next.pages[0].sections[0].blocks!.at(-1)!.children![0].text = "Unpublished nested heading";
+  await api.savePortalDesign({ ...theme.design, website: next }, live.revision, false, "admin", theme.id);
+  assert.equal((await api.getPublishedPortalDesign()).website?.pages[0].sections[0].blocks?.at(-1)?.children?.[0].text, "Published nested heading");
 });

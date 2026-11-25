@@ -6,7 +6,7 @@ import { EmptyState } from "@/components/data-state";
 import { PackageSearch } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useActionState, useState } from "react";
-import { Download, FileText, MailPlus, Plus } from "lucide-react";
+import { Building2, Download, FileText, MailPlus, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { createCatalog, createEmailDraft, type CrmActionState } from "@/app/crm-actions";
 import { Button } from "@/components/ui/button";
@@ -15,11 +15,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { type Company, type ContactOption, type Product } from "@/lib/types";
 import { companyExportCsv } from "@/lib/company-export";
+import "./company-profile-sheet.css";
+import "./company-create-sheet.css";
 
 const AddCompanyForm = dynamic(() => import("@/components/add-company-form").then(module => module.AddCompanyForm), {
-  loading: () => <p role="status" className="py-8 text-sm text-muted-foreground">Loading company form…</p>,
+  loading: () => <div className="company-create-loading" role="status">Loading company form…</div>,
 });
 
 function ActionMessage({ state }: { state: CrmActionState }) {
@@ -50,16 +53,23 @@ function useActionDialog(actionHandler: (state: CrmActionState, formData: FormDa
 export function AddCompanyButton({ canWrite, compact = false, existingSegments, label, onCreated }: { canWrite: boolean; compact?: boolean; existingSegments?: string[]; label?: string; onCreated?: (id: string) => void }) {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
+  const customer = Boolean(label?.toLowerCase().includes("customer"));
+  const title = customer ? "Add customer" : "Add company";
   return (
-    <>
-      <Button size="sm" disabled={!canWrite} title={canWrite ? "Add a company" : "Viewer access is read-only"} onClick={() => setOpen(true)}><Plus />{label ?? (compact ? "Add" : "Add company")}</Button>
-      <Dialog open={open} onOpenChange={next => { if (!pending) setOpen(next); }}>
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader><DialogTitle>Add company</DialogTitle><DialogDescription>Create a company profile, optional contact, and audit event.</DialogDescription></DialogHeader>
-          {open ? <AddCompanyForm existingSegments={existingSegments} onCreated={onCreated} onPendingChange={setPending} onClose={() => { setOpen(false); setPending(false); }} /> : null}
-        </DialogContent>
-      </Dialog>
-    </>
+    <Sheet open={open} onOpenChange={next => { if (!pending) setOpen(next); }}>
+      <SheetTrigger disabled={!canWrite} render={<Button size="sm" title={canWrite ? title : "Viewer access is read-only"} />}><Plus />{label ?? (compact ? "Add" : title)}</SheetTrigger>
+      <SheetContent side="right" className="company-profile-sheet company-create-sheet" overlayClassName="company-profile-overlay company-create-overlay" showCloseButton={false}>
+        <header className="company-create-header">
+          <span className="company-create-icon" aria-hidden="true"><Building2 /></span>
+          <div className="min-w-0 flex-1">
+            <SheetTitle>{title}</SheetTitle>
+            <SheetDescription>Add company details and a primary contact to get started.</SheetDescription>
+          </div>
+          <SheetClose disabled={pending} render={<Button type="button" variant="ghost" size="icon-sm" aria-label="Close form" />}><X /></SheetClose>
+        </header>
+        <AddCompanyForm existingSegments={existingSegments} submitLabel={title} onCreated={onCreated} onPendingChange={setPending} onClose={() => { setOpen(false); setPending(false); }} />
+      </SheetContent>
+    </Sheet>
   );
 }
 

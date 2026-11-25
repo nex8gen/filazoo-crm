@@ -178,6 +178,7 @@ export function syntheticServerData(inject = false) {
 export function syntheticRead(input: CrmRead, data: ReturnType<typeof syntheticServerData>, scenarioName: string) {
   const invoice = { ...data.invoice, status: /portal_reply|update_shipment|invoice_lifecycle/.test(scenarioName) ? "issued" : "draft" };
   const records: Record<CrmRead["resource"], unknown[]> = {
+    customer_insights: [{ id: data.currentCompany.id, name: data.currentCompany.fields.name, href: `/companies/${data.currentCompany.id}`, profile: data.currentCompany.fields, email: { messages: 1, inbound: 1, outbound: 0, conversations: 1, records: [data.currentEmail] }, coverage: { complete: false } }],
     companies: [data.currentCompany], products: data.products,
     invoices: [invoice], orders: [{ id: syntheticId, companyId: syntheticId, reference: "PO-1", status: "confirmed", currency: "USD", items: [{ ...item, unitPriceMinor: 800 }] }],
     quotations: [{ id: syntheticId, company_id: syntheticId, status: scenarioName.includes("quotation_lifecycle") ? "shared" : "draft", revision: 1, document: { currency: "USD", notes: "Original quotation", items: [{ ...item, unitPriceMinor: 800 }] } }],

@@ -1,0 +1,43 @@
+{
+  "syntheticOnly": true,
+  "businessWrites": false,
+  "chargedUsd": 0.011115,
+  "results": [
+    {
+      "name": "evidence-ranking",
+      "passed": true,
+      "providerCalls": 2,
+      "elapsedMs": 15887,
+      "reads": [
+        "customer_insights"
+      ],
+      "output": "Synthetic Ready\n\nHere is the ranking of all saved customers based on recent explicit intent, responsiveness, and buying signals:\n\n| Rank & Customer | Readiness / Confidence | Conversation & Email Proof | Blockers | Specific Next Action |\n| --- | --- | --- | --- | --- |\n| **1. [Synthetic Ready](/companies/15693adc-0bdf-4617-b214-71b1861764a9)** | High (Ready to Order) | **1 conversation, 2 messages**. Inbound email on *2026-11-25T02:00:00Z* (*[Black PLA inquiry](/email?thread=ready-latest)*): \"We approve the black PLA sample and quoted price for 500 rolls. Please send the order details and invoice for our review today.\" | None | Prepare and send the requested order and draft invoice for review. |\n| **2. [Synthetic Unresponsive](/companies/35693adc-0bdf-4617-b214-71b1861764a9)** | Low-Moderate (Unresponsive) | **1 conversation, 1 message**. Outbound pitch on *2026-11-25T03:00:00Z* (*[Black PLA inquiry](/email?thread=pitch-only)*): \"Our filament would be perfect for you. Would you like to order 2000 rolls?\" | Awaiting customer reply / no inbound response yet. | Schedule a polite follow-up if no reply is received within a few days. |\n| **3. [Synthetic Declined](/companies/25693adc-0bdf-4617-b214-71b1861764a9)** | None (Declined / Opt-out) | **1 conversation, 2 messages**. Inbound email on *2026-11-24T10:00:00Z* (*[Black PLA inquiry](/email?thread=declined-latest)*): \"We have selected another supplier. Do not contact us again.\" | Explicit opt-out and rejection. | Respect the opt-out; do not contact or create further records. |",
+      "actions": []
+    },
+    {
+      "name": "segment-from-analysis",
+      "passed": true,
+      "providerCalls": 1,
+      "elapsedMs": 4622,
+      "reads": [],
+      "output": "The requested actions are ready for review.",
+      "actions": [
+        {
+          "type": "crm_action",
+          "operation": {
+            "op": "create_segment",
+            "segment": {
+              "name": "Ready buyers",
+              "description": "Customers with explicit sample/price approval ready to order, based on recent buying signals and approval history.",
+              "rules": {
+                "companyIds": [
+                  "15693adc-0bdf-4617-b214-71b1861764a9"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

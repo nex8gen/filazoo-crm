@@ -10,17 +10,24 @@ import { Label } from "@/components/ui/label";
 import { neteaseServerProfiles, type NeteaseServerProfile } from "@/lib/netease-mail";
 import { saveNeteaseConnection } from "./netease-actions";
 import type { EmailConnectionScope } from "@/lib/email-connections";
+import { useUnsavedSettings } from "../use-unsaved-settings";
 import { ConnectionEmailImport } from "@/components/email-import-fields";
 
 export function NeteaseConnectionForm({ account, scope = "personal" }: { account?: { id: string; email: string; name: string; serverProfile: NeteaseServerProfile; smtpPort: number }; scope?: EmailConnectionScope }) {
-  const [state, action, pending] = useActionState(saveNeteaseConnection, undefined);
+  const [dirty, setDirty] = useState(false);
+  useUnsavedSettings(dirty);
+  const [state, action, pending] = useActionState(async (previous: Parameters<typeof saveNeteaseConnection>[0], form: FormData) => {
+    const result = await saveNeteaseConnection(previous, form);
+    if (result?.success) setDirty(false);
+    return result;
+  }, undefined);
   const [email, setEmail] = useState(account?.email ?? "");
   const [name, setName] = useState(account?.name ?? "");
   const [profile, setProfile] = useState<NeteaseServerProfile>(account?.serverProfile ?? "standard");
   const [smtpPort, setSmtpPort] = useState(String(account?.smtpPort === 465 ? 465 : 994));
   const prefix = `netease-${account?.id ?? "new"}`;
   return (
-    <form action={action} className="space-y-5">
+    <form action={action} onChangeCapture={() => setDirty(true)} className="space-y-5">
       <input type="hidden" name="mailboxId" value={account?.id ?? ""} />
       <input type="hidden" name="mailboxScope" value={scope} />
       <div className="space-y-2"><Label htmlFor={`${prefix}-email`}>Business email address</Label><Input id={`${prefix}-email`} name="email" type="email" autoComplete="email" placeholder="you@company.com" value={email} onChange={event => setEmail(event.target.value)} readOnly={Boolean(account)} required disabled={pending} /></div>

@@ -21,11 +21,15 @@ function text(value: unknown): string {
   if (value && typeof value === "object" && "props" in value) return text((value as Element).props.children);
   return typeof value === "string" ? value : "";
 }
-function panel(options: { delayStatus?: boolean; delayPreview?: boolean; saved?: Record<string, unknown>; failSave?: boolean } = {}) {
+function panel(options: { delayStatus?: boolean; delayPreview?: boolean; saved?: Record<string, unknown>; failSave?: boolean; direction?: "inbound" | "outbound"; failPreview?: boolean; replyDisabled?: boolean; canManage?: boolean; aiConfigured?: boolean } = {}) {
   const values: unknown[] = [], effects: Array<() => unknown> = [], deps: unknown[][] = [];
   let cursor = 0;
   let saved: Record<string, unknown> | null = options.saved || null;
   let statusReads = 0;
+  let replies = 0;
+  let conversationRefreshes = 0;
+  let direction = options.direction ?? "outbound";
+  let messageBaseline = ["crm-inquiry"];
   let releaseStatus: (() => void) | undefined;
   let releasePreview: (() => void) | undefined;
   const calls: Array<Record<string, unknown>> = [];
@@ -63,6 +67,7 @@ function panel(options: { delayStatus?: boolean; delayPreview?: boolean; saved?:
       calls.push(input);
       if (input.action === "preview") {
         if (options.delayPreview) await new Promise<void>(resolve => { releasePreview = resolve; });
+        if (options.failPreview) return Response.json({ error: "Load the complete conversation before generating a follow-up." }, { status: 409 });
         return Response.json({ subject: "Re: Quote", body: "Do you have any questions about the quote?", baseline: ["crm-inquiry"] });
       }
       if (input.action === "save" && options.failSave) return Response.json({ error: "The reminder could not be saved." }, { status: 409 });
@@ -77,7 +82,7 @@ function panel(options: { delayStatus?: boolean; delayPreview?: boolean; saved?:
   vm.runInNewContext(ts.transpileModule(readFileSync(new URL("../components/email-followup-panel.tsx", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText, sandbox);
   const identity = rules.followupTarget([{ id: "crm-inquiry", messageId: null, direction: "inbound", mailboxId: null }], { id: "crm-inquiry", messageId: null, direction: "inbound", mailboxId: null }, "team-mailbox");
   const messages = [{ id: "crm-inquiry", messageId: null, threadId: "local:crm-inquiry" }];
-  const render = () => { cursor = 0; return exports.EmailFollowupPanel({ ...identity, subject: "Quote", recipient: "buyer@example.test", aiConfigured: true, canManage: true, onUpdated(followup: rules.EmailFollowup | null, mutation?: string) {
+  const render = () => { cursor = 0; return exports.EmailFollowupPanel({ ...identity, baseline: messageBaseline, latestDirection: direction, onReply: () => { replies++; }, onConversationChanged: () => { conversationRefreshes++; }, replyDisabled: options.replyDisabled, subject: "Quote", recipient: "buyer@example.test", aiConfigured: options.aiConfigured ?? true, canManage: options.canManage ?? true, onUpdated(followup: rules.EmailFollowup | null, mutation?: string) {
     if (mutation && followup) actions = updateFollowupActions(actions, followup, messages);
   } }); };
   const flush = async () => { for (const effect of effects.splice(0)) effect(); await setImmediate(); };
@@ -87,8 +92,71 @@ function panel(options: { delayStatus?: boolean; delayPreview?: boolean; saved?:
     assert.ok(preview, "A generated draft should animate before editing");
     (preview.props.onComplete as () => void)();
   };
-  return { render, flush, button, calls, finishWriting, filters: () => [...followupConversationFilters(messages, indexFollowupActions(actions))], reads: () => statusReads, releaseStatus: () => releaseStatus?.(), releasePreview: () => releasePreview?.() };
+  return { render, flush, button, calls, finishWriting, replies: () => replies, refreshes: () => conversationRefreshes, sent: () => { direction = "outbound"; messageBaseline = [...messageBaseline, "sent-reply"]; }, filters: () => [...followupConversationFilters(messages, indexFollowupActions(actions))], reads: () => statusReads, releaseStatus: () => releaseStatus?.(), releasePreview: () => releasePreview?.() };
 }
+
+test("an incoming email opens AI follow-up scheduling immediately and only schedules after confirmation", async () => {
+  const app = panel({ direction: "inbound", delayPreview: true }); app.render(); await app.flush();
+  (app.button(app.render(), "AI follow-up").props.onClick as () => void)();
+  let tree = app.render();
+  assert.equal(elements(tree).find(node => node.type === "sheet")?.props.open, true);
+  assert.match(text(tree), /When should we follow up/);
+  assert.match(text(tree), /AI is writing/);
+  assert.doesNotMatch(text(tree), /AI reply|Reply to the latest email first/);
+  assert.equal(app.replies(), 0);
+  assert.deepEqual(app.calls.map(call => call.action), ["preview"]);
+  assert.deepEqual(app.filters(), []);
+  app.releasePreview(); await app.flush(); app.finishWriting(); tree = app.render();
+  assert.equal(Boolean(app.button(tree, "Confirm follow-up").props.disabled), false);
+  (app.button(tree, "Confirm follow-up").props.onClick as () => void)(); await app.flush();
+  assert.equal(app.calls.at(-1)?.kind, "ai");
+  assert.equal(app.calls.at(-1)?.action, "save");
+  assert.deepEqual(app.filters(), ["ai"]);
+});
+
+test("incoming conversations still support personal reminders", async () => {
+  const app = panel({ direction: "inbound" }); app.render(); await app.flush();
+  (app.button(app.render(), "Remind me").props.onClick as () => void)();
+  (app.button(app.render(), "Save reminder").props.onClick as () => void)(); await app.flush();
+  assert.equal(app.calls.at(-1)?.kind, "reminder");
+  assert.equal(app.replies(), 0);
+});
+
+test("follow-up respects read-only access and remains separate from pending reply work", async () => {
+  const app = panel({ direction: "inbound", canManage: false }); app.render(); await app.flush();
+  const button = app.button(app.render(), "AI follow-up");
+  assert.equal(button.props.disabled, true);
+  (button.props.onClick as () => void)();
+  assert.equal(app.calls.length, 0);
+  const pending = panel({ direction: "inbound", replyDisabled: true }); pending.render(); await pending.flush();
+  assert.equal(Boolean(pending.button(pending.render(), "AI follow-up").props.disabled), false);
+});
+
+test("an unavailable AI provider still opens the follow-up editor for manual scheduling", async () => {
+  const app = panel({ direction: "inbound", aiConfigured: false }); app.render(); await app.flush();
+  (app.button(app.render(), "AI follow-up").props.onClick as () => void)();
+  const tree = app.render();
+  assert.equal(elements(tree).find(node => node.type === "sheet")?.props.open, true);
+  assert.ok(elements(tree).some(node => node.type === "textarea"));
+  assert.match(text(tree), /write your follow-up below/);
+  assert.equal(app.calls.length, 0);
+  assert.equal(app.replies(), 0);
+});
+
+test("a failed preview stays in follow-up scheduling and allows manual review", async () => {
+  const app = panel({ direction: "inbound", failPreview: true }); app.render(); await app.flush();
+  (app.button(app.render(), "AI follow-up").props.onClick as () => void)(); await app.flush();
+  let tree = app.render();
+  assert.equal(elements(tree).find(node => node.type === "sheet")?.props.open, true);
+  assert.match(text(tree), /Load the complete conversation/);
+  assert.doesNotMatch(text(tree), /AI reply/);
+  const editor = elements(tree).find(node => node.type === "textarea"); assert.ok(editor);
+  (editor.props.onChange as (event: unknown) => void)({ target: { value: "Checking in about your filament plans. Are you still interested?" } });
+  tree = app.render();
+  assert.equal(Boolean(app.button(tree, "Confirm follow-up").props.disabled), false);
+  assert.equal(app.replies(), 0);
+  assert.equal(app.calls.filter(call => call.action === "save").length, 0);
+});
 test("dialogs open immediately during a slow status read, then save the actual existing revision", async () => {
   const app = panel({ delayStatus: true, saved: { id: "existing-followup", revision: 7, kind: "reminder", status: "scheduled", due_at: new Date(Date.now() + 3600_000).toISOString() } });
   let tree = app.render();

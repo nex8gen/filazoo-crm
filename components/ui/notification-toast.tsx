@@ -6,6 +6,12 @@ import { toast } from "sonner";
 type NotificationTone = "error" | "warning" | "success" | "message";
 type NotificationProps = HTMLAttributes<HTMLDivElement> & { tone?: NotificationTone; preserve?: boolean };
 
+// State-driven notices may be mounted by several visible surfaces (for example
+// an inbox and a composer). Share plain notices until their last owner clears.
+// Actionable notices keep independent stores so callbacks cannot cross forms.
+const sharedNotices = new Map<string, { id: string; owners: Set<string> }>();
+let sharedNoticeSequence = 0;
+
 function notificationText(node: ReactNode): string {
   if (typeof node === "string" || typeof node === "number") return String(node);
   if (Array.isArray(node)) return node.map(notificationText).join(" ");
@@ -44,7 +50,8 @@ export function NotificationToast({ children, tone = "error", preserve, id }: No
   const toastId = `notification-${instanceId}`;
   const [store] = useState(() => createContentStore(children));
   const message = notificationText(children).replace(/\s+/g, " ").trim();
-  const persistent = preserve ?? hasControls(children);
+  const interactive = hasControls(children);
+  const persistent = preserve ?? interactive;
 
   // Update retry controls and callbacks without restarting the notification timer
   // when an unrelated field or pending state changes.
@@ -52,9 +59,24 @@ export function NotificationToast({ children, tone = "error", preserve, id }: No
 
   useEffect(() => {
     if (!message) return;
-    toast[tone](<NotificationContent store={store} />, { id: toastId, duration: persistent ? Infinity : 3000 });
-    return () => { toast.dismiss(toastId); };
-  }, [message, persistent, store, toastId, tone]);
+    const key = interactive ? null : JSON.stringify([tone, message, persistent]);
+    const existing = key ? sharedNotices.get(key) : undefined;
+    const shared = existing ?? { id: key ? `notification-shared-${++sharedNoticeSequence}` : toastId, owners: new Set<string>() };
+    shared.owners.add(toastId);
+    if (key) sharedNotices.set(key, shared);
+    if (!existing) {
+      // A shared notice must not follow the first owner's store when that owner
+      // changes messages while another surface still owns the original notice.
+      const contentStore = key ? createContentStore(store.getSnapshot()) : store;
+      toast[tone](<NotificationContent store={contentStore} />, { id: shared.id, duration: persistent ? Infinity : 3000 });
+    }
+    return () => {
+      shared.owners.delete(toastId);
+      if (shared.owners.size) return;
+      if (key) sharedNotices.delete(key);
+      toast.dismiss(shared.id);
+    };
+  }, [interactive, message, persistent, store, toastId, tone]);
 
   // Preserve field descriptions that point to an error's original element ID.
   return id && message ? <span id={id} className="sr-only">{message}</span> : null;

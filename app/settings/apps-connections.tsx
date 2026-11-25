@@ -2,7 +2,7 @@
 
 import { useWorkspaceState } from "@/components/workspace-memory";
 import Link from "next/link";
-import { ArrowUpRight, Check, Clock3, Plus, Search } from "lucide-react";
+import { Check, Plus, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +17,7 @@ const filters: { value: Filter; label: string }[] = [
   { value: "connected", label: "Connected" },
 ];
 
-export function AppsConnections({ connections }: { connections: Record<string, AppConnectionSummary> }) {
+export function AppsConnections({ connections, isAdmin }: { connections: Record<string, AppConnectionSummary>; isAdmin: boolean }) {
   const [query, setQuery] = useWorkspaceState("settings.apps.query", "");
   const [savedFilter, setFilter] = useWorkspaceState<Filter>("settings.apps.filter", "available");
   const filter = savedFilter === "connected" ? "connected" : "available";
@@ -25,7 +25,7 @@ export function AppsConnections({ connections }: { connections: Record<string, A
   const normalizedQuery = query.trim().toLowerCase();
   const availableCategories = appCategories.filter(category => connectionApps.some(app => app.category === category && app.availability === "existing"));
   const filteredApps = connectionApps.filter((app) =>
-    app.availability === "existing" && (filter !== "connected" || connections[app.id]?.status === "connected")
+    app.availability === "existing" && (isAdmin || !app.adminOnly) && (filter !== "connected" || connections[app.id]?.status === "connected")
     && (category === "all" || app.category === category)
     && `${app.name} ${app.category} ${app.description} ${app.keywords ?? ""}`.toLowerCase().includes(normalizedQuery),
   );
@@ -64,8 +64,9 @@ export function AppsConnections({ connections }: { connections: Record<string, A
                   {sectionApps.map((app) => {
                     const summary = connections[app.id];
                     const connected = summary?.status === "connected";
+                    const managedByAdmin = !isAdmin && (app.scope === "Workspace" || (summary?.personalCount === 0 && Boolean(summary.teamCount)));
                     const href = summary?.personalCount !== undefined
-                      ? emailProviderHref(app.id, !summary.personalCount && summary.teamCount ? "workspace" : "personal")
+                      ? connected ? `/settings/apps?view=${summary.personalCount ? "personal" : "team"}` : emailProviderHref(app.id, "personal")
                       : `/settings/apps/${app.id}`;
                     const emailCounts = [summary?.personalCount ? `${summary.personalCount} personal` : "", summary?.teamCount ? `${summary.teamCount} team` : ""].filter(Boolean).join(" · ");
                     return (
@@ -75,10 +76,10 @@ export function AppsConnections({ connections }: { connections: Record<string, A
                           <div className="min-w-0"><h3 className="text-sm font-semibold"><Link href={href} className="rounded-sm outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring">{app.name}</Link></h3><p className="mt-1 text-sm leading-5 text-muted-foreground">{app.description}</p></div>
                         </div>
                         <div className="mt-auto flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-                          <Badge variant="outline" className="text-muted-foreground">{connected ? emailCounts || app.scope : app.availability === "planned" ? "Coming soon" : connectionStatusLabel(summary?.status ?? "unavailable")}</Badge>
-                          <Button nativeButton={false} render={<Link href={href} />} size="sm" variant={connected || app.availability === "planned" ? "outline" : "default"}
-                            aria-label={`${app.availability === "planned" ? "View details" : connected ? "Manage" : "Connect"}: ${app.name}`} className={connected ? "border-emerald-600/20 text-emerald-700 dark:text-emerald-400" : ""}>
-                            {app.availability === "planned" ? <Clock3 /> : connected ? <Check /> : <Plus />}{app.availability === "planned" ? "View details" : connected ? "Manage" : "Connect"}
+                          <Badge variant="outline" className="text-muted-foreground">{connected ? emailCounts || app.scope : connectionStatusLabel(summary?.status ?? "unavailable")}</Badge>
+                          <Button nativeButton={false} render={<Link href={href} />} size="sm" variant={connected || managedByAdmin ? "outline" : "default"}
+                            aria-label={`${managedByAdmin ? "View details" : connected ? "Manage" : "Connect"}: ${app.name}`} className={connected ? "border-emerald-600/20 text-emerald-700 dark:text-emerald-400" : ""}>
+                            {managedByAdmin ? null : connected ? <Check /> : <Plus />}{managedByAdmin ? "View details" : connected ? "Manage" : "Connect"}
                           </Button>
                         </div>
                       </article>
@@ -96,7 +97,6 @@ export function AppsConnections({ connections }: { connections: Record<string, A
           <Button variant="outline" size="sm" onClick={() => { setQuery(""); setFilter("available"); setCategory("all"); }}>Clear filters</Button>
         </div>
       )}
-      <section className="border-t pt-6" aria-labelledby="settings-workflows"><h2 id="settings-workflows" className="text-sm font-semibold">Related workspaces</h2><div className="mt-3 grid gap-3 sm:grid-cols-2">{[{ label: "Delivery checks", href: "/deliverability" }, { label: "Manage automation", href: "/workflow" }, { label: "Manage products", href: "/products" }, { label: "Company catalogs", href: "/company-quotations" }].map(link => <Link key={link.href} href={link.href} className="flex min-h-11 items-center justify-between rounded-xl border bg-card px-4 py-3 text-sm outline-none hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring">{link.label}<ArrowUpRight aria-hidden="true" className="size-4 text-muted-foreground" /></Link>)}</div></section>
     </div>
   );
 }

@@ -4,7 +4,7 @@ All catalog creators use the quotation template implemented in `lib/catalog-pdf.
 
 - Server agents, flow attachments, and email auto-replies call `buildServerCatalogPdf` from `lib/catalog-pdf-server.ts`. This awaits image loading before rendering the shared template.
 - Saved company catalogs call `ensureCompanyCatalogPdf`. It uses the same image loader and template and preserves the bytes of previously saved quote versions.
-- A new automated catalog request creates a fresh company-catalog version. If no products were specified, it preserves the customer's saved product selection instead of reattaching an old-layout PDF.
+- AI inbox replies, automatic replies and flow replies explicitly choose `selected`, `all`, or `unavailable` scope. Selected scope requires exact current product SKUs. Only an unrestricted general catalog may use all; omitted or empty selections never fall back to a saved catalog or the whole store. Named products restrict the selection, while a material comparison may include options within that material family. A new automated catalog request saves the actual selection as a fresh company-catalog version.
 - Browser previews, downloads, and email composition call `buildCatalogPdfWithImages` or `downloadCatalogPdf` from `lib/catalog-pdf.ts`.
 
 Do not call the synchronous `buildCatalogPdf` directly from an agent or email worker: it requires an already populated image map. Do not generate alternate layouts or attach the old static download for new catalogs.

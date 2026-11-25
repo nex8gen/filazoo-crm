@@ -1,6 +1,41 @@
 # Settings and feature audit
 
-The current settings structure and competitor comparison are documented in [Settings benchmark and implementation review — 7 November 2026](settings-benchmark-2026-11-07.md). The older organization and verification notes below are historical; My mailbox and Payment methods now forward to their consolidated homes.
+## Current review — 25 November 2026
+
+All 13 destinations in the settings registry were reviewed against their components, saved values, consumers, and authorization checks. This is a code and automated-interaction review. Browser and Windows preview connections were unavailable, so visual appearance, mobile interactions, and live provider operations have not been verified in this review.
+
+| Section | Decision and resulting behavior |
+| --- | --- |
+| General | Removed the nonfunctional Start page block and its navigation claims. Current sign-in behavior opens Home. Language and list size remain; historical saved start-page values are retained for compatibility. Removed the duplicate English subtitle. |
+| Appearance | Kept Light/Dark/System, table density, the density preview, and reduced motion: these have real consumers. Theme remains a browser preference; density and motion remain account preferences. |
+| Profile | Kept photo, display name, and the read-only sign-in email. Added matching name-length limits, pending-state disabling, discard, and unsaved-edit protection. Moved Alipay sign-in out of Profile. |
+| Security and login | Grouped password, supported sign-in options, and other sessions. Removed workspace role and implementation-specific cookie text. Alipay appears only when enabled or already linked. Session revocation keeps its existing server-side scope. |
+| Email preferences | Kept translation, read marking, writing suggestions, and inbox refresh. Shortened descriptions without changing behavior. Footer editing now has a separate card and unsaved-edit protection; load failures remain visible. |
+| Workspace | Non-admins can see the workspace name. Legacy workspaces display an honest unavailable state. Ownership transfer identifies the recipient and requires confirmation; leaving also requires confirmation. Successful rename and ownership changes invalidate the shared layout. |
+| AI access and behavior | Kept actual feature, data, action, and writing controls. Replaced a full-policy reset with an action that changes automatic permissions to approval-required while preserving denied actions, disabled features/data, and business guidance. Added duplicate-save protection. Save status is inline; opening the page no longer triggers a success toast. |
+| Team and access | Added contextual explanations for the selected invitation role and blocked edits during submission. Legacy workspaces no longer offer an invitation form that cannot succeed. Invitation-load failures remain visible. Existing role and member-removal authorization is retained. |
+| Lead assignment | Kept distribution rules, workload definition, capacity, participation, and the non-mutating preview. Added unsaved-edit protection; load failures remain visible. Saving does not redistribute existing leads. |
+| Apps and connections | Removed unrelated workspace shortcuts and repeated connection guidance. Connected email apps open the appropriate account list. Ordinary members receive View details for administrator-managed integrations, and administrator-only ERP entries stay out of their library. Personal/team access checks remain on the server. |
+| ERP connection | Kept credential testing, IP discovery, warehouse filters, stock scheduling, and SKU mapping: each has a real operational purpose. Added unsaved-edit protection and removed a nested width limit that left excess space on the right. Secrets stay server-side. |
+| Plan and AI credits | Retained real plan status, credit balance, renewal, resource usage, refresh, and owner-controlled purchases. The title now follows the wider billing column. No purchase or subscription was changed during review. |
+| Invoices and payments | Retained seller identity, currency, terms, initial-line tax, invoice instructions, and saved customer payment methods. Added payment-method discard and disabled unchanged saves. Existing role checks, issued-invoice preservation, and concurrent settings patches are retained. |
+
+Across settings, the page column stays centered with left-aligned contents. Repeated ownership badges were removed; navigation groups and relevant permission guidance identify scope. Loading placeholders now follow the same column width without adding a duplicate page heading. A settings-specific error boundary offers retry for unexpected section failures. New copy has Simplified Chinese translations.
+
+Seven new behavioral regressions cover ownership review/cancel/submit, leave review/cancel/submit, AI approval changes without policy expansion, duplicate policy submissions, read-only AI policies, role-aware app destinations, localization, and connection drafts across failed/successful saves. Existing settings action suites cover credentials, saved preferences, billing, usage limits, and ERP permissions.
+
+Validation for this review:
+
+- **123 focused tests passed**, covering settings, connections, preferences, AI policy/usage, lead assignment, ERP, invoices/payments, email footers, authentication destinations, and localization behavior.
+- ESLint passed on all changed application and test files. TypeScript (`npx tsc --noEmit`) passed. Both changed stylesheets parsed successfully, and the settings diff passed whitespace checks.
+- The full checkout suite finished with **2,787 passes and 3 failures out of 2,790 tests**. The failures were outside settings: `flow-inquiry.test.ts` could not resolve `../flow-mailboxes.ts`; `flow-visibility.test.ts` expected the old `wf-show-actions` control; and `i18n-coverage.test.ts` reported untranslated text elsewhere in the application. New settings copy was absent from that missing-translation list.
+- Production build verification is blocked: `FILAZOO_STABLE_RUNTIME=1 npm run build -- --webpack` exhausted Node's 4 GB heap during compilation, and a retry with a 6 GB heap also exhausted memory. The existing development server was left running. No successful production-build or live visual-verification claim is made.
+
+The review follows [W3C form guidance](https://www.w3.org/WAI/tutorials/forms/instructions/) for useful instructions and required inputs, [W3C status-message guidance](https://www.w3.org/WAI/WCAG22/Understanding/status-messages.html) for accessible feedback, and [Supabase sign-out semantics](https://supabase.com/docs/guides/auth/signout) for session scope and token expiry. These are implementation references, not a claim of independent certification.
+
+Further enterprise capabilities require full product workflows: MFA enrollment/challenge/recovery, a device inventory, central administrative audit history, notification delivery preferences, and time-zone/date preferences applied to all consumers. Default-mailbox switching still needs a transaction across its reset and save writes. The current unsaved-edit guard covers links and reload/close; browser Back/Forward and programmatic navigation need router-level handling. Inactive switches for these capabilities were not added.
+
+The [7 November benchmark](settings-benchmark-2026-11-07.md) and the notes below describe earlier versions; their start-page and previous verification claims are historical.
 
 Originally reviewed 2026-10-27 against the application's routes and their data/action handlers. Settings organization and interaction were reworked on 2026-10-30.
 

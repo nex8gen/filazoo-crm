@@ -9,15 +9,22 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { saveGmailConnection } from "./gmail-actions";
 import type { EmailConnectionScope } from "@/lib/email-connections";
+import { useUnsavedSettings } from "../use-unsaved-settings";
 import { ConnectionEmailImport } from "@/components/email-import-fields";
 
 export function GmailConnectionForm({ account, scope = "personal" }: { account?: { id: string; email: string; name: string }; scope?: EmailConnectionScope }) {
-  const [state, action, pending] = useActionState(saveGmailConnection, undefined);
+  const [dirty, setDirty] = useState(false);
+  useUnsavedSettings(dirty);
+  const [state, action, pending] = useActionState(async (previous: Parameters<typeof saveGmailConnection>[0], form: FormData) => {
+    const result = await saveGmailConnection(previous, form);
+    if (result?.success) setDirty(false);
+    return result;
+  }, undefined);
   const [email, setEmail] = useState(account?.email ?? "");
   const [name, setName] = useState(account?.name ?? "");
   const prefix = `gmail-${account?.id ?? "new"}`;
   return (
-    <form action={action} className="space-y-5">
+    <form action={action} onChangeCapture={() => setDirty(true)} className="space-y-5">
       <input type="hidden" name="mailboxId" value={account?.id ?? ""} />
       <input type="hidden" name="mailboxScope" value={scope} />
       <div className="space-y-2"><Label htmlFor={`${prefix}-email`}>Gmail address</Label><Input id={`${prefix}-email`} name="email" type="email" autoComplete="email" placeholder="you@gmail.com" value={email} onChange={event => setEmail(event.target.value)} readOnly={Boolean(account)} required disabled={pending} /></div>

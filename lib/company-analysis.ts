@@ -1,4 +1,11 @@
 import type { PurchaseOrderDocument } from "./purchase-orders.ts";
+import { groupEmailsByThread, normalizeMessageId, type EmailThreadMetadata } from "./email-threading.ts";
+
+export type AnalysisEmail = EmailThreadMetadata & {
+  direction: "inbound" | "outbound";
+  timestamp: string;
+  automaticResponse?: boolean;
+};
 
 export type AnalysisOrder = {
   id: string;
@@ -14,6 +21,7 @@ export type CompanyAnalysisData = {
   products: { sku: string; name: string }[];
   tasks: { id: string; notes: string | null; due_at: string | null }[];
   asOf: string;
+  email?: { messages: AnalysisEmail[]; available: boolean; partial: boolean };
 };
 export type AnalysisRange = { from: string; to: string };
 export type ProductReminder = {
@@ -42,6 +50,63 @@ export function analysisProductKey(item: AnalysisOrder["items"][number]) {
   return JSON.stringify([item.productSku || item.sku || item.description, item.variantId || item.sku || item.description]);
 }
 export function analysisTaskMarker(key: string) { return `Company purchase analysis: ${key}`; }
+
+/** Saved customer correspondence only; dates use the same timezone as orders. */
+export function companyEmailAnalysis(data: CompanyAnalysisData, range: AnalysisRange) {
+  const asOf = Date.parse(data.asOf);
+  const seen = new Set<string>();
+  const history = (data.email?.messages ?? []).filter(message => {
+    const time = Date.parse(message.timestamp);
+    if (!Number.isFinite(time) || time > asOf || analysisToday(new Date(time)) > range.to) return false;
+    const key = `${message.direction}:${normalizeMessageId(message.messageId) || message.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
+  const selected = (message: AnalysisEmail) => !range.from || analysisToday(new Date(message.timestamp)) >= range.from;
+  const messages = history.filter(selected);
+  const threads = [...groupEmailsByThread(history).values()].filter(thread => thread.some(selected));
+  let waitingOnCustomer = 0, waitingOnUs = 0;
+  const responseTimes: number[] = [];
+  for (const thread of threads) {
+    const manual = thread.filter(message => !message.automaticResponse);
+    const latest = manual.at(-1);
+    if (latest?.direction === "outbound") waitingOnCustomer++;
+    if (latest?.direction === "inbound") waitingOnUs++;
+    let received: AnalysisEmail | null = null;
+    for (const message of manual) {
+      if (message.direction === "inbound") received ??= message;
+      else if (received) {
+        if (selected(message)) responseTimes.push((Date.parse(message.timestamp) - Date.parse(received.timestamp)) / 3_600_000);
+        received = null;
+      }
+    }
+  }
+  const monthly = new Map<string, { sent: number; received: number }>();
+  for (const message of messages) {
+    const month = analysisToday(new Date(message.timestamp)).slice(0, 7);
+    const bucket = monthly.get(month) ?? { sent: 0, received: 0 };
+    bucket[message.direction === "outbound" ? "sent" : "received"]++;
+    monthly.set(month, bucket);
+  }
+  const months: { month: string; total: number; sent: number; received: number }[] = [];
+  const first = (range.from || (messages[0] ? analysisToday(new Date(messages[0].timestamp)) : range.to)).slice(0, 7);
+  const cursor = new Date(`${first}-01T00:00:00Z`);
+  while (Number.isFinite(cursor.getTime()) && cursor.toISOString().slice(0, 7) <= range.to.slice(0, 7)) {
+    const month = cursor.toISOString().slice(0, 7);
+    const bucket = monthly.get(month) ?? { sent: 0, received: 0 };
+    months.push({ month, ...bucket, total: bucket.sent + bucket.received });
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  }
+  return {
+    available: data.email?.available === true, partial: data.email?.partial === true,
+    total: messages.length, sent: messages.filter(message => message.direction === "outbound").length,
+    received: messages.filter(message => message.direction === "inbound").length,
+    conversations: threads.length, waitingOnCustomer, waitingOnUs,
+    averageResponseHours: responseTimes.length ? responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length : null,
+    lastContact: messages.at(-1)?.timestamp ?? null, months,
+  };
+}
 
 export function companyPurchaseAnalysis(data: CompanyAnalysisData, currency: string, range: AnalysisRange) {
   const today = analysisToday(new Date(data.asOf));

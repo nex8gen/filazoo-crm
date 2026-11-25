@@ -25,3 +25,8 @@ test("network and timeout failures never replay a scheduling request", async () 
   try { await assert.rejects(timeout("/api/email/follow-up", undefined, 5), /request timed out/); }
   finally { clearTimeout(keepAlive); }
 });
+
+test("the reply-required code survives the HTTP request for an actionable recovery", async () => {
+  await assert.rejects(request(async () => Response.json({ code: "followup_reply_required", error: "Reply first." }, { status: 409 }))("/api/email/follow-up"),
+    (error: Error & { code?: string }) => error.name === "FollowupRequestError" && error.code === "followup_reply_required" && error.message === "Reply first.");
+});

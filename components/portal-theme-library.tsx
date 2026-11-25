@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PortalThemeArtwork } from "@/components/portal-theme-artwork";
 import { PortalLocalTime } from "@/components/portal-local-time";
+import { PortalWebsite } from "@/components/portal-website";
 import { defaultPortalDesign, type PortalDesign, type PortalDesignView } from "@/lib/portal-design";
 import { createPortalTemplate, livePortalThemeId, portalLibraryThemes, portalTemplates } from "@/lib/portal-themes";
 import { portalPreviewData } from "@/lib/portal-preview";
@@ -30,13 +31,13 @@ export function PortalThemeLibrary({ initial, canWrite, workspaceName }: { initi
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [preview, setPreview] = useState<{ name: string; design: PortalDesign } | null>(null);
-  const [previewPage, setPreviewPage] = useState("home");
+  const [previewPage, setPreviewPage] = useState("website/home");
   const themes = portalLibraryThemes(view);
   const liveId = livePortalThemeId(view);
   const liveTheme = themes.find(theme => theme.id === liveId);
   const liveDesign = view.published ?? defaultPortalDesign();
   const editHref = (id: string) => `/customer-portal/themes/${encodeURIComponent(id)}`;
-  function showPreview(name: string, design: PortalDesign) { setPreviewPage("home"); setPreview({ name, design }); }
+  function showPreview(name: string, design: PortalDesign) { setPreviewPage("website/home"); setPreview({ name, design }); }
   async function add(input: { templateId?: string; sourceId?: string }, label: string) {
     if (!canWrite || locked.current) return;
     locked.current = true; setBusy(input.templateId || input.sourceId || "new"); setError(""); setNotice("");
@@ -71,6 +72,6 @@ export function PortalThemeLibrary({ initial, canWrite, workspaceName }: { initi
       const design = createPortalTemplate(template.id, workspaceName);
       return <Card key={template.id} size="sm" className="ptl-template-card gap-0 py-0"><button type="button" className="ptl-template-preview" aria-label={`Preview ${template.name} template`} onClick={() => showPreview(template.name, design)}><PortalThemeArtwork design={design} /></button><CardFooter className="ptl-template-info"><h3>{template.name}</h3><Button size="sm" variant="outline" disabled={!canWrite || Boolean(busy) || themes.length >= 20} onClick={() => void add({ templateId: template.id }, template.name)}>{busy === template.id ? <LoaderCircle className="animate-spin" /> : <Plus />}Add</Button></CardFooter></Card>;
     })}</div></section>
-    <Dialog open={Boolean(preview)} onOpenChange={open => { if (!open) setPreview(null); }}><DialogContent className="ptl-preview-dialog"><DialogHeader><DialogTitle>{preview?.name}</DialogTitle><DialogDescription className="sr-only">Theme preview with sample customer data.</DialogDescription></DialogHeader>{preview && <div className="ptl-preview-frame"><PortalExperience data={portalPreviewData(preview.design)} preview page={previewPage} onPageChange={setPreviewPage} /></div>}</DialogContent></Dialog>
+    <Dialog open={Boolean(preview)} onOpenChange={open => { if (!open) setPreview(null); }}><DialogContent className="ptl-preview-dialog"><DialogHeader><DialogTitle>{preview?.name}</DialogTitle><DialogDescription className="sr-only">Website and customer account preview. Account pages use sample customer data.</DialogDescription></DialogHeader>{preview && <div className="ptl-preview-frame">{previewPage.startsWith("website/") ? <PortalWebsite design={preview.design} preview page={previewPage.slice(8)} onPageChange={next => setPreviewPage(next === "account" ? "home" : `website/${next}`)} /> : <PortalExperience data={portalPreviewData(preview.design)} preview page={previewPage} onPageChange={setPreviewPage} onWebsiteHome={() => setPreviewPage("website/home")} />}</div>}</DialogContent></Dialog>
   </div>;
 }

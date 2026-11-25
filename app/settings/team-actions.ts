@@ -66,6 +66,6 @@ export async function transferWorkspaceOwnership(_state: TeamActionState, formDa
   if (!target.success) return { error: "Choose an active member." };
   const { error } = await createSupabaseControl().rpc("transfer_crm_workspace", { p_workspace_id: viewer.workspaceId, p_actor_id: viewer.id, p_target_id: target.data });
   if (error) return { error: "Unable to transfer ownership. Choose another active member." };
-  revalidatePath("/settings/team");
+  revalidatePath("/", "layout");
   return { success: "Workspace ownership transferred. You remain an administrator." };
 }

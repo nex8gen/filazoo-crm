@@ -45,7 +45,7 @@ function SearchableField({ id, name, label, value, onChange, options, placeholde
   const items = isCustom ? [...visible, value] : visible;
   const selected = custom || options.includes(value) ? value || null : null;
   return <div className="min-w-0 space-y-2">
-    <Label htmlFor={id}>{label}</Label>
+    <Label htmlFor={id}>{label}{required ? <span className="text-destructive" aria-hidden="true">*</span> : null}</Label>
     <Combobox.Root items={items} filter={null} name={name} value={selected} inputValue={value} required={required} disabled={disabled} autoHighlight
       onInputValueChange={(next, details) => { if (details.reason === "input-change" || details.reason === "input-clear") onChange(next); }}
       onValueChange={(next) => { if (next !== null) onChange(next); }}>
@@ -57,7 +57,7 @@ function SearchableField({ id, name, label, value, onChange, options, placeholde
         </Combobox.Trigger>
       </Combobox.InputGroup>
       <Combobox.Portal>
-        <Combobox.Positioner sideOffset={6} className="z-[60] outline-none">
+        <Combobox.Positioner sideOffset={6} className="z-[90] outline-none">
           <Combobox.Popup className="w-(--anchor-width) overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-xl">
             <Combobox.Empty className="p-3 text-sm text-muted-foreground">{loading ? "Loading options…" : "No matching options"}</Combobox.Empty>
             <Combobox.List className="max-h-[min(var(--available-height),16rem)] overflow-y-auto overscroll-contain p-1">
@@ -102,12 +102,12 @@ export function CompanyLocationFields({ disabled }: { disabled: boolean }) {
 export function CompanySegmentField({ disabled, existingSegments = [] }: { disabled: boolean; existingSegments?: string[] }) {
   const [value, setValue] = useState("");
   const options = [...new Set([...companySegmentOptions, ...existingSegments])];
-  return <SearchableField id="company-segment" name="segment" label="Segment" value={value} onChange={setValue} options={options}
+  return <SearchableField id="company-segment" name="segment" label="Business segment" value={value} onChange={setValue} options={options}
     placeholder="Choose or enter a segment" required custom disabled={disabled} />;
 }
 
-export function ContactRoleField({ disabled }: { disabled: boolean }) {
+export function ContactRoleField({ disabled, onChange }: { disabled: boolean; onChange?: (value: string) => void }) {
   const [value, setValue] = useState("");
-  return <SearchableField id="contact-role" name="contactRole" label="Role" value={value} onChange={setValue} options={contactRoleOptions}
-    placeholder="Choose or enter a role" custom disabled={disabled} />;
+  return <SearchableField id="contact-role" name="contactRole" label="Job title" value={value} onChange={next => { setValue(next); onChange?.(next); }} options={contactRoleOptions}
+    placeholder="Choose or enter a job title" custom disabled={disabled} />;
 }

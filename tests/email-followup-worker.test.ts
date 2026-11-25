@@ -87,7 +87,9 @@ test("a CRM inquiry without RFC metadata supports context loading, AI preview an
   app.crm([inquiry]);
   const context = await app.context(inquiry.id);
   assert.equal(context.message.id, inquiry.id); assert.equal(context.recipient, source.contact);
-  await assert.rejects(app.preview(inquiry.id), /latest message is from the customer/);
+  const draft = await app.preview(inquiry.id);
+  assert.ok(draft.body);
+  assert.ok(draft.baseline.includes(inquiry.id));
   app.row.anchors = context.anchors; app.row.message_id = inquiry.id; app.row.baseline = [inquiry.id]; app.row.kind = "reminder";
   await app.tick(); assert.equal(app.row.status, "reminded");
   app.row.status = "scheduled";
@@ -140,9 +142,19 @@ test("preview includes early requirements, full bodies, CRM sent messages and au
   assert.equal(app.sends(), 0);
 });
 
-test("preview never chases an unanswered customer message or works around missing earlier content", async () => {
+test("an incoming conversation can preview a scheduled check-in without an earlier sent message", async () => {
   const app = setup();
-  await assert.rejects(app.preview(), /latest message is from the customer/);
+  const draft = await app.preview();
+  assert.ok(draft.body);
+  const context = JSON.parse(app.generations[0].prompt);
+  assert.equal(context.latestMessageDirection, "inbound");
+  assert.equal(context.latestSentMessageId, null);
+  assert.equal(context.latestMessageId, source.messageId);
+  assert.equal(app.sends(), 0);
+});
+
+test("preview does not work around missing earlier content", async () => {
+  const app = setup();
   app.setMessages([{ ...source, bodyLoaded: false }, { ...source, id: "sent", messageId: "<sent@example.test>", inReplyTo: source.messageId, direction: "outbound", timestamp: new Date().toISOString() }]);
   await assert.rejects(app.preview(), /complete conversation/);
   assert.equal(app.generations.length, 0);

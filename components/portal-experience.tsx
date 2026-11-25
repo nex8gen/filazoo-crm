@@ -9,7 +9,6 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { PortalLocalTime } from "@/components/portal-local-time";
-import { PortalWebsiteContent } from "@/components/portal-website-content";
 import { InvoicePaper } from "@/components/invoice-paper";
 import { formatMoney } from "@/lib/invoices";
 import { shipmentLabels, type PortalData } from "@/lib/customer-portal";
@@ -28,10 +27,11 @@ function PortalPageLink({ pageId, active, preview, invoiceId, onNavigate, classN
   return preview ? <Button type="button" variant="ghost" className={className} aria-current={active ? "page" : undefined} onClick={() => onNavigate?.(pageId)}>{children}</Button>
     : <Button variant="ghost" nativeButton={false} render={<Link href={portalPageHref(invoiceId, pageId)} />} className={className} aria-current={active ? "page" : undefined}>{children}</Button>;
 }
-export function PortalExperience({ data, preview = false, invoiceId = "preview", page = "home", onPageChange, busy = false, refreshing = false, onRefresh, onSignout, security, composer, notifications, conversation, onConversationScroll }: {
+export function PortalExperience({ data, preview = false, invoiceId = "preview", page = "home", onPageChange, onWebsiteHome, busy = false, refreshing = false, onRefresh, onSignout, security, composer, notifications, conversation, onConversationScroll }: {
   data: PortalData; preview?: boolean; invoiceId?: string; page?: string; onPageChange?: (page: string) => void; busy?: boolean; refreshing?: boolean;
   onRefresh?: () => void; onSignout?: () => void; security?: ReactNode; composer?: ReactNode; notifications?: ReactNode;
   conversation?: RefObject<HTMLDivElement | null>; onConversationScroll?: () => void;
+  onWebsiteHome?: () => void;
 }) {
   const design = data.design;
   const pages = portalPages(design);
@@ -67,6 +67,7 @@ export function PortalExperience({ data, preview = false, invoiceId = "preview",
     {!preview && <a className="portal-skip-link" href="#customer-page">Skip to content</a>}
     <aside className="cpa-sidebar" aria-label="Customer sidebar">
       <div className="cpa-brand">{design.logoUrl ? <Image src={design.logoUrl} alt={design.brandName} width={150} height={42} unoptimized referrerPolicy="no-referrer" /> : <><span className="cpa-brand-symbol">{design.brandName[0]}</span><strong>{design.brandName}</strong></>}</div>
+      {onWebsiteHome && <Button variant="ghost" className="cpa-nav-link" onClick={onWebsiteHome}><ArrowUpRight />Back to website</Button>}
       <nav aria-label="Customer pages">{pages.map(navLink)}</nav>
       <div className="cpa-sidebar-bottom"><div className="cpa-profile"><span>{initials}</span><div><strong>{data.customerName}</strong><small>{data.email}</small></div><button type="button" aria-label="Sign out" disabled={preview || busy} onClick={onSignout}><LogOut /></button></div></div>
     </aside>
@@ -75,7 +76,6 @@ export function PortalExperience({ data, preview = false, invoiceId = "preview",
       <div className="cpa-scroll" key={page} id="customer-page" tabIndex={-1}>
         {design.announcement && <div className="cpa-announcement"><span>{design.announcement}</span><ShieldCheck /></div>}
         <div className="cpa-page-content">{notifications}{security}
-          {current && selectedSection?.website?.html && <PortalWebsiteContent website={selectedSection.website} accent={design.accent} title={current.label} />}
           {current?.type !== "content" && selectedSection?.body && !["All the details, whenever you need them", "A direct line to your sales team"].includes(selectedSection.body) && <p className="cpa-page-description">{selectedSection.body}</p>}
           {!current && <div className="cpa-unavailable"><LockKeyhole /><h1>This page isn’t available</h1><p>This page is hidden or has been removed from your portal.</p><PortalPageLink pageId="home" preview={preview} invoiceId={invoiceId} onNavigate={onPageChange}>Back to home<ArrowRight /></PortalPageLink></div>}
           {current?.type === "home" && <>
@@ -101,7 +101,7 @@ export function PortalExperience({ data, preview = false, invoiceId = "preview",
             <Card className="cpa-panel gap-0 py-0"><div className="cpa-invoice-row"><span className="cpa-file-icon"><FileText /></span><div><h2>{data.label}</h2><p>Issued {portalDate(invoice.document.issueDate)}</p></div><div><span>Total</span><strong>{formatMoney(invoice.total_minor, invoice.document.currency)}</strong></div><div><span>Due date</span><strong>{portalDate(invoice.document.dueDate)}</strong></div>{download && <a href={preview ? undefined : `${endpoint}/pdf`} aria-label="Download invoice PDF" aria-disabled={preview}><ArrowDownToLine /></a>}</div><details className="cpa-invoice-details"><summary>View invoice details<ChevronRight /></summary><div className="customer-invoice-preview"><InvoicePaper invoice={invoice} today={today} customerView /></div></details></Card>
           </>}
           {current?.type === "messages" && <Card className="cpa-panel gap-0 py-0 cpa-chat"><div className="cpa-chat-heading"><span className="cpa-team-avatar"><Headphones /></span><div><h2>Your account team</h2></div><span><LockKeyhole />Private</span></div><div ref={conversation} onScroll={onConversationScroll} role="log" aria-label="Customer conversation" aria-live="polite" tabIndex={0} className="portal-conversation cpa-conversation">{data.messages.length ? data.messages.map(item => <article key={item.id} className={`cpa-message ${item.sender === "customer" ? "is-own" : ""}`}><span>{item.sender === "customer" ? "You" : "Account team"}</span><p data-no-translate>{item.body}</p><PortalLocalTime value={item.created_at} compact /></article>) : <div className="cpa-empty"><MessageCircle /><h3>No messages</h3></div>}</div>{sendAllowed ? preview ? <div className="cpa-demo-composer"><span>Write a message to your team…</span><Button disabled>Send message<ArrowUpRight /></Button></div> : composer : <p className="cpa-readonly"><LockKeyhole />Your team’s updates appear here. Customer replies are turned off.</p>}</Card>}
-          {current?.type === "content" && !selectedSection?.website?.html && <Card className="cpa-panel cpa-content-page">{selectedSection?.body}</Card>}
+          {current?.type === "content" && <Card className="cpa-panel cpa-content-page">{selectedSection?.body}</Card>}
           {(footer || design.supportEmail) && <footer className="cpa-footer">{footer && <p>{footer}</p>}{design.supportEmail && <a href={preview ? undefined : `mailto:${design.supportEmail}`}>Contact support<ArrowUpRight /></a>}</footer>}
         </div>
       </div>

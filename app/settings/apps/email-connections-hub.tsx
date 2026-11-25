@@ -1,5 +1,4 @@
 "use client";
-import { NotificationToast } from "@/components/ui/notification-toast";
 
 
 import { useSearchParams } from "next/navigation";
@@ -23,7 +22,6 @@ function ConnectEmail({ scope }: { scope: EmailConnectionScope }) {
       <DialogHeader><DialogTitle>Connect {scope === "workspace" ? "team" : "personal"} email</DialogTitle><DialogDescription>{scope === "workspace" ? "Add a shared inbox for customer enquiries and team conversations." : "Add your own sales email. Only you can access this personal connection."}</DialogDescription></DialogHeader>
       <div className="space-y-3">{connectionApps.filter(app => ["gmail", "netease-mail"].includes(app.id)).map(app => <Link key={app.id} href={emailProviderHref(app.id, scope)} className="flex items-center gap-3 rounded-xl border p-4 outline-none hover:border-primary/30 hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-ring"><ConnectionAppLogo src={app.logo} /><div className="min-w-0 flex-1"><p className="text-sm font-semibold">{app.name}</p><p className="mt-1 text-xs text-muted-foreground">{app.id === "gmail" ? "Gmail or Google Workspace" : "NetEase Lingxi Office"}</p></div><ArrowRight className="size-4 shrink-0 text-muted-foreground" /></Link>)}</div>
       <Link href={`/settings/apps/smtp?scope=${scope === "workspace" ? "team" : "personal"}`} className="rounded-lg border p-4 text-sm font-medium hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-ring">Other email provider (SMTP / IMAP)<ArrowRight aria-hidden="true" className="ml-2 inline size-4" /></Link>
-      <p className="text-xs leading-5 text-muted-foreground">Choose your provider, then test and save the connection. Existing accounts and default senders stay in place.</p>
     </DialogContent>
   </Dialog>;
 }
@@ -54,8 +52,7 @@ function AccountsPanel({ scope, overview, isAdmin }: { scope: EmailConnectionSco
   const Icon = scope === "personal" ? UserRound : UsersRound;
   return <div className="space-y-6 pt-3">
     <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="text-lg font-semibold">{scope === "personal" ? "My email accounts" : "Team email accounts"}</h2><p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">{scope === "personal" ? "Your own sales inboxes and sending accounts. Personal email is private to you." : "Shared inboxes for customer enquiries and team conversations. Administrators manage these connections."}</p></div>{canManage && accounts.length > 0 && !overview.error ? <ConnectEmail scope={scope} /> : null}</div>
-    <div className="flex items-start gap-3 rounded-xl border bg-muted/20 p-4"><Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" /><p className="text-sm leading-6 text-muted-foreground">{scope === "personal" ? "Connect a mailbox here to read and reply from your own address. Adding an account keeps your current default sender." : "Team email follows existing customer-access rules. Adding a team inbox keeps the current default team sender."}</p></div>
-    {overview.error ? <NotificationToast>{overview.error}</NotificationToast> : accounts.length ? <div className="overflow-hidden rounded-xl border bg-card">{accounts.map(account => <AccountRow key={account.id} account={account} canManage={canManage} />)}</div> : <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed px-5 py-14 text-center"><span className="grid size-12 place-items-center rounded-2xl bg-muted"><Icon className="size-6 text-muted-foreground" /></span><h3 className="font-medium">{scope === "personal" ? "Connect your first personal email" : "No team email accounts yet"}</h3><p className="mb-1 max-w-md text-sm leading-6 text-muted-foreground">{scope === "personal" ? "Connect Gmail, Lingxi Mail, or another provider that supports SMTP and IMAP." : canManage ? "Add a shared address for your team's customer conversations." : "Your administrator can add a shared inbox for the team."}</p>{canManage ? <ConnectEmail scope={scope} /> : null}</div>}
+    {overview.error ? <p role="status" className="rounded-xl border p-5 text-sm text-muted-foreground">{overview.error}</p> : accounts.length ? <div className="overflow-hidden rounded-xl border bg-card">{accounts.map(account => <AccountRow key={account.id} account={account} canManage={canManage} />)}</div> : <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed px-5 py-14 text-center"><span className="grid size-12 place-items-center rounded-2xl bg-muted"><Icon className="size-6 text-muted-foreground" /></span><h3 className="font-medium">{scope === "personal" ? "Connect your first personal email" : "No team email accounts yet"}</h3><p className="mb-1 max-w-md text-sm leading-6 text-muted-foreground">{scope === "personal" ? "Connect Gmail, Lingxi Mail, or another provider that supports SMTP and IMAP." : canManage ? "Add a shared address for your team's customer conversations." : "Your administrator can add a shared inbox for the team."}</p>{canManage ? <ConnectEmail scope={scope} /> : null}</div>}
     {scope === "workspace" && !isAdmin ? <p className="flex items-center gap-2 text-xs text-muted-foreground"><LockKeyhole className="size-3.5" />Contact your administrator to add or update a team connection.</p> : null}
   </div>;
 }
@@ -74,7 +71,7 @@ export function EmailConnectionsHub({ connections, overview, isAdmin, initialVie
       <TabsTrigger value="personal" className="flex-none px-2 py-2"><UserRound />My email<Badge variant="secondary">{overview.accounts.filter(account => account.scope === "personal").length}</Badge></TabsTrigger>
       <TabsTrigger value="team" className="flex-none px-2 py-2"><UsersRound />Team email<Badge variant="secondary">{overview.accounts.filter(account => account.scope === "workspace").length}</Badge></TabsTrigger>
     </TabsList>
-    <TabsContent value="apps"><AppsConnections connections={connections} /></TabsContent>
+    <TabsContent value="apps"><AppsConnections connections={connections} isAdmin={isAdmin} /></TabsContent>
     <TabsContent value="personal"><AccountsPanel scope="personal" overview={overview} isAdmin={isAdmin} /></TabsContent>
     <TabsContent value="team"><AccountsPanel scope="workspace" overview={overview} isAdmin={isAdmin} /></TabsContent>
   </Tabs>;

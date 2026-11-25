@@ -16,6 +16,8 @@ import { mergePartialMailboxMessages } from "@/lib/mailbox-sync";
 import { usePreferences } from "@/components/preferences-provider";
 import { useBackgroundRefresh } from "@/components/use-background-refresh";
 import { useEmailReplyLink } from "@/components/use-email-reply-link";
+import { useEmailReplyOperation } from "@/components/use-email-reply-operation";
+import { EmailReplyStatus } from "@/components/email-reply-status";
 import { useEmailCustomerContext } from "@/components/use-email-customer-context";
 import { applyEmailCustomerContext } from "@/lib/email-customer-context";
 import { emailDeepLinkSelection } from "@/lib/email-deep-link";
@@ -84,7 +86,7 @@ import { requestEmailTranslation } from "@/lib/email-translation-client";
 import type { Catalog, Product } from "@/lib/types";
 import type { CustomerProfileContext } from "@/lib/ai/email-rewrite";
 import type { EmailSummary } from "@/lib/ai/email-summary";
-import { emailReplyPlanSchema } from "@/lib/ai/email-reply";
+import { emailReplyPlanSchema, replyCatalogProducts } from "@/lib/ai/email-reply";
 import { prepareReplyInvoice } from "@/lib/email-reply-client";
 import { filterCompanyEmails, type CompanyEmailScope } from "@/lib/company-email";
 import type { MailboxOption } from "@/lib/mailbox-utils";
@@ -189,7 +191,7 @@ async function fileToAttachment(file: File): Promise<ComposerAttachment> {
   };
 }
 
-function ComposerAttachmentChip({ attachment, onRemove }: { attachment: ComposerAttachment; onRemove: (id: string) => void }) {
+function ComposerAttachmentChip({ attachment, onRemove, disabled = false }: { attachment: ComposerAttachment; onRemove: (id: string) => void; disabled?: boolean }) {
   const linkRef = useRef<HTMLAnchorElement>(null);
 
   useEffect(() => {
@@ -207,13 +209,13 @@ function ComposerAttachmentChip({ attachment, onRemove }: { attachment: Composer
     <a ref={linkRef} target="_blank" rel="noopener noreferrer" aria-label={`Open ${attachment.filename}`} title={`Open ${attachment.filename}`} className="inline-flex min-w-0 items-center gap-2 rounded-sm hover:text-primary hover:underline focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2">
       <FileText className="size-3.5 shrink-0 text-muted-foreground" /><span className="max-w-52 truncate">{attachment.filename}</span><span className="shrink-0 text-muted-foreground">{Math.max(1, Math.round(attachment.size / 1024))} KB</span>
     </a>
-    <button type="button" onClick={() => onRemove(attachment.id)} aria-label={`Remove ${attachment.filename}`} className="shrink-0 rounded-full p-0.5 hover:bg-muted"><X className="size-3" /></button>
+    <button type="button" disabled={disabled} onClick={() => onRemove(attachment.id)} aria-label={`Remove ${attachment.filename}`} className="shrink-0 rounded-full p-0.5 hover:bg-muted disabled:opacity-40"><X className="size-3" /></button>
   </span>;
 }
 
-function AttachmentChips({ attachments, onRemove }: { attachments: ComposerAttachment[]; onRemove: (id: string) => void }) {
+function AttachmentChips({ attachments, onRemove, disabled = false }: { attachments: ComposerAttachment[]; onRemove: (id: string) => void; disabled?: boolean }) {
   if (!attachments.length) return null;
-  return <div className="flex flex-wrap gap-2 px-3 pb-3">{attachments.map((attachment) => <ComposerAttachmentChip key={attachment.id} attachment={attachment} onRemove={onRemove} />)}</div>;
+  return <div className="flex flex-wrap gap-2 px-3 pb-3">{attachments.map((attachment) => <ComposerAttachmentChip key={attachment.id} attachment={attachment} onRemove={onRemove} disabled={disabled} />)}</div>;
 }
 
 function emailMatchesFolder(
@@ -443,8 +445,6 @@ export function EmailInboxWorkspace({
   const [translationErrors, setTranslationErrors] = useState<Record<string, string>>({});
   const [translationOn, setTranslationOn] = useState(preferences.emailTranslate);
   const [aiReplyOn, setAiReplyOn] = useState(preferences.emailAiSuggestions);
-  const [aiReplyBusy, setAiReplyBusy] = useState(false);
-  const aiReplyInProgress = useRef(false);
   const aiReplyInvoices = useRef(new Map<string, string>());
   const [aiReplyInvoiceId, setAiReplyInvoiceId] = useState<string | null>(null);
   const [starred, setStarred] = useState<Set<string>>(() => new Set(sourceEmails.filter((email) => email.starred).map((email) => email.id)));
@@ -811,6 +811,8 @@ export function EmailInboxWorkspace({
   const automaticRecipients = replyParent ? replyRecipients(replyParent, mailboxes.map((mailbox) => mailbox.email || ""), replyAll) : { to: [], cc: [] };
   const replyRecipient = replyTo ?? (automaticRecipients.to.join(", ") || target?.recipient || selected?.contact || "");
   const effectiveReplyCc = replyCc ?? automaticRecipients.cc.join(", ");
+  const aiReplyOperation = useEmailReplyOperation(JSON.stringify([draftMailboxId, selectedConversation?.id, replyParent?.id, replyDraftId, replyRecipient, replySenderId]));
+  const aiReplyBusy = aiReplyOperation.busy;
   useEffect(() => {
     if (!draftsReady || !composerConversationId || !replyDraftId || !draftMailboxId || invoiceViewer?.role === "viewer") return;
     const value: SavedEmailDraft = { id: replyDraftId, mailboxId: draftMailboxId, senderId: replySenderId, kind: "reply", threadId: composerConversationId, to: replyRecipient, cc: effectiveReplyCc, bcc: replyBcc, subject: selected?.subject || "", text: draft, html: draftHtml, bodyText: replyBodyText, parentId: replyParent?.id, replyAll, attachments: replyAttachments, requestId: replyRequestId, revision: 0 };
@@ -1053,6 +1055,7 @@ export function EmailInboxWorkspace({
   }
 
   function clearReplyComposer() {
+    aiReplyOperation.cancel();
     aiRequestId.current += 1;
     setReplyExpanded(Boolean(companyScope));
     setDraft("");
@@ -1065,6 +1068,7 @@ export function EmailInboxWorkspace({
   }
 
   function updateDraft(value: string, html: string, bodyText = value) {
+    if (aiReplyOperation.error) aiReplyOperation.cancel();
     if (!replyParentId && replyParent) setReplyParentId(replyParent.id);
     editReply(value, html, bodyText);
     setAiWritingError(null);
@@ -1188,7 +1192,7 @@ export function EmailInboxWorkspace({
   }
 
   async function addFiles(files: FileList | null, target: "reply" | "compose") {
-    if (!files?.length) return;
+    if (!files?.length || attachmentBusy || (target === "reply" && aiReplyBusy)) return;
     const session = replySession.current;
     try {
       setAttachmentBusy(true);
@@ -1198,7 +1202,6 @@ export function EmailInboxWorkspace({
       if (target === "reply" && session !== replySession.current) return;
       if (target === "reply") setReplyAttachments((current) => [...current, ...next]);
       else setComposeAttachments((current) => [...current, ...next]);
-      setNotice(`${next.length} attachment${next.length === 1 ? "" : "s"} added.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to attach this file.";
       if (target === "compose") setComposeError(message);
@@ -1216,7 +1219,7 @@ export function EmailInboxWorkspace({
   }
 
   async function insertLibraryItem(document: LibraryDocument) {
-    if (!libraryTarget || attachmentBusy) return;
+    if (!libraryTarget || attachmentBusy || (libraryTarget === "reply" && aiReplyBusy)) return;
     const target = libraryTarget;
     const session = replySession.current;
     setAttachmentBusy(true);
@@ -1240,7 +1243,7 @@ export function EmailInboxWorkspace({
   }
 
   async function attachCatalog(title: string, bytes: Uint8Array) {
-    if (attachmentBusy) return;
+    if (attachmentBusy || (catalogTarget === "reply" && aiReplyBusy)) return;
     const session = replySession.current;
     const currentAttachments = catalogTarget === "reply" ? replyAttachments : composeAttachments;
     if (currentAttachments.length >= 10) {
@@ -1260,7 +1263,6 @@ export function EmailInboxWorkspace({
       if (catalogTarget === "reply") setReplyAttachments((current) => [...current, attachment]);
       else setComposeAttachments((current) => [...current, attachment]);
       setCatalogOpen(false);
-      setNotice(`${attachment.filename} is ready to send.`);
     } finally {
       setAttachmentBusy(false);
     }
@@ -1269,6 +1271,7 @@ export function EmailInboxWorkspace({
   async function attachInvoicePdf(invoiceId: string) {
     if (!invoiceContext) throw new Error("Open customer invoices from the email composer first.");
     const target = invoiceContext.target || "reply";
+    if (attachmentBusy || (target === "reply" && aiReplyBusy)) return;
     const session = replySession.current;
     const currentAttachments = target === "reply" ? replyAttachments : composeAttachments;
     setAttachmentBusy(true);
@@ -1289,28 +1292,25 @@ export function EmailInboxWorkspace({
       const next = mergeInvoiceAttachment(currentAttachments, attachment);
       if (target === "reply") setReplyAttachments(next);
       else setComposeAttachments(next);
-      setNotice(`${attachment.filename} attached to your email.`);
     } finally {
       setAttachmentBusy(false);
     }
   }
 
   async function generateAiReply() {
-    if (!selected || aiReplyInProgress.current || attachmentBusy || sending || draft.trim() || replyHasImages || replyMediaBusy) return;
+    if (!selected || !aiConfigured || !savedDrafts.ready || footerLoading || footerError || attachmentBusy || sending || draft.trim() || replyHasImages || replyMediaBusy) return;
+    const operation = aiReplyOperation.start("Reading the conversation and preparing your reply…");
+    if (!operation) return;
     const session = replySession.current;
-    const isCurrent = () => replySession.current === session;
-    aiReplyInProgress.current = true;
-    setAiReplyBusy(true);
-    setAttachmentBusy(true);
+    const isCurrent = () => operation.isCurrent() && replySession.current === session;
     setAiReplyOn(false);
     setAiDraft("");
     setAiDraftSource("");
     setAiWriting(false);
     setAiWritingError(null);
     startReply();
-    setNotice("Reading the conversation and preparing your reply…");
     try {
-      const { products, catalogs } = await ensureResources();
+      const { products } = await ensureResources();
       if (!isCurrent()) return;
       // IMAP list rows can contain only a preview. Load original bodies first.
       const history = await Promise.all(conversation.slice(-8).map(async (message) => {
@@ -1318,7 +1318,7 @@ export function EmailInboxWorkspace({
         if (!message.crmEmailId && (!message.uid || !message.uidValidity || !message.mailboxKey)) throw new Error("Load the conversation messages before generating a reply.");
         const params = new URLSearchParams({ uid: String(message.uid), validity: String(message.uidValidity), mailbox: message.mailboxKey || "", folder: message.providerFolder || "INBOX" });
         if (message.companyScopeId) params.set("companyId", message.companyScopeId);
-        const response = await fetch(message.crmEmailId ? `/api/email/crm-message?id=${encodeURIComponent(message.crmEmailId)}` : `/api/email/message?${params}`, { cache: "no-store" });
+        const response = await fetch(message.crmEmailId ? `/api/email/crm-message?id=${encodeURIComponent(message.crmEmailId)}` : `/api/email/message?${params}`, { cache: "no-store", signal: operation.signal });
         const result = await response.json();
         if (!response.ok || !result.email) throw new Error(result.error || "Unable to read the conversation.");
         return { ...message, ...result.email } as EmailWorkspaceItem;
@@ -1326,6 +1326,7 @@ export function EmailInboxWorkspace({
       if (!isCurrent()) return;
       const response = await fetch("/api/email/reply", {
         method: "POST", headers: { "Content-Type": "application/json" },
+        signal: operation.signal,
         body: JSON.stringify({
           language,
           recipient: selected.contactName || selected.customerProfile?.contactName || replyRecipient,
@@ -1333,7 +1334,7 @@ export function EmailInboxWorkspace({
           assignedManagerName: selected.ownerId ? selected.ownerName : undefined,
           customerProfile: selected.customerProfile,
           conversationHistory: history.map((message) => ({ direction: message.direction, subject: message.subject, body: message.body.slice(0, 4_000), timestamp: message.timestamp })),
-          products: products.slice(0, 500).map((product) => ({ sku: product.sku, name: `${product.name} ${product.material} ${product.color} ${product.diameter} ${product.weight}`, variants: product.variants.map(({ id, name }) => ({ id, name })) })),
+          products: products.filter(product => product.status === "Active").slice(0, 500).map((product) => ({ sku: product.sku, material: product.material, name: `${product.name} ${product.material} ${product.color} ${product.diameter} ${product.weight}`, variants: product.variants.map(({ id, name }) => ({ id, name })) })),
         }),
       });
       const result = await response.json();
@@ -1343,9 +1344,8 @@ export function EmailInboxWorkspace({
       if (replyAttachments.length + Number(plan.attachCatalog) + Number(plan.invoiceItems.length > 0) > 10) throw new Error("Remove some attachments before generating this reply. An email supports up to 10 files.");
       const prepared: ComposerAttachment[] = [];
       if (plan.attachCatalog) {
-        setNotice("Preparing the catalog PDF…");
-        const saved = catalogs.filter((catalog) => catalog.company === selected.company).sort((a, b) => b.version - a.version)[0];
-        const catalogProducts = saved ? products.filter((product) => saved.productSkus.includes(product.sku)) : products;
+        operation.update("Preparing the catalog PDF…");
+        const catalogProducts = replyCatalogProducts(plan, products, history);
         if (!catalogProducts.length) throw new Error("No catalog products are available. Add products before generating a catalog reply.");
         const { buildCatalogPdfWithImages } = await import("@/lib/catalog-pdf");
         const bytes = await buildCatalogPdfWithImages(catalogProducts, { title: "Filazoo product catalog", customer: selected.company });
@@ -1355,8 +1355,8 @@ export function EmailInboxWorkspace({
       }
       if (plan.invoiceItems.length) {
         if (!canCreateInvoices) throw new Error("Your role cannot create invoices. Ask an operator to prepare the invoice.");
-        setNotice("Creating a draft invoice with current CRM pricing…");
-        const pdf = await prepareReplyInvoice({ items: plan.invoiceItems, email: replyRecipient, companyId: selected.companyId, threadId: selectedConversation?.id, sourceMessageId: history.filter((message) => message.direction === "inbound").at(-1)?.id || selected.id, customerName: selected.company, cache: aiReplyInvoices.current, isCurrent });
+        operation.update("Creating a draft invoice with current CRM pricing…");
+        const pdf = await prepareReplyInvoice({ items: plan.invoiceItems, email: replyRecipient, companyId: selected.companyId, threadId: selectedConversation?.id, sourceMessageId: history.filter((message) => message.direction === "inbound").at(-1)?.id || selected.id, customerName: selected.company, cache: aiReplyInvoices.current, isCurrent, signal: operation.signal });
         if (!isCurrent()) return;
         setAiReplyInvoiceId(pdf.invoiceId);
         prepared.push({ id: pdf.id, filename: pdf.filename, content: bytesToBase64(pdf.bytes), contentType: "application/pdf", size: pdf.bytes.byteLength });
@@ -1364,18 +1364,16 @@ export function EmailInboxWorkspace({
       if (!isCurrent()) return;
       setReplyAttachments((current) => [...current, ...prepared]);
       setDraft(plan.body);
-      setNotice("AI reply is ready. Review the message and PDFs before sending.");
     } catch (error) {
-      if (isCurrent()) setNotice(error instanceof Error ? error.message : "Unable to prepare this AI reply. Please retry.");
+      if (isCurrent()) operation.fail(error instanceof Error ? error.message : "Unable to prepare this AI reply. Please retry.");
     } finally {
-      aiReplyInProgress.current = false;
       notifyAiCreditsChanged();
-      setAiReplyBusy(false);
-      setAttachmentBusy(false);
+      operation.finish();
     }
   }
 
   async function saveReply() {
+    if (aiReplyBusy) return;
     if (replyScheduleOpen && (!scheduleAt || !Number.isFinite(Date.parse(scheduleAt)) || Date.parse(scheduleAt) <= Date.now())) {
       setNotice("Choose a future date and time to schedule this email.");
       return;
@@ -1595,6 +1593,7 @@ export function EmailInboxWorkspace({
   const replyHasContent = Boolean(replyBodyText.trim() || replyHasImages || replyAttachments.length);
   const composeHasContent = Boolean(composeBodyText.trim() || composeHasImages || composeAttachments.length);
   const replyEditorDisabled = aiReplyBusy || sending || footerLoading || !savedDrafts.ready;
+  const aiReplyDisabled = !aiConfigured || replyEditorDisabled || attachmentBusy || replyMediaBusy || Boolean(footerError || draft.trim() || replyHasImages);
   const replyDraftNeedsRetry = savedDrafts.status !== "Draft saved" && !/^(Saving|Loading) drafts?/.test(savedDrafts.status);
   const replySendHint = !savedDrafts.ready ? "Loading your draft…" : footerLoading ? "Loading your email footer…" : aiReplyBusy ? "Preparing your reply…" : attachmentBusy || replyMediaBusy ? "Preparing attachments…" : !replySender?.sendConfigured ? "Choose a configured sender." : !replyRecipient.trim() ? "Add a recipient to send." : !replyHasContent ? "Write a message or attach a file to send." : replyScheduleOpen && !scheduleAt ? "Choose a send date and time." : "";
   const folderItems: Array<{ id: Folder; label: string; icon: typeof Inbox }> = [
@@ -1613,6 +1612,8 @@ export function EmailInboxWorkspace({
   for (const item of providerFolders.filter((item) => item.kind === "custom")) folderItems.push({ id: `provider:${item.path}`, label: item.name, icon: Inbox });
   return (
     <div data-ai-mailbox-id={selectedMailboxId || undefined} data-ai-email-id={reading ? selected?.id : undefined} data-ai-company-id={reading ? selected?.companyId || undefined : companyScope?.id} className={`email-workspace flex min-w-0 flex-col overflow-hidden bg-background ${companyScope ? "company-email-workspace min-h-0 flex-1" : "h-full min-h-0 border-t"}`}>
+      {notice ? <NotificationToast tone="message">{notice}</NotificationToast> : null}
+      {footerError && (replyExpanded || composeOpen) ? <NotificationToast>{footerError}</NotificationToast> : null}
       {companyScope ? <h3 className="sr-only">Customer mailbox</h3> : null}
       {!companyScope ? <><PageHeaderDetails>
         <nav aria-label="Email accounts" className="flex min-w-0 items-center gap-5 overflow-x-auto">
@@ -1678,7 +1679,6 @@ export function EmailInboxWorkspace({
 </>}
           {companyScope && inboxConfigured ? <div className="flex shrink-0 items-center justify-end border-b px-3 py-1"><EmailSyncStatus health={Object.values(syncHealth)} lastSuccessAt={lastSuccessfulSync} error={syncError} partialSnapshot={partialSnapshot} /></div> : null}
           {searchStatus ? <p role="status" className="border-b px-3 py-2 text-xs text-muted-foreground">{searchStatus}</p> : null}
-          {notice ? <NotificationToast tone="message">{notice}</NotificationToast> : null}
           <div className="mail-message-list min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
 {folder === "drafts" ? <div className="divide-y">{Object.values(savedDrafts.drafts).length ? Object.values(savedDrafts.drafts).map((value) => <div key={value.id} className="flex items-center gap-3 px-4 py-4"><button type="button" onClick={() => resumeDraft(value)} className="min-w-0 flex-1 text-left"><span className="block truncate text-sm font-medium">{value.subject || "(No subject)"}</span><span className="block truncate text-xs text-muted-foreground">{value.to || "No recipient"} · {value.bodyText.slice(0, 100)}</span></button><button type="button" onClick={() => { savedDrafts.remove(value); if (value.id === composeDraftId) { setComposeDraftId(""); setComposeTo(""); setComposeCc(""); setComposeBcc(""); setComposeBody(""); setComposeSubject(""); setComposeAttachments([]); setComposeProviderDraft(undefined); } }} aria-label={"Discard draft " + value.subject} className="rounded p-2 text-muted-foreground"><Trash2 className="size-4" /></button></div>) : <p className="p-5 text-sm text-muted-foreground">No saved drafts.</p>}<EmailMessageList emptyIcon={FileText} conversations={pageItems} categories={visibleCategories} compact={reading} activeId={selectedConversation?.id} checked={checkedIds} readMessages={readMessages} starred={starred} onCheck={() => undefined} onOpen={openConversation} onStar={toggleStar} /></div> : folder === "scheduled" ? <div className="divide-y">{scheduledError ? <NotificationToast>{scheduledError}</NotificationToast> : null}{scheduledEmails.map((value) => <div key={value.id} className="p-4"><p className="font-medium">{value.payload.subject || "(No subject)"}</p><p className="mt-1 text-xs text-muted-foreground">{value.payload.to?.join(", ")} · {new Date(value.scheduled_at).toLocaleString()} · {value.status}</p>{value.error ? <p className="mt-2 text-xs text-red-600">{value.error}</p> : null}{value.status === "scheduled" ? <button type="button" className="mt-2 text-xs underline" onClick={async () => { const response = await fetch("/api/email/scheduled", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: value.id }) }); const result = await response.json(); if (response.ok) setScheduledEmails((current) => current.filter((item) => item.id !== value.id)); else setScheduledError(result.error); }}>Cancel scheduled send</button> : null}{["scheduled", "failed"].includes(value.status) ? <button type="button" className="ml-4 mt-2 text-xs underline" onClick={() => void editScheduledEmail(value)}>Edit scheduled email</button> : null}</div>)}{!scheduledEmails.length && !scheduledError ? <p className="p-5 text-sm text-muted-foreground">No scheduled emails.</p> : null}</div> : <>
             <EmailMessageList unavailable={mailboxUnavailable} followups={selectedMailboxId && followupActions?.mailboxId === selectedMailboxId ? conversationActions : undefined} emptyIcon={folderItems.find((item) => item.id === folder)?.icon} conversations={pageItems} categories={visibleCategories} compact={reading} simple={Boolean(companyScope)} activeId={reading ? selectedConversation?.id : undefined} checked={checkedIds} readMessages={readMessages} starred={starred} onCheck={(id) => setCheckedIds((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; })} onOpen={openConversation} onStar={toggleStar} /></>}
@@ -1730,7 +1730,7 @@ export function EmailInboxWorkspace({
                           <AiIcon className="size-3.5" state={aiUpdating ? "thinking" : "idle"} />
                           <span>{aiUpdating ? (aiDraft ? "Refining your latest changes…" : "Crafting your reply…") : aiWritingError ? "Couldn't update this draft" : "Ready to send · Updates as you type"}</span>
                         </div>
-                        {aiWritingError ? <NotificationToast tone="warning"><span>{aiWritingError}</span><button type="button" onClick={() => setAiRetryNonce((value) => value + 1)} className="rounded-md border border-amber-300/70 bg-background px-2.5 py-1.5 font-semibold hover:bg-amber-50 dark:hover:bg-amber-500/10">Try again</button></NotificationToast> : null}
+                        {aiWritingError ? <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-amber-300/70 bg-amber-50/50 p-3 text-xs dark:bg-amber-500/10"><p role="alert" className="min-w-0 flex-1 break-words text-muted-foreground">{aiWritingError}</p><button type="button" onClick={() => setAiRetryNonce((value) => value + 1)} className="rounded-md border border-amber-300/70 bg-background px-2.5 py-1.5 font-semibold hover:bg-amber-50 dark:hover:bg-amber-500/10">Try again</button></div> : null}
                       </div>
                     </div>
                   </div>
@@ -1740,7 +1740,7 @@ export function EmailInboxWorkspace({
             <div className="mail-reply-panel shrink-0 border-t bg-background" data-expanded={replyExpanded} role="region" aria-label="Reply composer">
               <ColumnResizeHandle label="Reply area height" variable="--mail-reply-height" container=".mail-reader" panel=".mail-reply-panel" min={360} max={700} reverse orientation="horizontal" className={replyExpanded ? "mail-reply-resize" : "hidden"} />
               <div className="mail-reply-content min-h-0 flex-1 overflow-y-auto p-3">
-              {!replyExpanded ? <div className="flex items-center gap-2"><button type="button" onClick={startReply} className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-md border bg-muted/20 px-3 text-left text-xs text-muted-foreground"><Reply className="size-4 shrink-0" /><span className="truncate">Quick reply to {replyRecipient}</span></button><button type="button" onClick={() => void generateAiReply()} disabled={aiReplyBusy || attachmentBusy || sending} className="inline-flex h-11 items-center gap-2 rounded-md border px-3 text-xs text-violet-600"><AiIcon className="size-4" />AI reply</button></div> : <>
+              {!replyExpanded ? <div className="flex items-center gap-2"><button type="button" onClick={startReply} className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-md border bg-muted/20 px-3 text-left text-xs text-muted-foreground"><Reply className="size-4 shrink-0" /><span className="truncate">Quick reply to {replyRecipient}</span></button><button type="button" onClick={() => void generateAiReply()} disabled={aiReplyDisabled} className="inline-flex h-11 items-center gap-2 rounded-md border px-3 text-xs text-violet-600 disabled:opacity-40"><AiIcon className="size-4" />AI reply</button></div> : <>
               <div className="mb-2 flex shrink-0 items-center justify-between gap-2 text-xs"><span className="font-semibold">{replyAll ? "Reply all" : "Reply"}</span><div className="flex items-center gap-1">
                 <Popover><PopoverTrigger aria-label="AI reply options" className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-violet-600 hover:bg-muted"><AiIcon className="size-3.5" state={aiReplyBusy || aiUpdating ? "thinking" : "idle"} />AI tools<ChevronRight className="size-3 rotate-90" /></PopoverTrigger>
                   <PopoverContent align="end" side="top" className="mail-ai-tools w-80 max-w-[calc(100vw-2rem)] max-h-[min(28rem,var(--available-height))] overflow-y-auto p-3">
@@ -1751,27 +1751,26 @@ export function EmailInboxWorkspace({
                   {!aiConfigured ? <span className="text-xs text-amber-700">AI provider not configured — suggestions remain available</span> : null}
                 </div>
                 {aiReplyOn ? <div className="mb-2 flex gap-2 overflow-x-auto"><span className="flex shrink-0 items-center gap-1 text-xs font-semibold text-violet-600"><AiIcon className="size-3.5" />Suggestions</span>{["Send pricing + MOQ", "Confirm shipping details", "Schedule a follow-up"].map((item) => <button key={item} type="button" onClick={() => setDraft(item === "Send pricing + MOQ" ? `Hi ${(selected.contactName || selected.customerProfile?.contactName || selected.contact).split(" ")[0]},\n\nThanks for your message. I’ll send our current wholesale pricing and minimum order quantities for your review.\n\nBest,\n${defaultMailboxEmail || "Filazoo"}` : item === "Confirm shipping details" ? `Hi ${(selected.contactName || selected.customerProfile?.contactName || selected.contact).split(" ")[0]},\n\nWe can prepare a shipping quote. Could you confirm the delivery postcode and expected quantity?\n\nBest,\n${defaultMailboxEmail || "Filazoo"}` : `Hi ${(selected.contactName || selected.customerProfile?.contactName || selected.contact).split(" ")[0]},\n\nI’ll follow up with you shortly with the latest availability and next steps.\n\nBest,\n${defaultMailboxEmail || "Filazoo"}`)} className="shrink-0 rounded-full border px-3 py-1.5 text-xs text-muted-foreground hover:border-primary/40 hover:text-foreground">{item}</button>)}</div> : null}
-                <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><button type="button" disabled={aiReplyBusy || attachmentBusy || sending || Boolean(draft.trim() || replyHasImages)} onClick={() => void generateAiReply()} className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-violet-600 disabled:opacity-40"><AiIcon className="size-3.5" state={aiReplyBusy ? "thinking" : "idle"} />{aiReplyBusy ? "Preparing reply & PDFs?" : "AI reply"}</button>{aiReplyInvoiceId ? <Link href={`/invoices/${aiReplyInvoiceId}`} target="_blank" className="font-medium text-emerald-700 underline">Review draft invoice</Link> : null}</div>
+                <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><button type="button" disabled={aiReplyDisabled} onClick={() => void generateAiReply()} className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-violet-600 disabled:opacity-40"><AiIcon className="size-3.5" state={aiReplyBusy ? "thinking" : "idle"} />{aiReplyBusy ? "Preparing your reply…" : "AI reply"}</button>{aiReplyInvoiceId ? <Link href={`/invoices/${aiReplyInvoiceId}`} target="_blank" className="font-medium text-emerald-700 underline">Review draft invoice</Link> : null}</div>
                   </PopoverContent>
                 </Popover>
-                <button type="button" aria-label="Collapse reply" title="Collapse reply" disabled={sending} onClick={() => setReplyExpanded(false)} className="flex size-8 items-center justify-center rounded-md hover:bg-muted disabled:opacity-40"><X className="size-4" /></button>
+                <button type="button" aria-label="Collapse reply" title="Collapse reply" disabled={sending || aiReplyBusy} onClick={() => setReplyExpanded(false)} className="flex size-8 items-center justify-center rounded-md hover:bg-muted disabled:opacity-40"><X className="size-4" /></button>
               </div></div>
+              <EmailReplyStatus progress={aiReplyOperation.progress} error={aiReplyOperation.error} onCancel={aiReplyOperation.cancel} onRetry={() => void generateAiReply()} onDismiss={aiReplyOperation.cancel} />
               <div className="mail-reply-editor overflow-hidden rounded-lg border bg-background">
                 <div className="mail-reply-scroll px-3 sm:px-4">
                   <div className="mail-reply-recipient-header">
-                    <EmailRecipientFields key={`recipients:${replyDraftId}`} to={replyRecipient} cc={effectiveReplyCc} bcc={replyBcc} onTo={setReplyTo} onCc={setReplyCc} onBcc={setReplyBcc} disabled={sending} prefix="Reply " sender={<div className="mail-reply-sender flex min-w-0 items-center gap-2 py-1.5"><span className="shrink-0 text-xs text-muted-foreground">From</span><div className="min-w-0"><SenderSelect mailboxes={mailboxes} value={replySenderId} onChange={setReplySenderId} disabled={sending} label="Reply sender email" /></div></div>} />
+                    <EmailRecipientFields key={`recipients:${replyDraftId}`} to={replyRecipient} cc={effectiveReplyCc} bcc={replyBcc} onTo={setReplyTo} onCc={setReplyCc} onBcc={setReplyBcc} disabled={sending || aiReplyBusy} prefix="Reply " sender={<div className="mail-reply-sender flex min-w-0 items-center gap-2 py-1.5"><span className="shrink-0 text-xs text-muted-foreground">From</span><div className="min-w-0"><SenderSelect mailboxes={mailboxes} value={replySenderId} onChange={setReplySenderId} disabled={sending || aiReplyBusy} label="Reply sender email" /></div></div>} />
                   </div>
                   <EmailBodyEditor key={replyDraftId} ref={replyInput} value={draft} html={draftHtml} signature={preferences.emailSignature} footer={personalFooter} onChange={updateDraft} onError={setNotice} onBusyChange={setReplyMediaBusy} attachmentCount={replyAttachments.length} disabled={replyEditorDisabled} bodyEmpty={personalFooter?.html ? !replyBodyText.trim() && !replyHasImages : undefined} compactSignature label="Reply message" placeholder="Write your reply…" className="min-h-40 py-3 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring" />
-                  <AttachmentChips attachments={replyAttachments} onRemove={(id) => setReplyAttachments((current) => current.filter((item) => item.id !== id))} />
+                  <AttachmentChips disabled={replyEditorDisabled} attachments={replyAttachments} onRemove={(id) => setReplyAttachments((current) => current.filter((item) => item.id !== id))} />
                 </div>
                 <div className="mail-reply-footer shrink-0 border-t bg-muted/20 px-3 py-2">
                   {replyDraftNeedsRetry ? <div className="mb-2"><EmailDraftStatus status={savedDrafts.status} onRetry={() => void savedDrafts.retry()} disabled={sending} /></div> : null}
-                  {footerError ? <NotificationToast>{footerError}</NotificationToast> : null}
-                  {notice ? <NotificationToast tone="message"><span className="min-w-0 flex-1 break-words">{/Unable to load saved mailbox:|column .* does not exist/i.test(notice) ? "Mailbox sync is temporarily unavailable. Your reply is still open." : notice}</span><button type="button" aria-label="Dismiss reply notice" title="Dismiss notice" onClick={() => setNotice(null)} className="shrink-0 rounded p-0.5 hover:bg-background"><X className="size-3.5" /></button></NotificationToast> : null}
                   <div className="mail-reply-actions flex items-center gap-1.5">
-                    <input ref={replyFileInput} type="file" multiple disabled={sending || attachmentBusy} className="hidden" onChange={(event) => { void addFiles(event.target.files, "reply"); event.target.value = ""; }} />
-                    <EmailAttachmentMenu compact disabled={attachmentBusy || sending} onUpload={() => replyFileInput.current?.click()} onLibrary={() => { setLibraryTab("files"); setLibraryTarget("reply"); }} />
-                    <button type="button" disabled={attachmentBusy || sending} title="Files & templates" aria-label="Insert from file library" onClick={() => { setLibraryTab("templates"); setLibraryTarget("reply"); }} className="flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted disabled:opacity-40"><Library className="size-4" /></button>
+                    <input ref={replyFileInput} type="file" multiple disabled={replyEditorDisabled || attachmentBusy} className="hidden" onChange={(event) => { void addFiles(event.target.files, "reply"); event.target.value = ""; }} />
+                    <EmailAttachmentMenu compact disabled={attachmentBusy || replyEditorDisabled} onUpload={() => replyFileInput.current?.click()} onLibrary={() => { setLibraryTab("files"); setLibraryTarget("reply"); }} />
+                    <button type="button" disabled={attachmentBusy || replyEditorDisabled} title="Files & templates" aria-label="Insert from file library" onClick={() => { setLibraryTab("templates"); setLibraryTarget("reply"); }} className="flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted disabled:opacity-40"><Library className="size-4" /></button>
                     <Popover>
                       <PopoverTrigger aria-label="More reply options" title="Formatting and more options" disabled={sending} onMouseDown={(event) => event.preventDefault()} className="flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted disabled:opacity-40"><MoreHorizontal className="size-4" /></PopoverTrigger>
                       <PopoverContent align="start" side="top" className="w-64 max-w-[calc(100vw-2rem)] max-h-[min(28rem,var(--available-height))] overflow-y-auto p-3">
@@ -1779,8 +1778,8 @@ export function EmailInboxWorkspace({
                         <p className="text-xs text-muted-foreground">Text formatting</p>
                         <EmailFormatToolbar editor={replyInput} disabled={replyEditorDisabled} />
                         <div className="grid gap-1 border-t pt-2">
-                          <button type="button" disabled={attachmentBusy || sending} onClick={() => openCatalogPicker("reply")} className="flex h-9 items-center gap-2 rounded-md px-2 text-left text-xs hover:bg-muted disabled:opacity-40"><Library className="size-4" />Add catalog PDF</button>
-                          {canCreateInvoices ? <button type="button" disabled={attachmentBusy || sending} onClick={() => setInvoiceContext({companyId:selected.companyId,email:replyRecipient,threadId:selectedConversation?.id,customerName:selected.company,target:"reply"})} className="flex h-9 items-center gap-2 rounded-md px-2 text-left text-xs hover:bg-muted disabled:opacity-40"><ReceiptText className="size-4" />Customer invoices</button> : null}
+                          <button type="button" disabled={attachmentBusy || replyEditorDisabled} onClick={() => openCatalogPicker("reply")} className="flex h-9 items-center gap-2 rounded-md px-2 text-left text-xs hover:bg-muted disabled:opacity-40"><Library className="size-4" />Add catalog PDF</button>
+                          {canCreateInvoices ? <button type="button" disabled={attachmentBusy || replyEditorDisabled} onClick={() => setInvoiceContext({companyId:selected.companyId,email:replyRecipient,threadId:selectedConversation?.id,customerName:selected.company,target:"reply"})} className="flex h-9 items-center gap-2 rounded-md px-2 text-left text-xs hover:bg-muted disabled:opacity-40"><ReceiptText className="size-4" />Customer invoices</button> : null}
                           <div className="flex items-center gap-2"><button type="button" disabled={replyEditorDisabled} onMouseDown={(event) => event.preventDefault()} onClick={() => replyInput.current?.insertText(String.fromCodePoint(0x1f60a))} className="flex h-9 flex-1 items-center gap-2 rounded-md px-2 text-xs hover:bg-muted disabled:opacity-40"><Smile className="size-4" />Add emoji</button><InboxCalculator /></div>
                         </div>
                         <button type="button" disabled={sending || aiReplyBusy} onClick={() => { const saved = savedDrafts.get(replyDraftId); if (saved) savedDrafts.remove(saved); clearReplyComposer(); setReplyDraftId(crypto.randomUUID()); setReplyRequestId(crypto.randomUUID()); }} className="flex h-9 items-center gap-2 rounded-md border-t px-2 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-40"><Trash2 className="size-4" />Discard draft</button>
@@ -1870,7 +1869,6 @@ export function EmailInboxWorkspace({
               <p className="mt-2 text-xs leading-5 text-muted-foreground">Customize follow-ups and actions for this email address or its company. Manage these workflows here from Email.</p>
               <Link href={`/email/workflows?${new URLSearchParams({ recipient: selected.contact, ...(selected.companyId ? { companyId: selected.companyId } : {}), ...(selectedConversation?.id ? { thread: selectedConversation.id } : {}), ...(selectedMailboxId ? { mailbox: selectedMailboxId } : {}) })}`} className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-primary">Open workflow builder<ChevronRight className="size-3.5" /></Link>
             </section>
-            {notice ? <NotificationToast tone="message">{notice}</NotificationToast> : null}
           </div>
         </aside> : null}
       </div>
@@ -1902,7 +1900,7 @@ export function EmailInboxWorkspace({
             </div>
             <div className="shrink-0 border-t bg-muted/30 px-5 py-3 sm:px-6">
               <div className="mb-3"><EmailDraftStatus status={savedDrafts.status} onRetry={() => void savedDrafts.retry()} disabled={composeSending} /></div>
-              {composeError || footerError ? <NotificationToast>{composeError || footerError}</NotificationToast> : null}
+              {composeError ? <NotificationToast>{composeError}</NotificationToast> : null}
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <span id="compose-send-help" className="text-xs text-muted-foreground">{!savedDrafts.ready ? "Loading your draft…" : footerLoading ? "Loading your email footer…" : attachmentBusy || composeMediaBusy ? "Preparing attachments…" : !composeSender?.sendConfigured ? "Choose a configured sender." : !composeTo.trim() ? "Add a recipient to send." : !composeHasContent ? "Write a message or attach a file to send." : composeScheduleOpen && !composeScheduleAt ? "Choose a send date and time." : ""}</span>
                 <div className="ml-auto flex items-center gap-2">

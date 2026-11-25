@@ -1,5 +1,0 @@
-VvvebJs — https://github.com/givanz/VvvebJs
-Commit: 1acbab7ebfe3e7b004f1f18c039d26550fc04bd8
-Apache-2.0 (see LICENSE); bundled dependencies retain their notices.
-Filazoo changes: selected assets, portal-specific initialization, curated blocks, sandboxed canvas, branded styles and parent message bridge.
-Rebuild: node scripts/vendor-vvveb.mjs <checkout>

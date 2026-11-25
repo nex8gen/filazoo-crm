@@ -1,5 +1,15 @@
 # FILAZOO CRM agent
 
+## Customer investigation (2026-11-25)
+
+Chat and Agent can read `customer_insights`: a combined, read-only customer dossier, or a paginated customer population for comparison. It joins accessible profiles, contacts, saved activity/notes, orders, invoice totals by currency, the viewer's quotations/tasks, and both directions of accessible synced email. Drafts and failed outbound mail are excluded from conversation counts. Shared contact addresses are disclosed and excluded from email attribution. Customer assignment and workspace AI data permissions are checked before source reads. Mailbox indexes are reused only within one request.
+
+Responses should cite dated email subjects/excerpts and saved document links, distinguish messages from conversations, summarize the discussion, explain buying signals and blockers, and recommend a specific next action. Recent rejections and opt-outs override old interest; fit scores and outbound sales pitches are not purchase probabilities. Requests to save the recommended audience use the existing `create_segment` action with the exact verified `rules.companyIds` and normal action policy. Customer-profile chat stays read-only; Agent prepares executable proposals.
+
+Source scans follow stable pages up to 10,000 records per source/customer page. Excerpts and customer pages are bounded and expose omissions, next offsets, incomplete sources, ambiguous contacts and unloaded bodies. Email coverage includes up to eight accessible synced mailboxes; it does not start synchronization or include unlinked Messenger/social conversations. Large-population rankings must be labeled provisional if lookup/time limits prevent complete review. Native planning allows 24 reads, including up to 12 email searches, over at most 28 steps; the legacy read loop has the same lookup allowances. Account analysis receives a larger answer allowance and reasoning-capable routing.
+
+Verification: focused customer/agent/route/presentation tests, TypeScript and targeted lint pass. The full workspace run passed 2,818 of 2,820 tests; its failures were a workflow fixture import (`flow-inquiry.test.ts`) and screen translation coverage (`i18n-coverage.test.ts`). Live synthetic Gateway checks passed evidence-based ranking and exact segment membership at approximately $0.011115 total; no real customer was read and no business action was executed. See [customer-intelligence-20261125.json](./audit-evidence/customer-intelligence-20261125.json). These checks qualify the covered scenarios, not arbitrary CRM requests. No deployment was performed.
+
 The CRM owns the agent's business knowledge, available actions, permissions and execution. A model interprets the request and calls those tools. Switching a qualified model does not require fine-tuning or rebuilding the agent.
 
 In this CRM, **catalog is the previous name for quotation**. Both refer to Company Quotations. An invoice is a separate payment document. A quotation can start as a product selection, become a priced offer, record customer acceptance and create a draft order. It never silently becomes an invoice.

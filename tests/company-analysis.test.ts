@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { analysisDaysAgo, analysisToday, companyAnalysisCsv, companyPurchaseAnalysis, type AnalysisOrder, type CompanyAnalysisData } from "../lib/company-analysis.ts";
+import { analysisDaysAgo, analysisToday, companyAnalysisCsv, companyPurchaseAnalysis, companyEmailAnalysis, type AnalysisEmail, type AnalysisOrder, type CompanyAnalysisData } from "../lib/company-analysis.ts";
 
 const line = (quantity = 10, unitPriceMinor = 800) => ({ description: "PLA Basic · Black", sku: "PLA-BK", productSku: "PLA", variantId: "black", quantity, unitPriceMinor });
 function order(id: string, date: string, input: Partial<AnalysisOrder> = {}): AnalysisOrder {
@@ -10,6 +10,51 @@ function source(orders: AnalysisOrder[]): CompanyAnalysisData {
   return { orders, products: [{ sku: "PLA", name: "PLA Basic" }], tasks: [], asOf: "2026-10-27T02:00:00Z" };
 }
 const all = { from: "", to: "2026-10-27" };
+
+const message = (id: string, direction: AnalysisEmail["direction"], timestamp: string, input: Partial<AnalysisEmail> = {}): AnalysisEmail => ({ id, direction, timestamp, messageId: `<${id}>`, ...input });
+
+test("customer email totals deduplicate copies, respect China dates, and fill zero months", () => {
+  const data = { ...source([]), asOf: "2026-10-27T12:00:00Z", email: { available: true, partial: false, messages: [
+    message("sent", "outbound", "2026-08-01T00:00:00Z"),
+    message("sent-copy", "outbound", "2026-08-01T00:00:00Z", { messageId: "<SENT>" }),
+    message("received", "inbound", "2026-09-30T16:00:00Z"),
+    message("old", "inbound", "2026-07-31T15:59:59Z"),
+    message("future", "inbound", "2026-10-28T00:00:00Z"), message("bad", "inbound", "invalid"),
+  ] } };
+  const result = companyEmailAnalysis(data, { from: "2026-08-01", to: "2026-10-27" });
+  assert.equal(result.total, 2);
+  assert.equal(result.sent, 1);
+  assert.equal(result.received, 1);
+  assert.deepEqual(result.months.map(month => month.total), [1, 0, 1]);
+  assert.equal(result.lastContact, "2026-09-30T16:00:00Z");
+});
+
+test("pending replies and response time follow linked conversations across period boundaries", () => {
+  const result = companyEmailAnalysis({ ...source([]), email: { available: true, partial: true, messages: [
+    message("question", "inbound", "2026-09-30T15:00:00Z"),
+    message("nudge", "inbound", "2026-09-30T15:30:00Z", { inReplyTo: "<question>" }),
+    message("reply", "outbound", "2026-09-30T17:00:00Z", { inReplyTo: "<nudge>" }),
+    message("auto", "inbound", "2026-09-30T18:00:00Z", { inReplyTo: "<reply>", automaticResponse: true }),
+    message("unanswered", "inbound", "2026-10-01T01:00:00Z"),
+  ] } }, { from: "2026-10-01", to: "2026-10-27" });
+  assert.equal(result.total, 3);
+  assert.equal(result.conversations, 2);
+  assert.equal(result.waitingOnCustomer, 1);
+  assert.equal(result.waitingOnUs, 1);
+  assert.equal(result.averageResponseHours, 2);
+  assert.equal(result.partial, true);
+});
+
+test("email failure is distinct from empty history and a historic range excludes later replies", () => {
+  assert.equal(companyEmailAnalysis(source([]), all).available, false);
+  const result = companyEmailAnalysis({ ...source([]), email: { available: true, partial: false, messages: [
+    message("question", "inbound", "2026-09-01T00:00:00Z"),
+    message("later", "outbound", "2026-10-01T00:00:00Z", { inReplyTo: "<question>" }),
+  ] } }, { from: "2026-09-01", to: "2026-09-30" });
+  assert.equal(result.waitingOnUs, 1);
+  assert.equal(result.averageResponseHours, null);
+  assert.equal(companyEmailAnalysis({ ...source([]), email: { available: true, partial: false, messages: [] } }, all).total, 0);
+});
 
 test("purchase totals use line amounts, inclusive order dates and effective statuses within one currency", () => {
   const result = companyPurchaseAnalysis(source([

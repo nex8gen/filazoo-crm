@@ -15,13 +15,14 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import type { EmailFooter } from "@/lib/email-footer";
+import { useUnsavedSettings } from "./use-unsaved-settings";
 import "@/components/email-workspace.css";
 
 export function EmailFooterSettings() {
   const { preferences } = usePreferences();
   const { footer, loading, error: loadError } = useEmailFooter();
   if (loading) return <p role="status" className="mt-6 flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle className="size-4 animate-spin" />Loading footer…</p>;
-  if (loadError) return <NotificationToast>{loadError}</NotificationToast>;
+  if (loadError) return <p role="status" className="text-sm text-muted-foreground">{loadError}</p>;
   return <EmailFooterEditor initial={footer || { text: preferences.emailSignature, html: initialComposerHtml(preferences.emailSignature, "") }} />;
 }
 
@@ -39,6 +40,7 @@ function EmailFooterEditor({ initial }: { initial: EmailFooter }) {
   const editor = useRef<EmailBodyEditorHandle>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const dirty = draft.html !== saved;
+  useUnsavedSettings(dirty);
 
   async function save() {
     if (busy || mediaBusy) return;
@@ -54,7 +56,7 @@ function EmailFooterEditor({ initial }: { initial: EmailFooter }) {
     finally { setBusy(false); }
   }
 
-  return <section className="mt-8 space-y-4 border-t pt-6" aria-labelledby="email-footer-title">
+  return <section className="space-y-4" aria-labelledby="email-footer-title">
     <div><h3 id="email-footer-title" className="text-sm font-semibold">Custom email footer</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">Your personal footer is added to inbox emails, replies, and emails sent by your AI agent. Other users keep their own footers.</p></div>
     <>
       <div className="overflow-hidden rounded-lg border bg-background">

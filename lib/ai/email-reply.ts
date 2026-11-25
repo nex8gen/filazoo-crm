@@ -1,14 +1,18 @@
 import { z } from "zod";
 import { emailWritingLanguageInstruction } from "./language.ts";
 import { type InvoiceProduct, productInvoiceLine, productUnitPrice } from "../invoice-links.ts";
+import { catalogScopeSchema, catalogSelectionInstruction, selectCatalogProducts, catalogRequestText } from "./catalog-selection.ts";
 
 export const replyProductSchema = z.object({
   sku: z.string().max(200), name: z.string().max(500),
+  material: z.string().max(200).optional(),
   variants: z.array(z.object({ id: z.string().max(200), name: z.string().max(500) })).max(100),
 });
 export const emailReplyPlanSchema = z.object({
   body: z.string().trim().min(1).max(20_000),
   attachCatalog: z.boolean(),
+  catalogScope: catalogScopeSchema.optional(),
+  catalogProductSkus: z.array(z.string().trim().min(1).max(200)).max(500).optional(),
   invoiceItems: z.array(z.object({
     productSku: z.string().min(1).max(200),
     variantId: z.string().max(200).nullable(),
@@ -20,8 +24,10 @@ export type EmailReplyPlan = z.infer<typeof emailReplyPlanSchema>;
 export const emailReplyInstruction = [
   "You are the assigned Filazoo sales manager. Independently draft a helpful reply to the latest customer message using the complete supplied conversation and CRM company profile.",
   "This is reply generation, not rewriting manager input. Respect the latest request, corrections and earlier commitments. Do not repeat fulfilled requests.",
-  'Return only JSON: {"body":"email body", "attachCatalog":false, "invoiceItems":[{"productSku":"exact SKU", "variantId":null, "quantity":500}]}.',
+  'Return only JSON: {"body":"email body", "attachCatalog":false, "catalogScope":"selected|all|unavailable", "catalogProductSkus":[], "invoiceItems":[{"productSku":"exact SKU", "variantId":null, "quantity":500}]}.',
   "When the customer asks for a catalog or catalogue, set attachCatalog true and say the catalog PDF is attached.",
+  "Also attach a focused catalog when they need help exploring or comparing product types. If matching products are unavailable, use catalogScope unavailable, attachCatalog false and do not claim an attachment. With selected, fill catalogProductSkus; with all or unavailable, leave it empty.",
+  catalogSelectionInstruction,
   "When the customer explicitly requests an order or invoice with quantities and unambiguous products, populate invoiceItems using only supplied exact SKUs and variant IDs. For example, 500 pieces PLA basic black requires a matching PLA Basic product AND its black variant (or an explicitly black product). Never choose another color or silently choose a size or weight.",
   "Each invoiceItems.productSku must be the TOP-LEVEL product.sku, never a variant's sku. Put the matching product.variants[].id in variantId. For example, product PLA-BASIC with variant id black and variant sku PLA-BLACK requires productSku PLA-BASIC and variantId black, not productSku PLA-BLACK.",
   "When the latest message supplies shipping or billing details for an earlier order, carry forward the earlier product, color and quantity and populate invoiceItems. A prior promise to prepare an invoice does not mean it was fulfilled; only treat it as fulfilled if the history explicitly confirms a previously attached or issued invoice.",
@@ -42,6 +48,15 @@ export function buildEmailReplyInstruction() {
 
 export function parseEmailReplyPlan(output: string) {
   return emailReplyPlanSchema.parse(JSON.parse(output.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")));
+}
+
+export function replyCatalogProducts<T extends { sku: string; name: string; material?: string | null; status?: string }>(
+  plan: Pick<EmailReplyPlan, "attachCatalog" | "catalogScope" | "catalogProductSkus">,
+  products: readonly T[], history: readonly { direction: string; body?: string | null }[],
+) {
+  if (!plan.attachCatalog) return [];
+  if (plan.catalogScope === "unavailable") throw new Error("AI claimed an unavailable catalog was attached. Retry the reply.");
+  return selectCatalogProducts({ scope: plan.catalogScope, productSkus: plan.catalogProductSkus || [] }, products, catalogRequestText(history));
 }
 
 /** Resolve money and variants from the current billing catalog, never model output. */

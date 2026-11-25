@@ -108,10 +108,15 @@ export function EmailFollowupPanel({ mailboxId, messageId, subject, recipient, c
       if (alive.current && !controller.signal.aborted && generation.current === controller) {
         setBody(result.body); setDraftSubject(result.subject); setBaseline(result.baseline); setWritingDraft(result.body);
       }
-    } catch (cause) { if (alive.current && !controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Unable to generate follow-up."); }
+    } catch (cause) {
+      if (alive.current && !controller.signal.aborted) {
+        setError(cause instanceof Error ? cause.message : "Unable to generate follow-up.");
+      }
+    }
     finally { if (generation.current === controller) { generation.current = null; pending.current = false; if (alive.current) setGenerating(false); } }
   }
   function begin(nextKind: "reminder" | "ai", editing = false) {
+    if (locked) return;
     setWritingDraft(null);
     setNurture(nextKind === "ai" && followup?.purpose === "nurture");
     setKind(nextKind); setError(""); setNotice(""); setRequestId(followup?.id || crypto.randomUUID());

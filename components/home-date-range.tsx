@@ -8,6 +8,7 @@ import { analyticsDay, shiftDay } from "@/lib/analytics-dashboard";
 import { type HomeRange, validHomeDate } from "@/lib/home";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { useLanguage } from "@/components/language-provider";
+import "./home-date-range.css";
 
 const HomeDateCalendar = dynamic(() => import("@/components/home-date-calendar").then(module => module.HomeDateCalendar), { loading: () => <div role="status" className="h-[240px] w-full animate-pulse rounded-lg bg-muted/40">Loading calendar…</div> });
 const localDate = (value: string) => validHomeDate(value) ? new Date(`${value}T12:00:00`) : undefined;
@@ -21,12 +22,23 @@ export function homeRangeLabel(range: HomeRange, today: string, locale = "en-GB"
   return range.from === range.to ? format(range.from) : `${format(range.from)} – ${format(range.to)}`;
 }
 
-export function HomeDateRange({ range, minDate, asOf, disabled, onChange }: { range: HomeRange; minDate: string; asOf: string; disabled: boolean; onChange: (range: HomeRange) => void }) {
+type HomeDateRangeProps = {
+  range: HomeRange;
+  minDate: string;
+  asOf: string;
+  onChange: (range: HomeRange) => void;
+  disabled?: boolean;
+  align?: "start" | "end";
+  label?: string;
+};
+
+export function HomeDateRange({ range, minDate, asOf, onChange, disabled = false, align = "start", label = "Sales reporting period" }: HomeDateRangeProps) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(range);
   const [calendarKey, setCalendarKey] = useState(0);
   const { language, t } = useLanguage();
   const today = analyticsDay(asOf), locale = language === "zh-CN" ? "zh-CN" : "en-GB";
+  const rangeLabel = t(homeRangeLabel(range, today, locale));
   const presets = [
     { label: "Today", from: today, to: today },
     { label: "Yesterday", from: shiftDay(today, -1), to: shiftDay(today, -1) },
@@ -47,10 +59,10 @@ export function HomeDateRange({ range, minDate, asOf, disabled, onChange }: { ra
     if (validHomeDate(value)) setCalendarKey(current => current + 1);
   };
   return <Popover open={open} onOpenChange={next => { if (next) setDraft(range); setOpen(next); }}>
-    <PopoverTrigger disabled={disabled} className="home-date-trigger" aria-label={`${t("Sales reporting period")}: ${t(homeRangeLabel(range, today, locale))}`}>
-      <span>{homeRangeLabel(range, today, locale)}</span><ChevronDown className="size-3.5 text-muted-foreground" aria-hidden="true" />
+    <PopoverTrigger disabled={disabled} className="home-date-trigger" aria-label={`${t(label)}: ${rangeLabel}`}>
+      <span>{rangeLabel}</span><ChevronDown className="size-3.5 text-muted-foreground" aria-hidden="true" />
     </PopoverTrigger>
-    <PopoverContent align="start" sideOffset={8} className="home-date-popup !w-[min(632px,calc(100vw-2rem))] !gap-0 overflow-y-auto !rounded-xl !p-0" aria-label="Sales reporting period">
+    <PopoverContent align={align} sideOffset={8} className="home-date-popup !w-[min(632px,calc(100vw-2rem))] !gap-0 overflow-y-auto !rounded-xl !p-0" aria-label={t(label)}>
       <PopoverTitle className="sr-only">Choose reporting dates</PopoverTitle>
       <div className="home-date-layout">
         <nav aria-label="Date range presets" className="home-date-presets">{presets.map(preset => <button type="button" key={preset.label} aria-pressed={draft.from === preset.from && draft.to === preset.to} onClick={() => { updateRange({ from: preset.from, to: preset.to }); setCalendarKey(current => current + 1); setOpen(false); }}>{preset.label}</button>)}<span className="mt-2 border-t pt-2 text-xs text-muted-foreground">Custom range</span></nav>

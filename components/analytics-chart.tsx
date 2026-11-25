@@ -1,16 +1,99 @@
 "use client";
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
-export function AnalyticsChart({ data, metric, currency, locale }: { data: { date: string; companies: number; collected: number }[]; metric: "companies" | "collected"; currency: string; locale: string }) {
-  const money = (value: number) => new Intl.NumberFormat(locale, { style: "currency", currency, maximumFractionDigits: 2 }).format(value);
-  return <div className="h-[250px] min-w-0 w-full text-xs [&_.recharts-cartesian-axis-tick_text]:fill-muted-foreground [&_.recharts-cartesian-grid_line]:stroke-border/70 [&_.recharts-layer]:outline-hidden"><ResponsiveContainer width="100%" height={250} minWidth={0} initialDimension={{ width: 800, height: 250 }}>
-    <AreaChart accessibilityLayer data={data} margin={{ left: 0, right: 12, top: 12, bottom: 4 }}>
-      <defs><linearGradient id="analytics-trend-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#059669" stopOpacity={0.18} /><stop offset="100%" stopColor="#059669" stopOpacity={0.01} /></linearGradient></defs>
-      <CartesianGrid vertical={false} strokeDasharray="3 4" />
-      <XAxis dataKey="date" axisLine={false} tickLine={false} minTickGap={35} tickMargin={10} tickFormatter={date => String(date).slice(5)} />
-      <YAxis axisLine={false} tickLine={false} width={52} allowDecimals={metric === "collected"} tickFormatter={value => new Intl.NumberFormat(locale, { notation: "compact" }).format(Number(value))} />
-      <Tooltip formatter={value => [metric === "collected" ? money(Number(value)) : Number(value).toLocaleString(locale), metric === "collected" ? "Cash collected" : "New companies"]} contentStyle={{ background: "var(--popover)", color: "var(--popover-foreground)", border: "1px solid var(--border)", borderRadius: 10, fontSize: 12 }} />
-      <Area dataKey={metric} type="linear" stroke="#059669" strokeWidth={2} fill="url(#analytics-trend-fill)" isAnimationActive={false} />
-    </AreaChart>
-  </ResponsiveContainer></div>;
+import { useState } from "react";
+import { useLanguage } from "@/components/language-provider";
+import { AnalyticsChartCard, type AnalyticsChartCardProps, type TrendPoint } from "@/components/ui/analytics-chart-card";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { analyticsChange, previousRange, type AnalyticsFiltersValue, type AnalyticsSeriesMetric, type AnalyticsSeriesPoint } from "@/lib/analytics-dashboard";
+
+const chartLabels = {
+  orderValue: { title: "Sales", description: "Total value of confirmed orders", empty: "No orders in this period." },
+  companies: { title: "Leads", description: "New customer accounts added in the selected period.", empty: "No new companies in this period." },
+  averageOrderValue: { title: "Average order value over time", description: "Average value per confirmed order in the selected period.", empty: "No orders in this period." },
+};
+
+type ChartMetric = keyof typeof chartLabels;
+
+export function prepareTrend(data: AnalyticsSeriesPoint[], previousData: AnalyticsSeriesPoint[], metric: AnalyticsSeriesMetric, locale: string) {
+  const shortDate = new Intl.DateTimeFormat(locale, { month: "short", day: "numeric", timeZone: "UTC" });
+  const fullDate = new Intl.DateTimeFormat(locale, { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+  const date = (day: string) => new Date(`${day}T00:00:00Z`);
+  const rangeLabel = (range: { from: string; to: string }) =>
+    fullDate.formatRange(date(range.from), date(range.to)).replace(/\s+/gu, " ");
+  const bucketLabel = (point?: AnalyticsSeriesPoint) => point ? rangeLabel({ from: point.date, to: point.endDate }) : "—";
+  const series: TrendPoint[] = Array.from({ length: Math.max(data.length, previousData.length) }, (_, index) => {
+    const now = data[index], then = previousData[index];
+    return {
+      tick: shortDate.format(date((now ?? then).date)),
+      period: bucketLabel(now), value: now?.[metric] ?? null,
+      previousPeriod: bucketLabel(then), previous: then?.[metric] ?? null,
+    };
+  });
+  return { series, rangeLabel };
+}
+
+function periodValue(series: AnalyticsSeriesPoint[], metric: ChartMetric) {
+  if (metric === "companies") return series.reduce((sum, point) => sum + point.companies, 0);
+  const total = series.reduce((sum, point) => sum + point.orderValue, 0);
+  if (metric === "orderValue") return total;
+  const orders = series.reduce((sum, point) => sum + point.orders, 0);
+  return orders ? total / orders : null;
+}
+
+type AnalyticsChartProps = {
+  data: AnalyticsSeriesPoint[];
+  previousData: AnalyticsSeriesPoint[];
+  filters: AnalyticsFiltersValue;
+  locale: string;
+  available?: boolean;
+};
+
+export function SalesAndLeadsChart({ companiesAvailable, ...props }: AnalyticsChartProps & { companiesAvailable: boolean }) {
+  const { t } = useLanguage();
+  const [metric, setMetric] = useState<"orderValue" | "companies">("orderValue");
+  const list = <TabsList aria-label={t("Chart metric")} activateOnFocus className="group-data-horizontal/tabs:h-8">
+    <TabsTrigger value="orderValue">{t(chartLabels.orderValue.title)}</TabsTrigger>
+    <TabsTrigger value="companies">{t(chartLabels.companies.title)}</TabsTrigger>
+  </TabsList>;
+
+  return <Tabs value={metric} onValueChange={value => {
+    if (value === "orderValue" || value === "companies") setMetric(value);
+  }} className="min-w-0 [&>section]:flex-1">
+    <AnalyticsChart {...props} metric={metric} available={metric === "companies" ? companiesAvailable : props.available}
+      tabs={{ list, value: metric }} />
+  </Tabs>;
+}
+
+export function AnalyticsChart({ data, previousData, metric, filters, locale, available = true, compact = false, tabs }: AnalyticsChartProps & {
+  metric: ChartMetric;
+  compact?: boolean;
+  tabs?: AnalyticsChartCardProps["tabs"];
+}) {
+  const { t } = useLanguage();
+  const formatter = metric === "companies" ? new Intl.NumberFormat(locale)
+    : new Intl.NumberFormat(locale, { style: "currency", currency: filters.currency, maximumFractionDigits: 2 });
+  const percent = new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 1 });
+  const showComparison = filters.comparison !== "none";
+  const { series, rangeLabel } = prepareTrend(data, showComparison ? previousData : [], metric, locale);
+  const total = periodValue(data, metric), previous = periodValue(previousData, metric);
+  const change = showComparison && total !== null && previous !== null ? analyticsChange(total, previous) : null;
+  const labels = chartLabels[metric];
+
+  return <AnalyticsChartCard
+    tabs={tabs}
+    title={t(labels.title)}
+    description={t(labels.description)}
+    value={total === null ? "—" : formatter.format(total)}
+    change={change}
+    data={series}
+    currentLabel={rangeLabel(filters)}
+    previousLabel={showComparison ? rangeLabel(previousRange(filters)) : undefined}
+    formatValue={formatter.format}
+    formatChange={value => percent.format(value / 100)}
+    available={available}
+    compact={compact}
+    showDots={metric === "averageOrderValue"}
+    unavailableText={t("This report is unavailable. Refresh to retry.")}
+    emptyText={t(labels.empty)}
+  />;
 }

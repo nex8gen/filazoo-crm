@@ -176,7 +176,7 @@ test("invoice request pauses for shipping without replying or creating an invoic
 
 test("catalog requests generate a PDF attachment before delivery", async () => {
   const fixture = workerFixture();
-  fixture.setPlan({ attachCatalog: true, catalogSkus: ["PLA"], body: "Your catalog is attached." });
+  fixture.setPlan({ attachCatalog: true, catalogScope: "selected", catalogSkus: ["PLA"], body: "Your catalog is attached." });
   await fixture.run();
   assert.equal(fixture.calls.smtp, 1);
   assert.equal(fixture.calls.uploads, 1);
@@ -187,19 +187,32 @@ test("catalog requests generate a PDF attachment before delivery", async () => {
 
 test("unknown catalog selections stop delivery instead of attaching another product", async () => {
   const fixture = workerFixture();
-  fixture.setPlan({ attachCatalog: true, catalogSkus: ["UNKNOWN"] });
+  fixture.setPlan({ attachCatalog: true, catalogScope: "selected", catalogSkus: ["UNKNOWN"] });
   await fixture.run();
   assert.equal(fixture.calls.smtp, 0);
   assert.equal(fixture.row.status, "needs_review");
 });
 
-test("a fresh catalog request preserves the saved selection but generates a new template version", async () => {
+test("omitted or empty catalog selections never send the saved or full catalog", async () => {
+  for (const catalogScope of [undefined, "selected"] as const) {
+    const fixture = workerFixture();
+    fixture.tables.catalogs = [{ id: "old-catalog", user_id: "owner", company_id: "company", product_skus: ["PLA"], version: 1 }];
+    fixture.setPlan({ attachCatalog: true, catalogScope, catalogSkus: [], body: "Your catalog is attached." });
+    await fixture.run();
+    assert.equal(fixture.calls.smtp, 0);
+    assert.equal(fixture.calls.uploads, 0);
+    assert.equal(fixture.row.status, "needs_review");
+    assert.equal(fixture.renderedCatalogs.length, 0);
+  }
+});
+
+test("a fresh catalog request uses the explicit selection and generates a new template version", async () => {
   const fixture = workerFixture();
   fixture.tables.contacts = [{ id: "contact", email: fixture.next.contact, company_id: "company" }];
   fixture.tables.companies = [{ id: "company", name: "Buyer" }];
   fixture.tables.catalogs = [{ id: "old-catalog", user_id: "owner", company_id: "company", product_skus: ["PLA"], version: 1,
     currency: "USD", pdf_url: "/old-template.pdf", price_date: "2026-10-20" }];
-  fixture.setPlan({ attachCatalog: true, catalogSkus: [], body: "Your current catalog is attached." });
+  fixture.setPlan({ attachCatalog: true, catalogScope: "selected", catalogSkus: ["PLA"], body: "Your current catalog is attached." });
   await fixture.run();
   assert.equal(fixture.calls.smtp, 1, String(fixture.row.last_error));
   assert.equal(fixture.renderedCatalogs.length, 1);

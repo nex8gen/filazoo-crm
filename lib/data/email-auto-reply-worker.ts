@@ -10,7 +10,7 @@ import { autoReplyConversation, autoReplyInstruction, autoReplyPlanSchema, lates
 import { authorizeAutoReply, hydrateAutoReplyHistory, mailboxHistory, type AutoReplyRow } from "./email-auto-reply";
 import { loadFlowReplyProducts } from "./flow-ai-reply";
 import { invoiceProduct } from "../invoice-links";
-import { replyInvoiceLines } from "../ai/email-reply";
+import { replyInvoiceLines, replyCatalogProducts } from "../ai/email-reply";
 import { generateGatewayText } from "../ai/gateway";
 import { applyEmailSignature, DEFAULT_EMAIL_COMPANY, DEFAULT_EMAIL_TITLE } from "../ai/email-rewrite";
 import { crmProduct } from "../product-utils";
@@ -94,6 +94,11 @@ async function planReply(row: AutoReplyRow, history: InboxEmailItem[]) {
   };
   const output = await gateway();
   const plan = autoReplyPlanSchema.parse(JSON.parse(output.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")));
+  if (plan.attachCatalog) {
+    const selected = replyCatalogProducts({ ...plan, catalogProductSkus: plan.catalogSkus }, products, history);
+    plan.catalogScope = "selected";
+    plan.catalogSkus = selected.map(product => product.sku);
+  }
   if (plan.action === "reply" && plan.invoiceItems.length) throw new Error("Invoice requests must pause for shipping approval.");
   return { plan, products, profile, bootstrap };
 }
@@ -104,13 +109,8 @@ async function catalogAttachment(row: AutoReplyRow, plan: AutoReplyPlan, context
   const requested = new Set(plan.catalogSkus);
   if ([...requested].some((sku) => !products.some((product) => product.sku === sku))) throw new Error("A catalog product is unavailable.");
   const db = createSupabaseAdmin();
-  const { data: saved } = profile.company ? await db.from("catalogs").select("*").eq("user_id", row.user_id).eq("company_id", profile.company.id)
-    .order("version", { ascending: false }).limit(1).maybeSingle().throwOnError() : { data: null };
-  // Keep the customer's saved selection, but create a fresh version with the current
-  // template and product photos. Previously issued quote PDFs remain unchanged.
-  const selection = requested.size ? requested : saved ? new Set<string>(saved.product_skus ?? []) : null;
-  if (selection && [...selection].some((sku) => !products.some((product) => product.sku === sku))) throw new Error("A catalog product is unavailable.");
-  const selected = selection ? products.filter((product) => selection.has(product.sku)) : products;
+  if (!requested.size) throw new Error("Select the customer's requested catalog products before sending.");
+  const selected = products.filter((product) => requested.has(product.sku));
   if (!selected.length) throw new Error("Add active products before sending a catalog.");
   // Save the actual selection in the customer's catalog history.
   if (profile.company) {

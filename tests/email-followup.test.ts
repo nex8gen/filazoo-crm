@@ -65,7 +65,7 @@ test("follow-up parser strips a generated sign-off before the saved footer is ad
     assert.equal(followups.parseFollowupDraft(JSON.stringify({ action: "followup", topic: "Quote feedback", pendingFrom: "customer", evidenceMessageIds: [context.latestMessageId], body: `${body}\n\n${signoff}` }), context), body);
   }
 });
-function route() {
+function route(previewError?: Error) {
   let role = "admin";
   const calls: string[] = [];
   const dependencies: Record<string, unknown> = {
@@ -75,7 +75,7 @@ function route() {
     "@/lib/workspace-context": { withWorkspaceViewer: (_viewer: unknown, work: () => unknown) => work() },
     "@/lib/data/email-followups": {
       readFollowup: async () => { calls.push("read"); return { row: null, context: { conversation: [message("original")] } }; }, presentFollowup: (row: unknown) => row,
-      previewFollowup: async () => { calls.push("preview"); return { body: "Following up", subject: "Re: Quote" }; },
+      previewFollowup: async () => { calls.push("preview"); if (previewError) throw previewError; return { body: "Following up", subject: "Re: Quote" }; },
       saveFollowup: async () => { calls.push("save"); return { id, status: "scheduled" }; },
       cancelFollowup: async () => { calls.push("cancel"); return { id, status: "cancelled" }; },
     },
@@ -90,6 +90,15 @@ test("reads and AI previews never schedule or send mail", async () => {
   assert.equal((await app.get(new Request("http://localhost/api/email/follow-up?mailboxId=box&messageId=%3Cparent%40example.com%3E"))).status, 200);
   assert.equal((await app.post({ action: "preview", mailboxId: "box", messageId: "<parent@example.com>" })).status, 200);
   assert.deepEqual(app.calls, ["read", "preview"]);
+});
+
+test("failed follow-up previews report the error without saving or sending", async () => {
+  const app = route(new Error("Load the complete conversation before generating a follow-up."));
+  const response = await app.post({ action: "preview", mailboxId: "box", messageId: "<parent@example.com>" });
+  assert.equal(response.status, 409);
+  const result = await response.json();
+  assert.match(result.error, /Load the complete conversation/);
+  assert.deepEqual(app.calls, ["preview"]);
 });
 test("mailbox filter metadata is read-only and requires a mailbox identity", async () => {
   const app = route();

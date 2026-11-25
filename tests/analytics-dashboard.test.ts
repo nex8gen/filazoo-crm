@@ -18,10 +18,10 @@ function fixture(): AnalyticsDashboardData {
   return {
     asOf: "2026-10-30T04:00:00Z", minDate: "2026-01-01", maxDate: "2026-10-30", currencies: ["USD", "EUR"], sources: [], owners: [],
     companies: [
-      { id: "old", name: "Old open", createdAt: "2026-01-01T10:00:00Z", channel: "meta", ownerId: "alice", nextFollowupAt: "2026-10-29T09:00:00Z" },
-      { id: "new", name: "New won", createdAt: "2026-10-20T10:00:00Z", channel: "store", ownerId: "bob", nextFollowupAt: null },
-      { id: "lost", name: "Lost", createdAt: "2026-10-21T10:00:00Z", channel: "meta", ownerId: null, nextFollowupAt: null },
-      { id: "eur", name: "Euro", createdAt: "2026-10-22T10:00:00Z", channel: "meta", ownerId: "alice", nextFollowupAt: null },
+      { id: "old", name: "Old open", createdAt: "2026-01-01T10:00:00Z", channel: "meta", ownerId: "alice" },
+      { id: "new", name: "New won", createdAt: "2026-10-20T10:00:00Z", channel: "store", ownerId: "bob" },
+      { id: "lost", name: "Lost", createdAt: "2026-10-21T10:00:00Z", channel: "meta", ownerId: null },
+      { id: "eur", name: "Euro", createdAt: "2026-10-22T10:00:00Z", channel: "meta", ownerId: "alice" },
     ],
     invoices: [
       { id: "old-invoice", companyId: "old", number: 1, status: "issued", currency: "USD", issueDate: "2026-09-01", dueDate: "2026-09-15", totalMinor: 10000, paidMinor: 3000 },
@@ -33,9 +33,7 @@ function fixture(): AnalyticsDashboardData {
     payments: [{ id: "p1", invoiceId: "old-invoice", paidOn: "2026-10-10", amountMinor: 3000 }, { id: "bad", invoiceId: "void", paidOn: "2026-10-10", amountMinor: 500 }],
     orders: [{ id: "o1", companyId: "old", date: "2026-10-01", currency: "USD", status: "confirmed", totalMinor: 11000 }, { id: "o2", companyId: "new", date: "2026-10-01", currency: "USD", status: "cancelled", totalMinor: 99999 }],
     catalogs: [{ id: "c1", companyId: "old", createdAt: "2026-10-01T08:00:00Z", currency: "EUR", productSkus: ["sku", "sku"] }],
-    products: [{ sku: "sku", name: "Product" }], emails: [], messages: [], ai: [],
-    tasks: [{ id: "task", title: "Overdue", companyId: "new", status: "open", dueAt: "2026-10-29T00:00:00Z", completedAt: null }],
-    flows: [], runs: [], inventory: { configured: false, stale: false, lastSyncedAt: null, error: false, tracked: 0, unavailable: 0 },
+    products: [{ sku: "sku", name: "Product" }],
   };
 }
 test("receivables are current snapshots; activity uses its own event dates", () => {
@@ -54,7 +52,6 @@ test("source and owner scopes follow company links without currency filtering he
   assert.equal(result.current.collected, 3000);
   assert.equal(result.current.invoiced, 0);
   assert.equal(result.current.orderValue, 11000);
-  assert.equal(result.overdueTasks.length, 1, "personal tasks are independent of company filters");
 });
 test("catalogs use their own currency and each SKU counts once per catalog", () => {
   assert.equal(computeAnalytics(fixture(), filters).topProducts.length, 0);
@@ -74,6 +71,19 @@ test("large windows have bounded chart points and preserve all totals", () => {
   assert.ok(result.series.length <= 90);
   assert.equal(result.series.reduce((total, point) => total + point.companies, 0), 4);
   assert.equal(result.series.reduce((total, point) => total + point.collected, 0), 30);
+});
+test("comparison trend buckets keep their own dates, currency units and per-order averages", () => {
+  const data = fixture();
+  data.orders.push(
+    { id: "another", companyId: "old", date: "2026-10-01", currency: "USD", status: "confirmed", totalMinor: 2100 },
+    { id: "prev", companyId: "old", date: "2026-09-01", currency: "USD", status: "confirmed", totalMinor: 3800 },
+  );
+  const report = computeAnalytics(data, filters);
+  const current = report.series[0], previous = report.previousSeries[0];
+  assert.deepEqual([current.date, current.endDate, current.orders, current.orderValue, current.averageOrderValue], ["2026-10-01", "2026-10-01", 2, 131, 65.5]);
+  assert.deepEqual([previous.date, previous.invoiced, previous.orderValue, previous.averageOrderValue], ["2026-09-01", 100, 38, 38]);
+  assert.equal(report.series[1].averageOrderValue, null);
+  assert.deepEqual(computeAnalytics(data, { ...filters, comparison: "none" }).previousSeries, []);
 });
 test("CSV safely quotes content and neutralizes spreadsheet formulas", () => {
   const csv = analyticsCsv([["=1+1", 'Name, "quoted"', 12]]);

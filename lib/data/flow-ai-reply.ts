@@ -120,7 +120,9 @@ export async function generateFlowAiReply({ usageUserId, config, contact, compan
     catalogDecision = JSON.parse(output.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""));
     if (latestInbound && explicitFlowCatalogRequest(latestInbound.body || "") && (catalogDecision as { intent: string }).intent === "none")
       throw new Error("AI reply needs manual review: the requested catalog was not selected. No email was sent.");
-    selectedSkus = resolveFlowCatalog(output, config, catalogMessageCount, catalogProducts.map(product => product.sku));
+    selectedSkus = resolveFlowCatalog(output, config, catalogMessageCount, catalogProducts.map(product => product.sku), {
+      products: catalogProducts, requestText: latestInbound ? flowAuthoredText(latestInbound.body || "") : Object.values(inquiry?.fields || {}).flat().join("\n"),
+    });
   }
   const selectedProducts = catalogProducts.filter((product) => selectedSkus.includes(product.sku));
   const attachCatalog = selectedProducts.length > 0;

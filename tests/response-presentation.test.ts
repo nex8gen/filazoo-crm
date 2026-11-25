@@ -11,6 +11,15 @@ function invoice(index: number, status = "issued", dueDate = "2026-11-12", total
 }
 const evidence = (resource: string, records: unknown[], matching = records.length): RecordEvidence => ({ resource, records, coverage: { matching, nextOffset: matching > records.length ? records.length : null } });
 
+test("customer intelligence produces real customer cards and exports with partial-population disclosure", () => {
+  const report = buildRecordPresentation([evidence("customer_insights", [{ id: id(1), name: "Reviewed Buyer", country: "US", profile: { nextFollowupAt: "2026-11-12T08:00:00Z" } }], 100)], "Find customers most likely to order", now)!;
+  assert.equal(report.sections[0].id, "companies");
+  assert.equal(report.sections[0].rows[0].href, `/companies/${id(1)}`);
+  assert.equal(report.sections[0].rows[0].status, "Overdue follow-up");
+  assert.match(report.sections[0].description, /Partial view/);
+  assert.match(presentationCsv(report.sections[0]), /Reviewed Buyer/);
+});
+
 test("invoice cards use saved status, real balances, calendar due dates and separate currencies", () => {
   const report = buildRecordPresentation([evidence("invoices", [invoice(1, "draft"), invoice(2), invoice(3, "issued", "2026-11-13"), invoice(4, "void"), invoice(5, "issued", "2026-11-11", 10000, 10000), invoice(6, "issued", "2026-11-10", 10000, 2500, "EUR"), invoice(7, "issued", "")])], "Find overdue invoices", now)!;
   const section = report.sections[0];

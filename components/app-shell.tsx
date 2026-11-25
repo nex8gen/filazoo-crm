@@ -66,14 +66,15 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
   const [aiLaunchRequest, setAiLaunchRequest] = useState<WorkspaceAiLaunchRequest>({ id: 0, mode: "chat" });
   const navigationTriggerRef = useRef<HTMLButtonElement>(null);
   const isPublicPage = isStandaloneRoute(pathname);
+  const hideWorkspaceChrome = isPublicPage || isPortalEditor;
   // Only company views render server-owned customer tags. Inbox tags have
   // their own mailbox refresh; other pages don't need another polling request.
   useCustomerTagRefresh(companyPopupOpen || pathname === "/companies" || pathname.startsWith("/companies/"));
   // Inbox and automation already refresh their own data in place.
-  useVisitedPageRefresh(pathname, !isPublicPage && !usesViewportCanvas && !companyPopupOpen);
+  useVisitedPageRefresh(pathname, !hideWorkspaceChrome && !usesViewportCanvas && !companyPopupOpen);
 
   useEffect(() => {
-    if (isPublicPage) return;
+    if (hideWorkspaceChrome) return;
     const launch = (event: Event) => {
       const detail = (event as CustomEvent<WorkspaceAiLaunchDetail>).detail;
       if (!detail || !["chat", "agent"].includes(detail.mode)) return;
@@ -83,10 +84,10 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
     };
     window.addEventListener(workspaceAiLaunchEvent, launch);
     return () => window.removeEventListener(workspaceAiLaunchEvent, launch);
-  }, [isPublicPage, isHome, pathname]);
+  }, [hideWorkspaceChrome, isHome, pathname]);
 
   useEffect(() => {
-    if (isPublicPage) return;
+    if (hideWorkspaceChrome) return;
     const onKeyDown = (event: KeyboardEvent) => {
       const editing = event.target instanceof HTMLElement && (event.target.isContentEditable || Boolean(event.target.closest("input, textarea, select")));
       if (!editing && !event.defaultPrevented && event.key?.toLowerCase() === "b" && (event.metaKey || event.ctrlKey)) {
@@ -101,9 +102,10 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isPublicPage, toggleVisibleSidebar]);
+  }, [hideWorkspaceChrome, toggleVisibleSidebar]);
 
   if (isPublicPage) return children;
+  if (isPortalEditor) return <main id="workspace-content" tabIndex={-1} className="h-dvh min-h-0 w-full overflow-hidden text-foreground outline-none">{children}</main>;
 
   const navigate = (href: string) => {
     setCommandOpen(false);

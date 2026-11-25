@@ -1,0 +1,60 @@
+"use client";
+
+import { useRef, useState } from "react";
+import { ArrowLeft, Bold, Copy, Italic, Link2, Plus, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { PortalEditorSelect } from "@/components/portal-editor-select";
+import { EditorColor, EditorRange, EditorSettingsGroup, EditorToggle } from "@/components/portal-editor-fields";
+import { blockCanContainChildren, websiteElementTypes } from "@/lib/portal-website-blocks";
+import type { PortalWebsiteBlock, WebsiteBlockStyle } from "@/lib/portal-design";
+
+export function PortalElementSettings({ block, path, canAdd, onChange, onBack, onDuplicate, onRemove, onAddChild, pages }: {
+  block: PortalWebsiteBlock; path: number[]; canAdd: boolean; onChange: (patch: Partial<PortalWebsiteBlock>) => void;
+  onBack: () => void; onDuplicate: () => void; onRemove: () => void; onAddChild: (type: PortalWebsiteBlock["type"]) => void;
+  pages: { value: string; label: string }[];
+}) {
+  const [childType, setChildType] = useState<PortalWebsiteBlock["type"]>("text");
+  const textField = useRef<HTMLTextAreaElement | null>(null);
+  const style = block.style ?? {};
+  const updateStyle = (patch: Partial<WebsiteBlockStyle>) => onChange({ style: { ...style, ...patch } });
+  const textElement = ["heading", "text", "button", "faq", "testimonial", "stat", "icon"].includes(block.type);
+  const media = ["image", "slide", "testimonial", "video"].includes(block.type);
+  function format(kind: "bold" | "italic" | "link") {
+    const from = textField.current?.selectionStart ?? 0; const to = textField.current?.selectionEnd ?? from;
+    const selected = block.text.slice(from, to) || (kind === "link" ? "Link text" : "Text");
+    const formatted = kind === "bold" ? `**${selected}**` : kind === "italic" ? `*${selected}*` : `[${selected}](https://example.com)`;
+    onChange({ text: `${block.text.slice(0, from)}${formatted}${block.text.slice(to)}`.slice(0, 4000) });
+  }
+  return <div className="pb-element-settings">
+    <Button type="button" variant="ghost" size="sm" className="pb-back-to-section" onClick={onBack}><ArrowLeft />Back to section</Button>
+    <EditorToggle label="Visible element" checked={block.enabled} onChange={enabled => onChange({ enabled })} />
+    <EditorSettingsGroup title="Content">
+      <Label className="pb-field">{block.type === "faq" ? "Question" : block.type === "testimonial" ? "Customer name" : block.type === "stat" ? "Statistic label" : "Element name"}<Input aria-label="Element name" value={block.title} maxLength={120} onChange={event => onChange({ title: event.target.value })} /></Label>
+      {block.type === "heading" && <Label className="pb-field">Heading level<PortalEditorSelect label="Heading level" value={block.headingLevel ?? "auto"} options={[{ value: "auto", label: "Automatic" }, { value: "h1", label: "H1" }, { value: "h2", label: "H2" }, { value: "h3", label: "H3" }]} onChange={headingLevel => onChange({ headingLevel: headingLevel === "auto" ? undefined : headingLevel as PortalWebsiteBlock["headingLevel"] })} /></Label>}
+      {textElement && <div className="pb-field"><Label htmlFor="pb-element-text">{block.type === "faq" ? "Answer" : block.type === "testimonial" ? "Quote" : block.type === "stat" ? "Value" : block.type === "button" ? "Button text" : "Text"}</Label>{["text", "faq"].includes(block.type) && <div className="pb-format-toolbar" role="group" aria-label="Text formatting"><Button variant="ghost" size="icon-sm" aria-label="Bold text" onMouseDown={event => event.preventDefault()} onClick={() => format("bold")}><Bold /></Button><Button variant="ghost" size="icon-sm" aria-label="Italic text" onMouseDown={event => event.preventDefault()} onClick={() => format("italic")}><Italic /></Button><Button variant="ghost" size="icon-sm" aria-label="Insert text link" onMouseDown={event => event.preventDefault()} onClick={() => format("link")}><Link2 /></Button></div>}<Textarea ref={textField} id="pb-element-text" aria-label="Element text" value={block.text} maxLength={block.type === "heading" ? 120 : block.type === "button" ? 60 : 4000} rows={block.type === "heading" || block.type === "button" || block.type === "stat" ? 2 : 5} onChange={event => onChange({ text: event.target.value })} /></div>}
+      {media && <><Label className="pb-field">{block.type === "video" ? "Poster image URL" : block.type === "slide" ? "Background image URL" : "Image URL"}<Input aria-label="Element image URL" type="url" value={block.imageUrl} maxLength={2000} placeholder="https://" onChange={event => onChange({ imageUrl: event.target.value })} /></Label><Label className="pb-field">Alternative text<Input aria-label="Image alternative text" value={block.alt} maxLength={200} onChange={event => onChange({ alt: event.target.value })} /></Label></>}
+      {block.type === "video" && <Label className="pb-field">Video URL<Input type="url" aria-label="Video URL" placeholder="https://example.com/video.mp4" value={block.link} maxLength={2000} onChange={event => onChange({ link: event.target.value })} /><small>Use a direct HTTPS video file URL.</small></Label>}
+      {block.type === "button" && <><Label className="pb-field">Link<Input aria-label="Element link" value={block.link} maxLength={2000} placeholder="https://, mailto:, tel:, or a page" onChange={event => onChange({ link: event.target.value })} /></Label><Label className="pb-field">Choose a website page<PortalEditorSelect label="Element destination" value={pages.some(item => item.value === block.link) ? block.link : "custom"} options={[{ value: "custom", label: "Custom link" }, ...pages]} onChange={link => { if (link !== "custom") onChange({ link }); }} /></Label><EditorToggle label="Open in a new tab" checked={block.newTab ?? false} onChange={newTab => onChange({ newTab })} /></>}
+      {block.type === "icon" && <Label className="pb-field">Icon<PortalEditorSelect label="Element icon" value={block.icon ?? "check"} options={[{ value: "building", label: "Business" }, { value: "package", label: "Package" }, { value: "truck", label: "Delivery" }, { value: "shield", label: "Shield" }, { value: "check", label: "Check" }, { value: "star", label: "Star" }, { value: "mail", label: "Email" }, { value: "globe", label: "Globe" }]} onChange={icon => onChange({ icon: icon as PortalWebsiteBlock["icon"] })} /></Label>}
+      {block.type === "testimonial" && <EditorRange label="Star rating" min={0} max={5} value={block.rating ?? 0} unit="" onChange={rating => onChange({ rating })} />}
+    </EditorSettingsGroup>
+    {textElement && <EditorSettingsGroup title="Typography"><EditorRange label="Font size" min={10} max={96} value={style.fontSize ?? (block.type === "heading" ? 36 : block.type === "stat" ? 44 : block.type === "button" ? 13 : ["faq", "testimonial"].includes(block.type) ? 16 : 15)} onChange={fontSize => updateStyle({ fontSize })} /><Label className="pb-field">Font weight<PortalEditorSelect label="Element font weight" value={style.fontWeight ?? "inherit"} options={[{ value: "inherit", label: "Inherit" }, { value: "400", label: "Regular" }, { value: "500", label: "Medium" }, { value: "600", label: "Semibold" }, { value: "700", label: "Bold" }]} onChange={fontWeight => updateStyle({ fontWeight: fontWeight === "inherit" ? undefined : fontWeight as WebsiteBlockStyle["fontWeight"] })} /></Label><EditorColor label="Text color" value={style.color ?? ""} onChange={color => updateStyle({ color })} /><Button type="button" variant="ghost" size="sm" disabled={!style.fontSize && !style.fontWeight && !style.color} onClick={() => updateStyle({ fontSize: undefined, fontWeight: undefined, color: undefined })}>Reset typography</Button></EditorSettingsGroup>}
+    <EditorSettingsGroup title="Layout & appearance">
+      {(textElement || blockCanContainChildren(block)) && <Label className="pb-field">Alignment<PortalEditorSelect label="Element alignment" value={style.alignment ?? "inherit"} options={[{ value: "inherit", label: "Inherit from parent" }, { value: "left", label: "Left" }, { value: "center", label: "Center" }, { value: "right", label: "Right" }]} onChange={alignment => updateStyle({ alignment: alignment as WebsiteBlockStyle["alignment"] })} /></Label>}
+      {(blockCanContainChildren(block) || block.type === "divider") && <EditorColor label="Text color" value={style.color ?? ""} onChange={color => updateStyle({ color })} />}
+      <EditorColor label="Background color" value={style.background ?? ""} fallback="#ffffff" onChange={background => updateStyle({ background })} />
+      <EditorRange label="Element padding" min={0} max={80} value={style.padding ?? 0} onChange={padding => updateStyle({ padding })} />
+      <EditorRange label="Corner radius" min={0} max={48} value={style.radius ?? 0} onChange={radius => updateStyle({ radius })} />
+      {blockCanContainChildren(block) && <><EditorRange label="Columns" min={1} max={4} unit="" value={style.columns ?? 1} onChange={columns => updateStyle({ columns })} /><EditorRange label="Element mobile columns" min={1} max={2} unit="" value={style.mobileColumns ?? 1} onChange={mobileColumns => updateStyle({ mobileColumns })} /><EditorRange label="Element gap" min={0} max={64} value={style.gap ?? 20} onChange={gap => updateStyle({ gap })} /></>}
+      {block.type === "spacer" && <EditorRange label="Spacer height" min={0} max={600} value={style.height ?? 32} onChange={height => updateStyle({ height })} />}
+      {block.type === "button" && <><Label className="pb-field">Button style<PortalEditorSelect label="Element button style" value={style.buttonStyle ?? "solid"} options={[{ value: "solid", label: "Solid" }, { value: "outline", label: "Outline" }, { value: "text", label: "Text link" }]} onChange={buttonStyle => updateStyle({ buttonStyle: buttonStyle as WebsiteBlockStyle["buttonStyle"] })} /></Label><EditorToggle label="Full-width button" checked={style.width === "full"} onChange={full => updateStyle({ width: full ? "full" : "auto" })} /></>}
+      {block.type === "image" && <><Label className="pb-field">Image shape<PortalEditorSelect label="Image shape" value={style.imageAspect ?? "landscape"} options={[{ value: "natural", label: "Natural" }, { value: "square", label: "Square" }, { value: "landscape", label: "Landscape" }, { value: "portrait", label: "Portrait" }]} onChange={imageAspect => updateStyle({ imageAspect: imageAspect as WebsiteBlockStyle["imageAspect"] })} /></Label>{style.imageAspect !== "natural" && <Label className="pb-field">Image fit<PortalEditorSelect label="Image fit" value={style.imageFit ?? "cover"} options={[{ value: "cover", label: "Fill" }, { value: "contain", label: "Fit inside" }]} onChange={imageFit => updateStyle({ imageFit: imageFit as WebsiteBlockStyle["imageFit"] })} /></Label>}</>}
+    </EditorSettingsGroup>
+    <EditorSettingsGroup title="Device visibility"><EditorToggle label="Show on desktop" checked={style.desktopVisible ?? true} onChange={desktopVisible => updateStyle({ desktopVisible })} /><EditorToggle label="Show on mobile" checked={style.mobileVisible ?? true} onChange={mobileVisible => updateStyle({ mobileVisible })} /></EditorSettingsGroup>
+    {blockCanContainChildren(block) && path.length < 3 && <EditorSettingsGroup title="Nested elements"><PortalEditorSelect label="Nested element type" value={childType} options={websiteElementTypes.filter(item => path.length < 2 || !["group", "card", "slide"].includes(item.value))} onChange={next => setChildType(next as PortalWebsiteBlock["type"])} /><Button type="button" variant="outline" size="sm" className="mt-3" disabled={!canAdd} onClick={() => onAddChild(childType)}><Plus />Add nested element</Button></EditorSettingsGroup>}
+    <div className="pb-element-actions"><Button type="button" variant="outline" size="sm" disabled={!canAdd} onClick={onDuplicate}><Copy />Duplicate element</Button><Button type="button" variant="destructive" size="sm" onClick={onRemove}><Trash2 />Remove element</Button></div>
+  </div>;
+}

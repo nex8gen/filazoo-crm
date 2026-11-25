@@ -18,7 +18,6 @@ const eslintConfig = defineConfig([
     "output/**",
     "build/**",
     "next-env.d.ts",
-    "public/vendor/vvveb/**",
   ]),
 ]);
 

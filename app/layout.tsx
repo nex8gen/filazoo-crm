@@ -4,10 +4,9 @@ import { GeistSans } from "geist/font/sans";
 import { ThemeProvider } from "@/components/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
-import { AppShell } from "@/components/app-shell";
+import { WorkspaceSurface } from "@/components/workspace-surface";
+import { PageLoadingSkeleton } from "@/components/loading-skeletons";
 import { LanguageProvider } from "@/components/language-provider";
-import { UserMenu } from "@/components/user-menu";
-import { AccountPreferences } from "@/components/account-preferences";
 import { SiteMonitoring } from "@/components/site-monitoring";
 import { WorkspaceErrorBoundary } from "@/components/workspace-error-boundary";
 import "./globals.css";
@@ -25,7 +24,7 @@ export default function RootLayout({ children, company, product }: LayoutProps<"
       <body>
         <LanguageProvider>
           <ThemeProvider>
-            <TooltipProvider><WorkspaceErrorBoundary><Suspense fallback={<div className="min-h-svh bg-background" />}><AccountPreferences><AppShell userMenu={<Suspense fallback={<span className="size-7 rounded-full bg-muted" />}><UserMenu /></Suspense>}>{children}{company}{product}</AppShell></AccountPreferences></Suspense></WorkspaceErrorBoundary></TooltipProvider>
+            <TooltipProvider><WorkspaceErrorBoundary><Suspense fallback={<PageLoadingSkeleton fullScreen />}><WorkspaceSurface>{children}{company}{product}</WorkspaceSurface></Suspense></WorkspaceErrorBoundary></TooltipProvider>
             <Toaster position="bottom-right" />
           </ThemeProvider>
         </LanguageProvider>

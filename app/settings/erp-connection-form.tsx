@@ -18,6 +18,7 @@ import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useUnsavedSettings } from "./use-unsaved-settings";
 
 type SkuOption = { sku: string; name: string };
 const intervals = [{ value: 0, label: "Manual only" }, { value: 5, label: "Every 5 minutes" }, { value: 15, label: "Every 15 minutes" }, { value: 60, label: "Every hour" }, { value: 1440, label: "Every day" }];
@@ -37,6 +38,7 @@ export function ErpConnectionForm({ initial, status, products }: { initial: ErpS
   const [operation, setOperation] = useState("");
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null);
   const dirty = name !== initial.name || appId !== initial.appId || Boolean(appSecret) || warehouseIds !== initial.warehouseIds || enabled !== initial.enabled || syncInterval !== initial.syncInterval || JSON.stringify(mappings) !== JSON.stringify(initial.mappings);
+  useUnsavedSettings(dirty);
 
   function values(): ErpSettingsInput {
     return { name, appId, appSecret, warehouseIds, mappings, enabled, syncInterval, revision: initial.revision, appUrl: window.location.origin };
@@ -47,7 +49,7 @@ export function ErpConnectionForm({ initial, status, products }: { initial: ErpS
   }
   const selectedWarehouses = new Set(warehouseIds.split(",").map(x => x.trim()).filter(Boolean));
 
-  return <div className="max-w-4xl space-y-5">
+  return <div className="space-y-5">
     <Card className="shadow-none"><CardHeader><CardTitle className="flex items-center gap-2"><KeyRound className="size-4" />ERP API connection</CardTitle><CardDescription>Add or update your Lingxing credentials here. Credentials are encrypted and never displayed after saving.</CardDescription></CardHeader><CardContent>
       <form onSubmit={event => { event.preventDefault(); run("save", async () => {
         const result = await saveErpConnection(values());

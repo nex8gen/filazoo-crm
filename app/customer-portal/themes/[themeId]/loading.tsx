@@ -1,1 +1,5 @@
-export default function Loading() { return <div className="p-8" role="status">Opening your theme editor…</div>; }
+import { PortalEditorSkeleton } from "@/components/loading-skeletons";
+
+export default function Loading() {
+  return <PortalEditorSkeleton />;
+}

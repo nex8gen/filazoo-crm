@@ -1,4 +1,7 @@
 export const zhCNAnalytics: Record<string, string> = {
+  "Average value per confirmed order in the selected period.": "所选期间内每笔已确认订单的平均金额。",
+  "No orders in this period.": "所选期间内没有订单。", "No new companies in this period.": "所选期间内没有新增企业。",
+  "Top catalog products": "热门目录产品", "Change vs comparison period": "较对比期间变化",
   "Drop here": "拖放到此处",
   "Confirmed orders": "已确认订单", "Order value in the selected period": "所选期间内的订单金额",
   "Companies & follow-ups": "企业与跟进", "Account notes": "客户资料备注", "Keep useful customer preferences and profile notes together.": "集中保存客户偏好及资料备注。",

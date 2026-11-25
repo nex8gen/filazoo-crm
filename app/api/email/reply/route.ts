@@ -5,7 +5,7 @@ import { z } from "zod";
 import { aiLanguageSchema } from "@/lib/ai/language";
 import { requireWorkspaceMember } from "@/lib/auth";
 import { generateGatewayText } from "@/lib/ai/gateway";
-import { buildEmailReplyInstruction, parseEmailReplyPlan, replyProductSchema } from "@/lib/ai/email-reply";
+import { buildEmailReplyInstruction, parseEmailReplyPlan, replyProductSchema, replyCatalogProducts } from "@/lib/ai/email-reply";
 import { applyEmailSignature, DEFAULT_EMAIL_COMPANY, DEFAULT_EMAIL_TITLE, normalizeSignatureName } from "@/lib/ai/email-rewrite";
 import { canCreateInvoices } from "@/lib/invoice-permissions";
 
@@ -47,6 +47,12 @@ export async function POST(request: Request) {
   try {
     const output = await gateway();
     const plan = parseEmailReplyPlan(output);
+    if (plan.attachCatalog) {
+      if (!policy.data.products || policy.actions.catalogs === "deny") throw new Error("AI catalog attachments are blocked in Settings.");
+      const selected = replyCatalogProducts(plan, input.data.products, input.data.conversationHistory);
+      plan.catalogScope = "selected";
+      plan.catalogProductSkus = selected.map(product => product.sku);
+    }
     if (!canCreateInvoice && plan.invoiceItems.length) throw new Error("Your role cannot create invoices. Ask an operator to prepare the invoice.");
     for (const item of plan.invoiceItems) {
       const product = input.data.products.find((value) => value.sku === item.productSku);

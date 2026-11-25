@@ -1,5 +1,5 @@
 import { FieldSkeleton } from "@/components/workspace-skeletons";
-import { HeaderSkeleton, LoadingRegion } from "@/components/page-skeletons";
+import { LoadingRegion } from "@/components/page-skeletons";
 import { Skeleton } from "@/components/ui/skeleton";
 import "@/app/settings/settings.css";
 
@@ -14,8 +14,7 @@ export function SettingsSkeleton({ section = "general" }: { section?: string }) 
   const form = ["profile", "mailboxes", "email", "invoices"].includes(section);
   const workspace = section === "team" || section === "advanced";
   return <LoadingRegion label="Loading settings" className="settings-content">
-    <HeaderSkeleton actions={false} />
-      <div className={`space-y-4 ${workspace ? "" : "max-w-2xl"}`}>
+      <div className="space-y-4">
         <div className="space-y-5 rounded-xl border bg-card p-6"><div><Skeleton className="h-5 w-36 max-w-full" /><Skeleton className="mt-2 h-4 w-full" /></div>
           {form ? <>
             {section === "profile" ? <div className="flex items-center gap-4 border-y py-5"><Skeleton className="size-20 shrink-0 rounded-full" /><Skeleton className="h-9 w-32" /></div> : null}

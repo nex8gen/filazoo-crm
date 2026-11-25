@@ -10,6 +10,10 @@ import * as analysis from "../lib/company-analysis.ts";
 const require = createRequire(import.meta.url);
 const companyId = "4913b683-bcec-4079-b424-6fd559ed0c2a";
 const requestId = "b02b78ed-3f6e-459a-a461-802f6d231af8";
+const emailDeps = {
+  "./company-email-access": { getCompanyEmailScope: async () => ({ id: companyId, name: "Customer", emails: ["customer@example.com"] }) },
+  "./company-emails": { getCompanyEmailBackendData: async () => ({ emails: [], mailboxReadFailed: false }) },
+};
 function load(file: string, deps: Record<string, unknown>) {
   const exports: Record<string, (...args: unknown[]) => Promise<unknown>> = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -31,7 +35,7 @@ test("analysis loads every page within the company scope and strips customer sna
     if (table === "purchase_orders") return query({ data: Array.from({ length: pages++ === 0 ? 500 : 1 }, (_, i) => ({ id: `order-${pages}-${i}`, document })), error: null }, calls);
     return query({ data: [], error: null }, calls);
   } };
-  const loadedModule = load("../lib/data/company-analysis.ts", { "server-only": {}, "../auth": { requireWorkspaceMember: async (roles: string[]) => assert.ok(roles.includes("viewer")) }, "../supabase/admin": { createSupabaseAdmin: () => db }, "../purchase-orders": { purchaseOrderSchema } });
+  const loadedModule = load("../lib/data/company-analysis.ts", { ...emailDeps, "server-only": {}, "../auth": { requireWorkspaceMember: async (roles: string[]) => assert.ok(roles.includes("viewer")) }, "../supabase/admin": { createSupabaseAdmin: () => db }, "../purchase-orders": { purchaseOrderSchema } });
   const result = await loadedModule.getCompanyAnalysis(companyId) as analysis.CompanyAnalysisData;
   assert.equal(result.orders.length, 501);
   assert.ok(calls.some(call => call[0] === "range" && call[1] === 500 && call[2] === 999));
@@ -41,7 +45,7 @@ test("analysis loads every page within the company scope and strips customer sna
 
 test("analysis rejects unauthenticated reads before reaching the database and does not turn failed reads into zero totals", async () => {
   let reads = 0;
-  const deps = { "server-only": {}, "../auth": { requireWorkspaceMember: async () => { throw new Error("Unauthorized"); } }, "../supabase/admin": { createSupabaseAdmin: () => { reads++; return { from: () => query({ data: null, error: { message: "offline" } }) }; } }, "../purchase-orders": { purchaseOrderSchema } };
+  const deps = { ...emailDeps, "server-only": {}, "../auth": { requireWorkspaceMember: async () => { throw new Error("Unauthorized"); } }, "../supabase/admin": { createSupabaseAdmin: () => { reads++; return { from: () => query({ data: null, error: { message: "offline" } }) }; } }, "../purchase-orders": { purchaseOrderSchema } };
   await assert.rejects(load("../lib/data/company-analysis.ts", deps).getCompanyAnalysis(companyId), /Unauthorized/);
   assert.equal(reads, 0);
   deps["../auth"].requireWorkspaceMember = async () => {};
@@ -50,6 +54,39 @@ test("analysis rejects unauthenticated reads before reaching the database and do
 });
 
 const sample: analysis.CompanyAnalysisData = { orders: [{ id: "po", reference: document.reference, orderDate: document.orderDate, deliveryDate: "", currency: "USD", status: "completed", items: document.items }], products: [], tasks: [], asOf: "2026-10-27T02:00:00Z" };
+
+test("analysis verifies company access before reading purchases or correspondence", async () => {
+  let reads = 0;
+  const api = load("../lib/data/company-analysis.ts", {
+    ...emailDeps, "server-only": {}, "../auth": { requireWorkspaceMember: async () => ({ id: "staff", role: "bd_manager" }) },
+    "./company-email-access": { getCompanyEmailScope: async () => null },
+    "./company-emails": { getCompanyEmailBackendData: async () => { reads++; } },
+    "../supabase/admin": { createSupabaseAdmin: () => { reads++; } }, "../purchase-orders": { purchaseOrderSchema },
+  });
+  await assert.rejects(api.getCompanyAnalysis(companyId), /Company unavailable/);
+  assert.equal(reads, 0);
+});
+
+test("email metrics include sent messages only, transmit metadata only, and preserve purchases on email failure", async () => {
+  const saved = { id: "sent", direction: "outbound", timestamp: "2026-10-01T00:00:00Z", status: "Sent", body: "private body", subject: "private subject" };
+  for (const mode of ["ready", "partial", "failed", "offline"]) {
+    const api = load("../lib/data/company-analysis.ts", {
+      ...emailDeps, "server-only": {}, "../auth": { requireWorkspaceMember: async () => ({ id: "staff", role: "admin" }) },
+      "../supabase/admin": { createSupabaseAdmin: () => ({ from: (table: string) => query({ data: table === "purchase_orders" ? [{ id: "po", document }] : [], error: null }) }) },
+      "../purchase-orders": { purchaseOrderSchema },
+      "./company-emails": { getCompanyEmailBackendData: async () => {
+        if (mode === "offline") throw new Error("mailbox unavailable");
+        return { emails: [saved, { ...saved, id: "draft", status: "Draft" }, { ...saved, id: "received", direction: "inbound", status: "Received" }], mailboxReadFailed: mode === "failed", mailboxSnapshotPartial: mode === "partial" };
+      } },
+    });
+    const result = await api.getCompanyAnalysis(companyId) as analysis.CompanyAnalysisData;
+    assert.equal(result.orders.length, 1);
+    assert.equal(result.email?.available, mode !== "failed" && mode !== "offline");
+    assert.equal(result.email?.partial, mode === "partial");
+    assert.equal(result.email?.messages.length, mode === "offline" ? 0 : 2);
+    assert.ok(!JSON.stringify(result.email).includes("private"));
+  }
+});
 const input = { companyId, requestId, productKey: analysis.analysisProductKey(document.items[0]), currency: "USD", dueAt: "2099-01-01T12:00:00Z" };
 function actions(role: string, data = sample) {
   const calls: [string, ...unknown[]][] = [];

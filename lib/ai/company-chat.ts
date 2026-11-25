@@ -5,6 +5,7 @@ import type { CompanyDetails } from "../types.ts";
 import { customerReportInstruction } from "./customer-research.ts";
 import { chatMessageSchema, chatImageLimitError, conversationImageReferences, chatImageInstruction } from "./image-input.ts";
 import { historyReferenceSchema } from "./chat-history.ts";
+export { isCustomerIntelligenceRequest } from "./customer-intelligence.ts";
 
 export const companyChatSchema = z.object({
   language: aiLanguageSchema,
@@ -61,7 +62,7 @@ export function buildCompanyChatContext(details: CompanyDetails, includeBilling:
     const size = JSON.stringify(record).length;
     if (size > remaining) continue;
     context.activity.push(record);
-    sources.push({ id: source, label: `${record.title} · ${clip(item.detail, 120)}`, recordedAt: item.createdAt });
+    sources.push({ id: source, label: `${record.title} · ${clip(item.detail, 120)}`, recordedAt: item.createdAt, ...(item.href ? { url: item.href } : {}) });
     remaining -= size;
   }
   context.coverage.includedActivity = context.activity.length;
@@ -78,9 +79,10 @@ export function companyChatInstruction(now: string, language: AppLanguage = "en"
     "Cite factual claims with source markers such as [P], [C], [A1]. Use only source IDs in the supplied records. Mention missing information or omitted older records when it affects the answer. An empty timeline does not prove that the customer has never communicated elsewhere.",
     "If billingAvailable is false, explain that billing is not available to this role; never reconstruct restricted invoice or payment details from conversation history.",
     "Help with customer briefs, buying intent, objections, follow-up plans, questions to ask, and draft replies. For draft replies, use only known facts and the recorded account manager. Never claim to send an email, schedule a task, edit the CRM or take external actions: this chat only provides advice and drafts.",
+    "For customer status or sales analysis, give a substantive account brief: current situation, message and conversation counts (distinct concepts), chronological discussion summary, explicit buying signals, objections, commercial facts and a specific recommended next action. Cite dated email subjects and short supporting excerpts; distinguish the customer's words from the team's outbound pitches, and label inference. Newer rejection, opt-out or fulfilled orders can supersede older intent. If CUSTOMER_INTELLIGENCE is provided, use its exact counts, per-currency sales totals and linked evidence. State omitted/unavailable history and never claim complete coverage when excerpts or sources are missing. A profile fit score is not a purchase probability. Do not substitute generic sales advice for the customer's actual evidence. For requested CRM actions explain that Agent can use the analyzed customer's saved ID and existing action tools.",
     aiLanguageInstruction(language),
     webSearch ? customerReportInstruction : "Web search is off. Do not claim to have searched Google or visited websites. For external company research, suggest enabling Web search.",
-    `Use readable Markdown, short paragraphs, bold key findings and compact lists. Use a table when it makes a comparison easier to read, and small relevant emoji when useful. Never emit raw HTML or invented chart data. Keep answers under ${webSearch ? "5,500" : "4,000"} characters.`,
+    "Use readable Markdown, short paragraphs, bold key findings and compact lists. Use a table when it makes a comparison easier to read. Never emit raw HTML or invented chart data. Match the depth to the question; account analyses need evidence, discussion summary and next steps, while simple questions can be brief.",
     `Current time: ${now}. Workspace timezone: Asia/Shanghai.`,
   ].join("\n");
 }

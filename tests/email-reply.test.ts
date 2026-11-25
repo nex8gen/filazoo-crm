@@ -107,3 +107,50 @@ test("changing conversations prevents subsequent invoice creation", async () => 
   await assert.rejects(() => prepareReplyInvoice({ items, email: "buyer@example.com", customerName: "Buyer", cache: new Map(), isCurrent: () => current, request }), /conversation changed/);
   assert.ok(!mock.calls.some((call) => call.startsWith("POST")));
 });
+
+test("cancelling reply invoice reads aborts the request without saving an invoice", async () => {
+  const controller = new AbortController();
+  let calls = 0;
+  const request: typeof fetch = async (_url, init) => {
+    calls++;
+    assert.equal(init?.signal, controller.signal);
+    controller.abort();
+    return Response.json({ document: blankInvoiceDocument("2026-11-25") });
+  };
+  await assert.rejects(() => prepareReplyInvoice({ items, email: "buyer@example.com", customerName: "Buyer", cache: new Map(), isCurrent: () => true, signal: controller.signal, request }), { name: "AbortError" });
+  assert.equal(calls, 1);
+});
+
+test("cancel and immediate retry share an in-flight invoice save and keep its ID", async () => {
+  const mock = setup();
+  const controller = new AbortController();
+  let releaseSave!: () => void;
+  let startedSave!: () => void;
+  let retriedReads!: () => void;
+  const started = new Promise<void>(resolve => { startedSave = resolve; });
+  const retryRead = new Promise<void>(resolve => { retriedReads = resolve; });
+  const gate = new Promise<void>(resolve => { releaseSave = resolve; });
+  let writes = 0;
+  const request: typeof fetch = async (url, init) => {
+    if (init?.method === "POST") {
+      writes++;
+      assert.equal(init.signal, undefined, "keep the save response available after cancellation");
+      startedSave();
+      await gate;
+    }
+    if (String(url).includes("kind=products") && writes) retriedReads();
+    return mock.request(url, init);
+  };
+  const input = { items, email: "buyer@example.com", customerName: "Buyer", cache: new Map<string, string>(), isCurrent: () => true, request };
+  const first = prepareReplyInvoice({ ...input, signal: controller.signal });
+  const cancelled = assert.rejects(first, { name: "AbortError" });
+  await started;
+  controller.abort();
+  const retry = prepareReplyInvoice(input);
+  await retryRead;
+  releaseSave();
+  await cancelled;
+  assert.equal((await retry).invoiceId, "draft-id");
+  assert.equal(writes, 1);
+  assert.deepEqual([...input.cache.values()], ["draft-id"]);
+});

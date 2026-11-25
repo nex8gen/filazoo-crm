@@ -1,147 +1,191 @@
 "use client";
-import { NotificationToast } from "@/components/ui/notification-toast";
 
-import { useWorkspaceState } from "@/components/workspace-memory";
-
-import { useMemo, useTransition, type ReactNode } from "react";
-import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useRouter } from "next/navigation";
-import { ArrowDownRight, ArrowRight, ArrowUpRight, Building2, Check, CircleAlert, Download, Mail, MessageSquare, Package, RefreshCw, Sparkles, Workflow } from "lucide-react";
-import { useLanguage } from "@/components/language-provider";
+import Link from "next/link";
+import { useMemo } from "react";
+import { ArrowDownRight, ArrowUpRight, Download } from "lucide-react";
 import { AnalyticsFilters, initialAnalyticsFilters } from "@/components/analytics-filters";
-import { analyticsChange, analyticsCsv, channelLabels, computeAnalytics, type AnalyticsDashboardData, type AnalyticsSource } from "@/lib/analytics-dashboard";
+import { useLanguage } from "@/components/language-provider";
+import { PageActions, PageHeaderDetails } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
-import { PageActions } from "@/components/page-header";
+import { useWorkspaceState } from "@/components/workspace-memory";
+import {
+  analyticsChange, analyticsCsv, channelLabels, computeAnalytics,
+  type AnalyticsChannel, type AnalyticsDashboardData, type AnalyticsSource,
+} from "@/lib/analytics-dashboard";
+import styles from "./analytics-surface.module.css";
 
-const AnalyticsChart = dynamic(() => import("@/components/analytics-chart").then(module => module.AnalyticsChart), { loading: () => <div className="h-[250px] animate-pulse rounded-lg bg-muted/50" aria-label="Loading chart" /> });
-const count = (value: number) => value.toLocaleString();
-function ReportLink({ href, children }: { href: string; children: ReactNode }) {
-  return <Link href={href} className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">{children}<ArrowRight className="size-3.5" /></Link>;
+const AnalyticsChart = dynamic(() => import("./analytics-chart").then(module => module.AnalyticsChart), {
+  loading: () => <div aria-busy="true" aria-label="Loading chart" className={styles.chartPlaceholder} />,
+});
+const SalesAndLeadsChart = dynamic(() => import("./analytics-chart").then(module => module.SalesAndLeadsChart), {
+  loading: () => <div aria-busy="true" aria-label="Loading chart" className={styles.chartPlaceholder} />,
+});
+const AnalyticsSparkline = dynamic(() => import("./analytics-sparkline").then(module => module.AnalyticsSparkline));
+
+const channelColors: Record<AnalyticsChannel, string> = {
+  store: "#12ade9", direct: "#6745e8", meta: "#7298ed",
+  partner: "#ac80dc", mixed: "#6bbcb3", other: "#98a3b2",
+};
+
+function Comparison({ current, previous }: { current: number; previous: number }) {
+  const change = analyticsChange(current, previous);
+  if (change === null) return <span className={styles.change} title="No prior activity">—</span>;
+  const Arrow = change < 0 ? ArrowDownRight : ArrowUpRight;
+  return <span className={styles.change} data-up={change > 0} title="Change vs comparison period">
+    {change !== 0 && <Arrow aria-hidden size={12} />}{Math.abs(change).toFixed(0)}%
+  </span>;
 }
-function Panel({ id, title, subtitle, link, children, available = true, className = "" }: { id?: string; title: string; subtitle: string; link?: { href: string; label: string }; children: ReactNode; available?: boolean; className?: string }) {
-  return <section id={id} className={`min-w-0 scroll-mt-5 rounded-xl border bg-card ${className}`}>
-    <header className="flex flex-wrap items-start justify-between gap-3 border-b px-5 py-4"><div><h2 className="text-[length:var(--ui-text-heading)] leading-6 font-medium">{title}</h2><p className="mt-1 text-xs leading-relaxed text-muted-foreground">{subtitle}</p></div>{link ? <ReportLink href={link.href}>{link.label}</ReportLink> : null}</header>
-    <div className="p-5">{available ? children : <Unavailable />}</div>
+
+type AcquisitionProps = {
+  channels: { channel: AnalyticsChannel; count: number }[];
+  total: number;
+  available: boolean;
+  locale: string;
+};
+
+function Acquisition({ channels, total, available, locale }: AcquisitionProps) {
+  const active = channels.filter(row => row.count > 0).sort((a, b) => b.count - a.count);
+  let end = 0;
+  const stops: string[] = [];
+  for (const { channel, count } of active) {
+    const start = end;
+    end += count / total * 100;
+    stops.push(`${channelColors[channel]} ${start}% ${end}%`);
+  }
+  const background = stops.length ? `conic-gradient(${stops.join(", ")})` : "var(--muted)";
+  return <section className={styles.card}>
+    <h2 className={styles.title}><Link href="/companies">Acquisition sources</Link></h2>
+    {!available ? <p className={styles.empty}>Unavailable</p> : (
+      <div className={styles.channelBody}>
+        <div className={styles.ring} style={{ background }} aria-hidden>
+          <span>{total.toLocaleString(locale)}</span>
+        </div>
+        {active.length ? <dl className={styles.legend}>
+          {active.map(row => <div key={row.channel}>
+            <dt><i style={{ background: channelColors[row.channel] }} />{channelLabels[row.channel]}</dt>
+            <dd>{row.count.toLocaleString(locale)} <small>{Math.round(row.count / total * 100)}%</small></dd>
+          </div>)}
+        </dl> : <p className={styles.muted}>No new companies in this period.</p>}
+      </div>
+    )}
   </section>;
 }
-function Unavailable() { return <div role="status" className="flex min-h-24 items-center gap-2 rounded-lg bg-muted/40 p-4 text-sm text-muted-foreground"><CircleAlert className="size-4 shrink-0" />This report is unavailable. Refresh to retry.</div>; }
-function Empty({ children }: { children: ReactNode }) { return <p className="rounded-lg bg-muted/30 px-4 py-8 text-center text-xs text-muted-foreground">{children}</p>; }
-function Change({ current, previous, enabled }: { current: number; previous: number; enabled: boolean }) {
-  if (!enabled) return <span className="text-xs text-muted-foreground">Comparison off</span>;
-  const change = analyticsChange(current, previous);
-  if (change === null) return <span className="text-xs text-muted-foreground">No prior activity</span>;
-  const Icon = change < 0 ? ArrowDownRight : ArrowUpRight;
-  return <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Icon className="size-3.5" />{change > 0 ? "+" : ""}{change.toFixed(1)}% vs comparison</span>;
-}
-function Metric({ label, value, detail, children, available = true }: { label: string; value: string; detail: string; children?: ReactNode; available?: boolean }) {
-  return <article className="min-w-0 rounded-xl border bg-card p-5"><p className="text-xs font-medium text-muted-foreground">{label}</p><p className="mt-3 break-words text-2xl font-semibold tracking-tight tabular-nums 2xl:text-3xl">{available ? value : "Unavailable"}</p><p className="mt-1 text-xs text-muted-foreground">{detail}</p><div className="mt-4 border-t pt-3">{available ? children : <span className="text-xs text-muted-foreground">Refresh to retry</span>}</div></article>;
-}
-function SmallMetric({ label, value, warning = false }: { label: string; value: string | number; warning?: boolean }) {
-  return <div className="min-w-0"><p className={`break-words text-xl font-semibold tabular-nums ${warning ? "text-amber-600 dark:text-amber-400" : ""}`}>{value}</p><p className="mt-1 text-xs text-muted-foreground">{label}</p></div>;
-}
-const channelColors = ["bg-blue-500", "bg-emerald-500", "bg-violet-500", "bg-slate-500", "bg-amber-500", "bg-stone-400"];
 
 export function AnalyticsDashboard({ data }: { data: AnalyticsDashboardData }) {
   const [filters, setFilters] = useWorkspaceState("analytics.filters", () => initialAnalyticsFilters(data));
-  const [trend, setTrend] = useWorkspaceState<"companies" | "collected">("analytics.trend", "companies");
-  const [refreshing, startRefresh] = useTransition();
-  const router = useRouter();
   const { language } = useLanguage();
   const locale = language === "zh-CN" ? "zh-CN" : "en-US";
-  const money = (value: number) => new Intl.NumberFormat(locale, { style: "currency", currency: filters.currency, maximumFractionDigits: 2 }).format(value);
   const report = useMemo(() => computeAnalytics(data, filters), [data, filters]);
-  const ready = (...ids: AnalyticsSource["id"][]) => ids.every(id => data.sources.find(source => source.id === id)?.ok);
-  const failures = data.sources.filter(source => !source.ok);
+  const { current, previous } = report;
+  const count = new Intl.NumberFormat(locale);
+  const money = new Intl.NumberFormat(locale, { style: "currency", currency: filters.currency });
+  const amount = (minor: number) => money.format(minor / 100);
+  const ready = (...ids: AnalyticsSource["id"][]) => ids.every(id => data.sources.some(source => source.id === id && source.ok));
+  const companiesReady = ready("companies");
+  const orderReady = ready("companies", "orders");
+  const billingReady = ready("companies", "invoices");
+  const cashReady = billingReady && ready("payments");
+  const catalogReady = ready("companies", "catalogs", "products");
   const compare = filters.comparison !== "none";
-  const companyReady = ready("companies"), billingReady = ready("companies", "invoices"), cashReady = ready("companies", "invoices", "payments");
-  const emails = report.current.emails;
-  const sent = emails.filter(row => row.direction === "sent" && row.status === "sent").length;
-  const replies = emails.filter(row => row.direction === "received" && row.status === "received").length;
-  const failedMail = emails.filter(row => row.status === "failed").length;
-  const messages = report.current.messages;
-  const flowFailed = report.current.runs.filter(row => row.status === "failed").length;
-  const flowDone = report.current.runs.filter(row => row.status === "done").length;
-  const overdueInvoices = [...report.overdueInvoices].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
-  const refreshed = new Intl.DateTimeFormat(locale, { timeZone: "Asia/Shanghai", hour: "2-digit", minute: "2-digit" }).format(new Date(data.asOf));
+  const failedSources = data.sources.filter(source => !source.ok).map(source => source.label);
+  const time = new Intl.DateTimeFormat(locale, { timeZone: "Asia/Shanghai", hour: "numeric", minute: "2-digit" }).format(new Date(data.asOf));
+  const chartProps = { data: report.series, previousData: report.previousSeries, filters, locale, available: orderReady };
+  const metrics = [
+    { key: "orderValue", label: "Confirmed order value", current: current.orderValue, previous: previous.orderValue, format: amount, ready: orderReady },
+    { key: "companies", label: "New companies", current: current.newCompanies, previous: previous.newCompanies, format: count.format, ready: companiesReady },
+    { key: "collected", label: "Cash collected", current: current.collected, previous: previous.collected, format: amount, ready: cashReady },
+    { key: "orders", label: "Orders", current: current.periodOrders.length, previous: previous.periodOrders.length, format: count.format, ready: orderReady },
+  ] as const;
+  const breakdown = [
+    { label: "Confirmed order value", value: current.orderValue, prior: previous.orderValue, ready: orderReady },
+    { label: "Invoiced", value: current.invoiced, prior: previous.invoiced, ready: billingReady },
+    { label: "Cash collected", value: current.collected, prior: previous.collected, ready: cashReady },
+    { label: "Outstanding balance", value: report.outstanding, ready: billingReady },
+    { label: "Overdue balance", value: report.overdue, ready: billingReady },
+  ];
+  const largestProductCount = report.topProducts[0]?.count ?? 0;
 
   function exportReport() {
-    const value = (available: boolean, amount: string | number) => available ? amount : "Unavailable";
     const csv = analyticsCsv([
-      ["Filazoo analytics", "Value"], ["From", filters.from], ["To", filters.to], ["Source", filters.channel], ["Owner", filters.owner], ["Currency (no FX conversion)", filters.currency], ["Snapshot at", data.asOf],
-      ["Issued invoices (minor units)", value(billingReady, report.current.invoiced)], ["Cash collected (minor units)", value(cashReady, report.current.collected)],
-      ["Outstanding (current, minor units)", value(billingReady, report.outstanding)], ["Overdue (current, minor units)", value(billingReady, report.overdue)],
-      ["Confirmed order value (minor units)", value(ready("companies", "orders"), report.current.orderValue)], ["Your catalogs", value(ready("companies", "catalogs"), report.current.catalogs.length)],
-      ["CRM emails sent", value(ready("companies", "emails"), sent)], ["CRM replies received", value(ready("companies", "emails"), replies)],
-      ["Your open tasks (current)", value(ready("tasks"), report.openTasks.length)], ["Your overdue tasks (current)", value(ready("tasks"), report.overdueTasks.length)],
-      ["Workspace runs started", value(ready("flows", "runs"), report.current.runs.length)], ["Workspace failed runs", value(ready("flows", "runs"), flowFailed)],
-      ...report.channels.map(row => [`New companies: ${channelLabels[row.channel]}`, value(companyReady, row.count)]),
-      ...report.topProducts.map(row => [`Catalog product: ${row.sku}`, value(ready("companies", "catalogs"), row.count)]),
+      ["Filazoo analytics", "Value"], ["From", filters.from], ["To", filters.to],
+      ["Company source", filters.channel], ["Account owner", filters.owner], ["Currency", filters.currency],
+      ["Comparison", filters.comparison], ["Snapshot at", data.asOf],
+      ["New companies", companiesReady ? current.newCompanies : "Unavailable"],
+      ["Orders", orderReady ? current.periodOrders.length : "Unavailable"],
+      ["Average order value", orderReady && current.periodOrders.length ? current.orderValue / 100 / current.periodOrders.length : "Unavailable"],
+      ...breakdown.map(row => [row.label, row.ready ? row.value / 100 : "Unavailable"]),
+      ...report.channels.map(row => [`New companies: ${channelLabels[row.channel]}`, companiesReady ? row.count : "Unavailable"]),
+      ...report.topProducts.map(row => [`Catalog selections: ${row.sku}`, catalogReady ? row.count : "Unavailable"]),
     ]);
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
-    const anchor = document.createElement("a"); anchor.href = url; anchor.download = `filazoo-analytics-${filters.from}-${filters.to}.csv`; anchor.click(); URL.revokeObjectURL(url);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `filazoo-analytics-${filters.from}-${filters.to}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
   }
 
-  return <div className="w-full space-y-5 pb-8">
+  return <div className={styles.dashboard}>
+    <PageHeaderDetails><span className={styles.muted}>Updated {time} CST</span></PageHeaderDetails>
     <PageActions>
-      <div className="flex flex-wrap items-center gap-2"><span className="mr-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground"><span className={`size-1.5 rounded-full ${failures.length ? "bg-amber-500" : "bg-emerald-500"}`} />Updated {refreshed} CST</span><Button size="sm" variant="outline" disabled={refreshing} onClick={() => startRefresh(() => router.refresh())}><RefreshCw className={refreshing ? "animate-spin" : ""} />{refreshing ? "Refreshing…" : "Refresh"}</Button><Button size="sm" variant="outline" onClick={exportReport}><Download />Export CSV</Button></div>
+      <div className="flex min-w-0 max-w-full items-center justify-end gap-2">
+        <AnalyticsFilters value={filters} data={data} onChange={setFilters} />
+        <Button type="button" size="sm" variant="outline" onClick={exportReport}>
+          <Download aria-hidden="true" />Export CSV
+        </Button>
+      </div>
     </PageActions>
-    <AnalyticsFilters value={filters} data={data} onChange={setFilters} />
-    {failures.length ? <NotificationToast tone="warning"><CircleAlert className="size-4 shrink-0 text-amber-600" /><div><p className="font-medium">Some reports could not be loaded</p><p className="mt-1 text-muted-foreground">{failures.map(source => source.label).join(", ")}. Affected metrics are marked unavailable.</p></div></NotificationToast> : null}
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      <Metric label="New companies" value={count(report.current.newCompanies)} detail="Created in the selected period · all currencies" available={companyReady}><Change current={report.current.newCompanies} previous={report.previous.newCompanies} enabled={compare} /></Metric>
-      <Metric label="Confirmed orders" value={money(report.current.orderValue / 100)} detail="Order value in the selected period" available={companyReady && ready("orders")}><Change current={report.current.orderValue} previous={report.previous.orderValue} enabled={compare} /></Metric>
-      <Metric label="Invoiced" value={money(report.current.invoiced / 100)} detail="Issued invoices by issue date · excludes drafts" available={billingReady}><Change current={report.current.invoiced} previous={report.previous.invoiced} enabled={compare} /></Metric>
-      <Metric label="Cash collected" value={money(report.current.collected / 100)} detail="Recorded payments by payment date" available={cashReady}><Change current={report.current.collected} previous={report.previous.collected} enabled={compare} /></Metric>
+    {failedSources.length > 0 && <p role="status" className={styles.notice}>
+      Some reports could not be loaded<span>: {failedSources.join(", ")}</span>
+    </p>}
+    <div className={styles.kpis}>
+      {metrics.map(metric => <article key={metric.key} className={styles.kpi}>
+        <div className={styles.kpiText}>
+          <h2 className={styles.title}>{metric.label}</h2>
+          <div className={styles.readout}>
+            <strong>{metric.ready ? metric.format(metric.current) : "Unavailable"}</strong>
+            {compare && metric.ready && <Comparison current={metric.current} previous={metric.previous} />}
+          </div>
+        </div>
+        {metric.ready && <AnalyticsSparkline
+          data={report.series}
+          previousData={report.previousSeries}
+          metric={metric.key}
+          label={metric.label}
+          locale={locale}
+          formatValue={metric.key === "companies" || metric.key === "orders" ? count.format : money.format}
+        />}
+      </article>)}
     </div>
-    <nav aria-label="Analytics sections" className="flex flex-wrap gap-x-5 gap-y-2 border-b pb-3 text-xs text-muted-foreground">{[{ id: "sales", label: "Sales & acquisition" }, { id: "billing", label: "Orders & receivables" }, { id: "engagement", label: "Engagement" }, { id: "operations", label: "Products & automation" }].map(item => <a key={item.id} href={`#${item.id}`} className="hover:text-foreground">{item.label}</a>)}</nav>
-    <div id="sales" className="grid scroll-mt-5 gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
-      <Panel title="Activity over time" subtitle={`${filters.from} – ${filters.to} · daily or grouped into up to 90 intervals`} available={trend === "companies" ? companyReady : cashReady}>
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div><p className="text-2xl font-semibold tracking-tight">{trend === "companies" ? count(report.current.newCompanies) : money(report.current.collected / 100)}</p><p className="mt-1 text-xs text-muted-foreground">{trend === "companies" ? "New companies" : "Cash collected"}</p></div><div className="flex rounded-lg bg-muted/60 p-1">{[{ id: "companies", label: "Companies" }, { id: "collected", label: "Collections" }].map(item => <button type="button" aria-pressed={trend === item.id} key={item.id} onClick={() => setTrend(item.id as typeof trend)} className={`rounded-md px-3 py-1.5 text-xs ${trend === item.id ? "bg-background font-medium shadow-xs" : "text-muted-foreground"}`}>{item.label}</button>)}</div></div>
-        <AnalyticsChart data={report.series} metric={trend} currency={filters.currency} locale={locale} />
-      </Panel>
-      <Panel title="Acquisition sources" subtitle="Unique new companies · multiple sources kept separate" link={{ href: "/companies", label: "Companies" }} available={companyReady}>
-        <div className="space-y-5">{report.channels.map((row, index) => <div key={row.channel}><div className="mb-2 flex items-center justify-between gap-2 text-xs"><span className="flex items-center gap-2"><span className={`size-2 rounded-full ${channelColors[index]}`} />{channelLabels[row.channel]}</span><span className="tabular-nums">{row.count}<span className="ml-3 text-muted-foreground">{report.current.newCompanies ? Math.round(row.count / report.current.newCompanies * 100) : 0}%</span></span></div><div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className={`h-full rounded-full ${channelColors[index]}`} style={{ width: `${report.current.newCompanies ? row.count / report.current.newCompanies * 100 : 0}%` }} /></div></div>)}</div>
-      </Panel>
+    <div className={styles.reports}>
+      <div className={styles.primary}><SalesAndLeadsChart {...chartProps} companiesAvailable={companiesReady} /></div>
+      <section className={styles.card}>
+        <h2 className={styles.title}><Link href="/purchase-orders">Orders &amp; receivables</Link></h2>
+        <dl className={styles.breakdown}>
+          {breakdown.map(row => <div key={row.label}>
+            <dt>{row.label}{row.prior === undefined && <small>Current</small>}</dt>
+            <dd><strong>{row.ready ? amount(row.value) : "Unavailable"}</strong>
+              {compare && row.ready && row.prior !== undefined && <Comparison current={row.value} previous={row.prior} />}
+            </dd>
+          </div>)}
+        </dl>
+      </section>
+      <Acquisition channels={report.channels} total={current.newCompanies} available={companiesReady} locale={locale} />
+      <AnalyticsChart {...chartProps} metric="averageOrderValue" compact />
+      <section className={styles.card}>
+        <h2 className={styles.title}><Link href="/company-quotations">Top catalog products</Link></h2>
+        {!catalogReady ? <p className={styles.empty}>Unavailable</p> : report.topProducts.length === 0 ? (
+          <p className={styles.empty}>No catalog product selections in this period.</p>
+        ) : (
+          <ol className={styles.ranks}>
+            {report.topProducts.map(row => <li key={row.sku}>
+              <Link href={`/products/${encodeURIComponent(row.sku)}`}>{row.name}</Link>
+              <div><i style={{ width: `${row.count / largestProductCount * 100}%` }} /><span>{row.count} {row.count === 1 ? "catalog" : "catalogs"}</span></div>
+            </li>)}
+          </ol>
+        )}
+      </section>
     </div>
-    <div className="grid gap-4">
-      <Panel title="Needs attention" subtitle="Current overdue work · personal tasks and company follow-ups" link={{ href: "/tasks", label: "Your tasks" }} available={companyReady && ready("tasks")}>
-        <div className="mb-5 grid grid-cols-3 gap-3"><SmallMetric label="Your overdue tasks" value={report.overdueTasks.length} warning={report.overdueTasks.length > 0} /><SmallMetric label="Overdue follow-ups" value={report.followups.length} warning={report.followups.length > 0} /><SmallMetric label="Your open tasks" value={report.openTasks.length} /></div>
-        <div className="divide-y">{report.overdueTasks.slice(0, 3).map(task => <Link key={task.id} href={`/tasks?task=${task.id}`} className="flex items-center gap-3 py-3 text-xs hover:text-primary"><CircleAlert className="size-4 shrink-0 text-amber-600" /><span className="min-w-0 flex-1 truncate">{task.title}</span><ArrowRight className="size-3.5 shrink-0" /></Link>)}{report.followups.slice(0, 3).map(company => <Link key={company.id} href={`/companies/${company.id}`} className="flex items-center gap-3 py-3 text-xs hover:text-primary"><Building2 className="size-4 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1 truncate">Follow up with {company.name}</span><ArrowRight className="size-3.5 shrink-0" /></Link>)}</div>
-        {!report.overdueTasks.length && !report.followups.length ? <Empty>No overdue tasks or company follow-ups.</Empty> : null}
-        <p className="mt-4 text-xs text-muted-foreground">{report.completedTasks} of your tasks completed during the selected period. Company filters do not change personal tasks.</p>
-      </Panel>
-    </div>
-    <div id="billing" className="grid scroll-mt-5 gap-4 xl:grid-cols-2">
-      <Panel title="Orders & receivables" subtitle="Order activity for the period · balances as of now" link={{ href: "/purchase-orders", label: "Purchase orders" }} available={billingReady && ready("orders")}>
-        <div className="grid grid-cols-2 gap-x-6 gap-y-7"><SmallMetric label="Confirmed order value" value={money(report.current.orderValue / 100)} /><SmallMetric label="Outstanding balance" value={money(report.outstanding / 100)} /><SmallMetric label="Orders in period" value={report.current.periodOrders.length} /><SmallMetric label="Overdue balance" value={money(report.overdue / 100)} warning={report.overdue > 0} /></div>
-        <p className="mt-5 border-t pt-3 text-xs leading-relaxed text-muted-foreground">Orders use their order date and exclude drafts and cancellations. Receivables include all issued unpaid invoices in {filters.currency}, regardless of the date range.</p>
-      </Panel>
-      <Panel title="Overdue invoices" subtitle="Unpaid issued invoices past their due date · current" link={{ href: "/purchase-orders", label: "View orders" }} available={billingReady}>
-        {overdueInvoices.length ? <div className="divide-y">{overdueInvoices.slice(0, 5).map(invoice => <Link key={invoice.id} href={`/invoices/${invoice.id}`} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0 hover:text-primary"><div className="min-w-0"><p className="truncate text-xs font-medium">Invoice #{invoice.number}{invoice.companyId ? ` · ${report.companyMap.get(invoice.companyId)?.name ?? "Company"}` : ""}</p><p className="mt-1 text-xs text-muted-foreground">Due {invoice.dueDate}</p></div><span className="shrink-0 text-xs font-medium tabular-nums">{money((invoice.totalMinor - invoice.paidMinor) / 100)}</span></Link>)}</div> : <Empty>No overdue invoices in this currency and company scope.</Empty>}
-      </Panel>
-    </div>
-    <div id="engagement" className="grid scroll-mt-5 gap-4 lg:grid-cols-3">
-      <Panel title="CRM outreach" subtitle="Company-linked email activity · selected period" link={{ href: "/email", label: "Email" }} available={companyReady && ready("emails")}><Mail className="mb-5 size-5 text-muted-foreground" /><div className="grid grid-cols-3 gap-2"><SmallMetric label="Sent" value={sent} /><SmallMetric label="Replies" value={replies} /><SmallMetric label="Failed" value={failedMail} warning={failedMail > 0} /></div><p className="mt-5 text-xs leading-relaxed text-muted-foreground">CRM outreach records only. Personal inbox mail, provider delivery and email opens are not counted.</p></Panel>
-      <Panel title="Messenger" subtitle="Workspace messages · selected period · all sources" link={{ href: "/messenger", label: "Messenger" }} available={ready("messages")}><MessageSquare className="mb-5 size-5 text-muted-foreground" /><div className="grid grid-cols-3 gap-2"><SmallMetric label="Received" value={messages.filter(row => row.direction === "inbound").length} /><SmallMetric label="Sent" value={messages.filter(row => row.direction === "outbound" && row.status === "sent").length} /><SmallMetric label="Failed" value={messages.filter(row => row.status === "failed").length} /></div><p className="mt-5 text-xs leading-relaxed text-muted-foreground">Facebook and Instagram messages. Company source, account owner and currency filters do not apply.</p></Panel>
-      <Panel title="Your AI usage" subtitle="Your assistant calls · selected period" available={ready("ai")}><Sparkles className="mb-5 size-5 text-muted-foreground" /><div className="grid grid-cols-3 gap-2"><SmallMetric label="Calls" value={report.current.ai.length} /><SmallMetric label="Tokens" value={count(report.current.ai.reduce((total, row) => total + row.tokens, 0))} /><SmallMetric label="Failed calls" value={report.current.ai.filter(row => !row.success).length} /></div><p className="mt-5 text-xs text-muted-foreground">Estimated usage cost: {new Intl.NumberFormat(locale, { style: "currency", currency: "USD", minimumFractionDigits: 4 }).format(report.current.ai.reduce((total, row) => total + row.cost, 0))} USD</p></Panel>
-    </div>
-    <div id="operations" className="grid scroll-mt-5 gap-4 xl:grid-cols-2">
-      <Panel title="Your catalog activity" subtitle="Product selections in your catalogs · selected period" link={{ href: "/company-quotations", label: "Your catalogs" }} available={companyReady && ready("catalogs", "products")}>
-        <div className="mb-5 flex items-center gap-3"><span className="grid size-10 place-items-center rounded-lg bg-muted/60"><Package className="size-5 text-muted-foreground" /></span><div><p className="text-xl font-semibold">{report.current.catalogs.length}</p><p className="text-xs text-muted-foreground">Catalogs created in {filters.currency}</p></div></div>
-        {report.topProducts.length ? <div className="divide-y">{report.topProducts.map((product, index) => <Link key={product.sku} href={`/products/${encodeURIComponent(product.sku)}`} className="flex items-center gap-3 py-3 text-xs hover:text-primary"><span className="w-4 text-muted-foreground">{index + 1}</span><span className="min-w-0 flex-1"><span className="block truncate font-medium">{product.name}</span><span className="mt-1 block text-xs text-muted-foreground">{product.sku}</span></span><span className="shrink-0 text-muted-foreground">{product.count} catalogs</span></Link>)}</div> : <Empty>No catalog product selections in this period.</Empty>}
-        <p className="mt-4 text-xs text-muted-foreground">Each SKU counts once per catalog. Catalog selections do not measure purchases.</p>
-      </Panel>
-      <Panel title="Workflow performance" subtitle="Workspace workflows · runs started in the selected period" link={{ href: "/workflow", label: "Workflow" }} available={ready("flows", "runs")}>
-        <div className="mb-5 grid grid-cols-3 gap-3"><SmallMetric label="Live workflows now" value={data.flows.filter(flow => flow.status === "live").length} /><SmallMetric label="Completed runs" value={flowDone} /><SmallMetric label="Failed runs" value={flowFailed} warning={flowFailed > 0} /></div>
-        {report.flowRows.length ? <div className="divide-y">{[...report.flowRows].sort((a, b) => b.failed - a.failed || b.active - a.active).slice(0, 5).map(flow => <div key={flow.id} className="flex items-center gap-3 py-3 text-xs"><Workflow className="size-4 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1 truncate">{flow.name}</span><span className={flow.failed ? "shrink-0 text-amber-600 dark:text-amber-400" : "shrink-0 text-muted-foreground"}>{flow.failed ? `${flow.failed} failed` : `${flow.active} active now`}</span></div>)}</div> : <Empty>No workspace workflows configured.</Empty>}
-        <p className="mt-4 text-xs leading-relaxed text-muted-foreground">Company and email-scoped workflows are managed inside their own workspaces. Company filters do not apply here.</p>
-      </Panel>
-    </div>
-    <Panel title="Product & inventory status" subtitle="Current active catalog and configured ERP stock snapshot" link={{ href: "/products", label: "Products" }} available={ready("products", "inventory")}>
-      <div className="grid grid-cols-2 gap-5 md:grid-cols-4"><SmallMetric label="Active products" value={data.products.length} /><SmallMetric label="ERP stock records" value={data.inventory.configured ? data.inventory.tracked : "Not connected"} /><SmallMetric label="Unavailable stock records" value={data.inventory.configured ? data.inventory.unavailable : "—"} /><SmallMetric label="Inventory sync" value={data.inventory.error ? "Needs attention" : !data.inventory.configured ? "Not configured" : !data.inventory.lastSyncedAt ? "Awaiting sync" : data.inventory.stale ? "Stale" : "Up to date"} warning={data.inventory.error || data.inventory.stale} /></div>
-      {data.inventory.lastSyncedAt ? <p className="mt-5 text-xs text-muted-foreground">Last stock sync: {new Intl.DateTimeFormat(locale, { timeZone: "Asia/Shanghai", dateStyle: "medium", timeStyle: "short" }).format(new Date(data.inventory.lastSyncedAt))} CST</p> : null}
-    </Panel>
-    <details className="rounded-xl border bg-card text-xs"><summary className="cursor-pointer px-5 py-4 font-medium">Report definitions & data availability <span className="ml-2 font-normal text-muted-foreground">{data.sources.filter(source => source.ok).length}/{data.sources.length} sources loaded</span></summary><div className="space-y-4 border-t p-5"><p className="max-w-4xl leading-relaxed text-muted-foreground">Activity uses the selected dates. Receivables, overdue work, product inventory and live-workflow counts show the current state. Source attribution uses the saved company source, with combined sources grouped separately.</p><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{data.sources.map(source => <div key={source.id} className="flex items-center gap-2">{source.ok ? <Check className="size-3.5 text-emerald-600" /> : <CircleAlert className="size-3.5 text-amber-600" />}<span>{source.label}</span><span className="ml-auto text-muted-foreground">{source.ok ? `${source.count} records` : "Unavailable"}</span></div>)}</div><p className="text-muted-foreground">Snapshot: {data.asOf}. Refresh retrieves the latest saved CRM data. Revenue recognition, historical stage transitions, portal visits and provider delivery rates are not tracked by this report.</p></div></details>
   </div>;
 }

@@ -13,6 +13,7 @@ import { getInventoryState } from "../data/inventory";
 import { readAgentAutoReplies } from "./crm-productivity-records";
 import { variantsFromTags } from "../product-utils";
 import { userProductRows } from "../data/product-personalization";
+import type { CustomerInsightContext } from "./customer-intelligence-records";
 
 async function readPersonalProducts(viewer: WorkspaceViewer, input: CrmRead) {
   if (input.companyId) throw new Error("Products do not support a company filter.");
@@ -45,9 +46,10 @@ const resources = {
   business_facts: { table: "email_reply_knowledge", fields: "id,title,content,created_at", search: "title", order: "id" },
 } as const;
 
-export async function readCrmRecords(viewer: WorkspaceViewer, request: CrmRead) {
+export async function readCrmRecords(viewer: WorkspaceViewer, request: CrmRead, insightContext?: CustomerInsightContext) {
   const input = crmReadSchema.parse(request);
   const policy = await requireAiData(...aiReadResources[input.resource]);
+  if (input.resource === "customer_insights") return (await import("./customer-intelligence-records")).readCustomerInsights(viewer, input, insightContext);
   const db = createSupabaseAdmin();
   if (input.resource === "ai_settings" || input.resource === "email_footer" || input.resource === "scheduled_emails" || input.resource === "email_drafts" || input.resource === "task_workflows" || input.resource === "invoice_portal") {
     const { featureRecords } = await import("./crm-feature-execution");

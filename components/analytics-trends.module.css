@@ -1,0 +1,114 @@
+.card, .sparkline {
+  --trend-current: #df548f;
+  --trend-previous: #958ca9;
+}
+
+.sparkline {
+  position: relative;
+  flex: 0 1 84px;
+  width: 84px;
+  min-width: 32px;
+  max-width: 28%;
+}
+@container (max-width: 600px) {
+  .sparkline { max-width: 100%; margin-left: auto; }
+}
+.sparkline .tooltip {
+  width: max-content;
+  max-width: min(10rem, 43vw);
+}
+.card {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.card[data-compact] {
+  border-radius: 28px;
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px 16px;
+  padding: 19px 22px 7px;
+}
+
+.heading { flex: 1 1 10rem; }
+.heading p {
+  margin: 4px 0 0;
+  max-width: 33ch;
+  color: var(--muted-foreground);
+  font-size: .75rem;
+  line-height: 1.5;
+}
+
+.header h2 {
+  width: fit-content;
+  margin: 0;
+  font-size: .93rem;
+  line-height: 1.5;
+  letter-spacing: -.012em;
+  font-weight: 600;
+}
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  margin-left: auto;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.summary strong {
+  font-size: clamp(1.42rem, 2vw, 1.95rem);
+  font-weight: 450;
+  line-height: 1.1;
+  letter-spacing: -.035em;
+  overflow-wrap: anywhere;
+}
+
+.change {
+  color: var(--muted-foreground);
+  font-size: .72rem;
+  font-weight: 600;
+}
+.change[data-positive="true"] { color: #178157; }
+:global(.dark) .change[data-positive="true"] { color: #6bd8a7; }
+
+.plot { width: 100%; min-width: 0; flex: 1 0 auto; }
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  column-gap: 16px;
+  row-gap: 4px;
+  padding: 6px 16px 15px;
+  color: var(--muted-foreground);
+  font-size: .68rem;
+}
+.legend span, .tooltip div { display: inline-flex; align-items: center; gap: 7px; }
+.legend i, .tooltip i { display: inline-block; width: 16px; height: 3px; border-radius: 3px; background: linear-gradient(90deg, #fa937c, var(--trend-current), #5886de); }
+.legend [data-previous], .tooltip [data-previous] { background: none; border-top: 2px dotted var(--trend-previous); }
+.tooltip {
+  max-width: 100%;
+  display: grid;
+  gap: 6px;
+  border-radius: 14px;
+  background: #171719;
+  color: #fff;
+  padding: 8px 11px;
+  font-size: .72rem;
+  box-shadow: 0 3px 16px #0001;
+}
+.tooltip b { margin-left: auto; font-variant-numeric: tabular-nums; }
+.empty { min-height: 256px; display: grid; place-items: center; text-align: center; font-size: .8rem; color: var(--muted-foreground); }
+.card[data-compact="true"] .empty { min-height: 144px; }

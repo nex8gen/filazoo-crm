@@ -21,7 +21,7 @@ for (const provider of ["gateway", "oidc", "legacy-budget"] as const) {
       const body = "Dear David,\n\nThank you for the updated billing address for order #1297. Our catalog is attached.";
       const generate = async (input: { systemInstruction: string; prompt: string }) => {
         calls.push(input);
-        return JSON.stringify({ body: `${body}\n\n祝好，\nFilazoo 团队`, attachCatalog: true, invoiceItems: [] });
+        return JSON.stringify({ body: `${body}\n\n祝好，\nFilazoo 团队`, attachCatalog: true, catalogScope: "all", catalogProductSkus: [], invoiceItems: [] });
       };
       const dependencies: Record<string, unknown> = {
         "@/lib/auth": { requireWorkspaceMember: async () => ({ id: "trusted-member", role: "bd_manager", displayName: "Unassigned" }) },
@@ -54,12 +54,14 @@ for (const provider of ["gateway", "oidc", "legacy-budget"] as const) {
       const response = await exports.POST(new Request("http://localhost/api/email/reply", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ language, recipient: "david@example.com", companyName: "DASOTEC S.r.l.", customerProfile, conversationHistory, products: [] }),
+        body: JSON.stringify({ language, recipient: "david@example.com", companyName: "DASOTEC S.r.l.", customerProfile, conversationHistory, products: [{ sku: "PLA", name: "PLA", material: "PLA", variants: [] }] }),
       }));
       assert.equal(response.status, 200);
       const result = await response.json();
       assert.equal(result.plan.body, `${body}\n\nBest regards,\n\nFilazoo Sales Team\nBD Sales Manager\nFilazoo`);
       assert.equal(result.plan.attachCatalog, true);
+      assert.equal(result.plan.catalogScope, "selected");
+      assert.deepEqual(result.plan.catalogProductSkus, ["PLA"]);
       assert.deepEqual(result.plan.invoiceItems, []);
       assert.equal(calls.length, 1);
       assert.match(calls[0].systemInstruction, /Always write the entire finished email in professional English/);
@@ -71,3 +73,44 @@ for (const provider of ["gateway", "oidc", "legacy-budget"] as const) {
     });
   }
 }
+
+test("reply API blocks full, unrelated and missing catalog selections for a PLA inquiry", async () => {
+  let plan: Record<string, unknown> = { body: "The PLA catalog is attached.", attachCatalog: true, catalogScope: "all", catalogProductSkus: [], invoiceItems: [] };
+  const dependencies: Record<string, unknown> = {
+    "@/lib/auth": { requireWorkspaceMember: async () => ({ id: "member", role: "bd_manager" }) },
+    "@/lib/ai/gateway": { generateGatewayText: async () => JSON.stringify(plan) },
+    "@/lib/ai/email-reply": reply, "@/lib/ai/email-rewrite": rewrite,
+    "@/lib/ai/language": { aiLanguageSchema }, "@/lib/invoice-permissions": invoicePermissions, zod: { z },
+  };
+  const exports = {} as { POST: (request: Request) => Promise<Response> };
+  vm.runInNewContext(code, {
+    exports, require: (name: string) => policyTestDependency(name) ?? dependencies[name],
+    Response, URL, console: { error: () => undefined }, process: { env: { AI_GATEWAY_API_KEY: "synthetic" } },
+  });
+  const request = () => exports.POST(new Request("http://localhost/api/email/reply", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ recipient: "buyer@example.com", companyName: "Buyer",
+      conversationHistory: [{ direction: "inbound", body: "I'm unsure which PLA to choose. Show me your PLA options." }],
+      products: ["PLA", "PETG", "ABS"].map(material => ({ sku: material, name: material, material, variants: [] })),
+    }),
+  }));
+  for (const invalid of [
+    { catalogScope: "all", catalogProductSkus: [] },
+    { catalogScope: "selected", catalogProductSkus: ["PLA", "ABS"] },
+    { catalogScope: "selected", catalogProductSkus: [] },
+    { catalogScope: undefined, catalogProductSkus: undefined },
+  ]) {
+    plan = { ...plan, ...invalid };
+    const response = await request();
+    assert.equal(response.status, 502);
+    assert.equal((await response.json()).plan, undefined);
+  }
+  plan = { ...plan, catalogScope: "selected", catalogProductSkus: ["PLA"] };
+  const response = await request();
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).plan.catalogProductSkus, ["PLA"]);
+  plan = { ...plan, attachCatalog: false, catalogScope: "unavailable", catalogProductSkus: [], body: "Which PLA grade did you mean?" };
+  const unavailable = await request();
+  assert.equal(unavailable.status, 200);
+  assert.equal((await unavailable.json()).plan.attachCatalog, false);
+});

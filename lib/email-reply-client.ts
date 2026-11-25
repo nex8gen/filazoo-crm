@@ -2,7 +2,9 @@ import { replyInvoiceLines, type EmailReplyPlan } from "./ai/email-reply.ts";
 import { invoiceDocumentSchema, type InvoiceDocument } from "./invoices.ts";
 import type { InvoiceProduct } from "./invoice-links.ts";
 
-export async function prepareReplyInvoice({ items, email, companyId, threadId, sourceMessageId, customerName, cache, isCurrent, request = fetch }: {
+const pendingInvoiceSaves = new WeakMap<Map<string, string>, Map<string, Promise<string>>>();
+
+export async function prepareReplyInvoice({ items, email, companyId, threadId, sourceMessageId, customerName, cache, isCurrent, signal, request = fetch }: {
   items: EmailReplyPlan["invoiceItems"];
   email: string;
   companyId?: string | null;
@@ -11,12 +13,16 @@ export async function prepareReplyInvoice({ items, email, companyId, threadId, s
   customerName: string;
   cache: Map<string, string>;
   isCurrent: () => boolean;
+  signal?: AbortSignal;
   request?: typeof fetch;
 }) {
-  const checkCurrent = () => { if (!isCurrent()) throw new Error("The conversation changed. Generate the reply again in the intended conversation."); };
+  const checkCurrent = () => {
+    signal?.throwIfAborted();
+    if (!isCurrent()) throw new Error("The conversation changed. Generate the reply again in the intended conversation.");
+  };
   async function json(url: string, init?: RequestInit) {
     checkCurrent();
-    const response = await request(url, { cache: "no-store", ...init });
+    const response = await request(url, { cache: "no-store", signal, ...init });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Unable to prepare the draft invoice.");
     checkCurrent();
@@ -43,15 +49,30 @@ export async function prepareReplyInvoice({ items, email, companyId, threadId, s
       notes: [context.document.notes, "Draft for customer review. Shipping and applicable taxes must be confirmed before issue."].filter(Boolean).join("\n"),
     });
     checkCurrent();
-    // Keep the saved ID even if PDF preparation fails, so a retry uses the same draft.
-    const response = await request("/api/invoices", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(document) });
-    const result = await response.json();
-    if (!response.ok || !result.invoice?.id) throw new Error(result.error || "Unable to save the draft invoice.");
-    id = result.invoice.id as string;
-    cache.set(key, id);
+    // Let an in-flight save return its ID even after cancellation. An immediate
+    // retry shares that save instead of creating an invoice before its ID arrives.
+    id = cache.get(key);
+    if (!id) {
+      let saves = pendingInvoiceSaves.get(cache);
+      if (!saves) { saves = new Map(); pendingInvoiceSaves.set(cache, saves); }
+      let save = saves.get(key);
+      if (!save) {
+        save = (async () => {
+          const response = await request("/api/invoices", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(document) });
+          const result = await response.json();
+          if (!response.ok || !result.invoice?.id) throw new Error(result.error || "Unable to save the draft invoice.");
+          const invoiceId = result.invoice.id as string;
+          cache.set(key, invoiceId);
+          return invoiceId;
+        })();
+        saves.set(key, save);
+      }
+      try { id = await save; }
+      finally { if (saves.get(key) === save) saves.delete(key); }
+    }
   }
   checkCurrent();
-  const response = await request(`/api/invoices/${id}/pdf`, { cache: "no-store" });
+  const response = await request(`/api/invoices/${id}/pdf`, { cache: "no-store", signal });
   if (!response.ok) throw new Error(`Draft invoice saved. Open it in Invoices or retry to attach its PDF.`);
   const bytes = new Uint8Array(await response.arrayBuffer());
   checkCurrent();

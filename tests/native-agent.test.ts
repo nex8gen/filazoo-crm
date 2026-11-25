@@ -78,6 +78,24 @@ test("native SDK reads real records then stages a quotation without a business w
   assert.deepEqual(activity, ["Checking proposed action"]);
 });
 
+test("customer investigation can exceed the old limits and stage exactly the analyzed segment membership", async () => {
+  const calls = [
+    ...Array.from({ length: 7 }, (_, page) => result(["read_records", { resource: "customer_insights", offset: page * 20 }])),
+    ...Array.from({ length: 3 }, (_, page) => result(["search_customer_emails", { companyId: id, direction: "all", offset: page * 8 }])),
+    result(["create_segment", { op: "create_segment", segment: { name: "Ready to order", description: "Customers from the reviewed recommendation", rules: { companyIds: [id] } } }]),
+  ];
+  const model = new MockLanguageModelV4({ doGenerate: calls });
+  let reads = 0, emails = 0, validations = 0;
+  const plan = await generateCrmPlan({ ...options(model, "Analyze all customers and create a segment of the most promising buyers"), read: async () => { reads++; return { records: [{ id, name: "Synthetic buyer" }] }; }, searchEmails: async input => { assert.equal(input.direction, "all"); emails++; return { messages: [] }; }, validateAction: () => { validations++; } });
+  assert.equal(reads, 7); assert.equal(emails, 3); assert.equal(validations, 1);
+  assert.equal(plan.actions.length, 1);
+  const action = plan.actions[0];
+  assert.equal(action.type, "crm_action");
+  if (action.type === "crm_action" && action.operation.op === "create_segment") assert.deepEqual(action.operation.segment.rules, { companyIds: [id] });
+  else assert.fail("Expected an exact-membership segment");
+  assert.match(JSON.stringify(model.doGenerateCalls[0].prompt), /CUSTOMER INTELLIGENCE/);
+});
+
 test("capability discovery and clarification report actual tool activity without extra model calls", async () => {
   const model = new MockLanguageModelV4({ doGenerate: [result(["discover_capabilities", { domain: "quotations" }]), result(["ask_question", { question: "Which saved color should I use?" }])] });
   const activity: string[] = [];

@@ -69,11 +69,11 @@ export async function loadAgentEmails(viewer: WorkspaceViewer, emailId?: string,
 }
 
 export function presentAgentEmail(email: InboxEmailItem) {
-  return { id: email.id, direction: email.direction, contact: email.contact, replyTo: email.replyTo, subject: email.subject, text: email.bodyLoaded === false ? "" : email.body.slice(0, 12000), contentAvailable: email.bodyLoaded !== false, truncated: email.body.length > 12000, timestamp: email.timestamp, companyId: email.companyId, threadId: threadKeyForEmail(email) };
+  return { id: email.id, direction: email.direction, status: email.status, contact: email.contact, replyTo: email.replyTo, subject: email.subject, text: email.bodyLoaded === false ? "" : email.body.slice(0, 12000), contentAvailable: email.bodyLoaded !== false, truncated: email.body.length > 12000, timestamp: email.timestamp, companyId: email.companyId, threadId: threadKeyForEmail(email) };
 }
 
 /** Uses the same access-filtered inbox as the email UI; never searches raw mailbox tables. */
-export async function searchAgentEmails(viewer: WorkspaceViewer, search: AgentEmailSearch) {
+export async function loadAgentEmailIndex(viewer: WorkspaceViewer) {
   await requireAiData("emails", "customers");
   const mailboxes = await getViewerMailboxes(viewer.id);
   const searched = mailboxes.slice(0, 8);
@@ -81,14 +81,22 @@ export async function searchAgentEmails(viewer: WorkspaceViewer, search: AgentEm
     try { return { mailboxId: mailbox.id, inbox: await getEmailInboxBackendData({ syncMailbox: false, history: true, mailboxId: mailbox.id }), error: null }; }
     catch { return { mailboxId: mailbox.id, inbox: null, error: "Mailbox history unavailable" }; }
   }));
-  const inbox = { emails: sources.flatMap((source) => (source.inbox?.emails ?? []).map((email) => ({ ...email, mailboxId: source.mailboxId }))), inboxError: sources.some((source) => source.error || source.inbox?.inboxError) ? "Some mailbox history unavailable" : null };
+  const inbox = { emails: sources.flatMap((source) => (source.inbox?.emails ?? []).map((email) => ({ ...email, mailboxId: source.mailboxId }))), inboxError: sources.some((source) => source.error || source.inbox?.inboxError || source.inbox?.mailboxReadFailed || source.inbox?.mailboxSnapshotPartial || source.inbox?.mailboxHistoryPartial) ? "Some mailbox history unavailable or incomplete" : null };
+  return { inbox, searched, coverage: { mailboxesSearched: searched.length, mailboxesOmitted: Math.max(0, mailboxes.length - searched.length), mailboxError: inbox.inboxError } };
+}
+
+/** The optional index is request-local; never cache a user's mailbox across requests. */
+export async function searchAgentEmails(viewer: WorkspaceViewer, search: AgentEmailSearch, index?: Promise<Awaited<ReturnType<typeof loadAgentEmailIndex>>>) {
+  await requireAiData("emails", "customers");
+  const { inbox, searched, coverage } = await (index ?? loadAgentEmailIndex(viewer));
   const db = createSupabaseAdmin();
   const contacts = search.companyId ? await db.from("contacts").select("email").eq("company_id", search.companyId) : null;
   if (contacts?.error) throw new Error("Unable to load this customer's email addresses.");
   const addresses = new Set((contacts?.data ?? []).map((row) => row.email?.trim().toLowerCase()).filter(Boolean));
   const query = search.query.toLowerCase();
-  const accessibleCandidates = inbox.emails.filter((email) => !email.demo && email.direction === "inbound"
+  const accessibleCandidates = inbox.emails.filter((email) => !email.demo && (search.direction === "all" || email.direction === (search.direction ?? "inbound"))
     && (!search.companyId || addresses.has(email.contact.trim().toLowerCase()))
+    && (search.direction !== "all" || email.direction === "inbound" || /^sent$/i.test(email.status))
     && (!search.emailId || email.id === search.emailId));
   const candidates = accessibleCandidates.filter((email) => (!query || `${email.contact}\n${email.company}\n${email.subject}\n${email.body}`.toLowerCase().includes(query)))
     .sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp));
@@ -107,7 +115,7 @@ export async function searchAgentEmails(viewer: WorkspaceViewer, search: AgentEm
         if (!mailbox || !email.uid || !email.uidValidity || email.mailboxKey !== mailboxSyncKey(mailbox)) throw new Error("Message content unavailable.");
         body = (await loadMailboxMessageContent(mailbox, email.uid, email.uidValidity)).body;
       }
-      return { ...presentAgentEmail({ ...email, body, bodyLoaded: true, companyId }), contentAvailable: true };
+      return { ...presentAgentEmail({ ...email, body, bodyLoaded: true, companyId }), mailboxId: email.mailboxId, href: `/email?mailbox=${encodeURIComponent(email.mailboxId)}&thread=${encodeURIComponent(threadKeyForEmail(email))}`, contentAvailable: true };
     } catch {
       // A failed body load must never be presented as a complete message or used for extraction.
       return { ...presentAgentEmail({ ...email, body: "", companyId }), contentAvailable: false };
@@ -118,8 +126,11 @@ export async function searchAgentEmails(viewer: WorkspaceViewer, search: AgentEm
     messages,
     companies: await Promise.all(companyIds.map(id => loadAgentCompany(id, false))),
     coverage: {
-      scope: "accessible synced inbound emails across up to 8 mailboxes; no live mailbox sync; query matches only loaded bodies and headers",
-      mailboxesSearched: searched.length, mailboxesOmitted: Math.max(0, mailboxes.length - searched.length),
+      scope: `accessible synced ${search.direction ?? "inbound"} emails across up to 8 mailboxes; no live mailbox sync; query matches only loaded bodies and headers`,
+      ...coverage,
+      conversations: new Set(candidates.map(email => `${email.mailboxId}:${threadKeyForEmail(email)}`)).size,
+      inbound: candidates.filter(email => email.direction === "inbound").length,
+      outbound: candidates.filter(email => email.direction === "outbound").length,
       matching: candidates.length, included: messages.length, offset: search.offset,
       nextOffset: candidates.length > search.offset + 8 ? search.offset + 8 : null,
       unloadedBodiesNotSearched: accessibleCandidates.filter((email) => email.bodyLoaded === false).length,

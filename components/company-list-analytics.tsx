@@ -1,13 +1,17 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { ArrowDownRight, ArrowUpRight, CalendarDays, ChartNoAxesCombined, Minus } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { companyListAnalytics } from "@/lib/company-list-analytics";
 import type { Company } from "@/lib/types";
+import surfaces from "./analytics-surface.module.css";
 import "./company-list-analytics.css";
 
 function Sparkline({ points, previousPoints }: { points: number[]; previousPoints: number[] }) {
+  const id = useId();
+  const strokeId = `${id}-stroke`;
+  const fillId = `${id}-fill`;
   const maximum = Math.max(1, ...points, ...previousPoints);
   const path = (values: number[]) => values.map((value, index) => {
     const x = index / (values.length - 1) * 78 + 1;
@@ -20,9 +24,17 @@ function Sparkline({ points, previousPoints }: { points: number[]; previousPoint
   }).join(" ");
   const currentPath = path(points);
   return <svg aria-hidden="true" viewBox="0 0 80 28" className="company-analytics-sparkline" fill="none">
-    <path d={`${currentPath} L79,28 L1,28 Z`} fill="currentColor" fillOpacity=".06" />
-    <path className="company-analytics-previous-line" d={path(previousPoints)} stroke="currentColor" strokeWidth="1" strokeDasharray="2 3" />
-    <path d={currentPath} stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    <defs>
+      <linearGradient id={strokeId} gradientUnits="userSpaceOnUse" x1="1" x2="79" y1="0" y2="0">
+        <stop stopColor="#fa937c" /><stop offset=".43" stopColor="#e65596" /><stop offset="1" stopColor="#5886de" />
+      </linearGradient>
+      <linearGradient id={fillId} x1="0" x2="0" y1="0" y2="1">
+        <stop stopColor="#efa6ca" stopOpacity=".35" /><stop offset="1" stopColor="#9cbfff" stopOpacity=".02" />
+      </linearGradient>
+    </defs>
+    <path d={`${currentPath} L79,28 L1,28 Z`} fill={`url(#${fillId})`} />
+    <path d={path(previousPoints)} stroke="#958ca9" strokeWidth="1.1" strokeDasharray="2 2" />
+    <path d={currentPath} stroke={`url(#${strokeId})`} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
   </svg>;
 }
 
@@ -41,20 +53,20 @@ export function CompanyListAnalytics({ companies, asOf }: { companies: Company[]
         <SelectContent><SelectItem value="7">7 days</SelectItem><SelectItem value="30">30 days</SelectItem><SelectItem value="90">90 days</SelectItem></SelectContent>
       </Select>
     </div>
-    <dl className="company-analytics-metrics">
-      {metrics.map(metric => <div key={metric.label} className="company-analytics-metric" title={`${metric.detail} Compared with companies added in the preceding ${period} days. Solid line: selected period; dotted line: preceding period. Search and filters apply.`}>
-        <dt className="company-analytics-label">{metric.label}</dt>
-        <dd className="company-analytics-reading">
-          <div className="company-analytics-figures">
-            <span className="company-analytics-value">{number.format(metric.value)}{metric.percentage ? "%" : ""}</span>
-            <span className={`company-analytics-change ${metric.change !== null && metric.change > 0 ? "company-analytics-positive" : ""}`} title={metric.change === null ? "No previous baseline" : "Compared with the previous period"} aria-label={metric.change === null ? "No previous baseline" : `${number.format(Math.abs(metric.change))}% ${metric.change >= 0 ? "increase" : "decrease"} compared with the preceding period`}>
-              {metric.change === null || metric.change === 0 ? <Minus aria-hidden="true" /> : metric.change > 0 ? <ArrowUpRight aria-hidden="true" /> : <ArrowDownRight aria-hidden="true" />}
+    <div className="company-analytics-metrics">
+      {metrics.map(metric => <article key={metric.label} className={surfaces.kpi} title={`${metric.detail} Compared with companies added in the preceding ${period} days. Solid line: selected period; dotted line: preceding period. Search and filters apply.`}>
+        <div className={surfaces.kpiText}>
+          <h3 className={surfaces.title}>{metric.label}</h3>
+          <div className={surfaces.readout}>
+            <strong>{number.format(metric.value)}{metric.percentage ? "%" : ""}</strong>
+            <span className={surfaces.change} data-up={metric.change !== null && metric.change > 0} title={metric.change === null ? "No previous baseline" : "Compared with the previous period"} aria-label={metric.change === null ? "No previous baseline" : `${number.format(Math.abs(metric.change))}% ${metric.change >= 0 ? "increase" : "decrease"} compared with the preceding period`}>
+              {metric.change === null ? <Minus aria-hidden="true" size={12} /> : metric.change > 0 ? <ArrowUpRight aria-hidden="true" size={12} /> : metric.change < 0 ? <ArrowDownRight aria-hidden="true" size={12} /> : null}
               {metric.change !== null && `${number.format(Math.abs(metric.change))}%`}
             </span>
           </div>
-          <Sparkline points={metric.points} previousPoints={metric.previousPoints} />
-        </dd>
-      </div>)}
-    </dl>
+        </div>
+        <Sparkline points={metric.points} previousPoints={metric.previousPoints} />
+      </article>)}
+    </div>
   </section>;
 }

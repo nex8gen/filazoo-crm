@@ -1,3 +1,4 @@
+.settings-main[data-settings-section="credits"] { --settings-page-width: 76rem; }
 .settings-main .settings-content.billing-overview { max-width: 76rem !important; }
 .billing-overview { display: grid; gap: 1.5rem; color: var(--foreground); font-size: .875rem; line-height: 1.5; padding-block: .5rem; }
 .billing-overview :is(h2, h3, p, dl, dd) { margin: 0; }

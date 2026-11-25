@@ -4,11 +4,29 @@ import { requireWorkspaceMember } from "../auth";
 import { createSupabaseAdmin } from "../supabase/admin";
 import { purchaseOrderSchema } from "../purchase-orders";
 import type { AnalysisOrder, CompanyAnalysisData } from "../company-analysis";
+import { getCompanyEmailScope } from "./company-email-access";
+import { getCompanyEmailBackendData } from "./company-emails";
 
 export async function getCompanyAnalysis(companyId: string): Promise<CompanyAnalysisData> {
-  await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
+  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
   z.uuid().parse(companyId);
+  const company = await getCompanyEmailScope(viewer, companyId);
+  if (!company) throw new Error("Company unavailable.");
   const db = createSupabaseAdmin();
+  const emailPromise = (async () => {
+    let email: CompanyAnalysisData["email"] = { messages: [], available: false, partial: false };
+    try {
+      const history = await getCompanyEmailBackendData(company);
+      email = {
+        available: !history.mailboxReadFailed,
+        partial: Boolean(history.mailboxSnapshotPartial || history.mailboxHistoryPartial || history.inboxError),
+        messages: history.emails.filter(message => message.direction === "inbound" || message.status.toLowerCase() === "sent")
+          .map(({ id, direction, timestamp, threadId, messageId, inReplyTo, references, automaticResponse }) =>
+            ({ id, direction, timestamp, threadId, messageId, inReplyTo, references, automaticResponse })),
+      };
+    } catch { /* Keep purchase reports available when correspondence cannot be read. */ }
+    return email;
+  })();
   const orders: AnalysisOrder[] = [];
   // Read every page. PostgREST's row limit must never silently truncate totals.
   const pageSize = 500;
@@ -43,5 +61,6 @@ export async function getCompanyAnalysis(companyId: string): Promise<CompanyAnal
     tasks.push(...(data ?? []));
     if ((data?.length ?? 0) < pageSize) break;
   }
-  return { orders, products, tasks, asOf: new Date().toISOString() };
+  const email = await emailPromise;
+  return { orders, products, tasks, email, asOf: new Date().toISOString() };
 }

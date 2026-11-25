@@ -11,7 +11,8 @@ import { portalPreviewData } from "../lib/portal-preview.ts";
 import { formatMoney } from "../lib/invoices.ts";
 import * as themeTools from "../lib/portal-themes.ts";
 import * as domainTools from "../lib/portal-domains.ts";
-import * as websiteTools from "../lib/portal-website.ts";
+import * as websiteTools from "../lib/portal-website-design.ts";
+import * as blockTools from "../lib/portal-website-blocks.ts";
 
 const dom = new JSDOM("<!doctype html><body></body>", { url: "https://crm.test/customer-portal" });
 for (const key of ["window", "document", "navigator", "HTMLElement", "HTMLInputElement", "Node", "Event", "MouseEvent", "KeyboardEvent"] as const) {
@@ -22,18 +23,11 @@ const { createRoot } = await import("react-dom/client");
 const require = createRequire(import.meta.url);
 const native = (tag: string) => function NativeControl({ children, ...props }: Record<string, unknown>) {
   const render = props.render as React.ReactElement | undefined;
-  delete props.variant; delete props.size; delete props.nativeButton; delete props.render;
+  delete props.variant; delete props.size; delete props.nativeButton; delete props.render; delete props.fill; delete props.unoptimized;
   if (render) return React.cloneElement(render, props, children as React.ReactNode);
   return React.createElement(tag, props, children as React.ReactNode);
 };
 const controls = {
-  "@/components/portal-vvveb-editor": { PortalVvvebEditor: function EmbeddedEditor({ captureRef, onDirty }: { captureRef: React.RefObject<(() => Promise<{ html: string; css: string } | null>) | null>; onDirty: () => void }) {
-    const changed = React.useRef(false);
-    React.useEffect(() => { captureRef.current = async () => { if (!changed.current) return null; changed.current = false; return { html: "<h1>My website</h1>", css: "h1{color:green}" }; }; return () => { captureRef.current = null; }; }, [captureRef]);
-    return React.createElement("section", { "aria-label": "Embedded website designer" }, React.createElement("button", { onClick: () => { changed.current = true; onDirty(); } }, "Edit canvas content"));
-  } },
-  "@/components/portal-website-content": { PortalWebsiteContent: () => React.createElement("iframe", { title: "Website content" }) },
-  "@/lib/email-markup": { escapeEmailHtml: (value: string) => value.replace(/[<>&"]/g, "") },
   "@/components/ui/card": { Card: native("div"), CardFooter: native("div"), CardHeader: native("div"), CardTitle: native("h2") },
   "@/components/ui/badge": { Badge: native("span") },
   "@/components/ui/label": { Label: native("label") },
@@ -47,7 +41,7 @@ const controls = {
 function load(file: string, deps: Record<string, unknown>) {
   const exports = {} as Record<string, React.ComponentType<Record<string, unknown>>>;
   const code = ts.transpileModule(readFileSync(file, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-  vm.runInNewContext(code, { exports, window, document, crypto, console, setTimeout, clearTimeout, require: (name: string) => name.endsWith(".css") ? {} : deps[name] ?? controls[name as keyof typeof controls] ?? require(name) });
+  vm.runInNewContext(code, { exports, window, document, crypto, console, require: (name: string) => name.endsWith(".css") ? {} : deps[name] ?? controls[name as keyof typeof controls] ?? require(name) });
   return exports;
 }
 const { PortalLocalTime } = load("components/portal-local-time.tsx", {});
@@ -61,6 +55,21 @@ const { PortalExperience } = load("components/portal-experience.tsx", {
   "@/lib/customer-portal": { shipmentLabels: { in_transit: "In transit" } },
   "@/lib/portal-design": designTools,
   "@/lib/portal-themes": themeTools,
+});
+const websiteElements = load("components/portal-website-elements.tsx", {
+  "next/image": { default: native("img") }, "@/lib/portal-website-blocks": blockTools,
+});
+const editorFields = load("components/portal-editor-fields.tsx", {});
+const { PortalElementTree } = load("components/portal-element-tree.tsx", { "@/lib/portal-website-blocks": blockTools });
+const { PortalElementSettings } = load("components/portal-element-settings.tsx", { "@/lib/portal-website-blocks": blockTools, "@/components/portal-editor-fields": editorFields });
+const { PortalSectionAppearance } = load("components/portal-section-appearance.tsx", { "@/components/portal-editor-fields": editorFields });
+const { PortalSectionLibrary } = load("components/portal-section-library.tsx", { "@/lib/portal-website-design": websiteTools, "@/lib/portal-website-blocks": blockTools });
+const { PortalWebsite } = load("components/portal-website.tsx", {
+  "next/image": { default: native("img") },
+  "@/lib/portal-design": designTools,
+  "@/lib/portal-website-design": websiteTools,
+  "@/lib/portal-website-blocks": blockTools,
+  "@/components/portal-website-elements": websiteElements,
 });
 
 test("custom domain settings connect, show DNS records, verify HTTPS, and require disconnect confirmation", async () => {
@@ -88,17 +97,26 @@ test("custom domain settings connect, show DNS records, verify HTTPS, and requir
     await click("Disconnect domain"); await click("Confirm disconnect"); assert.ok(host.querySelector("#portal-custom-domain"));
   } finally { await React.act(async () => root.unmount()); host.remove(); }
 });
-async function mount(canWrite = true, preview = true) {
+async function mount(canWrite = true, options: { saveError?: string } = {}) {
   let state: designTools.PortalDesignView = { draft: designTools.defaultPortalDesign(), published: null, revision: 0, updatedAt: null, publishedAt: null };
   const calls: { publish: boolean; design: designTools.PortalDesign; revision: number }[] = [];
   const { PortalBuilder } = load("components/portal-builder.tsx", {
     "next/link": { default: native("a") },
     "@/components/portal-experience": { PortalExperience },
+    "@/components/portal-website": { PortalWebsite },
+    "@/components/portal-element-tree": { PortalElementTree },
+    "@/components/portal-element-settings": { PortalElementSettings },
+    "@/components/portal-section-appearance": { PortalSectionAppearance },
+    "@/components/portal-section-library": { PortalSectionLibrary },
+    "@/components/portal-editor-fields": editorFields,
+    "@/lib/portal-website-blocks": blockTools,
+    "@/lib/portal-website-design": websiteTools,
     "@/lib/portal-preview": { portalPreviewData },
     "@/lib/portal-design": designTools,
     "@/lib/portal-themes": themeTools,
     "@/app/customer-portal/actions": { updatePortalDesign: async (input: typeof calls[number]) => {
       calls.push(structuredClone(input));
+      if (options.saveError) return { error: options.saveError };
       state = { draft: input.design, published: input.publish ? input.design : state.published, revision: input.revision + 1, updatedAt: "2026-11-16T08:00:00Z", publishedAt: input.publish ? "2026-11-16T08:00:00Z" : state.publishedAt };
       return { saved: state };
     } },
@@ -111,57 +129,171 @@ async function mount(canWrite = true, preview = true) {
     assert.ok(node, label); return node;
   };
   const click = async (label: string) => { await React.act(async () => button(label).click()); };
-  if (preview) { if (canWrite) await click("Preview portal"); await click("Editor settings"); }
   return { host, button, click, calls, close: async () => { await React.act(async () => root.unmount()); host.remove(); } };
 }
+async function editField(host: HTMLElement, selector: string | HTMLInputElement | HTMLTextAreaElement, value: string) {
+  const node = typeof selector === "string" ? host.querySelector<HTMLInputElement | HTMLTextAreaElement>(selector)! : selector;
+  assert.ok(node, String(selector));
+  const prototype = node.tagName === "TEXTAREA" ? dom.window.HTMLTextAreaElement.prototype : dom.window.HTMLInputElement.prototype;
+  await React.act(async () => { Object.getOwnPropertyDescriptor(prototype, "value")!.set!.call(node, value); node.dispatchEvent(new Event("input", { bubbles: true })); });
+}
+async function selectEditor(host: HTMLElement, label: string, value: string) {
+  const node = host.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`)!;
+  assert.ok(node, label);
+  await React.act(async () => { node.value = value; node.dispatchEvent(new Event("change", { bubbles: true })); });
+}
+async function toggleSetting(host: HTMLElement, text: string) {
+  const label = [...host.querySelectorAll<HTMLLabelElement>("label")].find(item => item.textContent === text)!;
+  assert.ok(label, text);
+  const control = host.querySelector<HTMLInputElement>(`[id="${label.htmlFor}"]`)!;
+  assert.ok(control, text);
+  await React.act(async () => control.click());
+}
+async function clickElement(host: HTMLElement, section: string, id: string) {
+  const button = host.querySelector<HTMLButtonElement>(`.pws-${section} [data-element-id="${id}"] > .pws-element-edit`)!;
+  assert.ok(button, `${section} ${id}`);
+  await React.act(async () => button.click());
+}
 
-test("inline editor validates its bridge, captures current HTML and keeps its session across brand changes", async () => {
-  const { PortalVvvebEditor } = load("components/portal-vvveb-editor.tsx", { "@/lib/portal-website": websiteTools });
-  const host = document.createElement("div"); document.body.append(host);
-  const root = createRoot(host);
-  const captureRef: { current: (() => Promise<websiteTools.PortalWebsite | null>) | null } = { current: null };
-  let dirtyCalls = 0;
-  const props = { initial: { html: "<h1>My brand</h1>", css: "" }, accent: "#25865b", title: "Home", captureRef, onDirty: () => { dirtyCalls++; }, onSaveRequest: () => {} };
+test("individual heading edits, typography, section duplication and undo/redo persist independently", async () => {
+  const ui = await mount();
   try {
-    await React.act(async () => root.render(React.createElement(PortalVvvebEditor, props)));
-    assert.equal(host.querySelector("dialog"), null);
-    const frame = host.querySelector("iframe")!;
-    const sent: { type: string; requestId?: string }[] = [];
-    frame.contentWindow!.postMessage = (message: { type: string }) => { sent.push(message); };
-    const receive = (data: object, origin = window.location.origin) => window.dispatchEvent(new window.MessageEvent("message", { data, origin, source: frame.contentWindow }));
-    await React.act(async () => { receive({ type: "filazoo:ready" }); receive({ type: "filazoo:loaded" }); });
-    assert.ok(sent.some(message => message.type === "filazoo:init"));
-    await React.act(async () => receive({ type: "filazoo:dirty" }, "https://untrusted.test"));
-    assert.equal(dirtyCalls, 0);
-    await React.act(async () => receive({ type: "filazoo:dirty" }));
-    assert.equal(dirtyCalls, 1);
-    await React.act(async () => {
-      const result = captureRef.current!();
-      const requestId = sent.at(-1)!.requestId;
-      receive({ type: "filazoo:result", requestId, website: { html: '<h1 onclick="alert(1)">Saved layout</h1>', css: "h1{color:green}" } });
-      assert.equal((await result)?.html, "<h1>Saved layout</h1>");
-    });
-    await React.act(async () => root.render(React.createElement(PortalVvvebEditor, { ...props, accent: "#5261d8" })));
-    assert.equal(host.querySelector("iframe"), frame);
-    assert.equal(sent.filter(message => message.type === "filazoo:init").length, 1);
-    assert.equal(sent.at(-1)?.type, "filazoo:brand");
-    assert.equal(await captureRef.current!(), null);
-  } finally { await React.act(async () => root.unmount()); host.remove(); }
+    await clickElement(ui.host, "hero", "heading");
+    await editField(ui.host, '[aria-label="Element text"]', "Materials for your business");
+    await editField(ui.host, '[aria-label="Font size value"]', "44");
+    await editField(ui.host, '[aria-label="Text color hex"]', "#123456");
+    assert.equal(ui.host.querySelector(".pws-hero h1")?.textContent, "Materials for your business");
+    assert.equal(ui.host.querySelector<HTMLElement>('.pws-hero [data-element-id="heading"]')?.style.fontSize, "44px");
+    await ui.click("Back to section");
+    await ui.click("Duplicate section");
+    assert.equal(ui.host.querySelectorAll(".pws-hero").length, 2);
+    await ui.click("Undo edit"); assert.equal(ui.host.querySelectorAll(".pws-hero").length, 1);
+    await ui.click("Redo edit"); assert.equal(ui.host.querySelectorAll(".pws-hero").length, 2);
+    await ui.click("Undo edit");
+    await ui.click("Save");
+    const section = ui.calls[0].design.website!.pages[0].sections[0];
+    assert.equal(section.blocks?.find(item => item.id === "heading")?.text, "Materials for your business");
+    assert.equal(section.blocks?.find(item => item.id === "heading")?.style?.fontSize, 44);
+    assert.equal(section.blocks?.find(item => item.id === "heading")?.style?.color, "#123456");
+    assert.equal(section.title, "Materials for your business");
+    assert.equal(ui.button("Undo edit").disabled, true);
+  } finally { await ui.close(); }
 });
 
-test("website editor opens directly and captures its canvas before draft save and publish", async () => {
-  const ui = await mount(true, false);
+test("nested groups and their child headings can be added, duplicated and hidden without touching siblings", async () => {
+  const ui = await mount();
   try {
-    assert.ok(ui.host.querySelector('[aria-label="Embedded website designer"]'));
-    assert.equal(ui.host.querySelector(".portal-app"), null);
-    await ui.click("Edit canvas content");
-    assert.equal(ui.calls.length, 0);
+    await ui.click("Explore our business");
+    await clickElement(ui.host, "links", "page-links");
+    await selectEditor(ui.host, "Nested element type", "group");
+    await ui.click("Add nested element");
+    await selectEditor(ui.host, "Nested element type", "heading");
+    await ui.click("Add nested element");
+    await editField(ui.host, '[aria-label="Element text"]', "Nested business heading");
+    assert.ok(ui.host.querySelector(".pws-links")?.textContent?.includes("Nested business heading"));
+    await ui.click("Duplicate element");
+    await editField(ui.host, '[aria-label="Element text"]', "Hidden nested heading");
+    await toggleSetting(ui.host, "Visible element");
+    assert.equal(ui.host.querySelector(".pws-links")?.textContent?.includes("Hidden nested heading"), false);
+    assert.ok(ui.host.querySelector(".pws-links")?.textContent?.includes("Nested business heading"));
+    assert.ok(ui.host.querySelector(".pws-links")?.textContent?.includes("About us"));
     await ui.click("Save");
-    assert.equal(ui.calls[0].publish, false);
-    assert.equal(ui.calls[0].design.sections[0].website?.html, "<h1>My website</h1>");
-    await ui.click("Publish");
-    assert.equal(ui.calls[1].publish, true);
-    assert.equal(ui.calls[1].design.features.sendMessages, true);
+    const design = ui.calls[0].design;
+    assert.equal(designTools.portalDesignSchema.safeParse(design).success, true);
+    assert.ok(JSON.stringify(design).includes("Hidden nested heading"));
+    assert.equal(JSON.stringify(websiteTools.publicWebsiteDesign(design)).includes("Hidden nested heading"), false);
+  } finally { await ui.close(); }
+});
+
+test("section library, FAQ content and slideshow elements update the live preview", async () => {
+  const ui = await mount();
+  try {
+    await ui.click("Browse sections");
+    await editField(ui.host, '[aria-label="Search sections"]', "FAQ");
+    assert.equal(ui.host.querySelectorAll(".pb-library-options > button").length, 1);
+    await ui.click("Add FAQ / accordion");
+    assert.equal(ui.host.querySelectorAll(".pws-faq-item").length, 3);
+    await clickElement(ui.host, "faq", "question-1");
+    await editField(ui.host, '[aria-label="Element name"]', "What is the minimum order?");
+    await editField(ui.host, '[aria-label="Element text"]', "Contact **our team** for details.");
+    assert.ok(ui.host.querySelector(".pws-faq-item summary")?.textContent?.includes("What is the minimum order?"));
+    assert.equal(ui.host.querySelector(".pws-faq-item strong")?.textContent, "our team");
+    await ui.click("Browse sections");
+    await editField(ui.host, '[aria-label="Search sections"]', "Slideshow");
+    await ui.click("Add Slideshow");
+    assert.equal(ui.host.querySelectorAll('[aria-roledescription="slide"]').length, 2);
+    await ui.click("Next slide");
+    const slides = [...ui.host.querySelectorAll<HTMLElement>('[aria-roledescription="slide"]')];
+    assert.equal(slides[0].hidden, true); assert.equal(slides[1].hidden, false);
+    await selectEditor(ui.host, "Nested element type", "heading");
+    await ui.click("Add nested element");
+    await editField(ui.host, '[aria-label="Element text"]', "Second slide headline");
+    assert.ok(slides[1].textContent?.includes("Second slide headline"));
+    await ui.click("Save");
+    assert.equal(designTools.portalDesignSchema.safeParse(ui.calls[0].design).success, true);
+  } finally { await ui.close(); }
+});
+
+test("product card media, safe button links and colors are retained by the published renderer", async () => {
+  const ui = await mount();
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+  try {
+    await selectEditor(ui.host, "Section type", "products"); await ui.click("Add section");
+    await clickElement(ui.host, "products", "card-1-image");
+    await editField(ui.host, '[aria-label="Element image URL"]', "https://cdn.example.com/product.png");
+    await editField(ui.host, '[aria-label="Image alternative text"]', "Filament spool");
+    await selectEditor(ui.host, "Image shape", "natural");
+    assert.ok(ui.host.querySelector('.pws-products img[alt="Filament spool"]'));
+    await clickElement(ui.host, "products", "card-1-button");
+    await editField(ui.host, '[aria-label="Element text"]', "Request a quote");
+    await editField(ui.host, '[aria-label="Element link"]', "https://example.com/quote");
+    await selectEditor(ui.host, "Element button style", "outline");
+    await editField(ui.host, '[aria-label="Background color hex"]', "#123456");
+    await editField(ui.host, '[aria-label="Text color hex"]', "#ffffff");
+    await toggleSetting(ui.host, "Open in a new tab");
+    await ui.click("Save");
+    const design = ui.calls[0].design;
+    await React.act(async () => root.render(React.createElement(PortalWebsite, { design: websiteTools.publicWebsiteDesign(design) })));
+    const link = host.querySelector<HTMLAnchorElement>('.pws-products a[href="https://example.com/quote"]')!;
+    assert.equal(link.textContent, "Request a quote");
+    assert.equal(link.target, "_blank"); assert.equal(link.rel, "noopener noreferrer");
+    assert.equal(link.style.backgroundColor, "rgb(18, 52, 86)"); assert.equal(link.style.color, "rgb(255, 255, 255)");
+    assert.ok(host.querySelector('img[alt="Filament spool"]'));
+    assert.equal(host.querySelector(".pws-element-edit"), null);
+  } finally { await ui.close(); await React.act(async () => root.unmount()); host.remove(); }
+});
+
+test("header branding, account link, navigation and footer elements can be changed independently", async () => {
+  const ui = await mount();
+  try {
+    await ui.click("Logo & brand");
+    await toggleSetting(ui.host, "Show brand name");
+    assert.equal(ui.host.querySelector(".pws-header strong"), null);
+    await toggleSetting(ui.host, "Show brand name");
+    await editField(ui.host, '.pb-panel input[type="url"]', "https://cdn.example.com/logo.png");
+    assert.ok(ui.host.querySelector('.pws-header img[alt="Filazoo"]'));
+    const accountLabel = [...ui.host.querySelectorAll<HTMLLabelElement>(".pb-panel label")].find(label => label.textContent === "Customer account label")!;
+    await editField(ui.host, accountLabel.querySelector<HTMLInputElement>("input")!, "My account");
+    assert.equal(ui.host.querySelector(".pws-account span")?.textContent, "My account");
+    await ui.click("Add menu link");
+    await editField(ui.host, '[aria-label="Menu link 4 label"]', "Support");
+    await editField(ui.host, '[aria-label="Menu link 4 destination"]', "https://support.example.com");
+    assert.ok(ui.host.querySelector('.pws-header nav a[href="https://support.example.com"]'));
+    const menu = ui.host.querySelectorAll(".pb-menu-item")[3];
+    const hide = [...menu.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent === "Hide link")!;
+    await React.act(async () => hide.click());
+    assert.equal(ui.host.querySelector('.pws-header nav a[href="https://support.example.com"]'), null);
+    await ui.click("Footer");
+    await toggleSetting(ui.host, "Footer navigation");
+    assert.ok(ui.host.querySelector('.pws-footer nav[aria-label="Footer navigation"]'));
+    await toggleSetting(ui.host, "Footer brand name");
+    assert.equal(ui.host.querySelector(".pws-footer > strong"), null);
+    await ui.click("Save");
+    const design = ui.calls[0].design;
+    assert.equal(design.website?.header?.accountLabel, "My account");
+    assert.equal(design.website?.footer?.showNavigation, true);
+    assert.equal(designTools.portalDesignSchema.safeParse(design).success, true);
+    assert.equal(JSON.stringify(websiteTools.publicWebsiteDesign(design)).includes("support.example.com"), false);
   } finally { await ui.close(); }
 });
 
@@ -172,7 +304,7 @@ test("builder previews styles and devices and saves a draft separately from publ
     await React.act(async () => { inspector.value = "theme"; inspector.dispatchEvent(new Event("change", { bubbles: true })); });
     const style = [...ui.host.querySelectorAll<HTMLSelectElement>("select")].find(select => [...select.options].some(option => option.value === "soft"))!;
     await React.act(async () => { style.value = "soft"; style.dispatchEvent(new Event("change", { bubbles: true })); });
-    assert.equal(ui.host.querySelector(".portal-app")?.getAttribute("data-theme"), "soft");
+    assert.equal(ui.host.querySelector(".portal-website")?.getAttribute("data-theme"), "soft");
     await ui.click("Mobile preview");
     assert.ok(ui.host.querySelector(".pb-device-mobile"));
     await ui.click("Save");
@@ -195,7 +327,9 @@ test("page dropdown, visibility, custom pages and messaging permissions update t
     await React.act(async () => invoiceToggle.click());
     assert.equal(ui.host.querySelector(".cpa-invoice-balance"), null);
     assert.ok(ui.host.querySelector(".cpa-unavailable"));
-    await ui.click("Add page");
+    const settings = ui.host.querySelector<HTMLSelectElement>('[aria-label="Editor settings"]')!;
+    await React.act(async () => { settings.value = "pages"; settings.dispatchEvent(new Event("change", { bubbles: true })); });
+    await ui.click("Add account page");
     assert.ok(ui.host.querySelector(".cpa-content-page"));
     await ui.click("Remove this page");
     assert.equal(ui.host.querySelector(".cpa-content-page"), null);
@@ -222,6 +356,84 @@ test("read-only workspace members can inspect the preview without editing or pub
     await ui.click("Mobile preview"); assert.ok(ui.host.querySelector(".pb-device-mobile"));
     assert.equal(ui.calls.length, 0);
   } finally { await ui.close(); }
+});
+
+test("website is the starting page and its sections, account pages and saved content stay separate", async () => {
+  const ui = await mount();
+  const choose = async (label: string, value: string) => {
+    const select = ui.host.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`)!;
+    await React.act(async () => { select.value = value; select.dispatchEvent(new Event("change", { bubbles: true })); });
+  };
+  const input = async (selector: string, value: string) => {
+    const node = ui.host.querySelector<HTMLInputElement>(selector)!;
+    await React.act(async () => { Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")!.set!.call(node, value); node.dispatchEvent(new Event("input", { bubbles: true })); });
+  };
+  try {
+    assert.ok(ui.host.querySelector(".portal-website .pws-hero"));
+    assert.equal(ui.host.querySelector(".cpa-sidebar"), null);
+    const picker = ui.host.querySelector<HTMLSelectElement>('select[aria-label="Select portal page"]')!;
+    assert.equal(picker.value, "website/home");
+    for (const id of ["website/home", "website/pages/about", "website/pages/contact", "home", "orders", "billing", "messages"]) assert.ok([...picker.options].some(option => option.value === id), id);
+    assert.ok(ui.host.querySelector('[aria-label="Portal structure"]')?.textContent?.includes("Template"));
+    assert.equal(ui.host.querySelector('[aria-label="Portal structure"]')?.textContent?.includes("Orders"), false);
+    await input('[aria-label="Section heading"]', "Made for your next project");
+    assert.equal(ui.host.querySelector(".pws-hero h1")?.textContent, "Made for your next project");
+    await ui.click("Hide Made for your next project");
+    assert.equal(ui.host.querySelector(".pws-hero"), null);
+    await ui.click("Show Made for your next project");
+    await choose("Section type", "image");
+    await ui.click("Add section");
+    assert.ok(ui.host.querySelector(".pws-image"));
+    await ui.click("Remove section");
+    assert.equal(ui.host.querySelector(".pws-image"), null);
+    await ui.click("Page settings");
+    await ui.click("Manage website pages");
+    await ui.click("Add website page");
+    assert.equal(picker.options.length, 8);
+    assert.ok(ui.host.querySelector(".portal-website .pws-text"));
+    await ui.click("Remove this page");
+    assert.equal(picker.value, "website/home");
+    await choose("Select portal page", "home");
+    assert.ok(ui.host.querySelector(".cpa-sidebar"));
+    assert.ok(ui.host.querySelector(".cpa-metrics"));
+    assert.equal(ui.host.querySelector(".portal-website"), null);
+    await ui.click("Back to website");
+    assert.equal(picker.value, "website/home");
+    await ui.click("Save");
+    assert.equal(ui.calls[0].design.website?.pages[0].sections[0].title, "Made for your next project");
+    assert.equal(ui.calls[0].design.heading, "");
+    assert.equal(ui.calls[0].design.sections.length, 4);
+  } finally { await ui.close(); }
+});
+
+test("compact editor views switch between sections, preview and settings without losing the selected page", async () => {
+  const previous = dom.window.matchMedia;
+  Object.defineProperty(dom.window, "matchMedia", { configurable: true, value: () => ({ matches: true }) });
+  const ui = await mount();
+  const view = () => ui.host.querySelector(".pb-workbench")?.getAttribute("data-mobile-panel");
+  try {
+    assert.equal(view(), "preview");
+    await ui.click("Sections");
+    assert.equal(view(), "sections");
+    await ui.click("Header");
+    assert.equal(view(), "settings");
+    await ui.click("Close editor settings");
+    assert.equal(view(), "preview");
+    await ui.click("Settings");
+    assert.ok(ui.host.querySelector('[aria-label="Theme editor settings"]'));
+    assert.equal(view(), "settings");
+    await ui.click("Preview");
+    await ui.click("Toggle sections");
+    assert.equal(view(), "sections");
+    await ui.click("Theme settings");
+    assert.equal(view(), "settings");
+    assert.equal(ui.host.querySelector<HTMLSelectElement>('select[aria-label="Editor settings"]')?.value, "theme");
+    assert.equal(ui.host.querySelector<HTMLSelectElement>('select[aria-label="Select portal page"]')?.value, "website/home");
+    assert.equal(ui.calls.length, 0);
+  } finally {
+    await ui.close();
+    Object.defineProperty(dom.window, "matchMedia", { configurable: true, value: previous });
+  }
 });
 
 test("customer app uses separate page links, sidebar navigation, and mobile navigation instead of section tabs", async () => {
@@ -254,6 +466,7 @@ test("theme library separates the live theme, saved drafts and templates and per
     "next/link": { default: native("a") }, "@/components/ui/dialog": dialogParts,
     "@/components/portal-local-time": { PortalLocalTime },
     "@/components/portal-theme-artwork": { PortalThemeArtwork }, "@/components/portal-experience": { PortalExperience },
+    "@/components/portal-website": { PortalWebsite },
     "@/lib/portal-design": designTools, "@/lib/portal-themes": themeTools, "@/lib/portal-preview": { portalPreviewData },
     "@/app/customer-portal/actions": {
       createPortalTheme: async ({ templateId }: { templateId: string }) => {
@@ -286,10 +499,185 @@ test("theme library separates the live theme, saved drafts and templates and per
     assert.deepEqual(publishes, ["saved-studio"]);
     assert.ok(host.querySelector(".ptl-live-footer h2")?.textContent?.includes("Studio"));
     await React.act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Preview Bloom template"]')!.click());
+    assert.ok(host.querySelector(".ptl-preview-frame .portal-website"));
+    assert.equal(host.querySelector(".ptl-preview-frame .cpa-sidebar"), null);
+    await React.act(async () => host.querySelector<HTMLButtonElement>(".ptl-preview-frame .pws-account")!.click());
     assert.ok(host.querySelector(".ptl-preview-frame .cpa-metrics"));
     const orderLink = [...host.querySelectorAll<HTMLButtonElement>(".ptl-preview-frame .cpa-sidebar button")].find(button => button.textContent === "Orders")!;
     await React.act(async () => orderLink.click());
     assert.ok(host.querySelector(".ptl-preview-frame .cpa-order-steps"));
     assert.equal(host.querySelector(".ptl-preview-frame .cpa-metrics"), null);
   } finally { await React.act(async () => root.unmount()); host.remove(); }
+});
+
+
+test("section fields keep working after element edits and copied elements keep independent content", async () => {
+  const ui = await mount();
+  try {
+    await clickElement(ui.host, "hero", "heading");
+    await editField(ui.host, '[aria-label="Element text"]', "Original headline");
+    await ui.click("Duplicate element");
+    await editField(ui.host, '[aria-label="Element text"]', "Independent headline");
+    await ui.click("Back to section");
+    await editField(ui.host, '[aria-label="Section heading"]', "Revised headline");
+    assert.equal(ui.host.querySelector('.pws-hero [data-element-id="heading"] h1')?.textContent, "Revised headline");
+    assert.ok(ui.host.querySelector('.pws-hero')?.textContent?.includes("Independent headline"));
+    await ui.click("Duplicate section");
+    assert.deepEqual([...ui.host.querySelectorAll('.pws-hero h1')].map(node => node.textContent), ["Revised headline", "Independent headline", "Revised headline", "Independent headline"]);
+    await editField(ui.host, '[aria-label="Section name"]', "Alternate hero");
+    assert.equal(ui.host.querySelectorAll('.pws-hero')[1].querySelector("h1")?.textContent, "Revised headline");
+    assert.ok(ui.button("Alternate hero"));
+    await ui.click("Save");
+    const copied = ui.calls[0].design.website!.pages[0].sections[1];
+    assert.equal(copied.name, "Alternate hero");
+    assert.equal(copied.title, "Revised headline");
+    assert.equal(copied.blocks?.find(block => block.text === "Independent headline")?.binding, undefined);
+    await clickElement(ui.host, "hero", "heading");
+    await ui.click("Remove element");
+    assert.equal(ui.host.querySelector('[aria-label="Section heading"]'), null);
+  } finally { await ui.close(); }
+});
+
+test("all section presets expose working section content controls and interactive preview follows edited links", async () => {
+  const ui = await mount();
+  try {
+    for (const preset of websiteTools.websiteSectionTypes) {
+      await selectEditor(ui.host, "Section type", preset.value); await ui.click("Add section");
+      const section = [...ui.host.querySelectorAll<HTMLElement>('.pws-' + preset.value)].at(-1)!;
+      assert.ok(section, preset.label);
+      const heading = ui.host.querySelector<HTMLInputElement>('[aria-label="Section heading"]');
+      if (preset.value === "spacer") assert.equal(heading, null);
+      else { assert.ok(heading); await editField(ui.host, heading, "Custom " + preset.label); assert.ok(section.textContent?.includes("Custom " + preset.label)); }
+      if (["contact", "links", "columns", "gallery", "faq", "testimonials", "statistics", "logos", "products", "video", "spacer"].includes(preset.value)) assert.equal(ui.host.querySelector('[aria-label="Section button label"]'), null, preset.label);
+      if (preset.value === "slideshow") {
+        assert.equal(ui.host.querySelector('[aria-label="Section image URL"]'), null);
+        await clickElement(ui.host, "slideshow", "slide-2-heading");
+        await editField(ui.host, '[aria-label="Element text"]', "Independent slide");
+        await ui.click("Back to section");
+        await editField(ui.host, '[aria-label="Section heading"]', "First slide headline");
+        await editField(ui.host, '[aria-label="Section button label"]', "Read our story");
+        await selectEditor(ui.host, "Button destination", "pages/about");
+        assert.ok(section.textContent?.includes("First slide headline"));
+        assert.ok(section.textContent?.includes("Independent slide"));
+      }
+    }
+    await ui.click("Interact with preview");
+    assert.equal(ui.host.querySelector('.pws-element-edit'), null);
+    await ui.click("Read our story");
+    assert.equal(ui.host.querySelector<HTMLSelectElement>('[aria-label="Select portal page"]')?.value, "website/pages/about");
+    await ui.click("Customer account");
+    assert.ok(ui.host.querySelector('.cpa-sidebar'));
+    await ui.click("Return to editing");
+    await selectEditor(ui.host, "Select portal page", "website/home");
+    assert.ok(ui.host.querySelector('.pws-element-edit'));
+    await ui.click("Save");
+    assert.equal(designTools.portalDesignSchema.safeParse(ui.calls[0].design).success, true);
+  } finally { await ui.close(); }
+});
+
+test("brand, email and page cards stay live after nested edits, with manual content overrides preserved", async () => {
+  const ui = await mount();
+  const brandInput = () => [...ui.host.querySelectorAll('label')].find(label => label.textContent === "Brand name")!.querySelector<HTMLInputElement>('input')!;
+  try {
+    await clickElement(ui.host, "hero", "heading"); await editField(ui.host, '[aria-label="Element padding value"]', "4");
+    await clickElement(ui.host, "contact", "email"); await editField(ui.host, '[aria-label="Element padding value"]', "8");
+    await ui.click("Theme settings");
+    await editField(ui.host, brandInput(), "Wholesale Works");
+    await editField(ui.host, '.pb-panel input[type="email"]', "team@example.com");
+    assert.equal(ui.host.querySelector('.pws-eyebrow')?.textContent, "Wholesale Works · Business to business");
+    assert.ok(ui.host.querySelector('.pws-contact [data-element-id="email"]')?.textContent?.includes("team@example.com"));
+    await clickElement(ui.host, "hero", "eyebrow"); await editField(ui.host, '[aria-label="Element text"]', "Built for business");
+    await clickElement(ui.host, "contact", "email"); await editField(ui.host, '[aria-label="Element text"]', "Contact sales");
+    await ui.click("Theme settings"); await editField(ui.host, brandInput(), "Updated brand");
+    await editField(ui.host, '.pb-panel input[type="email"]', "new@example.com");
+    assert.equal(ui.host.querySelector('.pws-eyebrow')?.textContent, "Built for business");
+    assert.ok(ui.host.querySelector('.pws-contact [data-element-id="email"]')?.textContent?.includes("Contact sales"));
+    await clickElement(ui.host, "links", "page-about-heading"); await editField(ui.host, '[aria-label="Element padding value"]', "4");
+    await selectEditor(ui.host, "Select portal page", "website/pages/about");
+    await editField(ui.host, '.pb-panel input[maxlength="80"]', "About wholesale");
+    await toggleSetting(ui.host, "Visible in website");
+    assert.ok(ui.host.querySelector('.pws-text'), "Hidden pages remain editable in the theme preview");
+    await selectEditor(ui.host, "Select portal page", "website/home");
+    assert.equal(ui.host.querySelector('.pws-links [data-element-id="page-about"]'), null);
+    assert.equal(ui.host.querySelector('.pws-header nav')?.textContent?.includes("About wholesale"), false);
+    await clickElement(ui.host, "links", "heading"); await editField(ui.host, '[aria-label="Element padding value"]', "4");
+    await selectEditor(ui.host, "Select portal page", "website/pages/about"); await toggleSetting(ui.host, "Visible in website");
+    await selectEditor(ui.host, "Select portal page", "website/home");
+    assert.equal(ui.host.querySelector('.pws-links [data-element-id="page-about-heading"] h3')?.textContent, "About wholesale");
+    await ui.click("Save");
+    const publicDesign = websiteTools.publicWebsiteDesign(ui.calls[0].design);
+    assert.ok(JSON.stringify(publicDesign).includes("About wholesale"));
+    assert.ok(JSON.stringify(publicDesign).includes("Built for business"));
+    assert.ok(JSON.stringify(publicDesign).includes("Contact sales"));
+  } finally { await ui.close(); }
+});
+
+test("FAQ nested layout, responsive overrides and numeric fields apply and survive saving", async () => {
+  const ui = await mount();
+  try {
+    await selectEditor(ui.host, "Section type", "faq"); await ui.click("Add section");
+    await clickElement(ui.host, "faq", "question-1");
+    await selectEditor(ui.host, "Nested element type", "heading"); await ui.click("Add nested element");
+    await editField(ui.host, '[aria-label="Font size value"]', "");
+    await editField(ui.host, '[aria-label="Font size value"]', "4");
+    assert.equal(ui.host.querySelector<HTMLInputElement>('[aria-label="Font size value"]')?.value, "4");
+    await editField(ui.host, '[aria-label="Font size value"]', "44");
+    const nested = ui.host.querySelector<HTMLElement>('.pws-faq-item .pws-element-children>.pws-element')!;
+    assert.equal(nested.style.fontSize, "44px");
+    await ui.click("Reset typography"); assert.equal(nested.style.fontSize, "");
+    await clickElement(ui.host, "faq", "question-1");
+    await editField(ui.host, '[aria-label="Columns value"]', "2");
+    await editField(ui.host, '[aria-label="Element mobile columns value"]', "2");
+    await editField(ui.host, '[aria-label="Element gap value"]', "12");
+    const faq = ui.host.querySelector<HTMLElement>('.pws-faq [data-element-id="question-1"]')!;
+    assert.equal(faq.style.getPropertyValue('--pws-block-columns'), "2");
+    assert.equal(faq.style.getPropertyValue('--pws-block-mobile-columns'), "2");
+    assert.equal(faq.style.getPropertyValue('--pws-element-gap'), "12px");
+    assert.ok(faq.querySelector('.pws-faq-item>.pws-element-children') === null);
+    assert.ok(faq.querySelector('.pws-faq-item>div>.pws-element-children>.pws-element-heading'));
+    await ui.click("Back to section");
+    await editField(ui.host, '[aria-label="Mobile section height value"]', "400");
+    assert.equal(ui.host.querySelector('.pws-faq')?.getAttribute('data-mobile-height'), "true");
+    assert.equal(ui.host.querySelector<HTMLElement>('.pws-faq')?.style.getPropertyValue('--pws-mobile-height'), "400px");
+    await ui.click("Save");
+    const section = ui.calls[0].design.website!.pages[0].sections.at(-1)!;
+    assert.equal(section.style?.mobileHeight, 400);
+    assert.equal(section.blocks?.find(block => block.id === "question-1")?.style?.mobileColumns, 2);
+  } finally { await ui.close(); }
+});
+
+test("slideshow autoplay advances in preview and stops during element editing and when disabled", async () => {
+  const timers = new Map<number, () => void>(); let id = 0;
+  const originalSet = window.setInterval, originalClear = window.clearInterval;
+  window.setInterval = ((callback: () => void, delay: number) => { assert.equal(delay, 5000); timers.set(++id, callback); return id; }) as typeof window.setInterval;
+  window.clearInterval = (timer: number) => { timers.delete(timer); };
+  const ui = await mount();
+  try {
+    await selectEditor(ui.host, "Section type", "slideshow"); await ui.click("Add section");
+    await toggleSetting(ui.host, "Auto-rotate slides"); assert.equal(timers.size, 1);
+    await React.act(async () => { [...timers.values()][0](); });
+    const slides = [...ui.host.querySelectorAll<HTMLElement>('[aria-roledescription="slide"]')];
+    assert.equal(slides[1].hidden, false);
+    await clickElement(ui.host, "slideshow", "slide-2-heading"); assert.equal(timers.size, 0);
+    await ui.click("Back to section"); assert.equal(timers.size, 1);
+    await toggleSetting(ui.host, "Auto-rotate slides"); assert.equal(timers.size, 0);
+  } finally { await ui.close(); window.setInterval = originalSet; window.clearInterval = originalClear; }
+});
+
+test("invalid input blocks saving and failed saves preserve editable drafts for retry", async () => {
+  const options = { saveError: "Connection interrupted. Try again." };
+  const ui = await mount(true, options);
+  try {
+    await ui.click("Theme settings");
+    await editField(ui.host, '[aria-label="Brand color hex code"]', "#nope");
+    await ui.click("Save"); assert.equal(ui.calls.length, 0); assert.ok(ui.host.querySelector('[role="alert"]'));
+    await editField(ui.host, '[aria-label="Brand color hex code"]', "#123456");
+    await ui.click("Save"); assert.equal(ui.calls.length, 1);
+    assert.equal(ui.host.querySelector('[role="alert"]')?.textContent, options.saveError);
+    assert.equal(ui.button("Save").disabled, false);
+    options.saveError = ""; await ui.click("Save"); assert.equal(ui.calls.length, 2);
+    assert.equal(ui.calls[1].revision, 0);
+    assert.equal(ui.calls[1].design.accent, "#123456");
+    assert.ok(ui.host.textContent?.includes("All changes saved"));
+  } finally { await ui.close(); }
 });

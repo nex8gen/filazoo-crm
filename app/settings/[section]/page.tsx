@@ -36,7 +36,7 @@ async function SettingsWorkspace({ params }: SettingsPageProps) {
     case "appearance": return <AppearanceSection />;
     case "email": return <EmailSection />;
     case "profile": return <ProfileSection viewer={viewer} />;
-    case "security": return <SecuritySection viewer={viewer} />;
+    case "security": return <SecuritySection />;
     case "invoices": return <InvoicesSection viewer={viewer} />;
     case "team": return <TeamSection viewer={viewer} />;
     case "ai": return <AiSection viewer={viewer} />;

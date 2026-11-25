@@ -2,6 +2,7 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { randomUUID } from "node:crypto";
 import { requireViewer, requireWorkspaceMember } from "@/lib/auth";
 import { createSupabaseControl } from "@/lib/supabase/control";
@@ -39,5 +40,7 @@ export async function renameWorkspace(_state: WorkspaceActionState, formData: Fo
   const name = workspaceNameSchema.safeParse(formData.get("name"));
   if (!name.success) return { error: name.error.issues[0].message };
   const { error } = await createSupabaseControl().from("workspaces").update({ name: name.data, updated_at: new Date().toISOString() }).eq("id", viewer.workspaceId);
-  return error ? { error: "Unable to update the workspace." } : { success: "Workspace name updated." };
+  if (error) return { error: "Unable to update the workspace." };
+  revalidatePath("/", "layout");
+  return { success: "Workspace name updated." };
 }

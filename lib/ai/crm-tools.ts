@@ -75,8 +75,8 @@ export const preparedCrmActionSchema = crmActionSchema.extend({ target: text(300
 export type PreparedCrmAction = z.infer<typeof preparedCrmActionSchema>;
 
 export const crmReadSchema = z.object({
-  resource: z.enum(["companies", "products", "orders", "invoices", "quotations", "flows", "tasks", "alerts", "catalogs", "messages", "members", "mailboxes", "settings", "segments", "inventory", "auto_replies", "business_facts", "reply_requests", "ai_settings", "email_footer", "scheduled_emails", "email_drafts", "task_workflows", "invoice_portal"]),
-  query: z.string().trim().max(100).default(""), id: text(512).optional(), companyId: z.uuid().optional(), offset: z.number().int().min(0).max(1000).default(0),
+  resource: z.enum(["companies", "customer_insights", "products", "orders", "invoices", "quotations", "flows", "tasks", "alerts", "catalogs", "messages", "members", "mailboxes", "settings", "segments", "inventory", "auto_replies", "business_facts", "reply_requests", "ai_settings", "email_footer", "scheduled_emails", "email_drafts", "task_workflows", "invoice_portal"]),
+  query: z.string().trim().max(100).default(""), id: text(512).optional(), companyId: z.uuid().optional(), offset: z.number().int().min(0).max(100_000).default(0),
 }).strict();
 export type CrmRead = z.infer<typeof crmReadSchema>;
 export function extractCrmRead(output: string) {

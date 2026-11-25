@@ -68,4 +68,19 @@ test("Home backdrop follows the active route even when cached Home children rema
   pathname = "/";
   assert.equal(frame(exports.AppShell({ children: cachedHome }))?.props?.["data-home"], true,
     "a retained company segment cannot override the actual page after closing");
+
+  companySegment = null;
+  segments = ["customer-portal", "themes", "current"];
+  for (const path of ["/customer-portal/themes/current", "/customer-portal/themes/saved-studio"]) {
+    pathname = path;
+    const editor = exports.AppShell({ children: cachedHome });
+    assert.equal(frame(editor), undefined, "theme editors bypass the CRM frame and sidebar");
+    assert.equal(editor.props?.id, "workspace-content");
+    assert.match(String(editor.props?.className), /\bh-dvh\b/);
+    assert.equal(editor.props?.children, cachedHome, "the editor renders directly in the full viewport");
+  }
+  for (const path of ["/customer-portal", "/customer-portal/domains", "/companies"]) {
+    pathname = path;
+    assert.ok(frame(exports.AppShell({ children: cachedHome })), "leaving the editor restores the CRM frame");
+  }
 });

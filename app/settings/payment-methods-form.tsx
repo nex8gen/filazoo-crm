@@ -20,7 +20,8 @@ import { useUnsavedSettings } from "./use-unsaved-settings";
 export function PaymentMethodsForm({ initial, canManage }: { initial: InvoicePaymentMethod[]; canManage: boolean }) {
   const [methods, setMethods] = useState(initial);
   const [savedMethods, setSavedMethods] = useState(initial);
-  useUnsavedSettings(canManage && JSON.stringify(methods) !== JSON.stringify(savedMethods));
+  const dirty = JSON.stringify(methods) !== JSON.stringify(savedMethods);
+  useUnsavedSettings(canManage && dirty);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -77,7 +78,7 @@ export function PaymentMethodsForm({ initial, canManage }: { initial: InvoicePay
       {canManage ? <div className="flex flex-wrap gap-3"><Button type="button" variant="outline" disabled={methods.length >= 10} onClick={() => {
         const id = crypto.randomUUID();
         setMethods((old) => [...old, { id, type: "bank_transfer", label: "Bank transfer", currency: "", details: "", paymentUrl: "", bankDetails: { beneficiaryName: "", accountNumber: "", swift: "", bankName: "" } }]); setEditingId(id); setNotice("");
-      }}><Plus />Add payment method</Button><Button type="submit">{busy ? "Saving…" : "Save payment methods"}</Button></div> : null}
+      }}><Plus />Add payment method</Button><Button type="submit" disabled={!dirty}>{busy ? "Saving…" : "Save payment methods"}</Button>{dirty ? <Button type="button" variant="ghost" onClick={() => { setMethods(savedMethods); setEditingId(null); setError(""); setNotice(""); }}>Discard changes</Button> : null}</div> : null}
     </fieldset>
     {error ? <NotificationToast>{error}</NotificationToast> : null}
     {notice ? <NotificationToast tone="message">{notice}</NotificationToast> : null}

@@ -40,6 +40,12 @@ function recordLink(resource: ResponseSection["id"], id: string) {
 
 /** Values and charts come only from completed permission-scoped reads, never model prose. */
 export function buildRecordPresentation(evidence: readonly RecordEvidence[], userText: string, now = new Date()): ResponsePresentation | undefined {
+  evidence = evidence.map(item => item.resource === "customer_insights" ? {
+    ...item, resource: "companies", records: item.records.map(value => {
+      const row = object(value), profile = object(row.profile);
+      return { ...row, account: { next_followup_at: profile.nextFollowupAt } };
+    }),
+  } : item);
   const today = date(now.toISOString());
   const groups = new Map<ResponseSection["id"], RecordEvidence[]>();
   for (const item of evidence) {

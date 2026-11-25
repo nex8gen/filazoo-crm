@@ -1,7 +1,8 @@
 .settings-workspace { display: flex; min-height: 100%; flex-direction: column; background: var(--workspace-frame); }
-.settings-main { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; background: var(--background); }
+.settings-main { --settings-page-gutter: 1.25rem; --settings-page-width: 64rem; display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; background: var(--background); }
+.settings-main > .workspace-page-header { width: min(var(--settings-page-width), calc(100% - 2 * var(--settings-page-gutter))); margin-inline: auto; padding-inline: 0; }
 .settings-scroll-content { min-height: 0; min-width: 0; padding: 1rem 1.25rem 2rem; container-type: inline-size; }
-.settings-content { width: 100%; max-width: 64rem; margin-inline: 0; }
+.settings-content { width: 100%; max-width: 64rem; margin-inline: auto; }
 .settings-content > [data-slot="card"], .settings-content > div > [data-slot="card"] { max-width: none; }
 .settings-content [data-slot="card"] { --card-spacing: 1.25rem; border: 1px solid var(--border); border-radius: .75rem; box-shadow: none; --tw-ring-color: transparent; }
 .settings-content [data-slot="card-header"] { gap: .375rem; padding-bottom: 0; }
@@ -97,7 +98,7 @@
   .settings-navigation { position: relative; isolation: isolate; width: 100%; height: 100%; min-height: 0; }
   .settings-mobile-toggle { display: none; }
   .settings-menu, .settings-menu.is-expanded { display: block; flex: 1; overflow-y: auto; overscroll-behavior-y: contain; padding: 0 0 1.5rem; scrollbar-width: thin; }
-  .settings-main { height: 100%; overflow: hidden; border: 1px solid var(--workspace-frame-border); border-radius: 1rem; box-shadow: 0 1px 2px rgb(0 0 0 / 4%); }
+  .settings-main { --settings-page-gutter: 1.5rem; height: 100%; overflow: hidden; border: 1px solid var(--workspace-frame-border); border-radius: 1rem; box-shadow: 0 1px 2px rgb(0 0 0 / 4%); }
   .settings-scroll-content { flex: 1; overflow-y: auto; overscroll-behavior-y: contain; padding: 1rem 1.5rem 2rem; scrollbar-width: thin; }
 }
 
@@ -121,9 +122,8 @@ html[data-reduce-motion="true"] :is(.settings-navigation-frame, .settings-naviga
 .settings-account-context { padding: 0 .5rem 1rem; color: var(--muted-foreground); overflow-wrap: anywhere; font-size: var(--ui-text-meta); }
 .settings-nav-group + .settings-nav-group { margin-top: 1.25rem; }
 .settings-group-title { margin: 0 .5rem .5rem; color: var(--muted-foreground); font-size: var(--ui-text-caption); font-weight: 400; letter-spacing: 0; }
-.settings-section-intro { max-width: 64rem; padding: 0 0 1.25rem; }
-.settings-section-intro p { margin-top: .5rem; color: var(--muted-foreground); font-size: var(--ui-text-meta); line-height: 1.25rem; }
-.settings-scope { display: inline-block; border-radius: .375rem; padding: .25rem .5rem; background: var(--workspace-frame); color: var(--muted-foreground); font-size: var(--ui-text-caption); line-height: 1.125rem; }
+.settings-section-intro { max-width: 64rem; margin-inline: auto; padding: 0 0 1.25rem; }
+.settings-section-intro p { color: var(--muted-foreground); font-size: var(--ui-text-meta); line-height: 1.25rem; }
 .settings-main .settings-content { max-width: 64rem !important; }
 .settings-main .settings-appearance { display: grid; grid-template-columns: minmax(0, 1fr); max-width: 64rem !important; }
 .settings-content :is(section, [data-slot="card"])[id] { scroll-margin-top: 1rem; }

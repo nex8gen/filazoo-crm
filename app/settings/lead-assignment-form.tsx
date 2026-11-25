@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { assignmentCapacity, leadAssignmentSettingsSchema, nextAssignment, type LeadAssignmentView } from "@/lib/lead-assignment-settings";
 import { updateLeadAssignmentSettings } from "./lead-assignment-actions";
+import { useUnsavedSettings } from "./use-unsaved-settings";
 
 function draftOf(view: LeadAssignmentView) {
   return { enabled: view.enabled, strategy: view.strategy, workload: view.workload, members: view.members.map(member => ({ ...member, limit: member.capacity === null ? "" : String(member.capacity) })) };
@@ -25,6 +26,7 @@ export function LeadAssignmentForm({ initial }: { initial: LeadAssignmentView })
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const dirty = JSON.stringify(draft) !== JSON.stringify(draftOf(saved));
+  useUnsavedSettings(dirty);
   const preview = nextAssignment({ ...saved, ...draft, members: draft.members.map(member => ({ ...member, capacity: assignmentCapacity(member.limit) })) });
   const available = draft.members.filter(member => member.activated && member.enabled && (member.limit === "" || member[draft.workload === "open" ? "open" : "total"] < Number(member.limit))).length;
   function change(next: typeof draft) { if (saving.current) return; setDraft(next); setError(""); setSuccess(false); }

@@ -473,6 +473,28 @@ test("customer image questions use authorized records and retain image context i
   assert.match((await response.json()).output, /12345/);
 });
 
+test("customer status analysis loads combined evidence and requests a detailed reasoning-capable response", async () => {
+  let insightReads = 0;
+  const post = route("../app/api/companies/[id]/chat/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer },
+    "@/lib/data/crm": { getCompanyDetails: async () => ({ details: { company: {} } }) },
+    "@/lib/ai/company-chat": { ...companyChat, buildCompanyChatContext: () => ({ context: { coverage: {} }, sources: [] }), buildCompanyChatPrompt: () => "Customer timeline" },
+    "@/lib/ai/customer-intelligence-records": { readCustomerInsights: async (_viewer: unknown, lookup: { companyId: string }) => {
+      assert.equal(lookup.companyId, id); insightReads++;
+      return { records: [{ id, email: { messages: 12, conversations: 3, records: [{ subject: "Confirmed quantity", href: "/email?thread=proof" }] } }], coverage: { matching: 1, included: 1, billingAvailable: true } };
+    } },
+    "@/lib/ai/gateway": { generateGatewayText: async (options: { prompt: string; maxOutputTokens: number; complex: boolean }) => {
+      assert.equal(options.maxOutputTokens, 5000); assert.equal(options.complex, true);
+      assert.match(options.prompt, /CUSTOMER_INTELLIGENCE/); assert.match(options.prompt, /Confirmed quantity/);
+      return "12 messages across 3 conversations support this account brief.";
+    } },
+  }, { AI_GATEWAY_API_KEY: "test" });
+  const response = await post(request({ messages: [{ role: "user", content: "Find this customer current status and analyze the sales" }] }), { params: Promise.resolve({ id }) });
+  assert.equal(response.status, 200); assert.equal(insightReads, 1);
+  const result = await response.json();
+  assert.equal(result.coverage.customerIntelligence.billingAvailable, true);
+});
+
 test("agent reads email results before preparing customer updates and discards premature actions", async () => {
   const proposed = { type: "update_company", companyId: id, sourceEmailId: "mail-1", changes: { commerce: { shippingAddress: "99 New Road" } } };
   let generated = 0;
@@ -515,7 +537,7 @@ test("email lookup failures, invalid requests and repeated reads never save part
     const body = await response.json();
     assert.deepEqual(body.actions, []);
     assert.equal(prepares, 0);
-    assert.equal(reads, scenario === "limit" || scenario === "analyze" ? 2 : scenario === "failure" ? 1 : 0);
+    assert.equal(reads, scenario === "limit" || scenario === "analyze" ? 12 : scenario === "failure" ? 1 : 0);
     assert.ok(!body.output.includes("FILAZOO_"));
     assert.ok(!body.output.includes("Private mailbox detail"));
   }
@@ -617,7 +639,7 @@ test("batch failures, budget exhaustion and Chat never prepare partial actions",
     }, { AI_GATEWAY_API_KEY: "synthetic" });
     const response = await post(request({ mode: scenario === "analyze" ? "analyze" : "work", pathname: "/tasks", pageLabel: "Tasks", pageText: "", messages: [{ role: "user", content: "Check tasks, inventory and segments" }] }));
     const body = await response.json();
-    assert.equal(prepared, 0); assert.equal(reads, 3); assert.deepEqual(body.actions, []);
+    assert.equal(prepared, 0); assert.equal(reads, scenario === "failure" ? 3 : 23); assert.deepEqual(body.actions, []);
     assert.doesNotMatch(body.output, /Private|FILAZOO_/);
   }
 });
@@ -649,7 +671,7 @@ test("CRM read failures and read budgets never create partial mutations in Chat 
     }, { AI_GATEWAY_API_KEY: "synthetic" });
     const response = await post(request({ mode: scenario === "analyze" ? "analyze" : "work", pathname: "/products", pageLabel: "Products", pageText: "", messages: [{ role: "user", content: "Find PLA" }] }));
     const body = await response.json();
-    assert.deepEqual(body.actions, []); assert.equal(preparations, 0); assert.equal(reads, scenario === "failure" ? 1 : 4);
+    assert.deepEqual(body.actions, []); assert.equal(preparations, 0); assert.equal(reads, scenario === "failure" ? 1 : 24);
     assert.ok(!body.output.includes("Private connection error")); assert.ok(!body.output.includes("FILAZOO_"));
   }
 });

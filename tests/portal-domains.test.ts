@@ -144,6 +144,9 @@ test("custom hosts serve customer routes and the welcome page, while staff, lega
   let status = "connected";
   const api = load<typeof import("../proxy.ts")>("proxy.ts", { "@/lib/portal-domains": domains, "@/lib/data/portal-domain-routing": { findPortalDomain: async (hostname: string) => hostname === "portal.example.com" ? { workspace_id: "tenant-a", status } : null }, "@/lib/supabase/proxy": { updateSession: async () => new Response("customer") } });
   assert.equal((await api.proxy(new NextRequest("https://portal.example.com/"))).headers.get("x-middleware-rewrite"), "https://portal.example.com/customer/domain");
+  for (const path of ["/account", "/pages/about", "/pages/contact"]) {
+    assert.equal((await api.proxy(new NextRequest(`https://portal.example.com${path}`))).headers.get("x-middleware-rewrite"), `https://portal.example.com/customer/domain${path}`);
+  }
   assert.equal((await api.proxy(new NextRequest("https://portal.example.com/customer/invoices/id"))).status, 200);
   for (const path of ["/login", "/companies", "/api/invoices", "/customer/legacy/id"]) assert.equal((await api.proxy(new NextRequest(`https://portal.example.com${path}`))).status, 404);
   status = "pending_ssl"; assert.equal((await api.proxy(new NextRequest("https://portal.example.com/"))).status, 404);

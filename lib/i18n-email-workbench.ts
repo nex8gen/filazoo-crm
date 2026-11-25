@@ -1,4 +1,7 @@
 export const zhCNEmailWorkbench: Record<string, string> = {
+  "Preparing your reply…": "正在准备回复…",
+  "Dismiss reply error": "关闭回复错误提示",
+  "Reply to the latest email first. AI follow-up is available after you send.": "请先回复最新邮件。发送后即可使用 AI 跟进。",
   "Loading customer details…": "正在加载客户信息…",
   "Owner not loaded": "负责人信息尚未加载",
   "Customer details unavailable": "暂时无法加载客户信息",

@@ -1,7 +1,7 @@
 export const analyticsChannels = ["meta", "store", "partner", "direct", "mixed", "other"] as const;
 export type AnalyticsChannel = typeof analyticsChannels[number];
 export const channelLabels: Record<AnalyticsChannel, string> = { meta: "Meta", store: "Shopify", partner: "Partner / referral", direct: "Direct / email", mixed: "Multiple sources", other: "Unattributed" };
-export type AnalyticsCompany = { id: string; name: string; createdAt: string; channel: AnalyticsChannel; ownerId: string | null; nextFollowupAt: string | null };
+export type AnalyticsCompany = { id: string; name: string; createdAt: string; channel: AnalyticsChannel; ownerId: string | null };
 export type AnalyticsInvoice = { id: string; companyId: string | null; number: number; status: string; currency: string; issueDate: string; dueDate: string; totalMinor: number; paidMinor: number };
 export type AnalyticsInputs = {
   companies: AnalyticsCompany[];
@@ -10,17 +10,21 @@ export type AnalyticsInputs = {
   orders: { id: string; companyId: string; date: string; currency: string; status: string; totalMinor: number }[];
   catalogs: { id: string; companyId: string; createdAt: string; currency: string; productSkus: string[] }[];
   products: { sku: string; name: string }[];
-  emails: { id: string; companyId: string | null; date: string; direction: string; status: string }[];
-  messages: { id: string; date: string; direction: string; status: string }[];
-  tasks: { id: string; title: string; companyId: string | null; status: string; dueAt: string | null; completedAt: string | null }[];
-  flows: { id: string; name: string; status: string }[];
-  runs: { id: string; flowId: string; startedAt: string; status: string }[];
-  ai: { id: string; date: string; tokens: number; cost: number; success: boolean }[];
-  inventory: { configured: boolean; stale: boolean; lastSyncedAt: string | null; error: boolean; tracked: number; unavailable: number };
 };
 export type AnalyticsSource = { id: keyof AnalyticsInputs | "members"; label: string; ok: boolean; count: number };
 export type AnalyticsDashboardData = AnalyticsInputs & { sources: AnalyticsSource[]; currencies: string[]; owners: { id: string; name: string }[]; minDate: string; maxDate: string; asOf: string };
 export type AnalyticsFiltersValue = { from: string; to: string; channel: AnalyticsChannel | "all"; owner: string; currency: string; comparison: "previous_period" | "previous_year" | "none" };
+export type AnalyticsSeriesPoint = {
+  date: string;
+  endDate: string;
+  companies: number;
+  orders: number;
+  orderValue: number;
+  invoiced: number;
+  collected: number;
+  averageOrderValue: number | null;
+};
+export type AnalyticsSeriesMetric = Exclude<keyof AnalyticsSeriesPoint, "date" | "endDate">;
 
 export function analyticsChannelForSource(source: string | null | undefined): AnalyticsChannel {
   const value = source?.trim().toLowerCase() ?? "";
@@ -77,15 +81,12 @@ export function computeAnalytics(data: AnalyticsDashboardData, filters: Analytic
     const payments = data.payments.filter(row => invoiceMap.get(row.invoiceId)?.status === "issued" && inRange(row.paidOn, range));
     const periodOrders = orders.filter(row => inRange(row.date, range));
     const catalogs = data.catalogs.filter(row => matchesCompany(row.companyId) && row.currency === filters.currency && inRange(row.createdAt, range));
-    const emails = data.emails.filter(row => matchesCompany(row.companyId) && inRange(row.date, range));
-    const runs = data.runs.filter(row => inRange(row.startedAt, range));
-    const messages = data.messages.filter(row => inRange(row.date, range));
-    const ai = data.ai.filter(row => inRange(row.date, range));
-    return { companies, periodInvoices, payments, periodOrders, catalogs, emails, runs, messages, ai,
+    return { companies, periodInvoices, payments, periodOrders, catalogs,
       newCompanies: companies.length, invoiced: sum(periodInvoices, row => row.totalMinor), collected: sum(payments, row => row.amountMinor),
       orderValue: sum(periodOrders, row => row.totalMinor) };
   };
-  const current = period(filters), previous = period(previousRange(filters));
+  const comparisonRange = previousRange(filters);
+  const current = period(filters), previous = period(comparisonRange);
   const channels = analyticsChannels.map(channel => {
     const rows = current.companies.filter(row => row.channel === channel);
     return { channel, count: rows.length };
@@ -94,20 +95,38 @@ export function computeAnalytics(data: AnalyticsDashboardData, filters: Analytic
   const productCounts = new Map<string, number>();
   for (const catalog of current.catalogs) for (const sku of new Set(catalog.productSkus)) productCounts.set(sku, (productCounts.get(sku) ?? 0) + 1);
   const topProducts = [...productCounts].map(([sku, count]) => ({ sku, name: productNames.get(sku) ?? sku, count })).sort((a, b) => b.count - a.count || a.sku.localeCompare(b.sku)).slice(0, 5);
-  const days = Math.round((Date.parse(filters.to) - Date.parse(filters.from)) / 86400000) + 1;
-  const bucketSize = Math.max(1, Math.ceil(days / 90));
-  const series = Array.from({ length: Math.ceil(days / bucketSize) }, (_, index) => ({ date: shiftDay(filters.from, index * bucketSize), companies: 0, collected: 0 }));
-  const bucket = (date: string) => Math.floor(Math.round((Date.parse(analyticsDay(date)) - Date.parse(filters.from)) / 86400000) / bucketSize);
-  for (const row of current.companies) { const point = series[bucket(row.createdAt)]; if (point) point.companies++; }
-  for (const row of current.payments) { const point = series[bucket(row.paidOn)]; if (point) point.collected += row.amountMinor / 100; }
-  const openTasks = data.tasks.filter(row => row.status === "open");
-  const overdueTasks = openTasks.filter(row => row.dueAt && Date.parse(row.dueAt) < Date.parse(data.asOf)).sort((a, b) => Date.parse(a.dueAt!) - Date.parse(b.dueAt!));
-  const followups = matching.filter(row => row.nextFollowupAt && Date.parse(row.nextFollowupAt) < Date.parse(data.asOf));
-  const flowRows = data.flows.map(flow => ({ ...flow, active: data.runs.filter(row => row.flowId === flow.id && row.status === "active").length, failed: current.runs.filter(row => row.flowId === flow.id && row.status === "failed").length, done: current.runs.filter(row => row.flowId === flow.id && row.status === "done").length }));
-  return { current, previous, channels, series, topProducts, receivables, overdueInvoices,
+  const dayCount = (range: { from: string; to: string }) => (Date.parse(range.to) - Date.parse(range.from)) / 86400000 + 1;
+  const bucketSize = Math.max(1, Math.ceil(Math.max(dayCount(filters), dayCount(comparisonRange)) / 90));
+  function trendSeries(rows: typeof current, range: { from: string; to: string }): AnalyticsSeriesPoint[] {
+    const start = Date.parse(range.from);
+    const days = dayCount(range);
+    const buckets = Array.from({ length: Math.ceil(days / bucketSize) }, (_, index) => ({
+      date: shiftDay(range.from, index * bucketSize),
+      endDate: shiftDay(range.from, Math.min((index + 1) * bucketSize, days) - 1),
+      companies: 0, orders: 0, orderMinor: 0, invoicedMinor: 0, collectedMinor: 0,
+    }));
+    const bucket = (date: string) => buckets[Math.floor((Date.parse(analyticsDay(date)) - start) / (86400000 * bucketSize))];
+    for (const row of rows.companies) bucket(row.createdAt).companies++;
+    for (const row of rows.periodInvoices) bucket(row.issueDate).invoicedMinor += row.totalMinor;
+    for (const row of rows.payments) bucket(row.paidOn).collectedMinor += row.amountMinor;
+    for (const row of rows.periodOrders) {
+      const point = bucket(row.date);
+      point.orders++;
+      point.orderMinor += row.totalMinor;
+    }
+    return buckets.map(({ date, endDate, companies, orders, orderMinor, invoicedMinor, collectedMinor }) => ({
+      date, endDate, companies, orders,
+      orderValue: orderMinor / 100,
+      invoiced: invoicedMinor / 100,
+      collected: collectedMinor / 100,
+      averageOrderValue: orders ? orderMinor / (100 * orders) : null,
+    }));
+  }
+  const series = trendSeries(current, filters);
+  const previousSeries = filters.comparison === "none" ? [] : trendSeries(previous, comparisonRange);
+  return { current, previous, channels, series, previousSeries, topProducts, receivables, overdueInvoices,
     outstanding: sum(receivables, row => row.totalMinor - row.paidMinor), overdue: sum(overdueInvoices, row => row.totalMinor - row.paidMinor),
-    openTasks, overdueTasks, followups, flowRows, companyMap,
-    completedTasks: data.tasks.filter(row => row.status === "done" && row.completedAt && inRange(row.completedAt, filters)).length };
+    companyMap };
 }
 export function analyticsChange(current: number, previous: number): number | null {
   return previous === 0 ? (current === 0 ? 0 : null) : ((current - previous) / Math.abs(previous)) * 100;
