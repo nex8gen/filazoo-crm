@@ -11,6 +11,7 @@ export function HomeSkeleton() {
         <Skeleton className="size-6 justify-self-end" />
       </div>
       <div className="home-ai">
+        <div className="home-connect-tools"><Skeleton className="h-9 w-64 max-w-full rounded-full" /></div>
         <div className="home-ai-welcome"><Skeleton className="mx-auto mb-4 size-12 rounded-xl" /><Skeleton className="mx-auto h-9 w-72 max-w-full" /><Skeleton className="mx-auto mt-2.5 h-5 w-60 max-w-full" /></div>
         <Skeleton className="mx-auto h-32 w-full max-w-[640px] rounded-[20px]" />
         <div className="home-ai-suggestions">

@@ -6,6 +6,29 @@ import { normalizeMailboxRows } from "../mailbox-utils.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 import { mailboxSyncKey, loadMailboxMessageContent, savedProviderFolders } from "./mailbox-sync.ts";
 
+/** Batch the same saved-company authorization for AI population pages. */
+export async function getCompanyEmailScopes(viewer: WorkspaceViewer, companyIds: string[]): Promise<CompanyEmailScope[]> {
+  if (!companyIds.length) return [];
+  const db = createSupabaseAdmin();
+  let query = db.from("companies").select(viewer.role === "bd_manager" ? "id,name,pipeline!inner(owner_id)" : "id,name").in("id", companyIds);
+  if (viewer.role === "bd_manager") query = query.eq("pipeline.owner_id", viewer.id);
+  const { data: companies } = await query.throwOnError();
+  if (companies?.length !== new Set(companyIds).size) throw new Error("Company unavailable.");
+  const { data: staffMailboxes } = await db.from("workspace_mailboxes").select("email,imap_username").throwOnError();
+  const staff = new Set((staffMailboxes ?? []).flatMap(row => [row.email, row.imap_username])
+    .flatMap(address => address?.trim() ? [address.trim().toLowerCase()] : []));
+  const addresses = new Map<string, string[]>();
+  for (let offset = 0; ; offset += 500) {
+    const { data } = await db.from("contacts").select("company_id,email").in("company_id", companyIds).order("id").range(offset, offset + 499).throwOnError();
+    for (const contact of data ?? []) {
+      const address = contact.email?.trim();
+      if (address && !staff.has(address.toLowerCase())) addresses.set(contact.company_id, [...addresses.get(contact.company_id) ?? [], address]);
+    }
+    if ((data?.length ?? 0) < 500) break;
+  }
+  return ((companies ?? []) as unknown as { id: string; name: string }[]).map(company => ({ id: company.id, name: company.name, emails: addresses.get(company.id) ?? [] }));
+}
+
 /** Recheck the saved company and assignment; client-supplied addresses never grant access. */
 export async function getCompanyEmailScope(viewer: WorkspaceViewer, companyId: string): Promise<CompanyEmailScope | null> {
   const db = createSupabaseAdmin();

@@ -69,7 +69,7 @@ for (const surface of ["home", "analytics"] as const) for (const mode of ["chat"
       "@/components/column-resize-handle": { ColumnResizeHandle: ResizeHandle },
       "@/components/ai-history-menu": { AiHistoryMenu: HistoryMenu },
       "@/components/ui/ai-agent-response": { StreamingText, ThinkingState },
-      "@/components/ui/ai-image-attachments": { useAiImageAttachments: () => ({ images: [], processing: false, clear() {}, setImages() {} }) },
+      "@/components/ui/ai-image-attachments": { useAiImageAttachments: () => ({ images: [], files: [], setFiles() {}, processing: false, clear() {}, setImages() {} }) },
       "@/lib/ai/chat-history": history, "@/lib/ai/research-request": researchRequest, "@/lib/ai/research-progress": researchProgress,
       "@/lib/ai/response-presentation": responsePresentation,
       "@/lib/ai/session-recovery-fetch": { ...sessionRecovery, fetchWithSessionRecovery: (url: string, init: RequestInit, options: Parameters<typeof sessionRecovery.fetchWithSessionRecovery>[2]) => sessionRecovery.fetchWithSessionRecovery(url, init, { ...options, wait: async () => {} }) }, "@/lib/workspace-session-response": sessionResponse,

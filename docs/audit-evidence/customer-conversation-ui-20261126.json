@@ -1,0 +1,27 @@
+{
+  "checkedOn": "2026-11-26",
+  "timezone": "Asia/Shanghai",
+  "verified": true,
+  "behavior": "Customer AI answers include compact sender, subject and date rows. Expanding a row loads only the selected authorized exchange as plain text. Company cards, tables, exports and snapshot text are omitted from this conversation block.",
+  "liveVerification": {
+    "customer": "Carraro personalizados",
+    "conversations": 2,
+    "sentReplyListed": true,
+    "sentAt": "2026-11-26T01:39:49.000Z",
+    "expansionStatus": 200,
+    "loadedMessagesInSelectedThread": 1,
+    "genericSections": 0,
+    "modelCalls": 0,
+    "emailsSent": 0
+  },
+  "checks": {
+    "focusedTestsPassed": 162,
+    "focusedTestsFailed": 0,
+    "typecheck": "passed",
+    "eslint": "passed",
+    "componentRendering": "Passed: dates in Shanghai time, compact rows, lazy expansion, loaded-content reuse and plain-text email safety.",
+    "access": "Passed: authentication, current company/thread authorization, policy settings, cross-origin rejection and private no-store responses.",
+    "savedAnswers": "Passed: workspace and customer-profile chat save the conversation presentation with the answer.",
+    "browserVisualCheck": "Unavailable: browser access host and native computer connection were unavailable in this session."
+  }
+}

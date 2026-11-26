@@ -4,14 +4,14 @@ import type { WorkspaceViewer } from "../auth";
 import { requireAiData } from "../data/ai-settings";
 import { createSupabaseAdmin } from "../supabase/admin";
 import { threadKeyForEmail } from "../email-threading";
+import { emailParticipantAddresses } from "../company-email";
 import type { CrmRead } from "./crm-tools";
-import { loadAgentEmailIndex } from "./agent-records";
-import { clipEvidence, customerSalesTotals, type IntelligenceInvoice } from "./customer-intelligence.ts";
+import { customerEmailHref, isCustomerHistoryMessage, loadCustomerEmailBody, loadCustomerEmailHistories, type CustomerEmailHistoryContext } from "./customer-email-history";
+import { clipEvidence, customerSalesTotals, selectConversationEvidence, type IntelligenceInvoice } from "./customer-intelligence.ts";
 
 type Row = Record<string, unknown>;
 type Scan = { rows: Row[]; complete: boolean; available: boolean };
-type EmailIndex = Awaited<ReturnType<typeof loadAgentEmailIndex>>;
-export type CustomerInsightContext = { emailIndex?: Promise<EmailIndex> };
+export type CustomerInsightContext = CustomerEmailHistoryContext;
 const object = (value: unknown): Row => value && typeof value === "object" && !Array.isArray(value) ? value as Row : {};
 const relation = (value: unknown) => object(Array.isArray(value) ? value[0] : value);
 const string = (value: unknown) => typeof value === "string" ? value : "";
@@ -74,20 +74,22 @@ export async function readCustomerInsights(viewer: WorkspaceViewer, input: CrmRe
     return read.order("created_at", { ascending: false }).order("id").range(from, to);
   });
   const billingAvailable = policy.data.billing && ["admin", "operator"].includes(viewer.role);
-  const [events, orders, invoices, quotations, tasks, emailIndex] = await Promise.all([
+  const ownerIds = [...new Set(companies.map(company => string(relation(company.pipeline).owner_id)).filter(Boolean))];
+  const [events, orders, invoices, quotations, tasks, emailHistories, owners] = await Promise.all([
     source("events", "id,company_id,type,data,created_at"),
     billingAvailable ? source("purchase_orders", "id,company_id,reference,document,total_minor,created_at") : absent(),
     billingAvailable ? source("invoices", "id,company_id,number,status,total_minor,paid_minor,document,created_at") : absent(),
     billingAvailable && policy.data.products ? source("catalogs", "id,company_id,currency,quote_status,quote_order_id,quote_document,created_at", true) : absent(),
     policy.data.tasks ? source("crm_tasks", "id,company_id,title,notes,priority,status,due_at,created_at", true) : absent(),
-    policy.data.emails ? (context.emailIndex ??= loadAgentEmailIndex(viewer)).catch(() => null) : null,
+    policy.data.emails ? loadCustomerEmailHistories(viewer, ids, context).catch(() => null) : null,
+    ownerIds.length ? db.from("workspace_members").select("user_id,display_name").in("user_id", ownerIds) : { data: [], error: null },
   ]);
   // Resolve secondary addresses against the entire accessible contact set, not just
   // this page. Shared addresses must never silently attribute one buyer's emails to another.
   const addresses = [...new Set(companies.flatMap(company => (Array.isArray(company.contacts) ? company.contacts : []).map(contact => string(object(contact).email).trim().toLowerCase())).filter(Boolean))];
   const addressOwners = new Map<string, Set<string>>();
   let contactsComplete = true;
-  if (emailIndex) for (let from = 0; from < addresses.length; from += 100) {
+  if (emailHistories) for (let from = 0; from < addresses.length; from += 100) {
     // Case-insensitive exact matches also handle legacy mixed-case imports.
     const batch = addresses.slice(from, from + 100);
     const contacts = await scan((start, end) => db.from("contacts").select("id,company_id,email")
@@ -106,13 +108,20 @@ export async function readCustomerInsights(viewer: WorkspaceViewer, input: CrmRe
     const id = string(company.id), href = `/companies/${id}`;
     const profile = relation(company.company_profiles), account = relation(company.pipeline);
     const contacts = (Array.isArray(company.contacts) ? company.contacts : []).map(object);
-    const emails = (emailIndex?.inbox.emails ?? []).filter(email => !email.demo && (email.direction === "inbound" || /^sent$/i.test(email.status)) && contactsComplete && addressOwners.get(email.contact.trim().toLowerCase())?.size === 1 && addressOwners.get(email.contact.trim().toLowerCase())?.has(id));
+    const history = emailHistories?.get(id);
+    const emails = (history?.emails ?? []).filter(email => isCustomerHistoryMessage(email) && contactsComplete
+      && emailParticipantAddresses(email).some(address => addressOwners.get(address)?.size === 1 && addressOwners.get(address)?.has(id)));
     // Deduplicate copies across folders/mailboxes by RFC message ID when present.
     const unique = [...new Map(emails.map(email => [email.messageId?.trim().toLowerCase() || `${email.mailboxId}:${email.id}`, email])).values()]
       .sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp));
     const evidenceLimit = companyId ? 20 : 4;
     const ambiguousAddresses = contacts.filter(contact => (addressOwners.get(string(contact.email).trim().toLowerCase())?.size ?? 0) > 1).length;
-    const emailCountsComplete = Boolean(emailIndex && contactsComplete && !ambiguousAddresses && !emailIndex.coverage.mailboxesOmitted && !emailIndex.coverage.mailboxError);
+    const emailCountsComplete = Boolean(history && contactsComplete && !ambiguousAddresses && !history.inboxError && !history.mailboxReadFailed && !history.mailboxSnapshotPartial && !history.mailboxHistoryPartial);
+    const excerpts = await Promise.all(selectConversationEvidence(unique, evidenceLimit).map(email => companyId ? loadCustomerEmailBody(viewer, id, email, context) : email));
+    const lastInboundAt = unique.find(email => email.direction === "inbound")?.timestamp;
+    const lastOutboundAt = unique.find(email => email.direction === "outbound")?.timestamp;
+    const ownerId = string(account.owner_id) || null;
+    const ownerName = ownerId ? owners.data?.find(owner => owner.user_id === ownerId)?.display_name ?? null : null;
     const sourceRows = (read: Scan) => read.rows.filter(row => row.company_id === id);
     const summarize = (read: Scan, kind: "orders" | "invoices" | "quotations") => {
       const rows = sourceRows(read);
@@ -122,22 +131,28 @@ export async function readCustomerInsights(viewer: WorkspaceViewer, input: CrmRe
     // policies expose only customer notes, consistent with the customer summary.
     const allDomains = Object.values(policy.data).every(Boolean) && billingAvailable;
     const notes = sourceRows(events).filter(row => allDomains || string(row.type) === "staff_comment");
+    const noteExcerpts = [...notes.filter(row => row.type === "staff_comment"), ...notes.filter(row => row.type !== "staff_comment")].slice(0, evidenceLimit);
     const customerTasks = sourceRows(tasks);
     const record = {
       id, href, name: company.name, website: company.website, country: company.country, city: company.city, segment: company.segment, status: company.status,
+      assignedTo: { userId: ownerId, name: ownerName, assigned: Boolean(ownerId), available: !owners.error, isCurrentUser: ownerId === viewer.id },
       profile: { summary: clipEvidence(profile.summary, companyId ? 6000 : 1200), fitScore: profile.fit_score, interests: profile.interest_tags, nextFollowupAt: account.next_followup_at },
       contacts: contacts.slice(0, 20), omittedContacts: Math.max(0, contacts.length - 20),
-      notes: { count: notes.length, available: events.available, complete: events.complete && allDomains, omittedEvidence: Math.max(0, notes.length - evidenceLimit), records: notes.slice(0, evidenceLimit).map(row => ({ id: row.id, href, type: row.type, createdAt: row.created_at, summary: clipEvidence(object(row.data).summary ?? object(row.data).note, companyId ? 3000 : 500) })) },
+      notes: { count: notes.length, available: events.available, complete: events.complete && allDomains, omittedEvidence: Math.max(0, notes.length - evidenceLimit), records: noteExcerpts.map(row => ({ id: row.id, href, type: row.type, createdAt: row.created_at, summary: clipEvidence(object(row.data).summary ?? object(row.data).note, companyId ? 3000 : 500) })) },
       email: {
         messages: unique.length, inbound: unique.filter(email => email.direction === "inbound").length, outbound: unique.filter(email => email.direction === "outbound").length,
         conversations: new Set(unique.map(threadKeyForEmail)).size,
         earliestAt: unique.at(-1)?.timestamp, latestAt: unique[0]?.timestamp,
-        available: Boolean(emailIndex), countsComplete: emailCountsComplete, ambiguousAddresses,
-        complete: emailCountsComplete && unique.length <= evidenceLimit && unique.every(email => email.bodyLoaded !== false && email.body.length <= (companyId ? 3000 : 700)),
-        unloadedBodies: unique.filter(email => email.bodyLoaded === false).length, omittedEvidence: Math.max(0, unique.length - evidenceLimit),
-        records: unique.slice(0, evidenceLimit).map(email => ({ id: email.id, href: `/email?mailbox=${encodeURIComponent(email.mailboxId)}&thread=${encodeURIComponent(threadKeyForEmail(email))}`, direction: email.direction, subject: email.subject, timestamp: email.timestamp, threadId: threadKeyForEmail(email), contentAvailable: email.bodyLoaded !== false, body: clipEvidence(email.bodyLoaded === false ? "" : email.body, companyId ? 3000 : 700) })),
+        available: Boolean(history), countsComplete: emailCountsComplete, ambiguousAddresses,
+        lastInboundAt, lastOutboundAt,
+        replyState: !emailCountsComplete ? "unknown" : !unique.length ? "no_messages" : unique[0].direction === "outbound" ? "awaiting_customer" : "awaiting_team",
+        complete: emailCountsComplete && unique.length <= evidenceLimit && excerpts.every(email => email.bodyLoaded !== false && email.body.length <= (companyId ? 3000 : 700)),
+        unloadedBodies: unique.filter(email => email.bodyLoaded === false && !excerpts.some(excerpt => excerpt.id === email.id && excerpt.bodyLoaded !== false)).length, omittedEvidence: Math.max(0, unique.length - evidenceLimit),
+        records: excerpts.map(email => ({ id: email.id, href: customerEmailHref(id), direction: email.direction, from: email.from, to: email.to, subject: email.subject, timestamp: email.timestamp, threadId: threadKeyForEmail(email), contentAvailable: email.bodyLoaded !== false, body: clipEvidence(email.bodyLoaded === false ? "" : email.body, companyId ? 3000 : 700) })),
       },
       orders: summarize(orders, "orders"), invoices: summarize(invoices, "invoices"), quotations: summarize(quotations, "quotations"),
+      purchasePipeline: { available: orders.available, complete: orders.complete,
+        activeOrders: sourceRows(orders).filter(row => ["draft", "confirmed", "pending", "in_production"].includes(string(object(row.document).status).toLowerCase())).length },
       sales: { available: invoices.available, complete: invoices.complete, basis: "Saved invoices only; drafts separate; void invoices excluded; currencies separate; orders are not added to invoices", totals: customerSalesTotals(sourceRows(invoices) as unknown as IntelligenceInvoice[]) },
       tasks: { count: customerTasks.length, available: tasks.available, complete: tasks.complete, omittedEvidence: Math.max(0, customerTasks.length - evidenceLimit), records: customerTasks.slice(0, evidenceLimit).map(row => ({ id: row.id, href: "/tasks", title: row.title, notes: clipEvidence(row.notes, 500), status: row.status, priority: row.priority, dueAt: row.due_at })) },
     };
@@ -157,8 +172,8 @@ export async function readCustomerInsights(viewer: WorkspaceViewer, input: CrmRe
   const next = input.offset + records.length;
   return { records, coverage: {
     matching: count, included: records.length, offset: input.offset, nextOffset: count !== null && next < count ? next : null,
-    scope: "Accessible saved customers, linked CRM activity, your quotations/tasks and accessible synced email; no live mailbox sync. Counts are lower bounds when a source is incomplete. Unlinked Messenger/social conversations are not included. Evidence excerpts are bounded; inspect original records and paginate email for details.",
-    billingAvailable, ...(emailIndex?.coverage ?? { mailboxError: "Email history disabled or unavailable" }),
+    scope: "Accessible saved customers, assigned account managers, linked CRM activity, your quotations/tasks and the same customer-linked email history as each company profile Email tab, across staff accounts; no live mailbox sync. Counts are lower bounds when a source is incomplete. Unlinked Messenger/social conversations are not included. Evidence excerpts are bounded; inspect original records and paginate email for details.",
+    billingAvailable, mailboxError: !emailHistories ? "Email history disabled or unavailable" : ids.some(id => { const history = emailHistories.get(id); return !history || history.inboxError || history.mailboxReadFailed || history.mailboxSnapshotPartial || history.mailboxHistoryPartial; }) ? "Some customer email history unavailable or incomplete" : null,
     ambiguousContactAddresses: addresses.filter(address => (addressOwners.get(address)?.size ?? 0) > 1).length,
     contactMatchingComplete: contactsComplete,
   } };

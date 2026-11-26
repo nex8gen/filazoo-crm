@@ -1,0 +1,30 @@
+{
+  "checkedOn": "2026-11-26",
+  "timezone": "Asia/Shanghai",
+  "verified": true,
+  "method": "Executed the updated customer insight and email search readers against saved workspace data, then compared their results with the company profile Email backend. No AI model call or outgoing email was made.",
+  "customer": "Carraro personalizados",
+  "assignedTo": "Enphany",
+  "profileMessages": 2,
+  "aiMessages": 2,
+  "inbound": 1,
+  "outbound": 1,
+  "replyState": "awaiting_customer",
+  "countsComplete": true,
+  "loadedBodies": 2,
+  "requestLocalHistoryCacheEntries": 1,
+  "observedTimingMs": {
+    "customerInsights": 14999,
+    "subsequentEmailSearchUsingCachedHistory": 2967,
+    "separateProfileEmailReadForComparison": 7766
+  },
+  "timingNote": "One verification run, including network and supporting CRM reads; not a latency guarantee.",
+  "checks": {
+    "focusedTestsPassed": 178,
+    "focusedTestsFailed": 0,
+    "typecheck": "passed",
+    "eslintChangedFiles": "passed",
+    "batchMailboxReads": "A two-customer test scans each of four mailboxes once, rather than once per customer.",
+    "accessChecks": "Tests cover reassignment, unrelated private messages, staff-address exclusion, shared customer addresses and incomplete history."
+  }
+}

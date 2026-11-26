@@ -6,7 +6,7 @@ import ts from "typescript";
 import { translateUiText } from "../lib/i18n.ts";
 
 // Brands, protocol names, shortcut keys, and example identifiers remain verbatim.
-const unchanged = new Set(["English", "Filazoo", "Meta", "Facebook", "Instagram", "WhatsApp", "Google Workspace", "Microsoft 365", "SMTP / IMAP", "SMTP", "IMAP", "PDF", "CSV", "SKU", "KB", "USD", "EUR", "GBP", "CNY", "Ctrl K", "esc", "Authorization", "Bearer YOUR_CONNECTION_SECRET", "raul@filazoo.com", "© 2026 Filazoo"]);
+const unchanged = new Set(["English", "Filazoo", "Meta", "Facebook", "Instagram", "WhatsApp", "Google Workspace", "Microsoft 365", "SMTP / IMAP", "SMTP", "IMAP", "PDF", "CSV", "SKU", "KB", "USD", "EUR", "GBP", "CNY", "Ctrl K", "esc", "Authorization", "Bearer YOUR_CONNECTION_SECRET", "raul@filazoo.com", "© 2026 Filazoo", "example.com"]);
 const copyAttributes = new Set(["aria-label", "aria-description", "aria-valuetext", "placeholder", "data-placeholder", "title", "alt", "label", "description", "emptyText"]);
 for (const value of ["Apple", "Google", "Filazoo AI", "NetEase Lingxi Office", "PLA", "PLA-CUSTOM", "1–10 MB", "portal.yourbrand.com"]) unchanged.add(value);
 

@@ -1,4 +1,7 @@
 export const zhCNSegments: Record<string, string> = {
+  "Segment overview": "客户细分概览",
+  "About workflow activity": "关于工作流活动",
+  "runs · All time": "次运行 · 全部时间",
   "Workflow groups": "工作流分组",
   "Open Email": "打开邮件",
   "Workspace workflows": "工作区工作流",

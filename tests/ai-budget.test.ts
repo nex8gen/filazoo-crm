@@ -15,6 +15,7 @@ test("budget quote covers UTF-8 input, output, bounded web search and opaque ima
   assert.ok(web.reservedMicros > q.reservedMicros + 128000 * rate.input * 1e6);
   assert.ok(web.reservedMicros < 200000);
   assert.ok(quoteAiBudget({ ...body, input: [{ type: "input_image", image_url: "data:image/png;base64,abc" }] }, rate).reservedMicros > 200000);
+  assert.ok(quoteAiBudget({ ...body, input: [{ type: "input_file", file_data: "data:application/pdf;base64,abc" }] }, rate).reservedMicros > 200000);
   for (const invalid of [{ ...body, model: "unpriced" }, { ...body, max_output_tokens: 0 }, { ...body, tools: [{ type: "web_search" }] }, { ...body, tools: [{ type: "code_interpreter" }] }]) assert.throws(() => quoteAiBudget(invalid, rate), AiBudgetError);
 });
 test("actual settlement includes reasoning output and retains uncertain costs", () => {

@@ -205,3 +205,17 @@ test("Gateway order planning uses native action tools and shared authentication"
   assert.ok(Array.isArray(payload.tools));
   assert.doesNotMatch(JSON.stringify(payload.input), /FILAZOO_ACTIONS_JSON/);
 });
+
+test("native Agent forwards PDFs and extracted text through the installed SDK without executing actions", async () => {
+  let content = "";
+  const models = await nativeGatewayModels({ token: "synthetic", userId: id, userText: "Read these files", hasImages: true, fetcher: metered(async (_url, init) => {
+    content = JSON.stringify(JSON.parse(String(init?.body)).input);
+    return Response.json({ id: "resp-files", created_at: 1, status: "completed", model: "anthropic/claude-haiku-5.5", output: [{ type: "message", id: "msg-files", role: "assistant", content: [{ type: "output_text", text: "Read the files.", annotations: [] }] }], usage: { input_tokens: 20, output_tokens: 10 } });
+  }) });
+  const plan = await generateCrmPlan({ ...options(new MockLanguageModelV4(), "Read these files"), ...models, files: [
+    { name: "invoice.pdf", mediaType: "application/pdf", dataUrl: `data:application/pdf;base64,${Buffer.from("%PDF-1.7\nexample").toString("base64")}`, label: "Message 1, file 1" },
+    { name: "items.csv", mediaType: "text/csv", dataUrl: `data:text/csv;base64,${Buffer.from("SKU,quantity\nPLA,20").toString("base64")}`, label: "Message 1, file 2" },
+  ] });
+  assert.match(content, /input_file/); assert.match(content, /invoice.pdf/); assert.match(content, /PLA,20/);
+  assert.equal(plan.actions.length, 0);
+});

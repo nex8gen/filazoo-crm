@@ -70,6 +70,7 @@ function composerFixture() {
   const ui = new Proxy({}, { get: () => () => null });
   const dependencies: Record<string, unknown> = {
     react, "react/jsx-runtime": require("react/jsx-runtime"), "lucide-react": ui,
+    "next/image": { default: "img" }, "next/link": { default: "a" },
     "@/components/ai-icon": ui, "@/components/agent-icon": ui,
     "@/components/home-prompt-icon": ui,
     "@/components/ui/button": ui, "@/components/ui/popover": ui,

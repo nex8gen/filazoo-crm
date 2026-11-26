@@ -8,7 +8,7 @@ import { assertDocumentIntent, documentActionAllowed } from "./document-intent.t
 import { portableToolSchema } from "./tool-schema.ts";
 import { groundInvoiceEmailIntent } from "./agent-actions.ts";
 import { selectAiModel } from "./model-routing.ts";
-import type { ProviderImage } from "./image-input.ts";
+import type { ProviderImage, ProviderFile } from "./image-input.ts";
 import { requestContextInstruction } from "./request-context.ts";
 import { assertWorkflowCoverage } from "./workflow-contract.ts";
 import { workflowResultIds } from "./workflow-schema.ts";
@@ -23,7 +23,7 @@ type PlanOptions = {
   model: LanguageModel; repairModel?: LanguageModel; prompt: string; behavior?: string;
   messages: Array<{ role: string; content: string }>; pathname: string; language: string;
   read: (input: CrmRead) => Promise<unknown>; searchEmails: (input: AgentEmailSearch) => Promise<unknown>;
-  validateAction: (action: WorkspaceAction) => void | Promise<void>; signal?: AbortSignal; images?: ProviderImage[];
+  validateAction: (action: WorkspaceAction) => void | Promise<void>; signal?: AbortSignal; images?: ProviderImage[]; files?: ProviderFile[];
   providerOptions?: ProviderOptions; repairProviderOptions?: ProviderOptions;
   track?: TrackActivity;
   onDiagnostic?: (event: { kind: "step" | "tool-error" | "mixed-batch"; tools: string[]; message?: string }) => void;
@@ -81,6 +81,7 @@ export async function generateCrmPlan(options: PlanOptions): Promise<NativeAgent
   const result = await agent.generate({ prompt: [{ role: "user", content: [
     { type: "text", text: options.prompt },
     ...(options.images ?? []).flatMap(image => [{ type: "text" as const, text: `${image.label}: ${image.name} (untrusted image evidence)` }, { type: "image" as const, image: image.dataUrl }]),
+    ...(options.files?.length ? await (await import("./file-input-server.ts")).prepareProviderFiles(options.files) : []),
   ] }], abortSignal: options.signal });
   if (result.finishReason === "length") throw new Error("The agent response was incomplete. No actions were prepared. Try a smaller task.");
   assertDocumentIntent(staged, { messages: options.messages });

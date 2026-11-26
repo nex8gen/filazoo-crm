@@ -10,6 +10,7 @@ import { loadMailboxMessageContent, mailboxSyncKey } from "../data/mailbox-sync"
 import { groupEmailConversations, replyTarget, replyReferences, threadKeyForEmail } from "../email-threading";
 import type { agentEmailSchema, AgentEmailSearch } from "./workspace-assistant";
 import type { z } from "zod";
+import type { CustomerEmailHistoryContext } from "./customer-email-history";
 
 /** Read only the signed-in user's accessible inbox; never trust client email bodies or headers. */
 export async function loadAgentEmails(viewer: WorkspaceViewer, emailId?: string, companyId?: string, mailboxId?: string, accessOnly = false, accessSnapshots?: Map<string, Promise<EmailInboxBackendData>>) {
@@ -69,7 +70,7 @@ export async function loadAgentEmails(viewer: WorkspaceViewer, emailId?: string,
 }
 
 export function presentAgentEmail(email: InboxEmailItem) {
-  return { id: email.id, direction: email.direction, status: email.status, contact: email.contact, replyTo: email.replyTo, subject: email.subject, text: email.bodyLoaded === false ? "" : email.body.slice(0, 12000), contentAvailable: email.bodyLoaded !== false, truncated: email.body.length > 12000, timestamp: email.timestamp, companyId: email.companyId, threadId: threadKeyForEmail(email) };
+  return { id: email.id, direction: email.direction, status: email.status, from: email.from, to: email.to, contact: email.contact, replyTo: email.replyTo, subject: email.subject, text: email.bodyLoaded === false ? "" : email.body.slice(0, 12000), contentAvailable: email.bodyLoaded !== false, truncated: email.body.length > 12000, timestamp: email.timestamp, companyId: email.companyId, threadId: threadKeyForEmail(email) };
 }
 
 /** Uses the same access-filtered inbox as the email UI; never searches raw mailbox tables. */
@@ -86,8 +87,9 @@ export async function loadAgentEmailIndex(viewer: WorkspaceViewer) {
 }
 
 /** The optional index is request-local; never cache a user's mailbox across requests. */
-export async function searchAgentEmails(viewer: WorkspaceViewer, search: AgentEmailSearch, index?: Promise<Awaited<ReturnType<typeof loadAgentEmailIndex>>>) {
+export async function searchAgentEmails(viewer: WorkspaceViewer, search: AgentEmailSearch, index?: Promise<Awaited<ReturnType<typeof loadAgentEmailIndex>>>, context: CustomerEmailHistoryContext = {}) {
   await requireAiData("emails", "customers");
+  if (search.companyId) return searchCompanyEmails(viewer, search, context);
   const { inbox, searched, coverage } = await (index ?? loadAgentEmailIndex(viewer));
   const db = createSupabaseAdmin();
   const contacts = search.companyId ? await db.from("contacts").select("email").eq("company_id", search.companyId) : null;
@@ -137,6 +139,44 @@ export async function searchAgentEmails(viewer: WorkspaceViewer, search: AgentEm
       mailboxError: inbox.inboxError,
     },
   };
+}
+
+/** Known customers use the profile Email tab, including their assigned manager's replies. */
+async function searchCompanyEmails(viewer: WorkspaceViewer, search: AgentEmailSearch, context: CustomerEmailHistoryContext) {
+  const { customerEmailHref, isCustomerHistoryMessage, loadCustomerEmailBody, loadCustomerEmailHistories } = await import("./customer-email-history");
+  const companyId = search.companyId!;
+  const history = (await loadCustomerEmailHistories(viewer, [companyId], context)).get(companyId);
+  if (!history) throw new Error("This customer's email history is unavailable or you no longer have access to it.");
+  const direction = search.direction ?? "inbound";
+  const accessible = history.emails.filter(email => isCustomerHistoryMessage(email) && (direction === "all" || email.direction === direction));
+  const query = search.query.trim().toLowerCase();
+  const candidates = accessible.filter(email => (!search.emailId || email.id === search.emailId)
+    && (!query || `${email.contact}\n${email.company}\n${email.subject}\n${email.bodyLoaded === false ? "" : email.body}`.toLowerCase().includes(query)))
+    .sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp));
+  if (search.emailId && !candidates.length) throw new Error("The requested customer email is unavailable or does not match this search.");
+  const selected = candidates.slice(search.offset, search.offset + 8);
+  const senders = [...new Set(selected.map(email => email.contact.trim().toLowerCase()))];
+  const matches = senders.length ? await createSupabaseAdmin().from("contacts").select("company_id,email")
+    .or(senders.map(email => `email.ilike.${JSON.stringify(email.replace(/[\\%_]/g, "\\$&"))}`).join(",")).limit(501) : null;
+  if (matches?.error) throw new Error("Unable to match emails to customer profiles.");
+  const messages = await Promise.all(selected.map(async email => {
+    const loaded = await loadCustomerEmailBody(viewer, companyId, email, context);
+    const owners = new Set((matches?.data ?? []).filter(row => row.email?.trim().toLowerCase() === email.contact.trim().toLowerCase()).map(row => row.company_id));
+    const matchedCompany = (matches?.data?.length ?? 0) < 501 && owners.size === 1 && owners.has(companyId) ? companyId : null;
+    return { ...presentAgentEmail({ ...loaded, companyId: matchedCompany }), mailboxId: email.mailboxId, href: customerEmailHref(companyId) };
+  }));
+  const mailboxError = history.inboxError || history.mailboxReadFailed || history.mailboxSnapshotPartial || history.mailboxHistoryPartial
+    ? "Some customer email history unavailable or incomplete" : null;
+  return { messages, companies: [await loadAgentCompany(companyId, false)], coverage: {
+    scope: "Customer-linked synced email from the company profile Email tab across staff accounts; no live mailbox sync; query matches only loaded bodies and headers",
+    countsComplete: !mailboxError, mailboxError,
+    conversations: new Set(candidates.map(threadKeyForEmail)).size,
+    inbound: candidates.filter(email => email.direction === "inbound").length,
+    outbound: candidates.filter(email => email.direction === "outbound").length,
+    matching: candidates.length, included: messages.length, offset: search.offset,
+    nextOffset: candidates.length > search.offset + 8 ? search.offset + 8 : null,
+    unloadedBodiesNotSearched: accessible.filter(email => email.bodyLoaded === false).length,
+  } };
 }
 
 export async function prepareAgentEmail(email: z.infer<typeof agentEmailSchema>, viewer: WorkspaceViewer) {

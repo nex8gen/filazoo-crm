@@ -22,6 +22,8 @@ import { chatImageLimitError } from "@/lib/ai/image-input";
 import { useAiConversation } from "@/components/use-ai-conversation";
 import { AiHistoryMenu } from "@/components/ai-history-menu";
 import type { HistoryReference } from "@/lib/ai/chat-history";
+import { AiResponsePresentation } from "@/components/ui/ai-response-presentation";
+import type { ResponsePresentation } from "@/lib/ai/response-presentation";
 
 const shortcuts = [
   { label: "Analyze customer", icon: FileText, prompt: "Analyze this customer and write a report on their company, what they do, how big they are, their likely filament needs and the best sales approach. Separate facts from estimates and identify what we need to confirm." },
@@ -31,14 +33,14 @@ const shortcuts = [
   { label: "Follow-up plan", icon: Clock3, prompt: "Suggest a follow-up plan for this customer, including timing in Shanghai time, talking points, and questions to ask. Distinguish the existing schedule from your suggestions." },
 ];
 
-type ChatEntry = CompanyChatMessage & { id: string; attachmentNames?: string[]; sources?: CompanyChatSource[]; omittedActivity?: number; durationMs?: number; activity?: AssistantActivity[]; research?: ResearchResult };
-type CustomerReply = { output: string; error?: string; sources?: CompanyChatSource[]; activity?: AssistantActivity[]; coverage?: { omittedActivity?: number }; research?: ResearchResult; history?: Parameters<ReturnType<typeof useAiConversation>["accept"]>[0] };
+type ChatEntry = CompanyChatMessage & { id: string; attachmentNames?: string[]; sources?: CompanyChatSource[]; omittedActivity?: number; durationMs?: number; activity?: AssistantActivity[]; research?: ResearchResult; presentation?: ResponsePresentation };
+type CustomerReply = { output: string; error?: string; sources?: CompanyChatSource[]; activity?: AssistantActivity[]; coverage?: { omittedActivity?: number }; research?: ResearchResult; presentation?: ResponsePresentation; history?: Parameters<ReturnType<typeof useAiConversation>["accept"]>[0] };
 
 async function requestCustomerReply(companyId: string, messages: ChatEntry[], signal: AbortSignal, language: AppLanguage, webSearch: boolean, history: HistoryReference, onProgress: (progress: ResearchProgress) => void, onActivity: (steps: AssistantActivity[]) => void) {
   const started = performance.now();
   const response = await fetch(`/api/companies/${companyId}/chat`, {
     method: "POST", headers: { "Content-Type": "application/json", Accept: researchStreamType },
-    body: JSON.stringify({ language, webSearch, history, messages: messages.slice(-1).map(({ role, content, images }) => ({ role, content, images })) }),
+    body: JSON.stringify({ language, webSearch, history, messages: messages.slice(-1).map(({ role, content, images, files }) => ({ role, content, images, files })) }),
     signal,
   });
   const result = await readResearchResponse<CustomerReply>(response, onProgress, onActivity);
@@ -110,7 +112,7 @@ export function CompanyAi({ company }: { company: Company }) {
       if (controller.signal.aborted) return;
       history.accept(result.history);
       const id = crypto.randomUUID();
-      setMessages([...next, { id, role: "assistant", content: result.output, sources: result.sources, omittedActivity: result.coverage?.omittedActivity, durationMs: result.durationMs, activity: result.activity ?? requestActivity, research: result.research }]);
+      setMessages([...next, { id, role: "assistant", content: result.output, sources: result.sources, omittedActivity: result.coverage?.omittedActivity, durationMs: result.durationMs, activity: result.activity ?? requestActivity, research: result.research, presentation: result.presentation }]);
       setAnimation({ id, run: 1 });
       setRetryMessages(null);
     } catch (error) {
@@ -126,8 +128,8 @@ export function CompanyAi({ company }: { company: Company }) {
 
   function send(content = question) {
     const text = content.trim();
-    if ((!text && !attachments.images.length) || text.length > 6_000 || attachments.processing || request.current || retryMessages || busy) return;
-    const next: ChatEntry[] = [...messages, { id: crypto.randomUUID(), role: "user", content: text, ...(attachments.images.length ? { images: attachments.images } : {}) }];
+    if ((!text && !(attachments.images.length + (attachments.files?.length ?? 0))) || text.length > 6_000 || attachments.processing || request.current || retryMessages || busy) return;
+    const next: ChatEntry[] = [...messages, { id: crypto.randomUUID(), role: "user", content: text, ...((attachments.images.length + (attachments.files?.length ?? 0)) ? { images: attachments.images, files: attachments.files } : {}) }];
     const imageError = chatImageLimitError([next.at(-1)!]);
     if (imageError) { setError(imageError); return; }
     setMessages(next);
@@ -162,15 +164,16 @@ export function CompanyAi({ company }: { company: Company }) {
             {entry.role === "assistant" ? <>
               <ThinkingState working={false} writing={animation?.id === entry.id} durationMs={entry.durationMs} scope={company.name} steps={[...(entry.activity ?? []), ...(entry.sources ?? []).map((source) => ({ id: source.id, label: `[${source.id}] ${t(source.label)}`, detail: source.recordedAt ? new Date(source.recordedAt).toLocaleDateString(language, { timeZone: "Asia/Shanghai" }) : undefined }))]} className="mb-2" />
               <StreamingText key={`${entry.id}-${animation?.id === entry.id ? animation.run : 0}`} text={entry.content} sources={[...(entry.sources ?? []), ...(entry.research?.sources ?? [])]} animate={animation?.id === entry.id} onProgress={followReply} onComplete={() => setAnimation((current) => current?.id === entry.id ? null : current)} />
+              <AiResponsePresentation presentation={entry.presentation} />
               <CustomerResearchSources research={entry.research} />
               {animation?.id === entry.id ? <Button type="button" variant="ghost" size="xs" className="mt-2" onClick={() => setAnimation(null)}>Show full reply</Button> : <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                 <div className="min-w-0 flex-1 text-xs text-muted-foreground"><SourceList sources={(entry.sources ?? []).filter(source => !entry.research?.sources.some(web => web.id === source.id))} />{entry.omittedActivity ? <p className="mt-2 text-xs">Based on recent records; some older activity was outside this answer&apos;s context.</p> : null}</div>
                 <div className="flex gap-1"><Button type="button" variant="ghost" size="xs" disabled={busy} onClick={() => setAnimation({ id: entry.id, run: performance.now() })} aria-label="Replay reply animation"><RotateCcw />Replay</Button><Button type="button" variant="ghost" size="xs" onClick={() => void copy(entry)} aria-label="Copy AI answer"><Copy />{copiedId === entry.id ? "Copied" : "Copy"}</Button></div>
               </div>}
-            </> : <><p className="mb-2 text-xs font-medium text-muted-foreground">You</p><AiImagePreviews images={entry.images} />{entry.attachmentNames?.length ? <p className="mb-2 text-xs text-muted-foreground">Attached: {entry.attachmentNames.join(", ")}. Images are not retained; reattach to inspect them again.</p> : null}<p data-no-translate className="whitespace-pre-wrap break-words text-sm leading-7 [overflow-wrap:anywhere]">{entry.content}</p></>}
+            </> : <><p className="mb-2 text-xs font-medium text-muted-foreground">You</p><AiImagePreviews images={entry.images} files={entry.files} />{entry.attachmentNames?.length ? <p className="mb-2 text-xs text-muted-foreground">Attached: {entry.attachmentNames.join(", ")}. Files are not retained; reattach to inspect them again.</p> : null}<p data-no-translate className="whitespace-pre-wrap break-words text-sm leading-7 [overflow-wrap:anywhere]">{entry.content}</p></>}
           </div>)}</div>}
           {pending || (error && activity.length) ? <div className="mt-6"><ThinkingState key={messages.at(-1)?.id} working={pending} failed={!pending && Boolean(error)} scope={company.name} steps={activity} />{webSearch ? <ResearchSearching progress={researchProgress} /> : null}</div> : null}
-          {error ? <NotificationToast><p className="text-sm leading-6">{error}</p>{retryMessages ? <div className="mt-3 flex gap-2"><Button type="button" variant="outline" size="sm" disabled={pending} onClick={() => void generate(retryMessages)}>Try again</Button><Button type="button" variant="ghost" size="sm" disabled={pending} onClick={() => { const last = retryMessages.at(-1); setQuestion(last?.content || ""); attachments.setImages(last?.images ?? []); setMessages((current) => current.slice(0, -1)); setRetryMessages(null); setError(null); input.current?.focus(); }}>Edit question</Button></div> : null}</NotificationToast> : null}
+          {error ? <NotificationToast><p className="text-sm leading-6">{error}</p>{retryMessages ? <div className="mt-3 flex gap-2"><Button type="button" variant="outline" size="sm" disabled={pending} onClick={() => void generate(retryMessages)}>Try again</Button><Button type="button" variant="ghost" size="sm" disabled={pending} onClick={() => { const last = retryMessages.at(-1); setQuestion(last?.content || ""); attachments.setImages(last?.images ?? []); attachments.setFiles(last?.files ?? []); setMessages((current) => current.slice(0, -1)); setRetryMessages(null); setError(null); input.current?.focus(); }}>Edit question</Button></div> : null}</NotificationToast> : null}
         </div>
         <div className="sticky bottom-0 z-10 shrink-0 border-t bg-card px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-5 sm:px-6">
           {messages.length ? <div className="mb-3 flex flex-wrap items-center gap-2">{shortcuts.map(({ label, prompt }) => <button key={label} type="button" disabled={busy || Boolean(retryMessages)} onClick={() => send(t(prompt))} className="rounded-full border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50">{label}</button>)}</div> : null}

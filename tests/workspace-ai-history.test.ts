@@ -44,7 +44,7 @@ test("sidebar history stays enabled across close and reopen while drafts remain 
     "@/components/language-provider": { useLanguage: () => ({ language: "en", t: (value: string) => value }) },
     "@/components/use-ai-conversation": { useAiConversation: (input: { mode: string }, callback: typeof restore, enabled: boolean, _browseAll: boolean, autoResume: boolean) => { assert.equal(autoResume, false, "messages must not load until a history title is selected"); if (input.mode === "chat") restore = callback; preparedModes.push(input.mode); enabledValues.push(enabled); return controller; } },
     "@/components/ui/ai-mascot-input": { AiMascotInput: Composer },
-    "@/components/ui/ai-image-attachments": { useAiImageAttachments: () => ({ images: [], processing: false, clear: () => { clears++; } }) },
+    "@/components/ui/ai-image-attachments": { useAiImageAttachments: () => ({ images: [], files: [], setFiles() {}, processing: false, clear: () => { clears++; } }) },
     "@/lib/ai/chat-history": history, "@/lib/ai/assistant-intent": intent, "@/lib/ai/research-request": researchRequest,
     "@/lib/ai/agent-progress": { pageWorkArea: () => "email" },
   };
@@ -115,7 +115,7 @@ for (const savedMode of ["agent", "customer"] as const) test(`Home continues sav
     "@/components/use-ai-conversation": { useAiConversation: () => controller },
     "@/components/ui/ai-mascot-input": { AiMascotInput: Composer },
     "@/components/home-ai-composer": { HomeAiInput: Composer },
-    "@/components/ui/ai-image-attachments": { useAiImageAttachments: () => ({ images: [], processing: false, clear: () => {} }) },
+    "@/components/ui/ai-image-attachments": { useAiImageAttachments: () => ({ images: [], files: [], setFiles() {}, processing: false, clear: () => {} }) },
     "@/lib/ai/chat-history": history, "@/lib/ai/research-request": researchRequest, "@/lib/ai/research-progress": researchProgress,
     "@/lib/ai/image-input": { chatImageLimitError: () => null },
     "@/lib/ai/agent-progress": { requestedWorkProgress: () => undefined, pageWorkArea: () => "email" },
@@ -188,7 +188,7 @@ test("Open in Agent preserves the invoice request and images in a fresh Agent co
     "@/components/language-provider": { useLanguage: () => ({ language: "en", t: (value: string) => value }) },
     "@/components/use-ai-conversation": { useAiConversation: (input: { mode: string }) => input.mode === "agent" ? controller : chatController },
     "@/components/ui/ai-mascot-input": { AiMascotInput: Composer },
-    "@/components/ui/ai-image-attachments": { useAiImageAttachments: () => ({ images: [], processing: false, setImages: (value: unknown) => { attached = value; } }) },
+    "@/components/ui/ai-image-attachments": { useAiImageAttachments: () => ({ images: [], files: [], setFiles() {}, processing: false, setImages: (value: unknown) => { attached = value; } }) },
     "@/lib/ai/chat-history": history, "@/lib/ai/assistant-intent": intent, "@/lib/ai/research-request": researchRequest,
     "@/lib/ai/agent-progress": { pageWorkArea: () => "email" },
   };

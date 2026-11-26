@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowDown, ArrowLeft, ArrowUp, Check, ChevronDown, ChevronRight, Copy, Eye, EyeOff, Globe, GripVertical, LayoutTemplate, LoaderCircle, Monitor, Paintbrush, PanelLeft, PanelRight, Plus, Redo2, Save, Settings2, Smartphone, Trash2, Undo2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { PortalEditorSelect } from "@/components/portal-editor-select";
@@ -49,6 +50,7 @@ export function PortalBuilder({ initial, canWrite, workspaceName, themeId = "cur
   const [busy, setBusy] = useState<"draft" | "publish" | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [confirmPublish, setConfirmPublish] = useState(false);
   const saving = useRef(false);
   const dirty = JSON.stringify(design) !== JSON.stringify(saved.draft) || name !== savedName;
   const isLive = livePortalThemeId(saved) === themeId;
@@ -207,7 +209,7 @@ export function PortalBuilder({ initial, canWrite, workspaceName, themeId = "cur
     const [section] = sections.splice(index, 1); sections.splice(index + offset, 0, section);
     updateWebsitePage({ sections });
   }
-  async function save(publish: boolean) {
+  async function save(publish: boolean, confirmed = false) {
     if (!canWrite || saving.current) return;
     const parsed = portalDesignSchema.safeParse(design);
     if (!name.trim()) { openSettings("theme"); setError("Give this theme a name."); return; }
@@ -219,11 +221,12 @@ export function PortalBuilder({ initial, canWrite, workspaceName, themeId = "cur
       setError([invalidPage?.title, invalidSection?.name || invalidSection?.title, field].filter(Boolean).join(" / ") + ": " + issue.message);
       return;
     }
+    if (publish && !confirmed) { setError(""); setConfirmPublish(true); return; }
     saving.current = true; setBusy(publish ? "publish" : "draft"); setError(""); setNotice("");
     try {
       const result = await updatePortalDesign({ design: parsed.data, revision: saved.revision, publish, themeId, themeName: name.trim() });
       if (result.error) setError(result.error);
-      else if (result.saved) { setSaved(result.saved); setDesign(result.saved.draft); setHistory({ past: [], future: [] }); const nextName = portalLibraryThemes(result.saved).find(item => item.id === themeId)?.name ?? name.trim(); setName(nextName); setSavedName(nextName); setNotice(publish ? "Theme published." : "Theme saved."); }
+      else if (result.saved) { setSaved(result.saved); setDesign(result.saved.draft); setHistory({ past: [], future: [] }); const nextName = portalLibraryThemes(result.saved).find(item => item.id === themeId)?.name ?? name.trim(); setName(nextName); setSavedName(nextName); setConfirmPublish(false); setNotice(publish ? "Theme published." : "Theme saved."); }
     } catch { setError("Unable to save your theme. Please try again."); }
     finally { saving.current = false; setBusy(null); }
   }
@@ -256,6 +259,7 @@ export function PortalBuilder({ initial, canWrite, workspaceName, themeId = "cur
       <div className="pb-save-actions"><span className={dirty ? "is-dirty" : ""}>{dirty ? <span className="pb-unsaved-dot" /> : <Check />}{dirty ? "Unsaved changes" : "All changes saved"}</span><div className="pb-toolbar-tools"><Button variant="ghost" size="icon-sm" aria-label="Undo edit" disabled={!canWrite || Boolean(busy) || history.past.length === 0} onClick={() => undo()}><Undo2 /></Button><Button variant="ghost" size="icon-sm" aria-label="Redo edit" disabled={!canWrite || Boolean(busy) || history.future.length === 0} onClick={() => undo(true)}><Redo2 /></Button><Button variant="ghost" size="icon-sm" aria-label="Toggle sections" aria-pressed={showStructure === "auto" ? undefined : showStructure} onClick={toggleStructure}><PanelLeft /></Button><Button variant="ghost" size="icon-sm" aria-label="Theme settings" aria-pressed={showInspector && panel === "theme"} onClick={() => openSettings("theme")}><Paintbrush /></Button><Button type="button" variant="ghost" size="icon-sm" aria-label={interacting ? "Return to editing" : "Interact with preview"} aria-pressed={interacting} onClick={() => { setInteracting(value => !value); setMobilePanel("preview"); }}><Eye /></Button><div className="pb-device-toggle" role="group" aria-label="Preview size"><Button type="button" variant="ghost" size="icon-sm" aria-label="Desktop preview" aria-pressed={device === "desktop"} onClick={() => { setDevice("desktop"); setMobilePanel("preview"); }}><Monitor /></Button><Button type="button" variant="ghost" size="icon-sm" aria-label="Mobile preview" aria-pressed={device === "mobile"} onClick={() => { setDevice("mobile"); setMobilePanel("preview"); }}><Smartphone /></Button></div><Button type="button" variant="ghost" size="icon-sm" aria-label="Toggle editor settings" aria-expanded={showInspector} onClick={toggleInspector}><PanelRight /></Button></div><div className="pb-toolbar-commands"><Button size="sm" variant="outline" disabled={!canWrite || Boolean(busy) || (!dirty && saved.revision > 0)} onClick={() => void save(false)}>{busy === "draft" ? <LoaderCircle className="animate-spin" /> : <Save />}Save</Button><Button size="sm" disabled={!canWrite || Boolean(busy) || (!unpublished && !dirty)} onClick={() => void save(true)}>{busy === "publish" ? <LoaderCircle className="animate-spin" /> : <Globe />}Publish</Button></div></div>
     </header>
     {(error || notice || !canWrite) && <div className={`pb-feedback ${error ? "is-error" : ""}`} role={error ? "alert" : "status"}>{error || notice || "Preview access. A workspace admin can edit and publish themes."}{notice && <Check />}</div>}
+    <Dialog open={confirmPublish} onOpenChange={open => { if (!busy) setConfirmPublish(open); }}><DialogContent><DialogHeader><DialogTitle>Publish {name.trim()}?</DialogTitle><DialogDescription>This saves your changes and makes this design visible on your website and customer account. Orders, invoices, and messages stay unchanged.</DialogDescription></DialogHeader>{error && <p role="alert" className="text-sm text-destructive">{error}</p>}<DialogFooter><Button variant="outline" disabled={Boolean(busy)} onClick={() => setConfirmPublish(false)}>Keep editing</Button><Button disabled={Boolean(busy)} onClick={() => void save(true, true)}>{busy === "publish" ? <LoaderCircle className="animate-spin" /> : <Globe />}Publish theme</Button></DialogFooter></DialogContent></Dialog>
     <div className="pb-mobile-tabs" role="group" aria-label="Website editor view"><Button variant={mobilePanel === "sections" ? "secondary" : "ghost"} aria-pressed={mobilePanel === "sections"} onClick={() => { setShowStructure(true); setMobilePanel("sections"); }}><LayoutTemplate />Sections</Button><Button variant={mobilePanel === "preview" ? "secondary" : "ghost"} aria-pressed={mobilePanel === "preview"} onClick={() => setMobilePanel("preview")}><Monitor />Preview</Button><Button variant={mobilePanel === "settings" ? "secondary" : "ghost"} aria-pressed={mobilePanel === "settings"} onClick={() => { setShowInspector(true); setMobilePanel("settings"); }}><Settings2 />Settings</Button></div>
     <div className="pb-workbench" data-inspector={showInspector} data-structure={showStructure} data-mobile-panel={mobilePanel}>
       <aside className="pb-structure pb-glass" aria-label="Portal structure">

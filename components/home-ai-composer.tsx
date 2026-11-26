@@ -1,7 +1,9 @@
 "use client";
 
 import { useRef, useState, type ReactNode, type RefObject, type ClipboardEventHandler } from "react";
-import { ArrowUp, ArrowUpRight, Plus, Square } from "lucide-react";
+import Image from "next/image";
+import Link from "next/link";
+import { ArrowRight, ArrowUp, ArrowUpRight, Plus, Square } from "lucide-react";
 import { AiIcon } from "@/components/ai-icon";
 import { AgentIcon } from "@/components/agent-icon";
 import { Button } from "@/components/ui/button";
@@ -22,6 +24,15 @@ export function HomeAiComposer({ name, asOf }: { name: string; asOf: string }) {
   };
 
   return <section aria-labelledby="home-ai-heading" className="home-ai">
+    <div className="home-connect-tools">
+      <Link href="/settings/apps?view=apps" className="home-connect-tools-link">
+        <span className="home-connect-tools-icons" aria-hidden="true">
+          {["/shopify-mark.svg", "/app-logos/gmail.svg", "/app-logos/whatsapp.svg"].map(src => <span key={src} className="home-connect-tools-icon"><Image src={src} alt="" width={13} height={13} unoptimized /></span>)}
+        </span>
+        <span>Connect all your tools</span>
+        <ArrowRight aria-hidden="true" className="size-4 shrink-0" />
+      </Link>
+    </div>
     <header className="home-ai-welcome">
       <div className="mb-4 flex justify-center">{mode === "agent" ? <AgentIcon className="size-12" /> : <AiIcon className="size-12" />}</div>
       <h2 id="home-ai-heading">{greeting}, <span data-no-translate>{name}</span>!</h2>

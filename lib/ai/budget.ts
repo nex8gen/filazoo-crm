@@ -46,7 +46,7 @@ export function quoteAiBudget(body: Record<string, unknown>, rate: BudgetRate, f
   // UTF-8 bytes bound text tokenization. OpenAI caps search context at 128k.
   // Image tokenization is opaque, so retain the full model-context bound.
   const textBound = new TextEncoder().encode(encoded).length + 4096;
-  const input = fullContext || /"(?:input_image|image_url)"/.test(encoded) ? rate.context : Math.min(rate.context, textBound + (webCalls ? 128000 : 0));
+  const input = fullContext || /"(?:input_image|image_url|input_file)"/.test(encoded) ? rate.context : Math.min(rate.context, textBound + (webCalls ? 128000 : 0));
   const prices = tokenRate(rate, input + output);
   return { reservedMicros: Math.ceil((input * prices.input + output * prices.output + webCalls * rate.webSearch) * USD_MICROS), output, webCalls };
 }

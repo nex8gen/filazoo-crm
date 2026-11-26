@@ -11,6 +11,9 @@ import * as rules from "../lib/ai-policy.ts";
 import * as credentials from "../lib/ai/provider-credentials.ts";
 import * as assistant from "../lib/ai/workspace-assistant.ts";
 import * as assistantIntent from "../lib/ai/assistant-intent.ts";
+import * as customerIntelligence from "../lib/ai/customer-intelligence.ts";
+import * as customerPopulation from "../lib/ai/customer-intelligence-population.ts";
+import * as customerOpportunities from "../lib/ai/customer-opportunities.ts";
 import * as tools from "../lib/ai/crm-tools.ts";
 import * as images from "../lib/ai/image-input.ts";
 import * as actions from "../lib/ai/agent-actions.ts";
@@ -19,7 +22,7 @@ import { visibleSettingsSections } from "../lib/settings-sections.ts";
 const userId = "a1111111-1111-4111-8111-111111111111";
 const proposalId = "b2222222-2222-4222-8222-222222222222";
 function load<T>(file: string, dependencies: Record<string, unknown>, extra = {}): T {
-  dependencies = { "@/lib/ai/assistant-intent": assistantIntent, ...dependencies };
+  dependencies = { "@/lib/ai/assistant-intent": assistantIntent, "@/lib/ai/customer-intelligence": customerIntelligence, "@/lib/ai/customer-intelligence-population": customerPopulation, "@/lib/ai/customer-opportunities": customerOpportunities, ...dependencies };
   const exports = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   vm.runInNewContext(code, { exports, require: (name: string) => {

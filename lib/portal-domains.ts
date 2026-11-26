@@ -1,10 +1,10 @@
 import { z } from "zod";
 import { parse } from "tldts";
+import { portalDomainStatuses } from "./portal-domain-status.ts";
+export { portalDomainLabels, portalDomainStatuses } from "./portal-domain-status.ts";
 
-export const portalDomainStatuses = ["pending_dns", "pending_ssl", "connected", "disconnecting"] as const;
 export type PortalDnsRecord = { type: "TXT" | "CNAME" | "A"; name: string; value: string };
 export type PortalDomain = { hostname: string; status: typeof portalDomainStatuses[number]; records: PortalDnsRecord[]; checkedAt: string | null; message: string | null };
-export const portalDomainLabels = { pending_dns: "Waiting for DNS", pending_ssl: "Preparing HTTPS", connected: "Connected", disconnecting: "Disconnecting" };
 
 export function normalizePortalDomain(input: string): string {
   const value = input.trim().toLowerCase().replace(/\.$/, "");

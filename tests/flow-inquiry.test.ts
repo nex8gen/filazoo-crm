@@ -6,6 +6,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import * as errors from "../lib/flow-execution-errors.ts";
 import * as mailboxes from "../lib/mailbox-utils.ts";
+import * as flowMailboxes from "../lib/flow-mailboxes.ts";
 
 type Row = Record<string, unknown>;
 const require = createRequire(import.meta.url);
@@ -26,7 +27,7 @@ function fixture(file: string, tables: Record<string, Row[]>, deps: Record<strin
     return query;
   } };
   const exports: Record<string, (...args: unknown[]) => Promise<Record<string, unknown>>> = {};
-  const dependencies: Row = { "server-only": {}, "../supabase/admin.ts": { createSupabaseAdmin: () => admin }, "../flow-execution-errors.ts": errors, "../mailbox-utils.ts": mailboxes, ...deps };
+  const dependencies: Row = { "server-only": {}, "../supabase/admin.ts": { createSupabaseAdmin: () => admin }, "../flow-execution-errors.ts": errors, "../mailbox-utils.ts": mailboxes, "../flow-mailboxes.ts": flowMailboxes, ...deps };
   const code = ts.transpileModule(readFileSync(new URL(`../lib/data/${file}.ts`, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   vm.runInNewContext(code, { exports, require: (id: string) => dependencies[id] ?? require(id), Date, setTimeout, clearTimeout });
   return exports;

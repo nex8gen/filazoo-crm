@@ -33,7 +33,7 @@ export type AnalyticsChartCardProps = {
 };
 
 type TrendPlotProps = Pick<AnalyticsChartCardProps, "data" | "currentLabel" | "previousLabel" | "formatValue" | "showDots"> & {
-  size: "full" | "compact" | "sparkline";
+  size: "full" | "compact" | "sparkline" | "chat";
   label: string;
 };
 
@@ -45,7 +45,8 @@ export function AnalyticsTrendPlot({ data, currentLabel, previousLabel, formatVa
   const maskId = `${chartId}-mask`;
   const mini = size === "sparkline";
   const compact = size === "compact";
-  const height = mini ? 30 : compact ? 144 : 256;
+  const chat = size === "chat";
+  const height = mini ? 30 : compact ? 144 : chat ? 200 : 256;
   const dot = showDots || data.length === 1 ? { r: mini ? 1.6 : 2, strokeWidth: 0 } : false;
 
   return (
@@ -67,7 +68,7 @@ export function AnalyticsTrendPlot({ data, currentLabel, previousLabel, formatVa
               <rect width="1" height="1" fill={`url(#${fadeId})`} />
             </mask>
           </defs>
-          <XAxis hide={mini} dataKey="tick" interval="preserveStartEnd" tickMargin={10} minTickGap={compact ? 38 : 27} axisLine={false} tickLine={false} tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} />
+          <XAxis hide={mini} dataKey="tick" interval="preserveStartEnd" tickMargin={10} minTickGap={compact || chat ? 38 : 27} axisLine={false} tickLine={false} tick={{ fill: "var(--muted-foreground)", fontSize: chat ? 12 : 10 }} />
           <YAxis hide />
           <Tooltip allowEscapeViewBox={{ x: mini, y: mini }} wrapperStyle={mini ? { right: 0, left: "auto", top: "100%", transform: "none", zIndex: 5 } : undefined}
             cursor={{ stroke: "var(--muted-foreground)", strokeOpacity: 0.6 }} content={({ active, payload }) => {

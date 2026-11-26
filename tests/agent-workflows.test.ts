@@ -12,6 +12,7 @@ import ts from "typescript";
 import * as actions from "../lib/ai/agent-actions.ts";
 import * as invoices from "../lib/invoices.ts";
 import * as threading from "../lib/email-threading.ts";
+import * as customerConversations from "../lib/ai/customer-conversations.ts";
 import * as commerce from "../lib/company-commerce.ts";
 import * as permissions from "../lib/invoice-permissions.ts";
 import * as progress from "../lib/ai/agent-progress.ts";
@@ -315,7 +316,14 @@ test("email lookup loads full accessible inbound bodies, matches secondary conta
     { ...base, id: "other-customer", companyId: invoiceId, contact: "other@example.com", bodyLoaded: false },
   ];
   let reads = 0;
+  const customerHistory = moduleUnderTest<typeof import("../lib/ai/customer-email-history.ts")>("../lib/ai/customer-email-history.ts", {
+    "./customer-conversations.ts": customerConversations,
+    "../data/mailboxes": { getViewerMailboxes: async () => [] },
+    "../data/company-emails": { getCompaniesEmailBackendData: async () => new Map([[companyId, { emails: messages.filter(email => email.companyId === companyId), inboxError: "Some mailbox history unavailable" }]]) },
+    "../data/company-email-access": { readCompanyMailboxEmail: async (_viewer: unknown, _id: string, source: { uid: number }) => { reads++; if (source.uid === 2) throw new Error("Body unavailable"); return { email: { body: "Ship to 99 New Road, Shanghai 200000, China", bodyLoaded: true } }; } },
+  });
   const records = moduleUnderTest<typeof import("../lib/ai/agent-records.ts")>("../lib/ai/agent-records.ts", {
+    "./customer-email-history": customerHistory,
     "../supabase/admin": { createSupabaseAdmin: () => database(tables) }, "../company-commerce": commerce,
     "../email-inbox": { getEmailInboxBackendData: async (options: { syncMailbox: boolean; history: boolean }) => { assert.equal(options.syncMailbox, false); assert.equal(options.history, true); return { emails: messages, inboxError: "Some mailbox history unavailable" }; } },
     "../data/mailboxes": { getViewerMailboxes: async () => [{ id: "mailbox" }], getEffectiveMailbox: async () => ({ id: "mailbox" }) },

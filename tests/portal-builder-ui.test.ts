@@ -28,6 +28,7 @@ const native = (tag: string) => function NativeControl({ children, ...props }: R
   return React.createElement(tag, props, children as React.ReactNode);
 };
 const controls = {
+  "@/components/ui/dialog": { Dialog: ({ open, children }: { open: boolean; children: React.ReactNode }) => open ? React.createElement("div", { role: "dialog" }, children) : null, DialogContent: native("div"), DialogHeader: native("header"), DialogFooter: native("footer"), DialogTitle: native("h2"), DialogDescription: native("p") },
   "@/components/ui/card": { Card: native("div"), CardFooter: native("div"), CardHeader: native("div"), CardTitle: native("h2") },
   "@/components/ui/badge": { Badge: native("span") },
   "@/components/ui/label": { Label: native("label") },
@@ -311,6 +312,8 @@ test("builder previews styles and devices and saves a draft separately from publ
     assert.equal(ui.calls.length, 1); assert.equal(ui.calls[0].publish, false); assert.equal(ui.calls[0].design.theme, "soft");
     assert.ok(ui.host.textContent?.includes("Theme saved."));
     await ui.click("Publish");
+    assert.equal(ui.calls.length, 1);
+    await ui.click("Publish theme");
     assert.equal(ui.calls.length, 2); assert.equal(ui.calls[1].publish, true); assert.equal(ui.calls[1].revision, 1);
     assert.equal(ui.button("Publish").disabled, true);
   } finally { await ui.close(); }
@@ -459,15 +462,31 @@ test("theme library separates the live theme, saved drafts and templates and per
   let state: designTools.PortalDesignView = { draft: designTools.defaultPortalDesign(), published: null, revision: 0, updatedAt: null, publishedAt: null };
   const adds: string[] = [];
   const publishes: string[] = [];
-  const { PortalThemeArtwork } = load("components/portal-theme-artwork.tsx", {});
+  const changes: string[] = [];
+  let failChange = false;
+  const { PortalThemeArtwork } = load("components/portal-theme-artwork.tsx", { "@/lib/portal-design": designTools, "@/lib/portal-design-defaults": designTools, "@/lib/portal-website-design": websiteTools, "@/lib/portal-website-blocks": blockTools });
   const dialogParts = { Dialog: ({ open, children }: { open: boolean; children: React.ReactNode }) => open ? React.createElement("div", null, children) : null,
-    DialogContent: native("div"), DialogHeader: native("header"), DialogTitle: native("h2"), DialogDescription: native("p") };
+    DialogContent: native("div"), DialogHeader: native("header"), DialogFooter: native("footer"), DialogTitle: native("h2"), DialogDescription: native("p") };
+  const { PortalThemePreview } = load("components/portal-theme-preview.tsx", {
+    "next/dynamic": { default: () => PortalExperience }, "@/components/ui/dialog": dialogParts,
+    "@/components/portal-website": { PortalWebsite }, "@/lib/portal-preview": { portalPreviewData }, "@/lib/portal-themes": themeTools, "@/lib/portal-website-design": websiteTools,
+  });
+  const { PortalLibraryDialog } = load("components/portal-library-dialog.tsx", { "@/components/ui/dialog": dialogParts });
+  const menuParts = {
+    DropdownMenu: ({ open, onOpenChange, children }: { open: boolean; onOpenChange: (open: boolean) => void; children: React.ReactNode }) => {
+      const items = React.Children.toArray(children);
+      return React.createElement("div", null, React.cloneElement(items[0] as React.ReactElement<{ onClick: () => void }>, { onClick: () => onOpenChange(!open) }), open ? items.slice(1) : null);
+    },
+    DropdownMenuTrigger: native("button"), DropdownMenuContent: native("div"), DropdownMenuItem: native("button"), DropdownMenuSeparator: native("hr"),
+  };
+  const { PortalThemeMenu } = load("components/portal-theme-menu.tsx", { "@/components/ui/dropdown-menu": menuParts });
   const { PortalThemeLibrary } = load("components/portal-theme-library.tsx", {
-    "next/link": { default: native("a") }, "@/components/ui/dialog": dialogParts,
+    "next/link": { default: native("a") }, "next/navigation": { useRouter: () => ({ refresh() {} }) }, "next/dynamic": { default: (loader: () => unknown) => loader.toString().includes("portal-library-dialog") ? PortalLibraryDialog : loader.toString().includes("portal-theme-menu") ? PortalThemeMenu : PortalThemePreview }, "@/components/ui/dialog": dialogParts,
+    "@/components/ui/dropdown-menu": { DropdownMenu: native("div"), DropdownMenuTrigger: native("button"), DropdownMenuContent: native("div"), DropdownMenuItem: native("button"), DropdownMenuSeparator: native("hr") },
     "@/components/portal-local-time": { PortalLocalTime },
     "@/components/portal-theme-artwork": { PortalThemeArtwork }, "@/components/portal-experience": { PortalExperience },
     "@/components/portal-website": { PortalWebsite },
-    "@/lib/portal-design": designTools, "@/lib/portal-themes": themeTools, "@/lib/portal-preview": { portalPreviewData },
+    "@/lib/portal-design": designTools, "@/lib/portal-themes": themeTools, "@/lib/portal-theme-model": themeTools, "@/lib/portal-domains": domainTools, "@/lib/portal-domain-status": { portalDomainLabels: domainTools.portalDomainLabels }, "@/lib/portal-preview": { portalPreviewData },
     "@/app/customer-portal/actions": {
       createPortalTheme: async ({ templateId }: { templateId: string }) => {
         adds.push(templateId); const id = `saved-${templateId}`;
@@ -480,26 +499,71 @@ test("theme library separates the live theme, saved drafts and templates and per
         state = { ...state, revision: state.revision + 1, published: theme.design, liveThemeId: themeId, publishedAt: "2026-11-16T10:00:00Z" };
         return { saved: state };
       },
+      changePortalTheme: async ({ action, themeId, name }: { action: string; themeId: string; name?: string }) => {
+        if (failChange) return { error: "Unable to save. Please retry." };
+        changes.push(action);
+        state = { ...state, revision: state.revision + 1, themes: state.themes!.filter(item => action !== "remove" || item.id !== themeId).map(item => item.id !== themeId ? item : action === "rename" ? { ...item, name: name! } : { ...item, design: state.published! }) };
+        return { saved: state };
+      },
     },
   });
   const host = document.createElement("div"); document.body.append(host);
   const root = createRoot(host);
   try {
     await React.act(async () => root.render(React.createElement(PortalThemeLibrary, { initial: state, canWrite: true, workspaceName: "Test brand" })));
-    assert.ok(host.querySelector('[aria-label="Live theme"]'));
-    assert.equal(host.querySelectorAll(".ptl-template-card").length, 6);
+    assert.ok(host.querySelector(".ptl-unpublished"));
+    assert.equal(host.querySelector(".ptl-live-card"), null);
+    assert.equal(host.querySelectorAll(".ptl-template-card").length, 0);
     assert.equal(host.querySelector(".portal-builder"), null);
+    const click = async (label: string) => { const button = [...host.querySelectorAll<HTMLButtonElement>("button")].find(item => item.textContent?.trim() === label || item.getAttribute("aria-label") === label); assert.ok(button, label); await React.act(async () => button.click()); };
+    await click("Add theme");
+    assert.equal(host.querySelectorAll(".ptl-template-card").length, 6);
     const studio = [...host.querySelectorAll(".ptl-template-card")].find(card => card.textContent?.includes("Studio"))!;
-    await React.act(async () => studio.querySelector<HTMLButtonElement>(".ptl-template-info button")!.click());
+    await React.act(async () => studio.querySelector<HTMLButtonElement>(".ptl-template-actions button:last-child")!.click());
     assert.deepEqual(adds, ["studio"]);
     assert.ok(host.querySelector('a[href="/customer-portal/themes/saved-studio"]'));
-    const row = [...host.querySelectorAll(".ptl-draft-row")].find(item => item.textContent?.includes("Studio"))!;
+    const row = [...host.querySelectorAll(".ptl-draft-card")].find(item => item.textContent?.includes("Studio"))!;
     const publish = [...row.querySelectorAll<HTMLButtonElement>("button")].find(item => item.textContent === "Publish")!;
     await React.act(async () => publish.click());
+    assert.deepEqual(publishes, []);
+    await click("Publish theme");
     assert.deepEqual(publishes, ["saved-studio"]);
-    assert.ok(host.querySelector(".ptl-live-footer h2")?.textContent?.includes("Studio"));
+    assert.ok(host.querySelector(".ptl-live-info h3")?.textContent?.includes("Studio"));
+    assert.equal(host.querySelector(".ptl-unpublished"), null);
+    assert.equal(host.querySelectorAll(".ptl-draft-card").length, 1);
+    await click("More actions for Studio");
+    await click("Rename");
+    await editField(host, ".ptl-name-field input", "Showcase");
+    failChange = true;
+    await React.act(async () => host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    assert.ok(host.querySelector('[role="alert"]')?.textContent?.includes("retry"));
+    assert.equal(host.querySelector<HTMLInputElement>(".ptl-name-field input")?.value, "Showcase");
+    assert.deepEqual(changes, []);
+    failChange = false;
+    await React.act(async () => host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    assert.deepEqual(changes, ["rename"]);
+    assert.equal(host.querySelector(".ptl-live-info h3")?.textContent, "Showcase");
+    state = { ...state, revision: state.revision + 1, themes: state.themes!.map(item => item.id === state.liveThemeId ? { ...item, design: { ...item.design, heading: "Unpublished" } } : item) };
+    await React.act(async () => root.render(React.createElement(PortalThemeLibrary, { initial: state, canWrite: true, workspaceName: "Test brand" })));
+    assert.ok(host.textContent?.includes("Unpublished changes"));
+    await click("More actions for Showcase");
+    await click("Restore published version");
+    assert.deepEqual(changes, ["rename"]);
+    await React.act(async () => host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    assert.deepEqual(changes, ["rename", "restore"]);
+    assert.equal(host.textContent?.includes("Unpublished changes"), false);
+    await click("More actions for My customer portal");
+    await click("Remove draft");
+    assert.deepEqual(changes, ["rename", "restore"]);
+    await React.act(async () => host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    assert.deepEqual(changes, ["rename", "restore", "remove"]);
+    assert.equal(host.querySelectorAll(".ptl-draft-card").length, 0);
+    assert.ok(host.querySelector(".ptl-empty-drafts"));
+    await click("Browse templates");
     await React.act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Preview Bloom template"]')!.click());
     assert.ok(host.querySelector(".ptl-preview-frame .portal-website"));
+    await click("Mobile preview");
+    assert.equal(host.querySelector(".ptl-preview-frame")?.getAttribute("data-device"), "mobile");
     assert.equal(host.querySelector(".ptl-preview-frame .cpa-sidebar"), null);
     await React.act(async () => host.querySelector<HTMLButtonElement>(".ptl-preview-frame .pws-account")!.click());
     assert.ok(host.querySelector(".ptl-preview-frame .cpa-metrics"));
@@ -507,6 +571,11 @@ test("theme library separates the live theme, saved drafts and templates and per
     await React.act(async () => orderLink.click());
     assert.ok(host.querySelector(".ptl-preview-frame .cpa-order-steps"));
     assert.equal(host.querySelector(".ptl-preview-frame .cpa-metrics"), null);
+    await click("Close preview");
+    assert.equal(host.querySelectorAll(".ptl-template-card").length, 6);
+    await React.act(async () => root.render(React.createElement(PortalThemeLibrary, { initial: state, canWrite: false, workspaceName: "Test brand" })));
+    assert.equal([...host.querySelectorAll<HTMLButtonElement>("button")].some(button => button.textContent?.trim() === "Publish" || button.textContent?.trim() === "Add theme" || button.textContent?.trim() === "Rename"), false);
+    assert.ok(host.textContent?.includes("preview access"));
   } finally { await React.act(async () => root.unmount()); host.remove(); }
 });
 

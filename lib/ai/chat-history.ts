@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { assistantPageContextSchema } from "./page-context.ts";
 import type { AgentProposal, AgentActionResult } from "./agent-actions.ts";
-import type { ChatImage } from "./image-input.ts";
+import type { ChatImage, ChatFile } from "./image-input.ts";
 import type { ResponsePresentation } from "./response-presentation.ts";
 import type { AssistantActivity } from "./research-progress.ts";
 
@@ -17,7 +17,7 @@ export const conversationPatchSchema = z.object({
 export type ConversationInput = z.infer<typeof conversationInputSchema>;
 export type HistoryReference = z.infer<typeof historyReferenceSchema>;
 export type HistoryMessage = {
-  id: string; role: "user" | "assistant"; content: string; images?: ChatImage[]; attachmentNames?: string[];
+  id: string; role: "user" | "assistant"; content: string; images?: ChatImage[]; files?: ChatFile[]; attachmentNames?: string[];
   actions?: AgentProposal[]; sources?: Array<{ id: string; label: string; recordedAt?: string; url?: string }>;
   durationMs?: number; research?: unknown; activity?: AssistantActivity[];
   presentation?: ResponsePresentation;
@@ -51,7 +51,7 @@ export function savedPageContext(context: z.infer<typeof assistantPageContextSch
 
 /** Bounded extractive memory: attributed excerpts, never instructions or verified CRM facts. */
 export function conversationMemory(messages: Pick<HistoryMessage, "role" | "content">[], previousSummary = "") {
-  const recent = messages.slice(-10).map((m) => ({ role: m.role, content: m.content.slice(0, 2000) || "[Image attached in original conversation; reattach to inspect it.]" }));
+  const recent = messages.slice(-10).map((m) => ({ role: m.role, content: m.content.slice(0, 2000) || "[File attached in original conversation; reattach to inspect it.]" }));
   const older = messages.slice(0, -10);
   const excerpts = older.map((m) => `${m.role}: ${m.content.replace(/\s+/g, " ").slice(0, 320)}`).join("\n");
   const summary = [previousSummary, excerpts].filter(Boolean).join("\n").slice(-5000);

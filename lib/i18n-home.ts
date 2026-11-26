@@ -2,6 +2,7 @@ import { zhCNAiResponses } from "./i18n-ai-responses.ts";
 
 export const zhCNHome: Record<string, string> = {
   ...zhCNAiResponses,
+  "Connect all your tools": "连接您的所有工具",
   "Suggested CRM prompts": "推荐 CRM 提示",
   "Plan a campaign": "策划营销活动", "Get an audience, email draft, and suggested timing.": "获取受众建议、邮件草稿和发送时间建议。",
   "Prioritize follow-ups": "安排跟进优先级", "See which customers need your attention next.": "了解接下来需要关注哪些客户。",

@@ -22,6 +22,9 @@ import { readResearchResponse, researchStreamType, type ResearchProgress, type A
 import { blankInvoiceDocument } from "../lib/invoices.ts";
 import { agentOrderFromInvoice } from "../lib/ai/order-actions.ts";
 import { workflowAnalyticsPrompts } from "../lib/flow-analytics-prompts.ts";
+import * as customerIntelligence from "../lib/ai/customer-intelligence.ts";
+import * as customerPopulation from "../lib/ai/customer-intelligence-population.ts";
+import * as customerOpportunities from "../lib/ai/customer-opportunities.ts";
 
 const require = createRequire(import.meta.url);
 class TestHistoryError extends Error { status = 503; }
@@ -45,7 +48,7 @@ test("temporary workspace-session failures explicitly reject before saved turns,
 // No test signs in to the real workspace, saves an invoice, or sends an email.
 function route(file: string, dependencies: Record<string, unknown>, env: Record<string, string> = {}, method: "POST" | "GET" = "POST") {
   env = { AI_AGENT_RUNTIME: "legacy", ...env };
-  dependencies = { "@/lib/ai/assistant-intent": assistantIntent, "./document-intent": documentIntent, ...dependencies };
+  dependencies = { "@/lib/ai/assistant-intent": assistantIntent, "./document-intent": documentIntent, "@/lib/ai/customer-intelligence": customerIntelligence, "@/lib/ai/customer-intelligence-population": customerPopulation, "@/lib/ai/customer-opportunities": customerOpportunities, ...dependencies };
   const exports: { POST?: (request: Request, context?: { params: Promise<{ id: string }> }) => Promise<Response>; GET?: (request: Request) => Promise<Response> } = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (dependencies[name] ?? (name === "./crm-reply-tools" ? replyTools : name === "./crm-reply-execution" ? { replyOperationTarget: () => { throw new Error("Reply workflows use their dedicated fixtures"); } } : name === "../data/customer-reply-requests" ? { listReplyRequests: async () => [] } : name === "@/lib/ai/invoice-readiness" ? readiness : undefined) ?? (name === "@/lib/ai/chat-session" ? { startChatSession: async () => undefined } : name === "@/lib/ai/chat-history-server" ? { HistoryError: TestHistoryError } : name === "@/lib/ai/chat-history" ? { savedPageContext: (value: unknown) => value ?? {} } : name === "@/lib/ai/crm-tools" ? crmTools : name === "@/lib/ai/crm-records" ? {} : name === "@/lib/i18n" ? i18n : name === "@/lib/ai/customer-research" ? research : name === "@/lib/ai/image-input" ? imageInput : require(name))), Response, Request, URL, AbortSignal, Date, Error, crypto, console, process: { env } });
@@ -57,6 +60,37 @@ const id = "15693adc-0bdf-4617-b214-71b1861764a9";
 const company = { type: "create_company", company: { name: "Acme", country: "US", segment: "Retail" } };
 const request = (body: unknown, origin = "http://localhost:3000") => new Request("http://localhost:3000/api/ai/assistant/action", { method: "POST", headers: { "Content-Type": "application/json", origin }, body: JSON.stringify(body) });
 const decision = { id, decision: "approve", approval: "manual" };
+
+test("customer answers attach simple dated conversations in workspace and profile chat and save them with the answer", async () => {
+  const conversations = [{ companyId: id, companyName: "Carraro", state: "ready", more: false,
+    threads: [{ id: "sent-thread", subject: "Re: Shopify enquiry", sender: "enphany@example.com", timestamp: "2026-11-26T01:39:00Z", direction: "outbound" }] }];
+  for (const profile of [false, true]) {
+    let saved: Record<string, unknown> | undefined;
+    let lookups = 0;
+    const post = route(profile ? "../app/api/companies/[id]/chat/route.ts" : "../app/api/ai/assistant/route.ts", {
+      "@/lib/auth": { getWorkspaceViewer: async () => viewer },
+      "@/lib/data/crm": { getCompanyDetails: async () => ({ details: { company: { id, name: "Carraro" }, activity: [] } }) },
+      "@/lib/ai/company-chat": { ...companyChat, buildCompanyChatContext: () => ({ context: { coverage: {} }, sources: [] }), buildCompanyChatPrompt: () => "Saved profile" },
+      "@/lib/ai/workspace-assistant": assistant,
+      "@/lib/ai/chat-session": { startChatSession: async () => ({ messages: [{ role: "user", content: "Which country is Carraro in?" }], completedActionIds: [], complete: async (payload: Record<string, unknown>) => { saved = payload; return payload; }, fail: async () => {}, flush: async () => {} }) },
+      "@/lib/ai/gateway": { generateGatewayText: async () => "Carraro is in Brazil." },
+      "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
+      "@/lib/ai/crm-records": { readCrmRecords: async () => ({ records: [{ id, name: "Carraro", country: "Brazil" }], coverage: { matching: 1, nextOffset: null } }) },
+      "@/lib/ai/customer-email-history": { loadConversationPresentation: async (_viewer: unknown, evidence: { records: { id: string }[] }[]) => { lookups++; assert.equal(evidence[0].records[0].id, id); return conversations; } },
+      "@/lib/ai/native-agent": { nativeGatewayModels: () => ({ model: {} }), generateCrmPlan: async (options: { read: (input: unknown) => Promise<unknown> }) => { await options.read({ resource: "companies", query: "Carraro", offset: 0 }); return { output: "Carraro is in Brazil.", actions: [] }; } },
+      "@/lib/ai/agent-execution": { prepareAgentActions: async () => [] },
+    }, { AI_GATEWAY_API_KEY: "synthetic", AI_AGENT_RUNTIME: "sdk" });
+    const input = request({ ...(!profile ? { mode: "work", pathname: "/", pageLabel: "Home", pageText: "" } : {}), history: { conversationId: id, requestId: viewer.id, version: 0 }, messages: [{ role: "user", content: "Which country is Carraro in?" }] });
+    const response = await post(input, ...(profile ? [{ params: Promise.resolve({ id }) }] : []));
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.equal(result.output, "Carraro is in Brazil.");
+    assert.equal(lookups, 1);
+    assert.equal(result.presentation.conversations[0].threads[0].timestamp, "2026-11-26T01:39:00Z");
+    assert.equal(result.presentation.sections.length, 0, "Customer cards and tables must not accompany the compact conversation list");
+    assert.equal(JSON.stringify(result.presentation), JSON.stringify(saved?.presentation));
+  }
+});
 
 test("native Agent streams context, record and email lookups and saves its actual activity with the reply", async () => {
   let saved: Record<string, unknown> | undefined;
@@ -448,6 +482,35 @@ test("image prompts reach workspace providers in Chat and Agent mode without byp
   }
 });
 
+test("five file-only attachments reach Chat, Agent and customer providers; overflow is rejected before generation", async () => {
+  const files = Array.from({ length: 5 }, (_, index) => ({ name: `notes-${index}.txt`, mediaType: "text/plain", dataUrl: `data:text/plain;base64,${Buffer.from(`File ${index}`).toString("base64")}` }));
+  for (const mode of ["analyze", "work", "customer"]) {
+    let calls = 0;
+    const post = route(mode === "customer" ? "../app/api/companies/[id]/chat/route.ts" : "../app/api/ai/assistant/route.ts", {
+      "@/lib/auth": { getWorkspaceViewer: async () => viewer },
+      "@/lib/ai/workspace-assistant": assistant,
+      "@/lib/ai/company-chat": { ...companyChat, buildCompanyChatContext: () => ({ context: { coverage: {} }, sources: [] }) },
+      "@/lib/data/crm": { getCompanyDetails: async () => ({ details: { company: {} } }) },
+      "@/lib/ai/agent-context": { loadAgentContext: async () => ({}) },
+      "@/lib/ai/agent-execution": {},
+      "@/lib/ai/assistant-provider-error": providerError,
+      "@/lib/ai/gateway": { generateGatewayText: async (options: { files: imageInput.ProviderFile[]; images: unknown[] }) => {
+        calls++;
+        assert.equal(options.files.length, 5); assert.equal(options.files[4].name, "notes-4.txt");
+        assert.equal(options.images.length, 0);
+        return mode === "work" ? 'FILAZOO_QUESTION_JSON: {"question":"Which of the five attachments should I use?"}' : "All five attachments received.";
+      } },
+    }, { AI_GATEWAY_API_KEY: "synthetic" });
+    const body = { ...(mode === "customer" ? {} : { mode, pathname: "/", pageLabel: "Home", pageText: "" }), messages: [{ role: "user", content: "", files }] };
+    const response = await post(request(body), { params: Promise.resolve({ id }) });
+    assert.equal(response.status, 200); assert.ok(calls >= 1);
+    assert.match((await response.json()).output, /five attachments/);
+    const completedCalls = calls;
+    const overflow = await post(request({ ...body, messages: [{ role: "user", content: "", files: [...files, files[0]] }] }), { params: Promise.resolve({ id }) });
+    assert.equal(overflow.status, 400); assert.equal(calls, completedCalls);
+  }
+});
+
 test("customer image questions use authorized records and retain image context in follow-ups", async () => {
   const image = { name: "address.png", dataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1kAAAAASUVORK5CYII=" };
   let loaded = false;
@@ -786,6 +849,53 @@ test("Chat can look up an explicitly named customer's invoices from Analytics wi
   const response = await post(request({ mode: "analyze", pathname: "/analytics", pageLabel: "Analytics", pageText: "Aggregate metrics", messages: [{ role: "user", content: "Which invoices does Inovecell have?" }] }));
   const body = await response.json(); assert.equal(response.status, 200); assert.equal(reads, 2); assert.equal(generated, 3);
   assert.match(body.output, /INV-VERIFIED/); assert.deepEqual(body.actions, []);
+});
+
+test("Chat and Agent discover opportunities through verified conversations without prior draft-order answers", async () => {
+  for (const [mode, runtime] of [["analyze", "legacy"], ["work", "legacy"], ["work", "sdk"]] as const) {
+    const offsets: number[] = [];
+    let generated = 0, details = 0, emails = 0;
+    const checkScreening = (prompt: string) => {
+      assert.deepEqual(offsets, [0, 20]);
+      assert.match(prompt, /Verified buyer/);
+      assert.match(prompt, /500 rolls/);
+      assert.doesNotMatch(prompt, /PO-OLD|Current page draft|purchase_orders|fitScore/);
+    };
+    const post = route("../app/api/ai/assistant/route.ts", {
+      "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
+      "@/lib/ai/agent-context": { loadAgentContext: async () => assert.fail("The open account's commercial context cannot seed opportunity rankings"), searchAgentEmails: async (_actor: unknown, search: assistant.AgentEmailSearch) => {
+        emails++; assert.equal(search.companyId, id); assert.equal(search.direction, "all");
+        return { messages: [{ id: "source", companyId: id, direction: "inbound", timestamp: "2026-11-25T10:00:00Z", href: "/email?thread=source", subject: "Price request", text: "Please quote 500 rolls", contentAvailable: true }], coverage: { nextOffset: null } };
+      } },
+      "@/lib/ai/crm-records": { readCrmRecords: async (actor: unknown, lookup: crmTools.CrmRead) => {
+        assert.equal(actor, viewer); assert.equal(lookup.resource, "customer_insights");
+        if (lookup.companyId) { details++; assert.equal(lookup.companyId, id); return { records: [{ id, name: "Verified buyer", email: { messages: 1, countsComplete: true, complete: true, records: [{ id: "source", direction: "inbound", timestamp: "2026-11-25T10:00:00Z", body: { text: "Please quote 500 rolls" }, contentAvailable: true }] } }], coverage: { nextOffset: null } }; }
+        offsets.push(lookup.offset);
+        return { records: Array.from({ length: lookup.offset === 0 ? 20 : 3 }, (_, index) => {
+          const last = lookup.offset + index === 22;
+          return { id: last ? id : `customer-${lookup.offset + index}`, name: last ? "Verified buyer" : `Other ${lookup.offset + index}`,
+            email: { messages: 1, inbound: 1, available: true, countsComplete: true, records: [{ id: "source", direction: "inbound", timestamp: "2026-11-25T10:00:00Z", body: { text: last ? "Please quote 500 rolls" : "Send information" }, contentAvailable: true }] } };
+        }), coverage: { matching: 23, nextOffset: lookup.offset === 0 ? 20 : null } };
+      } },
+      "@/lib/ai/gateway": { generateGatewayText: async (options: { prompt: string; complex: boolean; systemInstruction: string; strictSchema: boolean }) => {
+        checkScreening(options.prompt); assert.equal(options.complex, true);
+        assert.equal(options.strictSchema, true);
+        assert.match(options.systemInstruction, /Discover prospective NEW purchase opportunities from customer conversations/);
+        if (++generated === 1) return JSON.stringify({ companyIds: [id] });
+        assert.equal(details, 1); assert.equal(emails, 1);
+        return JSON.stringify({ decisions: [{ companyId: id, latestInboundId: "source", outcome: "evaluating", confidence: "medium", evidence: [{ sourceId: "source", quote: "Please quote 500 rolls" }], conversationSummary: "The customer requested pricing for a specific quantity.", blockers: "Price acceptance is not confirmed.", nextAction: "Answer the pricing request." }] });
+      } },
+      "@/lib/ai/native-agent": { nativeGatewayModels: () => assert.fail("Read-only opportunity answers use the evidence-validated workflow") },
+      "@/lib/ai/agent-execution": { prepareAgentActions: async () => assert.fail("No actions were requested") },
+    }, { AI_AGENT_RUNTIME: runtime, AI_GATEWAY_API_KEY: "synthetic" });
+    const response = await post(request({ mode, pathname: "/", pageLabel: "Home", pageText: "Current page draft", messages: [{ role: "user", content: "Review Carraro" }, { role: "assistant", content: "A draft purchase order PO-OLD exists." }, { role: "user", content: "can you find top costomers who are most problaiy can order" }] }));
+    const body = await response.json();
+    assert.equal(response.status, 200, JSON.stringify(body));
+    assert.match(body.output, /Verified buyer/); assert.match(body.output, /2026-11-25.*Price request/);
+    assert.equal(body.opportunityAnalysis.coverage.included, 23); assert.equal(body.opportunityAnalysis.coverage.populationComplete, true);
+    assert.equal(details, 1); assert.equal(emails, 1); assert.equal(generated, 2);
+    assert.deepEqual(body.actions, []);
+  }
 });
 
 test("an explicit other customer bypasses the open customer's missing-address shortcut and email evidence", async () => {

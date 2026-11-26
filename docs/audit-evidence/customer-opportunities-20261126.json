@@ -1,0 +1,116 @@
+{
+  "passed": true,
+  "syntheticOnly": true,
+  "businessWrites": false,
+  "providerCalls": 2,
+  "chargedUsd": 0.008958,
+  "elapsedMs": 3361,
+  "searched": [
+    "15693adc-0bdf-4617-b214-000000000325"
+  ],
+  "result": {
+    "output": "These are opportunities found in customer conversations. Customers already in order preparation are tracked separately.\n\nScreened 326 of 326 customers; investigated conversations for 1 customer.\n\nScreening used recent excerpts, not every historical message. This is evidence-based prioritization, not a purchase probability.\n\n**1. [Synthetic Undiscovered Buyer](/companies/15693adc-0bdf-4617-b214-000000000325) (US)** — Explicit purchase intent\n\nThe customer confirmed that the black PLA samples passed production tests and stated an explicit intent to purchase 500 rolls next month, requesting delivery confirmation by December 15.\n\n[2026-11-25 · Filament samples and supply](/email?thread=ready-new): “We want to buy 500 rolls next month. Can you confirm delivery by December 15?”\n\nBlockers: Need to confirm delivery capability by December 15. Next action: Reply to confirm delivery schedule for 500 rolls by December 15. Evidence confidence: high.\n\nAlready in order preparation (1; excluded from newly discovered opportunities): [Synthetic Known Draft](/companies/15693adc-0bdf-4617-b214-000000000000).",
+    "recommendations": [
+      {
+        "name": "Synthetic Undiscovered Buyer",
+        "companyId": "15693adc-0bdf-4617-b214-000000000325",
+        "latestInboundId": "ready-new",
+        "outcome": "purchase_intent",
+        "confidence": "high",
+        "evidence": [
+          {
+            "sourceId": "ready-new",
+            "quote": "We want to buy 500 rolls next month. Can you confirm delivery by December 15?"
+          }
+        ],
+        "conversationSummary": "The customer confirmed that the black PLA samples passed production tests and stated an explicit intent to purchase 500 rolls next month, requesting delivery confirmation by December 15.",
+        "blockers": "Need to confirm delivery capability by December 15.",
+        "nextAction": "Reply to confirm delivery schedule for 500 rolls by December 15."
+      }
+    ],
+    "coverage": {
+      "matching": 326,
+      "included": 326,
+      "offset": 0,
+      "nextOffset": null,
+      "populationComplete": true,
+      "scope": "Saved email conversations and manual conversation notes. Active prepared orders are separated server-side and never supplied to the opportunity-ranking model. Unlinked social conversations are not included.",
+      "deepReviewRequired": false,
+      "pages": [
+        {
+          "matching": 326,
+          "nextOffset": 20
+        },
+        {
+          "matching": 326,
+          "nextOffset": 40
+        },
+        {
+          "matching": 326,
+          "nextOffset": 60
+        },
+        {
+          "matching": 326,
+          "nextOffset": 80
+        },
+        {
+          "matching": 326,
+          "nextOffset": 100
+        },
+        {
+          "matching": 326,
+          "nextOffset": 120
+        },
+        {
+          "matching": 326,
+          "nextOffset": 140
+        },
+        {
+          "matching": 326,
+          "nextOffset": 160
+        },
+        {
+          "matching": 326,
+          "nextOffset": 180
+        },
+        {
+          "matching": 326,
+          "nextOffset": 200
+        },
+        {
+          "matching": 326,
+          "nextOffset": 220
+        },
+        {
+          "matching": 326,
+          "nextOffset": 240
+        },
+        {
+          "matching": 326,
+          "nextOffset": 260
+        },
+        {
+          "matching": 326,
+          "nextOffset": 280
+        },
+        {
+          "matching": 326,
+          "nextOffset": 300
+        },
+        {
+          "matching": 326,
+          "nextOffset": 320
+        },
+        {
+          "matching": 326,
+          "nextOffset": null
+        }
+      ],
+      "conversationsInvestigated": 1,
+      "incompleteConversations": 0,
+      "knownPipelineCustomers": 1,
+      "pipelineClassificationComplete": true,
+      "rejectedEvidence": 0
+    }
+  }
+}

@@ -26,13 +26,13 @@ test("rejects remote URLs, unsupported formats, MIME spoofing and oversized imag
 });
 
 test("bounds images across conversation history and rejects assistant-supplied images", () => {
-  const turns = [messages[0], { role: "assistant", content: "Which fields?" }, { ...messages[0], images: [image, image, image, image] }];
+  const turns = [messages[0], { role: "assistant", content: "Which fields?" }, { ...messages[0], images: [image, image, image, image, image] }];
   assert.match(chatImageLimitError(turns)!, /too many images/);
   assert.equal(companyChatSchema.safeParse({ messages: turns }).success, false);
   assert.equal(workspaceAssistantSchema.safeParse({ ...request, messages: turns }).success, false);
   assert.equal(companyChatSchema.safeParse({ messages: [messages[0], { role: "assistant", content: "Done", images: [image] }, { role: "user", content: "Thanks" }] }).success, false);
   const big = { ...image, dataUrl: `data:image/png;base64,${"A".repeat(900_000)}` };
-  assert.match(chatImageLimitError([{ role: "user", content: "", images: [big, big, big, big] }])!, /too many images/);
+  assert.match(chatImageLimitError([{ role: "user", content: "", images: [big, big, big, big, big] }])!, /too many images/);
 });
 
 test("keeps image bytes out of text prompts and preserves image-to-turn references", () => {

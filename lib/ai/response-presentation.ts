@@ -1,10 +1,14 @@
 import { z } from "zod";
+import { customerConversationSchema } from "./customer-conversations.ts";
+export { conversationMessagesSchema } from "./customer-conversations.ts";
+export type { CustomerConversations, ConversationMessages } from "./customer-conversations.ts";
 
 const tone = z.enum(["neutral", "success", "warning", "danger"]);
 const cell = z.union([z.string().max(400), z.number().finite(), z.null()]);
 export const responsePresentationSchema = z.object({
   version: z.literal(1),
   capturedAt: z.iso.datetime(),
+  conversations: z.array(customerConversationSchema).max(10).optional(),
   sections: z.array(z.object({
     id: z.enum(["invoices", "orders", "quotations", "companies", "tasks", "products", "inventory", "segments"]),
     title: z.string().max(120),
@@ -24,8 +28,8 @@ export const responsePresentationSchema = z.object({
       unit: z.string().max(30),
     }).optional(),
     emptyMessage: z.string().max(240),
-  })).min(1).max(3),
-});
+  })).max(3),
+}).refine(value => value.sections.length > 0 || Boolean(value.conversations?.length), "A result must include records or conversations.");
 export type ResponsePresentation = z.infer<typeof responsePresentationSchema>;
 export type ResponseSection = ResponsePresentation["sections"][number];
 

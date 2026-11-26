@@ -3,7 +3,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
-import { filterCompanyEmails, scopeCompanyEmailContent } from "../lib/company-email.ts";
+import { companyEmailContact, filterCompanyEmails, scopeCompanyEmailContent } from "../lib/company-email.ts";
 import { applyConversationCustomerTags } from "../lib/customer-tags.ts";
 import { normalizeMessageId } from "../lib/email-threading.ts";
 import type { EmailInboxBackendData, InboxEmailItem } from "../lib/email-inbox.ts";
@@ -21,11 +21,13 @@ function setup({ empty = false, denied = false, companyDenied = false } = {}) {
   const ownerMailbox = { id: "assigned", type: "personal", userId: "assigned-owner" } as WorkspaceMailboxRecord;
   const otherMailbox = { id: "another", type: "personal", userId: "other-staff" } as WorkspaceMailboxRecord;
   const reads: Array<string | undefined> = [];
+  const historyModes: boolean[] = [];
+  const secondCompany = { id: "second-company", name: "Second customer", emails: ["second@example.test"] };
   const messages: Record<string, InboxEmailItem[]> = {
     mine: [item("personal-only"), item("personal-copy", "buyer@example.test", { messageId: "<Copy@example.test>" }), item("unrelated", "stranger@example.test")],
     team: [item("workspace-only"), item("workspace-copy", "buyer@example.test", { messageId: "<copy@example.test>" }), item("sent", "accounts@example.test", { direction: "outbound", mailboxId: "team" })],
     assigned: [item("assigned-owner-only"), item("assigned-unrelated", "stranger@example.test")],
-    another: [item("other-staff-customer"), item("other-staff-private", "private@example.test"), item("other-staff-draft", "buyer@example.test", { providerKind: "drafts" })],
+    another: [item("other-staff-customer"), item("other-staff-private", "private@example.test"), item("second-customer", "second@example.test"), item("other-staff-draft", "buyer@example.test", { providerKind: "drafts" })],
   };
   const snapshot = (id?: string): EmailInboxBackendData => ({
     selectedMailboxId: id ?? null, defaultSenderId: "mine", defaultMailboxEmail: "me@example.test", mailboxes: [],
@@ -35,15 +37,16 @@ function setup({ empty = false, denied = false, companyDenied = false } = {}) {
   });
   const dependencies: Record<string, unknown> = {
     "../auth.ts": { requireWorkspaceMember: async () => { if (denied) throw new Error("Unauthorized"); return viewer; } },
-    "../company-email.ts": { filterCompanyEmails, scopeCompanyEmailContent }, "../email-threading.ts": { normalizeMessageId },
+    "../company-email.ts": { companyEmailContact, filterCompanyEmails, scopeCompanyEmailContent }, "../email-threading.ts": { normalizeMessageId },
     "../customer-tags.ts": { applyConversationCustomerTags },
-    "./company-email-access.ts": { getCompanyEmailScope: async () => companyDenied ? null : company, listCompanyEmailMailboxes: async () => empty ? [] : [...mailboxes, ownerMailbox, otherMailbox] },
+    "./company-email-access.ts": { getCompanyEmailScope: async () => companyDenied ? null : company, getCompanyEmailScopes: async () => { if (companyDenied) throw new Error("Company unavailable"); return [company, secondCompany]; }, listCompanyEmailMailboxes: async () => empty ? [] : [...mailboxes, ownerMailbox, otherMailbox] },
     "./mailboxes.ts": { getViewerMailboxes: async (id: string) => { assert.equal(id, viewer.id); return mailboxes; }, getUserMailbox: async (id: string) => { assert.equal(id, "assigned-owner"); return ownerMailbox; } },
-    "../email-inbox.ts": { createEmailInboxReadContext: (viewer: WorkspaceViewer, mailboxes: WorkspaceMailboxRecord[]) => ({ viewer, mailboxes, states: Promise.resolve(new Map()) }), getEmailInboxBackendData: async (options: { mailboxId?: string; syncMailbox: boolean; context: { viewer: WorkspaceViewer; mailboxes: WorkspaceMailboxRecord[] } }) => {
+    "../email-inbox.ts": { createEmailInboxReadContext: (viewer: WorkspaceViewer, mailboxes: WorkspaceMailboxRecord[]) => ({ viewer, mailboxes, states: Promise.resolve(new Map()) }), getEmailInboxBackendData: async (options: { mailboxId?: string; syncMailbox: boolean; history?: boolean; context: { viewer: WorkspaceViewer; mailboxes: WorkspaceMailboxRecord[] } }) => {
       assert.equal(options.syncMailbox, false);
       assert.equal(options.context.viewer, viewer);
       assert.equal(options.context.mailboxes.slice(0, mailboxes.length).map((mailbox) => mailbox.id).join(","), mailboxes.map((mailbox) => mailbox.id).join(","));
       reads.push(options.mailboxId);
+      historyModes.push(options.history === true);
       return snapshot(options.mailboxId);
     } },
   };
@@ -51,8 +54,39 @@ function setup({ empty = false, denied = false, companyDenied = false } = {}) {
   vm.runInNewContext(ts.transpileModule(readFileSync(new URL("../lib/data/company-emails.ts", import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText, { exports, require: (name: string) => dependencies[name], URL });
-  return { ...exports, reads, context: { viewer, mailboxes } };
+  return { ...exports, reads, historyModes, context: { viewer, mailboxes }, secondCompany };
 }
+
+test("AI customer pages share mailbox reads and keep each profile's exact customer history", async () => {
+  const backend = setup();
+  const result = await backend.getCompaniesEmailBackendData([company.id, backend.secondCompany.id], backend.context, { history: true });
+  assert.equal(backend.reads.length, 4, "Two customers must not double the mailbox scans");
+  assert.ok(backend.historyModes.every(Boolean), "AI includes saved history, not just the recent mailbox window");
+  assert.equal(result.get(company.id)?.emails.length, 6);
+  assert.equal(result.get(backend.secondCompany.id)?.emails.map(email => email.id).join(","), "second-customer");
+  assert.doesNotMatch(JSON.stringify([...result.values()]), /other-staff-private|other-staff-draft|assigned-unrelated/);
+  assert.equal(result.get(company.id)?.mailboxes.some(mailbox => mailbox.id === "another"), false);
+});
+
+test("AI reuses profile results only inside the current request and preserves failed coverage", async () => {
+  const backend = setup();
+  const exports = {} as typeof import("../lib/ai/customer-email-history.ts");
+  const dependencies: Record<string, unknown> = {
+    "server-only": {}, "../data/ai-settings": { requireAiData: async () => ({}) },
+    "../data/mailboxes": { getViewerMailboxes: async () => backend.context.mailboxes },
+    "../data/company-emails": backend, "../data/company-email-access": {},
+  };
+  vm.runInNewContext(ts.transpileModule(readFileSync(new URL("../lib/ai/customer-email-history.ts", import.meta.url), "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText, { exports, require: (name: string) => dependencies[name] });
+  const context = {};
+  const first = await exports.loadCustomerEmailHistories(backend.context.viewer, [company.id, backend.secondCompany.id], context);
+  await exports.loadCustomerEmailHistories(backend.context.viewer, [company.id], context);
+  assert.equal(backend.reads.length, 4);
+  assert.equal(first.get(company.id)?.inboxError, "Personal sync unavailable");
+  await exports.loadCustomerEmailHistories(backend.context.viewer, [company.id], {});
+  assert.equal(backend.reads.length, 8, "A new request rechecks assignment and saved messages");
+});
 
 test("company history includes personal and workspace correspondence despite the personal default", async () => {
   const backend = setup();

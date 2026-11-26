@@ -150,7 +150,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
       </Sheet>
 
       <PageHeaderProvider key={isSettings ? "settings" : "workspace"}>
-        <div data-home={isHome || undefined} hidden={pageAiOpen} inert={pageAiOpen || undefined} className={`workspace-page flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background transition-transform duration-300 ease-out lg:ml-[var(--workspace-sidebar-width)] ${sidebarAiOpen ? "max-lg:-translate-x-full lg:mr-[var(--workspace-ai-width)]" : "translate-x-0 lg:mr-0"}`}>
+        <div data-home={isHome || undefined} hidden={pageAiOpen} inert={pageAiOpen || undefined} className={`workspace-page flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background transition-transform duration-300 ease-out lg:ml-[var(--workspace-sidebar-width)] ${sidebarAiOpen ? "max-lg:-translate-x-full lg:mr-[calc(var(--workspace-ai-width)+4px)]" : "translate-x-0 lg:mr-0"}`}>
           {!isSettings && !isPortalEditor ? <WorkspacePageHeader pathname={pathname} /> : null}
           <main id="workspace-content" tabIndex={-1} className={`${isHome ? "scrollbar-hidden " : ""}${isEmails || isDocuments || isSettings ? "" : "crm-workspace-content"} min-h-0 w-full flex-1 outline-none ${usesViewportCanvas ? "overflow-hidden p-0" : isSettings ? "overflow-y-auto p-0 lg:overflow-hidden" : "overflow-y-auto overscroll-y-contain px-5 pb-6 pt-4 sm:px-6"}`}><WorkspaceTableHeaders /><CompanyProfileReturnContext value={companyListBackground ? "/companies" : undefined}>{children}</CompanyProfileReturnContext></main>
         </div>

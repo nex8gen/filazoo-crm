@@ -6,6 +6,8 @@ export const zhCNAiResponses: Record<string, string> = {
   "Invoices reviewed": "已查看发票", "Orders reviewed": "已查看订单", "Quotations reviewed": "已查看报价", "Customers reviewed": "已查看客户",
   "Your tasks": "您的任务", "Products reviewed": "已查看产品", "Saved inventory": "已保存库存", "Customer segments": "客户分群",
   "Saved CRM records": "已保存的 CRM 记录", "Export CSV": "导出 CSV", "Cards": "卡片", "Table": "表格", "Chart": "图表",
+  "Source details": "数据来源详情", "CSV exports all reviewed records.": "CSV 导出全部已查看记录。",
+  "reviewed": "已查看", "reviewed records": "条已查看记录",
   "All statuses": "全部状态", "Search results…": "搜索结果……", "Show fewer": "收起", "Show record cards": "显示记录卡片", "Loading record cards…": "正在加载记录卡片……",
   "Records reviewed": "已查看记录", "Drafts excluded from overdue": "不计入逾期的草稿", "Issued balance": "已开具发票余额", "Confirmed order value": "已确认订单金额",
   "Invoice": "发票", "Quotation": "报价", "Order": "订单", "Record": "记录", "Customer": "客户", "Status": "状态", "Due date": "到期日期", "Days overdue": "逾期天数", "Balance": "余额",

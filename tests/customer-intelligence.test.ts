@@ -10,6 +10,7 @@ import { crmReadSchema } from "../lib/ai/crm-tools.ts";
 import { customerIntelligenceInstruction, customerSalesTotals, isCustomerIntelligenceRequest } from "../lib/ai/customer-intelligence.ts";
 import * as intelligence from "../lib/ai/customer-intelligence.ts";
 import { threadKeyForEmail } from "../lib/email-threading.ts";
+import { emailParticipantAddresses } from "../lib/company-email.ts";
 
 const require = createRequire(import.meta.url);
 const id = "15693adc-0bdf-4617-b214-71b1861764a9";
@@ -27,6 +28,7 @@ function fixture() {
     invoices: [{ id: "invoice", company_id: id, status: "issued", total_minor: 10000, paid_minor: 2500, document: { currency: "USD" } }],
     purchase_orders: [{ id: "order", company_id: id, document: { currency: "USD", status: "confirmed", items: [{ description: "Black PLA", quantity: 500 }] } }],
     catalogs: [], crm_tasks: [],
+    workspace_members: [{ user_id: viewer.id, display_name: "Enphany" }],
   };
   const emails = [
     { id: "mail-1", direction: "inbound", status: "Received", body: "We want 500 rolls of black PLA.", subject: "Black PLA", timestamp: "2026-11-20T10:00:00Z", threadId: "thread-1" },
@@ -65,9 +67,20 @@ function fixture() {
   const exports = {};
   const dependencies: Record<string, unknown> = {
     "server-only": {}, zod: { z }, "../data/ai-settings": { requireAiData: async () => { if (!policy.data.customers) throw new Error("Customer data denied"); return policy; } },
-    "../supabase/admin": { createSupabaseAdmin: () => db }, "../email-threading": { threadKeyForEmail },
+    "../supabase/admin": { createSupabaseAdmin: () => db }, "../email-threading": { threadKeyForEmail }, "../company-email": { emailParticipantAddresses },
     "./customer-intelligence.ts": intelligence,
-    "./agent-records": { loadAgentEmailIndex: async () => { indexReads++; return { inbox: { emails }, searched: [], coverage }; } },
+    "./customer-email-history": {
+      customerEmailHref: (companyId: string) => `/companies/${companyId}?tab=email`,
+      isCustomerHistoryMessage: (email: { direction: string; status: string }) => email.direction === "inbound" || /^sent$/i.test(email.status),
+      loadCustomerEmailBody: async (_viewer: unknown, _id: string, email: unknown) => email,
+      loadCustomerEmailHistories: async (_viewer: unknown, ids: string[], context: { companyEmails?: Map<string, Promise<unknown>> }) => {
+        const cache = context.companyEmails ??= new Map();
+        const missing = ids.filter(id => !cache.has(id));
+        if (missing.length) indexReads++;
+        for (const id of missing) cache.set(id, Promise.resolve({ emails, inboxError: coverage.mailboxError }));
+        return new Map(await Promise.all(ids.map(async id => [id, await cache.get(id)])));
+      },
+    },
   };
   const code = ts.transpileModule(readFileSync(new URL("../lib/ai/customer-intelligence-records.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   vm.runInNewContext(code, { exports, require: (name: string) => dependencies[name] ?? require(name), Error, Date, console });
@@ -82,11 +95,32 @@ test("customer briefs join both conversation directions, notes and sales with so
   assert.equal(account.id, id); assert.equal(account.email.messages, 2); assert.equal(account.email.conversations, 1);
   assert.equal(account.email.inbound, 1); assert.equal(account.email.outbound, 1);
   assert.equal(account.email.records[1].body.text, "We want 500 rolls of black PLA.");
-  assert.match(account.email.records[0].href, /^\/email\?mailbox=mailbox&thread=/);
+  assert.equal(account.email.records[0].href, `/companies/${id}?tab=email`);
+  assert.equal(account.assignedTo.name, "Enphany");
+  assert.equal(account.assignedTo.userId, viewer.id);
+  assert.equal(account.email.replyState, "awaiting_customer");
   assert.equal(account.notes.records[0].summary.text, "Confirm sample color first.");
   assert.equal(account.orders.records[0].items[0].quantity, 500);
+  assert.equal(account.purchasePipeline.activeOrders, 1);
+  assert.equal(account.purchasePipeline.complete, true);
   assert.equal(account.sales.totals[0].outstandingMinor, 7500);
   assert.doesNotMatch(JSON.stringify(result), /Unsent sales pitch|Failed sales pitch/);
+});
+
+test("assignment identifies the handling colleague while actual messages determine whose reply is pending", async () => {
+  const f = fixture();
+  f.rows.companies[0].pipeline = [{ owner_id: otherId }];
+  f.rows.workspace_members.push({ user_id: otherId, display_name: "Enphany" });
+  const record = (await f.readCustomerInsights(viewer, request(id))).records[0];
+  assert.equal(record.assignedTo.userId, otherId);
+  assert.equal(record.assignedTo.name, "Enphany");
+  assert.equal(record.assignedTo.isCurrentUser, false);
+  assert.equal(record.email.lastOutboundAt, "2026-11-21T10:00:00Z");
+  assert.equal(record.email.replyState, "awaiting_customer");
+  f.emails[0].timestamp = "2026-11-22T10:00:00Z";
+  assert.equal((await f.readCustomerInsights(viewer, request(id))).records[0].email.replyState, "awaiting_team");
+  f.coverage.mailboxError = "History incomplete";
+  assert.equal((await f.readCustomerInsights(viewer, request(id))).records[0].email.replyState, "unknown");
 });
 
 test("invoice aggregation separates currencies and drafts, excludes voids and never adds order values", () => {
@@ -111,6 +145,7 @@ test("restricted AI data and customer assignments are enforced before source rea
   f.policy.data.billing = false; f.policy.data.emails = false; f.policy.data.tasks = false;
   const result = await f.readCustomerInsights({ ...viewer, role: "bd_manager" }, request(id));
   assert.equal(result.records[0].email.available, false); assert.equal(result.records[0].sales.available, false);
+  assert.equal(result.records[0].purchasePipeline.available, false);
   assert.equal(f.indexReads(), 0);
   assert.ok(f.calls.some(call => call.table === "companies" && call.key === "pipeline.owner_id" && call.value === viewer.id));
   assert.ok(!f.calls.some(call => ["invoices", "purchase_orders", "catalogs", "crm_tasks"].includes(call.table)));
@@ -155,6 +190,19 @@ test("older records beyond the API's first 500 rows contribute to exact sales to
   assert.equal(account.invoices.omittedEvidence, 485);
 });
 
+test("opportunity preparation flags use all saved orders and manual conversation notes survive system-event noise", async () => {
+  const f = fixture();
+  f.rows.purchase_orders = Array.from({ length: 22 }, (_, index) => ({ ...f.rows.purchase_orders[0], id: `order-${index}`, document: { status: index === 21 ? "draft" : "completed" } }));
+  f.rows.events = [
+    ...Array.from({ length: 10 }, (_, index) => ({ id: `system-${index}`, company_id: id, type: "order_created", data: { summary: "Internal draft creation" } })),
+    { id: "call-note", company_id: id, type: "staff_comment", data: { summary: "On the call, the buyer requested sample pricing for their new project." }, created_at: "2026-11-20T10:00:00Z" },
+  ];
+  const account = (await f.readCustomerInsights(viewer, request())).records[0];
+  assert.equal(account.purchasePipeline.activeOrders, 1);
+  assert.equal(account.orders.records.length, 4);
+  assert.ok(account.notes.records.some(note => note.id === "call-note"));
+});
+
 test("clipped bodies disclose missing evidence instead of implying every message was read", async () => {
   const f = fixture();
   f.emails[0].body = "x".repeat(5000);
@@ -165,8 +213,20 @@ test("clipped bodies disclose missing evidence instead of implying every message
 });
 
 test("analysis intent routing understands reported spelling errors while ordinary tasks keep normal routing", () => {
-  for (const text of ["find this custon current stach", "find most possibal cusotmer willing to order", "anlyse customer sales", "analyze all customers", "客户当前状态分析"]) assert.ok(isCustomerIntelligenceRequest(text), text);
+  for (const text of ["find this custon current stach", "find most possibal cusotmer willing to order", "anlyse customer sales", "analyze all customers", "客户当前状态分析", "can you find top costomers who are most problaiy can order", "Which customers are most likely to order?", "Review this customer's email history"]) assert.ok(isCustomerIntelligenceRequest(text), text);
   assert.equal(isCustomerIntelligenceRequest("Draft a thank you email"), false);
   assert.match(customerIntelligenceInstruction, /rules.companyIds/);
   assert.match(customerIntelligenceInstruction, /outbound sales pitch/);
+});
+
+test("repeated outbound follow-ups cannot hide the buyer's latest objection from comparison evidence", async () => {
+  const f = fixture();
+  f.emails[0].body = "We are no longer interested. Please stop contacting us.";
+  for (let day = 22; day <= 26; day++) f.emails.push({ ...f.emails[1], id: `followup-${day}`, timestamp: `2026-11-${day}T10:00:00Z`, body: "Are you ready to order?" });
+  const email = (await f.readCustomerInsights(viewer, request())).records[0].email;
+  assert.equal(email.messages, 7);
+  assert.equal(email.records.length, 4);
+  assert.ok(email.records.some(message => message.direction === "inbound" && message.body.text.includes("no longer interested")));
+  assert.equal(email.records[0].id, "followup-26");
+  assert.equal(email.omittedEvidence, 3);
 });

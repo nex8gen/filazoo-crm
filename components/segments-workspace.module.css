@@ -1,0 +1,117 @@
+.workspace {
+  container-type: inline-size;
+  min-width: 0;
+}
+
+.overview {
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr);
+  gap: 14px;
+}
+
+.overviewHeading {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 9px;
+}
+
+.overviewHeading h2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .825rem;
+  font-weight: 600;
+}
+
+.overviewHeading h2 svg {
+  width: 14px;
+  height: 14px;
+  color: var(--brand-foreground);
+}
+
+.period {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--ui-text-caption);
+  color: var(--muted-foreground);
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  min-width: 0;
+}
+
+.metricIcon {
+  width: 18px;
+  height: 18px;
+  align-self: center;
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+
+.table th:first-child { width: 28%; }
+.table td { height: 60px; }
+
+.segmentName {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.segmentName > a {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.infoButton {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--muted-foreground);
+}
+
+.infoButton:hover { background: var(--muted); color: var(--foreground); }
+.infoButton:focus-visible, .progress:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+
+.progress {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  min-width: 136px;
+  max-width: 220px;
+  border-radius: 4px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.progressReadout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 8px;
+  font-size: .75rem;
+}
+
+@container (max-width: 900px) {
+  .overview { grid-template-columns: minmax(0, 1fr); }
+  .overviewHeading { flex-direction: row; align-items: center; justify-content: space-between; }
+}
+
+@container (max-width: 600px) {
+  .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+}

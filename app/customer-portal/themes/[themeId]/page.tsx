@@ -10,7 +10,7 @@ export default async function ThemeEditorPage({ params }: { params: Promise<{ th
   const viewer = await requireWorkspaceMember();
   const { themeId } = await params;
   if (!portalThemeIdSchema.safeParse(themeId).success) notFound();
-  const view = await withWorkspaceViewer(viewer, getPortalDesign);
+  const view = await withWorkspaceViewer(viewer, () => getPortalDesign(viewer.workspaceName));
   const theme = portalLibraryThemes(view).find(item => item.id === themeId);
   if (!theme) notFound();
   return <PortalBuilder key={`${viewer.workspaceId}:${themeId}`} initial={{ ...view, draft: theme.design }} themeId={themeId} themeName={theme.name} canWrite={canManagePortal(viewer.role)} workspaceName={viewer.workspaceName} />;

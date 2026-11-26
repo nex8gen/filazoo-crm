@@ -32,7 +32,7 @@ for (const turnOff of [false, true]) test(`Analytics composer sends explicit com
     react, "next/navigation": { usePathname: () => "/analytics", useRouter: () => ({}) }, "motion/react": { motion: ui },
     "@/components/language-provider": { useLanguage: () => ({ language: "en", t: (value: string) => value }) },
     "@/components/use-ai-conversation": { useAiConversation: () => controller },
-    "@/components/ui/ai-image-attachments": { useAiImageAttachments: () => ({ images: [], processing: false, clear: () => {} }) },
+    "@/components/ui/ai-image-attachments": { useAiImageAttachments: () => ({ images: [], files: [], setFiles() {}, processing: false, clear: () => {} }) },
     "@/components/ui/customer-research": { WebSearchOption: Toggle, CustomerResearchSources: () => null },
     "@/lib/ai/chat-history": history, "@/lib/ai/research-request": researchRequest,
     "@/lib/ai/research-progress": researchProgress,

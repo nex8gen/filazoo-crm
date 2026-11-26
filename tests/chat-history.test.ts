@@ -10,6 +10,9 @@ import * as history from "../lib/ai/chat-history.ts";
 import { parseAiUsage, trackAiUsage } from "../lib/ai/chat-usage.ts";
 import * as assistant from "../lib/ai/workspace-assistant.ts";
 import * as assistantIntent from "../lib/ai/assistant-intent.ts";
+import * as customerIntelligence from "../lib/ai/customer-intelligence.ts";
+import * as customerPopulation from "../lib/ai/customer-intelligence-population.ts";
+import * as customerOpportunities from "../lib/ai/customer-opportunities.ts";
 import * as historyHttp from "../lib/ai/history-http.ts";
 import * as companyChat from "../lib/ai/company-chat.ts";
 
@@ -21,7 +24,7 @@ const reference = { conversationId, requestId, version: 0 };
 const scopeInput = { mode: "chat", pathname: "/companies", pageContext: {} } as const;
 type Handler = (request: Request, context?: { params: Promise<{ id: string }> }) => Promise<Response>;
 function load(file: string, dependencies: Record<string, unknown>, env = {}) {
-  dependencies = { "@/lib/ai/assistant-intent": assistantIntent, "@/lib/ai/history-http": historyHttp, ...dependencies };
+  dependencies = { "@/lib/ai/assistant-intent": assistantIntent, "@/lib/ai/history-http": historyHttp, "@/lib/ai/customer-intelligence": customerIntelligence, "@/lib/ai/customer-intelligence-population": customerPopulation, "@/lib/ai/customer-opportunities": customerOpportunities, ...dependencies };
   const exports: Record<string, unknown> = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (dependencies[name] ?? (name === "@/lib/ai/invoice-readiness" ? readiness : undefined) ?? (name === "server-only" ? {} : require(name))), Request, Response, URL, AbortSignal, AbortController, Date, Error, Object, JSON, console, process: { env }, fetch: dependencies.fetch ?? fetch });
@@ -391,6 +394,22 @@ test("customer chat persists its final sources and coverage", async () => {
   }, { AI_GATEWAY_API_KEY: "synthetic" });
   const response = await (routes.POST as Handler)(req("POST", { history: reference, messages: [{ role: "user", content: "hello" }] }), { params: Promise.resolve({ id: conversationId }) });
   assert.equal(response.status, 200); assert.equal(saved?.output, "hello back"); assert.deepEqual(Array.from(saved?.sources as unknown[]), []);
+});
+
+test("saved turns retain all attachment names while excluding their raw file and image contents", async () => {
+  let args: Record<string, unknown> | undefined;
+  const server = load("../lib/ai/chat-history-server.ts", {
+    "../supabase/admin": { createSupabaseAdmin: () => ({ rpc: async (_name: string, input: Record<string, unknown>) => { args = input; return { error: null }; } }) },
+    "../data/crm": {}, "../data/invoices": {}, "../data/mailboxes": {}, "../data/email-access": {},
+    "./agent-records": {}, "./agent-page-records": {}, "./chat-history": history,
+  });
+  const finish = server.finishSavedTurn as (...args: unknown[]) => Promise<unknown>;
+  await finish(reference, viewer, { row: { summary: "", version: 0, title: "New conversation" }, messages: [] }, {
+    content: "Read these files", images: [{ name: "photo.png", dataUrl: "private image bytes" }], files: [{ name: "notes.txt", mediaType: "text/plain", dataUrl: "private file bytes" }],
+  }, { output: "Received" });
+  const saved = JSON.parse(JSON.stringify(args));
+  assert.deepEqual(saved.p_user_message.attachmentNames, ["photo.png", "notes.txt"]);
+  assert.doesNotMatch(JSON.stringify(args), /private (?:image|file) bytes/);
 });
 
 test("a changed sales assignment or disabled mailbox invalidates the saved access fingerprint", async () => {

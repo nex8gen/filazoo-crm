@@ -1,7 +1,7 @@
 import { zhCNApps } from "./i18n-apps.ts";
 import { zhCNSalesAutomation } from "./i18n-sales-automation.ts";
 import { zhCNCustomerTags } from "./i18n-customer-tags.ts";
-import { zhCNCustomerPortal } from "./i18n-customer-portal.ts";
+import { translatePortalThemeText, zhCNCustomerPortal } from "./i18n-customer-portal.ts";
 import { zhCNAnalytics } from "./i18n-analytics.ts";
 import { zhCNWorkspaceSearch } from "./i18n-workspace-search.ts";
 import { zhCNQuotations } from "./i18n-quotations.ts";
@@ -152,6 +152,17 @@ const zhCN: Record<string, string> = {
   "Test recipient email": "测试收件邮箱",
   "Test the current workflow before turning it on. Send a real reply to your test inbox, or generate a preview.": "启用前测试当前工作流。向测试邮箱发送实际回复，或生成预览。",
   "Add image": "添加图片", "Attach images": "添加图片附件", "Reading image…": "正在读取图片…", "Preparing image…": "正在处理图片…",
+  "Add files": "添加文件", "Attach files and images": "添加文件和图片", "Reading files…": "正在读取文件…",
+  "Add photos & files": "添加照片和文件", "Add from library": "从文件库添加", "Browse and search your files": "浏览和搜索文件",
+  "Search library files": "搜索文件库", "No matching files.": "没有匹配的文件。", "Your library has no files yet.": "文件库中还没有文件。",
+  ". Files are not retained; reattach to inspect them again.": "。文件内容不会保留；如需再次查看，请重新添加。",
+  "Add up to 5 files at a time, including images.": "每次最多添加 5 个文件（包括图片）。",
+  "This chat has too many images or files. Attach up to 5 files and 3 MB total.": "附件数量或大小超出限制。最多添加 5 个文件，总大小不超过 3 MB。",
+  "The attachments are too large. Attach up to 5 files and 3 MB total.": "附件过大。最多添加 5 个文件，总大小不超过 3 MB。",
+  "The selected files are too large. Attach up to 3 MB total.": "所选文件过大。总大小不能超过 3 MB。",
+  "Unable to add this file.": "无法添加此文件。", "Unable to load your library.": "无法加载文件库。",
+  "Conversations unavailable.": "暂时无法加载对话。", "No saved conversations.": "没有已保存的对话。",
+  "Sent reply": "已发送的回复", "Unable to load conversation. Retry": "无法加载对话，点击重试", "View full conversation": "查看完整对话",
   "Attach images (JPG, PNG or WebP, up to 10 MB each)": "添加图片（JPG、PNG 或 WebP，每张不超过 10 MB）",
   "Add up to 4 images at a time.": "每次最多添加 4 张图片。",
   "Choose a JPG, PNG or WebP image.": "请选择 JPG、PNG 或 WebP 图片。",
@@ -430,6 +441,8 @@ export function translateUiText(value: string, language: AppLanguage): string {
   if (!text) return value;
   const exact = Object.hasOwn(zhCN, text) ? zhCN[text] : undefined;
   if (exact) return `${leading}${exact}${trailing}`;
+  const portalThemeText = translatePortalThemeText(text);
+  if (portalThemeText) return `${leading}${portalThemeText}${trailing}`;
   const importEstimate = text.match(/^About (\d+)–(\d+) minutes remaining$/);
   if (importEstimate) return `${leading}预计剩余约 ${importEstimate[1]}–${importEstimate[2]} 分钟${trailing}`;
   const importDuration = text.match(/^(\d+) (seconds|minutes)$/);

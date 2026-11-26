@@ -28,7 +28,7 @@ import { AgentWorkIcon } from "@/components/agent-work-icon";
 import { AgentApprovalMenu } from "@/components/agent-approval-menu";
 import { CustomerResearchSources, ResearchSearching, WebSearchOption, type ResearchResult } from "@/components/ui/customer-research";
 import { AiImageFeedback, AiImagePicker, AiImagePreviews, useAiImageAttachments } from "@/components/ui/ai-image-attachments";
-import { chatImageLimitError, type ChatImage } from "@/lib/ai/image-input";
+import { chatImageLimitError, type ChatImage, type ChatFile } from "@/lib/ai/image-input";
 import { assistantRecordScope, readAssistantPageContext } from "@/lib/ai/page-context";
 import { conversationScope, savedPageContext, type HistoryDetail } from "@/lib/ai/chat-history";
 import { useAiConversation } from "@/components/use-ai-conversation";
@@ -44,7 +44,7 @@ import { notifyAiCreditsChanged } from "@/lib/billing/credit-events";
 
 type Mode = "chat" | "agent";
 export type WorkspaceAiLaunchRequest = { id: number; mode: Mode; prompt?: string; submit?: boolean; pathname?: string };
-type Message = { id: string; role: "user" | "assistant"; content: string; images?: ChatImage[]; attachmentNames?: string[]; actions?: AgentProposal[]; durationMs?: number; activity?: AssistantActivity[]; work?: AgentWorkProgress; research?: ResearchResult; presentation?: ResponsePresentation };
+type Message = { id: string; role: "user" | "assistant"; content: string; images?: ChatImage[]; files?: ChatFile[]; attachmentNames?: string[]; actions?: AgentProposal[]; durationMs?: number; activity?: AssistantActivity[]; work?: AgentWorkProgress; research?: ResearchResult; presentation?: ResponsePresentation };
 type AssistantReply = { output: string; error?: string; actions?: AgentProposal[]; activity?: AssistantActivity[]; research?: ResearchResult; presentation?: ResponsePresentation; history?: Parameters<ReturnType<typeof useAiConversation>["accept"]>[0] };
 
 const pageNames: Array<[RegExp, string]> = [
@@ -243,7 +243,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
   }, [requestActivity, pending]);
   async function send(value = question) {
     const content = value.trim();
-    if ((!content && !attachments.images.length) || attachments.processing || busy || loadingHistory || abort.current || actionLock.current) return;
+    if ((!content && !(attachments.images.length + (attachments.files?.length ?? 0))) || attachments.processing || busy || loadingHistory || abort.current || actionLock.current) return;
     const requestWebSearch = webSearchForRequest(webSearchPreference, content);
     if (requestWebSearch && webSearchPreference === "auto") setWebSearchPreference("on");
     const pageContext = restoredElsewhere ? history.conversation!.pageContext ?? {} : readAssistantPageContext(document.querySelector("#workspace-content"));
@@ -251,7 +251,8 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
     const requestPageLabel = pageNames.find(([pattern]) => pattern.test(requestPathname))?.[1] ?? "Workspace";
     const requestChatKey = chatKey;
     const sentImages = attachments.images;
-    const next: Message[] = [...(chats[requestChatKey] ?? []), { id: crypto.randomUUID(), role: "user", content, ...(sentImages.length ? { images: sentImages } : {}) }];
+    const sentFiles = attachments.files;
+    const next: Message[] = [...(chats[requestChatKey] ?? []), { id: crypto.randomUUID(), role: "user", content, ...((sentImages.length || sentFiles.length) ? { images: sentImages, files: sentFiles } : {}) }];
     const imageError = chatImageLimitError([next.at(-1)!]);
     if (imageError) { setError(imageError); return; }
     setChats((current) => ({ ...current, [requestChatKey]: next }));
@@ -278,7 +279,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
         headers: { "Content-Type": "application/json", Accept: researchStreamType },
         body: JSON.stringify(customerChat ? {
           language, history: reference, webSearch: requestWebSearch,
-          messages: [{ role: "user", content, images: sentImages }],
+          messages: [{ role: "user", content, images: sentImages, files: sentFiles }],
         } : {
           language,
           history: reference,
@@ -290,7 +291,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
           pathname: requestPathname,
           pageLabel: requestPageLabel,
           pageText: restoredElsewhere ? "" : visiblePageText(),
-          messages: [{ role: "user", content, images: sentImages }],
+          messages: [{ role: "user", content, images: sentImages, files: sentFiles }],
         }),
         signal: controller.signal,
       }, { fetcher: fetch, onRetry: () => setReconnecting(true) });
@@ -330,6 +331,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
         setChats((current) => ({ ...current, [requestChatKey]: (current[requestChatKey] ?? []).filter((message) => message.id !== next.at(-1)?.id) }));
         setQuestion(content);
         attachments.setImages(sentImages);
+        attachments.setFiles(sentFiles);
       }
     } finally {
       if (abort.current === controller) abort.current = null;
@@ -368,7 +370,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
     const index = messages.findIndex((message) => message.id === messageId);
     const request = messages[index - 1];
     if (busy || restoredElsewhere || request?.role !== "user") return;
-    // Keep the user's exact request and images; sending in Agent remains explicit.
+    // Keep the user's exact request and files; sending in Agent remains explicit.
     agentHistory.newConversation({ mode: "agent", pathname, pageContext: historyContext.context });
     setChats((current) => ({ ...current, [`${pathname}:${recordScope}:agent`]: [] }));
     setAnimation(null);
@@ -376,6 +378,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
     setMode("agent");
     setQuestion(request.content);
     attachments.setImages(request.images ?? []);
+    attachments.setFiles(request.files ?? []);
   }
 
   async function copy(message: Message) {
@@ -492,7 +495,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
             </div>
             {activeMode === "chat" ? <motion.button type="button" aria-label="Focus the AI message box" onClick={() => input.current?.focus()} animate={{ y: [0, 5, 0], opacity: [0.45, 1, 0.45] }} transition={{ duration: 1.8, ease: "easeInOut", repeat: Infinity }} className="mt-7 grid size-8 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"><ChevronDown className="size-5" /></motion.button> : null}
           </div> : <div className="space-y-5">{messages.map((message, index) => <div key={message.id} className={message.role === "user" ? "ml-auto max-w-[88%] rounded-2xl rounded-br-md bg-muted px-4 py-3" : "group max-w-full"}>
-            {message.role === "user" ? <><AiImagePreviews images={message.images} />{message.attachmentNames?.length ? <p className="mb-2 text-xs text-muted-foreground">Attached: {message.attachmentNames.join(", ")}. Images are not retained; reattach to inspect them again.</p> : null}<p data-no-translate className="whitespace-pre-wrap text-sm leading-6">{message.content}</p></> : <>
+            {message.role === "user" ? <><AiImagePreviews images={message.images} files={message.files} />{message.attachmentNames?.length ? <p className="mb-2 text-xs text-muted-foreground">Attached: {message.attachmentNames.join(", ")}. Files are not retained; reattach to inspect them again.</p> : null}<p data-no-translate className="whitespace-pre-wrap text-sm leading-6">{message.content}</p></> : <>
               <ThinkingState working={false} writing={animation?.id === message.id} durationMs={message.durationMs} scope={t(pageLabel)} steps={message.activity} activity={message.work} className="mb-2" />
               <StreamingText key={`${message.id}-${animation?.id === message.id ? animation.run : 0}`} text={message.content} sources={message.research?.sources} animate={animation?.id === message.id} onProgress={() => { const viewport = log.current; if (viewport && viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 120) viewport.scrollTop = viewport.scrollHeight; }} onComplete={() => setAnimation((current) => current?.id === message.id ? null : current)} />
               <CustomerResearchSources research={message.research} />
@@ -520,20 +523,20 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
               <span className="truncate font-medium">{pageLabel}</span>
             </div>
           </div> : null}
-          {presentation === "page" ? <HomeAiInput id={composerId} inputRef={input} mode={activeMode} onModeChange={changeMode} value={question} onChange={setQuestion} onSend={value => void send(value)} busy={busy || Boolean(queuedLaunch)} canSend={!busy && !loadingHistory && !attachments.processing && Boolean(question.trim() || attachments.images.length)} canStop={!applying && (pending || Boolean(animation))} onStop={() => { abort.current?.abort(); setAnimation(null); }} onPaste={busy ? undefined : attachments.onPaste} tools={<>{activeMode === "agent" ? <AgentApprovalMenu value={approvalMode} onChange={setApprovalMode} disabled={busy} iconOnly /> : null}<AiImagePicker attachments={attachments} disabled={busy} /><WebSearchOption enabled={webSearch} onChange={setWebSearch} disabled={busy} /></>}>
-            <AiImagePreviews images={attachments.images} onRemove={attachments.remove} disabled={busy || attachments.processing} /><AiImageFeedback attachments={attachments} />
+          {presentation === "page" ? <HomeAiInput id={composerId} inputRef={input} mode={activeMode} onModeChange={changeMode} value={question} onChange={setQuestion} onSend={value => void send(value)} busy={busy || Boolean(queuedLaunch)} canSend={!busy && !loadingHistory && !attachments.processing && Boolean(question.trim() || (attachments.images.length + (attachments.files?.length ?? 0)))} canStop={!applying && (pending || Boolean(animation))} onStop={() => { abort.current?.abort(); setAnimation(null); }} onPaste={busy ? undefined : attachments.onPaste} tools={<>{activeMode === "agent" ? <AgentApprovalMenu value={approvalMode} onChange={setApprovalMode} disabled={busy} iconOnly /> : null}<AiImagePicker attachments={attachments} disabled={busy} /><WebSearchOption enabled={webSearch} onChange={setWebSearch} disabled={busy} /></>}>
+            <AiImagePreviews images={attachments.images} files={attachments.files} onRemove={attachments.remove} disabled={busy || attachments.processing} /><AiImageFeedback attachments={attachments} />
           </HomeAiInput> : activeMode === "agent" ? <AiMascotInput key={`${chatKey}:${open}`} id={composerId} value={question} onChange={setQuestion} onSend={() => void send()} onCancel={() => { abort.current?.abort(); setAnimation(null); }} inputRef={input} attachments={attachments} webSearch={webSearch} onWebSearchChange={setWebSearch} busy={busy} loadingHistory={loadingHistory} canStop={!applying && (pending || Boolean(animation))} active={open} language={language} label="Instructions for Filazoo agent" placeholder="Tell the agent what to do…">
             <AgentApprovalMenu value={approvalMode} onChange={setApprovalMode} disabled={busy} iconOnly />
           </AiMascotInput> : <form onSubmit={(event) => { event.preventDefault(); void send(); }} className="ai-composer min-w-0 rounded-2xl border border-border/80 bg-card p-3 shadow-[0_2px_8px_rgba(15,23,42,.03)] transition-[border-color,box-shadow] focus-within:border-ring/60 focus-within:ring-2 focus-within:ring-ring/10 motion-reduce:transition-none">
             <label htmlFor={composerId} className="sr-only">Message Filazoo AI</label>
-            <AiImagePreviews images={attachments.images} onRemove={attachments.remove} disabled={busy || attachments.processing} /><AiImageFeedback attachments={attachments} />
+            <AiImagePreviews images={attachments.images} files={attachments.files} onRemove={attachments.remove} disabled={busy || attachments.processing} /><AiImageFeedback attachments={attachments} />
             <textarea ref={input} id={composerId} aria-describedby={`${composerId}-context ${composerId}-hint`} value={question} onPaste={busy ? undefined : attachments.onPaste} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); } }} placeholder={`Ask about ${pageLabel}…`} disabled={busy} rows={2} maxLength={6_000} className="block max-h-40 min-h-20 w-full resize-none overflow-y-auto bg-transparent px-1 pt-1 pb-3 text-base leading-6 outline-none [field-sizing:content] placeholder:text-muted-foreground/80 disabled:opacity-60 sm:text-sm" />
             <div className="ai-composer-toolbar justify-between">
               <div className="ai-composer-optional-actions [&>button]:min-h-9 [&>button]:rounded-lg [&>button]:px-2 [&>button:not([aria-pressed=true])]:border-transparent [&>button:not([aria-pressed=true])]:bg-transparent [&>button:not([aria-pressed=true]):hover]:bg-muted [&>button]:focus-visible:outline-2 [&>button]:focus-visible:outline-offset-2 [&>button]:focus-visible:outline-ring">
                 <AiImagePicker attachments={attachments} disabled={busy} />
                 <WebSearchOption enabled={webSearch} onChange={setWebSearch} disabled={busy} />
               </div>
-              <Button type="submit" size="icon" className="size-9 shrink-0 rounded-xl bg-foreground text-background shadow-none hover:bg-foreground/85 disabled:bg-muted disabled:text-muted-foreground disabled:opacity-60" disabled={busy || loadingHistory || attachments.processing || (!question.trim() && !attachments.images.length)} aria-label="Send to Filazoo AI" title="Send message (Enter)"><ArrowUp aria-hidden="true" className="size-4" /></Button>
+              <Button type="submit" size="icon" className="size-9 shrink-0 rounded-xl bg-foreground text-background shadow-none hover:bg-foreground/85 disabled:bg-muted disabled:text-muted-foreground disabled:opacity-60" disabled={busy || loadingHistory || attachments.processing || (!question.trim() && !(attachments.images.length + (attachments.files?.length ?? 0)))} aria-label="Send to Filazoo AI" title="Send message (Enter)"><ArrowUp aria-hidden="true" className="size-4" /></Button>
             </div>
           </form>}
           {presentation === "sidebar" ? <><p id={`${composerId}-hint`} className="mt-2 text-center text-xs leading-4 text-muted-foreground">Enter to send · Shift + Enter for a new line</p><p className="mt-1 text-center text-xs leading-4 text-muted-foreground">AI can make mistakes. Review suggestions before using them.</p></> : null}

@@ -21,9 +21,13 @@ function fixture() {
     let single = false;
     const query = { select() { return query; }, order() { return query; }, range() { return query; },
       eq(key: string, value: unknown) { filters.push([key, value]); return query; },
+      in(key: string, values: unknown[]) { filters.push([key, values]); return query; },
       maybeSingle() { single = true; return query; }, throwOnError() { return query; },
       then(resolve: (value: unknown) => unknown) {
-        const rows = (tables[table] ?? []).filter(row => filters.every(([key, value]) => row[key] === value));
+        const rows = (tables[table] ?? []).filter(row => filters.every(([key, value]) => {
+          if (key === "pipeline.owner_id") return tables.pipeline.some(account => account.company_id === row.id && account.owner_id === value);
+          return Array.isArray(value) ? value.includes(row[key]) : row[key] === value;
+        }));
         return Promise.resolve({ data: single ? rows[0] ?? null : rows }).then(resolve);
       } };
     return query;
@@ -50,6 +54,20 @@ test("company reader opens a colleague's exact customer email and scopes every i
   assert.match(result?.email.attachments?.[0].url ?? "", /companyId=company/);
   assert.match(result?.email.html ?? "", /&amp;companyId=company/);
   assert.equal(app.downloads(), 1);
+});
+
+test("batch customer scope checks every assignment and excludes staff addresses", async () => {
+  const app = fixture();
+  app.tables.companies.push({ id: "second", name: "Second customer" });
+  app.tables.pipeline.push({ company_id: "second", owner_id: app.viewer.id });
+  app.tables.contacts.push({ id: "second-contact", company_id: "second", email: "second@test" });
+  app.tables.contacts.push({ id: "staff-contact", company_id: "second", email: "STAFF@test" });
+  app.tables.workspace_mailboxes[0].email = "staff@test";
+  const scopes = await app.getCompanyEmailScopes(app.viewer, ["company", "second"]);
+  assert.equal(scopes.length, 2);
+  assert.equal(scopes.find(company => company.id === "second")?.emails.join(","), "second@test");
+  app.tables.pipeline[1].owner_id = "different-manager";
+  await assert.rejects(() => app.getCompanyEmailScopes(app.viewer, ["company", "second"]), /Company unavailable/);
 });
 
 test("a saved customer in CC authorizes the exact body and keeps the customer as its displayed contact", async () => {

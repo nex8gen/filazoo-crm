@@ -1,6 +1,6 @@
 {
   "contractVersion": "2026-11-07.2",
-  "generatedOn": "2026-11-18",
+  "generatedOn": "2026-11-26",
   "capabilities": [
     {
       "name": "create_company",
@@ -974,22 +974,28 @@
       "explanation": "Typed proposals use the same validated business service; role/policy and review still apply."
     },
     {
+      "surface": "app/customer-portal/actions.ts#changePortalTheme",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Workspace admins use /customer-portal to preview website and account themes, add or duplicate drafts, rename or remove a draft, restore the current published version, and confirm publishing. The editor saves drafts separately from the published snapshot and checks the library revision. General chat must hand off to these controls and cannot claim it changed or published a theme."
+    },
+    {
       "surface": "app/customer-portal/actions.ts#createPortalTheme",
       "mode": "guided",
       "tools": [],
-      "explanation": "Specialized UI test, composition or analysis flow; use its page controls. The agent must provide a handoff and must not claim it executed this feature."
+      "explanation": "Workspace admins use /customer-portal to preview website and account themes, add or duplicate drafts, rename or remove a draft, restore the current published version, and confirm publishing. The editor saves drafts separately from the published snapshot and checks the library revision. General chat must hand off to these controls and cannot claim it changed or published a theme."
     },
     {
       "surface": "app/customer-portal/actions.ts#publishPortalTheme",
       "mode": "guided",
       "tools": [],
-      "explanation": "Specialized UI test, composition or analysis flow; use its page controls. The agent must provide a handoff and must not claim it executed this feature."
+      "explanation": "Workspace admins use /customer-portal to preview website and account themes, add or duplicate drafts, rename or remove a draft, restore the current published version, and confirm publishing. The editor saves drafts separately from the published snapshot and checks the library revision. General chat must hand off to these controls and cannot claim it changed or published a theme."
     },
     {
       "surface": "app/customer-portal/actions.ts#updatePortalDesign",
       "mode": "guided",
       "tools": [],
-      "explanation": "Specialized UI test, composition or analysis flow; use its page controls. The agent must provide a handoff and must not claim it executed this feature."
+      "explanation": "Workspace admins use /customer-portal to preview website and account themes, add or duplicate drafts, rename or remove a draft, restore the current published version, and confirm publishing. The editor saves drafts separately from the published snapshot and checks the library revision. General chat must hand off to these controls and cannot claim it changed or published a theme."
     },
     {
       "surface": "app/customer-portal/domains/actions.ts#updatePortalDomain",

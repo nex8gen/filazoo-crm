@@ -53,7 +53,7 @@ for (const interruption of ["disconnect", "html-response"]) test(`approval recov
     "next/navigation": { usePathname: () => "/email", useRouter: () => ({ refresh: () => { refreshes++; } }) },
     "@/components/language-provider": { useLanguage: () => ({ language: "en", t: (text: string) => text }) },
     "@/components/use-ai-conversation": { useAiConversation: () => ({ scope: history.conversationScope({ mode: "agent", pathname: "/email" }), loading: false }) },
-    "@/components/ui/ai-image-attachments": { useAiImageAttachments: () => ({ images: [], processing: false }) },
+    "@/components/ui/ai-image-attachments": { useAiImageAttachments: () => ({ images: [], files: [], setFiles() {}, processing: false }) },
     "@/components/agent-action-card": { AgentActionCard: Card },
     "@/lib/ai/chat-history": history,
     "@/lib/ai/agent-progress": { actionWorkProgress: () => ({ area: "email", label: "Preparing draft…" }), pageWorkArea: () => "email" },

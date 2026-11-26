@@ -36,8 +36,8 @@ export function AiMascotInput({ id, value, onChange, onSend, onCancel, inputRef,
   const [listening, setListening] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const recognition = useRef<ReturnType<typeof startVoiceInput> | null>(null);
-  const canSend = !busy && !loadingHistory && !attachments.processing && Boolean(value.trim() || attachments.images.length);
-  const engaged = Boolean(value.length || attachments.images.length || busy || listening);
+  const canSend = !busy && !loadingHistory && !attachments.processing && Boolean(value.trim() || (attachments.images.length + (attachments.files?.length ?? 0)));
+  const engaged = Boolean(value.length || (attachments.images.length + (attachments.files?.length ?? 0)) || busy || listening);
   const mascotTransition = reduceMotion ? { duration: 0 } : { type: "spring" as const, stiffness: 230, damping: 26, mass: 1 };
   const mascot = <AgentIcon className="h-[72px] w-24" state={busy ? "thinking" : "idle"} textLength={value.length} isListening={listening && active && !busy} />;
 
@@ -85,7 +85,7 @@ export function AiMascotInput({ id, value, onChange, onSend, onCancel, inputRef,
       {engaged ? <motion.div layoutId="agent-composer-mascot" transition={mascotTransition} className="pointer-events-none absolute top-0 right-4 z-20">{mascot}</motion.div> : null}
     <form onSubmit={(event) => { event.preventDefault(); submit(); }} className="ai-composer relative rounded-3xl border border-border/90 bg-card p-4 shadow-[0_12px_35px_rgba(0,0,0,.06)] transition-shadow focus-within:border-ring/60 focus-within:shadow-[0_16px_40px_rgba(0,0,0,.09)] motion-reduce:transition-none">
       <label htmlFor={id} className="sr-only">{label}</label>
-      <AiImagePreviews images={attachments.images} onRemove={attachments.remove} disabled={busy || attachments.processing} />
+      <AiImagePreviews images={attachments.images} files={attachments.files} onRemove={attachments.remove} disabled={busy || attachments.processing} />
       <AiImageFeedback attachments={attachments} />
       <textarea ref={inputRef} id={id} aria-describedby={`${id}-context ${id}-hint`} value={value} onChange={(event) => { stopListening(); setVoiceError(null); onChange(event.target.value); }} onPaste={busy ? undefined : attachments.onPaste} onKeyDown={(event) => {
         if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); }

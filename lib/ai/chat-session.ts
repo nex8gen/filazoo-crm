@@ -3,9 +3,9 @@ import type { WorkspaceViewer } from "../auth";
 import { beginSavedTurn, finishSavedTurn, failSavedTurn, saveChatUsage } from "./chat-history-server";
 import { conversationMemory, memoryPrompt, pendingInvoicePrompt, type ConversationInput, type HistoryReference } from "./chat-history";
 import { trackAiUsage } from "./chat-usage";
-import type { ChatImage } from "./image-input";
+import type { ChatImage, ChatFile } from "./image-input";
 
-export async function startChatSession(reference: HistoryReference | undefined, input: ConversationInput, viewer: WorkspaceViewer, userMessage: { role: "user" | "assistant"; content: string; images?: ChatImage[] }) {
+export async function startChatSession(reference: HistoryReference | undefined, input: ConversationInput, viewer: WorkspaceViewer, userMessage: { role: "user" | "assistant"; content: string; images?: ChatImage[]; files?: ChatFile[] }) {
   if (!reference) return undefined; // Older API clients retain their existing behavior.
   const prior = await beginSavedTurn(reference, input, viewer);
   let rates: unknown = {};

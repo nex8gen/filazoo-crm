@@ -120,10 +120,10 @@ export async function beginSavedTurn(reference: HistoryReference, input: Convers
   } catch (error) { await failSavedTurn(reference, viewer); throw error; }
 }
 
-export async function finishSavedTurn(reference: HistoryReference, viewer: WorkspaceViewer, prior: Awaited<ReturnType<typeof beginSavedTurn>>, userMessage: { content: string; images?: { name: string }[] }, response: { output: string; [key: string]: unknown }) {
+export async function finishSavedTurn(reference: HistoryReference, viewer: WorkspaceViewer, prior: Awaited<ReturnType<typeof beginSavedTurn>>, userMessage: { content: string; images?: { name: string }[]; files?: { name: string }[] }, response: { output: string; [key: string]: unknown }) {
   const summary = conversationMemory([...prior.messages, { role: "user", content: userMessage.content }, { role: "assistant", content: response.output }], prior.row.summary).summary;
   const saved = { ...response, history: { conversationId: reference.conversationId, version: prior.row.version + 1, summary, title: prior.row.version === 0 && prior.row.title === "New conversation" ? (userMessage.content.trim() || "Image conversation").slice(0, 120) : prior.row.title } };
-  const args = { p_user_id: viewer.id, p_conversation_id: reference.conversationId, p_request_id: reference.requestId, p_user_message: { content: userMessage.content, attachmentNames: userMessage.images?.map((i) => i.name) ?? [] }, p_response: saved, p_summary: summary };
+  const args = { p_user_id: viewer.id, p_conversation_id: reference.conversationId, p_request_id: reference.requestId, p_user_message: { content: userMessage.content, attachmentNames: [...(userMessage.images ?? []), ...(userMessage.files ?? [])].map(file => file.name) }, p_response: saved, p_summary: summary };
   // Completion is idempotent. One retry handles a lost response after commit.
   let result = await createSupabaseAdmin().rpc("finish_ai_chat_turn", args);
   if (result.error) result = await createSupabaseAdmin().rpc("finish_ai_chat_turn", args);

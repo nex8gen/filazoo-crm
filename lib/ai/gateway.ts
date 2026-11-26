@@ -1,4 +1,4 @@
-import type { ProviderImage } from "./image-input.ts";
+import type { ProviderImage, ProviderFile } from "./image-input.ts";
 import { gatewayTokenUsage, type AiTokenUsage } from "./usage.ts";
 import { selectAiModel, type AiTask } from "./model-routing.ts";
 import { workspaceAiFetch } from "./provider-fetch.ts";
@@ -21,6 +21,7 @@ export type GenerateGatewayTextOptions = {
   systemInstruction: string;
   prompt: string;
   images?: ProviderImage[];
+  files?: ProviderFile[];
   visionModel?: string;
   maxOutputTokens?: number;
   fetcher?: typeof fetch;
@@ -43,6 +44,7 @@ export async function generateGatewayText({
   systemInstruction,
   prompt,
   images = [],
+  files = [],
   visionModel,
   maxOutputTokens = 1_200,
   fetcher = fetch,
@@ -61,7 +63,8 @@ export async function generateGatewayText({
   let expiresAt: unknown;
   try { if (token.split(".").length === 3) expiresAt = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString()).exp; } catch { /* Opaque API keys need no JWT inspection. */ }
   if (typeof expiresAt === "number" && expiresAt * 1000 <= Date.now()) throw new Error("AI Gateway authentication has expired. Refresh the linked project's local development token with vercel env pull, then reload the server environment.");
-  const routing = selectAiModel({ model, task, userText, complex, standard, prompt, hasImages: images.length > 0, visionModel });
+  const fileParts = files.length ? await (await import("./file-input-server.ts")).prepareProviderFiles(files) : [];
+  const routing = selectAiModel({ model, task, userText, complex, standard, prompt, hasImages: images.length > 0 || fileParts.some(part => part.type !== "text"), visionModel });
   const selectedModel = routing.model;
   fetcher = await workspaceAiFetch(usageUserId, fetcher);
   const deadline = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(55_000)]);
@@ -86,6 +89,7 @@ export async function generateGatewayText({
                 { type: "input_text", text: `${image.label}: ${JSON.stringify(image.name)} (user-supplied image evidence)` },
                 { type: "input_image", image_url: image.dataUrl, detail: "auto" },
               ]),
+              ...fileParts.map(part => part.type === "file" ? { type: "input_file", filename: part.filename, file_data: part.data } : part.type === "image" ? { type: "input_image", image_url: part.image, detail: "auto" } : { type: "input_text", text: part.text }),
             ] }],
             max_output_tokens: maxOutputTokens,
             ...(routing.reasoningEffort ? { reasoning: { effort: routing.reasoningEffort } } : {}),
