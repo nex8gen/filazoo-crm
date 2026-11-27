@@ -15,6 +15,11 @@
     "ai:eval:plan": "node --experimental-strip-types scripts/run-agent-soak.ts",
     "ai:eval:24h": "node --env-file=.env.local --experimental-strip-types scripts/run-agent-soak.ts --live",
     "ai:eval:status": "node scripts/agent-soak-status.mjs",
+    "ai:eval:daily:snapshot": "node --experimental-strip-types scripts/evaluate-daily-work.ts --snapshot",
+    "ai:eval:daily": "node --env-file=.env.local --experimental-strip-types scripts/evaluate-daily-work.ts --live",
+    "ai:eval:daily:review": "node --env-file=.env.local --experimental-strip-types scripts/review-daily-work.ts --live",
+    "ai:eval:daily:report": "node --experimental-strip-types scripts/evaluate-daily-work.ts --report",
+    "ai:eval:daily:native": "node --env-file=.env.local --experimental-strip-types scripts/verify-daily-expert-agent.ts --live",
     "perf:bundles": "node scripts/audit-client-bundles.mjs",
     "mail:worker": "node --env-file=.env.local --experimental-strip-types scripts/mail-sync-worker.ts",
     "verify": "npm run lint && npm run test && npm run build && npm run perf:bundles"

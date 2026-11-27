@@ -1,5 +1,80 @@
 # Workspace chat and agent
 
+## Bounded sales activity reviews
+
+Broad read-only requests such as “Review the last seven days of accessible sales
+activity” use a date-filtered report path in either Chat or Agent, independently
+of an open email. `sales-review-records.ts` reads up to 50 records from each of
+five sources in parallel, with a 15-second data deadline, then the route makes
+one generation call. It does not load the selected email, scan all mailbox
+histories, enter the native action-planning loop, or attach unrelated conversation
+previews after the answer. Explicit action requests, named-customer requests,
+attachments and web research retain their normal paths.
+
+Workspace isolation, current ownership joins for every non-admin, AI data
+settings, user-owned quotations and assigned tasks remain enforced in the
+server reader. Results state the creation-date window and any unavailable or
+truncated sources. They do not claim complete historical status changes,
+payments in the period or a review of external mailbox bodies. The default native
+planner also bounds lookup waiting and reserves a final answer step after its
+lookup budget, reporting incomplete coverage instead of discarding partial work.
+
+`scripts/verify-sales-review-data.ts --live` checks the actual reader against the
+configured database without model calls or writes. Adding `--model` exercises the
+actual API handler, real reader and live Gateway with a verified existing member
+injected only at the diagnostic's auth boundary. It checks streamed progress,
+one generation and no prepared actions. It does not test browser sign-in and
+does not modify authentication, customer records or saved transcripts.
+
+## Daily-work answer quality and 100-prompt qualification
+
+`lib/ai/daily-work-quality.ts` extends the shared answer style used by workspace
+Chat, customer Chat, native Agent, and conversation-based opportunity analysis.
+It defines evidence checks, latest-message/record-state handling, ownership of
+the next action, commercial arithmetic, proposal honesty, and task-specific
+formats. This changes runtime instructions; it does not fine-tune model weights.
+
+`scripts/daily-work-evaluation-cases.ts` contains all 100 daily-work prompts,
+instantiated against explicitly fictional CRM evidence, with prewritten reference
+answers, format guides, and limited deterministic smoke checks. The answering
+model never receives the references or grading rules. `evaluate-daily-work.ts`
+records unchanged-baseline and improved answers sequentially. The qualified
+reasoning model reviews observed pairs through `review-daily-work.ts`; these are
+explicitly self-reviews, not independent proof of correctness. Earlier reviewer
+revisions remain in raw evidence but are excluded from the final report.
+
+For a new run, capture the baseline **before** changing the instructions, using
+the same `--directory=output/<new-run>` argument on each command:
+
+```text
+npm run ai:eval:daily:snapshot -- --directory=output/<new-run>
+npm run ai:eval:daily -- --directory=output/<new-run> --phase=baseline
+# Apply the intended instruction changes.
+npm run ai:eval:daily -- --directory=output/<new-run> --phase=improved --improved-model=openai/gpt-6.2-sol
+npm run ai:eval:daily:review -- --directory=output/<new-run>
+npm run ai:eval:daily:report -- --directory=output/<new-run> --improved-model=openai/gpt-6.2-sol
+```
+
+Live runs require the existing Gateway credentials. Each answer run and review
+stage has its own persistent USD 4.75 cap and exclusive worker lock. They preserve baseline instructions,
+check fixture hashes, checkpoint every answer, and resume without replaying
+successful requests. Provider errors remain errors; they are never substituted
+with hypothetical model answers. The HTML report and JSON evidence include every
+prompt, before/after answers, detected gaps, model-assisted review, recommended
+format and reference answer. Logs and artifacts remain under ignored `output/`.
+
+This is a live-model **answer-quality simulation with preloaded synthetic
+evidence**. It does not validate live customer retrieval, native tool arguments,
+action execution, UI rendering, sending, attachment generation or production
+deployment. Existing integration and authorization tests remain necessary.
+
+`scripts/verify-daily-expert-agent.ts --live` separately checks native tool
+planning with fictional records: a reference-only order patch, a blocked
+invoice-quantity conflict, an issued-invoice/draft mismatch, and a missing
+Messenger selection that must not fall back to the selected email. It uses a fake
+workspace wallet backed by a real capped provider-spending ledger, never a live
+database or business action executor. Prior failed runs are retained separately.
+
 ## Saved conversations and usage
 
 Chat, Agent and customer AI conversations save to Supabase after every completed

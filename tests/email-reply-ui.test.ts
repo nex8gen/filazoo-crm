@@ -8,6 +8,7 @@ import vm from "node:vm";
 import * as React from "react";
 import ts from "typescript";
 import { JSDOM } from "jsdom";
+import { emailPageRequestSchema } from "../lib/email-pagination.ts";
 
 const dom = new JSDOM("<!doctype html><body></body>", { url: "https://crm.test", pretendToBeVisual: true });
 for (const key of ["window", "document", "navigator", "HTMLElement", "Node", "Event", "MouseEvent"] as const)
@@ -24,7 +25,8 @@ type Props = Record<string, unknown> & { children?: React.ReactNode };
 const Empty = () => null;
 const Container = ({ children }: Props) => React.createElement(React.Fragment, {}, children);
 
-async function mount() {
+async function mount(paginated = false, canSync = false) {
+  let backgroundRefresh: () => Promise<void> = async () => {};
   const requests: Array<{ url: string; init?: RequestInit; resolve: (response: Response) => void }> = [];
   const cache = new Map<string, unknown>();
   const drafts = { ready: true, drafts: {}, put() {}, remove() {}, retry() {}, status: "Draft saved" };
@@ -36,7 +38,7 @@ async function mount() {
     "@/components/use-mail-drafts": { useMailDrafts: () => drafts },
     "@/components/use-email-footer": { useEmailFooter: () => ({ footer: null, loading: false, error: null }) },
     "@/components/use-email-customer-context": { useEmailCustomerContext: () => customerContext },
-    "@/components/use-background-refresh": { useBackgroundRefresh() {} },
+    "@/components/use-background-refresh": { useBackgroundRefresh(refresh: () => Promise<void>) { backgroundRefresh = refresh; } },
     "@/components/use-email-reply-link": { useEmailReplyLink() {} },
     "@/components/customer-tag-select": { CustomerTagSelect: ({ onChange }: { onChange: (tag: string) => void }) => React.createElement("button", { onClick: () => onChange("customer") }, "Set customer tag") },
     "@/components/email-body-editor": {
@@ -51,10 +53,11 @@ async function mount() {
     "@/components/email-message-list": { EmailMessageList: ({ conversations, onOpen }: { conversations: Array<{ id: string; latest: { subject: string } }>; onOpen: (conversation: unknown) => void }) => React.createElement("div", {}, conversations.map(conversation => React.createElement("button", { key: conversation.id, onClick: () => onOpen(conversation) }, conversation.latest.subject))) },
     "@/components/ui/dialog": new Proxy({}, { get: (_target, name) => name === "Dialog" ? ({ open, children }: Props) => open ? children : null : Container }),
   };
-  const realComponents = new Set(["components/email-inbox.tsx", "components/use-email-reply-operation.ts", "components/email-reply-status.tsx", "components/ui/notification-toast.tsx", "components/ui/sonner.tsx"]);
+  const realComponents = new Set(["components/email-inbox.tsx", "components/use-cached-page.ts", "components/email-list-skeleton.tsx", "components/use-email-reply-operation.ts", "components/email-reply-status.tsx", "components/ui/notification-toast.tsx", "components/ui/sonner.tsx"]);
   const fetchMock: typeof fetch = async (url, init) => {
     if (String(url) === "/api/email/state") return Response.json({ ok: true });
-    if (String(url) !== "/api/email/reply") throw new Error(`Unexpected request: ${url}`);
+    if (String(url).startsWith("/api/email/follow-up?")) return Response.json({ actions: [] });
+    if (String(url) !== "/api/email/reply" && !String(url).startsWith("/api/email/page?")) throw new Error(`Unexpected request: ${url}`);
     return new Promise<Response>(resolveResponse => requests.push({ url: String(url), init, resolve: resolveResponse }));
   };
   function load(file: string): unknown {
@@ -91,14 +94,16 @@ async function mount() {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
-  const messages = [1, 2].map(index => ({ id: `message-${index}`, threadId: `thread-${index}`, messageId: `<message-${index}@example.test>`, direction: "inbound" as const, status: "received", subject: `Question ${index}`, contact: `buyer${index}@example.test`, company: "Buyer", body: "What colors are available?", preview: "What colors are available?", timestamp: `2026-11-25T0${index}:00:00Z`, bodyLoaded: true, read: true }));
+  const messages = Array.from({ length: paginated ? 30 : 2 }, (_, i) => i + 1).map(index => ({ id: `message-${index}`, threadId: `thread-${index}`, ...(paginated ? { listConversationKey: `thread-${index}` } : {}), messageId: `<message-${index}@example.test>`, direction: "inbound" as const, status: "received", subject: `Question ${index}`, contact: `buyer${index}@example.test`, company: "Buyer", body: "What colors are available?", preview: "What colors are available?", timestamp: new Date(Date.parse("2026-11-25T00:00:00Z") - index * 60000).toISOString(), bodyLoaded: true, read: true }));
+  const pagination = { request: emailPageRequestSchema.parse({}), total: 65, pageSize: 30, revision: "fixture", folderCounts: { inbox: 65 }, followupCounts: { all: 0, ai: 0, manual: 0, completed: 0, nurture: 0 } };
   await React.act(() => root.render(React.createElement(React.Fragment, {}, React.createElement(EmailInboxWorkspace, {
     initialEmails: messages, initialThreadId: "thread-1", initialReplyOpen: false,
-    mailboxConfigured: true, sendConfigured: true, inboxConfigured: false, inboxError: null, aiConfigured: true,
-    defaultMailboxEmail: "sales@example.test", mailboxes: [{ id: "sales", email: "sales@example.test", type: "personal", sendConfigured: true, inboxConfigured: false }], selectedMailboxId: null, defaultSenderId: "sales", dataMode: "live",
+    initialPage: paginated ? pagination : undefined,
+    mailboxConfigured: true, sendConfigured: true, inboxConfigured: canSync, inboxError: null, aiConfigured: true,
+    defaultMailboxEmail: "sales@example.test", mailboxes: [{ id: "sales", email: "sales@example.test", type: "personal", sendConfigured: true, inboxConfigured: false }], selectedMailboxId: paginated ? "sales" : null, defaultSenderId: "sales", dataMode: "live",
     initialAutomation: { enabled: false, queueCount: 0, steps: [] }, products: [], catalogs: [],
   }), React.createElement(Toaster))));
-  return { host, requests,
+  return { host, requests, messages, pagination, refresh: () => backgroundRefresh(),
     async click(label: string) {
       const button = [...host.querySelectorAll<HTMLButtonElement>("button")].find(item => item.textContent === label || item.getAttribute("aria-label") === label);
       assert.ok(button, `Missing button: ${label}`);
@@ -172,5 +177,63 @@ test("inbox notices mount once with a single close control across reply and cont
     await React.act(() => close.click());
     await ui.click("Contact and follow-up details");
     assert.equal(ui.host.querySelectorAll('[data-sonner-toast][data-removed="false"]').length, 0);
+  } finally { await ui.close(); }
+});
+
+test("email paging shows skeletons, requests thirty conversations, and reuses both visited pages", async () => {
+  const ui = await mount(true);
+  try {
+    assert.equal(ui.requests.length, 0);
+    await ui.click("Next email page");
+    await React.act(async () => { await new Promise(resolve => setTimeout(resolve, 15)); });
+    assert.equal(ui.requests.length, 1);
+    assert.equal(new URL(ui.requests[0].url, "https://crm.test").searchParams.get("page"), "2");
+    assert.ok(ui.host.querySelector('[aria-label="Loading emails…"]'));
+    assert.equal(ui.host.querySelector<HTMLButtonElement>('[aria-label="Next email page"]')!.disabled, true);
+    const emails = ui.messages.map((message, i) => ({ ...message, id: `page2-${i}`, threadId: `page2-${i}`, listConversationKey: `page2-${i}`, subject: `Page two ${i}` }));
+    await ui.respond(0, { emails, pagination: { ...ui.pagination, request: { ...ui.pagination.request, page: 2 } } });
+    assert.equal(ui.host.querySelector('[aria-label="Loading emails…"]'), null);
+    assert.ok(ui.host.textContent!.includes("Page two 0"));
+    assert.ok(ui.host.textContent!.includes("31–60 of 65"));
+    await ui.click("Page two 0");
+    await React.act(async () => { await new Promise(resolve => setTimeout(resolve, 15)); });
+    assert.ok(ui.host.textContent!.includes("31–60 of 65"), "Opening a conversation must retain its server page");
+    assert.equal(ui.requests.length, 1);
+    await ui.click("Previous email page");
+    await React.act(async () => { await new Promise(resolve => setTimeout(resolve, 15)); });
+    assert.equal(ui.requests.length, 1, "Previous uses the cached first page");
+    assert.ok(ui.host.textContent!.includes("Question 1"));
+    await ui.click("Next email page");
+    await React.act(async () => { await new Promise(resolve => setTimeout(resolve, 15)); });
+    assert.equal(ui.requests.length, 1, "Next reuses the cached second page");
+    assert.ok(ui.host.textContent!.includes("Page two 0"));
+  } finally { await ui.close(); }
+});
+
+test("background revisions preserve visited pages and late refreshes cannot change the current page", async () => {
+  const ui = await mount(true, true);
+  try {
+    await ui.click("Next email page");
+    await React.act(async () => { await new Promise(resolve => setTimeout(resolve, 15)); });
+    const emails = ui.messages.map((message, i) => ({ ...message, id: `page2-${i}`, threadId: `page2-${i}`, listConversationKey: `page2-${i}`, subject: `Page two ${i}` }));
+    const pagination = { ...ui.pagination, request: { ...ui.pagination.request, page: 2 } };
+    await ui.respond(0, { emails, pagination });
+    let refresh!: Promise<void>;
+    await React.act(async () => { refresh = ui.refresh(); });
+    assert.equal(ui.requests.length, 2);
+    await ui.respond(1, { emails, pagination: { ...pagination, revision: "unrelated-update" } });
+    await refresh;
+    assert.equal(ui.host.querySelector('[aria-label="Loading emails…"]'), null);
+    await ui.click("Previous email page");
+    await React.act(async () => { await new Promise(resolve => setTimeout(resolve, 15)); });
+    assert.equal(ui.requests.length, 2, "An unrelated revision must preserve cached page one");
+    await React.act(async () => { refresh = ui.refresh(); });
+    await ui.click("Next email page");
+    await React.act(async () => { await new Promise(resolve => setTimeout(resolve, 15)); });
+    await ui.respond(2, { emails: [{ ...ui.messages[0], subject: "Late changed first page" }], pagination: { ...ui.pagination, revision: "changed" } });
+    await refresh;
+    assert.match(ui.host.textContent!, /Page two 0/);
+    assert.doesNotMatch(ui.host.textContent!, /Late changed first page/);
+    assert.equal(ui.requests.length, 3);
   } finally { await ui.close(); }
 });

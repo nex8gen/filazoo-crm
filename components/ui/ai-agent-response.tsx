@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useEffectEvent, useId, useState, useSyncExternalStore } from "react";
-import { Check, ChevronDown, Database, FileText, CircleAlert } from "lucide-react";
+import { ArrowUpRight, Check, ChevronDown, Database, FileText, CircleAlert } from "lucide-react";
 import { cn } from "cn";
 import { ThinkingGlyph } from "@/components/ui/thinking-indicator";
 import { AgentWorkIcon } from "@/components/agent-work-icon";
@@ -11,15 +11,17 @@ import { AiMarkdown } from "@/components/ui/ai-markdown";
 import { useLanguage } from "@/components/language-provider";
 import type { AssistantActivity } from "@/lib/ai/research-progress";
 import type { CitationSource } from "@/lib/ai/source-citations";
+import { splitFollowUpQuestions } from "@/lib/ai/follow-up-questions";
 
 // Adapted from the supplied response design. Progress follows real request
 // state; there are no simulated reasoning, terminal or tool-execution traces.
 export type ResponseStep = { id: string; label: string; detail?: string; status?: AssistantActivity["status"]; durationMs?: number };
 
-export function ThinkingState({ working, writing = false, failed = false, durationMs, scope, steps = [], activity, className }: {
+export function ThinkingState({ working, writing = false, failed = false, errorMessage, durationMs, scope, steps = [], activity, className }: {
   working: boolean;
   writing?: boolean;
   failed?: boolean;
+  errorMessage?: string;
   durationMs?: number;
   scope: string;
   steps?: ResponseStep[];
@@ -53,6 +55,7 @@ export function ThinkingState({ working, writing = false, failed = false, durati
     <div id={id} inert={!expanded} aria-hidden={!expanded} className={cn("agent-trace-details grid transition-[grid-template-rows,opacity] duration-300", expanded ? "grid-rows-[1fr] opacity-100" : "pointer-events-none grid-rows-[0fr] opacity-0")}>
       <div className="min-h-0 overflow-hidden">
         <div className="mb-2 ml-1.5 mt-1 space-y-1 border-l border-border/70 py-1 pl-3">
+          {failed && errorMessage ? <p role="alert" className="mb-2 max-w-full break-words text-sm leading-6 text-destructive [overflow-wrap:anywhere]">{t(errorMessage)}</p> : null}
           <div className="flex min-h-7 min-w-0 items-center gap-2 text-xs"><Database aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" /><span className="shrink-0 font-medium">{t("Context")}</span><span data-no-translate className="truncate rounded-md border border-border/40 bg-muted/70 px-1.5 py-0.5 text-xs text-muted-foreground">{scope}</span></div>
           {activity ? <div className="flex min-h-7 flex-wrap items-center gap-1.5 text-xs">{[activity.area, ...(activity.relatedAreas ?? [])].map(area => <span key={area} className="inline-flex items-center gap-1.5 rounded-md border border-violet-500/15 bg-violet-500/5 px-2 py-1 font-medium"><AgentWorkIcon area={area} />{t(agentWorkAreaLabels[area])}</span>)}</div> : null}
           {steps.length ? <ol aria-label={t("Request activity")} className="space-y-1">{steps.map(step => <li key={step.id} className="flex min-h-7 items-start gap-2 py-1 text-xs" data-activity-status={step.status}>
@@ -75,26 +78,29 @@ function subscribeToMotion(onChange: () => void) {
 const getMotion = () => window.matchMedia(motionQuery).matches;
 const getServerMotion = () => false;
 
-export function StreamingText({ text, animate = true, onComplete, onProgress, className, sources = [] }: {
+export function StreamingText({ text, animate = true, onComplete, onProgress, className, sources = [], onFollowUp, followUpsDisabled = false }: {
   text: string;
   animate?: boolean;
   onComplete?: () => void;
   onProgress?: () => void;
   className?: string;
   sources?: CitationSource[];
+  onFollowUp?: (question: string) => void;
+  followUpsDisabled?: boolean;
 }) {
   const [visibleCount, setVisibleCount] = useState(0);
   const reducedMotion = useSyncExternalStore(subscribeToMotion, getMotion, getServerMotion);
   const complete = useEffectEvent(() => onComplete?.());
   const progress = useEffectEvent(() => onProgress?.());
-  const characters = Array.from(text);
+  const { answer, questions } = onFollowUp ? splitFollowUpQuestions(text) : { answer: text, questions: [] };
+  const characters = Array.from(answer);
   const finished = !animate || reducedMotion || visibleCount >= characters.length;
 
   useEffect(() => {
     if (!animate) return;
     let frame = 0;
     let started: number | undefined;
-    const length = Array.from(text).length;
+    const length = Array.from(answer).length;
     // Preserve the reference's flowing reveal without making long answers
     // take tens of seconds after the real request has already completed.
     const duration = reducedMotion ? 0 : Math.min(3_000, length * 9);
@@ -108,9 +114,20 @@ export function StreamingText({ text, animate = true, onComplete, onProgress, cl
     }
     frame = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(frame);
-  }, [text, animate, reducedMotion]);
+  }, [answer, animate, reducedMotion]);
 
   return <div data-no-translate aria-busy={!finished} className={cn("agent-streaming-text break-words text-sm leading-7 text-foreground/90 [overflow-wrap:anywhere]", className)}>
-    <AiMarkdown text={finished ? text : characters.slice(0, visibleCount).join("")} sources={sources} streaming={!finished} />{!finished ? <span aria-hidden="true" className="agent-writing-cursor" /> : null}
+    <AiMarkdown text={finished ? answer : characters.slice(0, visibleCount).join("")} sources={sources} streaming={!finished} />{!finished ? <span aria-hidden="true" className="agent-writing-cursor" /> : null}
+    {finished && onFollowUp ? <AiFollowUpQuestions questions={questions} onSelect={onFollowUp} disabled={followUpsDisabled} /> : null}
+  </div>;
+}
+
+export function AiFollowUpQuestions({ questions, onSelect, disabled = false }: { questions: string[]; onSelect: (question: string) => void; disabled?: boolean }) {
+  const { language } = useLanguage();
+  if (!questions.length) return null;
+  return <div className="agent-follow-up-questions" role="group" aria-label={language === "zh-CN" ? "相关问题" : "Related questions"}>
+    {questions.map(question => <button key={question} type="button" disabled={disabled} onClick={() => { if (!disabled) onSelect(question); }} className="agent-follow-up-button">
+      <span>{question}</span><ArrowUpRight aria-hidden="true" className="size-3.5 shrink-0" />
+    </button>)}
   </div>;
 }

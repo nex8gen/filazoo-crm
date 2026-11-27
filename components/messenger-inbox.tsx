@@ -1,67 +1,37 @@
 "use client";
-import { NotificationToast } from "@/components/ui/notification-toast";
 
-
-import { EmptyState } from "@/components/data-state";
-import { PageActions } from "@/components/page-header";
-import { AiIcon } from "@/components/ai-icon";
-
-import { useLanguage } from "@/components/language-provider";
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Archive, ArrowDownToLine, ArrowLeft, Check, CheckCheck, ChevronDown, CircleUserRound,
-  Clock3, Copy, Filter, Flag, Globe2, Inbox, Languages, MessageCircleMore,
-  MoreHorizontal, PanelRightClose, Paperclip, Phone, Plus, Search, SendHorizonal,
-  Settings2, Smile, UserCheck, UserRound, Wifi, Zap,
-} from "lucide-react";
+import { Fragment, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import type { MetaConversationThread, MetaInboxData, MetaThreadMessage } from "@/lib/meta-messenger";
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
-  DropdownMenuSeparator, DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Archive, ArrowLeft, Check, CheckCheck, ChevronDown, Clock3, Copy, Globe2, Inbox, Languages, MessageCircleMore, MoreHorizontal, PanelRightClose, PanelRightOpen, Plus, Search, SendHorizonal, Settings2, Smile, Wifi, X } from "lucide-react";
+import { AiIcon } from "@/components/ai-icon";
+import { useLanguage } from "@/components/language-provider";
+import { PageActions, PageHeaderDetails } from "@/components/page-header";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { launchWorkspaceAi } from "@/lib/ai/launch";
+import type { MetaThreadMessage } from "@/lib/meta-messenger";
+import { mergeWebsiteThreads, type MessengerThread, type MessengerInboxData, type WebsiteInboxData } from "@/lib/messenger";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Avatar as ContactAvatar, AvatarFallback } from "@/components/ui/avatar";
+import { InputGroup, InputGroupInput, InputGroupAddon, InputGroupTextarea } from "@/components/ui/input-group";
+import { NotificationToast } from "@/components/ui/notification-toast";
+import { EmptyState } from "@/components/data-state";
+import styles from "@/components/messenger-inbox.module.css";
 
-type Channel = "all" | "facebook" | "instagram" | "whatsapp" | "web";
-type InboxThread = MetaConversationThread & {
-  channel: Exclude<Channel, "all">;
-  company?: string;
-  operator?: string;
-  language?: string;
-  priority?: "High" | "Normal";
-};
-
+type Channel = "all" | "web" | "whatsapp" | "facebook" | "instagram";
+type InboxFilter = "all" | "unread" | "resolved";
 const channelOptions: Array<{
   id: Channel;
   label: string;
   shortLabel: string;
   markClass: string;
-  connected: boolean;
 }> = [
-  { id: "all", label: "All conversations", shortLabel: "All", markClass: "bg-foreground text-background", connected: true },
-  { id: "facebook", label: "Facebook", shortLabel: "Facebook", markClass: "bg-[#1877f2] text-white", connected: true },
-  { id: "instagram", label: "Instagram", shortLabel: "Instagram", markClass: "bg-gradient-to-br from-[#7c3aed] via-[#e1306c] to-[#f59e0b] text-white", connected: true },
-  { id: "whatsapp", label: "WhatsApp", shortLabel: "WhatsApp", markClass: "bg-[#25d366] text-white", connected: false },
-  { id: "web", label: "Website chat", shortLabel: "Website", markClass: "bg-[#8b5cf6] text-white", connected: false },
+  { id: "all", label: "All conversations", shortLabel: "All", markClass: "bg-foreground text-background" },
+  { id: "web", label: "Website chat", shortLabel: "Website", markClass: "bg-[#8b5cf6] text-white" },
+  { id: "whatsapp", label: "WhatsApp", shortLabel: "WhatsApp", markClass: "bg-[#25d366] text-white" },
+  { id: "facebook", label: "Facebook", shortLabel: "Facebook", markClass: "bg-[#1877f2] text-white" },
+  { id: "instagram", label: "Instagram", shortLabel: "Instagram", markClass: "bg-gradient-to-br from-[#7c3aed] via-[#e1306c] to-[#f59e0b] text-white" },
 ];
-
-const translations: Record<string, string> = {};
-
-function initials(name: string) {
-  return name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
-}
-
-function formatTime(value: string, language: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat(language, { hour: "numeric", minute: "2-digit" }).format(date);
-}
-
-function formatReplyWindow(value: string | null, language: string) {
-  if (!value) return "Closed";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Closed";
-  return `Open until ${new Intl.DateTimeFormat(language, { hour: "numeric", minute: "2-digit" }).format(date)}`;
-}
 
 function ChannelMark({ channel, size = "md" }: { channel: Exclude<Channel, "all">; size?: "sm" | "md" }) {
   const option = channelOptions.find((item) => item.id === channel)!;
@@ -79,265 +49,356 @@ function ChannelMark({ channel, size = "md" }: { channel: Exclude<Channel, "all"
   );
 }
 
-function Toggle({ checked, onChange, label }: { checked: boolean; onChange: () => void; label: string }) {
-  return (
-    <button type="button" role="switch" aria-checked={checked} aria-label={label} onClick={onChange} className={`relative h-5 w-9 rounded-full transition-colors ${checked ? "bg-primary" : "bg-muted-foreground/30"}`}>
-      <span className={`absolute left-0.5 top-0.5 size-4 rounded-full bg-white shadow-sm ring-1 ring-black/5 transition-transform ${checked ? "translate-x-4" : "translate-x-0"}`} />
-    </button>
-  );
+
+const cx = (...classes: Array<string | false | undefined>) => classes.filter(Boolean).join(" ");
+const channelName = (channel: Channel) => channelOptions.find((option) => option.id === channel)!.shortLabel;
+const quickReplies = [
+  { label: "Say hello", text: "Thanks for reaching out! How can I help you today?" },
+  { label: "Ask about quantity", text: "What quantity are you considering for your order?" },
+  { label: "Shipping destination", text: "Which country and postal code would you like us to ship to?" },
+];
+function initials(name: string) {
+  return name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
+}
+function formatTime(value: string, language: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat(language, { hour: "numeric", minute: "2-digit" }).format(date);
+}
+function formatDate(value: string, language: string, includeTime = false) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Unknown date";
+  return new Intl.DateTimeFormat(language, { month: "short", day: "numeric", year: "numeric", ...(includeTime ? { hour: "numeric", minute: "2-digit" } as const : {}) }).format(date);
+}
+function dayKey(value: string) { return new Date(value).toDateString(); }
+function Avatar({ thread, large = false }: { thread: MessengerThread; large?: boolean }) {
+  return <div className="relative shrink-0" aria-hidden="true"><ContactAvatar size={large ? "lg" : "default"}><AvatarFallback>{initials(thread.customer)}</AvatarFallback></ContactAvatar><span className="absolute -bottom-1 -right-1 rounded-full border-2 border-background"><ChannelMark channel={thread.channel} size="sm" /></span></div>;
 }
 
-export function MessengerInbox({ data }: { data: MetaInboxData }) {
+export function MessengerInbox({ data }: { data: MessengerInboxData }) {
   const { language, t } = useLanguage();
-  const initialThreads = useMemo<InboxThread[]>(() => data.threads.map((thread) => ({ ...thread, operator: "You", language: "Auto-detect", priority: "Normal" })), [data.threads]);
-  const [threads, setThreads] = useState(initialThreads);
-  const [selectedId, setSelectedId] = useState(initialThreads[0]?.id ?? "");
-  const [mobileReading, setMobileReading] = useState(false);
-  const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
+  const [threads, setThreads] = useState(data.threads);
+  const [selectedId, setSelectedId] = useState(data.threads[0]?.id ?? "");
   const [activeChannel, setActiveChannel] = useState<Channel>("all");
+  const [filter, setFilter] = useState<InboxFilter>("all");
   const [search, setSearch] = useState("");
-  const [draft, setDraft] = useState("");
-  const draftRef = useRef(draft);
-  const [sending, setSending] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [translationOn, setTranslationOn] = useState(true);
-  const [autoReplyOn, setAutoReplyOn] = useState(true);
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const [onlyUnread, setOnlyUnread] = useState(false);
-  const [resolvedIds, setResolvedIds] = useState<Set<string>>(() => new Set());
   const [sortNewest, setSortNewest] = useState(true);
+  const [resolvedIds, setResolvedIds] = useState<Set<string>>(() => new Set());
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
+  const pendingWebsiteReplies = useRef<Record<string, { id: string; body: string }>>({});
+  const websiteReadThrough = useRef<Record<string, string>>({});
+  const [websiteConnected, setWebsiteConnected] = useState(data.connection.webConfigured);
+  const [websiteCanReply, setWebsiteCanReply] = useState(data.canReply);
+  const [websiteError, setWebsiteError] = useState(data.websiteError);
+  const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
+  const [mobileReading, setMobileReading] = useState(false);
+  const [detailsMode, setDetailsMode] = useState<"open" | "closed">("closed");
+  const detailsOpen = detailsMode === "open";
+  const [quickRepliesOpen, setQuickRepliesOpen] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  const searchRef = useRef<HTMLInputElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const detailsTriggerRef = useRef<HTMLButtonElement>(null);
+  const detailsCloseRef = useRef<HTMLButtonElement>(null);
+  const previousDetailsOpen = useRef(false);
+  const messagesRef = useRef<HTMLDivElement>(null);
+  const workspaceRef = useRef<HTMLDivElement>(null);
 
+  const channelThreads = useMemo(() => threads.filter((thread) => activeChannel === "all" || thread.channel === activeChannel), [activeChannel, threads]);
   const filteredThreads = useMemo(() => {
     const normalized = search.trim().toLowerCase();
-    return threads.filter((thread) => {
-      const matchesChannel = activeChannel === "all" || thread.channel === activeChannel;
-      const matchesSearch = !normalized || `${thread.customer} ${thread.company ?? ""} ${thread.lastMessage}`.toLowerCase().includes(normalized);
-      return matchesChannel && matchesSearch && (!onlyUnread || thread.unread > 0);
+    return channelThreads.filter((thread) => {
+      const matchesSearch = !normalized || (thread.customer + " " + thread.customerId + " " + (thread.contextLabel ?? "") + " " + thread.lastMessage).toLowerCase().includes(normalized);
+      const matchesFilter = filter === "unread" ? thread.unread > 0 : filter === "resolved" ? resolvedIds.has(thread.id) : true;
+      return matchesSearch && matchesFilter;
     }).sort((a, b) => (new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()) * (sortNewest ? 1 : -1));
-  }, [activeChannel, onlyUnread, search, sortNewest, threads]);
+  }, [channelThreads, filter, resolvedIds, search, sortNewest]);
+  // Keep a conversation open after marking it read or resolving it.
+  const selectedThread = channelThreads.find((thread) => thread.id === selectedId) ?? filteredThreads[0];
+  const draft = drafts[selectedThread?.id ?? ""] ?? "";
+  const unreadCount = threads.reduce((total, thread) => total + thread.unread, 0);
+  const unreadThreads = channelThreads.filter((thread) => thread.unread > 0).length;
+  const isResolved = Boolean(selectedThread && resolvedIds.has(selectedThread.id));
+  const replyWindowOpen = Boolean(selectedThread && (selectedThread.channel === "web" || (selectedThread.replyWindowOpen && (!selectedThread.replyWindowEndsAt || new Date(selectedThread.replyWindowEndsAt).getTime() > now))));
+  const channelConnected = (channel: Channel): boolean => channel === "all"
+    ? websiteConnected || data.connection.facebookConfigured || data.connection.instagramConfigured || data.connection.whatsappConfigured
+    : channel === "facebook" ? data.connection.facebookConfigured
+    : channel === "instagram" ? data.connection.instagramConfigured
+    : channel === "whatsapp" ? data.connection.whatsappConfigured : websiteConnected;
+  const connectedCount = channelOptions.filter((option) => option.id !== "all" && channelConnected(option.id)).length;
+  const canReply = Boolean(selectedThread && data.canReply && (selectedThread.channel !== "web" || websiteCanReply) && channelConnected(selectedThread.channel) && replyWindowOpen && !isResolved);
+  const lastInbound = selectedThread?.messages.findLast((message) => message.direction === "inbound");
+  const firstMessage = selectedThread?.messages[0];
+  const activeOption = channelOptions.find((option) => option.id === activeChannel)!;
 
-  const selectedThread = filteredThreads.find((thread) => thread.id === selectedId) ?? filteredThreads[0];
-  useEffect(() => { draftRef.current = draft; }, [draft]);
+  const acceptWebsiteSnapshot = useEffectEvent((snapshot: WebsiteInboxData & { canReply: boolean }) => {
+    const visible = document.visibilityState === "visible" && (window.matchMedia("(min-width: 768px)").matches || mobileReading);
+    if (visible && selectedThread?.channel === "web") {
+      const latest = snapshot.threads.find((thread) => thread.id === selectedThread.id);
+      if (latest) websiteReadThrough.current[latest.id] = latest.updatedAt;
+    }
+    setThreads((current) => mergeWebsiteThreads(current, snapshot.threads, websiteReadThrough.current));
+    setWebsiteConnected(snapshot.connected);
+    setWebsiteCanReply(snapshot.canReply);
+    setWebsiteError(null);
+  });
+  useEffect(() => {
+    let pending: AbortController | null = null;
+    let disposed = false;
+    async function refresh() {
+      if (pending || document.visibilityState !== "visible" || workspaceRef.current?.closest("[hidden], [inert]")) return;
+      pending = new AbortController();
+      const controller = pending;
+      const timeout = window.setTimeout(() => controller.abort(), 10_000);
+      try {
+        const response = await fetch("/api/messenger/website", { cache: "no-store", signal: controller.signal });
+        if (disposed) return;
+        if (response.status === 401 || response.status === 403) {
+          setThreads((current) => current.filter((thread) => thread.channel !== "web"));
+          setWebsiteConnected(false); setWebsiteCanReply(false);
+          throw new Error("Sign in with an active workspace account to refresh website messages.");
+        }
+        const snapshot = await response.json();
+        if (!response.ok || !Array.isArray(snapshot.threads)) throw new Error(snapshot.error || "Website messages could not be refreshed.");
+        if (!disposed) acceptWebsiteSnapshot(snapshot);
+      } catch (error) {
+        if (!disposed) setWebsiteError(error instanceof Error && error.name !== "AbortError" ? error.message : "Website messages could not be refreshed.");
+      } finally { window.clearTimeout(timeout); pending = null; }
+    }
+    const resume = () => void refresh();
+    const interval = window.setInterval(resume, 5_000);
+    window.addEventListener("focus", resume);
+    document.addEventListener("visibilitychange", resume);
+    return () => { disposed = true; pending?.abort(); window.clearInterval(interval); window.removeEventListener("focus", resume); document.removeEventListener("visibilitychange", resume); };
+  }, []);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(interval);
+  }, []);
+  useEffect(() => {
+    const container = messagesRef.current;
+    if (container) container.scrollTop = container.scrollHeight;
+  }, [selectedThread?.id, selectedThread?.messages.length, mobileReading]);
+  useEffect(() => {
+    if (detailsOpen && detailsMode === "open") detailsCloseRef.current?.focus();
+    if (!detailsOpen && previousDetailsOpen.current) detailsTriggerRef.current?.focus();
+    previousDetailsOpen.current = detailsOpen;
+  }, [detailsMode, detailsOpen]);
+  useEffect(() => {
+    function keyboardShortcuts(event: KeyboardEvent) {
+      if (event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        if (event.target instanceof HTMLElement && event.target.closest("input, textarea, [contenteditable='true']")) return;
+        event.preventDefault(); setMobileReading(false);
+        window.requestAnimationFrame(() => searchRef.current?.focus());
+      }
+      if (event.key === "Escape" && detailsOpen) {
+        setDetailsMode("closed"); detailsTriggerRef.current?.focus();
+      }
+    }
+    window.addEventListener("keydown", keyboardShortcuts);
+    return () => window.removeEventListener("keydown", keyboardShortcuts);
+  }, [detailsOpen]);
   useEffect(() => {
     function openAgentDraft(event: Event) {
       const prepared = (event as CustomEvent<{ draftMessage?: { conversationId: string; text: string } }>).detail?.draftMessage;
       if (!prepared) return;
       const target = threads.find((thread) => thread.id === prepared.conversationId);
-      if (!target) { setNotice("Refresh Messenger to open the agent's conversation."); return; }
-      if (draftRef.current.trim()) { setNotice("You have an unsent message. Finish or clear it, then open the agent draft from its result."); return; }
-      setActiveChannel("all"); setSearch(""); setOnlyUnread(false);
-      setSelectedId(target.id); setMobileReading(true);
-      draftRef.current = prepared.text;
-      setDraft(prepared.text);
-      setNotice("Agent draft ready. Review it before sending.");
+      if (!target) { setNotice({ text: "Refresh Messenger to open the agent's conversation.", error: true }); return; }
+      if (drafts[target.id]?.trim()) { setNotice({ text: "This conversation already has a draft. Finish or clear it before inserting the agent draft.", error: true }); return; }
+      setActiveChannel("all"); setSearch(""); setFilter("all"); setSelectedId(target.id); setMobileReading(true);
+      setDrafts((current) => ({ ...current, [target.id]: prepared.text }));
+      setNotice({ text: "Agent draft ready. Review it before sending." });
     }
     window.addEventListener("filazoo:agent-action", openAgentDraft);
     return () => window.removeEventListener("filazoo:agent-action", openAgentDraft);
-  }, [threads]);
-  const activeOption = channelOptions.find((item) => item.id === activeChannel)!;
-  const unreadCount = threads.reduce((total, thread) => total + thread.unread, 0);
-  const isChannelConnected = (channel: Channel) => channel === "all"
-    ? data.connection.configured
-    : channel === "facebook"
-      ? data.connection.facebookConfigured
-      : channel === "instagram"
-        ? data.connection.instagramConfigured
-        : channel === "whatsapp" ? data.connection.whatsappConfigured : false;
+  }, [drafts, threads]);
 
-  function chooseThread(thread: InboxThread) {
-    setSelectedId(thread.id);
-    setNotice(null);
+  function setDraft(value: string) {
+    if (selectedThread) setDrafts((current) => ({ ...current, [selectedThread.id]: value }));
+  }
+  function chooseThread(thread: MessengerThread) {
+    if (thread.channel === "web") websiteReadThrough.current[thread.id] = thread.updatedAt;
+    setSelectedId(thread.id); setMobileReading(true); setNotice(null);
     setThreads((current) => current.map((item) => item.id === thread.id ? { ...item, unread: 0, status: item.status === "New" ? "Open" : item.status } : item));
   }
-
   function selectChannel(channel: Channel) {
-    setMobileReading(false);
-    setActiveChannel(channel);
-    const first = threads.find((thread) => channel === "all" || thread.channel === channel);
-    if (first) setSelectedId(first.id);
+    setMobileReading(false); setActiveChannel(channel); setNotice(null);
+    setSelectedId(threads.find((thread) => channel === "all" || thread.channel === channel)?.id ?? "");
   }
-
-  function assignToMe() {
-    if (!selectedThread) return;
-    setThreads((current) => current.map((thread) => thread.id === selectedThread.id ? { ...thread, operator: "You" } : thread));
-    setNotice(`${selectedThread.customer} is now assigned to you.`);
-  }
-
-  function markUnread() {
-    if (!selectedThread) return;
-    setThreads((current) => current.map((thread) => thread.id === selectedThread.id ? { ...thread, unread: Math.max(1, thread.unread) } : thread));
-    setNotice("Conversation marked as unread.");
-  }
-
   function toggleResolved() {
     if (!selectedThread) return;
     setResolvedIds((current) => {
       const next = new Set(current);
-      if (next.has(selectedThread.id)) next.delete(selectedThread.id);
-      else next.add(selectedThread.id);
+      if (next.has(selectedThread.id)) next.delete(selectedThread.id); else next.add(selectedThread.id);
       return next;
     });
-    setNotice(resolvedIds.has(selectedThread.id) ? "Conversation reopened." : "Conversation marked as resolved.");
+    setNotice({ text: isResolved ? "Conversation reopened." : "Conversation marked as resolved." });
   }
-
   async function copyCustomerId() {
     if (!selectedThread) return;
-    try {
-      await navigator.clipboard.writeText(selectedThread.customerId);
-      setNotice("Customer ID copied to clipboard.");
-    } catch {
-      setNotice(`Customer ID: ${selectedThread.customerId}`);
-    }
+    try { await navigator.clipboard.writeText(selectedThread.customerId); setNotice({ text: "Customer ID copied." }); }
+    catch { setNotice({ text: "Customer ID: " + selectedThread.customerId }); }
   }
-
+  function openAssistant(translate = false) {
+    if (!selectedThread) return;
+    setDetailsMode("closed");
+    launchWorkspaceAi({ mode: translate || selectedThread.channel === "web" ? "chat" : "agent", submit: false, prompt: translate
+      ? "Translate the latest incoming message in conversation " + selectedThread.id + " into " + (language === "zh-CN" ? "Chinese" : "English") + ":\n" + (lastInbound?.body ?? "")
+      : "Prepare a reply draft for conversation " + selectedThread.id + " with " + selectedThread.customer + ". " + (draft.trim() ? "Improve my draft: " + draft : "Use the conversation context and ask for any missing details.") + " Do not send the message." });
+  }
   async function handleSend() {
     const message = draft.trim();
-    if (!selectedThread || !message || !selectedThread.replyWindowOpen || resolvedIds.has(selectedThread.id)) return;
-    setSending(true);
-    setNotice(null);
-    try {
-      const response = await fetch("/api/meta/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to: selectedThread.customerId, message, channel: selectedThread.channel }) });
-      const result = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(result?.error || "Messenger reply could not be sent.");
-      const sent: MetaThreadMessage = { id: result?.messageId || `local-${Date.now()}`, direction: "outbound", body: message, type: "text", status: "sent", createdAt: result?.createdAt || new Date().toISOString() };
-      setThreads((current) => current.map((thread) => thread.id === selectedThread.id
-        ? { ...thread, messages: [...thread.messages, sent], lastMessage: message, updatedAt: sent.createdAt, status: "Open" }
-        : thread));
-      setDraft("");
-      setNotice(`Reply submitted through ${selectedThread.channel === "whatsapp" ? "WhatsApp" : selectedThread.channel === "instagram" ? "Instagram" : "Facebook Messenger"}.`);
-    } catch (reason) {
-      setNotice(reason instanceof Error ? reason.message : "Messenger reply could not be sent.");
-    } finally {
-      setSending(false);
+    if (!selectedThread || !message || !canReply || sendingRef.current) return;
+    if (selectedThread.channel !== "web" && selectedThread.replyWindowEndsAt && new Date(selectedThread.replyWindowEndsAt).getTime() <= Date.now()) {
+      setNow(Date.now());
+      return;
     }
+    const thread = selectedThread;
+    if (thread.channel === "web" && (!thread.invoiceId || message.length > 4000)) {
+      setNotice({ text: "Enter a portal reply of 1–4,000 characters.", error: true });
+      return;
+    }
+    let portalReply: { id: string; body: string } | undefined;
+    if (thread.channel === "web") {
+      const previous = pendingWebsiteReplies.current[thread.id];
+      portalReply = previous?.body === message ? previous : { id: crypto.randomUUID(), body: message };
+      pendingWebsiteReplies.current[thread.id] = portalReply;
+    }
+    sendingRef.current = true; setSending(true); setNotice(null);
+    try {
+      const endpoint = thread.channel === "web" ? "/api/invoices/" + thread.invoiceId + "/portal" + (thread.companyId ? "?companyId=" + encodeURIComponent(thread.companyId) : "") : "/api/meta/send";
+      const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(portalReply ? { action: "reply", ...portalReply } : { to: thread.customerId, message, channel: thread.channel }) });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result || (portalReply && result.ok !== true)) throw new Error(result?.error || "Your message could not be sent. Please try again.");
+      const sent: MetaThreadMessage = { id: portalReply?.id || result?.messageId || "local-" + Date.now(), direction: "outbound", body: message, type: "text", status: "sent", createdAt: result?.createdAt || new Date().toISOString() };
+      if (portalReply) delete pendingWebsiteReplies.current[thread.id];
+      setThreads((current) => current.map((item) => item.id === thread.id ? { ...item, messages: [...item.messages, sent], lastMessage: message, updatedAt: sent.createdAt, status: "Open" } : item));
+      setDrafts((current) => ({ ...current, [thread.id]: current[thread.id] === draft ? "" : current[thread.id] }));
+      setNotice({ text: "Reply to " + thread.customer + " submitted through " + channelName(thread.channel) + "." });
+    } catch (reason) {
+      setNotice({ text: reason instanceof Error ? reason.message : "Your message could not be sent. Please try again.", error: true });
+    } finally { sendingRef.current = false; setSending(false); }
   }
 
   return (
-    <div data-ai-conversation-id={selectedThread?.id} className="messenger-workspace flex h-full min-h-0 flex-col overflow-hidden bg-[#f7f8fa] dark:bg-background">
-      <div className={`${mobileReading ? "hidden md:block" : ""} shrink-0 border-b bg-background px-4 pb-3 pt-4 sm:px-6`}>
-        <PageActions>
-          <div className="flex items-center gap-2">
-            <div className="hidden items-center gap-2 rounded-md border bg-background px-3 py-2 text-xs text-muted-foreground sm:flex"><span className={`size-2 rounded-full ${data.connection.configured ? "bg-emerald-500" : "bg-amber-400"}`} />{data.connection.configured ? `Live · ${[data.connection.pageName, data.connection.instagramName, data.connection.whatsappConfigured ? (data.connection.whatsappSandbox ? "WhatsApp sandbox (test)" : "WhatsApp") : null].filter(Boolean).join(" + ") || "Meta"}` : "Disconnected · Meta setup needed"}</div>
-            <Link href="/settings" className="inline-flex h-9 items-center gap-2 rounded-md border bg-background px-3 text-xs font-medium hover:bg-muted"><Settings2 className="size-4" />Inbox settings</Link>
-          </div>
-        </PageActions>
-        <div className="flex gap-1 overflow-x-auto" aria-label="Messaging channels">
+    <div ref={workspaceRef} className={cx("messenger-workspace h-full min-h-0 min-w-0 overflow-hidden border-t bg-background", styles.workspace)} data-reading={mobileReading} data-ai-conversation-id={selectedThread?.id} data-ai-company-id={selectedThread?.companyId || undefined}>
+      <PageHeaderDetails>
+        <nav className="flex min-w-0 items-center gap-1 overflow-x-auto" aria-label="Messaging channels">
           {channelOptions.map((channel) => {
-            const active = channel.id === activeChannel;
-            const connected = isChannelConnected(channel.id);
             const count = channel.id === "all" ? unreadCount : threads.filter((thread) => thread.channel === channel.id).reduce((total, thread) => total + thread.unread, 0);
-            return (
-              <button key={channel.id} type="button" onClick={() => selectChannel(channel.id)} className={`relative flex h-9 shrink-0 items-center gap-2 rounded-md px-3 text-sm font-medium ${active ? "bg-muted text-foreground ring-1 ring-border" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>
-                {channel.id === "all" ? <span className="inline-flex size-5 items-center justify-center rounded-full bg-foreground text-background"><Inbox className="size-3" /></span> : <ChannelMark channel={channel.id} size="sm" />}{channel.shortLabel}
-                {count > 0 ? <span className="min-w-5 rounded-full bg-muted px-1.5 py-0.5 text-xs text-foreground">{count}</span> : null}
-                {!connected ? <span className="size-1.5 rounded-full bg-muted-foreground/30" title="Not connected" /> : null}
-                {active ? <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-primary" /> : null}
-              </button>
-            );
+            return <Button key={channel.id} type="button" size="xs" variant="ghost" aria-pressed={activeChannel === channel.id} onClick={() => selectChannel(channel.id)} className={activeChannel === channel.id ? "bg-muted text-foreground" : "text-muted-foreground"}>
+              {channel.id === "all" ? <Inbox className="size-3.5" /> : <ChannelMark channel={channel.id} size="sm" />}
+              {channel.shortLabel}{count > 0 ? <Badge variant="secondary" className="min-h-4 px-1 py-0 text-[10px]">{count}</Badge> : null}
+            </Button>;
           })}
-          <Link href="/settings" className="flex h-9 shrink-0 items-center gap-1.5 rounded-md px-3 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground"><Plus className="size-3.5" />Add channel</Link>
-        </div>
-      </div>
+          <Link href="/settings/apps" className={buttonVariants({ variant: "ghost", size: "icon-xs", className: "ml-1 text-muted-foreground" })} aria-label="Add channel" title="Add channel"><Plus /></Link>
+        </nav>
+      </PageHeaderDetails>
+      <PageActions>
+        <span className="hidden items-center gap-1.5 self-center text-xs text-muted-foreground xl:inline-flex"><span className={cx("size-1.5 rounded-full", connectedCount > 0 ? "bg-emerald-500" : "bg-amber-500")} />{connectedCount > 0 ? connectedCount + (connectedCount === 1 ? " channel connected" : " channels connected") : "Disconnected"}</span>
+        <Link href="/settings/apps" className={buttonVariants({ variant: "outline", size: "xs" })}><Settings2 />Inbox settings</Link>
+      </PageActions>
+      {data.dataError ? <NotificationToast tone="error">Could not load all messages. Refresh to try again.</NotificationToast> : null}
+      {websiteError ? <NotificationToast tone="error">{websiteError}</NotificationToast> : null}
 
-      <div className={`relative grid min-h-0 flex-1 grid-cols-1 bg-background md:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)] ${selectedThread && detailsOpen ? "min-[100rem]:grid-cols-[320px_minmax(0,1fr)_300px]" : ""}`}>
-        <section className={`${mobileReading ? "hidden" : "flex"} min-h-0 min-w-0 flex-col border-r md:flex`} aria-label="Conversations">
-          <div className="border-b p-3">
-            <div className="flex items-center justify-between px-1 pb-3"><div className="flex items-center gap-2"><h2 className="text-base font-semibold">Inbox</h2><span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">{filteredThreads.length}</span></div><div className="flex items-center gap-1"><button type="button" title={onlyUnread ? "Show all conversations" : "Show unread only"} aria-pressed={onlyUnread} onClick={() => setOnlyUnread((value) => !value)} className={`rounded-md p-2 hover:bg-muted hover:text-foreground ${onlyUnread ? "bg-primary/10 text-primary" : "text-muted-foreground"}`}><Filter className="size-4" /></button><DropdownMenu><DropdownMenuTrigger className="rounded-md p-2 text-muted-foreground outline-none hover:bg-muted hover:text-foreground" aria-label="Inbox actions"><MoreHorizontal className="size-4" /></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-48"><DropdownMenuLabel>Inbox actions</DropdownMenuLabel><DropdownMenuItem onClick={() => setThreads((current) => current.map((thread) => ({ ...thread, unread: 0 })))}><CheckCheck />Mark all as read</DropdownMenuItem><DropdownMenuItem onClick={() => setOnlyUnread(true)}><Filter />Show unread only</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div></div>
-            <label className="flex h-9 items-center gap-2 rounded-md border bg-muted/30 px-2.5 focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10"><Search className="size-3.5 text-muted-foreground" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search people or messages" className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground" /><kbd className="rounded border bg-background px-1 text-xs text-muted-foreground">⌘K</kbd></label>
+      <div className={styles.layout} data-details={Boolean(selectedThread && detailsOpen)}>
+        <section className={cx(styles.inbox, "flex min-h-0 min-w-0 flex-col border-r")} aria-label="Conversations">
+          <div className="space-y-3 border-b p-3">
+            <div className="flex items-center justify-between gap-2 px-1">
+              <h2 className="flex items-center gap-2 text-sm font-semibold">Inbox<Badge variant="secondary">{channelThreads.length}</Badge></h2>
+              <DropdownMenu><DropdownMenuTrigger aria-label="Inbox actions" className={buttonVariants({ variant: "ghost", size: "icon-xs" })}><MoreHorizontal /></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuLabel>Inbox actions</DropdownMenuLabel><DropdownMenuItem onClick={() => setThreads((current) => current.map((thread) => ({ ...thread, unread: 0 })))}><CheckCheck />Mark all as read</DropdownMenuItem><DropdownMenuItem onClick={() => setSortNewest((value) => !value)}><Clock3 />{sortNewest ? "Show oldest first" : "Show newest first"}</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
+            </div>
+            <InputGroup className="h-9 bg-muted/20">
+              <InputGroupAddon><Search className="size-3.5" /></InputGroupAddon>
+              <InputGroupInput ref={searchRef} aria-label="Search conversations" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search conversations" className="h-9" />
+              {search ? <InputGroupAddon align="inline-end"><Button type="button" size="icon-xs" variant="ghost" aria-label="Clear search" onClick={() => { setSearch(""); searchRef.current?.focus(); }}><X /></Button></InputGroupAddon> : null}
+            </InputGroup>
+            <div className="flex gap-1" role="group" aria-label="Filter conversations">
+              <Button type="button" size="xs" variant="ghost" aria-pressed={filter === "all"} className={filter === "all" ? "bg-muted" : "text-muted-foreground"} onClick={() => setFilter("all")}>All</Button>
+              <Button type="button" size="xs" variant="ghost" aria-pressed={filter === "unread"} className={filter === "unread" ? "bg-muted" : "text-muted-foreground"} onClick={() => setFilter("unread")}>Unread{unreadThreads > 0 ? <span className="text-muted-foreground">{unreadThreads}</span> : null}</Button>
+              <Button type="button" size="xs" variant="ghost" aria-pressed={filter === "resolved"} className={filter === "resolved" ? "bg-muted" : "text-muted-foreground"} onClick={() => setFilter("resolved")}>Resolved</Button>
+            </div>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto p-2">
-            {!isChannelConnected(activeOption.id) && filteredThreads.length === 0 ? (
-              <div className="m-2 rounded-xl border border-dashed bg-muted/20 p-5 text-center"><div className="mx-auto w-fit"><ChannelMark channel={activeOption.id as Exclude<Channel, "all">} /></div><h3 className="mt-3 text-sm font-semibold">Connect {activeOption.label}</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">Bring messages into Filazoo and assign them to your CRM operators.</p><Link href="/settings" className="mt-4 inline-flex h-9 items-center gap-2 rounded-md bg-foreground px-3 text-xs font-medium text-background"><Wifi className="size-3.5" />Connect channel</Link></div>
-            ) : filteredThreads.length === 0 ? (
-              <EmptyState compact icon={MessageCircleMore} title="No conversations match your search." className="m-2" />
-            ) : filteredThreads.map((thread) => {
-              const selected = selectedThread?.id === thread.id;
-              return (
-                <button key={thread.id} type="button" aria-pressed={selected} onClick={() => { chooseThread(thread); setMobileReading(true); }} className={`group relative mb-1.5 flex w-full gap-3.5 rounded-xl p-3.5 text-left transition-colors ${selected ? "bg-[#f0fdf7] shadow-[inset_0_0_0_1px_rgba(62,207,142,0.12)] dark:bg-primary/10" : "hover:bg-muted/60"}`}>
-                  {selected ? <span className="absolute inset-y-3 left-0 w-0.5 rounded-r bg-primary" /> : null}
-                  <div className="relative flex size-10 shrink-0 items-center justify-center rounded-full bg-[#e8eef7] text-xs font-semibold text-[#38536f] dark:bg-muted dark:text-foreground">{initials(thread.customer)}<span className="absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-background"><ChannelMark channel={thread.channel} size="sm" /></span></div>
-                  <div className="min-w-0 flex-1"><div className="flex items-baseline gap-2"><p className="min-w-0 flex-1 truncate text-xs font-semibold">{thread.customer}</p><time className="shrink-0 text-xs text-muted-foreground">{formatTime(thread.updatedAt, language)}</time></div><p className="mt-0.5 truncate text-xs text-muted-foreground">{thread.company || `${thread.channel === "whatsapp" ? (data.connection.whatsappSandbox ? "Test participant" : "WhatsApp") : "Messenger ID"} ${thread.customerId}`}</p><div className="mt-2 flex items-center gap-2"><p className={`min-w-0 flex-1 truncate text-xs ${thread.unread ? "font-medium text-foreground" : "text-muted-foreground"}`}>{thread.lastMessage}</p>{thread.unread > 0 ? <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{thread.unread}</span> : null}</div></div>
-                </button>
-              );
-            })}
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {filteredThreads.length === 0 ? <div className="p-3"><EmptyState compact icon={Inbox} className="border-0" title={search ? "No matching conversations" : filter === "unread" ? "No unread conversations" : filter === "resolved" ? "No resolved conversations" : "No conversations"}>
+              {search || filter !== "all" ? <Button size="xs" variant="outline" onClick={() => { setSearch(""); setFilter("all"); }}>Clear filters</Button> : !channelConnected(activeChannel) ? <Link href={activeChannel === "web" ? "/customer-portal" : "/settings/apps"} className={buttonVariants({ size: "xs", variant: "outline" })}>{activeChannel === "web" ? "Portal settings" : "Connect " + (activeChannel === "all" ? "a channel" : activeOption.shortLabel)}</Link> : null}
+            </EmptyState></div> : filteredThreads.map((thread) => <button key={thread.id} type="button" data-messenger-thread aria-pressed={selectedThread?.id === thread.id} onClick={() => chooseThread(thread)} className={cx("flex w-full gap-3 border-b px-4 py-4 text-left outline-none hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", selectedThread?.id === thread.id && "bg-primary/5")}>
+              <Avatar thread={thread} />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline gap-2"><strong className="min-w-0 flex-1 truncate text-sm font-medium">{thread.customer}</strong><time className="shrink-0 text-xs text-muted-foreground" dateTime={thread.updatedAt} title={formatDate(thread.updatedAt, language, true)}>{formatTime(thread.updatedAt, language)}</time></div>
+                <div className="mt-1 flex items-center gap-2"><p className={cx("min-w-0 flex-1 truncate text-xs", thread.unread > 0 ? "font-medium" : "text-muted-foreground")}>{drafts[thread.id]?.trim() ? <><span className="text-primary">Draft: </span>{drafts[thread.id]}</> : <>{thread.messages.at(-1)?.direction === "outbound" ? "You: " : ""}{thread.lastMessage}</>}</p>{thread.unread > 0 ? <Badge className="min-h-4 px-1.5 py-0 text-[10px]" aria-label={thread.unread + " unread messages"}>{thread.unread}</Badge> : resolvedIds.has(thread.id) ? <CheckCheck className="size-3.5 text-muted-foreground" /> : null}</div>
+                <p className="mt-1 text-xs text-muted-foreground">{channelName(thread.channel)}{thread.contextLabel ? " · " + thread.contextLabel : ""}</p>
+              </div>
+            </button>)}
           </div>
-          <div className="flex items-center justify-between border-t px-4 py-2.5 text-xs text-muted-foreground"><span>{threads.length} total conversations</span><button type="button" onClick={() => setSortNewest((value) => !value)} className="flex items-center gap-1 rounded px-1 py-0.5 hover:bg-muted hover:text-foreground">{sortNewest ? "Newest first" : "Oldest first"} <ChevronDown className={`size-3 transition-transform ${sortNewest ? "" : "rotate-180"}`} /></button></div>
+          <div className="flex min-h-11 shrink-0 items-center justify-between gap-2 border-t px-4 text-xs text-muted-foreground"><span>{filteredThreads.length} {filteredThreads.length === 1 ? "conversation" : "conversations"}</span><Button type="button" size="xs" variant="ghost" className="px-1 text-xs text-muted-foreground" onClick={() => setSortNewest((value) => !value)}>{sortNewest ? "Newest first" : "Oldest first"}<ChevronDown className={cx("size-3", !sortNewest && "rotate-180")} /></Button></div>
         </section>
 
-        <section className={`${mobileReading ? "flex" : "hidden"} min-h-0 min-w-0 flex-col bg-[#fbfbfc] dark:bg-background md:flex`} aria-label="Conversation">
-          <button type="button" onClick={() => setMobileReading(false)} className="flex min-h-11 shrink-0 items-center gap-2 border-b bg-background px-4 text-sm font-medium md:hidden"><ArrowLeft className="size-4" />All conversations</button>
-          {selectedThread && (activeChannel === "all" || selectedThread.channel === activeChannel) ? (
-            <>
-              <header className="flex min-h-16 items-center justify-between gap-3 border-b bg-background px-4 sm:px-5">
-                <div className="flex min-w-0 items-center gap-3"><div className="relative flex size-10 shrink-0 items-center justify-center rounded-full bg-[#e8eef7] text-xs font-semibold text-[#38536f] dark:bg-muted dark:text-foreground">{initials(selectedThread.customer)}<span className="absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-background"><ChannelMark channel={selectedThread.channel} size="sm" /></span></div><div className="min-w-0"><div className="flex items-center gap-2"><h2 className="truncate text-base font-semibold">{selectedThread.customer}</h2>{selectedThread.channel !== "whatsapp" ? <span className="size-2 rounded-full bg-emerald-500" /> : null}</div><p className="mt-0.5 truncate text-xs text-muted-foreground">{selectedThread.channel === "whatsapp" ? selectedThread.customerId : selectedThread.company || "CRM contact"}</p></div></div>
-                <div className="flex items-center gap-1"><button type="button" title="Call customer" onClick={() => setNotice("No phone number is saved for this customer.")} className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground"><Phone className="size-4" /></button><button type="button" title={detailsOpen ? "Hide customer details" : "Show customer details"} aria-pressed={detailsOpen} onClick={() => setDetailsOpen((open) => !open)} className={`rounded-md p-2 hover:bg-muted ${detailsOpen ? "bg-primary/10 text-primary" : "text-muted-foreground"}`}><UserRound className="size-4" /></button><DropdownMenu><DropdownMenuTrigger className="rounded-md p-2 text-muted-foreground outline-none hover:bg-muted hover:text-foreground" aria-label="Conversation actions"><MoreHorizontal className="size-4" /></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-52"><DropdownMenuLabel>Conversation actions</DropdownMenuLabel><DropdownMenuItem onClick={assignToMe}><UserCheck />Assign to me</DropdownMenuItem><DropdownMenuItem onClick={markUnread}><MessageCircleMore />Mark as unread</DropdownMenuItem><DropdownMenuItem onClick={() => void copyCustomerId()}><Copy />Copy customer ID</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem onClick={toggleResolved}><Archive />{resolvedIds.has(selectedThread.id) ? "Reopen conversation" : "Mark as resolved"}</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>
-              </header>
-              {selectedThread.channel === "whatsapp" ? <div className="border-b bg-muted/30 px-4 py-2 text-xs text-muted-foreground">{data.connection.whatsappSandbox ? <>Sandbox test inbox · {data.connection.whatsappSender}. Your existing WhatsApp Business phone app is not connected. Messages sent to this test number appear here.</> : <>Business sender: {data.connection.whatsappSender || "Not configured"}. Incoming messages are on the left; your CRM replies are on the right.</>}</div> : null}
-              <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-8">
-                <div className="mx-auto max-w-2xl"><div className="mb-5 flex items-center gap-3 text-xs uppercase tracking-[0.08em] text-muted-foreground"><span className="h-px flex-1 bg-border" /><span>Today</span><span className="h-px flex-1 bg-border" /></div><div className="space-y-4">
-                  {selectedThread.messages.map((message) => {
-                    const outbound = message.direction === "outbound";
-                    const translated = translationOn && translations[message.body];
-                    return (
-                      <div key={message.id} className={`flex items-end gap-2 ${outbound ? "justify-end" : "justify-start"}`}>
-                        {!outbound ? <div className="mb-5 flex size-7 shrink-0 items-center justify-center rounded-full bg-[#e8eef7] text-xs font-semibold text-[#38536f] dark:bg-muted dark:text-foreground">{initials(selectedThread.customer)}</div> : null}
-                        <div className={`max-w-[82%] sm:max-w-[70%] ${outbound ? "items-end" : "items-start"} flex flex-col`}><div className={`rounded-2xl px-4 py-2.5 text-xs leading-5 shadow-[0_1px_1px_rgba(0,0,0,0.03)] ${outbound ? "rounded-br-md bg-[#153f33] text-white dark:bg-primary dark:text-primary-foreground" : "rounded-bl-md border bg-background text-foreground"}`}><p className="whitespace-pre-wrap break-words">{message.body}</p>{translated ? <div className="mt-2 border-t border-border/50 pt-2"><p className="mb-0.5 flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.08em] text-primary"><Languages className="size-3" />{language === "zh-CN" ? "Translated to Chinese" : "Translated to English"}</p><p className="text-xs text-muted-foreground">{translated}</p></div> : null}</div><p className="mt-1 flex items-center gap-1 px-1 text-xs text-muted-foreground">{outbound ? "You · " : "Received · "}{formatTime(message.createdAt, language)}{outbound ? <Check className="size-3 text-muted-foreground" aria-label="Submitted" /> : null}</p></div>
+        <section className={cx(styles.conversation, "min-h-0 min-w-0 flex-col bg-background")} aria-label="Conversation">
+          {selectedThread ? <>
+            <header className="flex min-h-16 shrink-0 items-center gap-3 border-b px-4">
+              <Button type="button" size="icon-xs" variant="ghost" className="md:hidden" aria-label="Back to conversations" onClick={() => setMobileReading(false)}><ArrowLeft /></Button>
+              <Avatar thread={selectedThread} />
+              <div className="min-w-0 flex-1"><h3 className="truncate text-sm font-semibold">{selectedThread.customer}</h3><p className="mt-0.5 truncate text-xs text-muted-foreground">{channelName(selectedThread.channel)} · {selectedThread.customerId}</p></div>
+              <Button type="button" size="xs" variant="outline" onClick={toggleResolved} className="hidden sm:inline-flex"><Check />{isResolved ? "Reopen" : "Resolve"}</Button>
+              <Button ref={detailsTriggerRef} type="button" size="icon-xs" variant="ghost" className={detailsOpen ? "text-primary" : "text-muted-foreground"} aria-label={detailsOpen ? "Hide customer details" : "Show customer details"} aria-expanded={detailsOpen} aria-controls={detailsOpen ? "messenger-customer-details" : undefined} onClick={() => setDetailsMode(detailsOpen ? "closed" : "open")}><PanelRightOpen /></Button>
+              <DropdownMenu><DropdownMenuTrigger className={buttonVariants({ size: "icon-xs", variant: "ghost" })} aria-label="Conversation actions"><MoreHorizontal /></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuLabel>Conversation actions</DropdownMenuLabel><DropdownMenuItem onClick={() => { setThreads((current) => current.map((thread) => thread.id === selectedThread.id ? { ...thread, unread: Math.max(1, thread.unread) } : thread)); setNotice({ text: "Conversation marked as unread." }); }}><MessageCircleMore />Mark as unread</DropdownMenuItem><DropdownMenuItem onClick={() => void copyCustomerId()}><Copy />Copy customer ID</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem onClick={toggleResolved}><Archive />{isResolved ? "Reopen conversation" : "Mark as resolved"}</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
+            </header>
+            {selectedThread.channel === "whatsapp" && data.connection.whatsappSandbox ? <div className="flex shrink-0 items-center gap-2 border-b bg-muted/20 px-4 py-2 text-xs text-muted-foreground"><Wifi className="size-3.5" /><span>WhatsApp sandbox</span><Link href="/settings/apps" className="ml-auto hover:text-foreground">Manage</Link></div> : null}
+            <div ref={messagesRef} className={cx(styles.messages, "min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6")}>
+              <div className="mx-auto max-w-3xl">
+                {selectedThread.messages.map((message, index) => {
+                  const outbound = message.direction === "outbound";
+                  const startsDay = index === 0 || dayKey(message.createdAt) !== dayKey(selectedThread.messages[index - 1].createdAt);
+                  return <Fragment key={message.id}>
+                    {startsDay ? <div className="mb-6 mt-1 flex items-center gap-4 text-xs text-muted-foreground"><span className="h-px flex-1 bg-border" /><time dateTime={message.createdAt}>{formatDate(message.createdAt, language)}</time><span className="h-px flex-1 bg-border" /></div> : null}
+                    <div className={cx("mb-5 flex items-end gap-2", outbound && "justify-end")}>
+                      <div className={cx("flex min-w-0 max-w-[85%] flex-col sm:max-w-[75%]", outbound ? "items-end" : "items-start")}>
+                        <div className={cx("rounded-xl px-3.5 py-2.5 text-sm leading-6", outbound ? "rounded-br-sm bg-primary/10" : "rounded-bl-sm border bg-background")}><p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{message.body}</p></div>
+                        <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground"><time dateTime={message.createdAt}>{formatTime(message.createdAt, language)}</time>{outbound ? message.status === "failed" ? <span className="text-destructive">Failed</span> : <Check className="size-3" aria-label="Submitted" /> : null}</div>
                       </div>
-                    );
-                  })}
-                </div></div>
+                    </div>
+                  </Fragment>;
+                })}
               </div>
-              <div className="messenger-composer shrink-0 border-t bg-background p-3 sm:p-4" data-tools-open={mobileToolsOpen}><div className="mx-auto max-w-3xl"><button type="button" aria-expanded={mobileToolsOpen} onClick={() => setMobileToolsOpen((open) => !open)} className="mb-2 flex min-h-9 items-center gap-2 text-xs font-medium text-muted-foreground md:hidden"><Settings2 className="size-4" />Reply options<ChevronDown className="size-3" /></button>
-                <div className="messenger-reply-tools mb-2 flex flex-wrap items-center gap-2"><div className="flex items-center gap-2 rounded-md border bg-[#faf5ff] px-2.5 py-1.5 text-xs text-[#6d28d9] dark:bg-violet-500/10 dark:text-violet-300"><Languages className="size-3.5" /><span>{language === "zh-CN" ? "English → Chinese" : "Chinese → English"}</span><Toggle checked={translationOn} onChange={() => setTranslationOn((value) => !value)} label="Toggle automatic translation" /></div><div className="flex items-center gap-2 rounded-md border bg-[#f0fdf4] px-2.5 py-1.5 text-xs text-[#047857] dark:bg-emerald-500/10 dark:text-emerald-300"><AiIcon className="size-3.5" /><span>AI auto-reply</span><Toggle checked={autoReplyOn} onChange={() => setAutoReplyOn((value) => !value)} label="Toggle AI auto-reply" /></div><span className="ml-auto flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="size-3" />{formatReplyWindow(selectedThread.replyWindowEndsAt, language)}</span></div>
-                {autoReplyOn ? <div className="messenger-reply-tools mb-2 flex items-center gap-2 overflow-x-auto pb-0.5"><span className="flex shrink-0 items-center gap-1 text-xs font-semibold text-violet-600 dark:text-violet-300"><AiIcon className="size-3" />AI suggestions</span>{["Share the latest catalog", "Confirm shipping options", "Ask about order quantity"].map((suggestion) => <button key={suggestion} type="button" onClick={() => setDraft(t(suggestion === "Share the latest catalog" ? "Absolutely — I’ll send our latest pet bed catalog with wholesale pricing and MOQ details now." : suggestion === "Confirm shipping options" ? "Yes, we can help with international shipping. Which country and quantity should I quote?" : "What quantity are you considering for your first order?"))} className="shrink-0 rounded-full border bg-background px-3 py-1.5 text-xs text-muted-foreground hover:border-primary/40 hover:text-foreground">{suggestion}</button>)}</div> : null}
-                <div className="rounded-xl border bg-background shadow-[0_8px_30px_rgba(15,23,42,0.05)] focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10"><textarea aria-label="Message" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void handleSend(); } }} disabled={!selectedThread.replyWindowOpen || resolvedIds.has(selectedThread.id)} placeholder={resolvedIds.has(selectedThread.id) ? "Reopen this conversation to reply" : selectedThread.replyWindowOpen ? `Reply to ${selectedThread.customer}…` : "The reply window is closed"} className="min-h-20 w-full resize-none bg-transparent px-3.5 pt-3 text-xs outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed" /><div className="flex items-center justify-between border-t px-2 py-1.5"><div className="flex items-center gap-0.5"><button type="button" disabled title="Attachments are not available yet" className="cursor-not-allowed rounded-md p-1.5 text-muted-foreground opacity-40"><Paperclip className="size-4" /></button><button type="button" title="Add emoji" onClick={() => setDraft((value) => `${value}${value ? " " : ""}😊`)} className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"><Smile className="size-4" /></button><button type="button" title="Draft with AI" onClick={() => setDraft((value) => value || t("Thanks for reaching out! I’d be happy to help with your request."))} className="rounded-md p-1.5 text-violet-600 hover:bg-violet-50 dark:text-violet-300 dark:hover:bg-violet-500/10"><AiIcon className="size-4" /></button></div><div className="flex items-center gap-2"><span className="hidden text-xs text-muted-foreground sm:inline">Enter to send</span><button type="button" onClick={() => void handleSend()} disabled={sending || !draft.trim() || !selectedThread.replyWindowOpen || resolvedIds.has(selectedThread.id)} className="inline-flex h-8 items-center gap-2 rounded-md bg-action px-3 text-xs font-semibold text-action-foreground hover:bg-action-hover disabled:cursor-not-allowed disabled:opacity-40"><SendHorizonal className="size-3.5" />{sending ? "Sending" : "Send"}</button></div></div></div>
-                {notice ? <NotificationToast tone="message"><p>{notice}</p>{notice.includes("21654") ? <a href="https://console.twilio.com/account/upgrade" target="_blank" rel="noreferrer" className="mt-1 inline-flex font-medium text-primary underline">Open Twilio account upgrade</a> : null}</NotificationToast> : null}
-              </div></div>
-            </>
-          ) : <div className="flex flex-1 items-center justify-center p-8 text-center"><div><MessageCircleMore className="mx-auto size-10 text-muted-foreground/40" /><h2 className="mt-3 text-sm font-semibold">No conversation selected</h2><p className="mt-1 text-xs text-muted-foreground">Choose a conversation or connect this channel to get started.</p></div></div>}
+            </div>
+            <div className={cx(styles.composerArea, "shrink-0 border-t p-3 sm:p-4")}>
+              {!canReply ? <div data-reply-notice className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
+                {!data.canReply || (selectedThread.channel === "web" && !websiteCanReply) ? <span>Your account has read-only access.</span> : isResolved ? <><CheckCheck className="size-3.5 shrink-0" /><span>Conversation resolved.</span><Button type="button" size="xs" variant="link" className="h-auto p-0 text-xs" onClick={toggleResolved}>Reopen</Button></> : !channelConnected(selectedThread.channel) ? <><Wifi className="size-3.5 shrink-0" /><span>{selectedThread.channel === "web" ? "Portal messaging is disabled." : "Connect " + channelName(selectedThread.channel) + " to reply."}</span><Link href={selectedThread.channel === "web" ? "/customer-portal" : "/settings/apps"} className="font-medium text-foreground underline underline-offset-2">Settings</Link></> : <><Clock3 className="size-3.5 shrink-0" /><span>The reply window has ended.</span></>}
+              </div> : null}
+              <InputGroup className="h-auto flex-col items-stretch overflow-hidden">
+                <InputGroupTextarea ref={composerRef} aria-label="Message" value={draft} maxLength={selectedThread.channel === "web" ? 4000 : undefined} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void handleSend(); } }} disabled={!canReply || sending} placeholder={canReply ? "Write a reply…" : "Replies unavailable"} rows={3} className="min-h-24 max-h-48 resize-none text-sm" />
+                <InputGroupAddon align="block-end" className="flex-wrap gap-1 border-t bg-muted/20 px-2 py-2">
+                  <Button type="button" size="xs" variant="ghost" className="text-xs text-violet-600 dark:text-violet-300" onClick={() => openAssistant()} disabled={!canReply || sending}><AiIcon className="size-3.5" />Draft with AI</Button>
+                  <Button type="button" size="icon-xs" variant="ghost" aria-label="Add emoji" title="Add emoji" disabled={!canReply || sending} onClick={() => { setDraft(draft + " 😊"); composerRef.current?.focus(); }}><Smile /></Button>
+                  <Button type="button" size="icon-xs" variant="ghost" aria-label="Translate latest incoming message" title="Translate latest message" disabled={!lastInbound} onClick={() => openAssistant(true)}><Languages /></Button>
+                  <Button type="button" size="icon-xs" variant="ghost" aria-label="Quick replies" title="Quick replies" aria-expanded={quickRepliesOpen} onClick={() => setQuickRepliesOpen((open) => !open)} disabled={!canReply || sending}><MessageCircleMore /></Button>
+                  <Button type="button" size="xs" className="ml-auto" onClick={() => void handleSend()} disabled={sending || !draft.trim() || !canReply}><SendHorizonal />{sending ? "Sending…" : "Send"}</Button>
+                </InputGroupAddon>
+              </InputGroup>
+              {quickRepliesOpen && canReply ? <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Quick replies">{quickReplies.map((reply) => <Button key={reply.label} type="button" variant="outline" size="xs" disabled={sending} onClick={() => { setDraft(draft + (draft ? "\n" : "") + t(reply.text)); composerRef.current?.focus(); }}>{reply.label}</Button>)}</div> : null}
+            </div>
+          </> : <div className="flex min-h-0 flex-1 items-center justify-center p-6"><EmptyState compact icon={MessageCircleMore} title="Select a conversation" className="w-full max-w-sm border-0" /></div>}
         </section>
 
-        {selectedThread && detailsOpen ? (
-          <aside className="absolute inset-y-0 right-0 z-30 flex w-full max-w-[300px] min-h-0 flex-col overflow-y-auto border-l bg-background shadow-xl min-[100rem]:static min-[100rem]:shadow-none" aria-label="Customer details">
-            <div className="flex h-16 items-center justify-between border-b px-5">
-              <h2 className="text-base font-semibold">Customer details</h2>
-              <button type="button" title="Hide customer details" onClick={() => setDetailsOpen(false)} className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground"><PanelRightClose className="size-4" /></button>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              <div className="border-b px-5 py-5 text-center">
-                <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-[#e8eef7] text-base font-semibold text-[#38536f] ring-4 ring-[#f5f8fc] dark:bg-muted dark:text-foreground dark:ring-muted/40">{initials(selectedThread.customer)}</div>
-                <h3 className="mt-3 text-[1.05rem] font-semibold leading-none">{selectedThread.customer}</h3>
-                <p className="mt-2 text-xs text-muted-foreground">{selectedThread.company || "CRM contact"}</p>
-                <div className="mt-4 flex items-center justify-center gap-2">
-                  <Link href="/companies" className="inline-flex h-9 items-center gap-2 rounded-md bg-foreground px-3 text-xs font-medium text-background hover:bg-foreground/90"><CircleUserRound className="size-4" />View CRM profile</Link>
-                  <DropdownMenu><DropdownMenuTrigger className="inline-flex size-9 items-center justify-center rounded-md border text-muted-foreground outline-none hover:bg-muted hover:text-foreground" aria-label="Customer actions"><MoreHorizontal className="size-4" /></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-48"><DropdownMenuLabel>Customer actions</DropdownMenuLabel><DropdownMenuItem onClick={assignToMe}><UserCheck />Assign to me</DropdownMenuItem><DropdownMenuItem onClick={() => void copyCustomerId()}><Copy />Copy customer ID</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem onClick={toggleResolved}><Archive />{resolvedIds.has(selectedThread.id) ? "Reopen" : "Resolve"}</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
-                </div>
-              </div>
-
-              <div className="border-b p-5">
-                <h4 className="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Conversation</h4>
-                <dl className="overflow-hidden rounded-lg border bg-muted/10">
-                  <div className="grid grid-cols-[28px_1fr_auto] items-center gap-2 border-b px-3 py-2.5"><span className="flex size-7 items-center justify-center rounded-md bg-background text-muted-foreground"><MessageCircleMore className="size-3.5" /></span><dt className="text-sm text-muted-foreground">Status</dt><dd className={`rounded-full px-2.5 py-1 text-xs font-semibold ${resolvedIds.has(selectedThread.id) ? "bg-muted text-muted-foreground" : "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"}`}>{resolvedIds.has(selectedThread.id) ? "Resolved" : selectedThread.status}</dd></div>
-                  <button type="button" onClick={assignToMe} className="grid w-full grid-cols-[28px_1fr_auto] items-center gap-2 border-b px-3 py-2.5 text-left hover:bg-muted/60"><span className="flex size-7 items-center justify-center rounded-md bg-background text-muted-foreground"><UserRound className="size-3.5" /></span><span className="text-sm text-muted-foreground">Assigned to</span><span className="flex items-center gap-2 text-sm font-medium"><span className="flex size-6 items-center justify-center rounded-full bg-background text-xs">{selectedThread.operator === "Unassigned" ? "+" : initials(selectedThread.operator || "You")}</span>{selectedThread.operator || "Unassigned"}</span></button>
-                  <div className="grid grid-cols-[28px_1fr_auto] items-center gap-2 border-b px-3 py-2.5"><span className="flex size-7 items-center justify-center rounded-md bg-background text-muted-foreground"><Languages className="size-3.5" /></span><dt className="text-sm text-muted-foreground">Language</dt><dd className="text-sm font-medium">{selectedThread.language}</dd></div>
-                  <div className="grid grid-cols-[28px_1fr_auto] items-center gap-2 border-b px-3 py-2.5"><span className="flex size-7 items-center justify-center rounded-md bg-background text-muted-foreground"><Flag className="size-3.5" /></span><dt className="text-sm text-muted-foreground">Priority</dt><dd className={`text-sm font-medium ${selectedThread.priority === "High" ? "text-amber-600" : ""}`}>{selectedThread.priority}</dd></div>
-                  <div className="grid grid-cols-[28px_1fr_auto] items-center gap-2 px-3 py-2.5"><span className="flex size-7 items-center justify-center rounded-md bg-background"><ChannelMark channel={selectedThread.channel} size="sm" /></span><dt className="text-sm text-muted-foreground">Channel</dt><dd className="text-sm font-medium">{selectedThread.channel === "whatsapp" ? "WhatsApp" : selectedThread.channel === "instagram" ? "Instagram" : "Facebook"}</dd></div>
-                </dl>
-              </div>
-
-              <div className="border-b p-5">
-                <div className="flex items-center justify-between"><h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">CRM activity</h4><Link href="/companies" className="text-xs font-semibold text-primary hover:underline">View all</Link></div>
-                <div className="relative mt-4 space-y-4 pl-6 before:absolute before:bottom-1 before:left-[5px] before:top-1 before:w-px before:bg-border"><div className="relative"><span className="absolute -left-6 top-1 size-3 rounded-full border-[3px] border-background bg-primary" /><p className="text-sm font-medium leading-5">Messenger conversation</p><p className="mt-1 text-xs text-muted-foreground">Active today</p></div><div className="relative"><span className="absolute -left-6 top-1 size-3 rounded-full border-[3px] border-background bg-muted-foreground/40" /><p className="text-sm font-medium leading-5">Added to B2B leads</p><p className="mt-1 text-xs text-muted-foreground">Oct 12, 2026</p></div></div>
-              </div>
-
-              <div className="p-5"><h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">AI summary</h4><div className="mt-3 rounded-xl border border-violet-200/70 bg-violet-50/60 p-3.5 dark:border-violet-500/20 dark:bg-violet-500/5"><p className="flex items-center gap-2 text-sm font-semibold text-violet-700 dark:text-violet-300"><AiIcon className="size-4" />Conversation brief</p><p className="mt-2 text-sm leading-5 text-muted-foreground">Customer is interested in wholesale pet beds and needs the latest catalog, pricing, and minimum order details.</p></div></div>
-            </div>
-            <div className="border-t p-4"><button type="button" onClick={toggleResolved} className={`flex h-10 w-full items-center justify-center gap-2 rounded-md text-xs font-semibold ${resolvedIds.has(selectedThread.id) ? "border bg-background hover:bg-muted" : "bg-foreground text-background hover:bg-foreground/90"}`}><Check className="size-4" />{resolvedIds.has(selectedThread.id) ? "Reopen conversation" : "Mark conversation resolved"}</button></div>
-          </aside>
-        ) : null}
+        {selectedThread && detailsOpen ? <aside id="messenger-customer-details" className={cx(styles.details, "flex min-h-0 min-w-0 flex-col border-l bg-background")} aria-label="Customer details">
+          <div className="flex h-16 shrink-0 items-center justify-between border-b px-4"><h3 className="text-sm font-semibold">Contact details</h3><Button ref={detailsCloseRef} type="button" size="icon-xs" variant="ghost" aria-label="Close customer details" onClick={() => setDetailsMode("closed")}><PanelRightClose /></Button></div>
+          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            <div className="mb-6 flex items-center gap-3"><Avatar thread={selectedThread} large /><div className="min-w-0"><h3 className="truncate text-sm font-semibold">{selectedThread.customer}</h3><p className="mt-1 text-xs text-muted-foreground">{channelName(selectedThread.channel)}</p></div></div>
+            <dl className="space-y-4 text-xs">
+              <div className="flex items-center justify-between gap-3"><dt className="text-muted-foreground">Status</dt><dd><Badge variant="secondary">{isResolved ? "Resolved" : selectedThread.status}</Badge></dd></div>
+              <div className="flex items-center justify-between gap-3"><dt className="text-muted-foreground">Connection</dt><dd>{channelConnected(selectedThread.channel) ? "Connected" : "Not connected"}</dd></div>
+              <div className="flex items-center justify-between gap-3"><dt className="text-muted-foreground">Messages</dt><dd>{selectedThread.messages.length}</dd></div>
+              <div className="flex items-start justify-between gap-3"><dt className="shrink-0 text-muted-foreground">Last activity</dt><dd className="text-right">{formatDate(selectedThread.updatedAt, language, true)}</dd></div>
+              {firstMessage ? <div className="flex items-start justify-between gap-3"><dt className="shrink-0 text-muted-foreground">First message</dt><dd className="text-right">{formatDate(firstMessage.createdAt, language)}</dd></div> : null}
+              <div className="border-t pt-4"><dt className="text-muted-foreground">Customer ID</dt><dd className="mt-2 flex items-center gap-2"><span className="min-w-0 flex-1 break-all">{selectedThread.customerId}</span><Button type="button" size="icon-xs" variant="ghost" aria-label="Copy customer ID" onClick={() => void copyCustomerId()}><Copy /></Button></dd></div>
+            </dl>
+          </div>
+        </aside> : null}
       </div>
-
-      {!data.connection.configured || data.dataError ? <NotificationToast tone="warning"><Zap className="size-3.5" /><span>{data.connection.configured ? "CRM data connection needs attention." : "Connect messaging in Settings to receive and send live messages."}</span>{data.connection.missing.length > 0 ? <span className="font-mono opacity-70">Missing: {data.connection.missing.join(", ")}</span> : null}<Link href="/setup" className="ml-auto flex items-center gap-1 font-semibold hover:underline"><ArrowDownToLine className="size-3" />Setup guide</Link></NotificationToast> : null}
+      {notice ? <NotificationToast tone={notice.error ? "error" : "message"}>{notice.text}{notice.text.includes("21654") ? <a href="https://console.twilio.com/account/upgrade" target="_blank" rel="noreferrer" className="ml-2 underline">Open Twilio upgrade</a> : null}</NotificationToast> : null}
     </div>
   );
 }

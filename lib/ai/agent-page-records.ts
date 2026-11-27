@@ -3,16 +3,24 @@ import { requireAiData } from "../data/ai-settings";
 import { createSupabaseAdmin } from "../supabase/admin";
 import { getMetaInboxData } from "../meta-messenger";
 import { listWorkspaceFlows } from "../data/flows";
+import type { WorkspaceViewer } from "../auth.ts";
+import { assertAiCustomerAccess, AiCustomerAccessError } from "./customer-access.ts";
 
-export async function loadAgentFlow(flowId: string) {
+export async function loadAgentFlow(flowId: string, viewer?: WorkspaceViewer) {
   await requireAiData("flows", "emails", "team");
   const flow = (await listWorkspaceFlows()).find((item) => item.id === flowId);
   if (!flow) throw new Error("The selected workflow is unavailable.");
+  if (viewer && viewer.role !== "admin") {
+    if (!flow.triggerConfig.scopeCompanyId) throw new AiCustomerAccessError("This workflow has no verified assigned customer.");
+    await assertAiCustomerAccess(viewer, String(flow.triggerConfig.scopeCompanyId), createSupabaseAdmin());
+  }
   return flow;
 }
 
-export async function loadAgentConversation(conversationId: string) {
+export async function loadAgentConversation(conversationId: string, viewer?: WorkspaceViewer) {
   await requireAiData("emails");
+  if (conversationId.startsWith("web:")) return (await import("./website-conversation")).loadWebsiteConversationForAi(conversationId, viewer);
+  if (viewer && viewer.role !== "admin") throw new AiCustomerAccessError("This conversation has no verified customer assignment.");
   // Resolve composite UI identifiers through the same workspace inbox first.
   const thread = (await getMetaInboxData()).threads.find((item) => item.id === conversationId);
   if (!thread) throw new Error("The selected conversation is unavailable.");

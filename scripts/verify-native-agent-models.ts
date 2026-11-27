@@ -23,7 +23,7 @@ for (const model of [STANDARD_AI_MODEL, COMPLEX_AI_MODEL]) {
   const price = catalog.find(value => value.id === model)?.pricing;
   if (!price) throw new Error("Model is absent from the current catalog.");
   const rate: BudgetRate = { input: Math.max(Number(price.input), Number(price.input_cache_write ?? price.input)), output: Number(price.output), context: 1000000, webSearch: 0 };
-  process.env.AI_GATEWAY_COMPLEX_MODEL = model; process.env.AI_GATEWAY_STANDARD_MODEL = model;
+  process.env.AI_GATEWAY_COMPLEX_MODEL = model; process.env.AI_GATEWAY_STANDARD_MODEL = model; process.env.AI_GATEWAY_EXPERT_MODEL = model;
   for (const scenario of cases) {
     const started = performance.now();
     const fetcher: typeof fetch = async (url, init) => {

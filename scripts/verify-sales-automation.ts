@@ -24,7 +24,10 @@ try {
     const response = await fetch(origin + path, { headers, signal: AbortSignal.timeout(90_000) });
     const text = await response.text();
     assert.equal(response.status, 200, `${path}: ${text.slice(0, 200)}`);
-    if (path === "/") assert.match(text, /home-priorities-title/);
+    if (path === "/") {
+      assert.match(text, /home-ai-heading/);
+      assert.doesNotMatch(text, /home-priorities-title/);
+    }
     console.log(JSON.stringify({ path, status: response.status, verified: true }));
   }
   const bad = await fetch(origin + "/api/documents/search", { method: "POST", headers, body: JSON.stringify({ query: "catalog", send: true }), signal: AbortSignal.timeout(90_000) });

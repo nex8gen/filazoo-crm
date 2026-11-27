@@ -25,7 +25,7 @@ function load(file: string, dependencies: Record<string, unknown>) {
   return exports;
 }
 
-function recoveryFixture({ session = true, resetError = null as { status: number } | null, updateError = null as { message: string } | null } = {}) {
+function recoveryFixture({ session = true, mfa = false, resetError = null as { status: number } | null, updateError = null as { message: string } | null } = {}) {
   let callback = "", signOuts = 0, updates = 0;
   const client = { auth: {
     resetPasswordForEmail: async (address: string, options: { redirectTo: string }) => { assert.equal(address, email); callback = options.redirectTo; return { error: resetError }; },
@@ -41,6 +41,7 @@ function recoveryFixture({ session = true, resetError = null as { status: number
     "@/lib/password": { passwordSchema, passwordRequirementsError },
     "@/lib/env": { env: { NEXT_PUBLIC_APP_URL: "https://crm.example.test" } },
     "@/lib/supabase/server": { createClient: async () => client },
+    "@/lib/account-security-server": { readAccountSecurity: async () => ({ requiresMfa: mfa }) },
     "next/navigation": { redirect: (path: string) => { throw new Error(`redirect:${path}`); } },
     "next/server": { NextResponse: { redirect: (url: URL) => url } },
   };
@@ -97,6 +98,12 @@ test("password changes still require a recovery session and successful provider 
   assert.match((await limited.reset()).error!, /wait a minute/);
 });
 
+test("password recovery cannot bypass an enrolled authenticator", async () => {
+  const f = recoveryFixture({ mfa: true });
+  await assert.rejects(f.update(), /redirect:\/auth\/mfa\?next=%2Fupdate-password/);
+  assert.equal(f.updates(), 0); assert.equal(f.signOuts(), 0);
+});
+
 type Props = Record<string, unknown> & { children?: React.ReactNode };
 function renderForm(file: string, name: string, props: Record<string, unknown>, state?: unknown) {
   const h = React.createElement;
@@ -110,6 +117,7 @@ function renderForm(file: string, name: string, props: Record<string, unknown>, 
     },
     "@/components/ui/notification-toast": { NotificationToast: ({ children }: Props) => h("div", { role: "alert" }, children) },
     "@/components/auth-social-buttons": { AuthSocialButtons: () => null },
+    "./passkey-sign-in": { PasskeySignIn: () => null },
     "@/components/ui/button": { Button: ({ render, children }: Props) => React.cloneElement(render as React.ReactElement<Props>, {}, children) },
     "@/components/ui/input": { Input: (props: Props) => h("input", props) },
     "@/components/ui/label": { Label: ({ children, ...props }: Props) => h("label", props, children) },

@@ -7,7 +7,6 @@ import { useRouter } from "next/navigation";
 import { HomeOverview } from "@/components/home-overview";
 import { HomeTeamPerformance } from "@/components/home-team-performance";
 import { HomeAiComposer } from "@/components/home-ai-composer";
-import { HomePriorities } from "@/components/home-priorities";
 import type { HomeData, HomeRange } from "@/lib/home";
 import "./home-workspace.css";
 
@@ -27,7 +26,6 @@ export function HomeWorkspace({ data }: { data: HomeData }) {
       {data.unavailable.length ? <NotificationToast tone="warning"><p>Some data could not be loaded: {data.unavailable.join(", ")}. Affected totals are unavailable.</p><button type="button" onClick={() => startRefresh(() => router.refresh())} disabled={refreshing} className="font-medium underline">Try again</button></NotificationToast> : null}
 
       <HomeAiComposer name={data.name} asOf={data.asOf} />
-      <HomePriorities canManage={data.canManageTasks ?? false} />
 
       {data.isAdmin ? <HomeTeamPerformance data={data} refreshing={refreshing} /> : null}
     </div>

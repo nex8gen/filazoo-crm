@@ -37,6 +37,7 @@ import { replyOperationTarget, executeReplyOperation } from "./crm-reply-executi
 import { isProductivityOperation } from "./crm-productivity";
 import { productivityTarget, executeProductivityOperation } from "./crm-productivity-execution";
 import { withPersonalProducts, userProductRows } from "../data/product-personalization";
+import { assertAiCustomerAccess } from "./customer-access.ts";
 
 const adminOperations = new Set(["assign_owner", "delete_company", "invite_member", "update_member", "delete_member"]);
 export function authorizeCrmOperation(viewer: WorkspaceViewer, operation: CrmOperation) {
@@ -67,6 +68,7 @@ async function one(table: string, fields: string, key: string, value: string) {
 
 /** Reload only the relevant record, with ownership checked before preparing and executing. */
 async function target(operation: CrmOperation, viewer: WorkspaceViewer): Promise<{ name: string; value: unknown; preview: Record<string, unknown> }> {
+  if (viewer.role !== "admin" && "companyId" in operation && operation.companyId) await assertAiCustomerAccess(viewer, operation.companyId, createSupabaseAdmin());
   if (operation.op === "create_quotation" || operation.op === "update_quotation" || operation.op === "quotation_lifecycle") return (await import("./quotation-execution")).quotationTarget(operation, viewer);
   if (operation.op === "update_ai_settings" || operation.op === "update_email_footer" || operation.op === "cancel_scheduled_email" || operation.op === "discard_email_draft" || operation.op === "task_workflow_action" || operation.op === "portal_reply" || operation.op === "update_shipment") return (await import("./crm-feature-execution")).featureTarget(operation, viewer);
   if (isReplyOperation(operation)) return replyOperationTarget(operation, viewer);
@@ -123,6 +125,7 @@ async function target(operation: CrmOperation, viewer: WorkspaceViewer): Promise
   }
   if (operation.op === "invoice_lifecycle") {
     const invoice = await getInvoice(operation.invoiceId);
+    if (viewer.role !== "admin" && invoice?.document.companyId) await assertAiCustomerAccess(viewer, invoice.document.companyId, createSupabaseAdmin());
     if (!invoice || !canMutateInvoice(viewer, invoice, operation.action)) throw new Error("Invoice not found or you cannot perform this action.");
     if (operation.action === "issue" && invoice.status !== "draft") throw new Error("Only a draft invoice can be issued.");
     if (operation.action === "payment" && invoice.status !== "issued") throw new Error("Payments require an issued invoice.");
@@ -169,7 +172,7 @@ async function target(operation: CrmOperation, viewer: WorkspaceViewer): Promise
     return { name: "Workspace invoice settings", value: row.data?.settings ?? {}, preview: { changes } };
   }
   if ("companyId" in operation) {
-    const company = await loadAgentCompany(operation.companyId);
+    const company = await loadAgentCompany(operation.companyId, true, viewer);
     let value: unknown = company;
     let preview: Record<string, unknown> = { ...operation };
     if (operation.op === "assign_owner" && operation.ownerId) {

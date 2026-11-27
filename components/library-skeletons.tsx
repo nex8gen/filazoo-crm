@@ -26,9 +26,9 @@ export function CampaignsSkeleton() {
 }
 
 export function PortalLibrarySkeleton() {
-  return <LoadingRegion label="Loading customer portal themes" className="portal-theme-library">
+  return <LoadingRegion label="Loading website themes" className="portal-theme-library">
     <div className="flex items-center justify-between gap-3 rounded-xl border p-4"><div className="min-w-0 space-y-2"><Skeleton className="h-4 w-32" /><Skeleton className="h-3 w-64 max-w-full" /></div><Skeleton className="h-8 w-28" /></div>
-    <div className="ptl-live-card overflow-hidden rounded-xl border"><div className="ptl-live-heading"><Skeleton className="h-5 w-24" /><Skeleton className="h-5 w-12 rounded-full" /></div><div className="ptl-live-art"><Skeleton className="aspect-[1.65] w-full" /></div><div className="ptl-live-footer"><div className="w-full space-y-3"><Skeleton className="h-6 w-40" /><Skeleton className="h-4 w-48" /></div><div className="flex gap-2"><Skeleton className="h-8 w-24" /><Skeleton className="h-8 w-24" /></div></div></div>
+    <div className="ptl-live-section"><div className="ptl-performance"><div className="ptl-performance-period"><Skeleton className="h-4 w-20" /></div><dl>{[0, 1, 2, 3].map(index => <div key={index} className="ptl-performance-metric"><dt><Skeleton className="h-3 w-20 max-w-full" /></dt><dd><Skeleton className="h-4 w-24 max-w-full" /></dd></div>)}</dl></div><div className="ptl-live-card"><Skeleton className="absolute inset-0 h-full w-full rounded-none" /><div className="ptl-live-info"><div className="ptl-live-details space-y-2"><Skeleton className="h-6 w-40" /><Skeleton className="h-3 w-56 max-w-full" /></div><div className="ptl-live-actions"><Skeleton className="h-8 w-20 rounded-full" /><Skeleton className="h-8 w-24 rounded-full" /></div></div></div></div>
     <div className="ptl-library"><Skeleton className="mb-3 h-6 w-36" /><div className="ptl-draft-row rounded-xl border"><Skeleton className="ptl-draft-thumb" /><Skeleton className="h-5 min-w-0 flex-1" /><Skeleton className="h-8 w-24" /></div></div>
     <div className="ptl-templates"><Skeleton className="mb-3 h-6 w-28" /><div className="ptl-template-grid">{[0, 1, 2].map(index => <Skeleton key={index} className="aspect-[1.5] w-full rounded-xl" />)}</div></div>
   </LoadingRegion>;

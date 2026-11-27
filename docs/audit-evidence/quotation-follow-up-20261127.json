@@ -1,0 +1,42 @@
+{
+  "checkedAt": "2026-11-27T02:33:08.166Z",
+  "syntheticOnly": true,
+  "businessWrites": false,
+  "providerCalls": 3,
+  "results": [
+    {
+      "scenario": "Should I create a formal quotation for Synthetic Hook Studio?",
+      "succeeded": true,
+      "proposedActions": [],
+      "diagnostics": [
+        {
+          "kind": "step",
+          "tools": []
+        }
+      ],
+      "output": "Yes, you should create a formal quotation for Synthetic Hook Studio since they have requested pricing and warehouse pickup availability. [Synthetic Hook Studio email history](/companies/15693adc-0bdf-4617-b214-000000000001)\n\nRelated questions:\n- Can you prepare a draft quotation for Synthetic Hook Studio?\n- What products did Synthetic Hook Studio request?"
+    },
+    {
+      "scenario": "Can you prepare a draft quotation for Synthetic Hook Studio?",
+      "succeeded": true,
+      "proposedActions": [
+        "crm_action"
+      ],
+      "diagnostics": [
+        {
+          "kind": "step",
+          "tools": [
+            "search_customer_emails"
+          ]
+        },
+        {
+          "kind": "step",
+          "tools": [
+            "create_quotation"
+          ]
+        }
+      ],
+      "output": "The requested actions are ready for review."
+    }
+  ]
+}

@@ -1,6 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildWorkspaceAssistantPrompt, extractWorkspaceActions, workspaceAssistantInstruction, workspaceAssistantSchema } from "../lib/ai/workspace-assistant.ts";
+import { answerStyleInstruction } from "../lib/ai/answer-style.ts";
+
+test("Chat and legacy Agent share the same answer-first response contract", () => {
+  for (const mode of ["analyze", "work"] as const) {
+    const instruction = workspaceAssistantInstruction(mode, "2026-11-27T04:00:00Z");
+    assert.ok(instruction.includes(answerStyleInstruction));
+    assert.doesNotMatch(instruction, /For prospect comparisons give a ranked table|Small relevant emoji are welcome/);
+  }
+});
 
 const request = {
   mode: "analyze" as const,

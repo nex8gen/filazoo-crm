@@ -4,7 +4,7 @@ import { MockLanguageModelV4 } from "ai/test";
 import type { LanguageModelV4GenerateResult } from "@ai-sdk/provider";
 import { generateCrmPlan, nativeGatewayModels } from "../lib/ai/native-agent.ts";
 import { agentCapabilities } from "../lib/ai/capabilities.ts";
-import { assertDocumentIntent, requestedDocumentKinds } from "../lib/ai/document-intent.ts";
+import { assertDocumentIntent, requestedDocumentKinds, isDocumentAdviceRequest, documentActionAllowed } from "../lib/ai/document-intent.ts";
 import { aiActionRequirements, aiReadResources } from "../lib/ai-policy.ts";
 import { crmReadSchema, crmOperationSchema } from "../lib/ai/crm-tools.ts";
 import { quoteAiBudget } from "../lib/ai/budget.ts";
@@ -12,6 +12,7 @@ import { portableToolSchema } from "../lib/ai/tool-schema.ts";
 import { groundInvoiceEmailIntent } from "../lib/ai/agent-actions.ts";
 import { assertWorkflowCoverage } from "../lib/ai/workflow-contract.ts";
 import { createBudgetedAiFetch } from "../lib/ai/budget-fetch.ts";
+import { answerStyleInstruction } from "../lib/ai/answer-style.ts";
 
 const id = "15693adc-0bdf-4617-b214-71b1861764a9";
 const metered = (fetcher: typeof fetch) => createBudgetedAiFetch(id, {
@@ -62,6 +63,23 @@ test("catalog is an alias for quotation, and neither can silently become an invo
   assert.doesNotThrow(() => assertDocumentIntent([{ type: "create_invoice", companyId: id, items: [{ productSku: "PLA", quantity: 500 }] }], { messages: [{ role: "user", content: "create an invoice from this accepted quotation" }] }));
 });
 
+test("a Should-I quotation question cannot authorize creation; a direct follow-up can", async () => {
+  const advice = "Should I create a formal quotation for Hook it & book it?";
+  const context = { messages: [{ role: "user", content: advice }] };
+  assert.equal(isDocumentAdviceRequest(context), true);
+  assert.equal(documentActionAllowed("create_quotation", context), false);
+  assert.equal(documentActionAllowed("run_workflow", context), false);
+  assert.throws(() => assertDocumentIntent([{ type: "crm_action", operation: { op: "create_quotation", companyId: id } }], context), /asked for advice/);
+  assert.equal(isDocumentAdviceRequest({ messages: [{ role: "user", content: "Can you prepare a draft quotation for Hook it & book it?" }] }), false);
+  assert.equal(isDocumentAdviceRequest({ messages: [{ role: "user", content: advice + " Please prepare one now." }] }), false);
+  const model = new MockLanguageModelV4({ doGenerate: { ...result(), content: [{ type: "text", text: "Yes, a quotation is appropriate after confirming the requested products and quantities." }], finishReason: { unified: "stop", raw: "stop" } } });
+  const plan = await generateCrmPlan(options(model, advice));
+  assert.deepEqual(plan.actions, []);
+  assert.ok(model.doGenerateCalls[0].tools?.some(tool => tool.name === "read_records"));
+  assert.ok(!model.doGenerateCalls[0].tools?.some(tool => ["create_quotation", "create_invoice", "run_workflow"].includes(tool.name)));
+  assert.match(plan.output, /^Yes/);
+});
+
 test("native SDK reads real records then stages a quotation without a business write", async () => {
   const model = new MockLanguageModelV4({ doGenerate: [result(["read_records", { resource: "companies", query: "Abe" }]), result(["create_quotation", { op: "create_quotation", companyId: id }])] });
   let reads = 0, validations = 0;
@@ -75,7 +93,29 @@ test("native SDK reads real records then stages a quotation without a business w
   assert.equal(model.doGenerateCalls[0].providerOptions?.openai?.store, false);
   assert.match(JSON.stringify(model.doGenerateCalls[0].prompt), /REQUEST CONTEXT PRIORITY/);
   assert.match(JSON.stringify(model.doGenerateCalls[0].prompt), /The page is context, not a restriction/);
+  assert.ok(model.doGenerateCalls[0].prompt.some(message => message.role === "system" && message.content.includes(answerStyleInstruction)), "Native Agent receives the shared answer style through prepareStep");
   assert.deepEqual(activity, ["Checking proposed action"]);
+});
+
+test("slow native lookups leave time to return a partial answer instead of starting another tool round", async (t) => {
+  let clock = 0;
+  t.mock.method(Date, "now", () => clock);
+  const model = new MockLanguageModelV4({ doGenerate: [result(["read_records", { resource: "orders" }]), { ...result(), content: [{ type: "text", text: "Only the order records were reviewed; email coverage is incomplete. No changes were prepared." }], finishReason: { unified: "stop", raw: "stop" } }] });
+  const plan = await generateCrmPlan({ ...options(model, "Review the latest saved orders"), read: async () => { clock = 66000; return { records: [], coverage: { nextOffset: 10 } }; }, validateAction: () => assert.fail("No writes are authorized") });
+  assert.equal(model.doGenerateCalls.length, 2);
+  assert.equal(model.doGenerateCalls[1].tools?.length ?? 0, 0);
+  assert.match(JSON.stringify(model.doGenerateCalls[1].prompt), /lookup time budget has been reached/);
+  assert.match(plan.output, /coverage is incomplete/);
+  assert.deepEqual(plan.actions, []);
+});
+
+test("an unresolved native read is bounded and cannot keep the agent waiting until the HTTP timeout", async () => {
+  const model = new MockLanguageModelV4({ doGenerate: [result(["read_records", { resource: "orders" }]), { ...result(), content: [{ type: "text", text: "The order lookup did not complete. No actions were prepared." }], finishReason: { unified: "stop", raw: "stop" } }] });
+  const plan = await generateCrmPlan({ ...options(model, "Review orders"), lookupBudgetMs: 20, read: async () => new Promise(() => {}), validateAction: () => assert.fail("Must not validate a write") });
+  assert.equal(model.doGenerateCalls.length, 2);
+  assert.equal(model.doGenerateCalls[1].tools?.length ?? 0, 0);
+  assert.match(plan.output, /lookup did not complete/);
+  assert.deepEqual(plan.actions, []);
 });
 
 test("customer investigation can exceed the old limits and stage exactly the analyzed segment membership", async () => {

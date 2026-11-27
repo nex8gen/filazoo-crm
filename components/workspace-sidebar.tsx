@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
 import { useCallback, useState, useSyncExternalStore, type ReactNode } from "react";
-import { BrandMarkIcon } from "@/components/brand-mark";
+import { BrandMark, BrandMarkIcon } from "@/components/brand-mark";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { navigation, type NavigationGroup, type NavigationItem } from "@/lib/navigation";
@@ -72,7 +72,7 @@ function SidebarGroupFlyout({ group, pathname, rowClass }: { group: NavigationGr
       <PopoverTrigger aria-label={group.label} openOnHover delay={100} closeDelay={180} className={rowClass}>
         <group.icon aria-hidden="true" className="size-[18px] shrink-0" />
       </PopoverTrigger>
-      <PopoverContent side="right" align="start" sideOffset={20} className="workspace-sidebar-flyout">
+      <PopoverContent side="right" align="start" sideOffset={24} className="workspace-sidebar-flyout">
         <PopoverTitle className="sr-only">{group.label}</PopoverTitle>
         <nav aria-label={`${group.label} navigation`}>
           {group.items.map(item => (
@@ -103,7 +103,7 @@ function SidebarGroup({ group, pathname, expanded }: { group: NavigationGroup; p
 
   return (
     <li data-sidebar-section-start={group.sectionStart || undefined}>
-      {expanded ? link : collapsedRow ?? <Tooltip><TooltipTrigger render={link} /><TooltipContent side="right" sideOffset={20}><SidebarItemLabel item={group.items[0]} label={group.label} /></TooltipContent></Tooltip>}
+      {expanded ? link : collapsedRow ?? <Tooltip><TooltipTrigger render={link} /><TooltipContent side="right" sideOffset={24} className="workspace-sidebar-tooltip"><SidebarItemLabel item={group.items[0]} label={group.label} /></TooltipContent></Tooltip>}
       {active && !group.direct ? <>
         <div className="workspace-sidebar-submenu-reveal" inert={!expanded || undefined} aria-hidden={!expanded || undefined}>
           <div className="workspace-sidebar-submenu-clip">
@@ -136,9 +136,8 @@ export function WorkspaceSidebar({ pathname, expanded, onToggle, onSearch, userM
   return (
     <aside id="workspace-sidebar" aria-label="Workspace sidebar" data-expanded={expanded} className="workspace-sidebar fixed inset-y-0 left-0 z-40 hidden flex-col lg:flex">
       <div className="workspace-sidebar-header flex h-14 shrink-0 items-center gap-2 px-2">
-        <Link href="/analytics" aria-label="Filazoo home" inert={!expanded || undefined} aria-hidden={!expanded || undefined} className="workspace-sidebar-home flex min-w-0 flex-1 items-center gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-[#4dd396]">
-          <BrandMarkIcon aria-hidden="true" className="size-6 shrink-0 text-[#4dd396]" />
-          <span className="truncate text-sm font-medium tracking-tight text-foreground">Filazoo</span>
+        <Link href="/analytics" aria-label="NewAI home" inert={!expanded || undefined} aria-hidden={!expanded || undefined} className="workspace-sidebar-home flex min-w-0 flex-1 items-center gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <BrandMark aria-hidden="true" className="h-auto w-full max-w-[166px] shrink-0" />
         </Link>
         <Tooltip>
           <TooltipTrigger render={<button type="button" aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"} aria-expanded={expanded} aria-controls="workspace-sidebar" aria-keyshortcuts="Control+B Meta+B" onClick={onToggle} className="workspace-sidebar-brand-toggle">

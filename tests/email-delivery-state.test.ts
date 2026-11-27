@@ -8,31 +8,51 @@ import * as threading from "../lib/email-threading.ts";
 import * as content from "../lib/email-content.ts";
 import { createHash } from "node:crypto";
 import * as sendFailure from "../lib/email-send-failure.ts";
+import { evaluateSend } from "../lib/outreach-policy.ts";
+import { isCampaignContactEligible } from "../lib/campaign-contact-eligibility.ts";
 
 type Row = Record<string, unknown>;
-function setup() {
+const campaignId = "10000000-0000-4000-8000-000000000001";
+const contactId = "10000000-0000-4000-8000-000000000002";
+function setup(role = "operator") {
   const tables: Record<string, Row[]> = { email_send_operations: [], mailbox_sent_messages: [], workspace_members: [{ user_id: "actor", role: "operator", display_name: "Test user", activated_at: "2026-01-01T00:00:00Z" }] };
+  tables.workspace_members[0].role = role;
+  tables.marketing_assets = [{ id: campaignId, dispatch: { userId: "actor" } }];
+  tables.contacts = [{ id: contactId, company_id: "company", email: "buyer@example.test", verification_status: "valid", unsubscribed: false }];
+  tables.pipeline = [{ company_id: "company", owner_id: "actor" }];
+  tables.suppression = [];
+  let assignmentError = false;
+  let reassignDuringPreparation = false;
   const db = { from(table: string) {
-    let action = "select", value: Row = {}, one = false;
+    let action = "select", value: Row = {}, one = false, head = false;
     const filters: Array<[string, unknown]> = [];
     const ranges: Array<[string, string, boolean]> = [];
+    const lowerBounds: Array<[string, string]> = [];
     const query = {
       insert(input: Row) { action = "insert"; value = input; return query; },
       update(input: Row) { action = "update"; value = input; return query; },
       eq(key: string, expected: unknown) { filters.push([key, expected]); return query; },
       lt(key: string, expected: string) { ranges.push([key, expected, false]); return query; },
       lte(key: string, expected: string) { ranges.push([key, expected, true]); return query; },
+      gte(key: string, expected: string) { lowerBounds.push([key, expected]); return query; },
       order() { return query; }, limit() { return query; },
-      select() { return query; }, single() { one = true; return query; }, maybeSingle() { one = true; return query; },
+      select(fields?: string, options?: { head?: boolean }) {
+        head = Boolean(options?.head);
+        if (table === "pipeline") for (const field of (fields ?? "").split(",")) {
+          if (!(field in tables.pipeline[0])) throw new Error(`column pipeline.${field} does not exist`);
+        }
+        return query;
+      }, single() { one = true; return query; }, maybeSingle() { one = true; return query; },
       run() {
+        if (table === "pipeline" && assignmentError) throw new Error("Assignment lookup unavailable");
         const rows = tables[table] ||= [];
         if (action === "insert") {
           if (rows.some((row) => row.id === value.id && row.user_id === value.user_id)) return { data: null, error: { code: "23505" } };
           rows.push({ ...value }); return { data: one ? { ...value } : [{ ...value }], error: null };
         }
-        const matches = rows.filter((row) => filters.every(([key, expected]) => row[key] === expected) && ranges.every(([key, expected, equal]) => equal ? String(row[key]) <= expected : String(row[key]) < expected));
+        const matches = rows.filter((row) => filters.every(([key, expected]) => row[key] === expected) && ranges.every(([key, expected, equal]) => equal ? String(row[key]) <= expected : String(row[key]) < expected) && lowerBounds.every(([key, expected]) => String(row[key]) >= expected));
         if (action === "update") for (const row of matches) Object.assign(row, value);
-        return { data: one ? matches[0] || null : matches, error: null };
+        return { data: head ? null : one ? matches[0] || null : matches, count: matches.length, error: null };
       },
       async throwOnError() { const result = query.run(); if (result.error) throw result.error; return result; },
       then(resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) { return Promise.resolve(query.run()).then(resolve, reject); },
@@ -48,27 +68,77 @@ function setup() {
     "../workspace-context.ts": { currentWorkspaceContext: () => undefined },
     "node:crypto": { createHash }, "../email-workbench": { emailSendSchema },
     "../email-send-failure.ts": sendFailure,
+    "../supabase/admin.ts": { createSupabaseAdmin: () => db },
+    "../env.ts": { env: { DAILY_SEND_LIMIT: 100, BOUNCE_PAUSE_PERCENT: 5, dryRun: false } },
+    "../outreach-policy.ts": { evaluateSend },
+    "../campaign-contact-eligibility.ts": { isCampaignContactEligible },
     "../supabase/admin": { createSupabaseAdmin: () => db },
     "@/lib/auth": { requireWorkspaceMember: async () => ({ id: "actor", role: "operator" }) },
     "@/lib/data/mailboxes": { getViewerMailbox: async () => ({ id: "mailbox", email: "sender@example.test" }), mailboxHasSmtp: () => true },
     "@/lib/supabase/admin": { createSupabaseAdmin: () => db },
     "@/lib/email-threading": threading, "@/lib/email-content": content,
-    "@/lib/data/email-footers": { prepareUserEmail: async (_id: string, message: unknown) => message },
+    "@/lib/data/email-footers": { prepareUserEmail: async (_id: string, message: unknown) => {
+      if (reassignDuringPreparation) tables.pipeline[0].owner_id = "other-manager";
+      return message;
+    } },
     "@/lib/mailer": { sendMailboxEmail: async (_config: unknown, message: { messageId: string }) => { sends++; entered?.(); if (block) await new Promise<void>((resolve) => { release = resolve; }); if (failure) throw failure; return { messageId: message.messageId }; } },
   };
   function load(path: string) {
     const exports = {};
     const code = ts.transpileModule(readFileSync(new URL(path, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-    vm.runInNewContext(code, { exports, require: (name: string) => { if (!(name in dependencies)) throw new Error(`Unexpected dependency: ${name}`); return dependencies[name]; }, Response, Request, Buffer, crypto, console });
+    vm.runInNewContext(code, { exports, require: (name: string) => { if (!(name in dependencies)) throw new Error(`Unexpected dependency: ${name}`); return dependencies[name]; }, Response, Request, Buffer, crypto, console, Error });
     return exports as { deliverEmail: (viewer: { id: string; role: string }, input: unknown) => Promise<Response>; processScheduledEmails: (deliver: unknown) => Promise<number> };
   }
   const delivery = load("../lib/data/email-delivery.ts");
   dependencies["@/lib/data/email-delivery"] = delivery;
+  dependencies["./campaign-send-guard.ts"] = load("../lib/data/campaign-send-guard.ts");
   const { deliverEmail } = load("../lib/data/manual-email-send.ts");
   const input = { to: "buyer@example.test", text: "Hello", subject: "Order", requestId: crypto.randomUUID() };
-  const viewer = { id: "actor", role: "operator" };
-  return { input, viewer, send: (message = input, actor = viewer) => deliverEmail(actor, message), process: () => delivery.processScheduledEmails(deliverEmail), tables, sends: () => sends, fail: (error = new Error("Connection closed after DATA")) => { failure = error; }, recover: () => { failure = undefined; }, block: () => { block = true; return new Promise<void>((resolve) => { entered = resolve; }); }, release: () => release?.() };
+  const viewer = { id: "actor", role };
+  return { input, viewer, send: (message: unknown = input, actor = viewer) => deliverEmail(actor, message), process: () => delivery.processScheduledEmails(deliverEmail), tables, sends: () => sends, reassignDuringPreparation: () => { reassignDuringPreparation = true; }, failAssignment: () => { assignmentError = true; }, fail: (error = new Error("Connection closed after DATA")) => { failure = error; }, recover: () => { failure = undefined; }, block: () => { block = true; return new Promise<void>((resolve) => { entered = resolve; }); }, release: () => release?.() };
 }
+
+async function queueManagerCampaign() {
+  const mock = setup("bd_manager");
+  const response = await mock.send({ ...mock.input, campaign: { id: campaignId, contactId, smartSending: false }, scheduleAt: new Date(Date.now() + 3600_000).toISOString() });
+  assert.equal(response.status, 200, await response.text());
+  mock.tables.email_send_operations[0].scheduled_at = new Date(Date.now() - 1000).toISOString();
+  return mock;
+}
+
+test("scheduled BD manager campaigns pass the real assignment guard and send exactly once", async () => {
+  const mock = await queueManagerCampaign();
+  await mock.process();
+  await mock.process();
+  assert.equal(mock.sends(), 1);
+  assert.equal(mock.tables.email_send_operations[0].status, "sent");
+  assert.equal(mock.tables.mailbox_sent_messages.length, 1);
+});
+
+test("reassignment after queuing cancels a campaign before SMTP", async () => {
+  const mock = await queueManagerCampaign();
+  mock.tables.pipeline[0].owner_id = "other-manager";
+  await mock.process();
+  assert.equal(mock.sends(), 0);
+  assert.equal(mock.tables.email_send_operations[0].status, "cancelled");
+});
+
+test("reassignment while preparing a campaign is caught by the final guard before SMTP", async () => {
+  const mock = await queueManagerCampaign();
+  mock.reassignDuringPreparation();
+  await mock.process();
+  assert.equal(mock.sends(), 0);
+  assert.equal(mock.tables.email_send_operations[0].status, "cancelled");
+});
+
+test("database failures before campaign submission are recorded without calling SMTP", async () => {
+  const mock = await queueManagerCampaign();
+  mock.failAssignment();
+  await mock.process();
+  assert.equal(mock.sends(), 0);
+  assert.equal(mock.tables.email_send_operations[0].status, "failed");
+  assert.equal(mock.tables.email_send_operations[0].error, "Assignment lookup unavailable");
+});
 
 test("concurrent clicks and retries after a lost success response send exactly once", async () => {
   const mock = setup(); const entered = mock.block();

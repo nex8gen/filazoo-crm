@@ -1,6 +1,6 @@
 import { EmailAccountsWorkspace } from "@/components/email-accounts-workspace";
 import { requireWorkspaceMember } from "@/lib/auth";
-import { getEmailInboxBackendData } from "@/lib/email-inbox";
+import { getEmailInboxPageData } from "@/lib/data/email-pagination";
 import { canCreateInvoices } from "@/lib/invoice-permissions";
 import { getViewerMailboxes } from "@/lib/data/mailboxes";
 import { withWorkspaceViewer } from "@/lib/workspace-context";
@@ -15,11 +15,12 @@ export default async function EmailsPage({ searchParams }: PageProps<"/email">) 
     const mailboxId = typeof params.mailbox === "string" ? params.mailbox : undefined;
     const mailboxes = await getViewerMailboxes(viewer.id);
     if (mailboxId !== undefined && !mailboxes.some(mailbox => mailbox.id === mailboxId)) notFound();
-    const data = await getEmailInboxBackendData({ syncMailbox: false, mailboxId, context: { viewer, mailboxes }, interactive: true });
+    const data = await getEmailInboxPageData({ viewer, mailboxes, mailboxId,
+      request: { folder: typeof params.thread === "string" ? "all" : "inbox" }, thread: typeof params.thread === "string" ? params.thread : undefined });
 
     return (
       <EmailAccountsWorkspace
-        key={`${mailboxId ?? ""}:${typeof params.thread === "string" ? params.thread : ""}:${params.reply === "1"}`}
+        key={`${viewer.workspaceId}:${viewer.id}:${mailboxId ?? ""}:${typeof params.thread === "string" ? params.thread : ""}:${params.reply === "1"}`}
         initialData={data}
         canCreateInvoices={canCreateInvoices(viewer.role)}
         invoiceViewer={{ id: viewer.id, role: viewer.role }}

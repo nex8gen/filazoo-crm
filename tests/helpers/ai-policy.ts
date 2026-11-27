@@ -7,10 +7,14 @@ import { withWorkspaceViewer } from "../../lib/workspace-context.ts";
 import * as credentials from "../../lib/ai/provider-credentials.ts";
 import * as recordPresentation from "../../lib/ai/record-presentation.ts";
 import * as sessionResponse from "../../lib/workspace-session-response.ts";
+import * as customerAccess from "../../lib/ai/customer-access.ts";
+import * as salesReview from "../../lib/ai/sales-review.ts";
 
 // Existing feature fixtures explicitly opt in to automatic actions. Policy denial
 // and review are exercised separately against the real guards in ai-policy.test.ts.
 export function policyTestDependency(name: string) {
+  if (name === "@/lib/ai/sales-review") return salesReview;
+  if (/(?:^|\/)customer-access(?:\.ts)?$/.test(name)) return customerAccess;
   if (name === "@/lib/workspace-session-response") return sessionResponse;
   if (name === "@/lib/ai/record-presentation") return recordPresentation;
   if (name === "@/lib/ai/research-progress") return researchProgress;

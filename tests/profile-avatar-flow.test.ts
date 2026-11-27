@@ -39,7 +39,7 @@ const client = { auth: {
   },
 } };
 const admin = {
-  rpc: () => ({ maybeSingle: async () => ({ data: state.authenticated ? { ...state.user, role: "admin", activated_at: "2026-01-01", display_name: "Member" } : null, error: null }) }),
+  rpc: () => ({ maybeSingle: async () => ({ data: state.authenticated ? { ...state.user, role: "admin", activated_at: "2026-01-01", display_name: "Member", mfa_required: false } : null, error: null }) }),
   storage: {
   from: () => storage,
   getBucket: async () => ({ data: state.bucketMissing ? null : {}, error: state.bucketMissing ? { statusCode: "404" } : null }),

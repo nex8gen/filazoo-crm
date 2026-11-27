@@ -8,6 +8,6 @@ export default function SettingsPage() {
 }
 
 async function GeneralWorkspace() {
-  await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
-  return <GeneralSettings />;
+  const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
+  return <GeneralSettings viewer={viewer} />;
 }

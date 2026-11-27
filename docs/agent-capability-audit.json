@@ -1258,6 +1258,18 @@
       "explanation": "Connection credentials, uploads or connection testing use the relevant settings/file form."
     },
     {
+      "surface": "app/settings/security-actions.ts#loadDeviceSessions",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Account devices, session revocation, authenticators and passkeys are managed by the signed-in user at /settings/security. General chat must hand off to these account controls and cannot enroll credentials, supply authenticator codes or revoke sessions on the user's behalf."
+    },
+    {
+      "surface": "app/settings/security-actions.ts#revokeDeviceSessions",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Account devices, session revocation, authenticators and passkeys are managed by the signed-in user at /settings/security. General chat must hand off to these account controls and cannot enroll credentials, supply authenticator codes or revoke sessions on the user's behalf."
+    },
+    {
       "surface": "app/settings/team-actions.ts#createTeamInvitation",
       "mode": "guided",
       "tools": [],

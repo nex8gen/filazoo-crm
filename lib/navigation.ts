@@ -85,11 +85,11 @@ export const navigation: NavigationGroup[] = [
     ],
   },
   {
-    label: "Customer portal",
+    label: "Website",
     eyebrow: "Customer experience",
     icon: PanelsTopLeft,
     direct: true,
-    items: [{ label: "Customer portal", href: "/customer-portal", icon: PanelsTopLeft, badge: "Beta", description: "Customize your customer portal design, sections and customer permissions" }],
+    items: [{ label: "Website", href: "/customer-portal", icon: PanelsTopLeft, badge: "Beta", description: "Manage your website, themes and domains" }],
   },
   {
     label: "Messenger",

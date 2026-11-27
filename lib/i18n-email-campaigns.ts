@@ -1,6 +1,8 @@
 import { zhCNEmailBlocks } from "./i18n-email-blocks.ts";
 
 export const zhCNEmailCampaigns: Record<string, string> = {
+
+
   "Original email designs for every workspace. Customize a copy to save your own version in Custom emails.": "所有工作区均可使用原版邮件设计。自定义副本后，可将自己的版本保存至自定义邮件。",
   "Email library": "预置邮件模板库",
   "Custom emails": "自定义邮件",

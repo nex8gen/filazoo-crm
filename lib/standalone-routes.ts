@@ -1,5 +1,5 @@
 const standaloneRoots = [
-  "/customer", "/login", "/signup", "/workspaces", "/subscribe", "/join",
+  "/customer", "/website", "/login", "/signup", "/workspaces", "/subscribe", "/join",
   "/forgot-password", "/accept-invitation", "/update-password",
   "/auth", "/access-denied", "/privacy", "/terms", "/data-deletion",
 ];

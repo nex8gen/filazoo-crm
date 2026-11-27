@@ -29,7 +29,7 @@ export async function readFollowupStatus(viewer: WorkspaceViewer, mailboxId: str
 }
 
 /** Lightweight filter metadata for one authorized mailbox; never returns email bodies. */
-export async function listFollowupActions(viewer: WorkspaceViewer, mailboxId: string): Promise<FollowupActionRecord[]> {
+export async function listFollowupActions(viewer: WorkspaceViewer, mailboxId: string, context?: { mailboxes: Awaited<ReturnType<typeof getViewerMailboxes>> }): Promise<FollowupActionRecord[]> {
   const db = createSupabaseAdmin();
   async function rows(table: string, fields: string) {
     const result: Record<string, unknown>[] = [];
@@ -39,14 +39,17 @@ export async function listFollowupActions(viewer: WorkspaceViewer, mailboxId: st
       if (data.length < 500) return result;
     }
   }
-  const [mailboxes, assigned, followups] = await Promise.all([
-    getViewerMailboxes(viewer.id, true), getAssignedEmailContacts(viewer),
+  const knownMailbox = context?.mailboxes.find(mailbox => mailbox.id === mailboxId);
+  const dormantRequest = knownMailbox ? import("./dormant-customers.ts").then(({ listDormantActions }) => listDormantActions(viewer, knownMailbox, context!.mailboxes)) : null;
+  const [mailboxes, assigned, followups, knownDormant] = await Promise.all([
+    context?.mailboxes ?? getViewerMailboxes(viewer.id, true), knownMailbox?.type === "personal" ? Promise.resolve(null) : getAssignedEmailContacts(viewer),
     rows("email_message_followups", "id,kind,purpose,status,due_at,message_key,thread_key,anchors,updated_at,recipient,task:crm_tasks(status)"),
+    dormantRequest,
   ]);
   const mailbox = mailboxes.find(mailbox => mailbox.id === mailboxId);
   if (!mailbox) throw new Error("This mailbox is unavailable.");
   const { listDormantActions } = await import("./dormant-customers.ts");
-  const dormant = await listDormantActions(viewer, mailbox);
+  const dormant = knownDormant ?? await listDormantActions(viewer, mailbox);
   return [...dormant, ...followups
     .filter(row => canViewEmail(viewer, String(row.recipient), assigned, mailbox))
     .map((row): FollowupActionRecord => {

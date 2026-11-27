@@ -16,7 +16,7 @@ function gate(error: unknown) {
     "next/server": { NextResponse },
     "@supabase/ssr": { createServerClient: () => ({ auth: { getClaims: async () => ({ data: null, error }) } }) },
   };
-  vm.runInNewContext(source, { exports, require: (name: string) => dependencies[name], process: { env: { NEXT_PUBLIC_SUPABASE_URL: "https://test.supabase.co", NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "project-key" } } });
+  vm.runInNewContext(source, { exports, Headers, require: (name: string) => dependencies[name], process: { env: { NEXT_PUBLIC_SUPABASE_URL: "https://test.supabase.co", NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "project-key" } } });
   return (path: string) => exports.updateSession!(new NextRequest(`https://crm.test${path}`));
 }
 

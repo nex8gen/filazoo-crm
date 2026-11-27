@@ -106,6 +106,7 @@ async function evaluate(scenario: EvaluationCase, model: string, repair = false)
   // tiers inside this isolated worker so reported qualification matches reality.
   process.env.AI_GATEWAY_STANDARD_MODEL = model;
   process.env.AI_GATEWAY_COMPLEX_MODEL = model;
+  process.env.AI_GATEWAY_EXPERT_MODEL = model;
   process.env.AI_GATEWAY_SIMPLE_MODEL = model;
   const modelOptions = await nativeGatewayModels({ token: token!, userId: syntheticId, userText: scenario.messages.map(value => value.content).join("\n"), model, fetcher: guardedFetch });
   if (modelOptions.model.modelId !== model || modelOptions.repairModel.modelId !== model) throw new Error("Evaluation model routing mismatch.");

@@ -74,7 +74,7 @@ test("automated server exports include images and the approved template, includi
   const pdf = Buffer.from(bytes).toString("latin1");
   assert.match(pdf, /^%PDF-1.4/);
   assert.match(pdf, /Product catalog/);
-  assert.match(pdf, /cm 0 0 0 rg/);
+  assert.match(pdf, /0\.9568627450980393 0\.20392156862745098 0\.1450980392156863 rg/);
   assert.match(pdf, /0.976 0.858 0.878 rg/);
   assert.equal(pdf.match(/\/Subtype \/Image/g)?.length, 3);
   const draws = [...pdf.matchAll(/cm \/(I\d+) Do Q/g)].map(match => match[1]);

@@ -13,21 +13,23 @@ test("website editor keeps balanced sidebar widths and compact padding with work
   try {
     const pairs = [
       [".pb-topbar", ".wf-topbar", ["display", "min-height", "padding", "gap", "flex-wrap"]],
-      [".pb-workbench", ".wf-workbench", ["padding"]],
-      [".pb-structure", ".wf-panel", ["border-radius", "border-width"]],
+      [".pb-workbench", ".wf-workbench", ["padding-left", "padding-right", "padding-bottom"]],
+      [".pb-structure", ".wf-panel", ["border-width"]],
       [".pb-editor", ".wf-panel", ["border-radius", "border-width"]],
-      [".pb-inspector-title", ".pb-structure-heading", ["min-height", "padding", "gap"]],
       [".pb-editor-footer", ".wf-settings-footer", ["min-height"]],
     ] as const;
     for (const [site, flow, properties] of pairs) for (const property of properties) {
       assert.equal(computed(site).getPropertyValue(property), computed(flow).getPropertyValue(property), `${site} ${property}`);
     }
-    assert.equal(computed(".pb-workbench").gap, "6px");
+    assert.equal(computed(".pb-structure-heading").minHeight, "40px");
+    assert.equal(computed(".pb-structure").borderRadius, "12px");
+    assert.equal(computed(".pb-workbench").gap, "3px");
+    assert.equal(computed(".pb-workbench").paddingTop, "3px");
     const columns = computed(".pb-workbench").gridTemplateColumns.split(" ");
     assert.equal(columns[0], "280px");
     assert.equal(columns.at(-1), columns[0]);
     for (const selector of [".pb-panel", ".pb-inspector-mode", ".pb-editor-footer"]) {
-      assert.equal(computed(selector).paddingLeft, computed(".pb-structure-heading").paddingLeft);
+      assert.equal(computed(selector).paddingLeft, computed(".pb-inspector-title").paddingLeft);
     }
     assert.equal(computed(".portal-builder").getPropertyValue("--pb-canvas-background"), computed(".workflow-editor").getPropertyValue("--wf-canvas-background"));
   } finally { dom.window.close(); }

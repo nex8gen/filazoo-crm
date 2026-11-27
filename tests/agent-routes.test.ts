@@ -25,6 +25,7 @@ import { workflowAnalyticsPrompts } from "../lib/flow-analytics-prompts.ts";
 import * as customerIntelligence from "../lib/ai/customer-intelligence.ts";
 import * as customerPopulation from "../lib/ai/customer-intelligence-population.ts";
 import * as customerOpportunities from "../lib/ai/customer-opportunities.ts";
+import * as salesReview from "../lib/ai/sales-review.ts";
 
 const require = createRequire(import.meta.url);
 class TestHistoryError extends Error { status = 503; }
@@ -46,9 +47,36 @@ test("temporary workspace-session failures explicitly reject before saved turns,
 });
 // Run the actual route handlers with isolated auth/provider/database boundaries.
 // No test signs in to the real workspace, saves an invoice, or sends an email.
+for (const role of ["operator", "bd_manager", "viewer"] as const) test(`${role} customer chat rejects an unassigned customer before reading details or contacting the model`, async () => {
+  const query = { select() { return query; }, eq() { return query; }, async maybeSingle() { return { data: null, error: null }; } };
+  const post = route("../app/api/companies/[id]/chat/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => ({ ...viewer, role }) },
+    "@/lib/supabase/admin": { createSupabaseAdmin: () => ({ from: () => query }) },
+    "@/lib/data/crm": { getCompanyDetails: async () => assert.fail("Unassigned customer details must not be loaded") },
+    "@/lib/ai/company-chat": companyChat,
+    "@/lib/ai/gateway": { generateGatewayText: async () => assert.fail("Unassigned customer data must not reach a model") },
+  }, { AI_GATEWAY_API_KEY: "synthetic" });
+  const response = await post(request({ messages: [{ role: "user", content: "Summarize this customer" }] }), { params: Promise.resolve({ id }) });
+  assert.equal(response.status, 404);
+});
+
+for (const role of ["operator", "bd_manager", "viewer"] as const) test(`${role} AI excludes unrestricted page snapshots and receives assignment-scoped instructions`, async () => {
+  const post = route("../app/api/ai/assistant/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => ({ ...viewer, role }) }, "@/lib/ai/workspace-assistant": assistant,
+    "@/lib/ai/agent-context": {}, "@/lib/ai/agent-execution": {},
+    "@/lib/ai/gateway": { generateGatewayText: async (options: { prompt: string; systemInstruction: string }) => {
+      assert.doesNotMatch(options.prompt, /PRIVATE_OTHER_CUSTOMER_SNAPSHOT/);
+      assert.match(options.systemInstruction, /only customers currently assigned/);
+      return "Choose an assigned customer to analyze.";
+    } },
+  }, { AI_GATEWAY_API_KEY: "synthetic" });
+  const response = await post(request({ mode: "analyze", pathname: "/companies", pageLabel: "Companies", pageText: "PRIVATE_OTHER_CUSTOMER_SNAPSHOT", messages: [{ role: "user", content: "Summarize this page" }] }));
+  assert.equal(response.status, 200);
+});
+
 function route(file: string, dependencies: Record<string, unknown>, env: Record<string, string> = {}, method: "POST" | "GET" = "POST") {
   env = { AI_AGENT_RUNTIME: "legacy", ...env };
-  dependencies = { "@/lib/ai/assistant-intent": assistantIntent, "./document-intent": documentIntent, "@/lib/ai/customer-intelligence": customerIntelligence, "@/lib/ai/customer-intelligence-population": customerPopulation, "@/lib/ai/customer-opportunities": customerOpportunities, ...dependencies };
+  dependencies = { "@/lib/ai/sales-review": salesReview, "@/lib/ai/assistant-intent": assistantIntent, "./document-intent": documentIntent, "@/lib/ai/customer-intelligence": customerIntelligence, "@/lib/ai/customer-intelligence-population": customerPopulation, "@/lib/ai/customer-opportunities": customerOpportunities, ...dependencies };
   const exports: { POST?: (request: Request, context?: { params: Promise<{ id: string }> }) => Promise<Response>; GET?: (request: Request) => Promise<Response> } = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (dependencies[name] ?? (name === "./crm-reply-tools" ? replyTools : name === "./crm-reply-execution" ? { replyOperationTarget: () => { throw new Error("Reply workflows use their dedicated fixtures"); } } : name === "../data/customer-reply-requests" ? { listReplyRequests: async () => [] } : name === "@/lib/ai/invoice-readiness" ? readiness : undefined) ?? (name === "@/lib/ai/chat-session" ? { startChatSession: async () => undefined } : name === "@/lib/ai/chat-history-server" ? { HistoryError: TestHistoryError } : name === "@/lib/ai/chat-history" ? { savedPageContext: (value: unknown) => value ?? {} } : name === "@/lib/ai/crm-tools" ? crmTools : name === "@/lib/ai/crm-records" ? {} : name === "@/lib/i18n" ? i18n : name === "@/lib/ai/customer-research" ? research : name === "@/lib/ai/image-input" ? imageInput : require(name))), Response, Request, URL, AbortSignal, Date, Error, crypto, console, process: { env } });
@@ -60,6 +88,32 @@ const id = "15693adc-0bdf-4617-b214-71b1861764a9";
 const company = { type: "create_company", company: { name: "Acme", country: "US", segment: "Retail" } };
 const request = (body: unknown, origin = "http://localhost:3000") => new Request("http://localhost:3000/api/ai/assistant/action", { method: "POST", headers: { "Content-Type": "application/json", origin }, body: JSON.stringify(body) });
 const decision = { id, decision: "approve", approval: "manual" };
+
+for (const mode of ["analyze", "work"] as const) test(`${mode} weekly sales review bypasses selected email, full-history search and native planning`, async () => {
+  let generations = 0, saved: unknown;
+  const snapshot = { period: salesReview.salesReviewRange("Review the last seven days of accessible sales activity")!, scope: "Assigned customers", coverage: { externalMailboxHistoryScanned: false },
+    sources: { orders: { records: [{ id, reference: "PO-1", status: "draft" }], coverage: { available: true, included: 1, truncated: false } } } };
+  const post = route("../app/api/ai/assistant/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer },
+    "@/lib/ai/workspace-assistant": assistant,
+    "@/lib/ai/agent-context": { loadAgentContext: async () => assert.fail("A workspace report must not load selected email/invoice context"), searchAgentEmails: async () => assert.fail("Must not scan all mailbox history") },
+    "@/lib/ai/sales-review-records": { readSalesReview: async () => snapshot },
+    "@/lib/ai/agent-execution": { prepareAgentActions: async () => assert.fail("Read-only review must never prepare a write") },
+    "@/lib/ai/customer-email-history": { loadConversationPresentation: async () => assert.fail("Do not hydrate unrelated selected-email conversations after completing a report") },
+    "@/lib/ai/chat-session": { startChatSession: async () => ({ messages: [{ role: "user", content: "Review the last seven days of accessible sales activity. Explain what moved forward, where opportunities stalled, and the three changes most likely to improve next week’s work." }], completedActionIds: [], complete: async (payload: unknown) => { saved = payload; return payload; }, fail: async () => {}, flush: async () => {} }) },
+    "@/lib/ai/gateway": { generateGatewayText: async (input: { prompt: string; systemInstruction: string; maxOutputTokens: number }) => {
+      generations++; assert.match(input.prompt, /SALES_REVIEW/); assert.doesNotMatch(input.prompt, /PRIVATE_SELECTED_EMAIL|PAGE_CONTENT/);
+      assert.equal(input.maxOutputTokens, 2000); assert.match(input.systemInstruction, /read-only sales review/);
+      return "One draft order was created. This does not establish a completed sale. External mailbox history was not scanned.";
+    } },
+  }, { AI_GATEWAY_API_KEY: "synthetic", AI_AGENT_RUNTIME: "native" });
+  const original = request({ mode, pathname: "/email", pageLabel: "Email", pageText: "PRIVATE_SELECTED_EMAIL", pageContext: { emailId: "selected-email" }, messages: [{ role: "user", content: "Review the last seven days of accessible sales activity. Explain what moved forward, where opportunities stalled, and the three changes most likely to improve next week’s work." }] });
+  const response = await post(new Request(original, { headers: { ...Object.fromEntries(original.headers), accept: researchStreamType } }));
+  const payload = await readResearchResponse<{ output: string; actions: unknown[]; salesReview: unknown; activity: AssistantActivity[] }>(response, () => {});
+  assert.equal(generations, 1); assert.deepEqual(payload.actions, []); assert.ok(payload.salesReview); assert.ok(saved);
+  assert.deepEqual(payload.activity.map(step => step.label), ["Reviewing request context", "Reviewing sales activity", "Writing sales review"]);
+  assert.ok(payload.activity.every(step => step.status === "complete"));
+});
 
 test("customer answers attach simple dated conversations in workspace and profile chat and save them with the answer", async () => {
   const conversations = [{ companyId: id, companyName: "Carraro", state: "ready", more: false,

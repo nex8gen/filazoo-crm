@@ -5,8 +5,9 @@ import { getSavedSegment } from "../data/segments";
 import { matchesSegment, toSegmentCompany } from "../segments";
 import { companyExportCsv, companyExportRow, type ExportCompany } from "../company-export";
 import { exportSelectionSchema, type ExportSelection } from "./crm-productivity";
+import type { WorkspaceViewer } from "../auth.ts";
 
-export async function companyExportSnapshot(selection: ExportSelection) {
+export async function companyExportSnapshot(selection: ExportSelection, viewer?: WorkspaceViewer) {
   const input = exportSelectionSchema.parse(selection);
   const { mode, companies } = await listCompanies({ maxCompanies: 5000, ...(input.scope === "selected" ? { ids: input.companyIds } : {}) });
   if (mode !== "live") throw new Error("Connect the CRM database before exporting companies.");
@@ -14,7 +15,8 @@ export async function companyExportSnapshot(selection: ExportSelection) {
   if (input.scope === "segment" && !segment) throw new Error("The selected audience is no longer available.");
   const selectedIds = input.scope === "selected" ? new Set(input.companyIds) : null;
   const query = input.scope === "search" ? input.query.toLowerCase() : "";
-  const records: ExportCompany[] = companies.filter((company) => selectedIds ? selectedIds.has(company.id)
+  const accessible = viewer && viewer.role !== "admin" ? companies.filter(company => company.ownerId === viewer.id) : companies;
+  const records: ExportCompany[] = accessible.filter((company) => selectedIds ? selectedIds.has(company.id)
     : segment ? matchesSegment(toSegmentCompany(company), segment.rules)
       : !query || [company.name, company.domain, company.email, company.contact].some((value) => value.toLowerCase().includes(query)))
     .sort((a, b) => a.id.localeCompare(b.id));

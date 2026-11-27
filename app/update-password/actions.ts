@@ -5,6 +5,7 @@ import { z } from "zod";
 import { passwordRequirementsError, passwordSchema } from "@/lib/password";
 import { createClient } from "@/lib/supabase/server";
 import { loginDestination } from "@/lib/login-destination";
+import { readAccountSecurity } from "@/lib/account-security-server";
 
 export type UpdatePasswordState = { error?: string } | undefined;
 
@@ -17,6 +18,10 @@ export async function updatePassword(_state: UpdatePasswordState, formData: Form
   const supabase = await createClient();
   const { data: claimsData } = await supabase.auth.getClaims();
   if (!claimsData?.claims?.sub) return { error: "Open this page from a valid recovery link or sign in again." };
+
+  const security = await readAccountSecurity().catch(() => null);
+  if (!security) return { error: "Unable to verify your account session. Open a new recovery link or sign in again." };
+  if (security.requiresMfa) redirect(`/auth/mfa?next=${encodeURIComponent("/update-password")}`);
 
   const { error } = await supabase.auth.updateUser({ password: parsed.data.password });
   if (error) return { error: error.message };

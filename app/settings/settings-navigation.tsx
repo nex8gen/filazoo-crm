@@ -5,12 +5,12 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState, type CSSProperties } from "react";
 import { useWorkspaceState } from "@/components/workspace-memory";
 import { useSettingsReturnTo } from "@/components/workspace-navigation";
-import { Bot, Building2, ChevronDown, ChevronLeft, CreditCard, LayoutGrid, Mail, MailCheck, Plug, ReceiptText, Search, Settings2, ShieldCheck, Sun, UserRound, UsersRound, Workflow, X } from "lucide-react";
+import { Bot, Building2, ChevronDown, ChevronLeft, CreditCard, LayoutGrid, Mail, MailCheck, Plug, ReceiptText, Search, Settings2, ShieldCheck, UsersRound, Workflow, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { settingsGroups, settingsSectionForPath, visibleSettingsSections } from "@/lib/settings-sections";
 import "./settings.css";
 
-const icons = { bot: Bot, settings: Settings2, sun: Sun, user: UserRound, shield: ShieldCheck, mailCheck: MailCheck, apps: LayoutGrid, mail: Mail, plug: Plug, creditCard: CreditCard, receipt: ReceiptText, users: UsersRound, workflow: Workflow };
+const icons = { bot: Bot, settings: Settings2, shield: ShieldCheck, mailCheck: MailCheck, apps: LayoutGrid, mail: Mail, plug: Plug, creditCard: CreditCard, receipt: ReceiptText, users: UsersRound, workflow: Workflow };
 
 export function SettingsNavigation({ isAdmin, workspaceName }: { isAdmin: boolean; workspaceName: string }) {
   const pathname = usePathname();

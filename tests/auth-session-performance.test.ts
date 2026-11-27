@@ -12,7 +12,7 @@ import { isTransientAuthError } from "../lib/supabase/auth-error.ts";
 const id = "aaaaaaaa-1111-2222-3333-444444444444";
 const sessionId = "bbbbbbbb-1111-2222-3333-444444444444";
 const claims = { sub: id, session_id: sessionId, aud: "authenticated", role: "authenticated", iss: "https://test.supabase.co/auth/v1", user_metadata: { avatar_preset: "male", role: "admin" } };
-const member = { id, email: "staff@example.com", user_metadata: { avatar_preset: "female" }, role: "operator", display_name: "Staff", activated_at: "2026-01-01", workspace_id: "cccccccc-1111-4222-8333-444444444444", workspace_name: "Test workspace", owner_id: id, subscription_active: true };
+const member = { id, email: "staff@example.com", user_metadata: { avatar_preset: "female" }, role: "operator", display_name: "Staff", activated_at: "2026-01-01", workspace_id: "cccccccc-1111-4222-8333-444444444444", workspace_name: "Test workspace", owner_id: id, subscription_active: true, mfa_required: false };
 const source = ts.transpileModule(readFileSync(new URL("../lib/auth.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 type Options = { claims?: unknown; claimError?: unknown; row?: unknown; rpcError?: { code: string; message: string }; cache?: boolean; legacySignedIn?: boolean };
 function load(options: Options = {}) {
@@ -35,8 +35,8 @@ function load(options: Options = {}) {
     "./supabase/control.ts": { createSupabaseControl: () => ({
       rpc: (name: string, params: unknown) => {
         calls.rpc++;
-        assert.ok(name === "read_subscribed_workspace_session" || name === "read_crm_session");
-        assert.deepEqual(JSON.parse(JSON.stringify(params)), { p_user_id: id, p_session_id: sessionId, ...(name === "read_subscribed_workspace_session" ? { p_workspace_id: null } : {}) });
+        assert.equal(name, "read_secure_workspace_session");
+        assert.deepEqual(JSON.parse(JSON.stringify(params)), { p_user_id: id, p_session_id: sessionId, p_workspace_id: null });
         return { maybeSingle: async () => ({ data: name === "read_crm_session" && options.legacySignedIn === false ? null : state.row, error: name === "read_crm_session" ? null : options.rpcError ?? null }) };
       },
       from: (table: string) => { calls.membership++; assert.equal(table, "workspace_members"); const query = { select: () => query, eq: () => query, maybeSingle: async () => ({ data: state.row, error: null }) }; return query; },
@@ -115,16 +115,33 @@ test("unpaid or missing subscription state sends a member to billing without den
   }
 });
 
-test("rolling upgrades use only the existing live-session-validated legacy reader", async () => {
+test("missing security migrations fail closed instead of falling back to a reader without MFA", async () => {
   for (const code of ["PGRST202", "42883"]) {
     const { api, calls } = load({ rpcError: { code, message: "Function missing" } });
-    const viewer = await api.requireWorkspaceMember(["operator"]) as { workspaceId: string };
-    assert.equal(viewer.workspaceId, "legacy");
-    assert.deepEqual(calls, { claims: 1, rpc: 2, getUser: 0, membership: 0 });
+    await assert.rejects(api.requireWorkspaceMember(["operator"]), /Workspace session lookup failed/);
+    assert.deepEqual(calls, { claims: 1, rpc: 1, getUser: 0, membership: 0 });
   }
   const { api, calls } = load({ rpcError: { code: "PGRST202", message: "Function missing" }, legacySignedIn: false });
-  await assert.rejects(api.requireWorkspaceMember(), /\/login/);
+  await assert.rejects(api.requireWorkspaceMember(), /Workspace session lookup failed/);
   assert.equal(calls.membership, 0);
+});
+
+test("fresh MFA enrollment blocks old and new AAL1 tokens from every account and workspace reader", async () => {
+  const { api } = load({ row: { ...member, mfa_required: true } });
+  assert.equal(await api.getViewer(), null);
+  assert.equal(await api.getWorkspaceViewer(), null);
+  assert.equal(await api.isMfaPending(), true);
+  await assert.rejects(api.requireViewer(), /\/auth\/mfa/);
+  await assert.rejects(api.requireWorkspaceMember(), /\/auth\/mfa/);
+});
+
+test("AAL2 access succeeds only with a live session and fresh MFA state", async () => {
+  const verified = load({ claims: { ...claims, aal: "aal2" }, row: { ...member, mfa_required: true } });
+  assert.equal((await verified.api.requireWorkspaceMember() as { id: string }).id, id);
+  const revoked = load({ claims: { ...claims, aal: "aal2" }, row: null });
+  await assert.rejects(revoked.api.requireWorkspaceMember(), /\/login/);
+  const missing = load({ row: { ...member, mfa_required: undefined } });
+  await assert.rejects(missing.api.requireWorkspaceMember(), /security state is missing/);
 });
 
 test("database outages and permission errors cannot become successful authorization", async () => {

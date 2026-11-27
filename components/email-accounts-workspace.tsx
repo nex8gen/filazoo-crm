@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState, type ComponentProps } from "r
 import { EmailInboxWorkspace } from "@/components/email-inbox";
 import type { EmailInboxBackendData, InboxEmailItem } from "@/lib/email-inbox";
 import type { Product, Catalog } from "@/lib/types";
+import { createPageCache } from "@/lib/page-cache";
+import { emailPageKey, type EmailPageSnapshot } from "@/lib/email-pagination";
 
 type Props = {
   initialData: EmailInboxBackendData;
@@ -16,6 +18,7 @@ type Props = {
 
 export function EmailAccountsWorkspace({ initialData, resourcesDeferred = false, ...props }: Props) {
   const [data, setData] = useState(initialData);
+  const [pageCaches, setPageCaches] = useState(() => new Map<string | null, ReturnType<typeof createPageCache<EmailPageSnapshot>>>(initialData.pagination ? [[initialData.selectedMailboxId, createPageCache(emailPageKey(initialData.selectedMailboxId, initialData.pagination.request), { emails: initialData.emails, pagination: initialData.pagination })]] : []));
   const [switchingMailboxId, setSwitchingMailboxId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [hasSwitched, setHasSwitched] = useState(false);
@@ -41,7 +44,7 @@ export function EmailAccountsWorkspace({ initialData, resourcesDeferred = false,
     const timeout = setTimeout(() => controller.abort(new DOMException("Mailbox request timed out. Please try again.", "TimeoutError")), 30_000);
     const promise = (async () => {
       try {
-        const response = await fetch(`/api/email/inbox?mailboxId=${encodeURIComponent(mailboxId)}&refresh=false`, {
+        const response = await fetch(`/api/email/inbox?mailboxId=${encodeURIComponent(mailboxId)}&refresh=false&paged=true`, {
           cache: "no-store",
           signal: controller.signal,
         });
@@ -68,6 +71,10 @@ export function EmailAccountsWorkspace({ initialData, resourcesDeferred = false,
     if (mailboxId === current.current.selectedMailboxId) return;
 
     const install = (next: EmailInboxBackendData) => {
+      if (next.pagination) {
+        const initialPage = next.pagination;
+        setPageCaches(current => current.has(mailboxId) ? current : new Map([...current, [mailboxId, createPageCache(emailPageKey(mailboxId, initialPage.request), { emails: next.emails, pagination: initialPage })]]));
+      }
       current.current = next;
       snapshots.current.set(mailboxId, next);
       setData(next);
@@ -96,12 +103,13 @@ export function EmailAccountsWorkspace({ initialData, resourcesDeferred = false,
     }
   }, [loadMailbox]);
 
-  const rememberSnapshot = useCallback((mailboxId: string | null, emails: InboxEmailItem[], readFailed?: boolean, partial?: boolean) => {
+  const rememberSnapshot = useCallback((mailboxId: string | null, emails: InboxEmailItem[], readFailed?: boolean, partial?: boolean, pagination?: EmailInboxBackendData["pagination"]) => {
     const saved = snapshots.current.get(mailboxId);
     if (saved) snapshots.current.set(mailboxId, { ...saved, emails,
       mailboxReadFailed: readFailed ?? saved.mailboxReadFailed,
       mailboxSnapshotPartial: partial ?? saved.mailboxSnapshotPartial,
       inboxError: readFailed === false && saved.mailboxReadFailed ? null : saved.inboxError,
+      pagination: pagination ?? saved.pagination,
     });
   }, []);
 
@@ -111,11 +119,7 @@ export function EmailAccountsWorkspace({ initialData, resourcesDeferred = false,
   }, []);
 
   useEffect(() => {
-    // Warm the other authorized account while the user reads the current one.
-    // These requests only read saved data; provider sync stays on the active view.
-    for (const mailbox of initialData.mailboxSnapshotPartial || initialData.mailboxReadFailed ? [] : initialData.mailboxes) {
-      if (!snapshots.current.has(mailbox.id)) void loadMailbox(mailbox.id).catch(() => undefined);
-    }
+    // Accounts and their pages load on demand, after the user selects them.
     const onBack = () => {
       if (window.location.pathname !== "/email") return;
       const mailboxId = new URLSearchParams(window.location.search).get("mailbox") ?? initialData.defaultSenderId;
@@ -140,6 +144,8 @@ export function EmailAccountsWorkspace({ initialData, resourcesDeferred = false,
     selectedMailboxId={data.selectedMailboxId}
     defaultSenderId={data.defaultSenderId}
     initialEmails={data.emails}
+    initialPage={data.pagination}
+    pageCache={pageCaches.get(data.selectedMailboxId)}
     mailboxConfigured={data.mailboxConfigured}
     sendConfigured={data.sendConfigured}
     inboxConfigured={data.inboxConfigured}

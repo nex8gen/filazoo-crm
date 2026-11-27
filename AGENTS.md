@@ -7,3 +7,10 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+## AI customer access
+
+- Every non-admin user (operator, BD manager, or viewer) may give the AI access only to customers currently assigned to that user's ID and those customers' conversations. Unassigned customers and other users' customers are excluded.
+- Administrators may give the AI access to all customers and accessible customer conversations within their current workspace, including correspondence across staff mailboxes. Workspace boundaries and AI data settings still apply.
+- Enforce this in server-side readers, customer chat, AI context, searches, exports and previews. Prompts and hidden UI controls are not authorization checks.
+- Recheck assignments before reusing conversation data. Bind caches to workspace/user/role and invalidate saved-chat access when assignments change. Fail closed when conversation ownership cannot be verified.

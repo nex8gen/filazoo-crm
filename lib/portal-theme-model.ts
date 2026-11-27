@@ -43,7 +43,8 @@ export function createPortalTemplate(id: string, brandName = "Your brand"): Port
 }
 /** Older saved portals become a library theme without changing their published design. */
 export function portalLibraryThemes(view: PortalDesignView): PortalSavedTheme[] {
-  return view.themes?.length ? view.themes : [{ id: "current", name: "My customer portal", design: view.draft, updatedAt: view.updatedAt }];
+  const themes = view.themes?.length ? view.themes : [{ id: "current", name: "My website", design: view.draft, updatedAt: view.updatedAt }];
+  return themes.map(theme => theme.name === "My customer portal" ? { ...theme, name: "My website" } : theme);
 }
 export function livePortalThemeId(view: PortalDesignView) {
   return view.published ? view.liveThemeId ?? "current" : null;

@@ -56,7 +56,7 @@ test("shows exact product-specific ranges and a vector company logo on every pag
   for (const label of ["1 to 100 qty", "101 to 200 qty", "201+ qty", "10 to 50 qty", "51+ qty"]) assert.ok(pdf.includes(label), label);
   assert.doesNotMatch(pdf, /Tier \d|Default photo|Not specified|Confirm before order|Quote available/);
   const pages = pdf.match(/\/Type \/Page\b/g)?.length;
-  assert.equal(pdf.match(/cm 0 0 0 rg/g)?.length, pages);
+  assert.equal(pdf.match(/0\.9568627450980393 0\.20392156862745098 0\.1450980392156863 rg/g)?.length, pages);
 });
 
 test("keeps wide and tall photos inside their own variant cells and falls back to the product photo", () => {

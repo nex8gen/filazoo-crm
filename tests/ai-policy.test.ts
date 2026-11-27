@@ -27,9 +27,11 @@ function load<T>(file: string, dependencies: Record<string, unknown>, extra = {}
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   vm.runInNewContext(code, { exports, require: (name: string) => {
     if (name === "server-only") return {};
+    if (/(?:^|\/)customer-access(?:\.ts)?$/.test(name)) return policyTestDependency(name);
     if (name === "@/lib/ai/provider-credentials") return credentials;
     if (name === "@/lib/workspace-context") return policyTestDependency(name);
     if (name === "@/lib/ai/research-progress") return policyTestDependency(name);
+    if (name === "@/lib/ai/sales-review") return policyTestDependency(name);
     if (name === "@/lib/ai/record-presentation") return policyTestDependency(name);
     if (name === "@/lib/workspace-session-response") return policyTestDependency(name);
     if (name in dependencies) return dependencies[name];

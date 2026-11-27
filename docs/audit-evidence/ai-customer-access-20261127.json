@@ -1,0 +1,20 @@
+{
+  "checkedDate": "2026-11-27",
+  "readOnly": true,
+  "businessWrites": false,
+  "modelCalls": false,
+  "roleRegressionChecks": ["operator", "bd_manager", "viewer", "admin"],
+  "liveDatabaseVerification": {
+    "transport": "Supabase connected SQL tool",
+    "sampleAssignmentCounts": {
+      "assignedCustomers": 109,
+      "otherCustomersExcluded": 222,
+      "assignedOrders": 4,
+      "assignedInvoices": 4,
+      "assignedTasks": 4,
+      "assignedQuotations": 4
+    },
+    "scope": "Read-only ownership joins within the sampled owner's workspace; counts only, no customer content sent to a model.",
+    "directRestQualification": "Not completed: local direct connection to the Supabase hostname timed out. SQL verification used the connected tool instead."
+  }
+}

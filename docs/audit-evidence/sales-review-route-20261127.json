@@ -1,0 +1,33 @@
+{
+  "checkedAt": "2026-11-27T03:47:27.244Z",
+  "question": "Review the last seven days of accessible sales activity. Explain what moved forward, where opportunities stalled, and the three changes most likely to improve next week’s work.",
+  "browserSessionVerified": false,
+  "authentication": "Existing administrator membership injected into the route for this diagnostic; browser authentication was not tested",
+  "data": "Real production reader and database",
+  "model": "openai/gpt-6.2-sol",
+  "providerCalls": 1,
+  "elapsedMs": 8822,
+  "actionsPrepared": 0,
+  "outputCharacters": 1903,
+  "activity": [
+    {
+      "id": "activity-0",
+      "label": "Reviewing request context",
+      "status": "complete",
+      "durationMs": 0
+    },
+    {
+      "id": "activity-1",
+      "label": "Reviewing sales activity",
+      "status": "complete",
+      "durationMs": 636
+    },
+    {
+      "id": "activity-2",
+      "label": "Writing sales review",
+      "status": "complete",
+      "durationMs": 7892
+    }
+  ],
+  "writes": "No customer changes, sends, authentication changes or transcript saves; isolated evaluation-spending ledger only"
+}

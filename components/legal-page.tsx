@@ -18,9 +18,8 @@ export function LegalPage({
     <div className="min-h-svh bg-background text-foreground">
       <header className="border-b bg-background/95">
         <div className="mx-auto flex min-h-16 max-w-5xl flex-wrap items-center justify-between gap-4 px-5 py-4 sm:px-8">
-          <a href="https://filazoo.com" className="flex items-center gap-2.5 font-semibold" aria-label="Filazoo website">
-            <BrandMark className="h-6 w-auto text-primary" />
-            <span>Filazoo</span>
+          <a href="https://filazoo.com" className="flex items-center gap-2.5 font-semibold" aria-label="NewAI website">
+            <BrandMark className="h-auto w-[174px] max-w-full" />
           </a>
           <nav className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground" aria-label="Legal pages">
             <Link className="transition-colors hover:text-foreground" href="/terms">Terms</Link>

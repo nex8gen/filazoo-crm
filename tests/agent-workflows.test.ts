@@ -34,6 +34,16 @@ const require = createRequire(import.meta.url);
 function moduleUnderTest<T>(file: string, dependencies: Record<string, unknown>): T {
   dependencies["./workflow-contract"] = workflowContract;
   dependencies["./document-intent"] = documentIntent;
+  if (file.endsWith("/agent-records.ts") && !dependencies["./customer-email-history"]) {
+    const inbox = dependencies["../email-inbox"] as { getEmailInboxBackendData: (options: unknown) => Promise<{ emails: Record<string, unknown>[] }> };
+    dependencies["./customer-email-history"] = {
+      loadCustomerEmailHistories: async (_viewer: unknown, ids: string[]) => {
+        const result = await inbox.getEmailInboxBackendData({ syncMailbox: false, history: true });
+        return new Map(ids.map(id => [id, { ...result, emails: result.emails.filter(email => !email.demo) }]));
+      },
+      isCustomerHistoryMessage: (email: { demo?: boolean; direction: string; status?: string }) => !email.demo && (email.direction === "inbound" || email.status === "Sent"),
+    };
+  }
   const exports = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (name === "server-only" ? {} : dependencies[name] ?? (name === "./crm-reply-tools" ? replyTools : name === "./crm-reply-execution" ? { replyOperationTarget: () => { throw new Error("Reply workflows use their dedicated fixtures"); } } : name === "../data/customer-reply-requests" ? { listReplyRequests: async () => [] } : name === "@/lib/ai/invoice-readiness" ? readiness : undefined) ?? require(name)), Response, Request, URL, FormData, Date, Error, crypto, console, Buffer, Intl });
@@ -46,16 +56,18 @@ function database(tables: Record<string, Record<string, unknown>[]>) {
     let updated: Record<string, unknown> | undefined;
     const filters = new Map<string, unknown>();
     const lists = new Map<string, unknown[]>();
+    let first = 0, last = 999;
     const run = () => {
       if (inserted) (tables[table] ??= []).push(...inserted);
       const data = (tables[table] ?? []).filter((row) => [...filters].every(([key, value]) => row[key] === value) && [...lists].every(([key, values]) => values.includes(row[key])));
       if (updated) data.forEach((row) => Object.assign(row, updated));
-      return { data, error: null, count: data.length };
+      return { data: data.slice(first, last + 1), error: null, count: data.length };
     };
     const query = {
       select() { return query; }, order() { return query; }, limit() { return query; }, not() { return query; }, or() { return query; },
       eq(key: string, value: unknown) { filters.set(key, value); return query; },
       in(key: string, values: unknown[]) { lists.set(key, values); return query; },
+      range(start: number, end: number) { first = start; last = end; return query; },
       insert(rows: Record<string, unknown> | Record<string, unknown>[]) { inserted = Array.isArray(rows) ? rows : [rows]; return query; },
       update(row: Record<string, unknown>) { updated = row; return query; },
       async maybeSingle() { const result = run(); return { ...result, data: result.data[0] ?? null }; },

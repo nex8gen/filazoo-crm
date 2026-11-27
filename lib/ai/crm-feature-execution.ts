@@ -9,6 +9,7 @@ import { cleanEmailFooter } from "../email-footer-html";
 import { getViewerMailbox } from "../data/mailboxes";
 import type { FeatureOperation } from "./crm-feature-tools";
 import type { CrmRead } from "./crm-tools";
+import { assertAiCustomerAccess, assignedRecipientRecords, AiCustomerAccessError } from "./customer-access.ts";
 
 async function responseValue(response: Response) {
   const body = await response.json();
@@ -21,6 +22,12 @@ function localRequest(original: Request, path: string, method: string, body?: un
 }
 export async function featureRecords(viewer: WorkspaceViewer, input: CrmRead): Promise<unknown[]> {
   if (input.companyId) throw new Error("Use id to select this resource; companyId is unsupported.");
+  if (viewer.role !== "admin" && ["task_workflows", "invoice_portal"].includes(input.resource)) {
+    const db = createSupabaseAdmin();
+    const target = await db.from(input.resource === "task_workflows" ? "crm_tasks" : "invoices").select("company_id").eq("id", input.id ?? "").maybeSingle();
+    if (target.error || !target.data?.company_id) throw new AiCustomerAccessError("The requested customer record is unavailable.");
+    await assertAiCustomerAccess(viewer, target.data.company_id, db);
+  }
   if (input.resource === "ai_settings") {
     if (viewer.role !== "admin") throw new Error("AI settings require an administrator.");
     return [await getAiSettings()];
@@ -42,7 +49,7 @@ export async function featureRecords(viewer: WorkspaceViewer, input: CrmRead): P
     if (input.id) query = query.eq("id", input.id);
     const { data, error } = await query.order("scheduled_at").range(input.offset, input.offset + 9);
     if (error) throw new Error("Unable to read scheduled emails.");
-    return data ?? [];
+    return assignedRecipientRecords(viewer, data ?? [], db);
   }
   if (input.resource === "email_drafts") {
     const mailbox = z.uuid().parse(input.query);
@@ -51,7 +58,7 @@ export async function featureRecords(viewer: WorkspaceViewer, input: CrmRead): P
     if (input.id) query = query.eq("id", input.id);
     const { data, error } = await query.order("updated_at", { ascending: false }).range(input.offset, input.offset + 9);
     if (error) throw new Error("Unable to read saved drafts.");
-    return data ?? [];
+    return assignedRecipientRecords(viewer, data ?? [], db);
   }
   throw new Error("Unsupported CRM feature resource.");
 }

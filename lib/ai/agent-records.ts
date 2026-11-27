@@ -11,6 +11,7 @@ import { groupEmailConversations, replyTarget, replyReferences, threadKeyForEmai
 import type { agentEmailSchema, AgentEmailSearch } from "./workspace-assistant";
 import type { z } from "zod";
 import type { CustomerEmailHistoryContext } from "./customer-email-history";
+import { assertAiCustomerAccess, assignedAiCustomerIds } from "./customer-access.ts";
 
 /** Read only the signed-in user's accessible inbox; never trust client email bodies or headers. */
 export async function loadAgentEmails(viewer: WorkspaceViewer, emailId?: string, companyId?: string, mailboxId?: string, accessOnly = false, accessSnapshots?: Map<string, Promise<EmailInboxBackendData>>) {
@@ -23,20 +24,31 @@ export async function loadAgentEmails(viewer: WorkspaceViewer, emailId?: string,
     if (accessOnly) accessSnapshots?.set(key, read);
     return read;
   }
-  let inbox = await readInbox(mailboxId);
-  // Approval and execution also reload source IDs after the user leaves the page.
-  if (emailId && !mailboxId && !inbox.emails.some((email) => email.id === emailId && !email.demo)) {
+  if (companyId) await assertAiCustomerAccess(viewer, companyId, createSupabaseAdmin());
+  let inbox: EmailInboxBackendData;
+  try { inbox = await readInbox(mailboxId); }
+  catch { inbox = await readInbox(); }
+  if (viewer.role === "admin" && emailId && !mailboxId && !inbox.emails.some(email => email.id === emailId && !email.demo)) {
     for (const mailbox of await getViewerMailboxes(viewer.id)) {
       if (mailbox.id === inbox.selectedMailboxId) continue;
       const candidate = await readInbox(mailbox.id);
-      if (candidate.emails.some((email) => email.id === emailId && !email.demo)) { inbox = candidate; break; }
+      if (candidate.emails.some(email => email.id === emailId && !email.demo)) { inbox = candidate; break; }
     }
+  }
+  if (companyId) {
+    const { loadCustomerEmailHistories } = await import("./customer-email-history");
+    const history = (await loadCustomerEmailHistories(viewer, [companyId])).get(companyId);
+    if (!history) throw new Error("This customer's email history is unavailable.");
+    inbox = { ...inbox, emails: history.emails.map(email => ({ ...email, companyId })) };
+  } else if (viewer.role !== "admin" || (emailId && !inbox.emails.some(email => email.id === emailId && !email.demo))) {
+    const authorized = await loadAgentEmailIndex(viewer);
+    inbox = { ...inbox, emails: authorized.inbox.emails.filter(email => !mailboxId || email.mailboxId === mailboxId) };
   }
   const { emails } = inbox;
   const selected = emailId ? emails.find((email) => email.id === emailId && !email.demo) : null;
   if (emailId && !selected) throw new Error("The selected email is unavailable or you no longer have access to it.");
   // History only verifies visibility; never fetch MIME bodies or IMAP content.
-  if (accessOnly) return { current: selected, messages: [], mailboxId: inbox.selectedMailboxId ?? null, companyId: selected?.companyId ?? null };
+  if (accessOnly) return { current: selected, messages: [], mailboxId: selected?.mailboxId ?? inbox.selectedMailboxId ?? null, companyId: selected?.companyId ?? null };
   const groups = groupEmailConversations(emails);
   const conversation = selected ? [...groups.entries()].find(([, messages]) => messages.some((email) => email.id === selected.id)) : null;
   const companyContacts = companyId ? await createSupabaseAdmin().from("contacts").select("email").eq("company_id", companyId) : null;
@@ -51,6 +63,10 @@ export async function loadAgentEmails(viewer: WorkspaceViewer, emailId?: string,
   const messages = await Promise.all(recent.map(async (email) => {
     if (email.bodyLoaded !== false) return email;
     try {
+      if (email.companyId) {
+        const { loadCustomerEmailBody } = await import("./customer-email-history");
+        return await loadCustomerEmailBody(viewer, email.companyId, email);
+      }
       if (!mailbox || !email.uid || !email.uidValidity || email.mailboxKey !== mailboxSyncKey(mailbox)) throw new Error("Load this conversation before asking the agent to use it.");
       const full = await loadMailboxMessageContent(mailbox, email.uid, email.uidValidity);
       return { ...email, body: full.body, bodyLoaded: true };
@@ -66,7 +82,7 @@ export async function loadAgentEmails(viewer: WorkspaceViewer, emailId?: string,
   const matches = address ? await createSupabaseAdmin().from("contacts").select("company_id").eq("email", address) : null;
   if (matches?.error) throw new Error("Unable to match the email to its customer profile.");
   const companyIds = [...new Set((matches?.data ?? []).map((row) => row.company_id as string))];
-  return { current, messages, mailboxId: inbox.selectedMailboxId ?? null, companyId: companyIds.length === 1 ? companyIds[0] : null };
+  return { current, messages, mailboxId: current?.mailboxId ?? inbox.selectedMailboxId ?? null, companyId: companyIds.length === 1 ? companyIds[0] : null };
 }
 
 export function presentAgentEmail(email: InboxEmailItem) {
@@ -74,29 +90,44 @@ export function presentAgentEmail(email: InboxEmailItem) {
 }
 
 /** Uses the same access-filtered inbox as the email UI; never searches raw mailbox tables. */
-export async function loadAgentEmailIndex(viewer: WorkspaceViewer) {
+export async function loadAgentEmailIndex(viewer: WorkspaceViewer, context: CustomerEmailHistoryContext = {}) {
   await requireAiData("emails", "customers");
-  const mailboxes = await getViewerMailboxes(viewer.id);
-  const searched = mailboxes.slice(0, 8);
-  const sources = await Promise.all(searched.map(async (mailbox) => {
-    try { return { mailboxId: mailbox.id, inbox: await getEmailInboxBackendData({ syncMailbox: false, history: true, mailboxId: mailbox.id }), error: null }; }
-    catch { return { mailboxId: mailbox.id, inbox: null, error: "Mailbox history unavailable" }; }
-  }));
-  const inbox = { emails: sources.flatMap((source) => (source.inbox?.emails ?? []).map((email) => ({ ...email, mailboxId: source.mailboxId }))), inboxError: sources.some((source) => source.error || source.inbox?.inboxError || source.inbox?.mailboxReadFailed || source.inbox?.mailboxSnapshotPartial || source.inbox?.mailboxHistoryPartial) ? "Some mailbox history unavailable or incomplete" : null };
-  return { inbox, searched, coverage: { mailboxesSearched: searched.length, mailboxesOmitted: Math.max(0, mailboxes.length - searched.length), mailboxError: inbox.inboxError } };
+  const { loadCustomerEmailHistories, isCustomerHistoryMessage } = await import("./customer-email-history");
+  const db = createSupabaseAdmin(), ids: string[] = [];
+  for (let offset = 0; ; offset += 200) {
+    const query = viewer.role === "admin" ? db.from("companies").select("id")
+      : db.from("companies").select("id,pipeline!inner(owner_id)").eq("pipeline.owner_id", viewer.id);
+    const { data, error } = await query.order("id").range(offset, offset + 199);
+    if (error) throw new Error("Unable to verify customer conversation access.");
+    ids.push(...(data ?? []).map(row => row.id));
+    if ((data?.length ?? 0) < 200) break;
+  }
+  const emails: InboxEmailItem[] = [];
+  let incomplete = false;
+  for (let offset = 0; offset < ids.length; offset += 200) {
+    const histories = await loadCustomerEmailHistories(viewer, ids.slice(offset, offset + 200), context);
+    for (const [companyId, history] of histories) {
+      if (!history) { incomplete = true; continue; }
+      incomplete ||= Boolean(history.inboxError || history.mailboxReadFailed || history.mailboxSnapshotPartial || history.mailboxHistoryPartial);
+      emails.push(...history.emails.filter(isCustomerHistoryMessage).map(email => ({ ...email, companyId })));
+    }
+  }
+  const inbox = { emails, inboxError: incomplete ? "Some customer conversation history unavailable or incomplete" : null };
+  return { inbox, searched: [] as Awaited<ReturnType<typeof getViewerMailboxes>>, coverage: { mailboxesOmitted: 0, mailboxError: inbox.inboxError, customers: ids.length } };
 }
 
 /** The optional index is request-local; never cache a user's mailbox across requests. */
 export async function searchAgentEmails(viewer: WorkspaceViewer, search: AgentEmailSearch, index?: Promise<Awaited<ReturnType<typeof loadAgentEmailIndex>>>, context: CustomerEmailHistoryContext = {}) {
   await requireAiData("emails", "customers");
   if (search.companyId) return searchCompanyEmails(viewer, search, context);
-  const { inbox, searched, coverage } = await (index ?? loadAgentEmailIndex(viewer));
+  const { inbox, searched, coverage } = await (index ?? loadAgentEmailIndex(viewer, context));
   const db = createSupabaseAdmin();
+  const allowedIds = viewer.role === "admin" ? null : new Set(await assignedAiCustomerIds(viewer, db));
   const contacts = search.companyId ? await db.from("contacts").select("email").eq("company_id", search.companyId) : null;
   if (contacts?.error) throw new Error("Unable to load this customer's email addresses.");
   const addresses = new Set((contacts?.data ?? []).map((row) => row.email?.trim().toLowerCase()).filter(Boolean));
   const query = search.query.toLowerCase();
-  const accessibleCandidates = inbox.emails.filter((email) => !email.demo && (search.direction === "all" || email.direction === (search.direction ?? "inbound"))
+  const accessibleCandidates = inbox.emails.filter((email) => (allowedIds === null || Boolean(email.companyId && allowedIds.has(email.companyId))) && !email.demo && (search.direction === "all" || email.direction === (search.direction ?? "inbound"))
     && (!search.companyId || addresses.has(email.contact.trim().toLowerCase()))
     && (search.direction !== "all" || email.direction === "inbound" || /^sent$/i.test(email.status))
     && (!search.emailId || email.id === search.emailId));
@@ -114,10 +145,17 @@ export async function searchAgentEmails(viewer: WorkspaceViewer, search: AgentEm
     try {
       let body = email.body;
       if (email.bodyLoaded === false) {
-        if (!mailbox || !email.uid || !email.uidValidity || email.mailboxKey !== mailboxSyncKey(mailbox)) throw new Error("Message content unavailable.");
-        body = (await loadMailboxMessageContent(mailbox, email.uid, email.uidValidity)).body;
+        if (companyId) {
+          const { loadCustomerEmailBody } = await import("./customer-email-history");
+          const loaded = await loadCustomerEmailBody(viewer, companyId, email, context);
+          if (loaded.bodyLoaded === false) throw new Error("Message content unavailable.");
+          body = loaded.body;
+        } else {
+          if (viewer.role !== "admin" || !mailbox || !email.uid || !email.uidValidity || email.mailboxKey !== mailboxSyncKey(mailbox)) throw new Error("Message content unavailable.");
+          body = (await loadMailboxMessageContent(mailbox, email.uid, email.uidValidity)).body;
+        }
       }
-      return { ...presentAgentEmail({ ...email, body, bodyLoaded: true, companyId }), mailboxId: email.mailboxId, href: `/email?mailbox=${encodeURIComponent(email.mailboxId)}&thread=${encodeURIComponent(threadKeyForEmail(email))}`, contentAvailable: true };
+      return { ...presentAgentEmail({ ...email, body, bodyLoaded: true, companyId }), mailboxId: email.mailboxId, href: `/email?${email.mailboxId ? `mailbox=${encodeURIComponent(email.mailboxId)}&` : ""}thread=${encodeURIComponent(threadKeyForEmail(email))}`, contentAvailable: true };
     } catch {
       // A failed body load must never be presented as a complete message or used for extraction.
       return { ...presentAgentEmail({ ...email, body: "", companyId }), contentAvailable: false };
@@ -126,9 +164,9 @@ export async function searchAgentEmails(viewer: WorkspaceViewer, search: AgentEm
   const companyIds = [...new Set(messages.flatMap((message) => message.companyId ? [message.companyId] : []))];
   return {
     messages,
-    companies: await Promise.all(companyIds.map(id => loadAgentCompany(id, false))),
+    companies: await Promise.all(companyIds.map(id => loadAgentCompany(id, false, viewer))),
     coverage: {
-      scope: `accessible synced ${search.direction ?? "inbound"} emails across up to 8 mailboxes; no live mailbox sync; query matches only loaded bodies and headers`,
+      scope: `Customer-linked synced ${search.direction ?? "inbound"} conversations across staff mailboxes, restricted to assigned customers for non-administrators; no live mailbox sync; query matches only loaded bodies and headers`,
       ...coverage,
       conversations: new Set(candidates.map(email => `${email.mailboxId}:${threadKeyForEmail(email)}`)).size,
       inbound: candidates.filter(email => email.direction === "inbound").length,
@@ -167,7 +205,7 @@ async function searchCompanyEmails(viewer: WorkspaceViewer, search: AgentEmailSe
   }));
   const mailboxError = history.inboxError || history.mailboxReadFailed || history.mailboxSnapshotPartial || history.mailboxHistoryPartial
     ? "Some customer email history unavailable or incomplete" : null;
-  return { messages, companies: [await loadAgentCompany(companyId, false)], coverage: {
+  return { messages, companies: [await loadAgentCompany(companyId, false, viewer)], coverage: {
     scope: "Customer-linked synced email from the company profile Email tab across staff accounts; no live mailbox sync; query matches only loaded bodies and headers",
     countsComplete: !mailboxError, mailboxError,
     conversations: new Set(candidates.map(threadKeyForEmail)).size,
@@ -188,9 +226,11 @@ export async function prepareAgentEmail(email: z.infer<typeof agentEmailSchema>,
 }
 
 /** A complete editable snapshot, using raw values rather than display labels or defaults. */
-export async function loadAgentCompany(companyId: string, includeBilling = true) {
+export async function loadAgentCompany(companyId: string, includeBilling = true, viewer?: WorkspaceViewer) {
+  if (!viewer) throw new Error("Authenticated AI customer access is required.");
   await requireAiData("customers", ...(includeBilling ? ["billing"] as const : []));
   const db = createSupabaseAdmin();
+  await assertAiCustomerAccess(viewer, companyId, db);
   const [company, pipeline, profile, billing, contacts] = await Promise.all([
     db.from("companies").select("id,name,website,country,city,segment").eq("id", companyId).maybeSingle(),
     db.from("pipeline").select("next_followup_at").eq("company_id", companyId).maybeSingle(),

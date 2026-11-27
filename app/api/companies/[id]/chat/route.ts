@@ -12,6 +12,7 @@ import { ChatBodyTooLargeError, collectChatImages, collectChatFiles, readChatReq
 import { startChatSession } from "@/lib/ai/chat-session";
 import { HistoryError } from "@/lib/ai/chat-history-server";
 import { withResearchProgress, type ResearchProgress, type TrackActivity, type AssistantActivity } from "@/lib/ai/research-progress";
+import { assertAiCustomerAccess, AiCustomerAccessError, aiCustomerScopeInstruction } from "@/lib/ai/customer-access";
 
 export const maxDuration = 120;
 const headers = { "Cache-Control": "private, no-store" };
@@ -47,8 +48,13 @@ async function companyResponse(request: Request, params: Promise<{ id: string }>
   if (restricted) parsed.data.messages = parsed.data.messages.slice(-1);
   let details;
   try {
+    if (viewer.role !== "admin") {
+      const { createSupabaseAdmin } = await import("@/lib/supabase/admin");
+      await assertAiCustomerAccess(viewer, id, createSupabaseAdmin());
+    }
     ({ details } = await track("Loading customer records", () => getCompanyDetails(id)));
-  } catch {
+  } catch (error) {
+    if (error instanceof AiCustomerAccessError) return Response.json({ error: "Customer not found." }, { status: 404, headers });
     return Response.json({ error: "Unable to load this customer's records. Please try again." }, { status: 503, headers });
   }
   if (!details) return Response.json({ error: "Customer not found." }, { status: 404, headers });
@@ -81,7 +87,7 @@ async function companyResponse(request: Request, params: Promise<{ id: string }>
     } catch { intelligencePrompt = "\n\nCUSTOMER_INTELLIGENCE unavailable. Explain this coverage gap; do not infer conversation counts or sales totals from missing data."; }
   }
   const options = {
-    systemInstruction: companyChatInstruction(new Date().toISOString(), parsed.data.language, parsed.data.webSearch) + aiBehaviorInstruction(policy),
+    systemInstruction: companyChatInstruction(new Date().toISOString(), parsed.data.language, parsed.data.webSearch) + aiBehaviorInstruction(policy) + aiCustomerScopeInstruction(viewer),
     prompt: buildCompanyChatPrompt(context, parsed.data.messages) + (session?.summaryPrompt ?? "") + intelligencePrompt,
     images: policy.features.images ? collectChatImages(parsed.data.messages) : [],
     files: policy.features.images ? collectChatFiles(parsed.data.messages) : [],

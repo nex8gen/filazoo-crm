@@ -23,8 +23,8 @@ export type WorkspaceRole = "admin" | "operator" | "bd_manager" | "viewer";
 export type WorkspaceViewer = AuthViewer & { role: WorkspaceRole; displayName: string | null; workspaceId: string; workspaceName: string; ownerId: string; subscriptionActive?: boolean };
 
 type MemberRow = { role: string | null; display_name: string | null; activated_at: string | null; workspace_id: string | null; workspace_name: string | null; owner_id: string | null; subscription_active?: boolean };
-type SessionRow = MemberRow & { id: string; email: string | null; user_metadata: Record<string, unknown> | null };
-type AuthSnapshot = { viewer: AuthViewer; member: WorkspaceViewer | null };
+type SessionRow = MemberRow & { id: string; email: string | null; user_metadata: Record<string, unknown> | null; mfa_required: boolean };
+type AuthSnapshot = { viewer: AuthViewer; member: WorkspaceViewer | null; requiresMfa: boolean };
 const workspaceRoles = new Set<string>(["admin", "operator", "bd_manager", "viewer"]);
 const uuid = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
 
@@ -66,38 +66,35 @@ const getAuthSnapshot = cache(async (): Promise<AuthSnapshot | null> => {
   // a shared cache; React.cache only deduplicates a single Server Component render.
   const { cookies } = await import("next/headers");
   const selected = workspaceIdSchema.safeParse((await cookies()).get(workspaceCookie)?.value);
-  const result = await createSupabaseControl().rpc("read_subscribed_workspace_session", {
+  const result = await createSupabaseControl().rpc("read_secure_workspace_session", {
     p_user_id: claims.sub, p_session_id: claims.session_id, p_workspace_id: selected.success ? selected.data : null,
   }).maybeSingle();
-  let sessionData: unknown = result.data;
-  let sessionError = result.error;
-  if (result.error?.code === "PGRST202" || result.error?.code === "42883") {
-    // Rolling upgrades keep the existing, live-session-validated single workspace usable.
-    // This reader never authorizes a new tenant or trusts JWT metadata for membership.
-    const legacy = await createSupabaseControl().rpc("read_crm_session", { p_user_id: claims.sub, p_session_id: claims.session_id }).maybeSingle();
-    const legacyRow = legacy.data as Omit<SessionRow,"workspace_id"|"workspace_name"|"owner_id"> | null;
-    sessionData = legacyRow ? { ...legacyRow, workspace_id: "legacy", workspace_name: "Filazoo", owner_id: legacyRow.role === "admin" ? legacyRow.id : "legacy", subscription_active: true } : null;
-    sessionError = legacy.error;
+  if (result.error) {
+    // Never fall back to an older reader that cannot enforce two-step verification.
+    throw new Error(`Workspace session lookup failed: ${result.error.message}`);
   }
-  if (sessionError) {
-    throw new Error(`Workspace session lookup failed: ${sessionError.message}`);
-  }
-  const row = sessionData as SessionRow | null;
+  const row = result.data as SessionRow | null;
   if (!row || row.id !== claims.sub) return null;
+  if (typeof row.mfa_required !== "boolean") throw new Error("Workspace session lookup failed: security state is missing.");
   const viewer = toViewer(row);
-  return { viewer, member: toMember(viewer, row) };
+  return { viewer, member: toMember(viewer, row), requiresMfa: row.mfa_required && claims.aal !== "aal2" };
 });
 
-export const getViewer = cache(async (): Promise<AuthViewer | null> => (await getAuthSnapshot())?.viewer ?? null);
+export const isMfaPending = cache(async () => (await getAuthSnapshot())?.requiresMfa === true);
+export const getViewer = cache(async (): Promise<AuthViewer | null> => {
+  const snapshot = await getAuthSnapshot();
+  return snapshot && !snapshot.requiresMfa ? snapshot.viewer : null;
+});
 
 export async function requireViewer(): Promise<AuthViewer> {
-  const viewer = await getViewer();
-  if (!viewer) {
+  const snapshot = await getAuthSnapshot();
+  if (snapshot?.requiresMfa) (await getRedirect())("/auth/mfa");
+  if (!snapshot) {
     const redirect = await getRedirect();
     redirect("/login");
     throw new Error("Authentication required.");
   }
-  return viewer;
+  return snapshot.viewer;
 }
 
 function assertWorkspaceConfig() {
@@ -110,11 +107,12 @@ export const getWorkspaceViewer = cache(async (): Promise<WorkspaceViewer | null
   const snapshot = await getAuthSnapshot();
   if (!snapshot) return null;
   assertWorkspaceConfig();
-  return snapshot.member;
+  return snapshot.requiresMfa ? null : snapshot.member;
 });
 
 export async function requireWorkspaceMember(allowedRoles?: readonly WorkspaceRole[]): Promise<WorkspaceViewer> {
   const snapshot = await getAuthSnapshot();
+  if (snapshot?.requiresMfa) (await getRedirect())("/auth/mfa");
   if (!snapshot) {
     const redirect = await getRedirect();
     redirect("/login");

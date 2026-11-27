@@ -1,0 +1,76 @@
+{
+  "capturedAt": "2026-11-27T02:51:14.892Z",
+  "syntheticOnly": true,
+  "businessWrites": false,
+  "modelWeightsTrained": false,
+  "deploymentChanged": false,
+  "answerPairs": 100,
+  "referenceAnswers": 100,
+  "reviewedPairs": 100,
+  "models": {
+    "baseline": "anthropic/claude-haiku-5.5",
+    "improved": "openai/gpt-6.2-sol"
+  },
+  "selfReview": {
+    "reviewed": 100,
+    "verdicts": {
+      "improved": 92,
+      "mixed": 5,
+      "unchanged": 2,
+      "regressed": 1
+    },
+    "remainingMajorOrCriticalFlags": 10,
+    "caveat": "Model self-review, not independent or human-certified scoring. Flags may include false positives; inspect their quoted evidence."
+  },
+  "nativeChecks": [
+    {
+      "name": "order-reference-only",
+      "passed": true
+    },
+    {
+      "name": "invoice-quantity-conflict",
+      "passed": true
+    },
+    {
+      "name": "issued-is-not-draft",
+      "passed": true
+    },
+    {
+      "name": "missing-messenger-context",
+      "passed": true
+    }
+  ],
+  "postQualificationGuards": [
+    "Channel identity and sender attribution",
+    "Profile updates are separate from order changes",
+    "Preserve agreed order prices while investigating contradictory invoices"
+  ],
+  "limits": [
+    "Answer simulation preloads fictional evidence; it does not test live retrieval or all native tools.",
+    "Semantic critique is model self-review with possible false positives.",
+    "The four native checks separately verify later scope guards; they do not turn the 100-prompt simulation into full end-to-end qualification."
+  ],
+  "validation": {
+    "focusedTests": "53 passed",
+    "typecheck": "passed",
+    "build": "passed",
+    "fullSuite": "2993 passed, 1 Chinese-translation-coverage failure in the current shared working tree",
+    "bundles": "current bundle-size checks fail outside the AI reasoning changes"
+  },
+  "artifacts": {
+    "report": "output/ai-daily-work-100/expert-qualification/report.html",
+    "evidence": "output/ai-daily-work-100/expert-qualification/report.json",
+    "instructionsOnly": "output/ai-daily-work-100/report.json",
+    "native": "output/ai-daily-work-100/native-agent/report.json"
+  },
+  "sourceHashes": {
+    "lib/ai/daily-work-quality.ts": "6b2becb650ce391269e06067192c00c13603b3216fabf935b2a15ca50c0a98ba",
+    "lib/ai/answer-style.ts": "26d4ef7078adb120dc31e3e5b4269995d73c882a19bc4d13c2c8f04ab25f43b0",
+    "lib/ai/model-routing.ts": "e3863b2703f307dc2056e16e105b7aef611f77d4e7895b59591afa4254cccefb",
+    "lib/ai/request-context.ts": "f2140f52228feebe339f4821b0256b31ea8f58f30bdab61fb29fd66f9fa4adde",
+    "scripts/daily-work-evaluation-cases.ts": "132f195aebbdeb093d62b6bdad67edfbe7c883cdcbdd00f3a47f076b04d7ff86",
+    "scripts/evaluate-daily-work.ts": "e36268603baebde6f71be0900477ea3ea7d59c682d1bd6dbebe5399da0e2f4f6",
+    "scripts/review-daily-work.ts": "52bfa7f81d9413db0f1711ac4974d514c6a7241fef78d4ecbc0c7af0c5a37a6f",
+    "scripts/verify-daily-expert-agent.ts": "2be3543a1e13a3aa55c8446b075508c1a800e6f9b4b8f6b802d8b126ce79b666"
+  }
+}

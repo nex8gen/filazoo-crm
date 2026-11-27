@@ -11,7 +11,6 @@ export function HomeSkeleton() {
         <Skeleton className="size-6 justify-self-end" />
       </div>
       <div className="home-ai">
-        <div className="home-connect-tools"><Skeleton className="h-9 w-64 max-w-full rounded-full" /></div>
         <div className="home-ai-welcome"><Skeleton className="mx-auto mb-4 size-12 rounded-xl" /><Skeleton className="mx-auto h-9 w-72 max-w-full" /><Skeleton className="mx-auto mt-2.5 h-5 w-60 max-w-full" /></div>
         <Skeleton className="mx-auto h-32 w-full max-w-[640px] rounded-[20px]" />
         <div className="home-ai-suggestions">
@@ -19,7 +18,6 @@ export function HomeSkeleton() {
           <div className="home-ai-prompt-chips">{[0, 1, 2].map(index => <Skeleton key={index} className="h-9 w-36 rounded-full" />)}</div>
         </div>
       </div>
-      <div className="mx-auto w-full max-w-[1000px] space-y-4"><Skeleton className="h-5 w-44" /><div className="grid gap-4 sm:grid-cols-2">{[0, 1, 2, 3].map(index => <Skeleton key={index} className="h-40 rounded-xl border" />)}</div></div>
     </div>
   </LoadingRegion>;
 }

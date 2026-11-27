@@ -1315,6 +1315,7 @@ export const zhCNAdditional: Record<string, string> = {
   "Answered": "已回复",
   "Context": "上下文",
   "Request activity": "请求进度",
+  "Related questions": "相关问题",
   "Connecting to assistant…": "正在连接助手…",
   "Request interrupted": "请求已中断",
   "Waiting for the assistant to start": "正在等待助手开始处理",

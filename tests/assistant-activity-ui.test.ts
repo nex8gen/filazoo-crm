@@ -62,3 +62,12 @@ test("execution progress retains its real action label and user-provided text is
   assert.match(html, /&lt;script&gt;/);
   assert.doesNotMatch(html, /<script>|Connecting to assistant/);
 });
+
+test("interrupted requests retain their error reason beside the failed activity", () => {
+  const errorMessage = "AI provider authentication failed. Ask an administrator to refresh the connection.";
+  const html = render({ working: false, failed: true, errorMessage, steps: [{ id: "plan", label: "Preparing the action plan", status: "failed" }] });
+  assert.match(html, /role="alert"/);
+  assert.ok(html.includes(errorMessage));
+  assert.match(html, /Preparing the action plan/);
+  assert.doesNotMatch(render({ working: false, errorMessage }), /AI provider authentication failed/);
+});

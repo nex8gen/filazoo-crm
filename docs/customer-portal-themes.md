@@ -1,6 +1,6 @@
-# Customer portal theme system
+# Website theme system
 
-The customer portal uses one workspace theme library for a public business website and a private customer account. Administrators create and edit drafts, preview both surfaces, and explicitly publish a design. Publishing changes appearance and content settings; it does not change orders, invoices, messages, customer identities, or domain ownership.
+Website uses one workspace theme library for a public business website and a private customer account. Administrators create and edit drafts, preview both surfaces, and explicitly publish a design. Publishing changes appearance and content settings; it does not change orders, invoices, messages, customer identities, or domain ownership.
 
 ## Design references and decisions
 
@@ -11,7 +11,7 @@ The customer portal uses one workspace theme library for a public business websi
 | [Ghost theme selection](https://ghost.org/help/installing-a-theme/) | Browse, preview, then activate | A separate template chooser; adding a template creates a draft |
 | [W3C status messages](https://www.w3.org/WAI/WCAG21/Understanding/status-messages) | Announce outcomes without requiring focus changes | Inline status/error regions, loading labels, and visible retry feedback |
 
-The resulting layout emphasizes the published design first, draft comparison second, and template exploration third. Domain status sits below the published card. A missing publication has its own first-use state, rather than showing a default design as already live.
+The layout emphasizes the published website first, draft comparison second, and template exploration third. A performance strip sits above a full-width published preview with theme actions along the bottom. Domain settings are available in the page header. A missing publication has its own first-use state.
 
 ## User flow
 
@@ -22,6 +22,14 @@ The resulting layout emphasizes the published design first, draft comparison sec
 5. Publish from the library or editor after reviewing the confirmation. The published card always previews the stored published snapshot, including when the live theme has newer draft changes.
 6. Use the theme menu to rename, duplicate, or remove a draft. The current live theme cannot be removed. At least one theme must remain. The library supports 20 themes and explains how to free space.
 7. To discard saved changes to the live theme, use **Restore published version**. This replaces its draft with the current published snapshot. Duplicate the draft first to preserve those changes. This is not historical release rollback.
+
+## Public website link
+
+Every workspace has a stable `/website/{workspaceId}` address on the application's host. Once a theme is published, **Live preview** opens that address without staff sign-in when no connected custom domain is available, including while DNS or HTTPS verification is pending. **Copy public website link** copies the complete address on the current host. A connected custom domain becomes the main **View website** destination; the built-in address continues working.
+
+The public reader selects only `published`, filters explicitly by workspace ID, and runs inside that workspace's RLS context. Missing, invalid, and unpublished designs are unavailable. Drafts and private account settings never reach the public renderer. Public navigation, nested buttons, and inline page links retain the workspace URL prefix. `/account` displays instructions to use an existing secure customer link; it never reads a customer session or exposes invoices or conversations.
+
+Requests bypass the staff auth gate and CRM shell using a server-controlled marker. They are request-rendered with no-store headers so later publications appear on the next visit. The built-in link needs a publicly reachable application host for external sharing; a localhost installation remains local.
 
 ## Data and request boundaries
 

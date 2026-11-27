@@ -9,8 +9,8 @@ import { safeWebsiteLink, websiteSectionBlocks } from "@/lib/portal-website-bloc
 import { PortalWebsiteElements, PortalWebsiteSlideshow } from "@/components/portal-website-elements";
 import "./portal-website.css";
 
-export function PortalWebsite({ design, page = "home", preview = false, onPageChange, selectedSection, onSectionSelect, selectedElement, onElementSelect }: {
-  design: PublicWebsiteDesign; page?: string; preview?: boolean; onPageChange?: (page: string) => void;
+export function PortalWebsite({ design, page = "home", preview = false, basePath = "", onPageChange, selectedSection, onSectionSelect, selectedElement, onElementSelect }: {
+  design: PublicWebsiteDesign; page?: string; preview?: boolean; basePath?: string; onPageChange?: (page: string) => void;
   selectedSection?: string; onSectionSelect?: (id: string) => void;
   selectedElement?: { sectionId: string; path: number[] }; onElementSelect?: (sectionId: string, path: number[]) => void;
 }) {
@@ -21,7 +21,7 @@ export function PortalWebsite({ design, page = "home", preview = false, onPageCh
   const navigation = (website.navigation?.filter(item => item.enabled) ?? pages.map(item => ({ id: item.id, label: item.id === "home" ? "Home" : item.title, link: item.id === "home" ? "home" : `pages/${item.id}`, enabled: true }))).filter(item => !item.link.startsWith("pages/") || pages.some(page => `pages/${page.id}` === item.link));
   function destination(id: string, children: ReactNode, className = "") {
     if (preview && /^(home|account|pages\/)/.test(id)) return <button type="button" className={className} onClick={() => onPageChange?.(id)}>{children}</button>;
-    const href = safeWebsiteLink(id);
+    const href = safeWebsiteLink(id, basePath);
     return href ? <a className={className} href={href}>{children}</a> : <span className={className}>{children}</span>;
   }
   function editHandle(id: string, title: string) {
@@ -51,7 +51,7 @@ export function PortalWebsite({ design, page = "home", preview = false, onPageCh
         <div className="pws-section-copy pws-elements" data-section-layout={section.type}>
           {(() => {
             const Renderer = section.type === "slideshow" ? PortalWebsiteSlideshow : PortalWebsiteElements;
-            return <Renderer blocks={websiteSectionBlocks(section, { brandName: design.brandName, supportEmail: design.supportEmail, pages: website.pages, pageId: current.id })} section={section} preview={preview} selected={selectedElement?.sectionId === section.id ? selectedElement.path.join(".") : undefined} onSelect={onElementSelect ? path => onElementSelect(section.id, path) : undefined} onNavigate={onPageChange} />;
+            return <Renderer basePath={basePath} blocks={websiteSectionBlocks(section, { brandName: design.brandName, supportEmail: design.supportEmail, pages: website.pages, pageId: current.id })} section={section} preview={preview} selected={selectedElement?.sectionId === section.id ? selectedElement.path.join(".") : undefined} onSelect={onElementSelect ? path => onElementSelect(section.id, path) : undefined} onNavigate={onPageChange} />;
           })()}
         </div>
       </section>)}

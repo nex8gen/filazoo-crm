@@ -1,8 +1,6 @@
 export const settingsSections = [
   { id: "credits", title: "Plan and AI credits", group: "Billing", href: "/settings/credits", icon: "receipt", description: "Review your subscription, AI credits and workspace usage limits.", keywords: "subscription plan billing credits allowance usage limits topup pricing" },
-  { id: "general", title: "General", group: "Personal", href: "/settings", icon: "settings", description: "Choose your language and list preferences.", keywords: "language english chinese rows page list preferences 语言 中文 常规 列表" },
-  { id: "appearance", title: "Appearance", group: "Personal", href: "/settings/appearance", icon: "sun", description: "Choose your theme, table spacing, and motion preferences.", keywords: "theme light dark system density compact motion animation accessibility 外观 主题 深色 动画" },
-  { id: "profile", title: "Profile", group: "Personal", href: "/settings/profile", icon: "user", description: "Choose how you appear to people in your workspace.", keywords: "avatar photo name account 头像 姓名 个人资料" },
+  { id: "general", title: "General", group: "Personal", href: "/settings", icon: "settings", description: "Manage your profile, language, appearance, and list preferences.", keywords: "profile avatar photo name account language english chinese rows page list preferences appearance theme light dark system density compact motion animation accessibility 头像 姓名 个人资料 语言 中文 常规 列表 外观 主题 深色 动画" },
   { id: "security", title: "Security and login", group: "Personal", href: "/settings/security", icon: "shield", description: "Manage your password, sign-in options, and other sessions.", keywords: "password session sign out devices login alipay 安全 密码 设备 登录 支付宝" },
   { id: "email", title: "Email preferences", group: "Personal", href: "/settings/email", icon: "mailCheck", description: "Set your reading defaults, reply assistance, and personal email footer.", keywords: "signature footer translation chinese read refresh sync AI suggestions 邮件 签名 翻译 刷新 已读" },
   { id: "workspace", title: "Workspace", group: "Workspace", href: "/settings/workspace", icon: "users", description: "Manage workspace details and ownership.", keywords: "organization company workspace switch owner leave 工作区 所有权" },
@@ -19,6 +17,8 @@ export const settingsGroups = ["Personal", "Workspace", "Connections", "Billing"
 // Retain bookmarks and links from older CRM screens without duplicating editors.
 export const settingsAliases: Record<string, string> = {
   general: "/settings",
+  appearance: "/settings#appearance",
+  profile: "/settings#profile",
   integrations: "/settings/apps",
   mailboxes: "/settings/apps?view=personal",
   payments: "/settings/invoices#payment-methods",

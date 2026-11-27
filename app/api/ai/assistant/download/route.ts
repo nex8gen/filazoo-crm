@@ -23,7 +23,7 @@ export async function GET(request: Request) {
   if (Date.parse(data.expires_at) <= Date.now()) return Response.json({ error: "This export expired. Prepare a new export." }, { status: 410, headers });
   try {
     aiActionApproval((await getAiSettings()).policy, action.data, "ask");
-    const snapshot = await companyExportSnapshot(action.data.operation.selection);
+    const snapshot = await companyExportSnapshot(action.data.operation.selection, viewer);
     const hash = createHash("sha256").update(JSON.stringify(snapshot.value)).digest("hex");
     if (hash !== action.data.fingerprint) return Response.json({ error: "The selected data changed. Prepare a new export to review the current selection." }, { status: 409, headers });
     return new Response(companyExportCsv(snapshot.records), { headers: { ...headers, "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": 'attachment; filename="filazoo-companies.csv"' } });

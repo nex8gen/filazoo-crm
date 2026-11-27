@@ -1,5 +1,32 @@
 # CRM email receiving and replies
 
+## Campaign assignment regression — November 27, 2026
+
+Campaign delivery checks BD manager ownership through `pipeline.company_id` and
+`pipeline.owner_id`. The pipeline table has no `id` column. Selecting it caused
+all 25 recipients in one campaign to fail before SMTP submission. The lookup now
+selects `company_id`, matching the other company ownership checks.
+
+The guard tests use pipeline fixtures with the real keys and reject unknown
+selected columns. They cover a successfully assigned BD manager, a different
+company, reassignment, database errors, and admin/operator access. Scheduled
+delivery tests run the actual guard through the worker and verify one send,
+cancellation after reassignment, and zero SMTP calls after a database error.
+These checks run with `npm test` without sending real email.
+
+To check saved campaign recipients against the connected database without
+queuing, sending, or changing delivery records, run:
+
+```powershell
+node --env-file=.env.local --experimental-strip-types scripts/verify-campaign-delivery-guard.ts <workspace-id> <campaign-id>
+```
+
+This read-only check uses the current sender role and the local environment's
+current sending policy. Unexpected database errors fail the command; legitimate
+policy blocks are counted separately. Successful checks do not prove SMTP
+connectivity or inbox delivery. Failed campaign operations remain failed until
+explicitly retried; deploying the fix does not resend the previous campaign.
+
 ## Reply feedback and notification ownership — November 25, 2026
 
 The inbox previously mounted the same `notice` in its message list, reply footer, and contact sidebar. Each mount created a different global toast. The footer copy included its own dismiss button, which the shared notification component treated as an action requiring an infinite lifetime; Sonner also supplied a close button. AI progress, preparation failures, attachment confirmations, and send results all used that same notice state.

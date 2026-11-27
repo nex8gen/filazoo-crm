@@ -9,7 +9,7 @@ import { decodeEmailFilename } from "../email-mime.ts";
 import type { ProviderFolder } from "../email-provider.ts";
 import { readMailboxSnapshots } from "../mailbox-snapshot-reader.ts";
 
-function presentMailboxMessage(message: InboxEmailItem, key: string): InboxEmailItem {
+export function presentMailboxMessage(message: InboxEmailItem, key: string): InboxEmailItem {
   const attachments = message.attachments?.map((attachment) => {
     const filename = decodeEmailFilename(attachment.filename);
     if (!attachment.partId || !message.uid || !message.uidValidity) return { ...attachment, filename };

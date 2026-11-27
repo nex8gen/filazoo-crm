@@ -50,26 +50,27 @@ function commercialEvidence(row: Row, kind: "orders" | "invoices" | "quotations"
 }
 
 /** Workspace-scoped, assignment-scoped read only. No mutations and no model-generated scores. */
-export async function readCustomerInsights(viewer: WorkspaceViewer, input: CrmRead, context: CustomerInsightContext = {}) {
+export async function readCustomerInsights(viewer: WorkspaceViewer, input: CrmRead, context: CustomerInsightContext = {}, options: { screening?: boolean } = {}) {
   const policy = await requireAiData("customers");
   const db = createSupabaseAdmin();
   const companyId = input.companyId ?? input.id;
+  const screening = options.screening === true && !companyId;
   if (companyId && !z.uuid().safeParse(companyId).success) throw new Error("Choose a valid customer ID.");
   // Explicit assignment filtering is necessary even with workspace isolation.
-  const pipeline = viewer.role === "bd_manager" ? "pipeline!inner" : "pipeline";
+  const pipeline = viewer.role !== "admin" ? "pipeline!inner" : "pipeline";
   let query = db.from("companies").select(`id,name,website,country,city,segment,status,contacts(id,name,role,email),company_profiles(summary,fit_score,interest_tags),${pipeline}(owner_id,next_followup_at)`, { count: "exact" })
     .or("source.is.null,source.neq.sample_seed");
-  if (viewer.role === "bd_manager") query = query.eq("pipeline.owner_id", viewer.id);
+  if (viewer.role !== "admin") query = query.eq("pipeline.owner_id", viewer.id);
   if (companyId) query = query.eq("id", companyId);
   if (input.query) query = query.ilike("name", `%${input.query.replace(/[\\%_]/g, "\\$&")}%`);
-  const { data, error, count } = await query.order("id").range(input.offset, input.offset + (companyId ? 0 : 19));
+  const { data, error, count } = await query.order("id").range(input.offset, input.offset + (companyId ? 0 : screening ? 199 : 19));
   if (error) throw new Error("Unable to load the customer population for analysis.");
   const companies = (data ?? []) as unknown as Row[];
   const ids = companies.map(row => string(row.id));
   if (!ids.length) return { records: [], coverage: { matching: count, included: 0, offset: input.offset, nextOffset: null, scope: "Accessible saved customers" } };
   const source = (table: string, fields: string, own = false) => scan((from, to) => {
     let read = db.from(table).select(fields).in("company_id", ids);
-    if (table === "events" && !Object.values(policy.data).every(Boolean)) read = read.eq("type", "staff_comment");
+    if (table === "events" && (screening || !Object.values(policy.data).every(Boolean))) read = read.eq("type", "staff_comment");
     if (own) read = read.eq(table === "crm_tasks" ? "assigned_to" : "user_id", viewer.id);
     return read.order("created_at", { ascending: false }).order("id").range(from, to);
   });
@@ -77,10 +78,10 @@ export async function readCustomerInsights(viewer: WorkspaceViewer, input: CrmRe
   const ownerIds = [...new Set(companies.map(company => string(relation(company.pipeline).owner_id)).filter(Boolean))];
   const [events, orders, invoices, quotations, tasks, emailHistories, owners] = await Promise.all([
     source("events", "id,company_id,type,data,created_at"),
-    billingAvailable ? source("purchase_orders", "id,company_id,reference,document,total_minor,created_at") : absent(),
-    billingAvailable ? source("invoices", "id,company_id,number,status,total_minor,paid_minor,document,created_at") : absent(),
-    billingAvailable && policy.data.products ? source("catalogs", "id,company_id,currency,quote_status,quote_order_id,quote_document,created_at", true) : absent(),
-    policy.data.tasks ? source("crm_tasks", "id,company_id,title,notes,priority,status,due_at,created_at", true) : absent(),
+    billingAvailable ? source("purchase_orders", screening ? "id,company_id,document,created_at" : "id,company_id,reference,document,total_minor,created_at") : absent(),
+    billingAvailable && !screening ? source("invoices", "id,company_id,number,status,total_minor,paid_minor,document,created_at") : absent(),
+    billingAvailable && policy.data.products && !screening ? source("catalogs", "id,company_id,currency,quote_status,quote_order_id,quote_document,created_at", true) : absent(),
+    policy.data.tasks && !screening ? source("crm_tasks", "id,company_id,title,notes,priority,status,due_at,created_at", true) : absent(),
     policy.data.emails ? loadCustomerEmailHistories(viewer, ids, context).catch(() => null) : null,
     ownerIds.length ? db.from("workspace_members").select("user_id,display_name").in("user_id", ownerIds) : { data: [], error: null },
   ]);
@@ -103,7 +104,7 @@ export async function readCustomerInsights(viewer: WorkspaceViewer, input: CrmRe
     }
   }
   const records = [];
-  let remaining = 110_000;
+  let remaining = screening ? 4_000_000 : 110_000;
   for (const company of companies) {
     const id = string(company.id), href = `/companies/${id}`;
     const profile = relation(company.company_profiles), account = relation(company.pipeline);
@@ -125,7 +126,7 @@ export async function readCustomerInsights(viewer: WorkspaceViewer, input: CrmRe
     const sourceRows = (read: Scan) => read.rows.filter(row => row.company_id === id);
     const summarize = (read: Scan, kind: "orders" | "invoices" | "quotations") => {
       const rows = sourceRows(read);
-      return { count: rows.length, complete: read.complete, available: read.available, omittedEvidence: Math.max(0, rows.length - evidenceLimit), records: rows.slice(0, evidenceLimit).map(row => commercialEvidence(row, kind)) };
+      return { count: rows.length, complete: read.complete, available: read.available, omittedEvidence: Math.max(0, rows.length - (screening ? 0 : evidenceLimit)), records: screening ? [] : rows.slice(0, evidenceLimit).map(row => commercialEvidence(row, kind)) };
     };
     // Generic events can contain billing/email/workflow facts: under restricted
     // policies expose only customer notes, consistent with the customer summary.

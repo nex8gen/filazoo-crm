@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireWorkspaceMember } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { userPreferencesSchema } from "@/lib/user-preferences";
+import { revokeDeviceSessions } from "./security-actions";
 
 export async function saveUserPreferences(input: unknown) {
   await requireWorkspaceMember();
@@ -21,13 +22,5 @@ export async function saveUserPreferences(input: unknown) {
 }
 
 export async function signOutOtherSessions() {
-  await requireWorkspaceMember();
-  try {
-    const client = await createClient();
-    const { error } = await client.auth.signOut({ scope: "others" });
-    if (error) return { error: "Unable to sign out other devices. Please try again." };
-    return { success: "Other sessions have been revoked. Existing access may continue until its access token expires. This session stays signed in." };
-  } catch {
-    return { error: "Unable to sign out other devices. Please try again." };
-  }
+  return revokeDeviceSessions({ scope: "others" });
 }

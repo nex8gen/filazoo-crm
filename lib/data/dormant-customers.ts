@@ -25,9 +25,9 @@ export async function dormantRunEligible(userId: string, months: number, company
   return Boolean(customer?.eligible && Date.parse(customer.last_activity_at) === Date.parse(baseline));
 }
 
-export async function listDormantActions(viewer: WorkspaceViewer, mailbox: Pick<NormalizedMailboxRecord, "id">): Promise<FollowupActionRecord[]> {
+export async function listDormantActions(viewer: WorkspaceViewer, mailbox: Pick<NormalizedMailboxRecord, "id">, authorizedMailboxes?: Awaited<ReturnType<typeof getViewerMailboxes>>): Promise<FollowupActionRecord[]> {
   const db = createSupabaseAdmin();
-  const mailboxes = await getViewerMailboxes(viewer.id, true);
+  const mailboxes = authorizedMailboxes ?? await getViewerMailboxes(viewer.id, true);
   const { data: flows } = await db.from("flows").select("id,status").eq("user_id", viewer.id).eq("trigger_type", "dormant_customer").throwOnError();
   if (!flows.length) return [];
   const actions: FollowupActionRecord[] = [];

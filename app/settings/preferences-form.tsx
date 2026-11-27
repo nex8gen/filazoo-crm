@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { defaultUserPreferences, type UserPreferences } from "@/lib/user-preferences";
-import { saveUserPreferences, signOutOtherSessions } from "./preference-actions";
+import { saveUserPreferences } from "./preference-actions";
 
 export function PreferencesForm({ section }: { section: "general" | "appearance" | "email" }) {
   const { preferences, setPreferences } = usePreferences();
@@ -49,10 +49,4 @@ export function PreferencesForm({ section }: { section: "general" | "appearance"
     {error ? <NotificationToast>{error}</NotificationToast> : null}
     <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4"><p role="status" aria-live="polite" className={`flex items-center gap-2 text-xs ${saved ? "text-primary" : "text-muted-foreground"}`}>{pending ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : saved ? <CheckCircle2 aria-hidden="true" className="size-4" /> : <CloudCheck aria-hidden="true" className="size-4" />}{pending ? "Saving…" : saved ? "Preferences saved to your account." : "Changes save automatically to your account."}</p><Button type="button" variant="ghost" size="sm" disabled={pending || isDefault} onClick={() => save(Object.fromEntries(keys.map(key => [key, defaultUserPreferences[key]])))}><RotateCcw aria-hidden="true" className="size-3.5" />Restore defaults</Button></div>
   </div></>;
-}
-
-export function SessionSettings() {
-  const [pending, startTransition] = useTransition();
-  const [result, setResult] = useState<{ error?: string; success?: string }>({});
-  return <div className="space-y-4"><p className="text-xs leading-5 text-muted-foreground">Keep this session signed in and end your other sessions. Existing access may continue until those sessions expire.</p><Button variant="outline" disabled={pending} onClick={() => { setResult({}); startTransition(async () => { try { setResult(await signOutOtherSessions()); } catch { setResult({ error: "Unable to sign out other devices. Please try again." }); } }); }}>{pending ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : null}{pending ? "Signing out other devices..." : "Sign out other devices"}</Button>{result.error ? <NotificationToast>{result.error}</NotificationToast> : null}{result.success ? <p role="status" className="text-sm text-primary">{result.success}</p> : null}</div>;
 }

@@ -54,7 +54,7 @@ test("the session gate delegates mail sync authentication to its bearer guard wh
   const dependencies = { ...supabaseSessionDependencies, "@supabase/ssr": { createServerClient: () => ({ auth: { getClaims: async () => ({ data: { claims: null } }) } }) },
     "next/server": { NextResponse: { next: () => response(200), redirect: () => response(307) } } };
   vm.runInNewContext(ts.transpileModule(readFileSync(new URL("../lib/supabase/proxy.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText,
-    { exports, process: { env: { AUTH_REQUIRED: "true", NEXT_PUBLIC_SUPABASE_URL: "https://db.test", NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "fixture" } }, require: (name: keyof typeof dependencies) => dependencies[name] });
+    { exports, Headers, process: { env: { AUTH_REQUIRED: "true", NEXT_PUBLIC_SUPABASE_URL: "https://db.test", NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "fixture" } }, require: (name: keyof typeof dependencies) => dependencies[name] });
   const request = (path: string) => ({ nextUrl: { pathname: path, search: "", clone: () => new URL(`https://crm.test${path}`) }, cookies: { getAll: () => [] } });
   assert.equal((await exports.updateSession(request("/api/cron/mail-sync"))).status, 200);
   assert.equal((await exports.updateSession(request("/email"))).status, 307);

@@ -1,4 +1,5 @@
 import { citationParts, citationUrl, type CitationSource } from "./source-citations.ts";
+import { answerStyleInstruction } from "./answer-style.ts";
 
 export function assistantHref(value: string): string | undefined {
   if (!value || /[\u0000-\u0020\\]/.test(value)) return undefined;
@@ -13,4 +14,4 @@ export function responseMarkdown(text: string, sources: CitationSource[] = []) {
   return citationParts(linked, sources).map(part => part.source ? `[${part.source.id}](#filazoo-source-${part.source.id})` : part.text).join("");
 }
 
-export const richResponseInstruction = "RESPONSE PRESENTATION: Use readable Markdown: short paragraphs, bold key findings, compact lists, and tables for genuine comparisons. Small relevant emoji are welcome when helpful. Link saved CRM references as [label](/invoices/verified-id), [label](/purchase-orders/verified-id) or their actual app route. Never print raw HTML, UI JSON or fake download links. After CRM lookups the app automatically adds verified record cards, table/chart views and CSV export; write a concise finding and next step instead of repeating every record or claiming these snapshots are exhaustive. Read the relevant records when a CRM analysis or chart is requested; never invent chart data, dates or amounts. Separate currencies, acknowledge incomplete coverage, and keep explanations distinct from actual execution results.";
+export const richResponseInstruction = `${answerStyleInstruction}\nRESPONSE PRESENTATION: Use readable Markdown: short paragraphs, compact lists, and tables when they make a requested comparison easier to read. Link saved CRM references as [label](/invoices/verified-id), [label](/purchase-orders/verified-id) or their actual app route. Never print raw HTML, UI JSON or fake download links. After CRM lookups the app automatically adds verified record cards, table/chart views and CSV export; answer the question without repeating those records or claiming these snapshots are exhaustive. Read the relevant records when a CRM analysis or chart is requested; never invent chart data, dates or amounts. Separate currencies and keep explanations distinct from actual execution results.`;

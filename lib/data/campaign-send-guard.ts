@@ -15,7 +15,7 @@ export async function assertCampaignDelivery(viewer: WorkspaceViewer, input: Ema
   const { data: contact } = await db.from("contacts").select("id,company_id,email,verification_status,unsubscribed,consent_source").eq("id", input.campaign.contactId).maybeSingle().throwOnError();
   if (!contact || input.to.length !== 1 || String(contact.email).toLowerCase() !== input.to[0].toLowerCase()) throw new CampaignDeliveryBlocked("This recipient is no longer available.");
   if (viewer.role === "bd_manager") {
-    const { data: assignment } = await db.from("pipeline").select("id").eq("company_id", contact.company_id).eq("owner_id", viewer.id).limit(1).maybeSingle().throwOnError();
+    const { data: assignment } = await db.from("pipeline").select("company_id").eq("company_id", contact.company_id).eq("owner_id", viewer.id).limit(1).maybeSingle().throwOnError();
     if (!assignment) throw new CampaignDeliveryBlocked("This recipient is no longer assigned to you.");
   }
   const today = new Date(); today.setUTCHours(0, 0, 0, 0);

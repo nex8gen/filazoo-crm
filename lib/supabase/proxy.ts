@@ -5,7 +5,14 @@ import { isTransientAuthError } from "./auth-error.ts";
 import { workspaceSessionUnavailableResponse } from "../workspace-session-response.ts";
 
 export async function updateSession(request: NextRequest) {
-  let response = NextResponse.next({ request });
+  const publicWebsiteRoute = request.nextUrl.pathname === "/website" || request.nextUrl.pathname.startsWith("/website/");
+  function nextResponse() {
+    const headers = new Headers(request.headers);
+    headers.delete("x-filazoo-public-website");
+    if (publicWebsiteRoute) headers.set("x-filazoo-public-website", "1");
+    return NextResponse.next({ request: { headers } });
+  }
+  let response = nextResponse();
   // Alipay authenticates this callback with RSA2, without a browser session.
   if (request.nextUrl.pathname === "/api/alipay/notify") {
     response.headers.set("Cache-Control", "no-store");
@@ -14,7 +21,7 @@ export async function updateSession(request: NextRequest) {
   // Customer access is validated by its own invoice-scoped cookie and QR key.
   // Never run the staff session gate (or refresh staff cookies) for this surface.
   const customerRoute = request.nextUrl.pathname.startsWith("/customer/") || request.nextUrl.pathname.startsWith("/api/customer/");
-  if (customerRoute) {
+  if (customerRoute || publicWebsiteRoute) {
     response.headers.set("Referrer-Policy", "no-referrer");
     response.headers.set("Cache-Control", "private, no-store");
     response.headers.set("X-Robots-Tag", "noindex, nofollow");
@@ -25,12 +32,12 @@ export async function updateSession(request: NextRequest) {
   if (!url || !key) return response;
 
   const supabase = createServerClient(url, key, {
-    global: { fetch: authFetch() },
+    global: { fetch: authFetch(), headers: request.headers.get("user-agent") ? { "User-Agent": request.headers.get("user-agent")!.slice(0, 1024) } : {} },
     cookies: {
       getAll: () => request.cookies.getAll(),
       setAll: (cookiesToSet, headersToSet) => {
         cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-        response = NextResponse.next({ request });
+        response = nextResponse();
         cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
         if (headersToSet) Object.entries(headersToSet).forEach(([name, value]) => response.headers.set(name, value));
       },

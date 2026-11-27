@@ -1,0 +1,39 @@
+{
+  "checkedAt": "2026-11-27T02:00:23.022Z",
+  "syntheticOnly": true,
+  "businessWrites": false,
+  "models": [
+    "google/gemini-3.5-flash-lite"
+  ],
+  "providerCalls": 6,
+  "inputTokens": 49764,
+  "outputTokens": 810,
+  "elapsedMs": 5528,
+  "coverage": {
+    "matching": 331,
+    "included": 331,
+    "offset": 0,
+    "nextOffset": null,
+    "populationComplete": true,
+    "scope": "Saved email conversations and manual conversation notes. Active prepared orders are separated server-side and never supplied to the opportunity-ranking model. Unlinked social conversations are not included.",
+    "deepReviewRequired": false,
+    "pages": [
+      {
+        "matching": 331,
+        "nextOffset": 200
+      },
+      {
+        "matching": 331,
+        "nextOffset": null
+      }
+    ],
+    "conversationsInvestigated": 2,
+    "incompleteConversations": 0,
+    "knownPipelineCustomers": 0,
+    "pipelineClassificationComplete": true,
+    "rejectedEvidence": 1,
+    "modelScreenedCustomers": 331
+  },
+  "output": "**1. [Synthetic Sample Buyer](/companies/15693adc-0bdf-4617-b214-000000000330) (US)** — Explicit purchase intent.\n\n**Why:** The customer explicitly stated they want to order 500 rolls of black PLA after successful sample testing. [2026-11-26 · Filament enquiry](/email?thread=buyer-15693adc-0bdf-4617-b214-000000000330)\n\n**Conversation:** The customer confirmed that the samples passed their tests and requested to order 500 rolls of black PLA for delivery next month, asking for a final quotation and dispatch date. The team previously sent samples and requested test results.\n\n**Next step:** Casey — Casey should send the final quotation and available dispatch date to the customer.\n\nCoverage: screened 331 of 331 customers; reviewed conversations for 2.\n\nRelated questions: What is the final quotation amount for Synthetic Sample Buyer?",
+  "passed": true
+}

@@ -5,7 +5,7 @@ import { getPortalDesign } from "@/lib/data/portal-design";
 import { canManagePortal } from "@/lib/portal-design";
 import { portalLibraryThemes, portalThemeIdSchema } from "@/lib/portal-themes";
 import { PortalBuilder } from "@/components/portal-builder";
-export const metadata = { title: "Edit portal theme" };
+export const metadata = { title: "Edit website theme" };
 export default async function ThemeEditorPage({ params }: { params: Promise<{ themeId: string }> }) {
   const viewer = await requireWorkspaceMember();
   const { themeId } = await params;

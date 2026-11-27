@@ -36,6 +36,11 @@ function fixture(options: { authenticated?: boolean; error?: boolean } = {}) {
     "next/cache": { revalidatePath: (...args: unknown[]) => paths.push(args) },
     "@/lib/auth": { requireWorkspaceMember: async () => { if (options.authenticated === false) throw new Error("unauthenticated"); return { id: "current-user", role: "viewer" }; } },
     "@/lib/user-preferences": preferences,
+    "./security-actions": { revokeDeviceSessions: async (input: unknown) => {
+      if (options.authenticated === false) throw new Error("unauthenticated");
+      scopes.push(input);
+      return options.error ? { error: "unavailable" } : { success: "Other devices have been signed out." };
+    } },
     "@/lib/supabase/server": { createClient: async () => ({ auth: {
       updateUser: async (input: unknown) => { writes.push(input); return { error: options.error ? { message: "unavailable" } : null }; },
       signOut: async (input: unknown) => { scopes.push(input); return { error: options.error ? { message: "unavailable" } : null }; },

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { selectAiModel, SIMPLE_AI_MODEL, STANDARD_AI_MODEL, COMPLEX_AI_MODEL, RESEARCH_AI_MODEL, TAGGING_REVIEW_AI_MODEL } from "../lib/ai/model-routing.ts";
+import { selectAiModel, needsExpertCrmReasoning, SIMPLE_AI_MODEL, STANDARD_AI_MODEL, COMPLEX_AI_MODEL, EXPERT_AI_MODEL, RESEARCH_AI_MODEL, TAGGING_REVIEW_AI_MODEL } from "../lib/ai/model-routing.ts";
 import { generateGatewayText } from "../lib/ai/gateway.ts";
 import { parseAiUsage, trackAiUsage } from "../lib/ai/chat-usage.ts";
 import { gatewayTokenUsage } from "../lib/ai/usage.ts";
@@ -10,9 +10,9 @@ test("tagging uses the evaluated Haiku route with explicit Sol escalation; other
   assert.deepEqual(selectAiModel({ task: "tagging" }, {}), { model: STANDARD_AI_MODEL, tier: "tagging", reasoningEffort: "none" });
   assert.equal(selectAiModel({ task: "tagging", complex: true }, {}).model, TAGGING_REVIEW_AI_MODEL);
   for (const task of ["chat", "agent"] as const) assert.equal(selectAiModel({ task, userText: "Attach a catalog to an email draft" }, {}).model, STANDARD_AI_MODEL);
-  for (const userText of ["Create an invoice", "Prepare a quotation", "Record this payment", "创建发票"]) assert.equal(selectAiModel({ task: "agent", userText }, {}).model, COMPLEX_AI_MODEL);
+  for (const userText of ["Create an invoice", "Prepare a quotation", "Record this payment", "创建发票"]) assert.equal(selectAiModel({ task: "agent", userText }, {}).model, EXPERT_AI_MODEL);
   for (const task of ["reply", "workflow"] as const) assert.equal(selectAiModel({ task }, {}).model, COMPLEX_AI_MODEL);
-  assert.equal(selectAiModel({ task: "agent", complex: true }, {}).model, COMPLEX_AI_MODEL);
+  assert.equal(selectAiModel({ task: "agent", complex: true }, {}).model, EXPERT_AI_MODEL);
   assert.deepEqual(selectAiModel({ task: "research" }, {}), { model: RESEARCH_AI_MODEL, tier: "research", reasoningEffort: undefined });
   assert.equal(selectAiModel({ task: "email", prompt: "x".repeat(60001) }, {}).model, SIMPLE_AI_MODEL, "Prompt length alone must not trigger a more costly model");
 });
@@ -23,7 +23,18 @@ test("legacy environment and feature pins cannot select expensive models", () =>
   assert.equal(selectAiModel({ task: "workflow", model: "openai/gpt-6.1-sol", complex: true }, expensive).model, COMPLEX_AI_MODEL);
   assert.equal(selectAiModel({ task: "chat", model: "openai/gpt-5-nano" }, {}).model, STANDARD_AI_MODEL, "Old nano-only environment values cannot suppress task routing");
   assert.equal(selectAiModel({ task: "email", model: STANDARD_AI_MODEL }, {}).model, STANDARD_AI_MODEL, "A priced, audited model override is honored");
-  assert.equal(selectAiModel({ task: "agent", userText: "Create an invoice", model: SIMPLE_AI_MODEL }, {}).model, COMPLEX_AI_MODEL, "A generic email/agent pin cannot downgrade financial planning");
+  assert.equal(selectAiModel({ task: "agent", userText: "Create an invoice", model: SIMPLE_AI_MODEL }, {}).model, EXPERT_AI_MODEL, "A generic email/agent pin cannot downgrade financial planning");
+});
+
+test("interactive CRM reviews use the qualified reasoning route while simple facts and background automation keep their routes", () => {
+  for (const userText of ["Compare this invoice with its linked order", "Find overdue customer follow-ups", "Review workflow results", "Draft a reply to this customer complaint", "Summarize our sales this week", "核对订单与发票"]) {
+    assert.ok(needsExpertCrmReasoning(userText), userText);
+    assert.equal(selectAiModel({ task: "chat", userText, model: SIMPLE_AI_MODEL }, {}).model, EXPERT_AI_MODEL);
+  }
+  for (const userText of ["Who manages this customer? Only the name.", "What is this company's country?", "Attach a catalog to an email draft"]) assert.equal(selectAiModel({ task: "chat", userText }, {}).model, STANDARD_AI_MODEL);
+  assert.equal(selectAiModel({ task: "workflow", userText: "Review customer invoice" }, {}).model, COMPLEX_AI_MODEL);
+  assert.equal(selectAiModel({ task: "reply", userText: "Draft a customer reply" }, {}).model, COMPLEX_AI_MODEL);
+  assert.equal(selectAiModel({ task: "chat", userText: "Review invoice", hasImages: true }, {}).model, STANDARD_AI_MODEL);
 });
 
 const completed = { status: "completed", output: [{ type: "reasoning", content: [{ type: "output_text", text: "private reasoning" }] }, { type: "message", content: [{ type: "output_text", text: "Verified answer" }] }], usage: { input_tokens: 100, output_tokens: 20 } };

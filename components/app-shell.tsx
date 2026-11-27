@@ -8,6 +8,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState, type CSSPrope
 import { Gauge, Menu, Search } from "lucide-react";
 import { navigation } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
+import { BrandMark } from "@/components/brand-mark";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useVisitedPageRefresh } from "@/components/use-visited-page-refresh";
 import { useCustomerTagRefresh } from "@/components/use-customer-tag-refresh";
@@ -127,7 +128,7 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side="left" finalFocus={navigationTriggerRef} className="!z-[70] !w-[min(22rem,calc(100%-1rem))] gap-0 overflow-y-auto pb-[env(safe-area-inset-bottom)]">
           <SheetHeader className="border-b pr-14">
-            <SheetTitle>Filazoo workspace</SheetTitle>
+            <SheetTitle><span className="sr-only">NewAI workspace</span><BrandMark className="h-auto w-[174px] max-w-full" /></SheetTitle>
             <SheetDescription>Accounts, conversations, and sales tools</SheetDescription>
           </SheetHeader>
           <Button variant="outline" className="mx-4 mt-4 justify-start" onClick={() => { setMobileOpen(false); setCommandOpen(true); }}><Search />Search workspace</Button>

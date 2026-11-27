@@ -19,6 +19,7 @@ import { buildAgentInvoice, groundInvoiceVariant, groundInvoiceEmailIntent, type
 import type { WorkspaceAction } from "./workspace-assistant";
 import { actionWorkProgress, type AgentWorkProgress } from "./agent-progress";
 import { loadAgentCompany, loadAgentEmails, prepareAgentEmail } from "./agent-records";
+import { assertAiCustomerAccess } from "./customer-access.ts";
 import { threadKeyForEmail } from "../email-threading";
 import { prepareCrmAction, executeCrmAction } from "./crm-execution";
 import { crmManualApproval, crmViewerOperationAllowed } from "./crm-tools";
@@ -46,6 +47,7 @@ export async function prepareAgentActions(actions: WorkspaceAction[], viewer: Wo
   const proposals: AgentProposal[] = [];
   for (const candidate of actions) {
     let action = groundInvoiceEmailIntent(candidate, context);
+    if (viewer.role !== "admin" && "companyId" in action) await assertAiCustomerAccess(viewer, action.companyId, createSupabaseAdmin());
     if (context && ((action.type === "crm_action" && ["create_quotation", "create_catalog"].includes(action.operation.op)) || ("email" in action && action.email?.attachCatalog))) action = await (await import("./quotation-selection-server")).groundQuotationSelection(action, viewer, context);
     if (action.type === "create_order") action = { ...action, type: "create_invoice" };
     const policyApproval = aiActionApproval(policy, action, approvalMode);
@@ -55,7 +57,7 @@ export async function prepareAgentActions(actions: WorkspaceAction[], viewer: Wo
     else if (action.type === "create_company" || action.type === "create_flow") prepared = action;
     else if (action.type === "update_company" || action.type === "add_company_note") {
       await validateCustomerEmailSource(action, viewer);
-      const company = await loadAgentCompany(action.companyId, policy.data.billing);
+      const company = await loadAgentCompany(action.companyId, policy.data.billing, viewer);
       prepared = action.type === "update_company" ? { ...action, changes: action.deriveAddressFields ? deriveCompanyAddressFields(action.changes, company.fields) : action.changes, companyName: company.fields.name, fingerprint: company.fingerprint } : { ...action, companyName: company.fields.name };
     } else if (action.type === "write_email" && !action.invoiceId) {
       const email = await prepareAgentCatalog(await prepareAgentEmail(action.email, viewer), viewer);
@@ -67,6 +69,7 @@ export async function prepareAgentActions(actions: WorkspaceAction[], viewer: Wo
     }
     else {
       const existing = action.type === "create_invoice" ? null : action.invoiceId ? await getInvoice(action.invoiceId) : null;
+      if (viewer.role !== "admin" && existing?.document.companyId) await assertAiCustomerAccess(viewer, existing.document.companyId, createSupabaseAdmin());
       if (action.type !== "create_invoice" && !existing) throw new Error("The selected invoice no longer exists.");
       if (existing?.status === "void") throw new Error("A void invoice cannot be updated or sent.");
       if (action.type === "update_invoice" && existing && !canEditInvoice(viewer, existing)) throw new Error("You can only update draft invoices permitted by your workspace role.");
@@ -172,7 +175,7 @@ export async function executeAgentAction(id: string, action: PreparedAgentAction
   if (action.type === "update_company" || action.type === "add_company_note") {
     await reportProgress(activity);
     await validateCustomerEmailSource(action, viewer);
-    const company = await loadAgentCompany(action.companyId, policy.data.billing);
+    const company = await loadAgentCompany(action.companyId, policy.data.billing, viewer);
     const data = new FormData();
     if (action.type === "add_company_note") data.set("comment", action.note);
     else {

@@ -46,6 +46,7 @@ export async function login(_state: LoginState, formData: FormData): Promise<Log
     }
     if (!data.user) return { error: "The email or password is incorrect.", email };
     destination = loginDestination(parsed.data.next);
+    if (data.user.factors?.some(factor => factor.status === "verified")) destination = `/auth/mfa?next=${encodeURIComponent(destination)}`;
 
   } catch (error) {
     reportLoginFailure("unexpected", error);

@@ -85,7 +85,7 @@
   color: var(--invoice-ink);
 }
 .invoice-paper-brand { flex-shrink: 0; padding-top: 3px; }
-.invoice-paper-logo { flex: none; height: auto !important; aspect-ratio: 284 / 62; overflow: hidden; filter: grayscale(1) brightness(0); }
+.invoice-paper-logo { flex: none; height: auto !important; aspect-ratio: 1195 / 193; overflow: hidden; }
 .invoice-paper-heading { min-width: 0; text-align: left; }
 .invoice-paper-heading h2 {
   font-size: 32px;

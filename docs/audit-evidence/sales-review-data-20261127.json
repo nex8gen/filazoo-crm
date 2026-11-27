@@ -1,0 +1,47 @@
+{
+  "checkedAt": "2026-11-27T03:47:17.146Z",
+  "readOnly": true,
+  "modelCalls": false,
+  "productionReader": true,
+  "browserSessionVerified": false,
+  "period": {
+    "since": "2026-11-20T03:47:15.496Z",
+    "until": "2026-11-27T03:47:15.496Z",
+    "label": "Last seven days",
+    "timezone": "Asia/Shanghai"
+  },
+  "elapsedMs": 1648,
+  "sources": {
+    "events": {
+      "available": true,
+      "included": 27,
+      "truncated": false,
+      "scope": "Recent customer-linked audit event types; note bodies excluded"
+    },
+    "orders": {
+      "available": true,
+      "included": 0,
+      "truncated": false,
+      "scope": "Orders created in the period; current snapshot"
+    },
+    "quotations": {
+      "available": true,
+      "included": 0,
+      "truncated": false,
+      "scope": "Your quotations created in the period; current snapshot"
+    },
+    "invoices": {
+      "available": true,
+      "included": 0,
+      "truncated": false,
+      "scope": "Invoices created in the period; current snapshot"
+    },
+    "tasks": {
+      "available": true,
+      "included": 1,
+      "truncated": false,
+      "scope": "Your customer-linked tasks created in the period"
+    }
+  },
+  "externalMailboxHistoryScanned": false
+}

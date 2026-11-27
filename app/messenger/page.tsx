@@ -1,5 +1,5 @@
 import { MessengerInbox } from "@/components/messenger-inbox";
-import { getMetaInboxData } from "@/lib/meta-messenger";
+import { getMessengerInboxData } from "@/lib/data/messenger";
 
 export const metadata = {
   title: "Unified Messenger Inbox",
@@ -7,5 +7,5 @@ export const metadata = {
 };
 
 export default async function MessengerPage() {
-  return <MessengerInbox data={await getMetaInboxData()} />;
+  return <MessengerInbox data={await getMessengerInboxData()} />;
 }

@@ -102,7 +102,7 @@ export async function prepareReplyRequest(input: ReplyRequestInput, viewer: Work
     const { validateTaskWorkflow } = await import("./task-workflows");
     await validateTaskWorkflow(viewer, input.companyId, input.onReply);
   }
-  const company = await loadAgentCompany(input.companyId);
+  const company = await loadAgentCompany(input.companyId, true, viewer);
   const snapshot = await invoiceContext(input, viewer);
   const source = input.sourceEmailId ? await loadAgentEmails(viewer, input.sourceEmailId, undefined, input.mailboxId) : null;
   const recipient = ((input.op === "request_customer_information" ? input.recipient : undefined) || source?.current?.contact || company.fields.contactEmail || "").trim().toLowerCase();

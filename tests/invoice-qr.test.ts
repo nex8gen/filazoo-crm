@@ -9,6 +9,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import * as invoices from "../lib/invoices.ts";
 import * as crypto from "../lib/customer-portal-crypto.ts";
 import * as banks from "../lib/invoice-banks.ts";
+import * as brandAssets from "../lib/brand-assets.ts";
 import { notificationToastModule } from "./helpers/notification-toast.ts";
 
 const require = createRequire(import.meta.url);
@@ -97,11 +98,10 @@ test("generated draft and issued PDFs embed the same signed customer QR", async 
   const renderer = await import("@react-pdf/renderer");
   const qr = require("qrcode") as typeof import("qrcode");
   const encoded: string[] = [];
-  const brand = load<typeof import("../components/brand-mark.tsx")>("components/brand-mark.tsx", {});
   const pdf = load<typeof import("../lib/invoice-pdf.tsx")>("lib/invoice-pdf.tsx", {
     "@react-pdf/renderer": renderer,
     qrcode: { ...qr, toDataURL: async (value: string, options: object) => { encoded.push(value); return qr.toDataURL(value, options); } },
-    "./customer-portal-links": links, "../components/brand-mark": brand,
+    "./customer-portal-links": links, "./brand-assets": brandAssets,
     "./invoice-banks": banks, "./invoice-payment-methods": {},
     "./payment-icons": {}, "./invoices": invoices, "./invoice-links": {},
   });

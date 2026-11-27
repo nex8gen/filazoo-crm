@@ -15,6 +15,11 @@ import type { MailSyncHealth } from "@/lib/mail-sync-jobs";
 import { mergePartialMailboxMessages } from "@/lib/mailbox-sync";
 import { usePreferences } from "@/components/preferences-provider";
 import { useBackgroundRefresh } from "@/components/use-background-refresh";
+import { useCachedPage } from "@/components/use-cached-page";
+import { EmailListSkeleton } from "@/components/email-list-skeleton";
+import { emailPageKey, emailPageRequestSchema, readEmailPage, sameEmailPage, type EmailPageInfo } from "@/lib/email-pagination";
+import type { EmailPageSnapshot } from "@/lib/email-pagination";
+import type { createPageCache } from "@/lib/page-cache";
 import { useEmailReplyLink } from "@/components/use-email-reply-link";
 import { useEmailReplyOperation } from "@/components/use-email-reply-operation";
 import { EmailReplyStatus } from "@/components/email-reply-status";
@@ -99,6 +104,7 @@ const EmailCatalogDialog = dynamic(() => import("@/components/email-catalog-dial
 
 export type EmailWorkspaceItem = {
   id: string;
+  listConversationKey?: string;
   crmEmailId?: string;
   from?: string;
   to?: import("@/lib/email-addresses").EmailAddress[];
@@ -162,7 +168,8 @@ const categoryOptions = customerTagValues;
 type EmailConversation = { id: string; messages: EmailWorkspaceItem[]; latest: EmailWorkspaceItem };
 
 function buildConversations(emails: EmailWorkspaceItem[]): EmailConversation[] {
-  return [...groupEmailConversations(emails).entries()].map(([id, messages]) => {
+  const groups = emails.some(email => email.listConversationKey) ? Map.groupBy(emails, email => email.listConversationKey ?? threadKeyForEmail(email)) : groupEmailConversations(emails);
+  return [...groups.entries()].map(([id, messages]) => {
     const ordered = messages.sort((left, right) => new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime());
     return { id, messages: ordered, latest: ordered[ordered.length - 1]! };
   });
@@ -248,6 +255,8 @@ function SenderSelect({ mailboxes, value, onChange, disabled, label }: { mailbox
 
 export function EmailInboxWorkspace({
   initialEmails,
+  initialPage,
+  pageCache,
   initialThreadId,
   initialReplyOpen = false,
   initialComposeTo,
@@ -279,6 +288,8 @@ export function EmailInboxWorkspace({
   providerFolders: initialProviderFolders = [],
 }: {
   initialEmails: EmailWorkspaceItem[];
+  initialPage?: EmailPageInfo;
+  pageCache?: ReturnType<typeof createPageCache<EmailPageSnapshot>>;
   initialThreadId?: string;
   initialReplyOpen?: boolean;
   initialComposeTo?: string;
@@ -308,7 +319,7 @@ export function EmailInboxWorkspace({
   companyScope?: CompanyEmailScope;
   assignedCustomersOnly?: boolean;
   onMailboxChange?: (mailboxId: string) => void;
-  onMailboxSnapshot?: (mailboxId: string | null, emails: EmailWorkspaceItem[], readFailed?: boolean, partial?: boolean) => void;
+  onMailboxSnapshot?: (mailboxId: string | null, emails: EmailWorkspaceItem[], readFailed?: boolean, partial?: boolean, pagination?: EmailPageInfo) => void;
   switchingMailboxId?: string | null;
   mailboxSwitchError?: string | null;
   providerFolders?: ProviderFolder[];
@@ -353,20 +364,29 @@ export function EmailInboxWorkspace({
   const pendingThread = useRef(initialTarget ? null : initialThreadId);
   const pendingReply = useRef(initialReplyOpen ? initialThreadId : undefined);
   const [emails, setEmails] = useState(sourceEmails);
-  const [folder, setFolder] = useState<Folder>(initialSelection?.folder ?? (companyScope ? "all" : "inbox"));
+  const [folder, setFolder] = useState<Folder>((initialPage?.request.folder as Folder) ?? initialSelection?.folder ?? (companyScope ? "all" : "inbox"));
   const [mobileReading, setMobileReading] = useState(Boolean(initialThreadId));
   const [selectedId, setSelectedId] = useState(initialTarget?.id ?? "");
   const [replyExpanded, setReplyExpanded] = useState(Boolean(companyScope) || Boolean(initialReplyOpen && initialTarget));
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
-  const [page, setPage] = useState(1);
-  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(initialPage?.request.page ?? 1);
+  const [search, setSearch] = useState(initialPage?.request.query ?? "");
   const [searchResults, setSearchResults] = useState<EmailWorkspaceItem[]>([]);
   const [searchStatus, setSearchStatus] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<Category | null>(null);
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
-  const [followupFilter, setFollowupFilter] = useState<FollowupFilter>("all");
+  const [categoryFilter, setCategoryFilter] = useState<Category | null>((initialPage?.request.tag as Category) || null);
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>(initialPage?.request.source ?? "all");
+  const [followupFilter, setFollowupFilter] = useState<FollowupFilter>(initialPage?.request.followup ?? "all");
+  const paginated = Boolean(initialPage && !companyScope);
+  const [seedPage] = useState(() => initialPage ?? { request: emailPageRequestSchema.parse({}), total: 0, pageSize: 30, revision: "", folderCounts: {}, followupCounts: { all: 0, ai: 0, manual: 0, completed: 0, nurture: 0 } });
+  const pages = useCachedPage(emailPageKey(selectedMailboxId, seedPage.request), { emails: sourceEmails, pagination: seedPage }, readEmailPage, pageCache);
+  const { key: pageKey, value: pageSnapshot, select: selectPage, remember: rememberPage, invalidate: invalidatePages } = pages;
+  const validatedRevisions = useRef(new Map([[emailPageKey(selectedMailboxId, seedPage.request), pageSnapshot.pagination.revision]]));
+  const activePageKey = useRef(pageKey);
+  useEffect(() => { activePageKey.current = pages.requestedKey; }, [pages.requestedKey]);
+  const [installedPage, setInstalledPage] = useState(pageSnapshot);
+  const pageLoading = paginated && (pages.loading || installedPage !== pageSnapshot || Boolean(switchingMailboxId));
   const [followupActions, setFollowupActions] = useState<{ mailboxId: string; actions: FollowupActionRecord[] } | null>(null);
   const followupActionRevision = useRef(0);
   const [followupFiltersLoading, setFollowupFiltersLoading] = useState(false);
@@ -479,12 +499,16 @@ export function EmailInboxWorkspace({
   const stateWrites = useRef(new Map<string, Promise<void>>());
 
   useEffect(() => {
-    onMailboxSnapshot?.(selectedMailboxId, emails.map((email) => ({
+    if (paginated && installedPage !== pageSnapshot) return;
+    const snapshot = emails.map((email) => ({
       ...email,
       starred: starred.has(email.id), read: readMessages.has(email.id),
       category: categories[email.id] ?? null, folder: folderStates[email.id] ?? "inbox", followUpAt: followUps[email.id] ?? null,
-    })), mailboxUnavailable, partialSnapshot);
-  }, [onMailboxSnapshot, selectedMailboxId, emails, starred, readMessages, categories, folderStates, followUps, mailboxUnavailable, partialSnapshot]);
+    }));
+    const pagination = { ...pageSnapshot.pagination, revision: validatedRevisions.current.get(pageKey) ?? pageSnapshot.pagination.revision };
+    if (paginated) rememberPage(pageKey, { emails: snapshot, pagination });
+    onMailboxSnapshot?.(selectedMailboxId, snapshot, mailboxUnavailable, partialSnapshot, paginated ? pagination : undefined);
+  }, [onMailboxSnapshot, selectedMailboxId, emails, starred, readMessages, categories, folderStates, followUps, mailboxUnavailable, partialSnapshot, paginated, installedPage, pageKey, pageSnapshot, rememberPage]);
 
   useEffect(() => { unsentDraft.current = Boolean(composeTo.trim() || composeSubject.trim() || composeBody.trim() || draft.trim() || replyHasImages || composeHasImages || composeAttachments.length || replyAttachments.length); }, [composeTo, composeSubject, composeBody, draft, replyHasImages, composeHasImages, composeAttachments.length, replyAttachments.length]);
   useEffect(() => {
@@ -599,6 +623,25 @@ export function EmailInboxWorkspace({
     setSelectedId((current) => selection?.message.id ?? (partial || nextEmails.some((email) => email.id === current) ? current : ""));
   }, [companyScope]);
 
+  useEffect(() => {
+    if (!paginated || installedPage === pageSnapshot) return;
+    applyMailboxSnapshot(pageSnapshot.emails);
+    const incoming = pageSnapshot.pagination.request;
+    if (incoming.folder === folder && incoming.query === search.trim() && incoming.source === sourceFilter && incoming.tag === (categoryFilter ?? "") && incoming.followup === followupFilter) {
+      rememberPage(emailPageKey(selectedMailboxId, incoming), pageSnapshot);
+      setPage(incoming.page);
+    }
+    setInstalledPage(pageSnapshot);
+  }, [paginated, installedPage, pageSnapshot, applyMailboxSnapshot, folder, search, sourceFilter, categoryFilter, followupFilter, rememberPage, selectedMailboxId]);
+  useEffect(() => {
+    if (!paginated || !selectedMailboxId) return;
+    const request = { page, folder, query: search.trim(), source: sourceFilter, tag: categoryFilter ?? "", followup: followupFilter };
+    const key = emailPageKey(selectedMailboxId, request);
+    if (key === pageKey) return;
+    const timer = setTimeout(() => { setCheckedIds(new Set()); setMobileReading(false); void selectPage(key); }, search.trim() !== pageSnapshot.pagination.request.query ? 300 : 0);
+    return () => clearTimeout(timer);
+  }, [paginated, selectedMailboxId, page, folder, search, sourceFilter, categoryFilter, followupFilter, pageKey, selectPage, pageSnapshot.pagination.request.query]);
+
   const syncInbox = useCallback(async (manual = false, refreshRequested = false) => {
     if (!inboxConfigured || syncInProgress.current) return;
     syncInProgress.current = true;
@@ -607,6 +650,26 @@ export function EmailInboxWorkspace({
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30_000);
     try {
+      if (paginated) {
+        const params = new URLSearchParams(pageKey);
+        if (!manual && !refreshRequested) params.set("revision", validatedRevisions.current.get(pageKey) ?? pageSnapshot.pagination.revision);
+        params.set("refresh", manual ? "history" : "background");
+        const response = await fetch(`/api/email/page?${params}`, { cache: "no-store", signal: controller.signal });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Unable to load saved emails. Please retry.");
+        if (!result.unchanged && activePageKey.current === pageKey && revision === stateRevision.current && !pendingStateWrites.current) {
+          const changed = manual || refreshRequested || !sameEmailPage(pageSnapshot, result);
+          if (changed) { invalidatePages(); validatedRevisions.current.clear(); }
+          validatedRevisions.current.set(pageKey, result.pagination.revision);
+          // An unrelated background update must not throw away visited pages or
+          // flash their skeletons. Only changed list contents replace the view.
+          rememberPage(pageKey, changed ? result : { ...pageSnapshot, pagination: { ...pageSnapshot.pagination, revision: result.pagination.revision } });
+          if (changed) await selectPage(pageKey);
+        }
+        setSyncError(null);
+        if (manual) setNotice("History import queued. Emails will appear as they are imported.");
+        return;
+      }
       const params = new URLSearchParams();
       // Check imported headers frequently; wake provider receiving at most every
       // 15 seconds, independently of an external scheduler.
@@ -644,7 +707,7 @@ export function EmailInboxWorkspace({
       syncInProgress.current = false;
       setSyncing(false);
     }
-  }, [applyMailboxSnapshot, companyScope, inboxConfigured, selectedMailboxId, folder, providerFolders]);
+  }, [applyMailboxSnapshot, companyScope, inboxConfigured, selectedMailboxId, folder, providerFolders, paginated, pageKey, pageSnapshot, invalidatePages, rememberPage, selectPage]);
 
   useBackgroundRefresh(syncInbox, inboxConfigured, preferences.emailSyncSeconds);
 
@@ -687,7 +750,7 @@ export function EmailInboxWorkspace({
   useEffect(() => {
     const query = search.trim();
     setSearchResults([]); setSearchStatus("");
-    if (query.length < 2 || !selectedMailboxId || companyScope) return;
+    if (paginated || query.length < 2 || !selectedMailboxId || companyScope) return;
     const controller = new AbortController();
     const timer = setTimeout(() => {
       setSearchStatus("Searching provider…");
@@ -695,7 +758,7 @@ export function EmailInboxWorkspace({
       void fetch(`/api/email/search?${params}`, { signal: controller.signal, cache: "no-store" }).then(async (response) => { const result = await response.json(); if (!response.ok) throw new Error(result.error); if (!controller.signal.aborted) { setSearchResults(result.emails || []); setSearchStatus(result.error || (result.limited ? "Showing up to 50 matches per folder. Refine your search for more." : "Provider search complete")); } }).catch((reason) => { if (!controller.signal.aborted) setSearchStatus(reason instanceof Error ? reason.message : "Provider search failed."); });
     }, 700);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [search, selectedMailboxId, companyScope, folder]);
+  }, [search, selectedMailboxId, companyScope, folder, paginated]);
   const customerTarget = searchResults.find(email => email.id === selectedId) ?? emails.find(email => email.id === selectedId);
   const customerMailboxId = selectedMailboxId || defaultSenderId;
   const customerDetails = useEmailCustomerContext(customerMailboxId, customerTarget?.contact, mobileReading && !companyScope);
@@ -734,15 +797,16 @@ export function EmailInboxWorkspace({
   ), [scopedConversations, folder, folderStates, starred, readMessages, mobileReading, selectedId]);
   const showFollowupFilters = !companyScope && !["drafts", "scheduled"].includes(folder);
   const actionView = useMemo(() => followupView(scopedConversations, followupGroups, followupFilter), [scopedConversations, followupGroups, followupFilter]);
-  const followupFilterCounts = actionView.counts;
-  const visible = folder === "followup" ? actionView.conversations : folderConversations;
+  const followupFilterCounts = paginated ? pageSnapshot.pagination.followupCounts : actionView.counts;
+  const visible = paginated ? [...conversations].sort((a, b) => Date.parse(b.latest.timestamp) - Date.parse(a.latest.timestamp) || a.id.localeCompare(b.id)) : folder === "followup" ? actionView.conversations : folderConversations;
   const selectedConversation = visible.find((item) => item.messages.some((email) => email.id === selectedId));
   const selected = selectedConversation?.latest;
   const reading = mobileReading && Boolean(selected);
   const pageSize = 30;
-  const pageCount = Math.max(1, Math.ceil(visible.length / pageSize));
-  const currentPage = Math.min(page, pageCount);
-  const pageItems = visible.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const totalConversations = paginated ? pageSnapshot.pagination.total : visible.length;
+  const pageCount = Math.max(1, Math.ceil(totalConversations / pageSize));
+  const currentPage = paginated ? pageSnapshot.pagination.request.page : Math.min(page, pageCount);
+  const pageItems = paginated ? visible : visible.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const checkedVisible = visible.filter((item) => checkedIds.has(item.id));
   const allPageChecked = pageItems.length > 0 && pageItems.every((item) => checkedIds.has(item.id));
   const selectionScope = [folder, search, sourceFilter, categoryFilter, followupFilter].join("|");
@@ -999,8 +1063,8 @@ export function EmailInboxWorkspace({
       }
     }
     counts.drafts += Object.values(savedDrafts.drafts).length;
-    return counts;
-  }, [conversations, folderStates, starred, readMessages, savedDrafts.drafts, providerFolders, scheduledEmails.length, followupGroups]);
+    return paginated ? { ...counts, ...pageSnapshot.pagination.folderCounts, drafts: (pageSnapshot.pagination.folderCounts.drafts ?? 0) + Object.values(savedDrafts.drafts).length, scheduled: scheduledEmails.length } : counts;
+  }, [conversations, folderStates, starred, readMessages, savedDrafts.drafts, providerFolders, scheduledEmails.length, followupGroups, paginated, pageSnapshot.pagination.folderCounts]);
 
   async function persistState(id: string, override: Partial<MessageState>) {
     stateRevision.current += 1;
@@ -1028,6 +1092,7 @@ export function EmailInboxWorkspace({
       });
       const result = await response.json().catch(() => ({ ok: false, error: "Unable to save this change." }));
       if (!response.ok || !result.ok) throw new Error(result.error || "Unable to save this change.");
+      if (paginated) invalidatePages();
       savedStates.current.set(id, state);
     })();
     stateWrites.current.set(id, write);
@@ -1134,7 +1199,7 @@ export function EmailInboxWorkspace({
   function openConversation(item: EmailConversation) {
     setMobileReading(true);
     const position = visible.indexOf(item);
-    if (position >= 0) setPage(Math.floor(position / pageSize) + 1);
+    if (!paginated && position >= 0) setPage(Math.floor(position / pageSize) + 1);
     if (!companyScope && !mobileReading && window.matchMedia("(min-width: 1600px)").matches) setDetailsOpen(true);
     const email = item.latest;
     if (item.id !== selectedConversation?.id) clearReplyComposer();
@@ -1158,7 +1223,7 @@ export function EmailInboxWorkspace({
       for (const message of messages) savedStates.current.set(message.id, { ...(savedStates.current.get(message.id) ?? messageState(message)), category });
       setCategories((current) => { const next = { ...current }; for (const message of messages) { if (category) next[message.id] = category; else delete next[message.id]; } return next; });
       setNotice(category ? `Tag changed to ${category}.` : "Tag removed.");
-      router.refresh();
+      if (paginated) void syncInbox(false); else router.refresh();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Unable to save tag.");
     }
@@ -1667,8 +1732,8 @@ export function EmailInboxWorkspace({
             <div className="mt-2 flex gap-1 overflow-x-auto pb-0.5" aria-label="Filter inbox by message source">{sourceFilters.map((item) => <button key={item.id} type="button" aria-pressed={sourceFilter === item.id} onClick={() => { setSourceFilter(item.id); setSelectedId(""); }} className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors ${sourceFilter === item.id ? "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-500/40 dark:bg-blue-500/10 dark:text-blue-300" : "bg-background text-muted-foreground hover:bg-muted"}`}>{item.label}</button>)}</div>
           </div>
           <div className="flex min-h-11 shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b px-3 py-1 text-xs">
-            <input type="checkbox" aria-label="Select all conversations on this page" checked={allPageChecked} onChange={() => setCheckedIds((current) => { const next = new Set(current); for (const item of pageItems) { if (allPageChecked) next.delete(item.id); else next.add(item.id); } return next; })} />
-            {checkedVisible.length ? <><span>{checkedVisible.length} selected</span><button type="button" disabled={bulkBusy} title="Mark selected as read" onClick={() => void bulkUpdate({ read: true })} className="rounded p-2 hover:bg-muted disabled:opacity-40"><MailOpen className="size-4" /></button><button type="button" disabled={bulkBusy} title="Mark selected as unread" onClick={() => void bulkUpdate({ read: false })} className="rounded p-2 hover:bg-muted disabled:opacity-40"><Mail className="size-4" /></button><button type="button" disabled={bulkBusy} title={folder === "trash" || folder === "archive" ? "Restore selected to inbox" : "Archive selected"} onClick={() => void bulkUpdate({ folder: folder === "trash" || folder === "archive" ? "inbox" : "archive" })} className="rounded p-2 hover:bg-muted disabled:opacity-40"><Archive className="size-4" /></button><button type="button" disabled={bulkBusy} title="Move selected to trash" onClick={() => void bulkUpdate({ folder: "trash" })} className="rounded p-2 hover:bg-muted disabled:opacity-40"><Trash2 className="size-4" /></button></> : <><button type="button" title="Refresh inbox" disabled={syncing || !inboxConfigured} onClick={() => void syncInbox(false, true)} className="rounded p-2 hover:bg-muted disabled:opacity-40"><RefreshCw className={syncing ? "size-4 animate-spin" : "size-4"} /></button><span className="text-muted-foreground">{visible.length} conversations</span></>}
+            <input disabled={pageLoading} type="checkbox" aria-label="Select all conversations on this page" checked={allPageChecked} onChange={() => setCheckedIds((current) => { const next = new Set(current); for (const item of pageItems) { if (allPageChecked) next.delete(item.id); else next.add(item.id); } return next; })} />
+            {checkedVisible.length ? <><span>{checkedVisible.length} selected</span><button type="button" disabled={bulkBusy} title="Mark selected as read" onClick={() => void bulkUpdate({ read: true })} className="rounded p-2 hover:bg-muted disabled:opacity-40"><MailOpen className="size-4" /></button><button type="button" disabled={bulkBusy} title="Mark selected as unread" onClick={() => void bulkUpdate({ read: false })} className="rounded p-2 hover:bg-muted disabled:opacity-40"><Mail className="size-4" /></button><button type="button" disabled={bulkBusy} title={folder === "trash" || folder === "archive" ? "Restore selected to inbox" : "Archive selected"} onClick={() => void bulkUpdate({ folder: folder === "trash" || folder === "archive" ? "inbox" : "archive" })} className="rounded p-2 hover:bg-muted disabled:opacity-40"><Archive className="size-4" /></button><button type="button" disabled={bulkBusy} title="Move selected to trash" onClick={() => void bulkUpdate({ folder: "trash" })} className="rounded p-2 hover:bg-muted disabled:opacity-40"><Trash2 className="size-4" /></button></> : <><button type="button" title="Refresh inbox" disabled={syncing || !inboxConfigured} onClick={() => void syncInbox(false, true)} className="rounded p-2 hover:bg-muted disabled:opacity-40"><RefreshCw className={syncing ? "size-4 animate-spin" : "size-4"} /></button><span className="text-muted-foreground">{totalConversations} conversations</span></>}
             <div className="ml-auto flex min-w-0 items-center gap-2">
               {inboxConfigured ? <EmailSyncStatus health={Object.values(syncHealth)} lastSuccessAt={lastSuccessfulSync} error={syncError || syncStatusError} partialSnapshot={partialSnapshot} /> : null}
               {inboxConfigured && selectedMailboxId && !["drafts", "scheduled"].includes(folder) ? <EmailHistoryImport key={`${selectedMailboxId}:${syncProviderFolder || "INBOX"}`} mailboxId={selectedMailboxId} providerFolder={syncProviderFolder} health={syncHealth[selectedMailboxId]} onChange={refreshSyncStatus} /> : null}
@@ -1679,14 +1744,15 @@ export function EmailInboxWorkspace({
 </>}
           {companyScope && inboxConfigured ? <div className="flex shrink-0 items-center justify-end border-b px-3 py-1"><EmailSyncStatus health={Object.values(syncHealth)} lastSuccessAt={lastSuccessfulSync} error={syncError} partialSnapshot={partialSnapshot} /></div> : null}
           {searchStatus ? <p role="status" className="border-b px-3 py-2 text-xs text-muted-foreground">{searchStatus}</p> : null}
-          <div className="mail-message-list min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
-{folder === "drafts" ? <div className="divide-y">{Object.values(savedDrafts.drafts).length ? Object.values(savedDrafts.drafts).map((value) => <div key={value.id} className="flex items-center gap-3 px-4 py-4"><button type="button" onClick={() => resumeDraft(value)} className="min-w-0 flex-1 text-left"><span className="block truncate text-sm font-medium">{value.subject || "(No subject)"}</span><span className="block truncate text-xs text-muted-foreground">{value.to || "No recipient"} · {value.bodyText.slice(0, 100)}</span></button><button type="button" onClick={() => { savedDrafts.remove(value); if (value.id === composeDraftId) { setComposeDraftId(""); setComposeTo(""); setComposeCc(""); setComposeBcc(""); setComposeBody(""); setComposeSubject(""); setComposeAttachments([]); setComposeProviderDraft(undefined); } }} aria-label={"Discard draft " + value.subject} className="rounded p-2 text-muted-foreground"><Trash2 className="size-4" /></button></div>) : <p className="p-5 text-sm text-muted-foreground">No saved drafts.</p>}<EmailMessageList emptyIcon={FileText} conversations={pageItems} categories={visibleCategories} compact={reading} activeId={selectedConversation?.id} checked={checkedIds} readMessages={readMessages} starred={starred} onCheck={() => undefined} onOpen={openConversation} onStar={toggleStar} /></div> : folder === "scheduled" ? <div className="divide-y">{scheduledError ? <NotificationToast>{scheduledError}</NotificationToast> : null}{scheduledEmails.map((value) => <div key={value.id} className="p-4"><p className="font-medium">{value.payload.subject || "(No subject)"}</p><p className="mt-1 text-xs text-muted-foreground">{value.payload.to?.join(", ")} · {new Date(value.scheduled_at).toLocaleString()} · {value.status}</p>{value.error ? <p className="mt-2 text-xs text-red-600">{value.error}</p> : null}{value.status === "scheduled" ? <button type="button" className="mt-2 text-xs underline" onClick={async () => { const response = await fetch("/api/email/scheduled", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: value.id }) }); const result = await response.json(); if (response.ok) setScheduledEmails((current) => current.filter((item) => item.id !== value.id)); else setScheduledError(result.error); }}>Cancel scheduled send</button> : null}{["scheduled", "failed"].includes(value.status) ? <button type="button" className="ml-4 mt-2 text-xs underline" onClick={() => void editScheduledEmail(value)}>Edit scheduled email</button> : null}</div>)}{!scheduledEmails.length && !scheduledError ? <p className="p-5 text-sm text-muted-foreground">No scheduled emails.</p> : null}</div> : <>
+          {paginated && pages.error ? <div role="alert" className="flex items-center gap-2 border-b p-3 text-xs text-destructive">{pages.error}<button type="button" className="underline" onClick={() => void pages.retry()}>Retry</button></div> : null}
+          <div aria-busy={pageLoading} className="mail-message-list min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
+{pageLoading || switchingMailboxId ? <EmailListSkeleton /> : folder === "drafts" ? <div className="divide-y">{Object.values(savedDrafts.drafts).length ? Object.values(savedDrafts.drafts).map((value) => <div key={value.id} className="flex items-center gap-3 px-4 py-4"><button type="button" onClick={() => resumeDraft(value)} className="min-w-0 flex-1 text-left"><span className="block truncate text-sm font-medium">{value.subject || "(No subject)"}</span><span className="block truncate text-xs text-muted-foreground">{value.to || "No recipient"} · {value.bodyText.slice(0, 100)}</span></button><button type="button" onClick={() => { savedDrafts.remove(value); if (value.id === composeDraftId) { setComposeDraftId(""); setComposeTo(""); setComposeCc(""); setComposeBcc(""); setComposeBody(""); setComposeSubject(""); setComposeAttachments([]); setComposeProviderDraft(undefined); } }} aria-label={"Discard draft " + value.subject} className="rounded p-2 text-muted-foreground"><Trash2 className="size-4" /></button></div>) : <p className="p-5 text-sm text-muted-foreground">No saved drafts.</p>}<EmailMessageList emptyIcon={FileText} conversations={pageItems} categories={visibleCategories} compact={reading} activeId={selectedConversation?.id} checked={checkedIds} readMessages={readMessages} starred={starred} onCheck={() => undefined} onOpen={openConversation} onStar={toggleStar} /></div> : folder === "scheduled" ? <div className="divide-y">{scheduledError ? <NotificationToast>{scheduledError}</NotificationToast> : null}{scheduledEmails.map((value) => <div key={value.id} className="p-4"><p className="font-medium">{value.payload.subject || "(No subject)"}</p><p className="mt-1 text-xs text-muted-foreground">{value.payload.to?.join(", ")} · {new Date(value.scheduled_at).toLocaleString()} · {value.status}</p>{value.error ? <p className="mt-2 text-xs text-red-600">{value.error}</p> : null}{value.status === "scheduled" ? <button type="button" className="mt-2 text-xs underline" onClick={async () => { const response = await fetch("/api/email/scheduled", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: value.id }) }); const result = await response.json(); if (response.ok) setScheduledEmails((current) => current.filter((item) => item.id !== value.id)); else setScheduledError(result.error); }}>Cancel scheduled send</button> : null}{["scheduled", "failed"].includes(value.status) ? <button type="button" className="ml-4 mt-2 text-xs underline" onClick={() => void editScheduledEmail(value)}>Edit scheduled email</button> : null}</div>)}{!scheduledEmails.length && !scheduledError ? <p className="p-5 text-sm text-muted-foreground">No scheduled emails.</p> : null}</div> : <>
             <EmailMessageList unavailable={mailboxUnavailable} followups={selectedMailboxId && followupActions?.mailboxId === selectedMailboxId ? conversationActions : undefined} emptyIcon={folderItems.find((item) => item.id === folder)?.icon} conversations={pageItems} categories={visibleCategories} compact={reading} simple={Boolean(companyScope)} activeId={reading ? selectedConversation?.id : undefined} checked={checkedIds} readMessages={readMessages} starred={starred} onCheck={(id) => setCheckedIds((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; })} onOpen={openConversation} onStar={toggleStar} /></>}
 
           </div>
           <div className="flex min-h-12 items-center justify-end gap-3 border-t px-3 text-xs text-muted-foreground">
-            <span>{visible.length ? (currentPage - 1) * pageSize + 1 : 0}–{Math.min(currentPage * pageSize, visible.length)} of {visible.length}</span>
-            <button type="button" aria-label="Previous email page" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} className="rounded p-1.5 hover:bg-muted disabled:opacity-30"><ChevronLeft className="size-4" /></button><span>{currentPage} / {pageCount}</span><button type="button" aria-label="Next email page" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)} className="rounded p-1.5 hover:bg-muted disabled:opacity-30"><ChevronRight className="size-4" /></button>
+            <span>{totalConversations ? (currentPage - 1) * pageSize + 1 : 0}–{Math.min(currentPage * pageSize, totalConversations)} of {totalConversations}</span>
+            <button type="button" aria-label="Previous email page" disabled={pageLoading || currentPage === 1} onClick={() => setPage(currentPage - 1)} className="rounded p-1.5 hover:bg-muted disabled:opacity-30"><ChevronLeft className="size-4" /></button><span>{currentPage} / {pageCount}</span><button type="button" aria-label="Next email page" disabled={pageLoading || currentPage === pageCount} onClick={() => setPage(currentPage + 1)} className="rounded p-1.5 hover:bg-muted disabled:opacity-30"><ChevronRight className="size-4" /></button>
           </div>
         </section>
 

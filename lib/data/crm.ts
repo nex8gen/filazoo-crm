@@ -150,7 +150,7 @@ async function authorizeLiveRead() {
   }
 }
 
-function mapCompany(row: CompanyRow, ownerNames = new Map<string, string>(), ownerAvatars = new Map<string, string>(), paidOrderCount = 0): Company {
+export function mapCompany(row: CompanyRow, ownerNames = new Map<string, string>(), ownerAvatars = new Map<string, string>(), paidOrderCount = 0): Company {
   const profile = first(row.company_profiles);
   const contact = first(row.contacts);
   const pipeline = first(row.pipeline);
@@ -245,6 +245,9 @@ async function queryCompanies(id?: string, options: { ids?: string[]; maxCompani
     const query = createSupabaseAdmin()
       .from("companies")
       .select(`id,name,website,domain,country,city,segment,source,status,discovered_at,created_at,crm_email_tags(tag,source,message_key),crm_customer_tag_state(tags,communication,facts,processing_status,processing_reason),company_profiles(summary,fit_score,interest_tags),contacts(id,name,role,email,verification_status,emails(status,direction,created_at)),${viewer?.role === "bd_manager" ? "pipeline!inner" : "pipeline"}(next_followup_at,currency,owner_id)`)
+      // Keep the displayed primary contact consistent with database search/sort.
+      .order("created_at", { referencedTable: "contacts" })
+      .order("id", { referencedTable: "contacts" })
       // Outreach displays one latest status, not every contact's email history.
       .order("created_at", { referencedTable: "contacts.emails", ascending: false })
       .order("id", { referencedTable: "contacts.emails", ascending: false })

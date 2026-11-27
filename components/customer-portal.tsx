@@ -72,7 +72,7 @@ export function CustomerPortal({ invoiceId, page = "home" }: { invoiceId: string
   }, [invoiceId, refresh]);
   useEffect(() => {
     if (!hasSession) return;
-    const timer = window.setInterval(() => { if (document.visibilityState === "visible") void refresh().catch(err => setError(err.message)); }, 15000);
+    const timer = window.setInterval(() => { if (document.visibilityState === "visible") void refresh().catch(err => setError(err.message)); }, 5000);
     return () => window.clearInterval(timer);
   }, [hasSession, refresh]);
   const messageCount = data?.messages.length ?? 0;
@@ -118,8 +118,8 @@ export function CustomerPortal({ invoiceId, page = "home" }: { invoiceId: string
     <Button type="submit" disabled={busy} className="w-full"><LockKeyhole />{busy ? "Please wait…" : login ? "Sign in" : "Secure my account"}</Button>
     <p className="text-xs text-muted-foreground">{login ? "Forgot your password? Contact your sales representative for help." : "This QR code grants access to this invoice. Keep it private. After setting a password, future scans require sign-in."}</p>
   </form>;
-  if (loading) return <main className="customer-portal portal-entry"><div className="portal-entry-card"><BrandMark viewBox="20 18 284 62" style={{ width: 128, height: 28 }} /><LoaderCircle className="portal-spinner" /><p role="status">Opening your customer portal…</p></div></main>;
-  if (!data) return <main className="customer-portal portal-entry"><section className="portal-entry-card"><BrandMark viewBox="20 18 284 62" style={{ width: 128, height: 28 }} /><span className="portal-section-icon"><ShieldCheck /></span><div><p className="portal-eyebrow">YOUR PRIVATE WORKSPACE</p><h1>Customer portal</h1></div><p className="portal-muted">{login && email ? "Welcome back. Sign in to view your invoice and order." : "Scan the QR code on your invoice to open your private customer portal."}</p>{login && email ? securityForm : error && <NotificationToast>{error}</NotificationToast>}<p className="portal-entry-footer"><LockKeyhole />Private access. Connected to your invoice.</p></section></main>;
+  if (loading) return <main className="customer-portal portal-entry"><div className="portal-entry-card"><BrandMark style={{ width: 174, height: "auto" }} /><LoaderCircle className="portal-spinner" /><p role="status">Opening your customer portal…</p></div></main>;
+  if (!data) return <main className="customer-portal portal-entry"><section className="portal-entry-card"><BrandMark style={{ width: 174, height: "auto" }} /><span className="portal-section-icon"><ShieldCheck /></span><div><p className="portal-eyebrow">YOUR PRIVATE WORKSPACE</p><h1>Customer portal</h1></div><p className="portal-muted">{login && email ? "Welcome back. Sign in to view your invoice and order." : "Scan the QR code on your invoice to open your private customer portal."}</p>{login && email ? securityForm : error && <NotificationToast>{error}</NotificationToast>}<p className="portal-entry-footer"><LockKeyhole />Private access. Connected to your invoice.</p></section></main>;
   return <>
     <PortalExperience data={data} invoiceId={invoiceId} page={page} busy={busy || sending} refreshing={refreshing} onRefresh={() => void manualRefresh()}
       onSignout={() => { setBusy(true); void requestPortal("/api/customer/session", "DELETE").then(() => { setData(null); setEmail(""); setLogin(false); setError(""); setNotice(""); setSetup(false); }).catch(err => setError(err.message)).finally(() => setBusy(false)); }}

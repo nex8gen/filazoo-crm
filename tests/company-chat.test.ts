@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildCompanyChatContext, buildCompanyChatPrompt, citedCompanySources, companyChatSchema } from "../lib/ai/company-chat.ts";
+import { buildCompanyChatContext, buildCompanyChatPrompt, citedCompanySources, companyChatInstruction, companyChatSchema } from "../lib/ai/company-chat.ts";
+import { answerStyleInstruction } from "../lib/ai/answer-style.ts";
 import type { CompanyActivity, CompanyDetails } from "../lib/types.ts";
 
 function customer(activity: CompanyActivity[] = []): CompanyDetails {
@@ -23,6 +24,13 @@ const email: CompanyActivity = {
   direction: "received", actor: "Taylor", actorId: null, createdAt: "2026-10-24T10:00:00Z",
   actorAvatarUrl: "https://private.example/signed-photo?token=private",
 };
+
+test("customer chat receives the shared concise style without requiring a full brief for every question", () => {
+  const instruction = companyChatInstruction("2026-11-27T04:00:00Z");
+  assert.ok(instruction.includes(answerStyleInstruction));
+  assert.match(instruction, /full account brief only when requested/);
+  assert.doesNotMatch(instruction, /account analyses need evidence, discussion summary and next steps/);
+});
 
 test("builds customer evidence from the authorized profile, contacts and saved email bodies", () => {
   const { context, sources } = buildCompanyChatContext(customer([email]), true);

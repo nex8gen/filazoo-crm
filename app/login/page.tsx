@@ -4,7 +4,7 @@ import { AuthShell } from "@/components/auth-shell";
 import { getViewer } from "@/lib/auth";
 import { LoginForm } from "./login-form";
 import { loginDestination } from "@/lib/login-destination";
-import { getAuthProviders } from "@/lib/auth-providers";
+import { getAuthProviders, getPasskeysEnabled } from "@/lib/auth-providers";
 
 export const metadata: Metadata = { title: "Sign in" };
 // Session validation is request-bound. Opt this auth route out of instant
@@ -15,6 +15,6 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const [{ next, message, email }, viewer] = await Promise.all([searchParams, getViewer()]);
   if (viewer) redirect(loginDestination(next));
   return (
-    <AuthShell variant="signin"><LoginForm next={loginDestination(next)} message={message} email={email} providers={await getAuthProviders()} /></AuthShell>
+    <AuthShell variant="signin"><LoginForm next={loginDestination(next)} message={message} email={email} providers={await getAuthProviders()} passkeysEnabled={await getPasskeysEnabled()} /></AuthShell>
   );
 }

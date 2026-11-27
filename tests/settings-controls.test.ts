@@ -9,7 +9,7 @@ import * as mailImport from "../lib/mail-import.ts";
 
 test("settings search finds actual controls across categories and languages without exposing admin items", () => {
   assert.deepEqual(visibleSettingsSections(false, "email signature").map(item => item.id), ["email"]);
-  assert.deepEqual(visibleSettingsSections(false, "  DARK  theme ").map(item => item.id), ["appearance"]);
+  assert.deepEqual(visibleSettingsSections(false, "  DARK  theme ").map(item => item.id), ["general"]);
   assert.deepEqual(visibleSettingsSections(false, "签名").map(item => item.id), ["email"]);
   for (const query of ["ERP", "lead assignment"]) assert.equal(visibleSettingsSections(false, query).length, 0);
   assert.deepEqual(visibleSettingsSections(false, "team access").map(item => item.id), ["ai"]);
@@ -21,7 +21,8 @@ test("settings search finds actual controls across categories and languages with
 test("nested connection pages and the general alias keep the right active section", () => {
   assert.equal(settingsSectionForPath("/settings/apps/gmail")?.id, "apps");
   assert.equal(settingsSectionForPath("/settings/general")?.id, "general");
-  assert.equal(settingsSectionForPath("/settings/appearance")?.id, "appearance");
+  assert.equal(settingsSectionForPath("/settings/appearance")?.id, "general");
+  assert.equal(settingsSectionForPath("/settings/profile")?.id, "general");
   assert.equal(settingsSectionForPath("/settings/unknown"), undefined);
   assert.equal(settingsSectionForPath("/settings/mailboxes")?.id, "apps");
   assert.equal(settingsSectionForPath("/settings/payments")?.id, "invoices");

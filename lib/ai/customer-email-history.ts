@@ -7,8 +7,10 @@ import { getCompaniesEmailBackendData } from "../data/company-emails";
 import { readCompanyMailboxEmail } from "../data/company-email-access";
 import { customerConversationRows, type CustomerConversations } from "./customer-conversations.ts";
 import type { RecordEvidence } from "./record-presentation";
+import { assertAiCustomerAccess, assignedAiCustomerIds } from "./customer-access.ts";
 
 export type CustomerEmailHistoryContext = {
+  accessViewer?: string;
   companyEmails?: Map<string, Promise<EmailInboxBackendData>>;
   companyEmailBodies?: Map<string, Promise<InboxEmailItem>>;
 };
@@ -16,10 +18,45 @@ export type CustomerEmailHistoryContext = {
 /** Request-local only. Both AI tools use the same source as the company Email tab. */
 export async function loadCustomerEmailHistories(viewer: WorkspaceViewer, companyIds: string[], context: CustomerEmailHistoryContext = {}): Promise<Map<string, EmailInboxBackendData | null>> {
   await requireAiData("emails", "customers");
+  const accessViewer = `${viewer.workspaceId}:${viewer.id}:${viewer.role}`;
+  if (context.accessViewer !== accessViewer) {
+    context.companyEmails = undefined;
+    context.companyEmailBodies = undefined;
+    context.accessViewer = accessViewer;
+  }
+  const db = viewer.role === "admin" ? null : (await import("../supabase/admin.ts")).createSupabaseAdmin();
+  if (viewer.role !== "admin") {
+    const assigned = new Set(await assignedAiCustomerIds(viewer, db!));
+    if (companyIds.some(id => !assigned.has(id))) throw new Error("A requested customer is unavailable or is not assigned to you.");
+  }
   const cache: NonNullable<CustomerEmailHistoryContext["companyEmails"]> = context.companyEmails ??= new Map<string, Promise<EmailInboxBackendData>>();
   const missing = [...new Set(companyIds)].filter(id => !cache.has(id));
   if (missing.length) {
-    const batch = getViewerMailboxes(viewer.id).then(mailboxes => getCompaniesEmailBackendData(missing, { viewer, mailboxes }, { history: true }));
+    const batch = getViewerMailboxes(viewer.id).then(mailboxes => getCompaniesEmailBackendData(missing, { viewer, mailboxes }, { history: true })).then(async results => {
+      if (viewer.role === "admin") return results;
+      const addresses = [...new Set([...results.values()].flatMap(history => history.emails.map(email => email.contact.trim().toLowerCase())).filter(Boolean))];
+      const owners = new Map<string, Set<string>>();
+      for (let offset = 0; offset < addresses.length; offset += 100) {
+        const batch = addresses.slice(offset, offset + 100);
+        for (let start = 0; ; start += 500) {
+          const { data, error } = await db!.from("contacts").select("company_id,email")
+            .or(batch.map(email => `email.ilike.${JSON.stringify(email.replace(/[\\%_]/g, "\\$&"))}`).join(",")).order("id").range(start, start + 499);
+          if (error) throw new Error("Unable to verify conversation customer ownership.");
+          for (const contact of data ?? []) {
+            const address = contact.email.trim().toLowerCase(), ids = owners.get(address) ?? new Set<string>();
+            ids.add(contact.company_id); owners.set(address, ids);
+          }
+          if ((data?.length ?? 0) < 500) break;
+        }
+      }
+      return new Map([...results].map(([id, history]) => {
+        const emails = history.emails.filter(email => {
+          const ids = owners.get(email.contact.trim().toLowerCase());
+          return ids?.size === 1 && ids.has(id);
+        });
+        return [id, { ...history, emails, ...(emails.length < history.emails.length ? { inboxError: "Some conversations have ambiguous customer ownership." } : {}) }];
+      }));
+    });
     for (const id of missing) cache.set(id, batch.then(results => {
       const history = results.get(id);
       if (!history) throw new Error("Customer email history unavailable.");
@@ -37,6 +74,7 @@ export function isCustomerHistoryMessage(email: InboxEmailItem) {
 
 /** Reuse the profile's exact company/UID authorization for lazy Inbox AND Sent bodies. */
 export async function loadCustomerEmailBody(viewer: WorkspaceViewer, companyId: string, email: InboxEmailItem, context: CustomerEmailHistoryContext = {}) {
+  if (viewer.role !== "admin") await assertAiCustomerAccess(viewer, companyId, (await import("../supabase/admin.ts")).createSupabaseAdmin());
   if (email.bodyLoaded !== false) return email;
   await requireAiData("emails", "customers");
   const cache: NonNullable<CustomerEmailHistoryContext["companyEmailBodies"]> = context.companyEmailBodies ??= new Map<string, Promise<InboxEmailItem>>();

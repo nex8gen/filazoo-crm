@@ -88,6 +88,35 @@ function fixture() {
 }
 const request = (companyId?: string, offset = 0) => crmReadSchema.parse({ resource: "customer_insights", companyId, offset });
 
+test("population screening reads 200 customers per page and skips unrelated financial and task detail", async () => {
+  const f = fixture();
+  f.rows.companies = Array.from({ length: 331 }, (_, index) => ({ ...f.rows.companies[0], id: `customer-${index}`, contacts: [] }));
+  const first = await f.readCustomerInsights(viewer, request(), {}, { screening: true });
+  const last = await f.readCustomerInsights(viewer, request(undefined, 200), {}, { screening: true });
+  assert.equal(first.records.length, 200);
+  assert.equal(first.coverage.nextOffset, 200);
+  assert.equal(last.records.length, 131);
+  assert.equal(last.coverage.nextOffset, null);
+  assert.equal(first.coverage.matching, 331);
+  assert.ok(f.calls.some(call => call.table === "events" && call.method === "eq" && call.key === "type" && call.value === "staff_comment"));
+  assert.ok(!f.calls.some(call => ["invoices", "catalogs", "crm_tasks"].includes(call.table)));
+});
+
+for (const role of ["operator", "bd_manager", "viewer"] as const) test(`${role} screening retains assignment scope and disabled data permissions`, async () => {
+  const f = fixture();
+  f.rows.companies.push({ ...f.rows.companies[0], id: otherId, pipeline: [{ owner_id: otherId }] });
+  f.policy.data.billing = false;
+  f.policy.data.emails = false;
+  const result = await f.readCustomerInsights({ ...viewer, role }, request(), {}, { screening: true });
+  assert.deepEqual(Array.from(result.records, record => record.id), [id]);
+  assert.equal(result.coverage.matching, 1);
+  assert.equal(result.records[0].email.available, false);
+  assert.equal(result.records[0].purchasePipeline.available, false);
+  assert.equal(f.indexReads(), 0);
+  assert.ok(!f.calls.some(call => ["purchase_orders", "invoices", "catalogs", "crm_tasks"].includes(call.table)));
+  assert.ok(f.calls.some(call => call.table === "companies" && call.key === "pipeline.owner_id" && call.value === viewer.id));
+});
+
 test("customer briefs join both conversation directions, notes and sales with source links; unsent emails are excluded", async () => {
   const f = fixture();
   const result = await f.readCustomerInsights(viewer, request(id));

@@ -5,6 +5,7 @@ import { ArrowDownRight, ArrowUpRight, CalendarDays, ChartNoAxesCombined, Minus 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { companyListAnalytics } from "@/lib/company-list-analytics";
 import type { Company } from "@/lib/types";
+import { companyListBucketAnalytics, type CompanyAnalyticsBucket } from "@/lib/company-list";
 import surfaces from "./analytics-surface.module.css";
 import "./company-list-analytics.css";
 
@@ -38,9 +39,9 @@ function Sparkline({ points, previousPoints }: { points: number[]; previousPoint
   </svg>;
 }
 
-export function CompanyListAnalytics({ companies, asOf }: { companies: Company[]; asOf: string }) {
+export function CompanyListAnalytics({ companies = [], buckets, asOf }: { companies?: Company[]; buckets?: CompanyAnalyticsBucket[]; asOf: string }) {
   const [period, setPeriod] = useState("7");
-  const metrics = useMemo(() => companyListAnalytics(companies, Number(period), asOf), [companies, period, asOf]);
+  const metrics = useMemo(() => buckets ? companyListBucketAnalytics(buckets, Number(period)) : companyListAnalytics(companies, Number(period), asOf), [companies, buckets, period, asOf]);
   const number = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
 
   return <section aria-label="Company and customer analytics" className="company-analytics-strip">

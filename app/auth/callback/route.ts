@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error && data.user) {
       if (!data.user.email || !data.user.email_confirmed_at) return NextResponse.redirect(new URL(`/auth/email?next=${encodeURIComponent(next)}`, request.url));
+      if (data.user.factors?.some(factor => factor.status === "verified")) return NextResponse.redirect(new URL(`/auth/mfa?next=${encodeURIComponent(next)}`, request.url));
       return NextResponse.redirect(new URL(next, request.url));
     }
   }

@@ -14,8 +14,9 @@ export function createSupabaseAdmin() {
     global: { fetch: workspaceFetch(async () => {
       const explicit = currentWorkspaceContext();
       if (explicit) return explicit;
-      scope ??= import("../auth.ts").then(async ({ getWorkspaceViewer }) => {
+      scope ??= import("../auth.ts").then(async ({ getWorkspaceViewer, isMfaPending }) => {
         try {
+          if (await isMfaPending()) throw new Error("Complete two-step verification before accessing workspace data.");
           const viewer = await getWorkspaceViewer();
           return viewer ? { workspaceId: viewer.workspaceId, userId: viewer.id } : null;
         } catch (error) {

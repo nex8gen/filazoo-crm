@@ -8,6 +8,7 @@ import { getCompanyDetails } from "@/lib/data/crm";
 import { getCompanyEmailBackendData } from "@/lib/data/company-emails";
 import { after } from "next/server";
 import { validProviderFolder } from "@/lib/email-provider";
+import { getEmailInboxPageData } from "@/lib/data/email-pagination";
 
 export const maxDuration = 240;
 
@@ -31,7 +32,7 @@ export async function GET(request: Request) {
       name: company.company.name,
       ownerId: company.company.ownerId,
       emails: [company.company.email, ...company.contacts.map((contact) => contact.email)],
-    }, { viewer, mailboxes }) : await getEmailInboxBackendData({ syncMailbox: false, mailboxId, context: { viewer, mailboxes }, interactive: true, providerFolder });
+    }, { viewer, mailboxes }) : params.get("paged") === "true" ? await getEmailInboxPageData({ viewer, mailboxes, mailboxId }) : await getEmailInboxBackendData({ syncMailbox: false, mailboxId, context: { viewer, mailboxes }, interactive: true, providerFolder });
     // Manual refresh persists intent before returning. Automatic checks return
     // saved messages first and enqueue receiving in Next's after-response work.
     const syncHealth: Record<string, Awaited<ReturnType<typeof readMailboxSyncHealth>>> = {};

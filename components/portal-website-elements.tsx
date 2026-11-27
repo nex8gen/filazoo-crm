@@ -7,19 +7,19 @@ import type { PortalWebsiteBlock, PortalWebsiteSection } from "@/lib/portal-desi
 import { safeWebsiteLink } from "@/lib/portal-website-blocks";
 
 const icons = { building: Building2, package: Package, truck: Truck, shield: ShieldCheck, check: Check, star: Star, mail: Mail, globe: Globe };
-function inlineText(text: string, select?: () => void): ReactNode {
+function inlineText(text: string, select?: () => void, basePath = ""): ReactNode {
   const expression = /(\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/g;
   return text.split(expression).map((part, index) => {
     if (part.startsWith("**") && part.endsWith("**")) return <strong key={index}>{part.slice(2, -2)}</strong>;
     if (part.startsWith("*") && part.endsWith("*")) return <em key={index}>{part.slice(1, -1)}</em>;
     const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(part);
-    const href = link ? safeWebsiteLink(link[2]) : undefined;
+    const href = link ? safeWebsiteLink(link[2], basePath) : undefined;
     return link && href ? <a key={index} href={href} onClick={select ? event => { event.preventDefault(); select(); } : undefined}>{link[1]}</a> : part;
   });
 }
 type ElementsProps = {
   blocks: PortalWebsiteBlock[]; section: PortalWebsiteSection; preview: boolean; selected?: string;
-  parentPath?: number[]; onSelect?: (path: number[]) => void; onNavigate?: (page: string) => void;
+  parentPath?: number[]; basePath?: string; onSelect?: (path: number[]) => void; onNavigate?: (page: string) => void;
 };
 
 export function PortalWebsiteElements(props: ElementsProps) {
@@ -45,7 +45,7 @@ function WebsiteElement({ block, path, ...props }: ElementsProps & { block: Port
   const textStyle: CSSProperties = { fontSize: settings.fontSize ? "inherit" : undefined, fontWeight: settings.fontWeight ? "inherit" : undefined, color: settings.color ? "inherit" : undefined };
   const children = <PortalWebsiteElements {...props} preview={preview} blocks={block.children ?? []} section={section} parentPath={path} />;
   function action(label: ReactNode, className: string) {
-    const href = safeWebsiteLink(block.link);
+    const href = safeWebsiteLink(block.link, props.basePath);
     const actionStyle: CSSProperties = { ...textStyle, color: settings.color || undefined, backgroundColor: settings.background || undefined, borderRadius: settings.radius === undefined ? undefined : settings.radius, width: settings.width === "full" ? "100%" : undefined };
     if (!href) return preview ? <span className={className} style={actionStyle}>{label}</span> : null;
     if (editable) return <button type="button" className={className} style={actionStyle} onClick={() => onSelect?.(path)}>{label}</button>;
@@ -56,14 +56,14 @@ function WebsiteElement({ block, path, ...props }: ElementsProps & { block: Port
   if (block.type === "heading") {
     const Heading = block.headingLevel ?? (section.type === "hero" && block.binding === "title" ? "h1" : path.length > 1 && !(section.type === "slideshow" && path.length === 2) ? "h3" : "h2");
     content = block.text || preview ? <Heading style={textStyle}>{block.text || "Add a heading"}</Heading> : null;
-  } else if (block.type === "text") content = block.text || preview ? <p className={block.binding === "eyebrow" ? "pws-eyebrow" : "pws-body"} style={textStyle}>{inlineText(block.text || (editable ? "Add text" : ""), editable ? () => onSelect?.(path) : undefined)}</p> : null;
+  } else if (block.type === "text") content = block.text || preview ? <p className={block.binding === "eyebrow" ? "pws-eyebrow" : "pws-body"} style={textStyle}>{inlineText(block.text || (editable ? "Add text" : ""), editable ? () => onSelect?.(path) : undefined, props.basePath)}</p> : null;
   else if (block.type === "button") content = block.text || preview ? action(<>{block.text || "Add button text"}<ArrowRight /></>, `pws-button pws-button-${settings.buttonStyle ?? "solid"}`) : null;
   else if (block.type === "image") content = block.imageUrl ? <div className="pws-image-media" data-aspect={settings.imageAspect ?? "landscape"}>{settings.imageAspect === "natural" ? <Image src={block.imageUrl} alt={block.alt} width={1200} height={800} style={{ width: "100%", height: "auto" }} unoptimized referrerPolicy="no-referrer" /> : <Image src={block.imageUrl} alt={block.alt} fill unoptimized referrerPolicy="no-referrer" sizes="(max-width:650px) 100vw, 50vw" />}</div> : preview ? <div className="pws-element-empty" data-aspect={settings.imageAspect ?? "landscape"}><ImageIcon /><span>Choose an image</span></div> : null;
   else if (block.type === "group" || block.type === "card" || block.type === "slide") content = <>
     {block.type === "slide" && block.imageUrl && <div className="pws-slide-image"><Image src={block.imageUrl} alt={block.alt} fill unoptimized referrerPolicy="no-referrer" sizes="100vw" /></div>}
     <div className="pws-element-children">{block.children?.length ? children : preview ? <p className="pws-block-placeholder">Add elements to this {block.type}.</p> : null}</div>
   </>;
-  else if (block.type === "faq") content = <details className="pws-faq-item" open={preview && selected?.startsWith(`${path.join(".")}.`) ? true : undefined}><summary style={textStyle}>{block.title || "Question"}<span aria-hidden="true">+</span></summary><div><p className="pws-body" style={textStyle}>{inlineText(block.text, editable ? () => onSelect?.(path) : undefined)}</p>{block.children?.length ? <div className="pws-element-children">{children}</div> : null}</div></details>;
+  else if (block.type === "faq") content = <details className="pws-faq-item" open={preview && selected?.startsWith(`${path.join(".")}.`) ? true : undefined}><summary style={textStyle}>{block.title || "Question"}<span aria-hidden="true">+</span></summary><div><p className="pws-body" style={textStyle}>{inlineText(block.text, editable ? () => onSelect?.(path) : undefined, props.basePath)}</p>{block.children?.length ? <div className="pws-element-children">{children}</div> : null}</div></details>;
   else if (block.type === "testimonial") content = <figure className="pws-quote">{Boolean(block.rating) && <div className="pws-quote-rating" aria-label={`${block.rating} out of 5 stars`}>{Array.from({ length: block.rating ?? 0 }, (_, index) => <Star key={index} />)}</div>}<blockquote style={textStyle}>{block.text || (preview ? "Add a customer quote" : "")}</blockquote><figcaption>{block.imageUrl && <Image src={block.imageUrl} alt={block.alt} width={40} height={40} unoptimized referrerPolicy="no-referrer" />}<strong>{block.title}</strong></figcaption></figure>;
   else if (block.type === "stat") content = <div className="pws-stat"><strong style={textStyle}>{block.text || "—"}</strong><span>{block.title}</span></div>;
   else if (block.type === "icon") { const Icon = icons[block.icon ?? "check"]; content = <div className="pws-icon-label"><Icon style={{ color: settings.color || undefined }} /><span style={textStyle}>{block.text || block.title}</span></div>; }

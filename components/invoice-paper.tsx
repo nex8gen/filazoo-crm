@@ -39,11 +39,10 @@ export function InvoicePaper({ invoice, today, customerView = false }: { invoice
         </div>
         <div className="invoice-paper-brand">
         <BrandMark
-          viewBox="20 18 284 62"
           className="invoice-paper-logo"
-          style={{ width: 115, height: 25 }}
+          style={{ width: 145, height: "auto" }}
           role="img"
-          aria-label="Filazoo"
+          aria-label="NewAI"
           aria-hidden={false}
         />
         </div>

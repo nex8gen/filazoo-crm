@@ -1,12 +1,12 @@
 "use client";
 
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { type SortingState, flexRender } from "@tanstack/react-table";
-import { type LegacyColumnDef as ColumnDef, getCoreRowModel, getPaginationRowModel, getSortedRowModel, useLegacyTable as useReactTable } from "@tanstack/react-table/legacy";
+import { type LegacyColumnDef as ColumnDef, getCoreRowModel, useLegacyTable as useReactTable } from "@tanstack/react-table/legacy";
 import { Building2, ChevronsUpDown, Globe2, Mail, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { bulkUpdateCompanies } from "@/app/crm-actions";
@@ -30,11 +30,28 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableFilters, TableFilter } from "@/components/ui/table-filters";
 import { TablePagination } from "@/components/ui/table-pagination";
-import type { Company, DataMode } from "@/lib/types";
-import { usePreferences } from "@/components/preferences-provider";
-import { useWorkspaceState } from "@/components/workspace-memory";
+import type { Company } from "@/lib/types";
+import { companyListHref, type CompanyListPage, type CompanyListRequest } from "@/lib/company-list";
 import { countryFlagCode } from "@/lib/country-flags";
 import { customerTagValues } from "@/lib/customer-tags";
+import { useCachedPage } from "@/components/use-cached-page";
+import { Skeleton } from "@/components/ui/skeleton";
+import { usePreferences } from "@/components/preferences-provider";
+
+function companyPageKey(search: string, pageSize?: number) {
+  const params = new URLSearchParams(search.replace(/^.*\?/, ""));
+  if (pageSize) params.set("pageSize", String(pageSize));
+  if (!params.has("page")) params.set("page", "1");
+  params.sort();
+  return `/companies?${params}`;
+}
+type CompanyPageSnapshot = { result: CompanyListPage; request: CompanyListRequest; asOf: string };
+async function readCompanyPage(key: string, signal: AbortSignal): Promise<CompanyPageSnapshot> {
+  const response = await fetch(key.replace("/companies?", "/api/companies/page?"), { signal, cache: "no-store" });
+  const data = await response.json().catch(() => null);
+  if (!response.ok || !data?.result || !data?.request) throw new Error(data?.error || "Unable to load companies. Please retry.");
+  return data;
+}
 
 const addedAtFormatter = new Intl.DateTimeFormat(undefined, {
   timeZone: "Asia/Shanghai",
@@ -66,25 +83,48 @@ function CountryFlag({ country }: { country: string }) {
   </span>;
 }
 
-export function CompaniesTable({ companies, mode, canDelete, analyticsAsOf, viewKey = "all" }: { companies: Company[]; mode: DataMode; canWrite: boolean; canDelete: boolean; analyticsAsOf: string; viewKey?: string }) {
+export function CompaniesTable({ result: initialResult, request: initialRequest, canDelete, analyticsAsOf }: { result: CompanyListPage; request: CompanyListRequest; canDelete: boolean; analyticsAsOf: string }) {
+  const searchParams = useSearchParams();
   const { preferences } = usePreferences();
-  const memoryKey = `companies.${viewKey}`;
-  const [pagination, setPagination] = useWorkspaceState(`${memoryKey}.pagination`, { pageIndex: 0, pageSize: preferences.tablePageSize as number });
+  const page = useCachedPage(companyPageKey(searchParams.toString(), initialRequest.pageSize), { result: initialResult, request: initialRequest, asOf: analyticsAsOf }, readCompanyPage);
+  const { key: cacheKey, select: selectPage } = page;
+  const { result, request, asOf } = page.value;
+  const pending = page.loading;
+  const { companies, mode, total, countries, buckets } = result;
   const router = useRouter();
-  const [query, setQuery] = useWorkspaceState(`${memoryKey}.query`, "");
-  const [country, setCountry] = useWorkspaceState(`${memoryKey}.country`, "all");
-  const [tag, setTag] = useWorkspaceState(`${memoryKey}.tag`, "all");
-  const [sorting, setSorting] = useWorkspaceState<SortingState>(`${memoryKey}.sorting`, []);
-  const [columnVisibility, setColumnVisibility] = useTableColumns("companies");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useState(request.query);
+  const [queryDraft, setQueryDraft] = useState(request.query);
+  // Reset a local draft when browser back/forward supplies another server query.
+  if (query !== request.query) {
+    setQuery(request.query);
+    if (queryDraft === query) setQueryDraft(request.query);
+  }
+  const { country, tag } = request;
+  const sorting: SortingState = request.sort === "createdAt" ? [] : [{ id: request.sort, desc: request.descending }];
+  const navigate = useCallback((changes: Record<string, string | number | undefined>) => {
+    setSelectedIds(new Set());
+    const href = companyListHref(cacheKey.split("?")[1] ?? "", changes);
+    void selectPage(companyPageKey(href)).then(success => { if (success) window.history.replaceState(null, "", href); });
+  }, [cacheKey, selectPage]);
+  useEffect(() => {
+    if (preferences.tablePageSize === request.pageSize) return;
+    const timer = setTimeout(() => navigate({ page: 1, pageSize: preferences.tablePageSize }), 0);
+    return () => clearTimeout(timer);
+  }, [preferences.tablePageSize, request.pageSize, navigate]);
+  useEffect(() => {
+    if (queryDraft === request.query) return;
+    const timer = setTimeout(() => navigate({ q: queryDraft, page: 1 }), 300);
+    return () => clearTimeout(timer);
+  }, [queryDraft, request.query, navigate]);
+  useEffect(() => {
+    const back = () => { if (window.location.pathname === "/companies") { setSelectedIds(new Set()); void selectPage(companyPageKey(window.location.search, preferences.tablePageSize)); } };
+    window.addEventListener("popstate", back);
+    return () => window.removeEventListener("popstate", back);
+  }, [selectPage, preferences.tablePageSize]);
+  const [columnVisibility, setColumnVisibility] = useTableColumns("companies");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const selectedCompanyIds = useMemo(() => companies.filter(company => selectedIds.has(company.id)).map(company => company.id), [companies, selectedIds]);
-
-  const countries = useMemo(() => [...new Set(companies.map((company) => company.country).filter(country => country.trim()))].sort(), [companies]);
-  const filtered = useMemo(() => companies.filter((company) => {
-    const matchesQuery = `${company.name} ${company.domain} ${company.email} ${company.segment} ${company.ownerName} ${(company.customerTags ?? []).join(" ")}`.toLowerCase().includes(query.toLowerCase());
-    return matchesQuery && (country === "all" || company.country === country) && (tag === "all" || (company.customerTags ?? []).some(value => value === tag));
-  }), [companies, country, query, tag]);
 
   const toggleOne = (id: string, checked: boolean) => setSelectedIds((current) => {
     const next = new Set(current);
@@ -98,29 +138,32 @@ export function CompaniesTable({ companies, mode, canDelete, analyticsAsOf, view
       header: ({ table }) => {
         const ids = table.getRowModel().rows.map((row) => row.original.id);
         const allSelected = ids.length > 0 && ids.every((id) => selectedIds.has(id));
-        return <Checkbox aria-label="Select companies on this page" checked={allSelected} indeterminate={!allSelected && ids.some(id => selectedIds.has(id))} onCheckedChange={checked => setSelectedIds((current) => { const next = new Set(current); for (const id of ids) { if (checked) next.add(id); else next.delete(id); } return next; })} />;
+        return <Checkbox disabled={pending} aria-label="Select companies on this page" checked={allSelected} indeterminate={!allSelected && ids.some(id => selectedIds.has(id))} onCheckedChange={checked => setSelectedIds((current) => { const next = new Set(current); for (const id of ids) { if (checked) next.add(id); else next.delete(id); } return next; })} />;
       },
       cell: ({ row }) => <Checkbox aria-label={`Select ${row.original.name}`} checked={selectedIds.has(row.original.id)} onCheckedChange={checked => toggleOne(row.original.id, checked)} />,
     },
     {
       accessorKey: "name", header: "Company / customer", enableHiding: false,
-      cell: ({ row }) => <Link href={`/companies/${row.original.id}`} className="text-primary no-underline hover:no-underline"><CompanyIdentity company={row.original} /></Link>,
+      cell: ({ row }) => <Link prefetch={false} href={`/companies/${row.original.id}`} className="text-primary no-underline hover:no-underline"><CompanyIdentity company={row.original} /></Link>,
     },
     { accessorKey: "email", header: "Email", cell: ({ getValue }) => <span className="flex max-w-52 items-center gap-1.5 truncate"><Mail className="size-3.5 shrink-0 text-muted-foreground/70" />{getValue<string>() || "No email"}</span> },
     { accessorKey: "ownerName", header: "Assigned manager", cell: ({ row }) => <AssignedOwner name={row.original.ownerName} initials={row.original.ownerInitials} imageUrl={row.original.ownerAvatarUrl} assigned={Boolean(row.original.ownerId)} compact /> },
     { accessorKey: "addedAt", header: "Added", cell: ({ getValue }) => { const value = getValue<string | undefined>(); return <span className="whitespace-nowrap" title={value || undefined}>{value ? addedAtFormatter.format(new Date(value)) : "Unknown"}</span>; } },
     { accessorKey: "country", header: "Country", cell: ({ getValue }) => <CountryFlag country={getValue<string>()} /> },
     { accessorKey: "segment", header: "Segment", cell: ({ getValue }) => <span className="block max-w-44 truncate">{getValue<string>()}</span> },
-  ], [selectedIds]);
+  ], [selectedIds, pending]);
 
   const table = useReactTable({
-    data: filtered, columns, state: { sorting, columnVisibility, pagination: { pageSize: preferences.tablePageSize, pageIndex: Math.min(pagination.pageIndex, Math.max(0, Math.ceil(filtered.length / preferences.tablePageSize) - 1)) } }, onSortingChange: setSorting, onColumnVisibilityChange: setColumnVisibility, onPaginationChange: setPagination, getRowId: (row) => row.id,
-    getCoreRowModel: getCoreRowModel(), getSortedRowModel: getSortedRowModel(), getPaginationRowModel: getPaginationRowModel(),
+    data: companies, columns, state: { sorting, columnVisibility, pagination: { pageSize: request.pageSize, pageIndex: request.page - 1 } },
+    onSortingChange: updater => { const next = typeof updater === "function" ? updater(sorting) : updater; navigate({ sort: next[0]?.id, direction: next[0] ? next[0].desc ? "desc" : "asc" : undefined, page: 1 }); },
+    onColumnVisibilityChange: setColumnVisibility, getRowId: row => row.id,
+    manualSorting: true, manualPagination: true, enableMultiSort: false, rowCount: total,
+    getCoreRowModel: getCoreRowModel(),
   });
 
-  if (companies.length === 0) return <EmptyState icon={Building2} title={mode === "live" ? "No companies yet" : "Company data is unavailable"} description={mode === "live" ? "Add or import your first company to start building account history." : "Check your workspace connection in Settings and try again."} />;
+  if (total === 0 && !pending && !request.query && country === "all" && tag === "all") return <EmptyState icon={Building2} title={mode === "live" ? "No companies yet" : "Company data is unavailable"} description={mode === "live" ? "Add or import your first company to start building account history." : "Check your workspace connection in Settings and try again."} />;
 
-  return <div className="flex min-w-0 flex-col gap-6">
+  return <div className="flex min-w-0 flex-col gap-6" aria-busy={pending}>
     <ConfirmActionDialog open={deleteOpen} onOpenChange={setDeleteOpen} title="Delete selected companies?" description={`Delete ${selectedCompanyIds.length} selected companies and their contacts, catalogs, and account history? This cannot be undone.`} onConfirm={async () => {
       if (!canDelete || !selectedCompanyIds.length) throw new Error("Select companies you have permission to delete.");
       const result = await bulkUpdateCompanies(selectedCompanyIds, "delete");
@@ -129,7 +172,8 @@ export function CompaniesTable({ companies, mode, canDelete, analyticsAsOf, view
       setSelectedIds(new Set());
       router.refresh();
     }} />
-    <div className="-mb-3"><CompanyListAnalytics companies={filtered} asOf={analyticsAsOf} /></div>
+    <div className="-mb-3"><CompanyListAnalytics buckets={buckets} asOf={asOf} /></div>
+    {page.error ? <div role="alert" className="flex items-center gap-3 text-sm text-destructive">{page.error}<Button variant="outline" size="sm" onClick={() => void page.retry().then(success => { if (success) window.history.replaceState(null, "", page.requestedKey); })}>Retry</Button></div> : null}
     <TableFilters actions={
       <DropdownMenu>
         <TableColumnsTrigger />
@@ -143,21 +187,22 @@ export function CompaniesTable({ companies, mode, canDelete, analyticsAsOf, view
         </DropdownMenuContent>
       </DropdownMenu>
     }>
-      <TableFilter label="Search company" search><Input value={query} onChange={(event) => { setQuery(event.target.value); table.setPageIndex(0); }} placeholder="Company, email, domain, segment, or tag" /></TableFilter>
-      <TableFilter label="Customer tag"><Select value={tag} onValueChange={value => { setTag(value ?? "all"); table.setPageIndex(0); }}><SelectTrigger className="min-w-64"><SelectValue /></SelectTrigger><SelectContent className="min-w-72"><SelectItem value="all">All tags</SelectItem>{customerTagValues.map(value => <SelectItem key={value} value={value}><CustomerTagBadge tag={value} /></SelectItem>)}</SelectContent></Select></TableFilter>
-      <TableFilter label="Country"><Select value={country} onValueChange={(value) => { setCountry(value ?? "all"); table.setPageIndex(0); }}><SelectTrigger><SelectValue>{country === "all" ? "All countries" : country}</SelectValue></SelectTrigger><SelectContent><SelectItem value="all">All countries</SelectItem>{countries.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></TableFilter>
+      <TableFilter label="Search company" search><Input value={queryDraft} onChange={event => setQueryDraft(event.target.value)} placeholder="Company, email, domain, segment, or tag" /></TableFilter>
+      <TableFilter label="Customer tag"><Select disabled={pending} value={tag} onValueChange={value => navigate({ tag: value ?? "all", q: queryDraft, page: 1 })}><SelectTrigger className="min-w-64"><SelectValue /></SelectTrigger><SelectContent className="min-w-72"><SelectItem value="all">All tags</SelectItem>{customerTagValues.map(value => <SelectItem key={value} value={value}><CustomerTagBadge tag={value} /></SelectItem>)}</SelectContent></Select></TableFilter>
+      <TableFilter label="Country"><Select disabled={pending} value={country} onValueChange={value => navigate({ country: value ?? "all", q: queryDraft, page: 1 })}><SelectTrigger><SelectValue>{country === "all" ? "All countries" : country}</SelectValue></SelectTrigger><SelectContent><SelectItem value="all">All countries</SelectItem>{countries.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></TableFilter>
     </TableFilters>
     <Card className="crm-table-frame gap-0 py-0">
     {selectedCompanyIds.length > 0 && <div className="flex flex-wrap items-center gap-2 border-b bg-brand-soft px-4 py-2"><p className="mr-auto text-sm font-semibold text-primary" aria-live="polite">{selectedCompanyIds.length} selected</p><Button size="sm" variant="destructive" disabled={!canDelete} title={canDelete ? "Delete selected companies" : "Only admins can delete companies"} onClick={() => setDeleteOpen(true)}><Trash2 />Delete</Button></div>}
 
-    {filtered.length === 0 ? <div className="p-8"><EmptyState icon={Building2} title="No companies found" description="Try changing your search or filters to see more results." /></div> : <>
+    {!pending && companies.length === 0 ? <div className="p-8"><EmptyState icon={Building2} title="No companies found" description="Try changing your search or filters to see more results." /></div> : <>
       <div className="crm-table-flex-body"><Table>
         <caption className="sr-only">Companies, contact details, account owners, and business segments</caption>
-        <TableHeader>{table.getHeaderGroups().map((group) => <TableRow key={group.id} className="hover:bg-transparent">{group.headers.map((header) => <TableHead key={header.id} data-column={header.column.id} aria-sort={header.column.getIsSorted() === "asc" ? "ascending" : header.column.getIsSorted() === "desc" ? "descending" : undefined}>{header.isPlaceholder ? null : header.column.getCanSort() ? <button className="flex items-center gap-1 hover:text-foreground" onClick={header.column.getToggleSortingHandler()}>{flexRender(header.column.columnDef.header, header.getContext())}<ChevronsUpDown className="size-3" /></button> : flexRender(header.column.columnDef.header, header.getContext())}</TableHead>)}</TableRow>)}</TableHeader>
-        <TableBody>{table.getRowModel().rows.map((row) => <TableRow key={row.id} className="group cursor-pointer" tabIndex={0} onClick={(event) => { if (!(event.target as HTMLElement).closest("button,a,input,[role=checkbox]")) router.push(`/companies/${row.original.id}`); }} onKeyDown={(event) => { if (event.target === event.currentTarget && event.key === "Enter") router.push(`/companies/${row.original.id}`); }}>{row.getVisibleCells().map((cell) => <TableCell key={cell.id} data-column={cell.column.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}</TableRow>)}</TableBody>
+        <TableHeader>{table.getHeaderGroups().map((group) => <TableRow key={group.id} className="hover:bg-transparent">{group.headers.map((header) => <TableHead key={header.id} data-column={header.column.id} aria-sort={header.column.getIsSorted() === "asc" ? "ascending" : header.column.getIsSorted() === "desc" ? "descending" : undefined}>{header.isPlaceholder ? null : header.column.getCanSort() ? <button disabled={pending} className="flex items-center gap-1 hover:text-foreground" onClick={header.column.getToggleSortingHandler()}>{flexRender(header.column.columnDef.header, header.getContext())}<ChevronsUpDown className="size-3" /></button> : flexRender(header.column.columnDef.header, header.getContext())}</TableHead>)}</TableRow>)}</TableHeader>
+        <TableBody>{pending ? Array.from({ length: Math.min(10, request.pageSize) }, (_, index) => <TableRow key={index} aria-hidden="true">{table.getVisibleLeafColumns().map(column => <TableCell key={column.id} className="h-[73px]"><Skeleton className={column.id === "select" ? "size-4" : "h-4 w-4/5"} /></TableCell>)}</TableRow>) : table.getRowModel().rows.map((row) => <TableRow key={row.id} className="group cursor-pointer" tabIndex={0} onClick={(event) => { if (!(event.target as HTMLElement).closest("button,a,input,[role=checkbox]")) router.push(`/companies/${row.original.id}`); }} onKeyDown={(event) => { if (event.target === event.currentTarget && event.key === "Enter") router.push(`/companies/${row.original.id}`); }}>{row.getVisibleCells().map((cell) => <TableCell key={cell.id} data-column={cell.column.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}</TableRow>)}</TableBody>
       </Table></div>
     </>}
     </Card>
-      <TablePagination page={table.getState().pagination.pageIndex + 1} pageCount={table.getPageCount()} start={table.getRowModel().rows.length ? table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1 : 0} end={Math.min((table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize, filtered.length)} total={filtered.length} itemLabel="companies" onPrevious={() => table.previousPage()} onNext={() => table.nextPage()} onPageChange={(page) => table.setPageIndex(page - 1)} />
+      <span className="sr-only" role="status">{pending ? "Loading companies…" : ""}</span>
+      <TablePagination disabled={pending || queryDraft !== request.query} page={request.page} pageCount={Math.ceil(total / request.pageSize)} start={companies.length ? (request.page - 1) * request.pageSize + 1 : 0} end={Math.min(request.page * request.pageSize, total)} total={total} itemLabel="companies" onPrevious={() => navigate({ page: request.page - 1 })} onNext={() => navigate({ page: request.page + 1 })} onPageChange={page => navigate({ page })} />
   </div>;
 }

@@ -1,10 +1,9 @@
 import path from "node:path";
 import { readFileSync } from "node:fs";
-import { Children, isValidElement, type SVGProps } from "react";
-import { Document, Page, Text, View, Link, Image as PdfImage, Svg, Path, G, Defs, ClipPath, Rect, Font, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
+import { Document, Page, Text, View, Link, Image as PdfImage, Svg, Path, Font, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
 import QRCode from "qrcode";
 import { customerPortalUrl } from "./customer-portal-links";
-import { BrandMark } from "../components/brand-mark";
+import { brandLogoPaths, brandLogoViewBox } from "./brand-assets";
 import { invoiceBankFields } from "./invoice-banks";
 import { paymentMethodDetails, paymentMethodTitle } from "./invoice-payment-methods";
 import { PAYPAL_ICON_PATH } from "./payment-icons";
@@ -86,11 +85,8 @@ function ContentText({ value, style }: PdfTextProps) {
 }
 
 function PdfLogo() {
-  return <Svg width={86} height={18.8} viewBox="20 18 284 62">
-    <Defs><ClipPath id="filazoo-wordmark"><Rect x={20} y={18} width={284} height={62} /></ClipPath></Defs>
-    <G clipPath="url(#filazoo-wordmark)">{Children.toArray(BrandMark({}).props.children).map((child, index) =>
-      isValidElement<SVGProps<SVGPathElement>>(child) ? <Path key={index} d={child.props.d || ""} fill="#000000" fillRule={child.props.fillRule === "evenodd" ? "evenodd" : "nonzero"} /> : null,
-    )}</G>
+  return <Svg width={110} height={110 * 193 / 1195} viewBox={brandLogoViewBox}>
+    {brandLogoPaths.map(({ d, fill }, index) => <Path key={index} d={d} fill={fill} />)}
   </Svg>;
 }
 

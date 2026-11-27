@@ -9,6 +9,7 @@ import { normalizeMessageId } from "../lib/email-threading.ts";
 import type { EmailInboxBackendData, InboxEmailItem } from "../lib/email-inbox.ts";
 import type { WorkspaceViewer } from "../lib/auth.ts";
 import type { WorkspaceMailboxRecord } from "../lib/data/mailboxes.ts";
+import * as customerAccess from "../lib/ai/customer-access.ts";
 
 const company = { id: "gantri", name: "Gantri", emails: ["buyer@example.test", "accounts@example.test"] };
 function item(id: string, contact = "buyer@example.test", extra: Partial<InboxEmailItem> = {}): InboxEmailItem {
@@ -70,11 +71,18 @@ test("AI customer pages share mailbox reads and keep each profile's exact custom
 
 test("AI reuses profile results only inside the current request and preserves failed coverage", async () => {
   const backend = setup();
+  const permitted = [company, backend.secondCompany];
+  const db = { from(table: string) {
+    const query = { select() { return query; }, eq() { return query; }, order() { return query; }, or() { return query; }, range() { return query; },
+      then(resolve: (value: unknown) => unknown) { return Promise.resolve({ data: table === "pipeline" ? permitted.map(row => ({ company_id: row.id })) : permitted.flatMap(row => row.emails.map(email => ({ email, company_id: row.id }))), error: null }).then(resolve); } };
+    return query;
+  } };
   const exports = {} as typeof import("../lib/ai/customer-email-history.ts");
   const dependencies: Record<string, unknown> = {
     "server-only": {}, "../data/ai-settings": { requireAiData: async () => ({}) },
     "../data/mailboxes": { getViewerMailboxes: async () => backend.context.mailboxes },
     "../data/company-emails": backend, "../data/company-email-access": {},
+    "../supabase/admin.ts": { createSupabaseAdmin: () => db }, "./customer-access.ts": customerAccess,
   };
   vm.runInNewContext(ts.transpileModule(readFileSync(new URL("../lib/ai/customer-email-history.ts", import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },

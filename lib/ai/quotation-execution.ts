@@ -6,16 +6,20 @@ import { buildQuotation } from "../quotations";
 import type { CrmOperation } from "./crm-tools";
 import type { QuotationOperation } from "./quotation-tools";
 import { invoiceBootstrap } from "../data/invoice-connections";
+import { createSupabaseAdmin } from "../supabase/admin";
+import { assertAiCustomerAccess } from "./customer-access.ts";
 
 export function isQuotationOperation(operation: CrmOperation): operation is QuotationOperation {
   return ["create_quotation", "update_quotation", "quotation_lifecycle"].includes(operation.op);
 }
 export async function quotationTarget(operation: QuotationOperation, viewer: WorkspaceViewer) {
   if (operation.op === "create_quotation") {
+    if (viewer.role !== "admin") await assertAiCustomerAccess(viewer, operation.companyId, createSupabaseAdmin());
     const prepared = await prepareNewQuotation(operation, viewer);
     return { name: prepared.customerName, value: prepared, preview: { kind: "Quotation", status: "draft", ...(prepared.document ? { document: prepared.document } : {}), currency: prepared.currency, products: prepared.products.map(product => ({ sku: product.sku, name: product.name })), effect: prepared.document ? "Create a priced quotation draft." : "Prepare a quotation for the selected products." } };
   }
   const detail = await quotationDetail(operation.quotationId, viewer);
+  if (viewer.role !== "admin") await assertAiCustomerAccess(viewer, detail.catalog.company_id, createSupabaseAdmin());
   if (!detail.canWrite) throw new Error("You cannot change this quotation.");
   let document = detail.catalog.quote_document;
   if (operation.op === "update_quotation") {

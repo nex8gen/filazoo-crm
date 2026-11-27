@@ -13,6 +13,7 @@ import { invoiceDocumentSchema, invoiceTotals } from "../invoices";
 import { companyExportSnapshot } from "./company-export-records";
 import { loadAgentCompany, loadAgentEmails } from "./agent-records";
 import type { ProductivityOperation } from "./crm-productivity";
+import { assertAiCustomerAccess } from "./customer-access.ts";
 
 async function one(table: string, fields: string, id: string) {
   const { data, error } = await createSupabaseAdmin().from(table).select(fields).eq("id", id).maybeSingle();
@@ -21,32 +22,36 @@ async function one(table: string, fields: string, id: string) {
 }
 export async function productivityTarget(operation: ProductivityOperation, viewer: WorkspaceViewer) {
   if (operation.op === "export_companies") {
-    const snapshot = await companyExportSnapshot(operation.selection);
+    const snapshot = await companyExportSnapshot(operation.selection, viewer);
     return { name: `${snapshot.records.length} companies`, value: snapshot.value, preview: snapshot.preview };
   }
   if (operation.op === "create_task") {
-    const company = operation.companyId ? await loadAgentCompany(operation.companyId) : null;
+    const company = operation.companyId ? await loadAgentCompany(operation.companyId, true, viewer) : null;
     return { name: operation.title, value: company ? { id: company.id, name: company.fields.name } : null,
       preview: { title: operation.title, notes: operation.notes, priority: operation.priority, dueAt: operation.dueAt, assignedTo: "Me", workflow: operation.workflow, ...(company ? { company: company.fields.name } : {}) } };
   }
   if (operation.op === "update_task") {
     const task = await editableAgentTask(viewer, operation.taskId);
+    if (viewer.role !== "admin" && task.company_id) await assertAiCustomerAccess(viewer, task.company_id, createSupabaseAdmin());
     return { name: task.title, value: task, preview: { revision: task.updated_at, task: { title: task.title, notes: task.notes, priority: task.priority, dueAt: task.due_at, status: task.status, ...operation.changes } } };
   }
   if (operation.op === "download_document") {
     if (operation.kind === "quotation") {
       const { readQuotation } = await import("../data/quotations");
       const quotation = await readQuotation(operation.id, viewer);
+      if (viewer.role !== "admin" && quotation.company_id) await assertAiCustomerAccess(viewer, quotation.company_id, createSupabaseAdmin());
       return { name: `Quotation v${quotation.version}`, value: quotation, preview: { documentType: "Quotation PDF", currency: quotation.currency, version: quotation.version, prepared: Boolean(quotation.quote_document) } };
     }
     if (operation.kind === "invoice") {
       if (!canReadInvoices(viewer.role)) throw new Error("Your role does not have access to billing.");
       const invoice = await getInvoice(operation.id);
       if (!invoice) throw new Error("The invoice is unavailable.");
+      if (viewer.role !== "admin" && invoice.document.companyId) await assertAiCustomerAccess(viewer, invoice.document.companyId, createSupabaseAdmin());
       return { name: `INV-${String(invoice.number).padStart(6, "0")}`, value: invoice, preview: { documentType: "Invoice PDF", customer: invoice.document.customerName, status: invoice.status } };
     }
     const catalog = await one("catalogs", "id,user_id,company_id,currency,version,product_skus,price_date,pdf_url", operation.id);
     if (catalog.user_id !== viewer.id) throw new Error("This catalog belongs to another account or is unavailable.");
+    if (viewer.role !== "admin" && typeof catalog.company_id === "string") await assertAiCustomerAccess(viewer, catalog.company_id, createSupabaseAdmin());
     return { name: `Catalog v${catalog.version}`, value: catalog, preview: { documentType: "Catalog PDF", currency: catalog.currency, version: catalog.version, products: catalog.product_skus } };
   }
   if (operation.op === "conversation_auto_reply") {

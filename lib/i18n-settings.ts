@@ -3,6 +3,7 @@ export const zhCNSettings: Record<string, string> = {
   "Review member activity and manage access.": "查看成员活动并管理访问权限。",
   "Require approval for allowed actions": "允许的操作均需审批",
   "Choose your language and list preferences.": "选择语言和列表偏好。",
+  "Manage your profile, language, appearance, and list preferences.": "管理个人资料、语言、外观和列表偏好。",
   "Manage your password, sign-in options, and other sessions.": "管理密码、登录方式及其他会话。",
   "Manage workspace details and ownership.": "管理工作区资料和所有权。",
   "Lists": "列表",

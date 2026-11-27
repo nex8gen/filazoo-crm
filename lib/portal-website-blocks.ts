@@ -113,8 +113,8 @@ export function websiteBinding(blocks: PortalWebsiteBlock[], binding: PortalWebs
 export function publicWebsiteBlocks(blocks: PortalWebsiteBlock[]): PortalWebsiteBlock[] {
   return blocks.filter(block => block.enabled && !(block.style?.desktopVisible === false && block.style?.mobileVisible === false)).map(block => ({ ...block, children: block.children ? publicWebsiteBlocks(block.children) : undefined }));
 }
-export function safeWebsiteLink(value: string) {
-  if (/^(home|account|pages\/[A-Za-z0-9_-]{1,64})$/.test(value)) return value === "home" ? "/" : value === "account" ? "/account" : `/${value}`;
+export function safeWebsiteLink(value: string, basePath = "") {
+  if (/^(home|account|pages\/[A-Za-z0-9_-]{1,64})$/.test(value)) return value === "home" ? basePath || "/" : `${basePath}/${value}`;
   if (/^#[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(value) || /^mailto:[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) || /^tel:\+?[0-9 ()-]{3,30}$/.test(value)) return value;
   try { const url = new URL(value); if (url.protocol === "https:" && !url.username && !url.password) return value; } catch {}
   return undefined;

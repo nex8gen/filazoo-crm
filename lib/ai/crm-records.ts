@@ -14,6 +14,7 @@ import { readAgentAutoReplies } from "./crm-productivity-records";
 import { variantsFromTags } from "../product-utils";
 import { userProductRows } from "../data/product-personalization";
 import type { CustomerInsightContext } from "./customer-intelligence-records";
+import { assertAiCustomerAccess, assignedAiCustomerIds, AiCustomerAccessError } from "./customer-access.ts";
 
 async function readPersonalProducts(viewer: WorkspaceViewer, input: CrmRead) {
   if (input.companyId) throw new Error("Products do not support a company filter.");
@@ -46,11 +47,13 @@ const resources = {
   business_facts: { table: "email_reply_knowledge", fields: "id,title,content,created_at", search: "title", order: "id" },
 } as const;
 
-export async function readCrmRecords(viewer: WorkspaceViewer, request: CrmRead, insightContext?: CustomerInsightContext) {
+export async function readCrmRecords(viewer: WorkspaceViewer, request: CrmRead, insightContext?: CustomerInsightContext, options: { screening?: boolean } = {}) {
   const input = crmReadSchema.parse(request);
   const policy = await requireAiData(...aiReadResources[input.resource]);
-  if (input.resource === "customer_insights") return (await import("./customer-intelligence-records")).readCustomerInsights(viewer, input, insightContext);
+  if (input.resource === "customer_insights") return (await import("./customer-intelligence-records")).readCustomerInsights(viewer, input, insightContext, options);
   const db = createSupabaseAdmin();
+  if (input.companyId) await assertAiCustomerAccess(viewer, input.companyId, db);
+  if (viewer.role !== "admin" && ["messages", "alerts"].includes(input.resource)) throw new AiCustomerAccessError("This resource has no verified customer assignment. Read an assigned customer's conversations instead.");
   if (input.resource === "ai_settings" || input.resource === "email_footer" || input.resource === "scheduled_emails" || input.resource === "email_drafts" || input.resource === "task_workflows" || input.resource === "invoice_portal") {
     const { featureRecords } = await import("./crm-feature-execution");
     const records = await featureRecords(viewer, input);
@@ -61,10 +64,12 @@ export async function readCrmRecords(viewer: WorkspaceViewer, request: CrmRead, 
     if (input.id) {
       const { quotationDetail } = await import("../data/quotations");
       const detail = await quotationDetail(input.id, viewer);
+      await assertAiCustomerAccess(viewer, detail.catalog.company_id, db);
       if (input.companyId && detail.catalog.company_id !== input.companyId) throw new Error("This quotation belongs to a different customer.");
       return { records: [detail], coverage: { included: 1, offset: 0, nextOffset: null } };
     }
     let query = db.from("catalogs").select("id,company_id,currency,version,quote_status,quote_revision,quote_order_id,quote_previous_id,quote_document,created_at", { count: "exact" }).eq("user_id", viewer.id);
+    if (viewer.role !== "admin") query = query.in("company_id", await assignedAiCustomerIds(viewer, db) ?? []);
     if (input.companyId) query = query.eq("company_id", input.companyId);
     if (input.query) {
       if (!z.uuid().safeParse(input.query).success) throw new Error("Look up quotations by exact ID or companyId.");
@@ -77,12 +82,13 @@ export async function readCrmRecords(viewer: WorkspaceViewer, request: CrmRead, 
     return { records, coverage: { matching: count, included: records.length, offset: input.offset, nextOffset: count !== null && count > input.offset + records.length ? input.offset + records.length : null } };
   }
   if (input.resource === "reply_requests") {
-    const all = await listReplyRequests(viewer, { id: input.id, query: input.query, companyId: input.companyId });
+    const assigned = await assignedAiCustomerIds(viewer, db);
+    const all = (await listReplyRequests(viewer, { id: input.id, query: input.query, companyId: input.companyId })).filter(row => assigned === null || assigned.includes(row.company_id));
     const records = all.slice(input.offset, input.offset + 10);
     return { records, coverage: { included: records.length, offset: input.offset, nextOffset: all.length > input.offset + records.length ? input.offset + records.length : null, scope: "Your accessible 50 most recent customer waits; older waits may be omitted." } };
   }
   if (input.resource === "products") return readPersonalProducts(viewer, input);
-  if (input.resource === "auto_replies") return readAgentAutoReplies(viewer, input);
+  if (input.resource === "auto_replies") return readAgentAutoReplies(viewer.role === "admin" || viewer.role === "viewer" ? viewer : { ...viewer, role: "bd_manager" }, input);
   if (input.resource === "inventory") {
     if (input.companyId) throw new Error("Inventory does not support a company filter.");
     const { status, snapshots, skuMap } = await getInventoryState();
@@ -99,7 +105,8 @@ export async function readCrmRecords(viewer: WorkspaceViewer, request: CrmRead, 
     return { records: [{ billing: data?.settings ?? {}, ...personal, billingAvailable: true }], coverage: { matching: 1, included: 1, nextOffset: null } };
   }
   if (input.resource === "flows") {
-    const all = (await listWorkspaceFlows()).filter((flow) => (!input.id || flow.id === input.id)
+    const assigned = await assignedAiCustomerIds(viewer, db);
+    const all = (await listWorkspaceFlows()).filter((flow) => (assigned === null || Boolean(flow.triggerConfig.scopeCompanyId && assigned.includes(String(flow.triggerConfig.scopeCompanyId)))) && (!input.id || flow.id === input.id)
       && (!input.companyId || flow.triggerConfig.scopeCompanyId === input.companyId)
       && (!input.query || `${flow.name} ${String(flow.triggerConfig.scopeLabel || "")}`.toLowerCase().includes(input.query.toLowerCase())));
     return { records: all.slice(input.offset, input.offset + 10), coverage: { matching: all.length, included: Math.min(10, Math.max(0, all.length - input.offset)), nextOffset: all.length > input.offset + 10 ? input.offset + 10 : null } };
@@ -110,10 +117,15 @@ export async function readCrmRecords(viewer: WorkspaceViewer, request: CrmRead, 
   }
   if (input.resource === "companies" && input.id) {
     if (!z.uuid().safeParse(input.id).success) throw new Error("Choose a valid company ID.");
-    return { records: [await loadAgentCompany(input.id, policy.data.billing)], coverage: { matching: 1, included: 1, nextOffset: null } };
+    return { records: [await loadAgentCompany(input.id, policy.data.billing, viewer)], coverage: { matching: 1, included: 1, nextOffset: null } };
   }
   const config: { table: string; fields: string; search: string; order: string } = resources[input.resource];
-  let query = db.from(config.table).select(config.fields, { count: "exact" });
+  const companyLinked = ["orders", "invoices", "tasks", "catalogs"].includes(input.resource);
+  const fields = viewer.role !== "admin" && companyLinked ? `${config.fields},ai_company:companies!inner(pipeline!inner(owner_id))`
+    : viewer.role !== "admin" && input.resource === "companies" ? config.fields.replace("account: pipeline(", "account: pipeline!inner(") : config.fields;
+  let query = db.from(config.table).select(fields, { count: "exact" });
+  if (viewer.role !== "admin" && companyLinked) query = query.eq("ai_company.pipeline.owner_id", viewer.id);
+  if (viewer.role !== "admin" && input.resource === "companies") query = query.eq("account.owner_id", viewer.id);
   // Imported contact addresses can contain valid local-part characters that
   // the interactive form's stricter email validator does not accept.
   const contactSearch = input.resource === "companies" && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(input.query);
@@ -161,8 +173,20 @@ export async function readCrmRecords(viewer: WorkspaceViewer, request: CrmRead, 
   if (input.resource === "mailboxes" && viewer.role !== "admin") query = query.eq("user_id", viewer.id).eq("type", "personal");
   const { data, error, count } = await query.order(config.order, { ascending: input.resource === "companies" }).range(input.offset, input.offset + 9);
   if (error) throw new Error(`Unable to read ${input.resource}. No changes were prepared.`);
-  const rows = data ?? [];
+  const records: unknown[] = data ?? [];
+  let rows = records.map(row => {
+    if (!row || typeof row !== "object" || Array.isArray(row)) throw new Error("Unable to read CRM records.");
+    const safe: Record<string, unknown> = { ...row }; delete safe.ai_company; return safe;
+  });
+  if (viewer.role !== "admin" && input.resource === "segments") {
+    const assigned = new Set(await assignedAiCustomerIds(viewer, db));
+    rows = rows.filter(row => {
+      const ids = (row.rules as { companyIds?: unknown } | null)?.companyIds;
+      return Array.isArray(ids) && ids.length > 0 && ids.every(id => typeof id === "string" && assigned.has(id));
+    });
+  }
   const encoded = JSON.stringify(rows);
   if (encoded.length > 60_000) throw new Error("These records are too large. Look up one exact record ID at a time.");
-  return { records: rows, coverage: { matching: count, included: rows.length, offset: input.offset, nextOffset: count !== null && count > input.offset + rows.length ? input.offset + rows.length : null } };
+  const next = input.offset + (data?.length ?? 0);
+  return { records: rows, coverage: { matching: viewer.role !== "admin" && input.resource === "segments" ? null : count, included: rows.length, offset: input.offset, nextOffset: count !== null && count > next ? next : null } };
 }

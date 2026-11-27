@@ -2,6 +2,14 @@ import { env, hasSupabaseAuthConfig } from "./env";
 
 export type AuthProvider = "google" | "apple" | "alipay";
 
+export async function getPasskeysEnabled(): Promise<boolean> {
+  if (!hasSupabaseAuthConfig()) return false;
+  try {
+    const response = await fetch(`${env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/settings`, { headers: { apikey: env.supabasePublishableKey! }, cache: "no-store", signal: AbortSignal.timeout(5000) });
+    return response.ok && (await response.json()).passkeys_enabled === true;
+  } catch { return false; }
+}
+
 // The public Auth settings expose enabled providers, never credentials.
 export async function getAuthProviders(): Promise<AuthProvider[]> {
   if (!hasSupabaseAuthConfig()) return [];

@@ -18,6 +18,32 @@
 }
 
 .agent-trace-spinner { animation: crm-agent-spin 1s linear infinite; }
+.agent-follow-up-questions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.agent-follow-up-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 40px;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--background);
+  padding: 9px 12px;
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 150ms, border-color 150ms, color 150ms;
+}
+.agent-follow-up-button span { min-width: 0; overflow-wrap: anywhere; }
+.agent-follow-up-button svg { color: var(--muted-foreground); }
+.agent-follow-up-button:hover:not(:disabled) { border-color: var(--primary); background: var(--muted); }
+.agent-follow-up-button:hover:not(:disabled) svg { color: var(--primary); }
+.agent-follow-up-button:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+.agent-follow-up-button:disabled { opacity: .5; cursor: not-allowed; }
 .ai-markdown { min-width: 0; white-space: normal; font-size: inherit; line-height: inherit; }
 .ai-markdown > :first-child { margin-top: 0; }
 .ai-markdown > :last-child { margin-bottom: 0; }
@@ -68,7 +94,7 @@
 @media (prefers-reduced-motion: reduce) {
   .agent-pixel, .agent-shimmer, .agent-response-trace,
   .agent-streaming-text, .agent-trace-spinner, .agent-writing-cursor { animation: none; }
-  .agent-trace-details { transition: none; }
+  .agent-trace-details, .agent-follow-up-button { transition: none; }
   .agent-shimmer { background: none; color: inherit; }
   .agent-pixel { opacity: .7; }
 }

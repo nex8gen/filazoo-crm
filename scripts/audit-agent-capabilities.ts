@@ -11,6 +11,7 @@ const routes: Record<string, string[]> = {
 };
 const internal = /app\/api\/(?:ai\/(?:assistant|history|usage)|companies\/\[id\]\/chat|email\/(?:assist|reply)|agent\/demo|automation\/diagnose|cron\/|shopify\/|meta\/(?:webhook|lead-bridge)|twilio\/|customer\/|invoices\/\[id\]\/customer|flows\/(?:process|track))/;
 const surfaces = crmMutationSurfaces(process.cwd()).map(surface => {
+  if (surface.startsWith("app/settings/security-actions.ts#")) return { surface, mode: "guided", tools: [], explanation: "Account devices, session revocation, authenticators and passkeys are managed by the signed-in user at /settings/security. General chat must hand off to these account controls and cannot enroll credentials, supply authenticator codes or revoke sessions on the user's behalf." };
   if (surface.startsWith("app/auth/alipay/") || surface.startsWith("app/auth/email/")) return { surface, mode: "guided", tools: [], explanation: "Alipay authentication, identity linking and email verification use the account's sign-in/profile controls. The user authorizes Alipay directly. Signed provider identity, browser state, one-use grants and PKCE are verified on the server; general chat cannot grant identity or workspace access." };
   const [file, action] = surface.split("#");
   if (file === "app/api/alipay/notify/route.ts") return { surface, mode: "internal", tools: [], explanation: "Alipay's signed server callback validates app, merchant, order and amount before transactional settlement. General chat cannot invoke, simulate or mark payments as successful." };

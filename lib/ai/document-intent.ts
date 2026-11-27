@@ -6,6 +6,12 @@ const kinds = {
   invoice: /\b(?:invoice|invoices|invioce|inovice)\b|发票|發票/iu,
   order: /\b(?:purchase\s+order|sales\s+order|order|orders)\b|采购单|採購單|订单|訂單/iu,
 };
+/** A standalone advice question must not authorize document mutations. */
+export function isDocumentAdviceRequest(context?: Conversation) {
+  const latest = context?.messages?.filter(message => message.role === "user").at(-1)?.content ?? "";
+  return /^\s*should\s+(?:i|we)\s+(?:create|prepare|draft|make|issue|send|convert|revise|update|cancel|delete)\b[^?\r\n]*\?\s*$/i.test(latest)
+    && Object.values(kinds).some(pattern => pattern.test(latest));
+}
 export function requestedDocumentKinds(context?: Conversation) {
   for (const message of [...context?.messages ?? []].reverse()) {
     if (message.role !== "user") continue;
@@ -21,10 +27,12 @@ export function quotationEmailDraftRequested(context?: Conversation) {
   return requested.length === 1 && requested[0] === "quotation" && /\b(?:email|e-mail|emial|mail)\b|邮件|郵件/iu.test(latest) && /\bdraft\b|草稿/iu.test(latest);
 }
 export function documentActionAllowed(name: string, context?: Conversation) {
+  if (isDocumentAdviceRequest(context)) return false;
   return !(quotationEmailDraftRequested(context) && ["create_quotation", "create_catalog", "create_invoice", "custom_invoice", "invoice_order"].includes(name));
 }
 /** Business intent is checked independently of provider prompts and tool syntax. */
 export function assertDocumentIntent(actions: WorkspaceAction[], context?: Conversation) {
+  if (actions.length && isDocumentAdviceRequest(context)) throw new Error("The user asked for advice about a document. Answer from saved records without creating, changing or sending anything.");
   const requested = requestedDocumentKinds(context);
   if (!requested.length) return;
   for (const action of actions) {

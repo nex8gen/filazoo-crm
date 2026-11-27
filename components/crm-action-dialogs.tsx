@@ -73,17 +73,28 @@ export function AddCompanyButton({ canWrite, compact = false, existingSegments, 
   );
 }
 
-export function ExportCompaniesButton({ companies }: { companies: Company[] }) {
-  const exportCsv = () => {
-    const url = URL.createObjectURL(new Blob([companyExportCsv(companies)], { type: "text/csv;charset=utf-8" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `filazoo-companies-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-    toast.success(`${companies.length} companies exported.`);
+export function ExportCompaniesButton({ companies, exportHref }: { companies?: Company[]; exportHref?: string }) {
+  const [pending, setPending] = useState(false);
+  const exportCsv = async () => {
+    setPending(true);
+    try {
+      let blob: Blob;
+      if (exportHref) {
+        const response = await fetch(exportHref, { cache: "no-store" });
+        if (!response.ok || !response.headers.get("Content-Type")?.includes("text/csv")) throw new Error("Unable to export companies. Please retry.");
+        blob = await response.blob();
+      } else blob = new Blob([companyExportCsv(companies ?? [])], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `filazoo-companies-${new Date().toISOString().slice(0, 10)}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.success(companies ? `${companies.length} companies exported.` : "Companies exported.");
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to export companies."); }
+    finally { setPending(false); }
   };
-  return <Button size="sm" variant="outline" disabled={!companies.length} onClick={exportCsv}><Download />Export</Button>;
+  return <Button size="sm" variant="outline" disabled={pending || (!exportHref && !companies?.length)} onClick={exportCsv}><Download />{pending ? "Exporting…" : "Export"}</Button>;
 }
 
 export function NewEmailDraftButton({ contacts, canWrite, label = "New sequence" }: { contacts: ContactOption[]; canWrite: boolean; label?: string }) {

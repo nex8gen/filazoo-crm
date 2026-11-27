@@ -8,6 +8,7 @@ import { conversationMemory, conversationScope, historyCutoff, type Conversation
 import type { AiUsage } from "./chat-usage";
 import type { AgentActionResult } from "./agent-actions";
 import type { EmailInboxBackendData } from "../email-inbox";
+import { assignedAiCustomerIds } from "./customer-access.ts";
 
 export class HistoryError extends Error {
   constructor(message: string, public status = 409) { super(message); }
@@ -22,10 +23,10 @@ export const presentConversation = (row: ConversationRow) => ({ id: row.id, mode
 // Histories can include emails discovered by an agent away from an open record.
 // Changed mailbox grants or sales assignments invalidate the whole transcript.
 export async function conversationAccessKey(viewer: WorkspaceViewer) {
-  const [mailboxes, assigned] = await Promise.all([getViewerMailboxes(viewer.id, true), getAssignedEmailContacts(viewer)]);
+  const [mailboxes, assigned, customerIds] = await Promise.all([getViewerMailboxes(viewer.id, true), getAssignedEmailContacts(viewer.role === "admin" ? viewer : { ...viewer, role: "bd_manager" }), viewer.role === "admin" ? null : assignedAiCustomerIds(viewer, createSupabaseAdmin())]);
   const mailboxScope = mailboxes.map((m) => ({ id: m.id, type: m.type, userId: m.userId, isActive: m.isActive, email: m.email })).sort((a, b) => a.id.localeCompare(b.id));
   const assignments = [...(assigned?.entries() ?? [])].sort(([a], [b]) => a.localeCompare(b));
-  return createHash("sha256").update(JSON.stringify([viewer.id, viewer.role, mailboxScope, assignments])).digest("hex");
+  return createHash("sha256").update(JSON.stringify(["assigned-customers-v2", viewer.id, viewer.role, mailboxScope, assignments, customerIds?.sort() ?? null])).digest("hex");
 }
 
 export type ConversationAccessContext = { emailInboxes: Map<string, Promise<EmailInboxBackendData>> };
@@ -42,7 +43,7 @@ export async function assertConversationAccess(input: ConversationInput, viewer:
     const { data, error } = await db.from("companies").select("id").eq("id", companyId).maybeSingle();
     if (error) throw new HistoryError("Unable to verify customer access.", 503);
     if (!data) throw new HistoryError("This customer is no longer available.", 404);
-    if (viewer.role === "bd_manager") {
+    if (viewer.role !== "admin") {
       const assignment = await db.from("pipeline").select("company_id").eq("company_id", companyId).eq("owner_id", viewer.id).maybeSingle();
       if (assignment.error) throw new HistoryError("Unable to verify customer assignment.", 503);
       if (!assignment.data) throw new HistoryError("This customer is no longer available.", 404);
@@ -50,15 +51,20 @@ export async function assertConversationAccess(input: ConversationInput, viewer:
   })());
   if (invoiceId) checks.push((async () => {
     const db = createSupabaseAdmin();
-    const { data, error } = await db.from("invoices").select("id").eq("id", invoiceId).maybeSingle();
+    const { data, error } = await db.from("invoices").select("id,company_id").eq("id", invoiceId).maybeSingle();
     if (error) throw new HistoryError("Unable to verify invoice access.", 503);
     if (!data) throw new HistoryError("This invoice is no longer available.", 404);
+    if (viewer.role !== "admin") {
+      const assignment = await db.from("pipeline").select("company_id").eq("company_id", data.company_id).eq("owner_id", viewer.id).maybeSingle();
+      if (assignment.error) throw new HistoryError("Unable to verify customer assignment.", 503);
+      if (!assignment.data) throw new HistoryError("This invoice is no longer available.", 404);
+    }
   })());
   // Keep mailbox and messenger authorization identical to the agent's loaders,
   // but don't import their large dependency trees for ordinary chats.
   if (context.emailId) checks.push(import("./agent-records").then(({ loadAgentEmails }) => loadAgentEmails(viewer, context.emailId, undefined, context.mailboxId, true, accessContext?.emailInboxes)));
-  if (context.conversationId) checks.push(import("./agent-page-records").then(({ loadAgentConversation }) => loadAgentConversation(context.conversationId!)));
-  if (context.flowId) checks.push(import("./agent-page-records").then(({ loadAgentFlow }) => loadAgentFlow(context.flowId!)));
+  if (context.conversationId) checks.push(import("./agent-page-records").then(({ loadAgentConversation }) => loadAgentConversation(context.conversationId!, viewer)));
+  if (context.flowId) checks.push(import("./agent-page-records").then(({ loadAgentFlow }) => loadAgentFlow(context.flowId!, viewer)));
   await Promise.all(checks);
 }
 

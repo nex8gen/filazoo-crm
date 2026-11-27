@@ -11,3 +11,11 @@ export function assistantProviderError(error: unknown) {
   if (/location is not supported|unsupported (?:user )?location|region is not supported/i.test(message)) return "The selected model is unavailable in this server's region. Check its provider routing in Vercel AI Gateway.";
   return "Filazoo AI could not respond. Please retry or ask an administrator to check the AI provider.";
 }
+
+/** Retain useful diagnostics without logging provider payloads, prompts or credentials. */
+export function assistantFailureDiagnostic(error: unknown) {
+  const value = error && typeof error === "object" ? error as Record<string, unknown> : {};
+  const status = typeof value.statusCode === "number" ? value.statusCode : typeof value.status === "number" ? value.status : undefined;
+  const stack = error instanceof Error ? error.stack?.split("\n").slice(1).filter(line => /^\s+at /.test(line)).slice(0, 4).join("\n") : undefined;
+  return { name: error instanceof Error ? error.name : "UnknownError", status, message: assistantProviderError(error), ...(stack ? { stack } : {}) };
+}

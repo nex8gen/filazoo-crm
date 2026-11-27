@@ -6,6 +6,8 @@ import vm from "node:vm";
 import ts from "typescript";
 import type { EmailInboxBackendData } from "../lib/email-inbox.ts";
 import { notificationToastModule } from "./helpers/notification-toast.ts";
+import * as pagination from "../lib/email-pagination.ts";
+import * as pageCache from "../lib/page-cache.ts";
 
 const require = createRequire(import.meta.url);
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -16,6 +18,7 @@ function snapshot(id: string): EmailInboxBackendData {
     inboxError: null, aiConfigured: false, assignedCustomersOnly: id !== "mine",
     mailboxes: ["mine", "team", "other"].map((id) => ({ id, email: `${id}@example.test`, type: id === "mine" ? "personal" : "workspace", sendConfigured: true, inboxConfigured: true })),
     emails: [], automation: { enabled: false, steps: [], queueCount: 0 },
+    pagination: { request: pagination.emailPageRequestSchema.parse({}), total: 0, pageSize: 30, revision: "test", folderCounts: {}, followupCounts: { all: 0, ai: 0, manual: 0, completed: 0, nurture: 0 } },
   };
 }
 
@@ -47,7 +50,7 @@ function mount(signalStatics: unknown = AbortSignal, options: { partial?: boolea
     useState: (initial: unknown) => {
       const index = cursor++;
       if (!(index in slots)) slots[index] = typeof initial === "function" ? initial() : initial;
-      return [slots[index], (value: unknown) => { slots[index] = value; }];
+      return [slots[index], (value: unknown) => { slots[index] = typeof value === "function" ? value(slots[index]) : value; }];
     },
     useRef: (value: unknown) => {
       const index = cursor++;
@@ -64,9 +67,9 @@ function mount(signalStatics: unknown = AbortSignal, options: { partial?: boolea
       if (!(index in slots)) { slots[index] = true; cleanups.push(effect()); }
     },
   };
-  type View = { selectedMailboxId: string; switchingMailboxId: string | null; mailboxSwitchError: string | null; onMailboxChange: (id: string) => void; onMailboxSnapshot: (id: string, emails: EmailInboxBackendData["emails"]) => void; initialEmails: EmailInboxBackendData["emails"]; initialThreadId?: string; initialReplyOpen?: boolean; initialAgentDraft?: string; loadResources?: () => Promise<{ products: unknown[]; catalogs: unknown[] }> };
+  type View = { selectedMailboxId: string; switchingMailboxId: string | null; mailboxSwitchError: string | null; onMailboxChange: (id: string) => void; onMailboxSnapshot: (id: string, emails: EmailInboxBackendData["emails"]) => void; initialEmails: EmailInboxBackendData["emails"]; initialThreadId?: string; initialReplyOpen?: boolean; initialAgentDraft?: string; loadResources?: () => Promise<{ products: unknown[]; catalogs: unknown[] }>; pageCache?: ReturnType<typeof pageCache.createPageCache<pagination.EmailPageSnapshot>> };
   const exports = {} as { EmailAccountsWorkspace: (props: unknown) => { props: View } };
-  const dependencies: Record<string, unknown> = { react, "@/components/email-inbox": { EmailInboxWorkspace: () => null } };
+  const dependencies: Record<string, unknown> = { react, "@/components/email-inbox": { EmailInboxWorkspace: () => null }, "@/lib/page-cache": pageCache, "@/lib/email-pagination": pagination };
   const code = ts.transpileModule(readFileSync(new URL("../components/email-accounts-workspace.tsx", import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
@@ -132,13 +135,13 @@ test("catalog data loads only on demand and shares its request across composer a
 
 test("mailbox switching works without AbortSignal.any or AbortSignal.timeout", async () => {
   const ui = mount({});
-  assert.equal(ui.requests.length, 2);
+  assert.equal(ui.requests.length, 0);
   ui.render().onMailboxChange("team");
   ui.requests[0].resolve(Response.json(snapshot("team")));
   await tick();
   assert.equal(ui.render().selectedMailboxId, "team");
   assert.equal(ui.render().mailboxSwitchError, null);
-  assert.equal(ui.timers.size, 1, "The completed request clears its timeout");
+  assert.equal(ui.timers.size, 0, "The completed request clears its timeout");
   ui.elapse(30_000);
   await tick();
   assert.equal(ui.requests[0].signal.aborted, false, "A completed request must not be aborted later");
@@ -158,8 +161,8 @@ test("a stalled mailbox request times out after 30 seconds and can be retried", 
   assert.equal(ui.render().switchingMailboxId, null);
   assert.equal(ui.timers.size, 0);
   ui.render().onMailboxChange("team");
-  assert.equal(ui.requests.length, 3, "Retry starts a new request");
-  ui.requests[2].resolve(Response.json(snapshot("team")));
+  assert.equal(ui.requests.length, 2, "Retry starts a new request");
+  ui.requests[1].resolve(Response.json(snapshot("team")));
   await tick();
   assert.equal(ui.render().selectedMailboxId, "team");
   assert.equal(ui.render().mailboxSwitchError, null);
@@ -167,14 +170,15 @@ test("a stalled mailbox request times out after 30 seconds and can be retried", 
   ui.unmount();
 });
 
-test("other inboxes preload once and switching reuses their in-flight request", async () => {
+test("other inboxes load on demand and repeated selections reuse their in-flight request", async () => {
   const ui = mount();
-  assert.equal(ui.requests.length, 2);
+  assert.equal(ui.requests.length, 0);
+  ui.render().onMailboxChange("team");
   ui.render().onMailboxChange("team");
   assert.equal(ui.render().switchingMailboxId, "team");
   assert.equal(ui.render().selectedMailboxId, "mine");
-  assert.equal(ui.requests[0].url, "/api/email/inbox?mailboxId=team&refresh=false");
-  assert.equal(ui.requests.length, 2, "Clicking must not duplicate the preload");
+  assert.equal(ui.requests[0].url, "/api/email/inbox?mailboxId=team&refresh=false&paged=true");
+  assert.equal(ui.requests.length, 1, "Clicking must not duplicate the pending page read");
   ui.requests[0].resolve(Response.json(snapshot("team")));
   await tick();
   assert.equal(ui.render().selectedMailboxId, "team");
@@ -184,7 +188,7 @@ test("other inboxes preload once and switching reuses their in-flight request", 
   assert.deepEqual(ui.history, ["/email?mailbox=team"]);
   ui.render().onMailboxChange("mine");
   assert.equal(ui.render().selectedMailboxId, "mine");
-  assert.equal(ui.requests.length, 2);
+  assert.equal(ui.requests.length, 1);
   ui.unmount();
 });
 
@@ -211,7 +215,7 @@ test("read state and opened message content remain cached when switching after s
   await tick();
   ui.time.now += 120_000;
   ui.render().onMailboxChange("mine");
-  assert.equal(ui.requests.length, 2);
+  assert.equal(ui.requests.length, 1);
   assert.equal(ui.render().selectedMailboxId, "mine");
   assert.equal(ui.render().switchingMailboxId, null);
   assert.equal(ui.render().initialEmails[0].read, true);
@@ -264,18 +268,35 @@ test("leaving the workspace cancels the account request", async () => {
   ui.render().onMailboxChange("team");
   ui.unmount();
   assert.equal(ui.requests[0].signal.aborted, true);
-  assert.equal(ui.requests[1].signal.aborted, true);
+  assert.equal(ui.requests.length, 1);
   await tick();
   assert.equal(ui.timers.size, 0);
 });
 
-test("a preloaded account opens synchronously without a spinner or another request", async () => {
+test("a previously loaded account opens synchronously without a spinner or another request", async () => {
   const ui = mount();
+  ui.render().onMailboxChange("team");
   ui.requests[0].resolve(Response.json(snapshot("team")));
   await tick();
+  ui.render().onMailboxChange("mine");
   ui.render().onMailboxChange("team");
   assert.equal(ui.render().selectedMailboxId, "team");
   assert.equal(ui.render().switchingMailboxId, null);
-  assert.equal(ui.requests.length, 2);
+  assert.equal(ui.requests.length, 1);
+  ui.unmount();
+});
+
+test("visited email pages survive switching to another account and back", async () => {
+  const ui = mount();
+  const cached = ui.render().pageCache!;
+  const secondKey = pagination.emailPageKey("mine", pagination.emailPageRequestSchema.parse({ page: 2 }));
+  const second = { emails: [], pagination: { ...snapshot("mine").pagination!, request: pagination.emailPageRequestSchema.parse({ page: 2 }) } };
+  cached.set(secondKey, second);
+  ui.render().onMailboxChange("team");
+  ui.requests[0].resolve(Response.json(snapshot("team"))); await tick();
+  ui.render().onMailboxChange("mine");
+  assert.equal(ui.render().pageCache, cached);
+  assert.equal(ui.render().pageCache!.get(secondKey), second);
+  assert.equal(ui.requests.length, 1);
   ui.unmount();
 });

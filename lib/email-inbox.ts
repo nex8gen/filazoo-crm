@@ -19,6 +19,7 @@ import type { CustomerProfileContext } from "./ai/email-rewrite.ts";
 
 export type InboxEmailItem = {
   id: string;
+  listConversationKey?: string;
   crmEmailId?: string;
   from?: string;
   to?: import("./email-addresses.ts").EmailAddress[];
@@ -79,6 +80,7 @@ export type AutomationFlowStep = {
 };
 
 export type EmailInboxBackendData = {
+  pagination?: import("./email-pagination.ts").EmailPageInfo;
   mode: DataMode;
   mailboxConfigured: boolean;
   sendConfigured: boolean;

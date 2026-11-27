@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { ArrowDown, ArrowLeft, ArrowUp, Check, ChevronDown, ChevronRight, Copy, Eye, EyeOff, Globe, GripVertical, LayoutTemplate, LoaderCircle, Monitor, Paintbrush, PanelLeft, PanelRight, Plus, Redo2, Save, Settings2, Smartphone, Trash2, Undo2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, CirclePlus, Copy, Eye, EyeOff, Globe, GripVertical, ImageIcon, LayoutTemplate, LoaderCircle, Monitor, Paintbrush, Plus, Redo2, Save, Settings2, Smartphone, Trash2, Undo2, Video, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { PortalEditorSelect } from "@/components/portal-editor-select";
 import { Badge } from "@/components/ui/badge";
@@ -29,7 +30,7 @@ import "@/app/customer/customer.css";
 import "./portal-builder.css";
 
 const colors = ["#16776b", "#5261d8", "#8867ac", "#ab644d", "#333b49", "#2879a5"];
-export function PortalBuilder({ initial, canWrite, workspaceName, themeId = "current", themeName = "My customer portal" }: { initial: PortalDesignView; canWrite: boolean; workspaceName: string; themeId?: string; themeName?: string }) {
+export function PortalBuilder({ initial, canWrite, themeId = "current", themeName = "My website" }: { initial: PortalDesignView; canWrite: boolean; workspaceName: string; themeId?: string; themeName?: string }) {
   const [saved, setSaved] = useState(initial);
   const [design, setDesign] = useState(initial.draft);
   const [name, setName] = useState(themeName);
@@ -39,10 +40,9 @@ export function PortalBuilder({ initial, canWrite, workspaceName, themeId = "cur
   const [block, setBlock] = useState("hero");
   const [elementPath, setElementPath] = useState<number[] | null>(null);
   const [elementParent, setElementParent] = useState<number[]>([]);
-  const [expandedSections, setExpandedSections] = useState(() => new Set(["hero"]));
+  const [expandedSections, setExpandedSections] = useState(() => new Set<string>());
   const [history, setHistory] = useState<{ past: { design: PortalDesign; name: string }[]; future: { design: PortalDesign; name: string }[] }>({ past: [], future: [] });
-  const [sectionType, setSectionType] = useState<PortalWebsiteSection["type"]>("text");
-  const [showStructure, setShowStructure] = useState<boolean | "auto">("auto");
+  const [sectionPickerOpen, setSectionPickerOpen] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<"sections" | "preview" | "settings">("preview");
   const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
   const [showInspector, setShowInspector] = useState(true);
@@ -166,18 +166,11 @@ export function PortalBuilder({ initial, canWrite, workspaceName, themeId = "cur
     }));
   }
   function selectPage(next: string) {
-    setPage(next); setPanel("page"); setBlock(""); setElementPath(null); setShowInspector(true); setMobilePanel("preview");
+    setPage(next); setPanel("page"); setBlock(""); setElementPath(null); setShowInspector(true); setMobilePanel("preview"); setSectionPickerOpen(false);
   }
-  function selectBlock(id: string) { setBlock(id); setElementPath(null); setPanel("section"); setShowInspector(true); setMobilePanel("settings"); setExpandedSections(current => new Set([...current, id])); }
+  function selectBlock(id: string) { setBlock(id); setElementPath(null); setPanel("section"); setShowInspector(true); setMobilePanel("settings"); setExpandedSections(current => new Set([...current, id, id.split("/")[0]])); }
+  function toggleSection(id: string) { setExpandedSections(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; }); }
   function openSettings(next: string) { setPanel(next); setShowInspector(true); setMobilePanel("settings"); }
-  function toggleStructure() {
-    if (window.matchMedia?.("(max-width:760px)").matches) { setShowStructure(true); setMobilePanel("sections"); }
-    else setShowStructure(value => value === "auto" ? window.matchMedia?.("(max-width:1250px)").matches ?? false : !value);
-  }
-  function toggleInspector() {
-    if (window.matchMedia?.("(max-width:760px)").matches) { setShowInspector(true); setMobilePanel("settings"); }
-    else setShowInspector(value => !value);
-  }
   function addPage(area: "website" | "account") {
     if (!canWrite || busy) return;
     const id = crypto.randomUUID();
@@ -191,10 +184,10 @@ export function PortalBuilder({ initial, canWrite, workspaceName, themeId = "cur
       update("sections", [...design.sections, section]); selectPage(`pages/${id}`);
     }
   }
-  function addSection(type: PortalWebsiteSection["type"] = sectionType) {
+  function addSection(type: PortalWebsiteSection["type"]) {
     if (!canWrite || busy || websitePage.sections.length >= 20) return;
     const section = createWebsiteSection(type, crypto.randomUUID());
-    updateWebsitePage({ sections: [...websitePage.sections, section] }); selectBlock(section.id);
+    updateWebsitePage({ sections: [...websitePage.sections, section] }); selectBlock(section.id); setSectionPickerOpen(false);
   }
   function duplicateSection(id: string) {
     if (!canWrite || busy || websitePage.sections.length >= 20) return;
@@ -202,6 +195,12 @@ export function PortalBuilder({ initial, canWrite, workspaceName, themeId = "cur
     const copy = { ...section, id: crypto.randomUUID(), name: `${(section.name || section.title || section.type).slice(0, 115)} copy`, blocks: websiteSectionBlocks(section, elementContext).map(element => duplicateWebsiteBlock(element, true)) };
     const index = websitePage.sections.indexOf(section);
     updateWebsitePage({ sections: [...websitePage.sections.slice(0, index + 1), copy, ...websitePage.sections.slice(index + 1)] }); selectBlock(copy.id);
+  }
+  function removeSection(id: string) {
+    if (!canWrite || busy || !websitePage.sections.some(item => item.id === id)) return;
+    updateWebsitePage({ sections: websitePage.sections.filter(item => item.id !== id) });
+    if (block === id) { setBlock(""); setElementPath(null); setPanel("page"); }
+    setExpandedSections(current => { const next = new Set(current); next.delete(id); return next; });
   }
   function moveWebsiteSection(index: number, offset: number) {
     const sections = [...websitePage.sections];
@@ -230,12 +229,17 @@ export function PortalBuilder({ initial, canWrite, workspaceName, themeId = "cur
     } catch { setError("Unable to save your theme. Please try again."); }
     finally { saving.current = false; setBusy(null); }
   }
-  const sectionRow = (id: string, label: string, hidden = false) => <button type="button" className={`pb-section-button ${["section", "element", "elements"].includes(panel) && block === id ? "is-selected" : ""}`} aria-pressed={["section", "element", "elements"].includes(panel) && block === id} onClick={() => selectBlock(id)}><LayoutTemplate /><span>{label}</span>{hidden && <EyeOff />}</button>;
+  const sectionRow = (id: string, label: string, hidden = false, type?: PortalWebsiteSection["type"]) => {
+    const Icon = type === "video" ? Video : type && ["hero", "image", "gallery", "slideshow", "logos"].includes(type) ? ImageIcon : LayoutTemplate;
+    const active = ["section", "elements"].includes(panel) && block === id;
+    return <button type="button" className={`pb-section-button ${active ? "is-selected" : ""}`} aria-pressed={active} onClick={() => selectBlock(id)}><Icon className={type ? "pb-row-type-icon" : undefined} />{type && <GripVertical className="pb-row-drag-handle" aria-hidden="true" />}<span>{label}</span>{hidden && <EyeOff className="pb-hidden-indicator" aria-label="Hidden" />}</button>;
+  };
+  const globalSection = (id: string, label: string, hidden: boolean, children: ReactNode) => <div className="pb-section-item"><div className="pb-section-heading-row"><button type="button" className="pb-section-expander" aria-label={`${expandedSections.has(id) ? "Collapse" : "Expand"} ${label} elements`} aria-expanded={expandedSections.has(id)} onClick={() => toggleSection(id)}>{expandedSections.has(id) ? <ChevronDown /> : <ChevronRight />}</button>{sectionRow(id, label, hidden)}</div>{expandedSections.has(id) && <div className="pb-global-elements">{children}</div>}</div>;
   const pageDestinations = [...websitePages.filter(item => item.enabled).map(item => ({ value: item.pageId === "home" ? "home" : `pages/${item.pageId}`, label: item.label })), { value: "account", label: "Customer account" }];
   const navigation = website.navigation ?? website.pages.map(item => ({ id: item.id, label: item.id === "home" ? "Home" : item.title.slice(0, 60), link: item.id === "home" ? "home" : `pages/${item.id}`, enabled: item.enabled }));
   const inspectorTitle = panel === "element" ? selectedElement?.title || "Element settings" : panel === "elements" ? "Add element" : panel === "library" ? "Section library" : panel === "section" ? (selectedWebsiteSection?.name || selectedWebsiteSection?.title) || (block.startsWith("header") ? "Header" : block.startsWith("footer") ? "Footer" : block === "announcement" ? "Announcement bar" : selected?.title) || "Section settings" : "Settings";
   const sectionControls = <>
-    <div className="pb-section-group"><h3>Header</h3>{isWebsite && sectionRow("announcement", "Announcement bar", !design.announcement)}{sectionRow("header", isWebsite ? "Header" : "Account header", isWebsite && website.header?.enabled === false)}{isWebsite && <div className="pb-global-elements">{sectionRow("header/brand", "Logo & brand")}{sectionRow("header/navigation", "Navigation")}{sectionRow("header/account", "Customer account link")}</div>}</div>
+    <div className="pb-section-group"><h3>Header</h3>{isWebsite ? <><div className="pb-section-leaf">{sectionRow("announcement", "Announcement bar", !design.announcement)}</div>{globalSection("header", "Header", website.header?.enabled === false, <>{sectionRow("header/brand", "Logo & brand")}{sectionRow("header/navigation", "Navigation")}{sectionRow("header/account", "Customer account link")}</>)}</> : <div className="pb-section-leaf">{sectionRow("header", "Account header")}</div>}</div>
     <div className="pb-section-group"><h3>Template</h3>{isWebsite ? websitePage.sections.map((section, index) => {
       const expanded = expandedSections.has(section.id);
       const elements = websiteSectionBlocks(section, elementContext);
@@ -243,29 +247,28 @@ export function PortalBuilder({ initial, canWrite, workspaceName, themeId = "cur
         if (!canWrite || busy) return;
         try { const source = JSON.parse(event.dataTransfer.getData("application/x-filazoo-section")); const from = websitePage.sections.findIndex(item => item.id === source.section); if (source.page === websitePage.id && from >= 0) { event.preventDefault(); moveWebsiteSection(from, index - from); } } catch {}
       }}>
-      <div className="pb-section-heading-row"><button type="button" className="pb-section-expander" aria-label={`${expanded ? "Collapse" : "Expand"} ${section.name || section.title || section.type} elements`} aria-expanded={expanded} onClick={() => setExpandedSections(current => { const next = new Set(current); if (next.has(section.id)) next.delete(section.id); else next.add(section.id); return next; })}>{expanded ? <ChevronDown /> : <ChevronRight />}</button>{sectionRow(section.id, section.name || section.title || websiteSectionTypes.find(item => item.value === section.type)!.label, !section.enabled)}</div>
-      <div className="pb-section-actions"><button type="button" aria-label={`Move ${section.name || section.title || section.type} up`} disabled={!canWrite || Boolean(busy) || index === 0} onClick={() => moveWebsiteSection(index, -1)}><ArrowUp /></button><button type="button" aria-label={`Move ${section.name || section.title || section.type} down`} disabled={!canWrite || Boolean(busy) || index === websitePage.sections.length - 1} onClick={() => moveWebsiteSection(index, 1)}><ArrowDown /></button><button type="button" aria-label={`Duplicate ${section.name || section.title || section.type} section`} disabled={!canWrite || Boolean(busy) || websitePage.sections.length >= 20} onClick={() => duplicateSection(section.id)}><Copy /></button><button type="button" aria-label={`${section.enabled ? "Hide" : "Show"} ${section.name || section.title || section.type}`} disabled={!canWrite || Boolean(busy)} onClick={() => updateWebsitePage({ sections: websitePage.sections.map(item => item.id === section.id ? { ...item, enabled: !item.enabled } : item) })}>{section.enabled ? <Eye /> : <EyeOff />}</button><GripVertical className="pb-section-grip" /></div>
-    </div>{expanded && <div className="pb-section-nested"><PortalElementTree blocks={elements} scope={`${websitePage.id}:${section.id}`} selected={block === section.id && elementPath && panel === "element" ? elementPath.join(".") : undefined} canWrite={canWrite && !busy} canAdd={countWebsiteBlocks(elements) < 60} onSelect={path => selectElement(section.id, path)} onToggle={path => changeElements(section.id, items => changeWebsiteBlock(items, path, item => ({ ...item, enabled: !item.enabled })))} onDuplicate={path => duplicateElement(section.id, path)} onMove={(path, target) => moveElement(section.id, path, target)} onAdd={parent => openElements(section.id, parent)} /><Button type="button" variant="ghost" size="sm" className="pb-add-element" disabled={!canWrite || Boolean(busy) || countWebsiteBlocks(elements) >= 60} onClick={() => openElements(section.id)}><Plus />Add element</Button></div>}</div>;
+      <div className="pb-section-heading-row"><button type="button" className="pb-section-expander" aria-label={`${expanded ? "Collapse" : "Expand"} ${section.name || section.title || section.type} elements`} aria-expanded={expanded} onClick={() => toggleSection(section.id)}>{expanded ? <ChevronDown /> : <ChevronRight />}</button>{sectionRow(section.id, section.name || section.title || websiteSectionTypes.find(item => item.value === section.type)!.label, !section.enabled, section.type)}</div>
+      <div className="pb-section-actions"><button type="button" title="Delete section" aria-label={`Delete ${section.name || section.title || section.type} section`} disabled={!canWrite || Boolean(busy)} onClick={() => removeSection(section.id)}><Trash2 /></button><button type="button" title={section.enabled ? "Hide section" : "Show section"} aria-label={`${section.enabled ? "Hide" : "Show"} ${section.name || section.title || section.type}`} disabled={!canWrite || Boolean(busy)} onClick={() => updateWebsitePage({ sections: websitePage.sections.map(item => item.id === section.id ? { ...item, enabled: !item.enabled } : item) })}>{section.enabled ? <Eye /> : <EyeOff />}</button></div>
+    </div>{expanded && <div className="pb-section-nested"><PortalElementTree blocks={elements} scope={`${websitePage.id}:${section.id}`} selected={block === section.id && elementPath && panel === "element" ? elementPath.join(".") : undefined} canWrite={canWrite && !busy} canAdd={countWebsiteBlocks(elements) < 60} onSelect={path => selectElement(section.id, path)} onToggle={path => changeElements(section.id, items => changeWebsiteBlock(items, path, item => ({ ...item, enabled: !item.enabled })))} onRemove={path => changeElements(section.id, items => changeWebsiteBlock(items, path, () => null))} onMove={(path, target) => moveElement(section.id, path, target)} onAdd={parent => openElements(section.id, parent)} /><Button type="button" variant="ghost" size="sm" className="pb-add-element" disabled={!canWrite || Boolean(busy) || countWebsiteBlocks(elements) >= 60} onClick={() => openElements(section.id)}><Plus />Add element</Button></div>}</div>;
     }) : <>{selected && sectionRow(selected.id, selectedPage.type === "home" ? "Payment overview" : selected.title, !selected.enabled)}{selectedPage.type === "home" && sectionRow("shortcuts", "Account navigation")}</>}
-    {isWebsite && <div className="pb-add-section"><PortalEditorSelect label="Section type" value={sectionType} options={[...websiteSectionTypes]} onChange={next => setSectionType(next as PortalWebsiteSection["type"])} /><Button variant="ghost" size="sm" disabled={!canWrite || Boolean(busy) || websitePage.sections.length >= 20} onClick={() => addSection()}><Plus />Add section</Button><Button variant="outline" size="sm" onClick={() => openSettings("library")}><LayoutTemplate />Browse sections</Button></div>}</div>
-    <div className="pb-section-group"><h3>Footer</h3>{sectionRow("footer", "Footer", isWebsite && website.footer?.enabled === false)}{isWebsite && <div className="pb-global-elements">{sectionRow("footer/content", "Brand & text")}{sectionRow("footer/contact", "Contact information")}{sectionRow("footer/navigation", "Footer navigation")}</div>}</div>
+    {isWebsite && <div className="pb-add-section"><Popover open={sectionPickerOpen} onOpenChange={setSectionPickerOpen}><PopoverTrigger render={<Button variant="ghost" size="sm" disabled={!canWrite || Boolean(busy) || websitePage.sections.length >= 20} />}><CirclePlus />Add section</PopoverTrigger><PopoverContent className="pb-section-picker" side="right" align="start" sideOffset={12} aria-label="Add a section"><PortalSectionLibrary compact mode="section" disabled={!canWrite || Boolean(busy) || websitePage.sections.length >= 20} onAdd={type => addSection(type as PortalWebsiteSection["type"])} /></PopoverContent></Popover></div>}</div>
+    <div className="pb-section-group"><h3>Footer</h3>{isWebsite ? globalSection("footer", "Footer", website.footer?.enabled === false, <>{sectionRow("footer/content", "Brand & text")}{sectionRow("footer/contact", "Contact information")}{sectionRow("footer/navigation", "Footer navigation")}</>) : <div className="pb-section-leaf">{sectionRow("footer", "Footer")}</div>}</div>
   </>;
   return <div className="portal-builder">
-    <header className="pb-topbar"><div className="pb-theme-title"><Link href="/customer-portal" aria-label="Back to theme library" onClick={event => { if (dirty && !window.confirm("Leave the editor and discard unsaved changes?")) event.preventDefault(); }}><ArrowLeft />Themes</Link><span aria-hidden="true">/</span><div><div><strong>{name}</strong><Badge variant="secondary">{isLive ? "Live" : "Draft"}</Badge></div></div></div>
+    <header className="pb-topbar"><div className="pb-theme-title"><Link href="/customer-portal" aria-label="Back to theme library" onClick={event => { if (dirty && !window.confirm("Leave the editor and discard unsaved changes?")) event.preventDefault(); }}><span className="pb-back-text" aria-hidden="true"><span className="pb-back-name">Themes</span><span className="pb-back-action">Back</span></span></Link><span aria-hidden="true">/</span><div><div><strong>{name}</strong><Badge variant="secondary">{isLive ? "Live" : "Draft"}</Badge></div></div><div className="pb-toolbar-tools" role="group" aria-label="Edit history"><Button variant="ghost" size="icon-sm" aria-label="Undo edit" disabled={!canWrite || Boolean(busy) || history.past.length === 0} onClick={() => undo()}><Undo2 /></Button><Button variant="ghost" size="icon-sm" aria-label="Redo edit" disabled={!canWrite || Boolean(busy) || history.future.length === 0} onClick={() => undo(true)}><Redo2 /></Button></div></div>
       <div className="pb-page-picker"><PortalEditorSelect label="Select portal page" value={selectedPage.id} options={[
         ...websitePages.map(item => ({ value: item.id, label: item.label + (!item.enabled ? " (hidden)" : ""), group: "B2B website" })),
         ...pages.map(item => ({ value: item.id, label: `Customer account · ${item.label}${!item.enabled ? " (hidden)" : ""}`, group: "Customer account" })),
       ]} onChange={selectPage} /></div>
-      <div className="pb-save-actions"><span className={dirty ? "is-dirty" : ""}>{dirty ? <span className="pb-unsaved-dot" /> : <Check />}{dirty ? "Unsaved changes" : "All changes saved"}</span><div className="pb-toolbar-tools"><Button variant="ghost" size="icon-sm" aria-label="Undo edit" disabled={!canWrite || Boolean(busy) || history.past.length === 0} onClick={() => undo()}><Undo2 /></Button><Button variant="ghost" size="icon-sm" aria-label="Redo edit" disabled={!canWrite || Boolean(busy) || history.future.length === 0} onClick={() => undo(true)}><Redo2 /></Button><Button variant="ghost" size="icon-sm" aria-label="Toggle sections" aria-pressed={showStructure === "auto" ? undefined : showStructure} onClick={toggleStructure}><PanelLeft /></Button><Button variant="ghost" size="icon-sm" aria-label="Theme settings" aria-pressed={showInspector && panel === "theme"} onClick={() => openSettings("theme")}><Paintbrush /></Button><Button type="button" variant="ghost" size="icon-sm" aria-label={interacting ? "Return to editing" : "Interact with preview"} aria-pressed={interacting} onClick={() => { setInteracting(value => !value); setMobilePanel("preview"); }}><Eye /></Button><div className="pb-device-toggle" role="group" aria-label="Preview size"><Button type="button" variant="ghost" size="icon-sm" aria-label="Desktop preview" aria-pressed={device === "desktop"} onClick={() => { setDevice("desktop"); setMobilePanel("preview"); }}><Monitor /></Button><Button type="button" variant="ghost" size="icon-sm" aria-label="Mobile preview" aria-pressed={device === "mobile"} onClick={() => { setDevice("mobile"); setMobilePanel("preview"); }}><Smartphone /></Button></div><Button type="button" variant="ghost" size="icon-sm" aria-label="Toggle editor settings" aria-expanded={showInspector} onClick={toggleInspector}><PanelRight /></Button></div><div className="pb-toolbar-commands"><Button size="sm" variant="outline" disabled={!canWrite || Boolean(busy) || (!dirty && saved.revision > 0)} onClick={() => void save(false)}>{busy === "draft" ? <LoaderCircle className="animate-spin" /> : <Save />}Save</Button><Button size="sm" disabled={!canWrite || Boolean(busy) || (!unpublished && !dirty)} onClick={() => void save(true)}>{busy === "publish" ? <LoaderCircle className="animate-spin" /> : <Globe />}Publish</Button></div></div>
+      <div className="pb-save-actions"><div className="pb-toolbar-tools"><Button variant="ghost" size="icon-sm" aria-label="Theme settings" aria-pressed={showInspector && panel === "theme"} onClick={() => openSettings("theme")}><Paintbrush /></Button><Button type="button" variant="ghost" size="icon-sm" aria-label={interacting ? "Return to editing" : "Interact with preview"} aria-pressed={interacting} onClick={() => { setInteracting(value => !value); setMobilePanel("preview"); }}><Eye /></Button><div className="pb-device-toggle" role="group" aria-label="Preview size"><Button type="button" variant="ghost" size="icon-sm" aria-label="Desktop preview" aria-pressed={device === "desktop"} onClick={() => { setDevice("desktop"); setMobilePanel("preview"); }}><Monitor /></Button><Button type="button" variant="ghost" size="icon-sm" aria-label="Mobile preview" aria-pressed={device === "mobile"} onClick={() => { setDevice("mobile"); setMobilePanel("preview"); }}><Smartphone /></Button></div></div><div className="pb-toolbar-commands"><Button size="sm" variant="outline" disabled={!canWrite || Boolean(busy) || (!dirty && saved.revision > 0)} onClick={() => void save(false)}>{busy === "draft" ? <LoaderCircle className="animate-spin" /> : <Save />}Save</Button><Button size="sm" disabled={!canWrite || Boolean(busy) || (!unpublished && !dirty)} onClick={() => void save(true)}>{busy === "publish" ? <LoaderCircle className="animate-spin" /> : <Globe />}Publish</Button></div></div>
     </header>
     {(error || notice || !canWrite) && <div className={`pb-feedback ${error ? "is-error" : ""}`} role={error ? "alert" : "status"}>{error || notice || "Preview access. A workspace admin can edit and publish themes."}{notice && <Check />}</div>}
     <Dialog open={confirmPublish} onOpenChange={open => { if (!busy) setConfirmPublish(open); }}><DialogContent><DialogHeader><DialogTitle>Publish {name.trim()}?</DialogTitle><DialogDescription>This saves your changes and makes this design visible on your website and customer account. Orders, invoices, and messages stay unchanged.</DialogDescription></DialogHeader>{error && <p role="alert" className="text-sm text-destructive">{error}</p>}<DialogFooter><Button variant="outline" disabled={Boolean(busy)} onClick={() => setConfirmPublish(false)}>Keep editing</Button><Button disabled={Boolean(busy)} onClick={() => void save(true, true)}>{busy === "publish" ? <LoaderCircle className="animate-spin" /> : <Globe />}Publish theme</Button></DialogFooter></DialogContent></Dialog>
-    <div className="pb-mobile-tabs" role="group" aria-label="Website editor view"><Button variant={mobilePanel === "sections" ? "secondary" : "ghost"} aria-pressed={mobilePanel === "sections"} onClick={() => { setShowStructure(true); setMobilePanel("sections"); }}><LayoutTemplate />Sections</Button><Button variant={mobilePanel === "preview" ? "secondary" : "ghost"} aria-pressed={mobilePanel === "preview"} onClick={() => setMobilePanel("preview")}><Monitor />Preview</Button><Button variant={mobilePanel === "settings" ? "secondary" : "ghost"} aria-pressed={mobilePanel === "settings"} onClick={() => { setShowInspector(true); setMobilePanel("settings"); }}><Settings2 />Settings</Button></div>
-    <div className="pb-workbench" data-inspector={showInspector} data-structure={showStructure} data-mobile-panel={mobilePanel}>
+    <div className="pb-mobile-tabs" role="group" aria-label="Website editor view"><Button variant={mobilePanel === "sections" ? "secondary" : "ghost"} aria-pressed={mobilePanel === "sections"} onClick={() => { setMobilePanel("sections"); }}><LayoutTemplate />Sections</Button><Button variant={mobilePanel === "preview" ? "secondary" : "ghost"} aria-pressed={mobilePanel === "preview"} onClick={() => setMobilePanel("preview")}><Monitor />Preview</Button><Button variant={mobilePanel === "settings" ? "secondary" : "ghost"} aria-pressed={mobilePanel === "settings"} onClick={() => { setShowInspector(true); setMobilePanel("settings"); }}><Settings2 />Settings</Button></div>
+    <div className="pb-workbench" data-inspector={showInspector} data-mobile-panel={mobilePanel}>
       <aside className="pb-structure pb-glass" aria-label="Portal structure">
-        <div className="pb-structure-heading"><div><h2>{selectedPage.label}</h2><p>{isWebsite ? "B2B website" : "Customer account"}</p></div><Button variant="ghost" size="icon-sm" aria-label="Page settings" onClick={() => openSettings("page")}><Settings2 /></Button></div>
+        <div className="pb-structure-heading"><h2>{selectedPage.label}</h2><Button variant="ghost" size="icon-sm" aria-label="Page settings" onClick={() => openSettings("page")}><Settings2 /></Button></div>
         <div className="pb-structure-scroll">{sectionControls}</div>
-        <div className="pb-workspace"><span>{workspaceName.slice(0, 1).toUpperCase()}</span><div><strong>{workspaceName}</strong><small>{isWebsite ? "Website sections" : "Account sections"}</small></div></div>
       </aside>
       {showInspector && <aside className="pb-editor pb-glass" aria-label="Theme editor settings"><div className="pb-inspector-heading"><div className="pb-inspector-title"><span className="pb-inspector-icon">{panel === "theme" ? <Paintbrush /> : <LayoutTemplate />}</span><h2>{inspectorTitle}</h2><button type="button" aria-label="Close editor settings" onClick={() => { setShowInspector(false); setMobilePanel("preview"); }}><X /></button></div><div className="pb-inspector-mode"><PortalEditorSelect label="Editor settings" value={panel} options={[{ value: "section", label: "Section settings" }, { value: "element", label: "Element settings" }, ...(isWebsite ? [{ value: "library", label: "Section library" }] : []), ...(isWebsite && selectedWebsiteSection ? [{ value: "elements", label: "Add element" }] : []), { value: "page", label: "Page settings" }, { value: "theme", label: "Theme settings" }, { value: "pages", label: "Pages & navigation" }, { value: "features", label: "Customer permissions" }]} onChange={setPanel} /></div></div><div className="pb-panel"><fieldset disabled={!canWrite || Boolean(busy)}>
         {panel === "library" && isWebsite && <PortalSectionLibrary mode="section" disabled={!canWrite || Boolean(busy) || websitePage.sections.length >= 20} onAdd={type => addSection(type as PortalWebsiteSection["type"])} />}
@@ -290,7 +293,7 @@ export function PortalBuilder({ initial, canWrite, workspaceName, themeId = "cur
           {selectedWebsiteSection.type === "contact" && <Label className="pb-field">Contact email<Input type="email" value={design.supportEmail} maxLength={254} onChange={event => update("supportEmail", event.target.value)} /></Label>}
           <div className="pb-element-actions"><Button variant="outline" size="sm" disabled={countWebsiteBlocks(currentElements) >= 60} onClick={() => openElements(block)}><Plus />Add element</Button><Button variant="outline" size="sm" disabled={websitePage.sections.length >= 20} onClick={() => duplicateSection(block)}><Copy />Duplicate section</Button></div>
           <PortalSectionAppearance section={selectedWebsiteSection} onChange={updateWebsiteSection} />
-          <Button variant="destructive" size="sm" onClick={() => { updateWebsitePage({ sections: websitePage.sections.filter(item => item.id !== block) }); setBlock(""); setPanel("page"); }}><Trash2 />Remove section</Button>
+          <Button variant="destructive" size="sm" onClick={() => removeSection(block)}><Trash2 />Remove section</Button>
         </>}
         {panel === "section" && !selectedWebsiteSection && !selected && !["announcement", "header", "footer", "shortcuts"].includes(block.split("/")[0]) && <p className="pb-help">Choose a section on the left or add a section to start editing.</p>}
         {panel === "section" && block === "announcement" && <Label className="pb-field">Announcement text<Textarea value={design.announcement} maxLength={300} onChange={event => update("announcement", event.target.value)} /><small>Leave empty to hide the announcement bar.</small></Label>}

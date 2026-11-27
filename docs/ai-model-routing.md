@@ -21,6 +21,30 @@ budgets are separate controls; topping up does not reset a key quota.
 
 ## Model selection
 
+### 27 November 2026: interactive expert reasoning
+
+Interactive Chat/Agent customer reviews, comparisons, reconciliation,
+prioritization and business-grounded drafting now use `openai/gpt-6.2-sol` with
+low reasoning. Explicitly complex interactive requests and Agent invoice,
+quotation and payment planning use that same expert route. Simple record facts
+and routine actions retain the standard route; background email/workflow jobs,
+tagging and images retain their existing routing.
+
+`needsExpertCrmReasoning` performs local intent matching, without an extra model
+call. `AI_GATEWAY_EXPERT_MODEL` is the dedicated allowlisted override; generic
+email/agent pins cannot downgrade this route. Existing workspace budgets and
+server-side action permissions still apply. The expert route costs more than
+Haiku and may be slower; it does not increase a user's allowance or buy credits.
+
+Qualification uses the 100-prompt synthetic suite described in
+[workspace-agent.md](workspace-agent.md). Its report separates an unchanged
+baseline, an instructions-only run, model pilots, and the final expert run.
+Model-assisted critiques are explicitly self-reviews and cannot certify accuracy.
+The original answer logs, reference answers and remaining gaps remain inspectable.
+
+The table below records the earlier 5 November routing; the interactive expert
+route above supersedes its Chat/Agent reasoning and financial-planning entries.
+
 The 5 November request replaces the earlier nano-only preference. Model selection
 is local code, with no separate classifier request. The live catalog and a bounded
 synthetic evaluation inform these defaults:
