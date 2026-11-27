@@ -136,8 +136,8 @@ export function WorkspaceSidebar({ pathname, expanded, onToggle, onSearch, userM
   return (
     <aside id="workspace-sidebar" aria-label="Workspace sidebar" data-expanded={expanded} className="workspace-sidebar fixed inset-y-0 left-0 z-40 hidden flex-col lg:flex">
       <div className="workspace-sidebar-header flex h-14 shrink-0 items-center gap-2 px-2">
-        <Link href="/analytics" aria-label="NewAI home" inert={!expanded || undefined} aria-hidden={!expanded || undefined} className="workspace-sidebar-home flex min-w-0 flex-1 items-center gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring">
-          <BrandMark aria-hidden="true" className="h-auto w-full max-w-[166px] shrink-0" />
+        <Link href="/analytics" aria-label="NewAI home" inert={!expanded || undefined} aria-hidden={!expanded || undefined} className="workspace-sidebar-home flex min-w-0 flex-1 items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <BrandMark aria-hidden="true" className="h-auto w-full min-w-0 max-w-[166px]" />
         </Link>
         <Tooltip>
           <TooltipTrigger render={<button type="button" aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"} aria-expanded={expanded} aria-controls="workspace-sidebar" aria-keyshortcuts="Control+B Meta+B" onClick={onToggle} className="workspace-sidebar-brand-toggle">
