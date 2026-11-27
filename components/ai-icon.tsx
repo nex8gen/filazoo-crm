@@ -39,7 +39,7 @@ type AiIconProps = ComponentPropsWithoutRef<"span"> & {
 /** Shared AI identity. The surrounding control supplies its accessible label. */
 export function AiIcon({ className, state = "idle", ...props }: AiIconProps) {
   return (
-    <span {...props} aria-hidden="true" data-state={state} className={cn("inline-grid size-4 shrink-0 place-items-center align-middle", state === "error" ? "text-destructive" : "text-brand-foreground", className)}>
+    <span {...props} aria-hidden="true" data-state={state} className={cn("inline-grid size-4 shrink-0 place-items-center align-middle", state === "error" ? "text-destructive" : "text-[#0a2d53] dark:text-[#82b5e1]", className)}>
       <AnimatedGlyph key={state} duration={state === "thinking" ? 2.4 : 4} />
     </span>
   );

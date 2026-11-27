@@ -1,6 +1,6 @@
-.ai-robot { --robot-light: #34d399; }
-.ai-robot-shell { fill: #f4f4f5; stroke: #b8b8c1; }
-.dark .ai-robot-shell { fill: #27272a; stroke: #71717a; }
+.ai-robot { --robot-light: #82b5e1; }
+.ai-robot-shell { fill: #eef4fa; stroke: #7597b7; }
+.dark .ai-robot-shell { fill: #14283d; stroke: #4c8bc4; }
 .ai-robot-light { fill: var(--robot-light); filter: drop-shadow(0 0 3px var(--robot-light)); }
 .ai-robot-eyes { transform: translateX(var(--robot-eye-offset, 0px)); transition: transform 180ms ease-out; }
 .ai-robot-eye { transform-box: fill-box; transform-origin: center; }
