@@ -1,4 +1,6 @@
 import "server-only";
+import { getWorkspaceSettings } from "./workspace-settings.ts";
+import type { WorkspaceSchedule } from "../workspace-settings.ts";
 import { randomUUID } from "node:crypto";
 import { uploadFlowAttachment } from "../attachment-upload.ts";
 import { submitFlowEmail } from "../flow-smtp.ts";
@@ -22,8 +24,8 @@ type TestRow = FlowEmailDeliveryTestRun & {
 };
 const table = "flow_email_test_runs";
 
-export function planFlowEmailDeliveryTest(input: FlowEmailDeliveryTestInput, now = new Date()): PlanAction[] {
-  const trace = flowEmailTestTrace(input, now);
+export function planFlowEmailDeliveryTest(input: FlowEmailDeliveryTestInput, now = new Date(), schedule?: WorkspaceSchedule): PlanAction[] {
+  const trace = flowEmailTestTrace(input, now, schedule);
   const actions: PlanAction[] = [];
   let sendAt = now.toISOString();
   for (const entry of trace) {
@@ -50,7 +52,8 @@ export async function startFlowEmailDeliveryTest(input: FlowEmailDeliveryTestInp
   const admin = createSupabaseAdmin();
   const existing = await admin.from(table).select("*").eq("id", input.requestId).eq("user_id", userId).maybeSingle().throwOnError();
   if (existing.data) return publicRun(existing.data as TestRow);
-  let plan = planFlowEmailDeliveryTest(input);
+  const schedule = await getWorkspaceSettings();
+  let plan = planFlowEmailDeliveryTest(input, new Date(), schedule);
   for (const action of plan) {
     const step = flowStepAtPath(input.flow, action.stepPath ?? [action.step - 1]);
     if (!step) throw new Error("The test action no longer exists.");
@@ -61,7 +64,7 @@ export async function startFlowEmailDeliveryTest(input: FlowEmailDeliveryTestInp
   const { count: active } = await admin.from(table).select("id", { count: "exact", head: true }).eq("user_id", userId).eq("status", "waiting").gt("expires_at", new Date().toISOString()).throwOnError();
   if ((active ?? 0) >= 3) throw new Error("Finish or cancel an existing delivery test before starting another.");
   const startedAt = new Date();
-  plan = planFlowEmailDeliveryTest(input, startedAt);
+  plan = planFlowEmailDeliveryTest(input, startedAt, schedule);
   const { data, error } = await admin.from(table).insert({ id: input.requestId, user_id: userId, recipient: input.recipient,
     input, plan, manager_name: managerName, created_at: startedAt.toISOString(), next_run_at: plan[0].sendAt }).select("*").single();
   if (error) {

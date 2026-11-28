@@ -10,7 +10,7 @@ import { loadAgentContext, searchAgentEmails } from "@/lib/ai/agent-context";
 import { prepareAgentActions } from "@/lib/ai/agent-execution";
 import { assistantFailureDiagnostic, assistantProviderError } from "@/lib/ai/assistant-provider-error";
 import { researchCustomer } from "@/lib/ai/customer-research";
-import { companyResearchTarget } from "@/lib/ai/research-request";
+import { companyResearchForRequest } from "@/lib/ai/research-request";
 import { requestContextSelection } from "@/lib/ai/request-context";
 import { withResearchProgress, type ResearchProgress, type TrackActivity, type AssistantActivity } from "@/lib/ai/research-progress";
 import { ChatBodyTooLargeError, collectChatImages, collectChatFiles, readChatRequestBody } from "@/lib/ai/image-input";
@@ -218,10 +218,11 @@ async function assistantResponse(request: Request, report: (progress: ResearchPr
         : fields?.name ? `I'll prepare a draft invoice for ${fields.name}. Which products, colors or variants, and quantities should I include? If you want to use a saved purchase order, tell me its reference.` : "Which customer should I create the draft invoice for? Please give their company name or business email, along with the products, colors and quantities to include.";
       return await reply({ output: translateUiText(question, parsed.data.language), clarification: { question }, actions: [] });
     }
-    const researchTarget = parsed.data.webSearch ? companyResearchTarget({ messages: parsed.data.messages,
+    const researchTarget = parsed.data.webSearch ? companyResearchForRequest({ messages: parsed.data.messages,
       currentCompany: fields?.name ? { id: serverData?.currentCompanyId ?? undefined, fields: { name: fields.name, website: fields.website, email: fields.contactEmail, contact: fields.contactName, country: fields.country, city: fields.city } } : undefined,
       choices: serverData?.customerChoices,
     }) : undefined;
+    if (parsed.data.webSearch && !researchTarget) options.prompt += "\n\nNo public web research was performed for this turn. Continue the latest user request using verified CRM lookups where relevant or general knowledge for general questions. Do not claim to have searched the web. Web search being enabled does not require a company identity; do not ask for a company for an unrelated product or workspace question.";
     if (researchTarget?.question) return await reply({ output: translateUiText(researchTarget.question, parsed.data.language), clarification: { question: translateUiText(researchTarget.question, parsed.data.language) }, actions: [] });
     const research = parsed.data.webSearch && researchTarget?.identity ? await researchCustomer({ usageUserId: viewer.id,
       identity: researchTarget.identity,

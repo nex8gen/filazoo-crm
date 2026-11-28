@@ -22,11 +22,6 @@ const definitions: Record<HomeMetricId, { label: string; title: string; descript
 };
 const stageLabels: Record<string, string> = { new: "New", contacted: "Contacted", replied: "Replied", interested: "Interested", big_order: "Big order", won: "Won", lost: "Lost" };
 
-function Sparkline({ values }: { values: number[] }) {
-  const max = Math.max(1, ...values);
-  return <svg aria-hidden="true" viewBox="0 0 38 16" className="h-4 w-9"><polyline points={values.map((value, index) => `${values.length === 1 ? 19 : index / (values.length - 1) * 36 + 1},${14 - value / max * 12}`).join(" ")} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" /></svg>;
-}
-
 function Change({ current, previous }: { current: number | null; previous: number | null }) {
   const change = current === null || previous === null ? null : analyticsChange(current, previous);
   if (change === null) return <span className="text-xs text-muted-foreground" title="No prior activity">—</span>;
@@ -57,7 +52,7 @@ export function HomeOverview({ data, refreshing, onRangeChange, onRefresh }: { d
       return <Popover key={index} open={opened === index} onOpenChange={open => { setOpened(current => open ? index : current === index ? null : current); if (!open) setEditing(current => current === index ? null : current); }}>
         <PopoverTrigger openOnHover delay={180} closeDelay={200} className="home-overview-metric" data-muted={opened !== null && opened !== index ? "true" : undefined} aria-label={`${metric.label}: ${ready ? format(current) : "unavailable"}. Open detailed analysis.`}>
           <span className="home-overview-label">{metric.label}</span>
-          <span className="home-overview-value"><strong title={ready ? format(current) : undefined}>{ready ? format(current) : "—"}</strong>{ready && !snapshot && points ? <span className="home-overview-trend text-primary"><Sparkline values={points.filter(point => point.current !== null && (!point.date.includes("T") || Date.parse(point.date) <= Date.parse(data.asOf))).map(point => point.current!)} /><Change current={current} previous={previous} /></span> : <span className="home-overview-trend text-xs font-normal text-muted-foreground">{snapshot ? "Current" : "—"}</span>}</span>
+          <span className="home-overview-value"><strong title={ready ? format(current) : undefined}>{ready ? format(current) : "—"}</strong>{ready && !snapshot && points ? <span className="home-overview-trend text-primary"><span className="home-overview-sparkline"><HomeMetricChart points={points} currentLabel={currentLabel} previousLabel={previousLabel} asOf={data.asOf} format={monetary ? "money" : id === "conversionRate" ? "percent" : "count"} currency={currency} size="sparkline" /></span><Change current={current} previous={previous} /></span> : <span className="home-overview-trend text-xs font-normal text-muted-foreground">{snapshot ? "Current" : "—"}</span>}</span>
         </PopoverTrigger>
         <PopoverContent align="center" side="bottom" sideOffset={12} className="home-metric-popup !w-[min(600px,calc(100vw-2rem))] !gap-0 !rounded-xl !p-5">
           <div className="flex items-start justify-between gap-4"><div className="min-w-0"><div className="flex flex-wrap items-center gap-3"><strong className="text-3xl font-semibold tracking-tight tabular-nums">{ready ? format(current) : "—"}</strong>{ready && !snapshot ? <Change current={current} previous={previous} /> : null}</div><PopoverTitle className="mt-2 text-sm">{metric.title}</PopoverTitle><PopoverDescription className="mt-1 text-xs leading-5">{metric.description}{monetary ? ` · ${currency}` : ""}</PopoverDescription></div>

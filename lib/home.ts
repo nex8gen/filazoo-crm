@@ -6,13 +6,14 @@ export type HomeCompany = { id: string; ownerId: string | null; stage: string; c
 export type HomeEmail = { ownerId: string | null; sentAt: string };
 export type HomeOrder = { companyId: string; date: string; status: string; currency: string; totalMinor: number };
 export type HomeMember = { id: string; name: string; role: string; avatarUrl?: string };
-export type HomeInputs = { companies: HomeCompany[]; emails: HomeEmail[]; orders: HomeOrder[]; members: HomeMember[] };
+export type HomeInputs = { timezone?: string; companies: HomeCompany[]; emails: HomeEmail[]; orders: HomeOrder[]; members: HomeMember[] };
 export type HomeMetrics = { newCompanies: number; emailsSent: number; orders: number; wonCustomers: number; openOpportunities: number; orderValues: { currency: string; minor: number }[] };
 export type HomePerformance = HomeMember & { emailsSent: number; wonCustomers: number; orders: number; customers: number; newCustomers: number; orderValues: HomeMetrics["orderValues"] };
 export type HomeRange = { from: string; to: string };
 export type HomeTrendMetric = "newCompanies" | "emailsSent" | "orders";
-export type HomeTrendPoint = { date: string; previousDate: string; current: number; previous: number };
+export type HomeTrendPoint = { date: string; previousDate: string; current: number; previous: number; localHour?: number; available?: boolean };
 export type HomeReport = {
+  timezone?: string;
   range: HomeRange; previousRange: HomeRange; minDate: string;
   metrics: HomeMetrics; previousMetrics: HomeMetrics; team: HomePerformance[];
   trends: Record<HomeTrendMetric, HomeTrendPoint[]>; bucketDays: number;
@@ -47,9 +48,10 @@ export function homePreviousRange(range: HomeRange): HomeRange {
 // Won customers are a current pipeline snapshot: updated_at is not a win date.
 // Orders belong to the current account owner; email credit belongs to the sender.
 export function buildHomePeriod(input: HomeInputs, period: HomePeriod | HomeRange, now: Date, includeTeam: boolean) {
-  const today = analyticsDay(now), month = today.slice(0, 7);
+  const dayInWorkspace = (value: string | Date) => analyticsDay(value, input.timezone);
+  const today = dayInWorkspace(now), month = today.slice(0, 7);
   const inPeriod = (value: string) => {
-    const day = analyticsDay(value);
+    const day = dayInWorkspace(value);
     return Boolean(day && day <= today && (typeof period === "object" ? day >= period.from && day <= period.to : period === "all" || (period === "today" ? day === today : day.startsWith(month))));
   };
   const companyMap = new Map(input.companies.map(row => [row.id, row]));
@@ -79,8 +81,10 @@ export function buildHomePeriod(input: HomeInputs, period: HomePeriod | HomeRang
 }
 
 export function buildHomeReport(input: HomeInputs, requested: Partial<HomeRange> | undefined, now: Date, includeTeam: boolean): HomeReport {
-  const today = analyticsDay(now), range = resolveHomeRange(requested, today), previousRange = homePreviousRange(range);
-  const dates = [...input.companies.map(row => analyticsDay(row.createdAt)), ...input.emails.map(row => analyticsDay(row.sentAt)), ...input.orders.map(row => analyticsDay(row.date))].filter(day => day >= "1900-01-01" && day <= today).sort();
+  const timezone = input.timezone ?? "Asia/Shanghai";
+  const dayInWorkspace = (value: string | Date) => analyticsDay(value, timezone);
+  const today = dayInWorkspace(now), range = resolveHomeRange(requested, today), previousRange = homePreviousRange(range);
+  const dates = [...input.companies.map(row => dayInWorkspace(row.createdAt)), ...input.emails.map(row => dayInWorkspace(row.sentAt)), ...input.orders.map(row => dayInWorkspace(row.date))].filter(day => day >= "1900-01-01" && day <= today).sort();
   const days = Math.round((Date.parse(range.to) - Date.parse(range.from)) / 86400000) + 1;
   const bucketDays = Math.max(1, Math.ceil(days / 60));
   const companyIds = new Set(input.companies.map(row => row.id));
@@ -89,15 +93,18 @@ export function buildHomeReport(input: HomeInputs, requested: Partial<HomeRange>
     orders: input.orders.filter(row => companyIds.has(row.companyId) && !["draft", "cancelled"].includes(row.status)).map(row => row.date),
   };
   const trends = {} as HomeReport["trends"];
-  const hourFormatter = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Shanghai", hour: "2-digit", hourCycle: "h23" });
+  const hourFormatter = new Intl.DateTimeFormat("en-GB", { timeZone: timezone, hour: "2-digit", hourCycle: "h23" });
   for (const metric of ["newCompanies", "emailsSent", "orders"] as const) {
     const hourly = days === 1 && metric !== "orders";
     const points: HomeTrendPoint[] = Array.from({ length: hourly ? 24 : Math.ceil(days / bucketDays) }, (_, index) => ({
-      date: hourly ? `${range.from}T${String(index).padStart(2, "0")}:00:00+08:00` : shiftDay(range.from, index * bucketDays),
-      previousDate: hourly ? `${previousRange.from}T${String(index).padStart(2, "0")}:00:00+08:00` : shiftDay(previousRange.from, index * bucketDays), current: 0, previous: 0,
+      // Hourly buckets represent local clock hours, including empty DST hours.
+      // Explicit labels and availability avoid interpreting them in the browser timezone.
+      date: hourly ? `${range.from}T${String(index).padStart(2, "0")}:00:00Z` : shiftDay(range.from, index * bucketDays),
+      previousDate: hourly ? `${previousRange.from}T${String(index).padStart(2, "0")}:00:00Z` : shiftDay(previousRange.from, index * bucketDays),
+      ...(hourly ? { localHour: index, available: range.from < today || index <= Number(hourFormatter.format(now)) } : {}), current: 0, previous: 0,
     }));
     for (const value of activity[metric]) {
-      const day = analyticsDay(value);
+      const day = dayInWorkspace(value);
       const field = day >= range.from && day <= range.to ? "current" : day >= previousRange.from && day <= previousRange.to ? "previous" : null;
       if (!field) continue;
       const start = field === "current" ? range.from : previousRange.from;
@@ -108,7 +115,7 @@ export function buildHomeReport(input: HomeInputs, requested: Partial<HomeRange>
     trends[metric] = points;
   }
   const stages = ["new", "contacted", "replied", "interested", "big_order", "won", "lost"].map(stage => ({ stage, count: input.companies.filter(row => row.stage === stage).length }));
-  return { range, previousRange, minDate: dates[0] ?? today, ...buildHomePeriod(input, range, now, includeTeam),
+  return { timezone, range, previousRange, minDate: dates[0] ?? today, ...buildHomePeriod(input, range, now, includeTeam),
     previousMetrics: buildHomePeriod(input, previousRange, now, false).metrics, trends, bucketDays, stages,
     sales: buildHomeSales(input, range, previousRange, trends.orders, bucketDays) };
 }

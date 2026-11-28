@@ -26,13 +26,14 @@ export function replaceHomeMetric(current: HomeMetricId[], index: number, next: 
 }
 
 export function buildHomeSales(input: HomeInputs, range: HomeRange, previousRange: HomeRange, points: HomeTrendPoint[], bucketDays: number): HomeSalesReport {
+  const workspaceDay = (value: string) => analyticsDay(value, input.timezone);
   const companyIds = new Set(input.companies.map(row => row.id));
   const orders = input.orders.filter(row => companyIds.has(row.companyId) && !["draft", "cancelled"].includes(row.status));
   const currencies = [...new Set(orders.map(row => row.currency).filter(value => /^[A-Z]{3}$/.test(value)))].sort();
   if (!currencies.length) currencies.push("USD");
-  const inRange = (value: string, selected: HomeRange) => { const day = analyticsDay(value); return day >= selected.from && day <= selected.to; };
+  const inRange = (value: string, selected: HomeRange) => { const day = workspaceDay(value); return day >= selected.from && day <= selected.to; };
   const selectedOrders = orders.filter(row => inRange(row.date, range)), previousOrders = orders.filter(row => inRange(row.date, previousRange));
-  const bucket = (value: string, start: string) => Math.floor(Math.round((Date.parse(analyticsDay(value)) - Date.parse(start)) / 86400000) / bucketDays);
+  const bucket = (value: string, start: string) => Math.floor(Math.round((Date.parse(workspaceDay(value)) - Date.parse(start)) / 86400000) / bucketDays);
   const byCurrency: HomeSalesReport["byCurrency"] = {};
   for (const currency of currencies) {
     const compute = (rows: typeof orders, selected: HomeRange) => {
@@ -52,8 +53,8 @@ export function buildHomeSales(input: HomeInputs, range: HomeRange, previousRang
   // A conversion is a unique new lead with a confirmed order in the same reporting period.
   const conversion = (selected: HomeRange, rows: typeof orders) => {
     const leads = input.companies.filter(row => inRange(row.createdAt, selected));
-    const leadDates = new Map(leads.map(row => [row.id, analyticsDay(row.createdAt)]));
-    const converted = new Set(rows.filter(row => leadDates.has(row.companyId) && analyticsDay(row.date) >= leadDates.get(row.companyId)!).map(row => row.companyId));
+    const leadDates = new Map(leads.map(row => [row.id, workspaceDay(row.createdAt)]));
+    const converted = new Set(rows.filter(row => leadDates.has(row.companyId) && workspaceDay(row.date) >= leadDates.get(row.companyId)!).map(row => row.companyId));
     const buckets = points.map(() => ({ leads: 0, converted: 0 }));
     for (const lead of leads) { const entry = buckets[bucket(lead.createdAt, selected.from)]; if (entry) { entry.leads++; if (converted.has(lead.id)) entry.converted++; } }
     return { rate: leads.length ? converted.size / leads.length * 100 : null, buckets: buckets.map(entry => entry.leads ? entry.converted / entry.leads * 100 : null) };

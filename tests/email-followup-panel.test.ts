@@ -42,6 +42,8 @@ function panel(options: { delayStatus?: boolean; delayPreview?: boolean; saved?:
   };
   const jsx = (type: unknown, props: Record<string, unknown>) => ({ type, props });
   const dependencies: Record<string, unknown> = {
+    "@/components/ai-icon": { AiIcon: "ai-icon" },
+    "@/components/agent-icon": { AgentIcon: "agent-icon" },
     react, "react/jsx-runtime": { jsx, jsxs: jsx }, "next/link": { default: "link" }, "lucide-react": {},
     "@/components/ui/button": { Button: "button" }, "@/components/ui/date-picker": { DatePicker: "date-picker" },
     "@/components/ui/sheet": { Sheet: "sheet", SheetContent: "sheet-content", SheetTitle: "sheet-title", SheetHeader: "sheet-header", SheetDescription: "sheet-description" },

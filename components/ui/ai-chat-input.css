@@ -54,7 +54,7 @@
 }
 
 button.customer-chat-chip:hover:not(:disabled) { background: color-mix(in srgb, var(--foreground) 9%, var(--card)); }
-button.customer-chat-chip:focus-visible { outline: 2px solid var(--foreground); outline-offset: 3px; }
+button.customer-chat-chip:focus-visible { outline: 2px solid var(--ai-accent); outline-offset: 3px; }
 button.customer-chat-chip:disabled { cursor: not-allowed; opacity: .4; }
 
 .customer-chat-textarea {
@@ -75,9 +75,9 @@ button.customer-chat-chip:disabled { cursor: not-allowed; opacity: .4; }
 }
 .customer-chat-textarea::placeholder { color: var(--muted-foreground); }
 .customer-chat-textarea:disabled { opacity: .55; }
-.customer-chatbox:focus-within { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--foreground) 45%, var(--border)); }
+.customer-chatbox:focus-within { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ai-accent) 45%, var(--border)); }
 .customer-chat-send:not(:disabled),
-button.customer-chat-send:hover:not(:disabled) { background: var(--foreground); color: var(--background); }
+button.customer-chat-send:hover:not(:disabled) { background: var(--ai-foreground); color: var(--ai-contrast); }
 
 @media (prefers-reduced-motion: reduce) {
   .customer-chat-beam,

@@ -1,0 +1,672 @@
+{
+  "scope": "prerendered shell scripts and client entry chunks",
+  "maxGzipBytes": 420000,
+  "results": [
+    {
+      "route": "/analytics",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/companies",
+      "scripts": 28,
+      "bytes": 1365904,
+      "gzipBytes": 435502,
+      "maxGzipBytes": 420000,
+      "pass": false
+    },
+    {
+      "route": "/tasks",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/segments",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/products",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/company-quotations",
+      "scripts": 28,
+      "bytes": 1342895,
+      "gzipBytes": 452179,
+      "maxGzipBytes": 420000,
+      "pass": false
+    },
+    {
+      "route": "/invoices",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/email",
+      "scripts": 24,
+      "bytes": 1133744,
+      "gzipBytes": 361298,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/messenger",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/settings",
+      "scripts": 26,
+      "bytes": 1150453,
+      "gzipBytes": 367731,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/workflow",
+      "scripts": 24,
+      "bytes": 1130102,
+      "gzipBytes": 360682,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/accept-invitation",
+      "scripts": 24,
+      "bytes": 1140144,
+      "gzipBytes": 365126,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/access-denied",
+      "scripts": 24,
+      "bytes": 1129880,
+      "gzipBytes": 361424,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/automation",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/customer-portal",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/data-deletion",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/deliverability",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/documents",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/forgot-password",
+      "scripts": 24,
+      "bytes": 1132934,
+      "gzipBytes": 362670,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/login",
+      "scripts": 26,
+      "bytes": 1401057,
+      "gzipBytes": 434059,
+      "maxGzipBytes": 420000,
+      "pass": false
+    },
+    {
+      "route": "/marketing",
+      "scripts": 25,
+      "bytes": 1156968,
+      "gzipBytes": 368334,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/pipeline",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/privacy",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/purchase-orders",
+      "scripts": 24,
+      "bytes": 1125222,
+      "gzipBytes": 359590,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/replies",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/setup",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/signup",
+      "scripts": 24,
+      "bytes": 1140042,
+      "gzipBytes": 364667,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/subscribe",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/terms",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/update-password",
+      "scripts": 26,
+      "bytes": 1398683,
+      "gzipBytes": 433462,
+      "maxGzipBytes": 420000,
+      "pass": false
+    },
+    {
+      "route": "/workspaces",
+      "scripts": 24,
+      "bytes": 1138815,
+      "gzipBytes": 364926,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/[...catchAll]",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/_global-error",
+      "scripts": 8,
+      "bytes": 573278,
+      "gzipBytes": 176328,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/_not-found",
+      "scripts": 21,
+      "bytes": 1077332,
+      "gzipBytes": 341960,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/workspaces\\new",
+      "scripts": 24,
+      "bytes": 1127183,
+      "gzipBytes": 360504,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/workspaces\\setup",
+      "scripts": 24,
+      "bytes": 1129880,
+      "gzipBytes": 361424,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/workflow\\analytics",
+      "scripts": 28,
+      "bytes": 1216655,
+      "gzipBytes": 391819,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/workflow\\marketing-assets",
+      "scripts": 24,
+      "bytes": 1130102,
+      "gzipBytes": 360682,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/workflow\\qa",
+      "scripts": 24,
+      "bytes": 1130102,
+      "gzipBytes": 360682,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/website\\[workspaceId]\\[[...page]]",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/subscribe\\orders\\[id]",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/signup\\verify",
+      "scripts": 24,
+      "bytes": 1134146,
+      "gzipBytes": 363001,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/settings\\apps",
+      "scripts": 26,
+      "bytes": 1150453,
+      "gzipBytes": 367731,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/settings\\credits",
+      "scripts": 26,
+      "bytes": 1150453,
+      "gzipBytes": 367731,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/settings\\workspace",
+      "scripts": 26,
+      "bytes": 1150453,
+      "gzipBytes": 367731,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/settings\\[section]",
+      "scripts": 26,
+      "bytes": 1150453,
+      "gzipBytes": 367731,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/settings\\workspace\\activity",
+      "scripts": 26,
+      "bytes": 1150453,
+      "gzipBytes": 367731,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/settings\\apps\\smtp",
+      "scripts": 26,
+      "bytes": 1150453,
+      "gzipBytes": 367731,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/settings\\apps\\[appId]",
+      "scripts": 26,
+      "bytes": 1150453,
+      "gzipBytes": 367731,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/purchase-orders\\drafts",
+      "scripts": 24,
+      "bytes": 1125222,
+      "gzipBytes": 359590,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/purchase-orders\\new",
+      "scripts": 24,
+      "bytes": 1125222,
+      "gzipBytes": 359590,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/purchase-orders\\[id]",
+      "scripts": 24,
+      "bytes": 1125222,
+      "gzipBytes": 359590,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/purchase-orders\\[id]\\edit",
+      "scripts": 24,
+      "bytes": 1125222,
+      "gzipBytes": 359590,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/products\\[sku]",
+      "scripts": 29,
+      "bytes": 1356591,
+      "gzipBytes": 458276,
+      "maxGzipBytes": 420000,
+      "pass": false
+    },
+    {
+      "route": "/marketing\\demo-source",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/lead-channel\\ai-leads",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/lead-channel\\meta",
+      "scripts": 24,
+      "bytes": 1144079,
+      "gzipBytes": 366253,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/join\\[token]",
+      "scripts": 24,
+      "bytes": 1129269,
+      "gzipBytes": 361448,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/invoices\\new",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/invoices\\[id]",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/email\\campaigns",
+      "scripts": 24,
+      "bytes": 1133744,
+      "gzipBytes": 361298,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/email\\workflows",
+      "scripts": 24,
+      "bytes": 1133744,
+      "gzipBytes": 361298,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/customer-portal\\domains",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/customer-portal\\themes\\[themeId]",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/customer\\domain",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/customer\\invoices\\[id]",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/customer\\invoices\\[id]\\[...page]",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/customer\\domain\\[...page]",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/company-quotations\\[id]",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/companies\\[id]",
+      "scripts": 32,
+      "bytes": 1434991,
+      "gzipBytes": 483075,
+      "maxGzipBytes": 420000,
+      "pass": false
+    },
+    {
+      "route": "/auth\\email",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/auth\\error",
+      "scripts": 24,
+      "bytes": 1129880,
+      "gzipBytes": 361424,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/auth\\mfa",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/auth\\alipay\\connected",
+      "scripts": 23,
+      "bytes": 1124451,
+      "gzipBytes": 359134,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/auth\\alipay\\error",
+      "scripts": 24,
+      "bytes": 1129880,
+      "gzipBytes": 361424,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/(.)products\\[sku]",
+      "scripts": 24,
+      "bytes": 1124331,
+      "gzipBytes": 359169,
+      "maxGzipBytes": 420000,
+      "pass": true
+    },
+    {
+      "route": "/(.)companies\\[id]",
+      "scripts": 24,
+      "bytes": 1124946,
+      "gzipBytes": 359488,
+      "maxGzipBytes": 420000,
+      "pass": true
+    }
+  ],
+  "clientEntries": [
+    {
+      "module": "components/products-catalog-v2.tsx",
+      "scripts": 20,
+      "bytes": 783604,
+      "gzipBytes": 282134,
+      "maxGzipBytes": 225000,
+      "pass": false
+    },
+    {
+      "module": "components/portal-theme-library.tsx",
+      "scripts": 17,
+      "bytes": 589991,
+      "gzipBytes": 195621,
+      "maxGzipBytes": 190000,
+      "pass": false
+    },
+    {
+      "module": "components/flow-builder.tsx",
+      "scripts": 24,
+      "bytes": 1084237,
+      "gzipBytes": 398908,
+      "maxGzipBytes": 390000,
+      "pass": false
+    },
+    {
+      "module": "components/email-accounts-workspace.tsx",
+      "scripts": 22,
+      "bytes": 1161175,
+      "gzipBytes": 402643,
+      "maxGzipBytes": 380000,
+      "pass": false
+    },
+    {
+      "module": "components/documents-workspace.tsx",
+      "scripts": 21,
+      "bytes": 897636,
+      "gzipBytes": 341128,
+      "maxGzipBytes": 330000,
+      "pass": false
+    }
+  ]
+}

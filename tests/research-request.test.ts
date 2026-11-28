@@ -1,9 +1,39 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { companyResearchTarget, webSearchForRequest } from "../lib/ai/research-request.ts";
+import { companyResearchForRequest, companyResearchTarget, webSearchForRequest } from "../lib/ai/research-request.ts";
 
 const choices = [{ id: "inovecell-brazil", name: "Inovecell", city: "Cachoeirinha", country: "Brazil" }, { id: "other", name: "Example Print", city: "Boston", country: "United States" }];
 const messages = (content: string) => [{ role: "user", content }];
+
+test("the reported Chinese background-check request enables search and extracts the full business name", () => {
+  const name = "深圳市基石新材料技术有限公司";
+  for (const content of [`背调${name}`, `请帮我背调${name}。`, `研究 ${name}`]) {
+    assert.equal(webSearchForRequest("auto", content), true);
+    assert.deepEqual(companyResearchForRequest({ messages: messages(content) }), { identity: { name } });
+    assert.equal(companyResearchForRequest({ messages: messages(content), choices: [{ id: "saved-cn", name }] })?.companyId, "saved-cn");
+  }
+  assert.equal(webSearchForRequest("off", `背调${name}`), false);
+  assert.equal(webSearchForRequest("on", `不要联网，背调${name}`), false);
+});
+
+test("a product or workspace question does not require a company even after research or its clarification", () => {
+  for (const previous of ["Research Inovecell", "背调深圳市基石新材料技术有限公司"]) {
+    for (const content of ["give me the information of PETG-CF", "介绍PETG-CF", "Show saved products", "How many unpaid orders do we have?"]) {
+      const conversation = [...messages(previous), { role: "assistant", content: "您想研究哪家公司？请输入公司名称或公开网站。" }, ...messages(content)];
+      assert.equal(companyResearchForRequest({ messages: conversation, choices }), undefined);
+      assert.equal(companyResearchForRequest({ messages: conversation, choices, currentCompany: { id: "other", fields: { name: "Example Print" } } }), undefined);
+    }
+  }
+});
+
+test("company clarification replies and research retries preserve authorized resolution", () => {
+  const clarification = { role: "assistant", content: "Which company should I research? Enter its name or public website." };
+  assert.equal(companyResearchForRequest({ messages: [...messages("Research this company"), clarification, ...messages("Inovecell")], choices })?.companyId, "inovecell-brazil");
+  assert.equal(companyResearchForRequest({ messages: [...messages("Research Inovecell"), { role: "assistant", content: "Research could not complete." }, ...messages("Try again")], choices })?.companyId, "inovecell-brazil");
+  assert.equal(companyResearchForRequest({ messages: [...messages("Research Inovecell"), { role: "assistant", content: "Company report" }, ...messages("Research more about this customer")], choices })?.companyId, "inovecell-brazil");
+  assert.equal(companyResearchForRequest({ messages: [...messages("Tell me about PETG-CF"), { role: "assistant", content: "Material details" }, ...messages("Try again")], choices }), undefined);
+  assert.match(companyResearchForRequest({ messages: messages("背调这家公司") })?.question ?? "", /Which company/);
+});
 test("the reported research request enables search before sending, while explicit Off and private-record requests stay off", () => {
   for (const text of ["Research Inovecell again.", "Please research Inovecell", "can you search online for this company", "Find public information about Inovecell", "Search Google for Vercel"]) assert.equal(webSearchForRequest("auto", text), true, text);
   for (const text of ["Summarize Analytics", "Research our invoices", "Research unpaid orders", "Analyze this CRM page", "Do not use web search. Research Inovecell", "Research Inovecell using only saved records"]) assert.equal(webSearchForRequest("auto", text), false, text);

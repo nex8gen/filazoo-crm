@@ -1,0 +1,262 @@
+/* [project]/components/company-profile-sheet.css.css [app-client] (css) */
+.company-profile-overlay[data-slot="sheet-overlay"] {
+  z-index: 69;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: #00000014;
+  transition: opacity .32s cubic-bezier(.22, 1, .36, 1);
+}
+
+.company-profile-sheet[data-slot="sheet-content"][data-side="right"] {
+  z-index: 70;
+  border-left: 1px solid var(--border);
+  background: var(--workspace-frame);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  opacity: 1;
+  border-radius: 20px 0 0 20px;
+  gap: 0;
+  width: min(1120px, 100vw - 64px);
+  max-width: none;
+  height: 100dvh;
+  max-height: 100dvh;
+  transition: none;
+  inset: 0 0 0 auto;
+  overflow: hidden;
+  translate: 0;
+  box-shadow: -12px 0 48px #0000001a;
+}
+
+.company-profile-scroll {
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.company-profile-content {
+  --company-profile-padding: .375rem;
+  width: 100%;
+  min-height: 0;
+  padding: var(--company-profile-padding) var(--company-profile-padding) max(var(--company-profile-padding), env(safe-area-inset-bottom));
+  flex-direction: column;
+  flex: 1;
+  display: flex;
+  container: company-profile / inline-size;
+}
+
+.company-profile-sheet > [data-slot="sheet-close"] {
+  z-index: 40;
+}
+
+.company-profile-content .company-workspace-header {
+  margin-top: calc(-1 * var(--company-profile-padding));
+  margin-inline: calc(-1 * var(--company-profile-padding));
+  padding: 12px var(--company-profile-padding) 0;
+  background: var(--workspace-frame);
+  border: 0;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  display: grid;
+}
+
+.company-profile-content .company-workspace-toolbar {
+  flex-wrap: wrap;
+  order: 1;
+  gap: 12px;
+  padding: 0 44px 0 8px;
+}
+
+.company-profile-content .company-workspace-toolbar > div:first-child {
+  flex: 240px;
+}
+
+.company-profile-content .company-workspace-title {
+  letter-spacing: -.025em;
+  max-width: min(48vw, 440px);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.company-profile-content .company-workspace-navigation {
+  order: 2;
+  width: 100%;
+  padding: 0;
+}
+
+.company-profile-content .company-workspace-tabs[data-slot="tabs-list"] {
+  gap: 4px;
+  height: 46px;
+  padding: 5px 0 0;
+}
+
+.company-profile-content .company-workspace-tabs [data-slot="tabs-trigger"] {
+  padding-inline: 10px;
+}
+
+.company-profile-content .company-workspace-tab-label {
+  display: inline;
+}
+
+.company-profile-content > [data-ai-company-id] {
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.company-profile-content .company-workspace {
+  flex: 1;
+  min-height: 0;
+}
+
+.company-profile-content .company-workspace > .company-workspace-header {
+  flex-shrink: 0;
+}
+
+.company-profile-content .company-workspace > [data-slot="tabs-content"] {
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  scrollbar-gutter: auto;
+  min-height: 0;
+  overflow: hidden auto;
+}
+
+.company-profile-content .company-workspace > [data-slot="tabs-content"]::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.company-profile-content .company-workspace[data-company-tab="email"] > .company-workspace-email {
+  flex-direction: column;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.company-profile-content .company-email-section {
+  flex: 1;
+  height: auto;
+}
+
+.company-profile-content .company-email-workspace {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
+
+.company-profile-content .po-register-company {
+  min-height: 100%;
+}
+
+.company-profile-content .po-register-company .po-register-content {
+  flex-direction: column;
+  flex: 1;
+  display: flex;
+}
+
+.company-profile-content .po-register-company .crm-table-viewport {
+  flex: 1;
+}
+
+.company-profile-content .po-register-company .crm-table-viewport:has( > .po-register-empty) {
+  flex-direction: column;
+  display: flex;
+}
+
+.company-profile-content .po-register-company .po-register-empty {
+  flex: 1;
+  min-height: 220px;
+}
+
+.company-profile-content .po-register-company .crm-table-pagination {
+  flex-shrink: 0;
+  margin-top: auto;
+}
+
+.company-profile-content :is(.company-portal-workspace, .company-timeline)[data-empty="true"] {
+  flex-direction: column;
+  gap: 20px;
+  min-height: 100%;
+  display: flex;
+}
+
+.company-profile-content :is(.company-portal-workspace, .company-timeline)[data-empty="true"] > * {
+  margin-block: 0;
+}
+
+.company-profile-content .company-portal-empty {
+  flex-direction: column;
+  flex: 1;
+  justify-content: center;
+  align-items: center;
+  min-height: 240px;
+  display: flex;
+}
+
+.company-profile-content .company-timeline[data-empty="true"] > .company-timeline-events {
+  flex-direction: column;
+  flex: 1;
+  padding-top: 0;
+  display: flex;
+}
+
+.company-profile-content .company-timeline-empty {
+  flex: 1;
+}
+
+.company-profile-sheet [data-slot="card"] {
+  background: var(--card);
+  box-shadow: none;
+  border: 0;
+}
+
+.company-profile-sheet [data-company-back] {
+  display: none;
+}
+
+body:has(.company-profile-sheet) :is([data-slot="dialog-overlay"], [data-slot="sheet-overlay"]):not(.company-profile-overlay) {
+  z-index: 79;
+}
+
+body:has(.company-profile-sheet) :is([data-slot="dialog-content"], [data-slot="sheet-content"]):not(.company-profile-sheet) {
+  z-index: 80;
+}
+
+body:has(.company-profile-sheet) :has( > :is([data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="select-content"], [data-slot="popover-content"], [data-slot="tooltip-content"])) {
+  z-index: 81;
+}
+
+@container company-profile (max-width: 680px) {
+  .company-profile-content .company-workspace-tab-label {
+    display: none;
+  }
+
+  .company-profile-content .company-workspace-title {
+    font-size: 20px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .company-profile-content {
+    --company-profile-padding: .5rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .company-profile-sheet[data-slot="sheet-content"][data-side="right"] {
+    border-left: 0;
+    border-radius: 0;
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .company-profile-overlay[data-slot="sheet-overlay"] {
+    transition: none;
+  }
+}
+

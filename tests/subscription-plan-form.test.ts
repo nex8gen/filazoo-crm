@@ -7,6 +7,7 @@ import ts from "typescript";
 import { JSDOM } from "jsdom";
 import * as React from "react";
 import * as catalog from "../lib/billing/plans.ts";
+import * as creditUnits from "../lib/billing/credits.ts";
 import * as features from "../lib/billing/features.ts";
 import * as paymentIcons from "../lib/payment-icons.ts";
 
@@ -17,7 +18,8 @@ const { createRoot } = await import("react-dom/client");
 const require = createRequire(import.meta.url);
 const sharedComponents = new Map<string, unknown>();
 function requireComponent(name: string): unknown {
-  if (!name.startsWith("@/components/ui/")) return require(name);
+  if (name === "@/lib/billing/credits") return creditUnits;
+  if (!name.startsWith("@/components/")) return require(name);
   if (sharedComponents.has(name)) return sharedComponents.get(name);
   const exports = {};
   const code = ts.transpileModule(readFileSync(new URL("../" + name.slice(2) + ".tsx", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
@@ -27,10 +29,10 @@ function requireComponent(name: string): unknown {
 }
 const source = ts.transpileModule(readFileSync(new URL("../app/subscribe/plan-form.tsx", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
 
-async function mount(props: { enabled: boolean; activePlan?: string; activeSeats?: number; workspaceId?: string } = { enabled: true }) {
+async function mount(props: { enabled: boolean; activePlan?: string; activeSeats?: number; workspaceId?: string } = { enabled: true }, discountResult: { discountPercent?: number; error?: string } = { discountPercent: 100 }) {
   const submissions: Record<string, FormDataEntryValue>[] = [];
   const exports: { PlanForm?: React.ComponentType<typeof props> } = {};
-  const dependencies: Record<string, unknown> = { "@/lib/billing/plans": catalog, "@/lib/billing/features": features, "@/lib/payment-icons": paymentIcons, "./actions": { startCheckout: async (_state: unknown, form: FormData) => { submissions.push(Object.fromEntries(form)); return { error: "Checkout test response" }; } } };
+  const dependencies: Record<string, unknown> = { "@/lib/billing/plans": catalog, "@/lib/billing/features": features, "@/lib/payment-icons": paymentIcons, "./discount-actions": { applySubscriptionDiscount: async () => discountResult }, "./actions": { startCheckout: async (_state: unknown, form: FormData) => { submissions.push(Object.fromEntries(form)); return { error: "Checkout test response" }; } } };
   vm.runInNewContext(source, { exports, require: (name: string) => dependencies[name] ?? requireComponent(name) });
   const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
   await React.act(async () => { root.render(React.createElement(exports.PlanForm!, props)); });
@@ -42,6 +44,53 @@ async function mount(props: { enabled: boolean; activePlan?: string; activeSeats
   }); };
   return { host, click, inputSeats, submissions, dispose: async () => { await React.act(async () => root.unmount()); host.remove(); } };
 }
+
+async function enterDiscount(host: HTMLElement, value: string) {
+  await React.act(async () => {
+    const input = host.querySelector<HTMLInputElement>('[name="discountCode"]')!;
+    Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+  });
+}
+
+test("a validated subscription discount enables free activation without Alipay and edits restore the original total", async () => {
+  const ui = await mount({ enabled: false });
+  try {
+    await enterDiscount(ui.host, "fixture-free");
+    await ui.click('.subscription-discount button');
+    assert.match(ui.host.querySelector('.subscription-discount-success')!.textContent!, /100% off/);
+    assert.match(ui.host.querySelector('.subscription-checkout-total')!.textContent!, /¥0/);
+    const button = ui.host.querySelector<HTMLButtonElement>('[type="submit"]')!;
+    assert.equal(button.disabled, false);
+    assert.equal(button.textContent, "Activate plan for free");
+    assert.equal(ui.host.querySelector('.subscription-payment-notice'), null);
+    await ui.click('[name="plan"][value="business"]');
+    await ui.click('[name="billingPeriod"][value="annual"]');
+    assert.match(ui.host.querySelector('.subscription-checkout-total')!.textContent!, /¥0/);
+    assert.equal(ui.host.querySelector('[name="name"]'), null);
+    await React.act(async () => ui.host.querySelector('form')!.requestSubmit());
+    assert.equal(ui.submissions[0].discountCode, 'fixture-free');
+    assert.equal(ui.submissions[0].plan, 'business');
+    await enterDiscount(ui.host, 'changed-code');
+    assert.equal(button.disabled, true);
+    assert.equal(ui.host.querySelector('.subscription-discount-success'), null);
+    assert.doesNotMatch(ui.host.querySelector('.subscription-checkout-total')!.textContent!, /¥0/);
+  } finally { await ui.dispose(); }
+});
+
+test("rejected codes keep the actual price and prevent accidental paid checkout", async () => {
+  const ui = await mount({ enabled: true }, { error: 'This code is not available.' });
+  try {
+    await enterDiscount(ui.host, 'fixture-invalid');
+    await ui.click('.subscription-discount button');
+    assert.match(ui.host.querySelector('#subscription-discount-status')!.textContent!, /not available/);
+    assert.equal(ui.host.querySelector<HTMLButtonElement>('[type="submit"]')!.disabled, true);
+    assert.match(ui.host.querySelector('.subscription-checkout-total')!.textContent!, /139/);
+    await enterDiscount(ui.host, '');
+    assert.equal(ui.host.querySelector<HTMLButtonElement>('[type="submit"]')!.disabled, false);
+    assert.equal(ui.submissions.length, 0);
+  } finally { await ui.dispose(); }
+});
 
 test("packages include fixed users, shared credits and one checkout price without a seat selector", async () => {
   const ui = await mount();
@@ -56,7 +105,7 @@ test("packages include fixed users, shared credits and one checkout price withou
     assert.match(ui.host.querySelector('.subscription-checkout-selection')!.textContent!, /Business.*5 users.*15,000 AI credits/);
     assert.match(ui.host.querySelector('.subscription-checkout-total')!.textContent!, /929/);
     const form = ui.host.querySelector('form')!;
-    ui.host.querySelector<HTMLInputElement>('[name="name"]')!.value = 'Studio Workspace';
+    assert.equal(ui.host.querySelector('#workspace-name'), null);
     await React.act(async () => form.requestSubmit());
     assert.equal(ui.submissions.length, 1); assert.equal(ui.submissions[0].plan, 'business');
     assert.equal(ui.submissions[0].seats, undefined); assert.equal(ui.submissions[0].amount, undefined);
@@ -80,14 +129,17 @@ test("comparison shows shared package limits and shares selection and billing wi
     const table = ui.host.querySelector('.subscription-comparison-table')!;
     const metrics = [
       ['AI credits / month', 'credits'], ['Customer companies', 'companies'], ['Products', 'products'],
-      ['Connected mailboxes', 'mailboxes'], ['Saved workflows', 'flows'], ['Workflow starts / month', 'flowRuns'],
+      ['Connected mailboxes', 'mailboxes'], ['Saved workflows', 'flows'], ['Workflow emails / month', 'workflowEmails'],
     ] as const;
     for (const [label, key] of metrics) {
       const row = [...table.querySelectorAll('tbody tr')].find(row => row.querySelector('[scope="row"]')?.textContent === label)!;
       assert.deepEqual([...row.querySelectorAll('td')].map(cell => cell.textContent), catalog.plans.map(plan => plan[key].toLocaleString('en-US')));
     }
     for (const plan of catalog.plans) {
-      assert.match(table.querySelector(`thead [data-plan="${plan.id}"]`)!.textContent!, new RegExp(String(catalog.planPrice(plan, 'monthly').monthlyCents / 100).replace('.', '\\.')));
+      const monthlyPrice = `¥${(catalog.planPrice(plan, 'monthly').monthlyFen / 100).toLocaleString('en-US')}`;
+      assert.equal(ui.host.querySelector(`.subscription-plan-card[data-plan="${plan.id}"] .subscription-yuan-price`)!.textContent, monthlyPrice);
+      assert.equal(table.querySelector(`thead [data-plan="${plan.id}"] .subscription-comparison-price`)!.textContent, `${monthlyPrice} / workspace / month`);
+      assert.equal(ui.host.querySelector(`[name="plan"][value="${plan.id}"]`)!.getAttribute('aria-label'), `${plan.name} plan, CNY ${monthlyPrice.slice(1)} per workspace per month`);
       assert.match(table.querySelector(`[data-feature="variants"] td[data-plan="${plan.id}"]`)!.textContent!, /Included/);
       assert.match(table.querySelector(`[data-feature="social"] td[data-plan="${plan.id}"]`)!.textContent!, /Limited access/);
     }
@@ -97,6 +149,12 @@ test("comparison shows shared package limits and shares selection and billing wi
     assert.equal(ui.submissions.length, 0, 'Comparing a plan must not submit checkout');
     await ui.click('#comparison-annual');
     assert.equal(ui.host.querySelector<HTMLInputElement>('[name="billingPeriod"]:checked')?.value, 'annual');
+    for (const plan of catalog.plans) {
+      const monthlyPrice = `¥${(catalog.planPrice(plan, 'annual').monthlyFen / 100).toLocaleString('en-US')}`;
+      assert.equal(ui.host.querySelector(`.subscription-plan-card[data-plan="${plan.id}"] .subscription-yuan-price`)!.textContent, monthlyPrice);
+      assert.equal(table.querySelector(`thead [data-plan="${plan.id}"] .subscription-comparison-price`)!.textContent, `${monthlyPrice} / workspace / month`);
+      assert.equal(ui.host.querySelector(`[name="plan"][value="${plan.id}"]`)!.getAttribute('aria-label'), `${plan.name} plan, CNY ${monthlyPrice.slice(1)} per workspace per month, billed annually`);
+    }
     assert.match(table.querySelector('thead [data-plan="business"]')!.textContent!, /9,348.*year/);
     assert.match(ui.host.querySelector('.subscription-checkout-total')!.textContent!, /9,348/);
     await ui.click('[name="billingPeriod"][value="monthly"]');

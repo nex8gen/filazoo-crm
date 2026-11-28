@@ -17,6 +17,16 @@ const environment = {
   ALIPAY_PRIVATE_KEY: app.privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
   ALIPAY_PUBLIC_KEY: provider.publicKey.export({ type: "spki", format: "pem" }).toString(),
 };
+
+test("custom recharge cashier signs the frozen total and rejects mismatched order prices", () => {
+  const api = load();
+  const order = { id: "fixture", workspace_id: "fixture", out_trade_no: `FZ${"a".repeat(32)}`, status: "pending", expires_at: "2099-01-01", catalog_version: 5, plan_id: "credits_custom", kind: "credits", seats: 1, period_months: 1, credit_quantity: 12345, credit_rate_micros: 6630000, amount_fen: 8185, currency: "CNY" };
+  const url = String(api.checkoutUrl(order));
+  const biz = JSON.parse(new URL(url).searchParams.get("biz_content")!);
+  assert.equal(biz.total_amount, "81.85");
+  assert.match(biz.subject, /12,345 AI credits/);
+  assert.throws(() => api.checkoutUrl({ ...order, amount_fen: 1 }), /Invalid order/);
+});
 function load(overrides = {}) {
   const exports: Record<string, (...args: unknown[]) => unknown> = {};
   const dependencies: Record<string, unknown> = {

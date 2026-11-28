@@ -1,10 +1,11 @@
 "use client";
+import { AgentIcon } from "@/components/agent-icon";
 import { NotificationToast } from "@/components/ui/notification-toast";
 
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Bot, LoaderCircle, BookOpen } from "lucide-react";
+import { LoaderCircle, BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { shippingMinorFromInput, type AutoReplyState } from "@/lib/email-auto-reply";
@@ -129,14 +130,14 @@ export function EmailAutoReplyControl({ automationId, mailboxId, senderId, messa
   const conversationLink = automation ? `/email?${new URLSearchParams({ mailbox: automation.mailbox_id, thread: automation.thread_key })}` : "";
   return <section aria-label="Conversation AI auto-reply" className="mb-2 shrink-0 border-b pb-2">
     <div className="flex min-h-8 items-center justify-between gap-3">
-      <div className="flex min-w-0 items-center gap-2"><Bot className="size-3.5 shrink-0 text-violet-600" /><span className="text-xs font-medium">AI auto-reply</span></div>
+      <div className="flex min-w-0 items-center gap-2"><AgentIcon className="size-3.5 shrink-0 text-ai-foreground" /><span className="text-xs font-medium">AI auto-reply</span></div>
       <div className="flex shrink-0 items-center gap-2">
         {!automationId ? <BusinessFacts compact /> : null}
         {busy || (!loaded && !loadError && query) ? <LoaderCircle aria-label="Loading auto-reply" className="size-3.5 animate-spin text-muted-foreground" /> : null}
         <button type="button" role="switch" aria-label="AI auto-reply for this conversation" aria-checked={Boolean(automation?.enabled)} title="Automatically reply to future messages in this conversation" disabled={busy || !loaded || !query || (!automation?.enabled && (!senderId || Boolean(automationId)))} onClick={() => void action(automation?.enabled ? { action: "stop", id: automation.id } : { action: "enable", mailboxId, senderId, messageId, revision: automation?.revision ?? 0 })} className="inline-flex items-center gap-2 text-xs text-muted-foreground disabled:opacity-50"><span>{automation?.enabled ? "On" : "Off"}</span><span className={`inline-flex h-5 w-9 items-center rounded-full p-0.5 transition-colors ${automation?.enabled ? "bg-emerald-600" : "bg-muted-foreground/30"}`}><span className={`size-4 rounded-full bg-white shadow-sm transition-transform ${automation?.enabled ? "translate-x-4" : ""}`} /></span></button>
       </div>
     </div>
-    {automation?.enabled && automation.status !== "active" ? <p className="mt-1 text-xs text-muted-foreground" role="status">{statusLabels[automation.status]}{!automationId && automation.task_id ? <> · <Link href="/tasks" className="text-primary underline">Review task</Link></> : null}</p> : null}
+    {automation?.enabled && automation.status !== "active" ? <p className="mt-1 text-xs text-muted-foreground" role="status">{statusLabels[automation.status]}{!automationId && automation.task_id ? <> · <Link href="/tasks" className="text-ai-foreground underline">Review task</Link></> : null}</p> : null}
     {automationId && automation?.last_error ? <p className="mt-2 whitespace-pre-wrap break-words text-xs text-amber-800 dark:text-amber-300">{automation.last_error}</p> : null}
     {automationId && automation?.status === "waiting_shipping" && pendingDocument ? <form className="mt-3 space-y-3 rounded-lg border bg-background p-3" onSubmit={(event) => { event.preventDefault(); try { void action({ action: "shipping", id: automation.id, revision: automation.revision, shippingMinor: shippingMinorFromInput(shipping) }); } catch (cause) { setError(cause instanceof Error ? cause.message : "Enter a valid cost."); } }}>
       <div className="text-xs"><p className="font-semibold">{pendingDocument.customerName} · {pendingDocument.currency}</p><p className="mt-1 whitespace-pre-wrap text-muted-foreground">{pendingDocument.shippingAddress}</p><ul className="mt-2 space-y-1">{pendingDocument.items.map((item, index) => <li key={index}>{item.description} × {item.quantity} · {formatInvoiceMoney(item.unitPriceMinor * item.quantity, pendingDocument.currency)}</li>)}</ul></div>
@@ -144,8 +145,8 @@ export function EmailAutoReplyControl({ automationId, mailboxId, senderId, messa
       <p className="text-xs text-muted-foreground">Confirming creates the invoice with this shipping cost and emails its PDF to {automation.recipient}. Enter 0 only for approved free shipping.</p>
       <Button size="sm" disabled={busy}>{busy ? "Saving…" : "Add shipping and send invoice"}</Button>
     </form> : null}
-    {automationId && conversationLink ? <Link href={conversationLink} className="mt-2 inline-block text-xs text-primary underline">{manualReady ? "Open conversation to reply manually" : "Open conversation"}</Link> : null}
-    {automation?.invoice_id ? <Link href={`/invoices/${automation.invoice_id}`} className="mt-2 inline-block text-xs text-primary underline">View invoice</Link> : null}
+    {automationId && conversationLink ? <Link href={conversationLink} className="mt-2 inline-block text-xs text-ai-foreground underline">{manualReady ? "Open conversation to reply manually" : "Open conversation"}</Link> : null}
+    {automation?.invoice_id ? <Link href={`/invoices/${automation.invoice_id}`} className="mt-2 inline-block text-xs text-ai-foreground underline">View invoice</Link> : null}
     {loadError ? <NotificationToast><span>Unable to load.</span><button type="button" className="font-medium underline" onClick={() => { setLoadError(""); setRetry((value) => value + 1); }}>Retry</button></NotificationToast> : null}
     {error ? <NotificationToast>{error}</NotificationToast> : null}
   </section>;

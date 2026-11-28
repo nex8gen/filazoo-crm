@@ -1,0 +1,60 @@
+.intro { text-align: center; }
+.successIcon, .paymentIcon { display: grid; width: 64px; height: 64px; place-items: center; margin: 0 auto 24px; border: 1px solid #cdece0; border-radius: 20px; background: #edf9f3; color: #138158; box-shadow: 0 0 0 8px color-mix(in srgb, #138158 3%, transparent); }
+.paymentIcon { border-color: var(--border); background: var(--muted); color: var(--primary); box-shadow: none; }
+.eyebrow { margin-bottom: 12px; color: var(--muted-foreground); font-size: .75rem; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; }
+.title { margin: 0; font-size: clamp(2rem, 3.5vw, 2.75rem); font-weight: 600; line-height: 1.15; letter-spacing: -.04em; }
+.description { max-width: 520px; margin: 16px auto 0; color: var(--muted-foreground); font-size: .9375rem; line-height: 1.7; overflow-wrap: anywhere; }
+.workspaceName { color: var(--foreground); font-weight: 500; }
+.sectionLabel { margin-bottom: 14px; color: var(--muted-foreground); font-size: .75rem; font-weight: 500; letter-spacing: .04em; }
+.steps { margin-top: 48px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 16px; }
+.card { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; padding: 24px; border: 1px solid var(--border); border-radius: 14px; background: var(--card); transition: border-color 150ms, background 150ms; }
+.card:hover { border-color: color-mix(in srgb, var(--primary) 40%, var(--border)); background: color-mix(in srgb, var(--primary) 2%, var(--card)); }
+.cardIcon { display: grid; width: 42px; height: 42px; place-items: center; margin-bottom: 24px; border-radius: 11px; background: var(--muted); color: var(--primary); }
+.card h2 { font-size: .9375rem; font-weight: 600; line-height: 1.5; }
+.card p { flex: 1; margin: 8px 0 24px; color: var(--muted-foreground); font-size: .8125rem; line-height: 1.65; }
+.cardAction { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; color: var(--primary); font-size: .8125rem; font-weight: 500; }
+.actions { display: flex; flex-direction: column; align-items: center; margin-top: 36px; }
+.primaryButton { display: inline-flex; min-height: 48px; align-items: center; justify-content: center; gap: 12px; padding: 12px 30px; border-radius: 9px; background: var(--action); color: var(--action-foreground); font-size: .875rem; font-weight: 500; transition: background 150ms; }
+.primaryButton:hover { background: var(--action-hover); }
+.note { margin-top: 16px; color: var(--muted-foreground); font-size: .75rem; line-height: 1.7; text-align: center; }
+.checkout { width: min(100%, 520px); margin-inline: auto; }
+.back { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 32px; color: var(--muted-foreground); font-size: .8125rem; }
+.back:hover { color: var(--foreground); }
+.summary { margin-top: 32px; overflow: hidden; border: 1px solid var(--border); border-radius: 14px; background: var(--card); }
+.summaryHeading { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 24px; border-bottom: 1px solid var(--border); }
+.summaryHeading h2 { font-size: .875rem; font-weight: 600; }
+.badge { padding: 4px 9px; border-radius: 6px; background: #edf9f3; color: #138158; font-size: .6875rem; font-weight: 500; }
+.details { display: grid; gap: 14px; padding: 24px; font-size: .8125rem; }
+.details > div { display: flex; justify-content: space-between; gap: 24px; }
+.details dt { color: var(--muted-foreground); }
+.details dd { text-align: right; font-weight: 500; overflow-wrap: anywhere; }
+.discount { color: #138158; }
+.total { padding-top: 18px; border-top: 1px solid var(--border); }
+.total dt { color: var(--foreground); font-weight: 500; }
+.total dd { font-size: 1.125rem; line-height: 1.25; }
+.cashier { margin-top: 28px; }
+.cashier p { margin-bottom: 16px; color: var(--muted-foreground); font-size: .875rem; line-height: 1.6; text-align: center; }
+.qr { display: block; width: 100%; max-width: 300px; height: 350px; margin-inline: auto; border: 1px solid var(--border); border-radius: 12px; background: white; }
+.externalPayment { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 16px; color: var(--primary); font-size: .8125rem; text-decoration: underline; text-underline-offset: 4px; }
+.status { display: grid; justify-items: center; gap: 16px; margin-top: 28px; text-align: center; }
+.statusMessage { display: flex; align-items: center; justify-content: center; gap: 9px; color: var(--muted-foreground); font-size: .8125rem; line-height: 1.6; }
+.spinner { flex-shrink: 0; animation: spin 1.2s linear infinite; }
+.retry { min-height: 42px; padding: 10px 20px; border: 1px solid var(--border); border-radius: 8px; font-size: .8125rem; cursor: pointer; }
+.retry:hover { background: var(--muted); }
+.error { color: var(--destructive); font-size: .8125rem; line-height: 1.6; }
+.returnLink { color: var(--primary); font-size: .8125rem; text-decoration: underline; text-underline-offset: 4px; }
+.assurance { margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--border); }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } .card, .primaryButton { transition: none; } }
+:global(.dark) .successIcon, :global(.dark) .badge { border-color: #245640; background: #112b20; color: #7bddb2; }
+:global(.dark) .discount { color: #7bddb2; }
+@media (max-width: 639px) {
+  .steps { margin-top: 32px; }
+  .card { padding: 20px; }
+  .cardIcon { margin-bottom: 16px; }
+  .card p { margin-bottom: 18px; }
+  .actions { margin-top: 28px; }
+  .primaryButton { width: 100%; }
+  .summaryHeading, .details { padding: 20px; }
+}

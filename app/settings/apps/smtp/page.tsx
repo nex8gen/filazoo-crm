@@ -32,6 +32,6 @@ async function SmtpSettings({ searchParams }: Props) {
   };
   return <div className="settings-content settings-section-enter space-y-5">
     <Link href={`/settings/apps?view=${team ? "team" : "personal"}`} className="text-sm text-primary underline underline-offset-4">Back to email connections</Link>
-    <Card><CardHeader><CardTitle>{account ? "Manage email connection" : team ? "Connect team email" : "Connect personal email"}</CardTitle><CardDescription>Use the SMTP and IMAP details from your email provider. Sending and receiving are tested before saving. Leave saved passwords blank to keep them.</CardDescription></CardHeader><CardContent>{team ? <WorkspaceMailboxForm key={account?.id ?? "new"} {...values} /> : <PersonalMailboxForm key={account?.id ?? "new"} {...values} />}</CardContent></Card>
+    <header className="settings-page-heading"><h1>{account ? "Manage email connection" : team ? "Connect team email" : "Connect personal email"}</h1></header><Card><CardHeader><CardTitle>Mail servers</CardTitle><CardDescription>Use the SMTP and IMAP details from your email provider. Sending and receiving are tested before saving. Leave saved passwords blank to keep them.</CardDescription></CardHeader><CardContent>{team ? <WorkspaceMailboxForm key={account?.id ?? "new"} {...values} /> : <PersonalMailboxForm key={account?.id ?? "new"} {...values} />}</CardContent></Card>
   </div>;
 }

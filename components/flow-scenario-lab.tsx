@@ -7,16 +7,17 @@ import { FlaskConical, CheckCircle2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { testFlowScenarios } from "@/lib/flow-scenarios";
+import type { WorkspaceSchedule } from "@/lib/workspace-settings";
 import { stepLabels, type FlowInput } from "@/lib/flows";
 
 const factLabels: Record<string, string> = { customerReplied: "Customer replied", openedEmail: "Opened email", clickedLink: "Clicked link", category: "Category", segment: "Segment", country: "Country", companyStatus: "Company status", fitScore: "Fit score" };
 
-export function FlowScenarioLab({ flow, onOpenChange }: { flow: FlowInput; onOpenChange: (open: boolean) => void }) {
+export function FlowScenarioLab({ flow, onOpenChange, schedule }: { flow: FlowInput; onOpenChange: (open: boolean) => void; schedule?: WorkspaceSchedule }) {
   const [selected, setSelected] = useState(0);
   const result = useMemo(() => {
-    try { return { report: testFlowScenarios(flow), error: null }; }
+    try { return { report: testFlowScenarios(flow, 256, new Date(), schedule), error: null }; }
     catch (error) { return { report: null, error: error instanceof Error ? error.message : "Complete the workflow settings first." }; }
-  }, [flow]);
+  }, [flow, schedule]);
   const report = result.report;
   const current = report?.cases[selected];
   return <Dialog open onOpenChange={onOpenChange}><DialogContent className="z-[70] max-h-[90vh] overflow-y-auto sm:max-w-5xl">

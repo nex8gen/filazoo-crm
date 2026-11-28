@@ -11,11 +11,11 @@ const twinkle = "M 19 2.5 C 19.18 4.32 19.68 4.82 21.5 5 C 19.68 5.18 19.18 5.68
 const timing = { keyTimes: "0;0.3;0.5;0.7;1", calcMode: "spline" as const, keySplines: "0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1" };
 
 /** Native SVG keeps the original morph, rotation and twinkle without a global animation bundle. */
-function AnimatedGlyph({ duration }: { duration: number }) {
+function AnimatedGlyph({ duration, error }: { duration: number; error: boolean }) {
   const gradientId = useId();
   const dur = `${duration}s`;
   return <svg aria-hidden="true" className="size-full" fill="none" viewBox="0 0 24 24">
-    <defs><linearGradient id={gradientId} x1="5" x2="20" y1="4" y2="20" gradientUnits="userSpaceOnUse"><stop stopColor="currentColor" /><stop offset="1" stopColor="currentColor" stopOpacity="0.4" /></linearGradient></defs>
+    <defs><linearGradient id={gradientId} x1="5" x2="20" y1="4" y2="20" gradientUnits="userSpaceOnUse"><stop stopColor={error ? "currentColor" : "var(--ai-highlight, #ffb580)"} /><stop offset="1" stopColor="currentColor" /></linearGradient></defs>
     <g className="motion-safe:hidden"><path d={sparkle} fill={`url(#${gradientId})`} /><path d={twinkle} fill="currentColor" opacity="0.5" /></g>
     <g className="motion-reduce:hidden">
       <g><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur={dur} repeatCount="indefinite" />
@@ -39,8 +39,8 @@ type AiIconProps = ComponentPropsWithoutRef<"span"> & {
 /** Shared AI identity. The surrounding control supplies its accessible label. */
 export function AiIcon({ className, state = "idle", ...props }: AiIconProps) {
   return (
-    <span {...props} aria-hidden="true" data-state={state} className={cn("inline-grid size-4 shrink-0 place-items-center align-middle", state === "error" ? "text-destructive" : "text-[#0a2d53] dark:text-[#82b5e1]", className)}>
-      <AnimatedGlyph key={state} duration={state === "thinking" ? 2.4 : 4} />
+    <span {...props} aria-hidden="true" data-state={state} className={cn("inline-grid size-4 shrink-0 place-items-center align-middle", state === "error" ? "text-destructive" : "text-[#f43425] dark:text-[#ff986e]", className)}>
+      <AnimatedGlyph key={state} duration={state === "thinking" ? 2.4 : 4} error={state === "error"} />
     </span>
   );
 }

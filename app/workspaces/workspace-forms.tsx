@@ -17,7 +17,7 @@ export function WorkspaceNameForm({ name = "", editing = false }: { name?: strin
     {editing ? <Button disabled={pending} type="submit">{pending ? "Saving…" : "Save workspace"}<ArrowRight /></Button> : <button disabled={pending} type="submit" className={authButtonClass}>{pending ? "Creating workspace…" : "Create workspace"}<ArrowRight className="size-4" /></button>}</form>;
 }
 
-export function OpenWorkspaceForm({ id, name, role, active }: { id: string; name: string; role: string; active: boolean }) {
+export function OpenWorkspaceForm({ id, name, role, active, logoDataUrl }: { id: string; name: string; role: string; active: boolean; logoDataUrl?: string | null }) {
   const [state, action, pending] = useActionState(async (previous: Awaited<ReturnType<typeof switchWorkspace>>, data: FormData) => {
     const result = await switchWorkspace(previous, data);
     // A document navigation clears Router Cache, retained tabs, and account-specific client state.
@@ -25,5 +25,11 @@ export function OpenWorkspaceForm({ id, name, role, active }: { id: string; name
     if (result?.success) window.location.assign("/");
     return result;
   }, undefined);
-  return <form action={action}><input type="hidden" name="workspaceId" value={id} /><Button type="submit" variant="outline" disabled={pending} className="h-auto w-full justify-between gap-4 p-4 text-left"><span className="flex min-w-0 items-center gap-3"><Building2 className="size-5 shrink-0 text-primary" /><span className="min-w-0"><span className="block truncate font-medium">{name}</span><span className="block text-xs capitalize text-muted-foreground">{role === "bd_manager" ? "BD Sales Manager" : role}{active ? " · Current workspace" : ""}</span></span></span><ArrowRight className="size-4" /></Button>{state?.error ? <NotificationToast>{state.error}</NotificationToast> : null}</form>;
+  return <form action={action}><input type="hidden" name="workspaceId" value={id} /><Button type="submit" variant="outline" disabled={pending} className="h-auto w-full justify-between gap-4 p-4 text-left"><span className="flex min-w-0 items-center gap-3"><WorkspaceLogo dataUrl={logoDataUrl} /><span className="min-w-0"><span className="block truncate font-medium">{name}</span><span className="block text-xs capitalize text-muted-foreground">{role === "bd_manager" ? "BD Sales Manager" : role}{active ? " · Current workspace" : ""}</span></span></span><ArrowRight className="size-4" /></Button>{state?.error ? <NotificationToast>{state.error}</NotificationToast> : null}</form>;
+}
+
+function WorkspaceLogo({ dataUrl }: { dataUrl?: string | null }) {
+  // Workspace logos are sanitized WebP images, read only after membership checks.
+  // eslint-disable-next-line @next/next/no-img-element
+  return dataUrl ? <img src={dataUrl} alt="" className="size-9 shrink-0 rounded-lg border object-contain p-1" /> : <Building2 aria-hidden="true" className="size-5 shrink-0 text-primary" />;
 }

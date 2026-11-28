@@ -1,14 +1,15 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Fingerprint, KeyRound, LoaderCircle } from "lucide-react";
+import { KeyRound, LoaderCircle, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatSecurityDate, securityError } from "@/lib/account-security";
 import { passkeyBrowserError } from "@/lib/passkey-config";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SecuritySetting } from "./security-setting";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { NotificationToast } from "@/components/ui/notification-toast";
 
@@ -30,16 +31,21 @@ export function Passkeys({ initialPasskeys, enabled, initialError }: { initialPa
     if (error) throw error;
     await reload(); setSuccess("Passkey added. You can now use it to sign in.");
   }); }
-  return <Card><CardHeader><CardTitle>Passkeys</CardTitle><CardDescription>Sign in with your fingerprint, face, device PIN, or security key.</CardDescription></CardHeader><CardContent className="space-y-4">
-    <p className="text-xs leading-5 text-muted-foreground">Passkeys are saved in your device or password manager. Your biometric data stays on your device. Two-step verification still applies when enabled. Times shown in UTC.</p>
-    {passkeys.map(passkey => <div key={passkey.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"><div className="flex min-w-0 items-center gap-3"><KeyRound aria-hidden="true" className="size-5 shrink-0 text-muted-foreground" /><div className="min-w-0"><p className="break-words text-sm">{passkey.friendly_name || "Passkey"}</p><p className="mt-1 text-xs text-muted-foreground">Added {formatSecurityDate(passkey.created_at)}{passkey.last_used_at ? ` · Last used ${formatSecurityDate(passkey.last_used_at)}` : " · Not used yet"}</p></div></div><div className="flex gap-1"><Button size="sm" variant="ghost" disabled={pending} onClick={() => { setError(""); setName(passkey.friendly_name || ""); setEditing(passkey); }}>Rename</Button><Button size="sm" variant="ghost" disabled={pending} onClick={() => { setError(""); setRemoving(passkey); }}>Remove</Button></div></div>)}
-    {enabled ? <Button variant="outline" disabled={pending} onClick={add}>{pending && !editing && !removing ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : <Fingerprint aria-hidden="true" className="size-4" />}Add passkey</Button> : <p className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">Passkeys are not enabled for this service yet.</p>}
+  return <SecuritySetting title="Passkeys" actions={enabled ? <Button size="sm" variant="outline" disabled={pending || Boolean(initialError)} onClick={add}>{pending && !editing && !removing ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : <Plus aria-hidden="true" className="size-3.5" />}Add passkey</Button> : null}>
+    {passkeys.length ? <ul className="security-items">{passkeys.map(passkey => <li key={passkey.id} className="security-item">
+      <div className="security-item-identity"><KeyRound aria-hidden="true" className="security-item-icon" /><div className="security-item-text"><p id={`passkey-${passkey.id}`} className="security-item-name">{passkey.friendly_name || "Passkey"}</p><p className="security-item-meta">{passkey.last_used_at ? <><span>Last used</span> <time dateTime={passkey.last_used_at}>{formatSecurityDate(passkey.last_used_at)}</time></> : <span>Not used yet</span>}</p></div></div>
+      <DropdownMenu><DropdownMenuTrigger disabled={pending} render={<Button variant="ghost" size="icon-sm" aria-label="Passkey actions" aria-describedby={`passkey-${passkey.id}`} />}><MoreHorizontal aria-hidden="true" /></DropdownMenuTrigger><DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => { setError(""); setName(passkey.friendly_name || ""); setEditing(passkey); }}><Pencil aria-hidden="true" />Rename</DropdownMenuItem>
+        <DropdownMenuItem variant="destructive" onClick={() => { setError(""); setRemoving(passkey); }}><Trash2 aria-hidden="true" />Remove</DropdownMenuItem>
+      </DropdownMenuContent></DropdownMenu>
+    </li>)}</ul> : enabled && !error ? <p className="security-empty">No passkeys added.</p> : null}
+    {!enabled ? <p className="security-empty">Passkeys are not enabled for this service yet.</p> : null}
     {error && !editing && !removing ? <NotificationToast>{error}</NotificationToast> : null}{success ? <p role="status" className="text-sm text-primary">{success}</p> : null}
-    <Dialog open={Boolean(editing || removing)} onOpenChange={open => { if (!open && !pending) { setEditing(null); setRemoving(null); setError(""); } }}><DialogContent showCloseButton={!pending}><DialogHeader><DialogTitle>{editing ? "Rename passkey" : "Remove passkey?"}</DialogTitle><DialogDescription>{editing ? "Choose a name to help you recognize this passkey." : "This passkey will no longer sign in to your account. You can still use your password or another passkey."}</DialogDescription></DialogHeader><form className="space-y-4" onSubmit={event => { event.preventDefault(); run(async () => {
+    <Dialog open={Boolean(editing || removing)} onOpenChange={open => { if (!open && !pending) { setEditing(null); setRemoving(null); setError(""); } }}><DialogContent showCloseButton={!pending} className="settings-field-dialog"><DialogHeader><DialogTitle>{editing ? "Rename passkey" : "Remove passkey?"}</DialogTitle><DialogDescription>{editing ? "Choose a name to help you recognize this passkey." : "This passkey will no longer sign in to your account. You can still use your password or another passkey."}</DialogDescription></DialogHeader><form className="space-y-4" onSubmit={event => { event.preventDefault(); run(async () => {
       const client = createClient();
       const result = editing ? await client.auth.passkey.update({ passkeyId: editing.id, friendlyName: name.trim() }) : await client.auth.passkey.delete({ passkeyId: removing!.id });
       if (result.error) throw result.error;
       await reload(); setEditing(null); setRemoving(null); setSuccess(editing ? "Passkey renamed." : "Passkey removed.");
     }); }}>{editing ? <div className="space-y-2"><Label htmlFor="passkey-name">Passkey name</Label><Input id="passkey-name" value={name} onChange={event => setName(event.target.value)} maxLength={120} required disabled={pending} autoFocus /></div> : null}{error ? <NotificationToast>{error}</NotificationToast> : null}<DialogFooter><Button variant="outline" type="button" disabled={pending} onClick={() => { setEditing(null); setRemoving(null); setError(""); }}>Cancel</Button><Button type="submit" disabled={pending || Boolean(editing && !name.trim())}>{pending ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : null}{editing ? "Save name" : "Remove passkey"}</Button></DialogFooter></form></DialogContent></Dialog>
-  </CardContent></Card>;
+  </SecuritySetting>;
 }

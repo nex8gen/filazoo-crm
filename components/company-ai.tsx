@@ -150,16 +150,16 @@ export function CompanyAi({ company }: { company: Company }) {
     }
   }
 
-  return <section aria-label="Customer AI workspace" className="min-w-0">
+  return <section aria-label="Customer AI workspace" className="ai-surface min-w-0">
     <Card className="h-[min(48rem,calc(100dvh-5rem))] min-h-[32rem] min-w-0 gap-0 overflow-clip py-0">
       <CardContent className="flex min-h-0 flex-1 flex-col px-0">
         <AiHistoryMenu key={history.scope} history={history} disabled={pending || Boolean(animation)} onNew={newChat} onRetry={() => setError(null)} />
         <div ref={thread} role="log" aria-label="Customer AI conversation" aria-live="polite" aria-relevant="additions" aria-busy={busy} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-6 sm:px-6">
           {!messages.length ? <div className="flex min-h-full flex-col items-center justify-center text-center">
-            <span className="mb-5 grid size-14 place-items-center rounded-2xl border border-violet-200/60 bg-violet-50 dark:border-violet-500/20 dark:bg-violet-500/10"><AiIcon className="size-7" /></span>
+            <span className="mb-5 grid size-14 place-items-center rounded-2xl border border-ai-border bg-ai-soft dark:border-ai-border dark:bg-ai-soft"><AiIcon className="size-7" /></span>
             <h2 className="text-lg font-semibold tracking-tight">Get to know {company.name}</h2>
             <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">Ask about their needs, review the relationship, or prepare your next conversation.</p>
-            <div className="mt-6 grid w-full max-w-lg gap-2 sm:grid-cols-2">{shortcuts.map(({ label, icon: Icon, prompt }) => <button key={label} type="button" onClick={() => send(t(prompt))} className="flex items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm transition-colors hover:border-primary/40 hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"><Icon className="size-4 text-muted-foreground" />{label}</button>)}</div>
+            <div className="mt-6 grid w-full max-w-lg gap-2 sm:grid-cols-2">{shortcuts.map(({ label, icon: Icon, prompt }) => <button key={label} type="button" onClick={() => send(t(prompt))} className="flex items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm transition-colors hover:border-ai-accent/40 hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"><Icon className="size-4 text-muted-foreground" />{label}</button>)}</div>
           </div> : <div className="space-y-6">{messages.map((entry) => <div key={entry.id} className={entry.role === "user" ? "ml-auto max-w-[90%] rounded-2xl rounded-br-md bg-muted px-4 py-3 sm:max-w-[80%]" : "max-w-full"}>
             {entry.role === "assistant" ? <>
               <ThinkingState working={false} writing={animation?.id === entry.id} durationMs={entry.durationMs} scope={company.name} steps={[...(entry.activity ?? []), ...(entry.sources ?? []).map((source) => ({ id: source.id, label: `[${source.id}] ${t(source.label)}`, detail: source.recordedAt ? new Date(source.recordedAt).toLocaleDateString(language, { timeZone: "Asia/Shanghai" }) : undefined }))]} className="mb-2" />

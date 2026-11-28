@@ -1,6 +1,6 @@
 {
   "contractVersion": "2026-11-07.2",
-  "generatedOn": "2026-11-26",
+  "generatedOn": "2026-11-28",
   "capabilities": [
     {
       "name": "create_company",
@@ -1294,6 +1294,18 @@
       "explanation": "Identity, workspace or ownership flow uses the authenticated account controls."
     },
     {
+      "surface": "app/settings/workspace/actions.ts#saveWorkspaceDetails",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Workspace administrators use /settings/workspace to review and save workspace name, website, logo, timezone, and business hours. The server verifies current membership and administrator role, scopes writes to the current workspace, validates images and schedules, and records changes in the administrator-only activity log. General chat must hand off to these controls and must not claim it changed workspace details or schedules."
+    },
+    {
+      "surface": "app/settings/workspace/actions.ts#saveWorkspaceSchedule",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "Workspace administrators use /settings/workspace to review and save workspace name, website, logo, timezone, and business hours. The server verifies current membership and administrator role, scopes writes to the current workspace, validates images and schedules, and records changes in the administrator-only activity log. General chat must hand off to these controls and must not claim it changed workspace details or schedules."
+    },
+    {
       "surface": "app/signup/actions.ts#resendVerification",
       "mode": "guided",
       "tools": [],
@@ -1322,6 +1334,18 @@
       "mode": "guided",
       "tools": [],
       "explanation": "The authenticated workspace owner chooses a plan at /subscribe, reviews the recipient and price, and authorizes payment directly in Alipay. The application checks provider evidence before granting access. General chat must hand off to these controls and cannot claim a payment or subscription is active."
+    },
+    {
+      "surface": "app/subscribe/discount-actions.ts#applyCreditDiscount",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "The authenticated workspace owner chooses a plan at /subscribe, reviews the recipient and price, and authorizes payment directly in Alipay. The application checks provider evidence before granting access. General chat must hand off to these controls and cannot claim a payment or subscription is active."
+    },
+    {
+      "surface": "app/subscribe/recharge-actions.ts#startCreditRecharge",
+      "mode": "guided",
+      "tools": [],
+      "explanation": "The authenticated workspace owner uses /settings/credits#add-ai-credits to choose a custom quantity, review the locked RMB total and authorize payment directly in Alipay. The database verifies ownership, active access, quote freshness, amount and provider evidence before adding credits exactly once. General chat must hand off to these controls and cannot initiate payment or claim credits were purchased."
     },
     {
       "surface": "app/table-column-actions.ts#saveTableColumns",

@@ -1,4 +1,5 @@
 import "server-only";
+import { getWorkspaceSettings } from "./workspace-settings.ts";
 import { flowStepAtPath } from "../flow-engine.ts";
 import { flowEmailTestFacts, flowEmailTestTrace, type FlowEmailTestInput, type FlowEmailTestResult } from "../flow-email-test.ts";
 import { generateFlowAiReply, loadFlowReplyProducts, prepareFlowTemplateCatalog, type FlowReplyMessage } from "./flow-ai-reply.ts";
@@ -7,7 +8,7 @@ import { emailTemplates, renderFlowTemplate } from "../flow-templates.ts";
 /** Preview only: never creates a run, writes CRM data, uploads attachments or sends email. */
 export async function testFlowWithEmails(input: FlowEmailTestInput, managerName: string | null, userId?: string): Promise<FlowEmailTestResult> {
   const facts = flowEmailTestFacts(input);
-  const simulation = { trace: flowEmailTestTrace(input) };
+  const simulation = { trace: flowEmailTestTrace(input, new Date(), await getWorkspaceSettings()) };
   const executedAi = simulation.trace.filter((entry) => entry.type === "ai_auto_reply" && entry.status === "would_run");
   if (executedAi.length * input.emails.length > 6) throw new Error("Test up to six AI actions at a time. Use fewer sample emails.");
   const productRows = executedAi.length ? await loadFlowReplyProducts({

@@ -12,7 +12,7 @@ export type AnalyticsInputs = {
   products: { sku: string; name: string }[];
 };
 export type AnalyticsSource = { id: keyof AnalyticsInputs | "members"; label: string; ok: boolean; count: number };
-export type AnalyticsDashboardData = AnalyticsInputs & { sources: AnalyticsSource[]; currencies: string[]; owners: { id: string; name: string }[]; minDate: string; maxDate: string; asOf: string };
+export type AnalyticsDashboardData = AnalyticsInputs & { timezone?: string; sources: AnalyticsSource[]; currencies: string[]; owners: { id: string; name: string }[]; minDate: string; maxDate: string; asOf: string };
 export type AnalyticsFiltersValue = { from: string; to: string; channel: AnalyticsChannel | "all"; owner: string; currency: string; comparison: "previous_period" | "previous_year" | "none" };
 export type AnalyticsSeriesPoint = {
   date: string;
@@ -36,11 +36,11 @@ export function analyticsChannelForSource(source: string | null | undefined): An
   return "other";
 }
 // Use one business timezone so every teammate sees the same totals.
-export function analyticsDay(value: string | Date): string {
+export function analyticsDay(value: string | Date, timezone = "Asia/Shanghai"): string {
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return "";
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+  return new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 }
 export function shiftDay(day: string, days: number) {
   const date = new Date(`${day}T00:00:00Z`);
@@ -61,9 +61,9 @@ export function previousRange(filters: Pick<AnalyticsFiltersValue, "from" | "to"
   return { from: shiftDay(filters.from, -days), to: shiftDay(filters.from, -1) };
 }
 const sum = <T,>(rows: T[], field: (row: T) => number) => rows.reduce((total, row) => total + field(row), 0);
-const inRange = (value: string, range: { from: string; to: string }) => { const day = analyticsDay(value); return Boolean(day && day >= range.from && day <= range.to); };
 
 export function computeAnalytics(data: AnalyticsDashboardData, filters: AnalyticsFiltersValue) {
+  const inRange = (value: string, range: { from: string; to: string }) => { const day = analyticsDay(value, data.timezone); return Boolean(day && day >= range.from && day <= range.to); };
   const companyMap = new Map(data.companies.map(row => [row.id, row]));
   const matching = data.companies.filter(row => (filters.channel === "all" || row.channel === filters.channel) && (filters.owner === "all" || (filters.owner === "unassigned" ? !row.ownerId : row.ownerId === filters.owner)));
   const companyIds = new Set(matching.map(row => row.id));
@@ -105,7 +105,7 @@ export function computeAnalytics(data: AnalyticsDashboardData, filters: Analytic
       endDate: shiftDay(range.from, Math.min((index + 1) * bucketSize, days) - 1),
       companies: 0, orders: 0, orderMinor: 0, invoicedMinor: 0, collectedMinor: 0,
     }));
-    const bucket = (date: string) => buckets[Math.floor((Date.parse(analyticsDay(date)) - start) / (86400000 * bucketSize))];
+    const bucket = (date: string) => buckets[Math.floor((Date.parse(analyticsDay(date, data.timezone)) - start) / (86400000 * bucketSize))];
     for (const row of rows.companies) bucket(row.createdAt).companies++;
     for (const row of rows.periodInvoices) bucket(row.issueDate).invoicedMinor += row.totalMinor;
     for (const row of rows.payments) bucket(row.paidOn).collectedMinor += row.amountMinor;

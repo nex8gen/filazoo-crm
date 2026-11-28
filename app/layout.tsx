@@ -5,11 +5,12 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { WorkspaceSurface } from "@/components/workspace-surface";
-import { PageLoadingSkeleton } from "@/components/loading-skeletons";
+import { AppLoading } from "@/components/app-loading";
 import { LanguageProvider } from "@/components/language-provider";
 import { SiteMonitoring } from "@/components/site-monitoring";
 import { WorkspaceErrorBoundary } from "@/components/workspace-error-boundary";
 import "./globals.css";
+import "./ai-theme.css";
 import "./responsive.css";
 import "./tables.css";
 
@@ -24,7 +25,7 @@ export default function RootLayout({ children, company, product }: LayoutProps<"
       <body>
         <LanguageProvider>
           <ThemeProvider>
-            <TooltipProvider><WorkspaceErrorBoundary><Suspense fallback={<PageLoadingSkeleton fullScreen />}><WorkspaceSurface>{children}{company}{product}</WorkspaceSurface></Suspense></WorkspaceErrorBoundary></TooltipProvider>
+            <TooltipProvider><WorkspaceErrorBoundary><Suspense fallback={<AppLoading fullScreen />}><WorkspaceSurface>{children}{company}{product}</WorkspaceSurface></Suspense></WorkspaceErrorBoundary></TooltipProvider>
             <Toaster position="bottom-right" />
           </ThemeProvider>
         </LanguageProvider>

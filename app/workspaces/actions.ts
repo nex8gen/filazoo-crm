@@ -14,7 +14,7 @@ export async function createWorkspace(_state: WorkspaceActionState, formData: Fo
   const viewer = await requireViewer();
   const name = workspaceNameSchema.safeParse(formData.get("name"));
   if (!name.success) return { error: name.error.issues[0].message };
-  const { data, error } = await createSupabaseControl().rpc("create_crm_workspace", {
+  const { data, error } = await createSupabaseControl(viewer.id).rpc("create_crm_workspace", {
     p_user_id: viewer.id, p_name: name.data, p_slug: `${workspaceSlug(name.data)}-${randomUUID().slice(0, 8)}`,
   });
   if (error?.code === "PGRST202" || error?.code === "42883") return { error: "Workspace creation is awaiting the database upgrade. Your account is ready." };
@@ -28,7 +28,7 @@ export async function switchWorkspace(_state: WorkspaceActionState, formData: Fo
   const id = workspaceIdSchema.safeParse(formData.get("workspaceId"));
   if (formData.get("workspaceId") === "legacy" && (await requireWorkspaceMember()).workspaceId === "legacy") return { success: "Workspace selected." };
   if (!id.success) return { error: "Choose a valid workspace." };
-  const { data, error } = await createSupabaseControl().from("workspace_members").select("workspace_id")
+  const { data, error } = await createSupabaseControl(viewer.id).from("workspace_members").select("workspace_id")
     .eq("workspace_id", id.data).eq("user_id", viewer.id).not("activated_at", "is", null).maybeSingle();
   if (error || !data) return { error: "You no longer have access to this workspace." };
   (await cookies()).set(workspaceCookie, id.data, workspaceCookieOptions());
@@ -39,7 +39,7 @@ export async function renameWorkspace(_state: WorkspaceActionState, formData: Fo
   const viewer = await requireWorkspaceMember(["admin"]);
   const name = workspaceNameSchema.safeParse(formData.get("name"));
   if (!name.success) return { error: name.error.issues[0].message };
-  const { error } = await createSupabaseControl().from("workspaces").update({ name: name.data, updated_at: new Date().toISOString() }).eq("id", viewer.workspaceId);
+  const { error } = await createSupabaseControl(viewer.id).from("workspaces").update({ name: name.data, updated_at: new Date().toISOString() }).eq("id", viewer.workspaceId);
   if (error) return { error: "Unable to update the workspace." };
   revalidatePath("/", "layout");
   return { success: "Workspace name updated." };

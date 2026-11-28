@@ -1080,6 +1080,53 @@ test("Research Inovecell again from Analytics resolves the authorized company an
   assert.equal(searches, 1); assert.equal(result.research.status, "complete"); assert.equal(result.research.visitedUrls.length, 1); assert.deepEqual(result.actions, []);
 });
 
+test("the reported Chinese background check reaches public research with the extracted company name", async () => {
+  const name = "深圳市基石新材料技术有限公司";
+  let searches = 0;
+  const post = route("../app/api/ai/assistant/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
+    "@/lib/ai/agent-execution": {},
+    "@/lib/ai/agent-context": { loadAgentContext: async () => ({ customerChoices: [] }) },
+    "@/lib/ai/customer-research": { researchCustomer: async ({ identity }: { identity: { name: string } }) => {
+      searches++; assert.equal(identity.name, name);
+      return { status: "complete", findings: "Verified public evidence", sources: [], queries: [] };
+    } },
+    "@/lib/ai/gateway": { generateGatewayText: async ({ prompt }: { prompt: string }) => {
+      assert.match(prompt, /WEB_RESEARCH_TARGET/); assert.ok(prompt.includes(name)); return "公司调研结果";
+    } },
+  }, { AI_GATEWAY_API_KEY: "synthetic" });
+  const response = await post(request({ mode: "analyze", language: "zh-CN", pathname: "/", pageLabel: "Home", pageText: "", messages: [{ role: "user", content: `背调${name}` }], webSearch: true }));
+  const result = await response.json();
+  assert.equal(response.status, 200); assert.equal(searches, 1); assert.equal(result.clarification, undefined);
+  assert.equal(result.output, "公司调研结果");
+});
+
+for (const selectedCompany of [false, true]) test(`PETG-CF after a saved research clarification reaches product lookup, with selected company ${selectedCompany}`, async () => {
+  const content = "give me the information of PETG-CF";
+  const savedMessages = [{ role: "user", content: "背调深圳市基石新材料技术有限公司" }, { role: "assistant", content: "您想研究哪家公司？请输入公司名称或公开网站。" }, { role: "user", content }];
+  let generations = 0, reads = 0;
+  const post = route("../app/api/ai/assistant/route.ts", {
+    "@/lib/auth": { getWorkspaceViewer: async () => viewer }, "@/lib/ai/workspace-assistant": assistant,
+    "@/lib/ai/agent-execution": {},
+    "@/lib/ai/chat-session": { startChatSession: async () => ({ messages: savedMessages, completedActionIds: [], complete: async (payload: unknown) => payload, flush: async () => {}, fail: async () => {} }) },
+    "@/lib/ai/agent-context": { loadAgentContext: async () => selectedCompany ? { currentCompanyId: id, currentCompany: { fields: { name: "Unrelated Company" } } } : {} },
+    "@/lib/ai/customer-research": { researchCustomer: async () => assert.fail("A product request must not research a company") },
+    "@/lib/ai/crm-records": { readCrmRecords: async (recordViewer: typeof viewer, lookup: { resource: string; query: string }) => {
+      reads++; assert.equal(recordViewer.id, viewer.id); assert.equal(lookup.resource, "products"); assert.equal(lookup.query, "PETG-CF");
+      return { records: [{ sku: "PETG-CF", name: "PETG-CF", description: "Saved carbon-fiber reinforced PETG" }], coverage: { included: 1 } };
+    } },
+    "@/lib/ai/gateway": { generateGatewayText: async ({ prompt }: { prompt: string }) => {
+      generations++; assert.match(prompt, /No public web research was performed for this turn/); assert.doesNotMatch(prompt, /WEB_RESEARCH_TARGET/);
+      if (generations === 1) return 'FILAZOO_CRM_READ_JSON: {"resource":"products","query":"PETG-CF"}';
+      assert.match(prompt, /Saved carbon-fiber reinforced PETG/); return "PETG-CF is carbon-fiber reinforced PETG.";
+    } },
+  }, { AI_GATEWAY_API_KEY: "synthetic" });
+  const response = await post(request({ mode: "analyze", pathname: "/", pageLabel: "Home", pageText: "", messages: [{ role: "user", content }], webSearch: true }));
+  const result = await response.json();
+  assert.equal(response.status, 200); assert.equal(generations, 2); assert.equal(reads, 1);
+  assert.match(result.output, /carbon-fiber reinforced PETG/); assert.equal(result.clarification, undefined); assert.equal(result.research, undefined);
+});
+
 test("ambiguous cross-page research asks for a company before spending any provider tokens", async () => {
   const unexpected = async () => { throw new Error("No provider call should run before company selection"); };
   const post = route("../app/api/ai/assistant/route.ts", {

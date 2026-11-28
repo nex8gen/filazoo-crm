@@ -13,5 +13,5 @@ export default async function AccountEmailPage({ searchParams }: { searchParams:
   const next = loginDestination((await searchParams).next);
   const { data: { user } } = await (await createClient()).auth.getUser();
   if (user?.email && user.email_confirmed_at) redirect(next);
-  return <AuthShell><AuthHeading title="Add your account email">Alipay does not share a verified email. Verify your email to finish setting up your Filazoo account and receive workspace invitations.</AuthHeading><AccountEmailForm next={next} /></AuthShell>;
+  return <AuthShell><AuthHeading title="Add your account email">Your sign-in provider did not share a verified email. Verify your email to finish setting up your NewAI account and receive workspace invitations.</AuthHeading><AccountEmailForm next={next} /></AuthShell>;
 }

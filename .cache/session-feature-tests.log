@@ -1,0 +1,296 @@
+(node:3708) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/Administrator/filazoo-crm/tests/background-refresh.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\Administrator\filazoo-crm\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ returning to a recently visited inbox keeps its snapshot without another automatic sync (88.1946ms)
+✔ an older inbox refreshes on return and simultaneous focus events deduplicate (29.7315ms)
+✔ background tabs and hidden routes do not poll (33.1354ms)
+✔ disabled polling still allows throttled focus refresh, and unconfigured inboxes do no work (15.4376ms)
+✔ slow requests never overlap across polling, focus and Activity resume (10.8279ms)
+✔ a rejected refresh releases the request lock and can retry (6.4293ms)
+(node:31844) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/Administrator/filazoo-crm/tests/document-connections.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\Administrator\filazoo-crm\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ business document categories require the relevant CRM connections (3.6177ms)
+✔ live invoices open the source order and use an honest size label (0.2224ms)
+✔ uploaded connections are bounded and linked SKUs are searchable (5.1945ms)
+(node:35952) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/Administrator/filazoo-crm/tests/document-library-filter.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\Administrator\filazoo-crm\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ complete collection filters categories, folders, views and literal searches instantly (8.8555ms)
+✔ date boundaries use the workspace timezone and types use server MIME rules (0.2885ms)
+✔ pagination slices locally, preserving total and deterministic ordering (0.5472ms)
+✔ switching categories needs no request, and refresh replaces the whole collection (0.5787ms)
+(node:9764) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/Administrator/filazoo-crm/tests/document-library-state.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\Administrator\filazoo-crm\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ switching categories hides old rows and counts before the new request starts (0.9544ms)
+✔ slow out-of-order requests cannot replace the latest category or report its errors (0.8346ms)
+✔ returning to a category immediately uses only that category's cached files (0.2566ms)
+✔ uploads and edits invalidate cached views and ignore already-running responses (0.3281ms)
+✔ pagination appends within the matching query and removes duplicate rows (0.2959ms)
+✔ server seed provides rows and navigation on the first render (0.1467ms)
+✔ refresh retains the current rows and ignores a response from before invalidation (0.251ms)
+✔ searches, customers, folders and picker tabs have distinct query identities (0.5139ms)
+(node:23092) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/Administrator/filazoo-crm/tests/document-promotions.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\Administrator\filazoo-crm\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ creating a template from a campaign preserves its designed layout (16.635ms)
+✔ promotion conversion separates the email subject and keeps planning notes out of its message (0.9009ms)
+✔ conversion preserves handwritten multilingual copy and bounds library metadata (0.8513ms)
+✔ planner distinguishes saved and unplanned slots and never leaks another year or category (0.9319ms)
+(node:35016) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/Administrator/filazoo-crm/tests/document-template-editor.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\Administrator\filazoo-crm\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ library creation opens the new designer and Save template persists the design before closing (290.4018ms)
+✔ customizing a prebuilt design creates a workspace copy in Custom emails (111.7041ms)
+✔ a Colorlib copy opens as editable blocks and keeps the native design when saved (242.2437ms)
+✔ settings survive repeated saves and the second save updates the returned version (131.2731ms)
+✔ failed saves keep the designer open with the current draft and error (55.2219ms)
+✔ saving as a new template creates a separate record and subsequent saves target that copy (76.55ms)
+✔ leaving after a successful save does not report unsaved changes (55.1964ms)
+✔ editing fetches the complete saved design instead of flattening the library row (65.4713ms)
+✔ old text templates open as editable text blocks in the new designer (48.0058ms)
+✔ an unavailable saved design cannot be overwritten with a flattened template (43.3059ms)
+(node:39692) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/Administrator/filazoo-crm/tests/document-upload.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\Administrator\filazoo-crm\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ file selection treats initial files and later drops alike and keeps valid files up to the limit (0.9359ms)
+✔ a save failure retries metadata with the same id without transferring the file again (0.8032ms)
+✔ a lost storage receipt is recovered by server verification before reporting success (0.2132ms)
+✔ failed transfers remain failed when the server cannot verify an object (0.2196ms)
+✔ idempotent saves only accept the same active file, owner, destination and metadata (0.2689ms)
+(node:37484) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/Administrator/filazoo-crm/tests/documents.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\Administrator\filazoo-crm\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ library templates require content and constrain metadata (5.4763ms)
+✔ search includes metadata and template contents, preserving multilingual text (0.1965ms)
+✔ active formats cannot become inline library previews (0.0972ms)
+✔ business documents and email templates cannot use each other's categories (0.165ms)
+✔ email insertion only replaces placeholders with known customer details (0.3568ms)
+✔ a linked template loads its actual attachments before insertion (17.2305ms)
+✔ email insertion rejects oversized attachments and unavailable items (0.9046ms)
+(node:15216) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/Administrator/filazoo-crm/tests/email-inbox-route.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\Administrator\filazoo-crm\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Mailbox receiving will retry on the next inbox check.
+Mailbox queue unavailable: Unknown error
+✔ preloading authorizes once, reads mailbox settings once and starts no provider sync (76.1482ms)
+✔ active inbox refresh durably enqueues authorized work before returning (16.7748ms)
+✔ preloading cannot access another user's personal mailbox or bypass authentication (25.9603ms)
+✔ automatic refresh returns saved messages before queue, health or provider work (9.556ms)
+✔ a failed automatic queue does not start provider work and leaves saved messages usable (9.5802ms)
+✔ history progress can update without re-enqueuing a provider refresh (7.9028ms)
+✔ company refresh reads combined history and refreshes every authorized account (7.8465ms)
+✔ automatic company polling does not rescan history for tags on every cache read (6.8588ms)
+✔ recent provider mail remains readable without adding more work to an overloaded cache (9.427ms)
+✔ partial optional CRM details do not prevent a manual mailbox refresh (5.8331ms)
+✔ a history request skipped for a partial history cache is never reported as queued (7.9279ms)
+✔ missing company cannot read or sync any mailbox (5.983ms)
+✔ queue outages still return saved mail and an actionable refresh error (6.4303ms)
+✔ a failed saved-mail read cannot replace the client snapshot with an empty inbox (13.3215ms)
+✔ a provider error with a readable cache still returns an authoritative snapshot (4.8334ms)
+(node:3220) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/Administrator/filazoo-crm/tests/email-inbox-state.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\Administrator\filazoo-crm\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ AI follow-up with a Shanghai offset can be saved as UTC (3.7695ms)
+✔ state accepts UTC and no follow-up, and rejects ambiguous or invalid dates (0.3113ms)
+(node:39748) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/Administrator/filazoo-crm/tests/email-page-freshness.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\Administrator\filazoo-crm\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ an unrelated revision or loaded body does not evict visited pages (2.0226ms)
+✔ new messages, flags, ordering, tags and totals invalidate stale pages (0.83ms)
+(node:7756) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/Administrator/filazoo-crm/tests/flow-analytics.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\Administrator\filazoo-crm\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ workflow analytics counts real sends separately from completed, skipped, dry-run and failed runs (2.5621ms)
+✔ activity uses event dates, including old runs sending this week, with UTC boundaries and no future activity (7.6698ms)
+✔ CSV keeps commas and newlines intact and prevents spreadsheet formulas (0.2939ms)
+✔ analytics paginates runs and events beyond 1000, and queries only visible workflow IDs (79.5885ms)
+✔ viewers can read analytics, nonmembers cannot query, and query failures never become zero counts (29.7066ms)
+✔ analytics controls filter the combined report, switch metrics, navigate dates and export the selected rows (40.189ms)
+✔ chart and table render both real activity and clear empty states (36.2121ms)
+✔ chart ranks workflows by the selected metric and aligns sparse points by date (2.9985ms)
+(node:6312) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/Administrator/filazoo-crm/tests/page-cache.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\Administrator\filazoo-crm\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ visited pages and identical in-flight requests never repeat their read (1.7216ms)
+✔ failed reads retry and invalidation prevents older requests repopulating the cache (0.5955ms)
+✔ page keys separate mailboxes and filtered views; edited messages can be remembered (0.1457ms)
+✔ long sessions bound cached pages and retain the most recently visited pages (0.1778ms)
+✔ network-loaded pages obey the same memory bound and caches remain isolated (0.2264ms)
+(node:12644) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/Administrator/filazoo-crm/tests/product-content.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\Administrator\filazoo-crm\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ product descriptions preserve formatting and remove unsafe markup from pasted or source HTML (3.2301ms)
+✔ legacy plain descriptions and explicitly empty descriptions remain readable (0.1279ms)
+✔ media metadata preserves order and explicit removal without restoring variant images (0.6869ms)
+(node:40876) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/Administrator/filazoo-crm/tests/product-edit-metadata.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\Administrator\filazoo-crm\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ all workspace roles save private prices, local photos and variants without the missing colors field (404.2384ms)
+✔ product deletion, database errors, and concurrent first saves cannot report a successful edit (80.5661ms)
+✔ stale forms cannot overwrite a newer private version, and current forms can save again (26.1184ms)
+✔ private product images are restricted to their owner and image removal persists (29.2454ms)
+✔ company images and videos persist in galleries while the saved cover remains an image (42.1714ms)
+✔ duplicate variants and invalid variant prices cannot enter saved PDFs (120.2051ms)
+✔ generated price descriptions refresh while an intentionally empty custom description is preserved (0.3005ms)
+✔ manual inventory saves privately, survives reloads and unrelated edits, and can be cleared (28.1569ms)
+✔ manual inventory rejects negative, fractional, non-numeric and unsafe quantities (104.0976ms)
+✔ new products retain manual inventory, including zero, after loading from storage (73.7163ms)
+✔ formatted descriptions and ordered product media save privately and survive unrelated edits (17.8347ms)
+✔ product galleries reject invalid images, excessive counts and another account's photos (82.1391ms)
+✔ new product descriptions and galleries load with their selected cover image (15.427ms)
+✔ variant swatches and manual inventory persist on create, update and clear (35.6169ms)
+✔ invalid variant quantities and swatches cannot be saved (90.8773ms)
+✔ advanced variant settings and custom option combinations persist through the product action (15.4956ms)
+✔ duplicate option combinations and invalid extended pricing cannot be saved (73.4758ms)
+(node:23860) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/Administrator/filazoo-crm/tests/product-editing.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\Administrator\filazoo-crm\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ round-trips individually editable product variants through product tags (0.9472ms)
+✔ builds a downloadable PDF from only the selected products (3.3289ms)
+✔ adding a variant after a removal skips SKUs that are still in use (1.8667ms)
+✔ new option combinations preserve existing identities and never copy stock or barcodes to a new SKU (0.6308ms)
+✔ advanced prices and option selections round-trip while internal costs stay out of customer PDFs (10.4855ms)
+(node:20240) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/Administrator/filazoo-crm/tests/product-editor-ui.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\Administrator\filazoo-crm\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ media stays within two rows on desktop and mobile with an accurate overflow count (1266.7034ms)
+✔ two-row media handles 0 images at each breakpoint (219.5785ms)
+✔ two-row media handles 1 images at each breakpoint (209.149ms)
+✔ two-row media handles 4 images at each breakpoint (208.1758ms)
+✔ two-row media handles 5 images at each breakpoint (185.602ms)
+✔ two-row media handles 8 images at each breakpoint (216.354ms)
+✔ two-row media handles 9 images at each breakpoint (215.5764ms)
+✔ two-row media handles 20 images at each breakpoint (181.283ms)
+✔ overflow expands media inline and edits hidden images without closing the product sheet (589.3984ms)
+✔ read-only products can view hidden media without editing it (163.4523ms)
+✔ Add media opens company storage, selects images and videos, and applies only on Done (417.3011ms)
+✔ company media search, failed loading, retry, and Cancel preserve the product draft (653.3482ms)
+✔ company media respects remaining gallery capacity and Escape closes only the picker (267.1137ms)
+✔ uploading in the company picker selects the new file and adds it to the product on Done (456.9687ms)
+✔ the product content card leads with Title, editable description and media, and saves those changes (278.134ms)
+✔ compact volume pricing keeps ranges connected and saves the selected currency (259.1867ms)
+✔ volume pricing adds and removes ranges, validates missing prices, and accepts zero (370.8754ms)
+✔ HTML source changes are sanitized before saving, and formatting commands preserve the editor (319.0136ms)
+✔ media can be uploaded, promoted, removed and saved without changing unrelated fields (277.1534ms)
+✔ plain text paste preserves ampersands and angle brackets without double escaping (218.2759ms)
+✔ read-only product content cannot be edited or submitted (148.8534ms)
+✔ description links insert after their dialog closes without submitting the product form (313.9263ms)
+✔ filtered variant edits save the correct SKU, price and manual quantity (136.2618ms)
+✔ inventory dropdown filtering and partial checkbox selection keep the intended variants (174.088ms)
+✔ unit pricing controls save their values and Escape closes only the nested dropdown (235.0718ms)
+✔ a variant can be added with a color swatch and existing product photo (259.7936ms)
+✔ variant details use the existing product panel and preserve drafts when switching variants (207.6941ms)
+✔ Escape cancels variant edits without closing the product sheet or losing product fields (150.4192ms)
+✔ custom options generate editable combinations in the same product form (183.9543ms)
+✔ option drafts validate individual values, block premature saving, and cancel without changing SKUs (231.6129ms)
+✔ grouped variants expand into the correct SKUs, keep filtered selection scoped, and save child prices (309.7397ms)
+✔ deleting an option explicitly chooses which SKUs remain without merging inventory (197.4364ms)
+✔ team inventory updates save immediately and survive cancelling unrelated variant edits (257.6941ms)
+✔ connected variant inventory is read-only and selection removes only filtered rows (263.2905ms)
+(node:29936) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/Administrator/filazoo-crm/tests/product-media-upload.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\Administrator\filazoo-crm\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ media uploads use company storage and register files before returning persistent product URLs (60.8209ms)
+✔ failed or invalid media uploads never return unusable URLs (17.9142ms)
+(node:18196) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/Administrator/filazoo-crm/tests/product-media.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\Administrator\filazoo-crm\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ company media lists only active images and videos in the authenticated workspace (47.1977ms)
+✔ saving company media rejects another workspace, trashed files and spoofed extensions (10.8961ms)
+✔ stable media URLs get fresh storage links only after workspace and path checks (9.8094ms)
+✔ image and video metadata survives reloads while video cannot become a product or variant photo (0.464ms)
+✔ company library images stay private in email previews and embed once for sending (2.7712ms)
+(node:16316) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/Administrator/filazoo-crm/tests/product-options.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\Administrator\filazoo-crm\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ renaming an option or value retains every SKU's identity, inventory, barcode and pricing (1.3926ms)
+✔ adding option values creates only new combinations with fresh SKUs and empty stock (1.9155ms)
+✔ removing a value or dimension retains only the chosen SKUs without merging stock (0.5092ms)
+✔ option and value order survives saved metadata without changing SKU data (9.2796ms)
+✔ invalid option edits do not mutate the existing variants (0.6453ms)
+(node:8524) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/Administrator/filazoo-crm/tests/product-profile-route.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\Administrator\filazoo-crm\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ refreshing or directly opening a product renders its dialog over the catalog (49.4957ms)
+✔ in-app interception loads only the details inside the existing sheet layout (8.7575ms)
+✔ missing products still return not found on direct and intercepted routes (5.3123ms)
+(node:43208) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/Administrator/filazoo-crm/tests/product-profile-sheet.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\Administrator\filazoo-crm\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ product profiles keep the catalog mounted and retain form values across rerenders (120.0434ms)
+✔ editor close closes the intercepted product panel and returns to the catalog (34.5946ms)
+✔ Escape closes the intercepted product panel and returns to the catalog (22.3515ms)
+✔ backdrop closes the intercepted product panel and returns to the catalog (20.5815ms)
+✔ editor close closes the reloaded product panel and returns to the catalog (18.7092ms)
+✔ Escape closes the reloaded product panel and returns to the catalog (24.7051ms)
+✔ backdrop closes the reloaded product panel and returns to the catalog (21.1027ms)
+✔ the intercepted panel cannot close while a product save or image upload is busy (16.644ms)
+✔ the reloaded panel cannot close while a product save or image upload is busy (28.9405ms)
+(node:44744) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/Administrator/filazoo-crm/tests/session-recovery-refresh.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\Administrator\filazoo-crm\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ revisiting pages, focusing the tab and resuming Activity preserve route memory (34.1612ms)
+✔ network recovery refreshes once in a transition (7.3864ms)
+✔ background tabs defer network recovery until visible (3.6095ms)
+✔ an offline mount recovers, disabled public screens do no work and cleanup removes listeners (7.1138ms)
+(node:40064) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/Administrator/filazoo-crm/tests/workspace-memory.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\Administrator\filazoo-crm\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ view memory retains more than three pages and restores falsy controls (0.9463ms)
+✔ account providers have isolated memory and do not carry drafts into a new account (0.0962ms)
+✔ only subscribed views are notified, equal values do no work and unmounted pages retain values (0.1079ms)
+✔ memory stays bounded and editing a view renews its retention (0.0711ms)
+✔ memory pressure evicts invoice rows, filters and page number as one view (0.0701ms)
+(node:29836) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/Administrator/filazoo-crm/tests/workspace-navigation-ui.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\Administrator\filazoo-crm\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ the actual Settings back link follows navigation, section changes and a Settings refresh (65.0698ms)
+✔ the provider redirects a fresh session to Home without repeating after normal navigation (12.1575ms)
+(node:40580) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/Administrator/filazoo-crm/tests/workspace-navigation.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\Administrator\filazoo-crm\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ fresh sessions open Home, and later navigation and refresh stay on the selected page (1.1246ms)
+✔ Settings returns to the originating record with filters and hash across sections and reloads (0.1754ms)
+✔ Home remains the Settings return page when Settings was opened from Home (0.0647ms)
+✔ auth, onboarding and customer pages never become the Settings return destination (0.0688ms)
+✔ accounts have separate session navigation (0.0796ms)
+✔ unavailable storage keeps navigation working without redirect loops (0.1246ms)
+✔ invalid stored return locations fall back to Home (0.1137ms)
+✔ subscribers update the Settings link after navigation and stop after unmount (0.1072ms)
+✔ login redirects cover social callbacks, onboarding and password recovery safely (0.1908ms)
+ℹ tests 182
+ℹ suites 0
+ℹ pass 182
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 15084.0158

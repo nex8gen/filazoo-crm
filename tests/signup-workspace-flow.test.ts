@@ -145,6 +145,27 @@ test("signup's existing-account link starts a new workspace before a duplicate s
   assert.equal(new URL(link.href, "https://crm.example.test").searchParams.get("next"), "/workspaces/new");
 });
 
+test("the account form collects and preserves the company name", () => {
+  const document = renderForm("app/signup/signup-form.tsx", "SignupForm", {}, { companyName: "Acme Studio" });
+  const company = document.querySelector<HTMLInputElement>('[name="companyName"]')!;
+  assert.equal(company.value, "Acme Studio");
+  assert.equal(company.autocomplete, "organization");
+  assert.equal(company.required, true);
+  assert.equal(company.maxLength, 80);
+  assert.equal(document.querySelector('[name="workspaceName"]'), null);
+});
+
+test("the shared setup progress consistently has Account, Plan and Get started", () => {
+  const { AccountSetupProgress } = load("components/account-setup-progress.tsx", { "./account-setup-progress.module.css": { default: {} } });
+  for (const current of [1, 2, 3]) {
+    const document = new JSDOM(renderToStaticMarkup(React.createElement(AccountSetupProgress as React.ComponentType<{ current: number }>, { current }))).window.document;
+    const steps = [...document.querySelectorAll('li')];
+    assert.equal(steps.length, 3);
+    assert.deepEqual(steps.map(step => step.textContent!.replace(/^\d/, '').trim()), ['Account', 'Plan', 'Get started']);
+    assert.equal(steps.findIndex(step => step.getAttribute('aria-current') === 'step'), current - 1);
+  }
+});
+
 test("already signed-in accounts go directly from signup to a new workspace while preserving invitations", async () => {
   const page = load("app/signup/page.tsx", {
     "next/navigation": { redirect: (path: string) => { throw new Error(`redirect:${path}`); } },

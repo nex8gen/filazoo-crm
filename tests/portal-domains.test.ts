@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { EventEmitter } from "node:events";
 import vm from "node:vm";
+import * as marketing from "../lib/marketing.ts";
 import ts from "typescript";
 import { NextRequest } from "next/server.js";
 import * as domains from "../lib/portal-domains.ts";
@@ -142,7 +143,7 @@ test("host lookup independently rejects cross-workspace invoice capabilities and
 
 test("custom hosts serve customer routes and the welcome page, while staff, legacy and unknown hosts are blocked", async () => {
   let status = "connected";
-  const api = load<typeof import("../proxy.ts")>("proxy.ts", { "@/lib/portal-domains": domains, "@/lib/data/portal-domain-routing": { findPortalDomain: async (hostname: string) => hostname === "portal.example.com" ? { workspace_id: "tenant-a", status } : null }, "@/lib/supabase/proxy": { updateSession: async () => new Response("customer") } });
+  const api = load<typeof import("../proxy.ts")>("proxy.ts", { "@/lib/marketing": marketing, "@/lib/portal-domains": domains, "@/lib/data/portal-domain-routing": { findPortalDomain: async (hostname: string) => hostname === "portal.example.com" ? { workspace_id: "tenant-a", status } : null }, "@/lib/supabase/proxy": { updateSession: async () => new Response("customer") } });
   assert.equal((await api.proxy(new NextRequest("https://portal.example.com/"))).headers.get("x-middleware-rewrite"), "https://portal.example.com/customer/domain");
   for (const path of ["/account", "/pages/about", "/pages/contact"]) {
     assert.equal((await api.proxy(new NextRequest(`https://portal.example.com${path}`))).headers.get("x-middleware-rewrite"), `https://portal.example.com/customer/domain${path}`);

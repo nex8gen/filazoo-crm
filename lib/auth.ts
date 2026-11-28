@@ -1,7 +1,7 @@
 import { cache } from "react";
 import { env, hasSupabaseAuthConfig, hasSupabaseConfig } from "./env.ts";
 import { createSupabaseControl } from "./supabase/control.ts";
-import { workspaceCookie, workspaceIdSchema } from "./workspaces.ts";
+import { workspaceCookie, workspaceIdSchema, workspaceNameSchema } from "./workspaces.ts";
 import { createClient } from "./supabase/server.ts";
 import { isTransientAuthError } from "./supabase/auth-error.ts";
 import { isAvatarPreset, type AvatarPreset } from "./profile-avatar.ts";
@@ -18,7 +18,7 @@ async function getConnection() {
   return mod.connection;
 }
 
-export type AuthViewer = { id: string; email: string | null; avatarPath?: string; avatarPreset?: AvatarPreset; preferences?: UserPreferences; tableColumns?: TableColumnPreferences };
+export type AuthViewer = { id: string; email: string | null; companyName?: string; avatarPath?: string; avatarPreset?: AvatarPreset; preferences?: UserPreferences; tableColumns?: TableColumnPreferences };
 export type WorkspaceRole = "admin" | "operator" | "bd_manager" | "viewer";
 export type WorkspaceViewer = AuthViewer & { role: WorkspaceRole; displayName: string | null; workspaceId: string; workspaceName: string; ownerId: string; subscriptionActive?: boolean };
 
@@ -30,9 +30,12 @@ const uuid = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
 
 function toViewer(user: { id: string; email?: string | null; user_metadata?: Record<string, unknown> | null }): AuthViewer {
   const metadata = user.user_metadata;
+  // Company metadata is a naming preference, never an authorization claim.
+  const companyName = workspaceNameSchema.safeParse(metadata?.company_name);
   return {
     id: user.id,
     email: user.email ?? null,
+    companyName: companyName.success ? companyName.data : undefined,
     preferences: readUserPreferences(metadata?.crm_preferences),
     tableColumns: readTableColumnPreferences(metadata),
     avatarPath: typeof metadata?.avatar_path === "string" ? metadata.avatar_path : undefined,

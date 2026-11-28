@@ -1,7 +1,8 @@
 "use client";
 
+import { AiIcon } from "@/components/ai-icon";
 import { useMemo, useState } from "react";
-import { ArrowRight, Bell, Check, Clock3, GitBranch, Mail, Plus, Search, Sparkles, Tag, UserRoundCheck, Workflow } from "lucide-react";
+import { ArrowRight, Bell, Check, Clock3, GitBranch, Mail, Plus, Search, Tag, UserRoundCheck, Workflow } from "lucide-react";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,7 @@ import { useLanguage } from "@/components/language-provider";
 import "./flow-starter-dialog.css";
 
 type Step = FlowInput["steps"][number];
-const previewIcons = { ai_auto_reply: Sparkles, send_email: Mail, wait: Clock3, split: GitBranch, if_condition: GitBranch, create_task: UserRoundCheck, internal_alert: Bell, change_category: Tag, update_company: Workflow, stop: Check };
+const previewIcons = { ai_auto_reply: AiIcon, send_email: Mail, wait: Clock3, split: GitBranch, if_condition: GitBranch, create_task: UserRoundCheck, internal_alert: Bell, change_category: Tag, update_company: Workflow, stop: Check };
 
 export function FlowStarterDialog({ onChoose, onOpenChange, viewerId }: { onChoose: (flow: FlowInput) => void; onOpenChange: (open: boolean) => void; viewerId: string }) {
   const { t } = useLanguage();

@@ -125,6 +125,7 @@ function analyticsUi() {
     react: { useState: (initial: unknown) => { const index = cursor++; if (!(index in states)) states[index] = initial; return [states[index], (next: unknown) => { states[index] = next; }]; }, useMemo: (fn: () => unknown) => fn(), useTransition: () => [false, (fn: () => void) => fn()] },
     "next/navigation": { useRouter: () => ({ push: (url: string) => navigations.push(url), refresh() {} }) },
     "next/link": { default: "Link" },
+    "next/dynamic": { default: () => "FlowAnalyticsChart" },
     "@/components/ui/button": { Button: "Button", buttonVariants: () => "button" },
     "@/components/language-provider": { useLanguage: () => ({ language: "en" }) },
     "@/lib/flow-analytics": metrics,

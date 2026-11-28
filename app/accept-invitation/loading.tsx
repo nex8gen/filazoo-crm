@@ -1,5 +1,5 @@
 import { AuthSkeleton } from "@/components/auth-skeleton";
 
 export default function Loading() {
-  return <AuthSkeleton fields={3} />;
+  return <AuthSkeleton fields={4} variant="signup" />;
 }

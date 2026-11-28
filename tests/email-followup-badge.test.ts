@@ -61,6 +61,8 @@ test("the rendered badge has an accessible text status, decorative icon and mach
   const jsx = (type: unknown, props: Record<string, unknown>): Element => ({ type, props });
   const exports = {} as { EmailFollowupBadge: (props: unknown) => Element };
   const dependencies: Record<string, unknown> = {
+    "@/components/ai-icon": { AiIcon: "ai-icon" },
+    "@/components/agent-icon": { AgentIcon: "agent-icon" },
     "react/jsx-runtime": { jsx, jsxs: jsx },
     "lucide-react": { Bell: "bell" },
     "@/lib/email-followup-badge": { emailFollowupBadge },

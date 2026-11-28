@@ -1,3 +1,4 @@
+import { defaultWorkspaceSettings } from "../lib/workspace-settings.ts";
 import { policyTestDependency } from "./helpers/ai-policy.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -15,7 +16,7 @@ const require = createRequire(import.meta.url);
 function moduleUnderTest(file: string, dependencies: Record<string, unknown>) {
   const exports: Record<string, (...args: unknown[]) => Promise<unknown>> = {};
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (name === "server-only" ? {} : dependencies[name] ?? require(name)), Response, Request, URL, Date, Error, console });
+  vm.runInNewContext(code, { exports, require: (name: string) => name === "./workspace-settings.ts" ? { getWorkspaceSettings: async () => defaultWorkspaceSettings } : policyTestDependency(name) ?? (name === "server-only" ? {} : dependencies[name] ?? require(name)), Response, Request, URL, Date, Error, console });
   return exports;
 }
 const payload = () => ({ flow: { ...defaultFlowInput, triggerType: "new_lead", triggerConfig: {}, steps: [

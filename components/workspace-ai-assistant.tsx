@@ -9,7 +9,7 @@ import { useLanguage } from "@/components/language-provider";
 import { useEffect, useEffectEvent, useId, useMemo, useRef, useState, type ComponentProps } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, motion, useIsPresent, useReducedMotion } from "motion/react";
-import { ArrowUp, ChartNoAxesCombined, ChevronDown, Copy, FileText, Lightbulb, ListChecks, Map as MapIcon, PenLine, RotateCcw, Search, Sparkles, TriangleAlert, Users } from "lucide-react";
+import { ArrowUp, ChartNoAxesCombined, ChevronDown, Copy, FileText, Lightbulb, ListChecks, Map as MapIcon, PenLine, RotateCcw, Search, TriangleAlert, Users } from "lucide-react";
 import { AiIcon } from "@/components/ai-icon";
 import { AgentIcon } from "@/components/agent-icon";
 import { ColumnResizeHandle } from "@/components/column-resize-handle";
@@ -66,9 +66,9 @@ const pageNames: Array<[RegExp, string]> = [
 ];
 
 const chatStarters = [
-  { label: "Analyze customer", icon: Users, tone: "text-blue-600 dark:text-blue-400", prompt: "Analyze the customer shown on this page: their business, likely filament needs, and sales opportunities. Separate verified facts from estimates. If no customer is selected, ask which customer to analyze." },
+  { label: "Analyze customer", icon: Users, tone: "text-ai-foreground dark:text-ai-foreground", prompt: "Analyze the customer shown on this page: their business, likely filament needs, and sales opportunities. Separate verified facts from estimates. If no customer is selected, ask which customer to analyze." },
   { label: "Summarize page", icon: FileText, tone: "text-pink-600 dark:text-pink-400", prompt: "Summarize this page in a few concise bullets. Highlight key facts, outstanding items, and anything that needs attention." },
-  { label: "Make a plan", icon: MapIcon, tone: "text-primary", prompt: "Based on this page, suggest a short action plan with priorities and clear next steps. Explain what information is missing before any action can be taken." },
+  { label: "Make a plan", icon: MapIcon, tone: "text-ai-foreground", prompt: "Based on this page, suggest a short action plan with priorities and clear next steps. Explain what information is missing before any action can be taken." },
   { label: "Find risks", icon: TriangleAlert, tone: "text-orange-600 dark:text-orange-400", prompt: "Review this page for risks, missing information, and inconsistencies. Rank the most important issues and suggest practical ways to address them." },
   { label: "Help me write", icon: PenLine, tone: "text-amber-600 dark:text-amber-400", prompt: "Help me draft a concise, professional customer message using the context on this page. If the recipient or purpose is unclear, ask me to clarify first. Show the draft for review." },
 ];
@@ -478,18 +478,18 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
             <div className="w-full max-w-sm"><OrbitingCirclesGlobe active={open} /></div>
             <h2 className="mt-5 text-lg font-semibold tracking-tight text-balance">What should I take care of?</h2>
             <p className="mt-2 max-w-xs text-sm leading-6 text-pretty text-muted-foreground">Create invoices, draft emails, and update customers.</p>
-          </div> : <div className="relative flex min-h-full flex-col items-center justify-center overflow-hidden rounded-3xl py-8 before:pointer-events-none before:absolute before:inset-x-8 before:top-[18%] before:h-56 before:rounded-full before:bg-primary/5 before:blur-3xl">
+          </div> : <div className="relative flex min-h-full flex-col items-center justify-center overflow-hidden rounded-3xl py-8 before:pointer-events-none before:absolute before:inset-x-8 before:top-[18%] before:h-56 before:rounded-full before:bg-ai-accent/5 before:blur-3xl">
             <div className="mx-auto flex w-full max-w-sm flex-col items-center text-center">
               <motion.div animate={{ y: [0, -5, 0] }} transition={{ duration: 3, ease: "easeInOut", repeat: Infinity }} className="relative z-10 mb-5 flex items-center justify-center"><AiIcon className="size-12" /></motion.div>
               <h2 className="relative z-10 text-lg font-semibold tracking-tight text-balance">What would you like to know?</h2>
               <p className="relative z-10 mt-2 max-w-xs text-pretty text-sm leading-6 text-muted-foreground">{`Ask about ${pageLabel}, find patterns, or get a concise recommendation.`}</p>
             </div>
             <div role="group" aria-label="Suggested questions" className="relative z-10 mx-auto mt-6 flex w-full max-w-sm flex-wrap justify-center gap-2">
-              {chatStarters.map(({ label, prompt, icon: Icon, tone }) => <button key={label} type="button" disabled={busy || loadingHistory} onClick={() => void send(t(prompt))} className="inline-flex min-h-8 items-center gap-1.5 rounded-lg bg-muted/80 px-2.5 py-1.5 text-xs font-medium leading-4 transition-colors hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50"><Icon aria-hidden="true" className={`size-3.5 shrink-0 ${tone}`} /><span>{label}</span></button>)}
+              {chatStarters.map(({ label, prompt, icon: Icon, tone }) => <button key={label} type="button" disabled={busy || loadingHistory} onClick={() => void send(t(prompt))} className="inline-flex min-h-8 items-center gap-1.5 rounded-lg bg-muted/80 px-2.5 py-1.5 text-xs font-medium leading-4 transition-colors hover:bg-ai-accent/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50"><Icon aria-hidden="true" className={`size-3.5 shrink-0 ${tone}`} /><span>{label}</span></button>)}
               <DropdownMenu>
-                <DropdownMenuTrigger disabled={busy} className="inline-flex min-h-8 items-center gap-1.5 rounded-lg bg-muted/80 px-2.5 py-1.5 text-xs font-medium leading-4 hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50" aria-label="More suggested questions"><Sparkles aria-hidden="true" className="size-3.5 text-primary" /><span>More</span></DropdownMenuTrigger>
+                <DropdownMenuTrigger disabled={busy} className="inline-flex min-h-8 items-center gap-1.5 rounded-lg bg-muted/80 px-2.5 py-1.5 text-xs font-medium leading-4 hover:bg-ai-accent/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50" aria-label="More suggested questions"><AiIcon aria-hidden="true" className="size-3.5 text-ai-foreground" /><span>More</span></DropdownMenuTrigger>
                 <DropdownMenuContent side="bottom" align="end" positionerClassName="z-[70]" className="w-56">
-                  {moreChatStarters.map(({ label, prompt, icon: Icon }) => <DropdownMenuItem key={label} disabled={busy || loadingHistory} onClick={() => void send(t(prompt))}><Icon aria-hidden="true" className="size-4 text-primary" />{label}</DropdownMenuItem>)}
+                  {moreChatStarters.map(({ label, prompt, icon: Icon }) => <DropdownMenuItem key={label} disabled={busy || loadingHistory} onClick={() => void send(t(prompt))}><Icon aria-hidden="true" className="size-4 text-ai-foreground" />{label}</DropdownMenuItem>)}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -511,12 +511,12 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
           {reconnecting ? <p role="status" className="mt-3 text-sm text-muted-foreground">Reconnecting to your workspace… Your request will continue automatically.</p> : null}
           {pending && activeResearch?.chatKey === chatKey ? <ResearchSearching progress={activeResearch.progress} /> : null}
           {error && error !== history.error ? <NotificationToast>{error}</NotificationToast> : null}
-          {sessionProblem && error ? <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-border bg-muted/40 p-3"><p className="text-xs text-muted-foreground">Your prompt is preserved in the message box.</p>{sessionProblem === 401 ? <a className="text-xs font-medium text-primary underline" href={`/login?next=${encodeURIComponent(pathname)}`} target="_blank" rel="noopener noreferrer">Sign in to continue</a> : null}<Button type="button" variant="outline" size="sm" disabled={busy || loadingHistory} onClick={() => void send()}>Retry request</Button></div> : null}
+          {sessionProblem && error ? <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-border bg-muted/40 p-3"><p className="text-xs text-muted-foreground">Your prompt is preserved in the message box.</p>{sessionProblem === 401 ? <a className="text-xs font-medium text-ai-foreground underline" href={`/login?next=${encodeURIComponent(pathname)}`} target="_blank" rel="noopener noreferrer">Sign in to continue</a> : null}<Button type="button" variant="outline" size="sm" disabled={busy || loadingHistory} onClick={() => void send()}>Retry request</Button></div> : null}
         </div>
         </div>
 
         <div className={presentation === "page" ? "workspace-ai-page-composer home-ai !mt-0 !shrink-0 px-5 sm:px-6" : "shrink-0 bg-background px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]"}>
-          {activeMode === "agent" && applying && activeWork ? <div className="mb-3 rounded-xl border border-violet-500/15 bg-violet-500/[0.04] px-3 py-2"><ThinkingState key={applying} working scope={t(workPage)} activity={activeWork} /></div> : null}
+          {activeMode === "agent" && applying && activeWork ? <div className="mb-3 rounded-xl border border-ai-border bg-ai-soft px-3 py-2"><ThinkingState key={applying} working scope={t(workPage)} activity={activeWork} /></div> : null}
           {presentation === "sidebar" ? <div className="mb-2.5 flex min-h-7 min-w-0 items-center justify-between gap-3 px-1">
             <div id={`${composerId}-context`} className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
               <AgentWorkIcon area={pageWorkArea(pageLabel)} className="size-3.5 shrink-0" />
@@ -539,7 +539,7 @@ export function WorkspaceAiAssistant({ open, onOpenChange, launchRequest, presen
               <Button type="submit" size="icon" className="size-9 shrink-0 rounded-xl bg-foreground text-background shadow-none hover:bg-foreground/85 disabled:bg-muted disabled:text-muted-foreground disabled:opacity-60" disabled={busy || loadingHistory || attachments.processing || (!question.trim() && !(attachments.images.length + (attachments.files?.length ?? 0)))} aria-label="Send to Filazoo AI" title="Send message (Enter)"><ArrowUp aria-hidden="true" className="size-4" /></Button>
             </div>
           </form>}
-          {presentation === "sidebar" ? <><p id={`${composerId}-hint`} className="mt-2 text-center text-xs leading-4 text-muted-foreground">Enter to send · Shift + Enter for a new line</p><p className="mt-1 text-center text-xs leading-4 text-muted-foreground">AI can make mistakes. Review suggestions before using them.</p></> : null}
+          {presentation === "sidebar" ? <p id={`${composerId}-hint`} className="sr-only">Enter to send · Shift + Enter for a new line</p> : null}
         </div>
   </Container> : null}</AnimatePresence>;
 }

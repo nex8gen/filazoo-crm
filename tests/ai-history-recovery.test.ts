@@ -88,7 +88,7 @@ test("stalled history has one bounded deadline and never retries after expiry", 
 });
 
 test("read-only POST session RPC retries preserve credentials, body, scope and request deadline", async () => {
-  for (const rpc of ["read_workspace_session", "read_crm_session"]) {
+  for (const rpc of ["read_secure_workspace_session", "read_workspace_session", "read_crm_session"]) {
     let calls = 0;
     const body = JSON.stringify({ p_user_id: "synthetic", p_session_id: "synthetic" });
     const fetcher = sessionFetch(async (_url, init) => {
@@ -114,7 +114,7 @@ test("session transport never retries writes, permission failures, cancelled req
   for (const status of [401, 403, 404, 429]) {
     let calls = 0;
     const transport = sessionFetch(async () => { calls++; return new Response(null, { status }); });
-    assert.equal((await transport("https://test.supabase.co/rest/v1/rpc/read_workspace_session", { method: "POST", body: "{}" })).status, status);
+    assert.equal((await transport("https://test.supabase.co/rest/v1/rpc/read_secure_workspace_session", { method: "POST", body: "{}" })).status, status);
     assert.equal(calls, 1);
   }
   let calls = 0;

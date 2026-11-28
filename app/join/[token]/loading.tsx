@@ -1,1 +1,5 @@
-export { AuthSkeleton as default } from "@/components/auth-skeleton";
+import { AuthSkeleton } from "@/components/auth-skeleton";
+
+export default function Loading() {
+  return <AuthSkeleton fields={0} variant="signup" />;
+}

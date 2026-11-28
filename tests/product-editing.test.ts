@@ -69,5 +69,7 @@ test("advanced prices and option selections round-trip while internal costs stay
   assert.deepEqual(saved[0].unitPricing, variant.unitPricing);
   assert.deepEqual(saved[0].options, variant.options);
   const pdf = new TextDecoder().decode(buildCatalogPdf([{ ...b2bProducts[0], variants: saved }], { title: "Prices", date: "2026-11-18" }));
-  assert.doesNotMatch(pdf, /7\.34|Cost per item|Profit per item/);
+  // Inspect rendered text; vector logo coordinates can contain the same digits.
+  const text = [...pdf.matchAll(/\((?:\\.|[^\\)])*\)\s*Tj/g)].map(match => match[0]).join("\n");
+  assert.doesNotMatch(text, /7\.34|Cost per item|Profit per item/);
 });

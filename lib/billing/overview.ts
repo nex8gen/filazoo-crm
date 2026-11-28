@@ -12,6 +12,6 @@ export async function billingOverview(viewer: WorkspaceViewer): Promise<BillingO
     // Billing screens receive customer-facing plan totals only.
     return { plan: data.plan, seats: data.seats, grandfathered: data.grandfathered, active: data.active,
       complimentary: data.complimentary, creditOnly: data.creditOnly, memberCount: data.memberCount, credits: data.credits,
-      limits: data.limits ?? {}, usage: data.usage } as BillingOverview;
+      limits: { ...data.limits, workflowEmails: data.limits?.workflowEmails ?? null }, usage: { ...data.usage, workflowEmails: data.usage?.workflowEmails ?? 0 } } as BillingOverview;
   });
 }

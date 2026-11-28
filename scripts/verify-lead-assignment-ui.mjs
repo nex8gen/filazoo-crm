@@ -13,7 +13,7 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const output = path.join(root, "tmp/lead-assignment-db/form.cjs");
 mkdirSync(path.dirname(output), { recursive: true });
 await build({
-  absWorkingDir: root, stdin: { contents: 'export { LeadAssignmentForm } from "./app/settings/lead-assignment-form.tsx"', resolveDir: root, loader: "tsx" },
+  absWorkingDir: root, stdin: { contents: 'export { LeadAssignmentForm } from "./app/settings/lead-assignment-form.tsx"; export { LanguageProvider } from "./components/language-provider.tsx"; export { Toaster } from "sonner";', resolveDir: root, loader: "tsx" },
   outfile: output, bundle: true, packages: "external", platform: "node", format: "cjs", jsx: "automatic",
   plugins: [{ name: "isolated-form", setup(builder) {
     builder.onResolve({filter: /^next\/link$/}, () => ({path:"link",namespace:"fixture"}));
@@ -35,7 +35,7 @@ for (const key of ["window","document","navigator","HTMLElement","HTMLInputEleme
 globalThis.IS_REACT_ACT_ENVIRONMENT=true;
 const { createElement, act } = await import("react");
 const { createRoot } = await import("react-dom/client");
-const { LeadAssignmentForm } = createRequire(import.meta.url)(output);
+const { LeadAssignmentForm, LanguageProvider, Toaster } = createRequire(import.meta.url)(output);
 const a="aaaaaaaa-1111-4111-8111-111111111111", b="bbbbbbbb-1111-4111-8111-111111111111";
 let saved={revision:0,enabled:true,strategy:"lowest_workload",workload:"all",unassigned:3,members:[
   {userId:a,name:"Manager A",enabled:true,activated:true,capacity:null,total:3,open:1,lastAssignedAt:null},
@@ -52,7 +52,7 @@ globalThis.__saveAssignment=async input=>{
 };
 const container=window.document.createElement("div");window.document.body.append(container);
 const app=createRoot(container);
-await act(async()=>app.render(createElement(LeadAssignmentForm,{initial:saved})));
+await act(async()=>app.render(createElement(LanguageProvider,null,createElement(LeadAssignmentForm,{initial:saved}),createElement(Toaster))));
 const query=selector=>{const found=container.querySelector(selector);assert.ok(found,selector);return found;};
 const button=text=>[...container.querySelectorAll("button")].find(item=>item.textContent.includes(text));
 const click=async node=>act(async()=>node.click());
@@ -86,12 +86,14 @@ assert.match(container.textContent,/Assignment rules saved/);
 assert.equal(button("Save assignment rules").disabled,true);
 await change(query(`#capacity-${a}`),"0");
 await submit();
-assert.match(query('[role="alert"]').textContent,/whole-number capacities/);
+await act(async()=>new Promise(resolve=>setTimeout(resolve,50)));
+assert.match(query('[data-sonner-toast]').textContent,/whole-number capacities/);
 assert.equal(writes.length,1);
 await change(query(`#capacity-${a}`),"");
 saveError="Settings changed in another session. Reload before saving.";
 await submit();
-assert.match(query('[role="alert"]').textContent,/Reload before saving/);
+await act(async()=>new Promise(resolve=>setTimeout(resolve,50)));
+assert.match(container.textContent,/Reload before saving/);
 assert.equal(button("Save assignment rules").disabled,false);
 await click(button("Discard changes"));
 assert.equal(query(`#capacity-${a}`).value,"5");

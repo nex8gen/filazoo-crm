@@ -1,3 +1,5 @@
+import { rechargeProduct } from "./recharge.ts";
+
 /** Frozen v2/v3 per-seat catalog for existing orders and renewals. */
 export const seatPlans = [
   { id: "starter", name: "Starter", amountFen: 13900, amountCents: 1900, credits: 2000, companies: 1000, products: 500, mailboxes: 1, flows: 3, flowRuns: 1000, documentBytes: 1_000_000_000, description: "Everyday CRM, email, documents and AI assistance." },
@@ -5,15 +7,21 @@ export const seatPlans = [
   { id: "business", name: "Business", amountFen: 55900, amountCents: 7900, credits: 12000, companies: 50000, products: 25000, mailboxes: 5, flows: 100, flowRuns: 50000, documentBytes: 20_000_000_000, description: "Larger teams, catalogs and automation workloads." },
 ] as const;
 /** Catalog v4: prices, credits and capacity apply once per workspace package. */
-export const plans = [
+export const packagePlansV4 = [
   { ...seatPlans[0], members: 1, amountFen: 13900, amountCents: 1900, annualMonthlyFen: 10900, annualMonthlyCents: 1500, credits: 2000 },
   { ...seatPlans[1], members: 2, amountFen: 42900, amountCents: 5900, annualMonthlyFen: 35900, annualMonthlyCents: 4900, credits: 6000 },
   { ...seatPlans[2], members: 5, amountFen: 92900, amountCents: 12900, annualMonthlyFen: 77900, annualMonthlyCents: 10900, credits: 15000 },
 ] as const;
+/** Catalog v6: right-sized packages with customer workflow email allowances. */
+export const plans = [
+  { ...packagePlansV4[0], companies: 1000, products: 100, flows: 5, workflowEmails: 1000 },
+  { ...packagePlansV4[1], companies: 5000, products: 500, flows: 15, workflowEmails: 5000 },
+  { ...packagePlansV4[2], companies: 20000, products: 2000, flows: 50, workflowEmails: 20000 },
+] as const;
 export type PlanId = typeof plans[number]["id"];
 export type BillingPeriod = "monthly" | "annual";
 /** Annual prices show a monthly equivalent; checkout collects twelve months. */
-export function planPrice(plan: typeof plans[number], period: BillingPeriod) {
+export function planPrice(plan: { amountFen: number; amountCents: number; annualMonthlyFen: number; annualMonthlyCents: number }, period: BillingPeriod) {
   const months = period === "annual" ? 12 : 1;
   const monthlyFen = period === "annual" ? plan.annualMonthlyFen : plan.amountFen;
   const monthlyCents = period === "annual" ? plan.annualMonthlyCents : plan.amountCents;
@@ -25,13 +33,15 @@ export const legacyPlans = [
   { id: "starter", name: "Starter (legacy)", amountFen: 9900, members: 1 },
   { id: "team", name: "Team (legacy)", amountFen: 29900, members: 5 },
 ] as const;
+/** Frozen historical pack for existing orders; new recharges use catalog v5. */
 export const creditPacks = [{ id: "credits_3000", name: "3,000 AI credits", credits: 3000, amountFen: 6900, amountCents: 1000 }] as const;
-export function orderProduct(order: Pick<SubscriptionOrder, "plan_id" | "catalog_version" | "kind" | "seats" | "period_months">) {
+export function orderProduct(order: Pick<SubscriptionOrder, "plan_id" | "catalog_version" | "kind" | "seats" | "period_months" | "credit_quantity" | "credit_rate_micros">) {
   if (order.period_months !== undefined && order.period_months !== 1 && order.period_months !== 12) return undefined;
   if ((order.catalog_version ?? 1) < 3 && (order.period_months ?? 1) !== 1) return undefined;
+  if (order.catalog_version === 5) return rechargeProduct(order);
   if ((order.catalog_version ?? 1) === 1) return legacyPlans.find(plan => plan.id === order.plan_id);
-  if (order.catalog_version === 4) {
-    const plan = findPlan(order.plan_id);
+  if (order.catalog_version === 4 || order.catalog_version === 6) {
+    const plan = (order.catalog_version === 4 ? packagePlansV4 : plans).find(value => value.id === order.plan_id);
     if (!plan || order.kind !== "subscription" || order.seats !== plan.members) return undefined;
     return { ...plan, ...planPrice(plan, order.period_months === 12 ? "annual" : "monthly") };
   }
@@ -54,7 +64,9 @@ export function amountFen(value: unknown): number | null {
 }
 export type SubscriptionOrder = {
   id: string; workspace_id: string; user_id: string; out_trade_no: string;
-  plan_id: PlanId | "team" | "credits_3000"; amount_fen: number; currency: "CNY";
+  plan_id: PlanId | "team" | "credits_3000" | "credits_custom"; amount_fen: number; currency: "CNY";
+  credit_quantity?: number; credit_rate_micros?: number; credit_pricing_id?: string;
+  subscription_discount_id?: string | null; discount_amount_fen?: number;
   catalog_version?: number; kind?: "subscription" | "credits"; seats?: number;
   period_months?: number;
   status: "pending" | "paid" | "closed" | "refunded";

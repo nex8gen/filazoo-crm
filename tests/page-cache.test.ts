@@ -34,3 +34,27 @@ test("page keys separate mailboxes and filtered views; edited messages can be re
   assert.equal(cache.has("team:inbox:1"), false);
   assert.equal(cache.has("mine:sent:1"), false);
 });
+
+test("long sessions bound cached pages and retain the most recently visited pages", async () => {
+  const cache = createPageCache("first", 1, 3);
+  cache.set("second", 2); cache.set("third", 3);
+  assert.equal(await cache.load("first", async () => 99), 1);
+  cache.set("fourth", 4);
+  assert.equal(cache.has("second"), false);
+  assert.equal(cache.has("first"), true);
+  cache.get("third"); cache.set("fifth", 5);
+  assert.equal(cache.has("first"), false);
+  assert.equal(cache.get("third"), 3);
+  for (let i = 0; i < 100; i++) cache.set(`page-${i}`, i);
+  assert.equal(cache.has("page-96"), false);
+  assert.equal(cache.get("page-99"), 99);
+});
+
+test("network-loaded pages obey the same memory bound and caches remain isolated", async () => {
+  const first = createPageCache("one", 1, 1), second = createPageCache("one", 10);
+  await first.load("two", async () => 2);
+  assert.equal(first.has("one"), false);
+  assert.equal(second.get("one"), 10);
+  assert.equal(second.has("two"), false);
+  for (const limit of [0, -1, 0.5, Infinity, NaN]) assert.throws(() => createPageCache("one", 1, limit), RangeError);
+});

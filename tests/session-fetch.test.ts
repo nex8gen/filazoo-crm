@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { sessionFetch } from "../lib/supabase/session-fetch.ts";
 
-const url = "https://test.supabase.co/rest/v1/rpc/read_workspace_session";
+const url = "https://test.supabase.co/rest/v1/rpc/read_secure_workspace_session";
 const options = { method: "POST", body: "{}" };
 
 test("subscription-aware authorization is a read-only retry while settlement and checkout are never replayed", async () => {
-  for (const [name, expected] of [["read_subscribed_workspace_session",2],["create_subscription_order",1],["confirm_subscription_payment",1]] as const) {
+  for (const [name, expected] of [["read_secure_workspace_session",2],["read_subscribed_workspace_session",2],["read_workspace_session",2],["read_crm_session",2],["create_subscription_order",1],["confirm_subscription_payment",1]] as const) {
     let calls = 0;
     const request = sessionFetch(async () => { calls++; throw new TypeError("fetch failed"); });
     await assert.rejects(request(`https://test.supabase.co/rest/v1/rpc/${name}`, options), /fetch failed/);

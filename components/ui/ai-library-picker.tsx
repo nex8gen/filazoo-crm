@@ -41,7 +41,7 @@ export default function AiLibraryPicker({ remaining, onClose, onAdd }: { remaini
           return <button type="button" key={file.id} role="checkbox" aria-checked={checked} disabled={adding || (!checked && selected.length >= remaining)} onClick={() => setSelected(current => checked ? current.filter(item => item.id !== file.id) : [...current, file])} className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left hover:bg-muted disabled:opacity-50">
             <FileText aria-hidden="true" className="size-5 shrink-0 text-muted-foreground" />
             <span className="min-w-0 flex-1"><span data-no-translate className="block truncate text-sm">{file.name}</span>{file.company ? <span data-no-translate className="block truncate text-xs text-muted-foreground">{file.company}</span> : null}</span>
-            <span aria-hidden="true" className={`grid size-4 shrink-0 place-items-center rounded border ${checked ? "border-primary bg-primary text-primary-foreground" : "border-input"}`}>{checked ? <Check className="size-3" /> : null}</span>
+            <span aria-hidden="true" className={`grid size-4 shrink-0 place-items-center rounded border ${checked ? "border-ai-accent bg-ai-accent text-ai-contrast" : "border-input"}`}>{checked ? <Check className="size-3" /> : null}</span>
           </button>;
         }) : <p className="p-3 text-sm text-muted-foreground">{query ? "No matching files." : "Your library has no files yet."}</p>}
       </div>

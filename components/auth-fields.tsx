@@ -5,8 +5,8 @@ import { Eye, EyeOff } from "lucide-react";
 
 export const authButtonClass = "flex h-12 w-full items-center justify-center gap-2 rounded-[10px] bg-action px-5 text-base font-medium text-action-foreground transition-colors hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-action-ring focus-visible:outline-offset-4 disabled:cursor-wait disabled:opacity-50";
 
-export function AuthHeading({ title, children }: { title: string; children: ReactNode }) {
-  return <div className="mb-8"><h1 className="text-3xl font-semibold leading-tight tracking-[-0.025em] sm:text-4xl">{title}</h1><div className="mt-3 text-base leading-6 text-black/60 dark:text-white/60">{children}</div></div>;
+export function AuthHeading({ title, children }: { title: string; children?: ReactNode }) {
+  return <div className="mb-[var(--auth-heading-margin,2rem)]"><h1 className="text-3xl font-semibold leading-tight tracking-[-0.025em] sm:text-4xl">{title}</h1>{children ? <div className="mt-[var(--auth-description-gap,0.75rem)] text-base leading-6 text-black/60 dark:text-white/60">{children}</div> : null}</div>;
 }
 
 export function AuthField({ label, id, type = "text", ...props }: InputHTMLAttributes<HTMLInputElement> & { label: string; id: string }) {

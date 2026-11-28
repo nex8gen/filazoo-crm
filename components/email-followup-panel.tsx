@@ -1,10 +1,11 @@
 "use client";
+import { AiIcon } from "@/components/ai-icon";
 import { NotificationToast } from "@/components/ui/notification-toast";
 
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import Link from "next/link";
-import { Bell, CalendarClock, CheckCircle2, ChevronRight, Clock3, Info, LoaderCircle, Mail, RefreshCw, Sparkles } from "lucide-react";
+import { Bell, CalendarClock, CheckCircle2, ChevronRight, Clock3, Info, LoaderCircle, Mail, RefreshCw, } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
 import { EmailAiTypewriter } from "@/components/email-ai-typewriter";
@@ -156,13 +157,13 @@ export function EmailFollowupPanel({ mailboxId, messageId, subject, recipient, c
   return <section className="mx-6 mb-6 space-y-3" aria-label="Follow up on this email">
     {followup ? <div className="rounded-xl border bg-muted/20 p-3.5" aria-live="polite">
       <h3 className="flex items-center gap-2 text-xs font-semibold"><CalendarClock className="size-4 text-muted-foreground" />Follow-up status</h3>
-      <p className="mt-3 flex items-center gap-2 text-xs font-semibold"><span className={`size-2 rounded-full ${active ? "bg-blue-500" : followup.status === "sent" ? "bg-emerald-500" : "bg-muted-foreground"}`} />{labels[followup.status]}</p>
+      <p className="mt-3 flex items-center gap-2 text-xs font-semibold"><span className={`size-2 rounded-full ${active ? "bg-ai-accent" : followup.status === "sent" ? "bg-emerald-500" : "bg-muted-foreground"}`} />{labels[followup.status]}</p>
       <p className="mt-2 flex items-start gap-2 text-xs text-muted-foreground"><Clock3 className="mt-0.5 size-3.5 shrink-0" /><span>{new Date(followup.due_at).toLocaleString()} · {followup.kind === "ai" ? "AI sends once" : "Notify me"}</span></p>
       {active ? <p className="mt-2 flex items-start gap-2 text-xs text-emerald-700 dark:text-emerald-300"><CheckCircle2 className="mt-0.5 size-3.5 shrink-0" />Stops when the customer replies</p> : null}
       {followup.error ? <p className="mt-2 break-words text-xs leading-5 text-muted-foreground">{followup.error}</p> : null}
       <div className="mt-3 flex justify-end gap-3 text-xs">
-        {followup.task_id && followup.kind === "reminder" ? <Link className="mr-auto text-primary hover:underline" href="/tasks">View task</Link> : null}
-        {active && followup.status !== "processing" && canManage ? <><button type="button" disabled={locked} onClick={() => begin(followup.kind, true)} className="font-medium text-primary hover:underline disabled:opacity-40">Edit</button><button type="button" disabled={locked} onClick={() => void mutate("cancel")} className="font-medium text-muted-foreground hover:underline disabled:opacity-40">Cancel</button></> : null}
+        {followup.task_id && followup.kind === "reminder" ? <Link className="mr-auto text-ai-foreground hover:underline" href="/tasks">View task</Link> : null}
+        {active && followup.status !== "processing" && canManage ? <><button type="button" disabled={locked} onClick={() => begin(followup.kind, true)} className="font-medium text-ai-foreground hover:underline disabled:opacity-40">Edit</button><button type="button" disabled={locked} onClick={() => void mutate("cancel")} className="font-medium text-muted-foreground hover:underline disabled:opacity-40">Cancel</button></> : null}
       </div>
     </div> : null}
     <div className="rounded-xl border bg-background p-3">
@@ -184,8 +185,8 @@ export function EmailFollowupPanel({ mailboxId, messageId, subject, recipient, c
           <span className="min-w-0 text-sm font-medium leading-5 text-foreground">Remind me</span>
           <ChevronRight aria-hidden="true" className="size-3.5 text-muted-foreground/60 transition-colors group-hover:text-foreground" />
         </button>
-        <button type="button" disabled={locked} onClick={() => begin("ai")} className={`${actionClassName} border-indigo-100 bg-indigo-50/40 hover:border-indigo-200 hover:bg-indigo-50/80 dark:border-indigo-500/20 dark:bg-indigo-500/5 dark:hover:border-indigo-500/40 dark:hover:bg-indigo-500/10`}>
-          <span aria-hidden="true" className="flex size-7 items-center justify-center rounded-md bg-indigo-100/80 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300"><Sparkles className="size-4" strokeWidth={1.75} /></span>
+        <button type="button" disabled={locked} onClick={() => begin("ai")} className={`${actionClassName} border-ai-border bg-ai-soft hover:border-ai-border hover:bg-ai-soft dark:border-ai-border dark:bg-ai-soft dark:hover:border-ai-border dark:hover:bg-ai-soft`}>
+          <span aria-hidden="true" className="flex size-7 items-center justify-center rounded-md bg-ai-soft text-ai-foreground dark:bg-ai-soft dark:text-ai-foreground"><AiIcon className="size-4" /></span>
           <span className="min-w-0 text-sm font-medium leading-5 text-foreground">AI follow-up</span>
           <ChevronRight aria-hidden="true" className="size-3.5 text-muted-foreground/60 transition-colors group-hover:text-foreground" />
         </button>
@@ -197,10 +198,10 @@ export function EmailFollowupPanel({ mailboxId, messageId, subject, recipient, c
     {notice ? <NotificationToast tone="message">{notice}</NotificationToast> : null}
     {error && !open ? <NotificationToast>{error}</NotificationToast> : null}
     <Sheet open={open} onOpenChange={value => { if (!busy) { if (!value) { generation.current?.abort(); setWritingDraft(null); } setOpen(value); setError(""); } }}>
-      <SheetContent side="right" className="email-followup-sheet" overlayClassName="email-followup-overlay" showCloseButton={!busy}>
+      <SheetContent side="right" className="ai-surface email-followup-sheet" overlayClassName="email-followup-overlay" showCloseButton={!busy}>
         <SheetHeader className="shrink-0 gap-4 border-b px-5 py-6 pr-14 sm:px-7 sm:pr-16">
           <div className="flex items-center gap-3">
-            <span aria-hidden="true" className={`flex size-11 shrink-0 items-center justify-center rounded-2xl ${kind === "ai" ? "bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300" : "bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300"}`}>{kind === "ai" ? <Sparkles className="size-5" /> : <Bell className="size-5" />}</span>
+            <span aria-hidden="true" className={`flex size-11 shrink-0 items-center justify-center rounded-2xl ${kind === "ai" ? "bg-ai-soft text-ai-foreground dark:bg-ai-soft dark:text-ai-foreground" : "bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300"}`}>{kind === "ai" ? <AiIcon className="size-5" /> : <Bell className="size-5" />}</span>
             <div className="space-y-1"><SheetTitle className="text-xl font-semibold tracking-tight">{kind === "ai" ? "AI follow-up" : "Remind me"}</SheetTitle><SheetDescription className="text-xs leading-5">{kind === "ai" ? "A thoughtful follow-up, at the right time." : "Make time for your next conversation."}</SheetDescription></div>
           </div>
         </SheetHeader>
@@ -216,7 +217,7 @@ export function EmailFollowupPanel({ mailboxId, messageId, subject, recipient, c
             <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><Clock3 aria-hidden="true" className="size-3.5" />Your local time</p>
           </div>
           {kind === "ai" ? <div className="space-y-3">
-            <div className="flex min-h-8 items-center justify-between gap-2"><h4 className="text-sm font-semibold">Follow-up message</h4>{drafting ? <div role="status" className="email-followup-writing-status"><span aria-hidden="true" className="email-followup-writing-sparkle"><Sparkles className="size-3.5" /></span><span className="email-followup-writing-label">AI is writing</span></div> : <button type="button" disabled={busy || !aiConfigured} onClick={() => void generate()} className="inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-indigo-600 transition-colors hover:bg-indigo-50 focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50 dark:text-indigo-300 dark:hover:bg-indigo-500/10"><RefreshCw aria-hidden="true" className="size-3.5" />{body ? "Regenerate" : "Generate draft"}</button>}</div>
+            <div className="flex min-h-8 items-center justify-between gap-2"><h4 className="text-sm font-semibold">Follow-up message</h4>{drafting ? <div role="status" className="email-followup-writing-status"><span aria-hidden="true" className="email-followup-writing-sparkle"><AiIcon className="size-3.5" /></span><span className="email-followup-writing-label">AI is writing</span></div> : <button type="button" disabled={busy || !aiConfigured} onClick={() => void generate()} className="inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-ai-foreground transition-colors hover:bg-ai-soft focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50 dark:text-ai-foreground dark:hover:bg-ai-soft"><RefreshCw aria-hidden="true" className="size-3.5" />{body ? "Regenerate" : "Generate draft"}</button>}</div>
             {!aiConfigured ? <p className="text-xs text-muted-foreground">Connect an AI provider in Settings, or write your follow-up below.</p> : null}
             <div className="email-followup-composer overflow-hidden rounded-2xl border bg-background transition-shadow focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/15" data-writing={drafting || undefined} aria-busy={drafting}>
               <label className="flex items-center gap-3 border-b px-4 py-3 text-xs text-muted-foreground">Subject<input required maxLength={300} disabled={busy || drafting} value={draftSubject} onChange={event => setDraftSubject(event.target.value)} className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none disabled:opacity-60" data-no-translate /></label>

@@ -1,20 +1,81 @@
-.signin {
-  --primary: #0a2d53;
+.brand {
+  --primary: var(--brand-navy, #0a2d53);
   --primary-foreground: #fff;
-  --ring: #3974ab;
-  --action: #0a2d53;
+  --ring: var(--brand-orange, #f43425);
+  --action: var(--brand-navy, #0a2d53);
   --action-foreground: #fff;
   --action-hover: #164b7b;
-  --action-ring: #3974ab;
+  --action-ring: var(--brand-orange, #f43425);
+}
+
+.signin {
   --auth-form-gap: 1rem;
   --auth-heading-gap: 1.25rem;
   --auth-social-gap: 1.5rem;
   --auth-signup-gap: 1.75rem;
 }
 
-:global(.dark) .signin {
+:global(.dark) .brand {
   --primary: #a8cdee;
-  --ring: #82b5e1;
+  --primary-foreground: var(--brand-navy, #0a2d53);
+}
+
+.signup {
+  --auth-form-gap: .875rem;
+  --auth-heading-margin: 1.25rem;
+  --auth-description-gap: .5rem;
+  --auth-social-margin: .5rem;
+  --auth-social-note-gap: .5rem;
+  --auth-divider-gap: .75rem;
+  --auth-steps-gap: 1.5rem;
+}
+
+.signupPanel {
+  padding-block: clamp(1rem, 2.5svh, 1.75rem);
+  padding-inline: clamp(1.5rem, 4vw, 5rem);
+}
+
+.signupContent {
+  max-width: 460px;
+  padding-block: 1.5rem;
+}
+
+.signupContent input:not([type="checkbox"]),
+.signupContent button[type="submit"] {
+  height: 2.5rem;
+  border-radius: 8px;
+}
+
+.signupContent input:not([type="checkbox"]) {
+  padding-inline: .75rem;
+  font-size: .875rem;
+}
+
+.signupContent input[type="password"],
+.signupContent input[autocomplete="new-password"] {
+  padding-right: 3rem;
+}
+
+.signupContent button[type="submit"] {
+  font-size: .875rem;
+}
+
+.signupContent div:has(> label[for]) {
+  gap: .25rem;
+  display: grid;
+}
+
+.signupContent h1 {
+  font-size: 1.875rem;
+  text-align: center;
+}
+
+.signupContent label {
+  line-height: 1.25rem;
+}
+
+.signupContent > ol {
+  width: 100%;
 }
 
 .frame {
@@ -66,6 +127,25 @@
   margin-bottom: clamp(.5rem, 2svh, 2rem);
 }
 
+@media (max-height: 850px) {
+  .signup {
+    --auth-form-gap: .75rem;
+    --auth-heading-margin: 1rem;
+    --auth-steps-gap: 1.25rem;
+    --auth-social-margin: 0rem;
+    --auth-social-note-gap: .25rem;
+    --auth-divider-gap: .5rem;
+  }
+
+  .signupPanel {
+    padding-block: .75rem;
+  }
+
+  .signupContent {
+    padding-block: .5rem;
+  }
+}
+
 @media (max-height: 740px) {
   .signin {
     --auth-form-gap: .75rem;
@@ -104,6 +184,15 @@
 }
 
 @media (max-width: 639px) {
+  .signupPanel {
+    padding-inline: 1rem;
+  }
+
+  .signupContent input:not([type="checkbox"]) {
+    /* Avoid focus zoom on mobile browsers. */
+    font-size: 1rem;
+  }
+
   .signin {
     padding: 0;
   }

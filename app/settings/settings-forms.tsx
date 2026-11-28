@@ -48,12 +48,12 @@ export function InviteMemberForm() {
   const [role, setRole] = useState("bd_manager");
   const roleHelp: Record<string, string> = { admin: "Manage team access and workspace settings.", operator: "Manage shared CRM records and billing.", bd_manager: "Manage assigned customers and receive automatic leads when enabled.", viewer: "View CRM records without changing shared data." };
   return (
-    <form action={action} className="grid gap-4 md:grid-cols-2">
+    <form action={action} className="settings-fields-grid">
       <div className="space-y-2"><Label htmlFor="inviteName">Name</Label><Input id="inviteName" name="displayName" autoComplete="off" minLength={2} maxLength={80} disabled={pending} required /></div>
       <div className="space-y-2"><Label htmlFor="inviteEmail">Email</Label><Input id="inviteEmail" name="email" type="email" autoComplete="off" disabled={pending} required /></div>
       <div className="space-y-2"><Label htmlFor="inviteRole">Role</Label><Select name="role" value={role} onValueChange={value => { if (value !== null) setRole(value); }} disabled={pending}><SelectTrigger id="inviteRole" aria-describedby="invite-role-help"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="admin">Admin</SelectItem><SelectItem value="operator">Operator</SelectItem><SelectItem value="bd_manager">BD Sales Manager</SelectItem><SelectItem value="viewer">Viewer</SelectItem></SelectContent></Select><p id="invite-role-help" className="text-xs text-muted-foreground">{roleHelp[role]}</p></div>
       <div className="flex items-end"><Button type="submit" disabled={pending}><Send />{pending ? "Creating…" : "Invite member"}</Button></div>
-      <div className="space-y-3 md:col-span-2"><FormMessage error={state?.error} success={state?.success} />{state?.invitationUrl ? <div className="space-y-2"><Label htmlFor="invitation-link">Secure invitation link</Label><Input id="invitation-link" readOnly value={state.invitationUrl} onFocus={event => event.target.select()} /><Button type="button" variant="outline" size="sm" onClick={async () => { try { await navigator.clipboard.writeText(state.invitationUrl!); toast.success("Invitation link copied."); } catch { toast.error("Unable to copy. Select the invitation link and copy it manually."); } }}>Copy link</Button></div> : null}</div>
+      <div className="settings-field-full space-y-3"><FormMessage error={state?.error} success={state?.success} />{state?.invitationUrl ? <div className="space-y-2"><Label htmlFor="invitation-link">Secure invitation link</Label><Input id="invitation-link" readOnly value={state.invitationUrl} onFocus={event => event.target.select()} className="settings-control" /><Button type="button" variant="outline" size="sm" onClick={async () => { try { await navigator.clipboard.writeText(state.invitationUrl!); toast.success("Invitation link copied."); } catch { toast.error("Unable to copy. Select the invitation link and copy it manually."); } }}>Copy link</Button></div> : null}</div>
     </form>
   );
 }
@@ -112,21 +112,21 @@ function MailboxFields({
       <input type="hidden" name="mailboxId" value={mailboxId} />
       <div className="space-y-2">
         <Label htmlFor={`${prefix}MailboxEmail`}>{prefix === "workspace" ? "Common workspace email" : "Your email address"}</Label>
-        <Input id={`${prefix}MailboxEmail`} name="email" type="email" readOnly={Boolean(mailboxId)} defaultValue={defaultEmail} placeholder={prefix === "workspace" ? "hello@company.com" : "bd.manager@company.com"} required />
+        <Input id={`${prefix}MailboxEmail`} name="email" type="email" readOnly={Boolean(mailboxId)} defaultValue={defaultEmail} placeholder={prefix === "workspace" ? "hello@company.com" : "bd.manager@company.com"} required className="settings-control" />
       </div>
       <div className="space-y-2">
         <Label htmlFor={`${prefix}MailboxLabel`}>Mailbox label</Label>
         <Input id={`${prefix}MailboxLabel`} name="displayName" defaultValue={defaultDisplayName} placeholder={`${titlePrefix} mailbox`} maxLength={80} />
       </div>
       <input type="hidden" name="provider" value={defaultProvider} />
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="space-y-2"><Label htmlFor={`${prefix}SmtpHost`}>SMTP host</Label><Input id={`${prefix}SmtpHost`} name="smtpHost" defaultValue={defaultSmtpHost} placeholder="smtp.gmail.com" required /></div>
+      <div className="settings-fields-grid">
+        <div className="space-y-2"><Label htmlFor={`${prefix}SmtpHost`}>SMTP host</Label><Input id={`${prefix}SmtpHost`} name="smtpHost" defaultValue={defaultSmtpHost} placeholder="smtp.gmail.com" required className="settings-control" /></div>
         <div className="space-y-2"><Label htmlFor={`${prefix}SmtpPort`}>SMTP port</Label><Input id={`${prefix}SmtpPort`} name="smtpPort" type="number" min={1} max={65535} step={1} defaultValue={defaultSmtpPort} required /></div>
-        <div className="space-y-2"><Label htmlFor={`${prefix}SmtpUsername`}>SMTP username</Label><Input id={`${prefix}SmtpUsername`} name="smtpUsername" defaultValue={defaultSmtpUsername} placeholder={defaultEmail || "Email address"} required /></div>
+        <div className="space-y-2"><Label htmlFor={`${prefix}SmtpUsername`}>SMTP username</Label><Input id={`${prefix}SmtpUsername`} name="smtpUsername" defaultValue={defaultSmtpUsername} placeholder={defaultEmail || "Email address"} required className="settings-control" /></div>
         <div className="space-y-2"><Label htmlFor={`${prefix}SmtpPassword`}>SMTP password / app password</Label><Input id={`${prefix}SmtpPassword`} name="smtpPassword" type="password" autoComplete="new-password" required={!mailboxId} maxLength={255} placeholder={mailboxId ? "Leave blank to keep the saved password" : "Required"} /></div>
-        <div className="space-y-2"><Label htmlFor={`${prefix}ImapHost`}>IMAP host</Label><Input id={`${prefix}ImapHost`} name="imapHost" defaultValue={defaultImapHost} placeholder="imap.gmail.com" required /></div>
+        <div className="space-y-2"><Label htmlFor={`${prefix}ImapHost`}>IMAP host</Label><Input id={`${prefix}ImapHost`} name="imapHost" defaultValue={defaultImapHost} placeholder="imap.gmail.com" required className="settings-control" /></div>
         <div className="space-y-2"><Label htmlFor={`${prefix}ImapPort`}>IMAP port</Label><Input id={`${prefix}ImapPort`} name="imapPort" type="number" min={1} max={65535} step={1} defaultValue={defaultImapPort} required /></div>
-        <div className="space-y-2"><Label htmlFor={`${prefix}ImapUsername`}>IMAP username</Label><Input id={`${prefix}ImapUsername`} name="imapUsername" defaultValue={defaultImapUsername} placeholder={defaultEmail || "Email address"} required /></div>
+        <div className="space-y-2"><Label htmlFor={`${prefix}ImapUsername`}>IMAP username</Label><Input id={`${prefix}ImapUsername`} name="imapUsername" defaultValue={defaultImapUsername} placeholder={defaultEmail || "Email address"} required className="settings-control" /></div>
         <div className="space-y-2"><Label htmlFor={`${prefix}ImapPassword`}>IMAP password / app password</Label><Input id={`${prefix}ImapPassword`} name="imapPassword" type="password" autoComplete="new-password" required={!mailboxId} maxLength={255} placeholder={mailboxId ? "Leave blank to keep the saved password" : "Required"} /></div>
       </div>
       <p className="text-xs leading-5 text-muted-foreground">
@@ -136,7 +136,7 @@ function MailboxFields({
         <Label htmlFor={`${prefix}MailboxNotes`}>Notes</Label>
         <Input id={`${prefix}MailboxNotes`} name="notes" defaultValue={defaultNotes} maxLength={240} />
       </div>
-      <div className="flex items-center justify-between gap-5 rounded-xl border bg-muted/20 p-4">
+      <div className="settings-panel flex items-center justify-between gap-5 p-4">
         <Label htmlFor={`${prefix}-default-mailbox`} className="cursor-pointer text-sm">{prefix === "workspace" ? "Use this as the default workspace mailbox" : "Make this my default personal mailbox"}</Label>
         <Switch id={`${prefix}-default-mailbox`} name="isDefault" defaultChecked={defaultIsDefault} onCheckedChange={onEdit} />
       </div>

@@ -6,10 +6,10 @@ import { env } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 import { pendingSignupCookie, pendingSignupOptions, readPendingSignup, signupDestination, signupSchema } from "@/lib/signup";
 
-export type SignupState = { error?: string; email?: string; firstName?: string; lastName?: string; existingAccount?: boolean; next?: string } | undefined;
+export type SignupState = { error?: string; email?: string; firstName?: string; lastName?: string; companyName?: string; existingAccount?: boolean; next?: string } | undefined;
 export async function signup(_state: SignupState, formData: FormData): Promise<SignupState> {
   const next = signupDestination(formData.get("next"));
-  const values = { firstName: String(formData.get("firstName") || ""), lastName: String(formData.get("lastName") || ""), email: String(formData.get("email") || "") };
+  const values = { firstName: String(formData.get("firstName") || ""), lastName: String(formData.get("lastName") || ""), companyName: String(formData.get("companyName") || ""), email: String(formData.get("email") || "") };
   const parsed = signupSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ...values, error: parsed.error.issues[0]?.message || "Check your account details." };
   let signedIn = false;
@@ -17,7 +17,7 @@ export async function signup(_state: SignupState, formData: FormData): Promise<S
     const supabase = await createClient();
     const { data, error } = await supabase.auth.signUp({ email: parsed.data.email, password: parsed.data.password,
       options: { emailRedirectTo: new URL(`/auth/callback?next=${encodeURIComponent(next)}`, env.NEXT_PUBLIC_APP_URL).toString(),
-        data: { display_name: `${parsed.data.firstName} ${parsed.data.lastName}`, first_name: parsed.data.firstName, last_name: parsed.data.lastName,
+        data: { display_name: `${parsed.data.firstName} ${parsed.data.lastName}`, first_name: parsed.data.firstName, last_name: parsed.data.lastName, company_name: parsed.data.companyName,
           terms_accepted_at: new Date().toISOString(), terms_version: "2026-11-05", product_updates: formData.get("productUpdates") === "on" } } });
     // Supabase masks a repeated signup with a user that has no identities.
     // That response has no session and does not send a verification email.

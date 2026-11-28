@@ -22,15 +22,17 @@ const nextConfig: NextConfig = {
     ];
   },
   experimental: {
+    serverActions: { bodySizeLimit: "3mb" },
     // Next 16.4 can restore a stale HMR version from the persisted dev cache,
     // forcing continuous full-page reloads after a restart (next.js#100267).
     // Keep build caching; only development compilation starts with a fresh cache.
     turbopackFileSystemCacheForDev: false,
     // Bound build workers on developer machines and small deployment builders.
     cpus: 2,
-    // Reuse visited pages throughout a working session. The workspace quietly
-    // refreshes older snapshots; saves and explicit refresh still invalidate.
-    staleTimes: { dynamic: 1800, static: 1800 },
+    // Keep visited routes in this tab for a full working day. Saves, explicit
+    // refresh, reconnects and framework memory limits can still invalidate them.
+    // Private route payloads stay in browser memory, never a shared data cache.
+    staleTimes: { dynamic: 86_400, static: 86_400 },
   },
   outputFileTracingIncludes: {
     "/api/email/campaigns": ["./public/catalog-default-product.*", "./public/quotation-2610/**/*"],

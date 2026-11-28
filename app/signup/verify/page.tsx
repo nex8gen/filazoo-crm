@@ -16,7 +16,7 @@ export default async function VerifyEmailPage({ searchParams }: { searchParams: 
   const next = signupDestination((await searchParams).next || pending?.next);
   const accountQuery = new URLSearchParams({ next: next === "/subscribe" ? "/workspaces/new" : next, ...(pending ? { email: pending.email } : {}) });
   if (await getViewer()) redirect(next);
-  return <AuthShell step={2}><MailCheck className="mb-6 size-10 text-primary" /><AuthHeading title="Verify your email">Enter the verification code from your email to finish setting up your account.</AuthHeading>
+  return <AuthShell step={1}><MailCheck className="mb-6 size-10 text-primary" /><AuthHeading title="Verify your email">Enter the verification code from your email to finish setting up your account.</AuthHeading>
     {pending ? <p className="mb-6 break-words text-sm text-black/60 dark:text-white/60">If your account needs verification, check for a code at <strong className="text-black dark:text-white">{pending.email}</strong>.</p> : null}
     <VerificationForm email={pending?.email} next={next} />
     <p className="mt-7 text-sm leading-6 text-black/60 dark:text-white/60">Already verified this email? Signing up again does not send a new code. Sign in with your existing password, or reset it below.</p>

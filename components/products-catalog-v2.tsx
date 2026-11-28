@@ -10,6 +10,7 @@ import { useWorkspaceState } from "@/components/workspace-memory";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { CheckSquare2, ChevronLeft, ChevronRight, Download, FileDown, ImageIcon, PackagePlus, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { createProduct, updateProduct } from "@/app/crm-actions";
@@ -27,17 +28,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableFilters, TableFilter } from "@/components/ui/table-filters";
 import { TablePagination } from "@/components/ui/table-pagination";
-import { ProductVariantsEditor } from "@/components/product-variants-editor";
 import { manualStockTotal } from "@/lib/shared-product-inventory";
-import { ProductMediaGallery } from "@/components/product-media-gallery";
-import { ProductVolumePricing } from "@/components/product-volume-pricing";
-import { ProductDescriptionEditor } from "@/components/product-description-editor";
 import { MAX_PRODUCT_MEDIA } from "@/lib/product-images";
 import { isProductVideo, productMediaCover } from "@/lib/product-media";
 import { ProductSheet, useProductProfileSheet } from "@/components/product-profile-sheet";
 import { inventoryLabel } from "@/lib/product-inventory";
 import { validVariantPrice } from "@/lib/product-pricing";
 import "./product-editor.css";
+
+// Catalog browsing does not need the rich text, media upload or variant editors.
+// Download these once when a product is opened or created, then reuse the chunks.
+const editorLoading = () => <div aria-busy="true" className="h-32 animate-pulse rounded-lg bg-muted motion-reduce:animate-none" />;
+const ProductVariantsEditor = dynamic(() => import("@/components/product-variants-editor").then(module => module.ProductVariantsEditor), { loading: editorLoading });
+const ProductMediaGallery = dynamic(() => import("@/components/product-media-gallery").then(module => module.ProductMediaGallery), { loading: editorLoading });
+const ProductVolumePricing = dynamic(() => import("@/components/product-volume-pricing").then(module => module.ProductVolumePricing), { loading: editorLoading });
+const ProductDescriptionEditor = dynamic(() => import("@/components/product-description-editor").then(module => module.ProductDescriptionEditor), { loading: editorLoading });
 
 const pageSize = 25;
 const amount = (value: string) => parseCurrencyAmount(value).toFixed(2);

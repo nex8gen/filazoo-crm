@@ -16,6 +16,8 @@ body:has(.column-resize-handle[data-dragging]) iframe { pointer-events: none; }
 @media (min-width: 1024px) { .ai-sidebar-resize { display: block; } }
 
 :root {
+  --brand-navy: #0a2d53;
+  --brand-orange: #f43425;
   --radius: 0.5rem;
   --ui-text-caption: 0.75rem;
   --ui-text-meta: 0.8125rem;
@@ -174,6 +176,12 @@ body:has(.column-resize-handle[data-dragging]) iframe { pointer-events: none; }
   --color-brand: var(--brand);
   --color-brand-foreground: var(--brand-foreground);
   --color-brand-soft: var(--brand-soft);
+  --color-ai-accent: var(--ai-accent);
+  --color-ai-foreground: var(--ai-foreground);
+  --color-ai-contrast: var(--ai-contrast);
+  --color-ai-highlight: var(--ai-highlight);
+  --color-ai-soft: var(--ai-soft);
+  --color-ai-border: var(--ai-border);
   --radius-sm: calc(var(--radius) - 0.125rem);
   --radius-md: var(--radius);
   --radius-lg: calc(var(--radius) + 0.25rem);

@@ -16,11 +16,20 @@ test("order prices are versioned and seat quantities cannot reprice a legacy con
   assert.equal(orderProduct({ plan_id: "team", catalog_version: 2 }), undefined);
 });
 
-test("fractional credits preserve ledger precision rather than rounding every call up", () => {
-  assert.equal(formatCredits(1), "0.001");
+test("credit amounts always display whole numbers without changing fractional accounting", () => {
+  assert.equal(formatCredits(1), "<1");
+  assert.equal(formatCredits(999), "<1");
   assert.equal(formatCredits(1000), "1");
-  assert.equal(formatCredits(1234567), "1,234.567");
+  assert.equal(formatCredits(1234567), "1,234");
+  assert.equal(formatCredits(1986164), "1,986");
+  assert.equal(formatCredits(3264022), "3,264");
+  assert.equal(formatCredits(11735978), "11,735");
+  assert.equal(formatCredits(15000000), "15,000");
   assert.equal(formatCredits(0), "0");
+  const usage = { usedMicros: 1986164, remainingMicros: 3264022 };
+  formatCredits(usage.usedMicros);
+  formatCredits(usage.remainingMicros);
+  assert.deepEqual(usage, { usedMicros: 1986164, remainingMicros: 3264022 });
 });
 
 test("package pricing includes its fixed users and preserves historical annual orders", () => {
@@ -42,6 +51,17 @@ test("package pricing includes its fixed users and preserves historical annual o
   }
   for (const period_months of [0, 6, 13, NaN]) assert.equal(orderProduct({ plan_id: "pro", catalog_version: 4, kind: "subscription", period_months, seats: 2 }), undefined);
   assert.equal(orderProduct({ plan_id: "pro", catalog_version: 2, period_months: 12 }), undefined);
+});
+
+test("current packages have smaller product catalogs and email allowances without rewriting purchased v4 packages", () => {
+  assert.deepEqual(plans.map(plan => [plan.companies, plan.products, plan.flows, plan.workflowEmails]), [
+    [1000,100,5,1000], [5000,500,15,5000], [20000,2000,50,20000],
+  ]);
+  const current = orderProduct({ plan_id: 'business', catalog_version: 6, kind: 'subscription', period_months: 12, seats: 5 });
+  const historical = orderProduct({ plan_id: 'business', catalog_version: 4, kind: 'subscription', period_months: 12, seats: 5 });
+  assert.equal(current?.amountFen, historical?.amountFen);
+  assert.equal(current && 'products' in current && current.products, 2000);
+  assert.equal(historical && 'products' in historical && historical.products, 25000);
 });
 
 test("an exhausted commercial wallet blocks paid calls even when local safety caps are raised", async () => {

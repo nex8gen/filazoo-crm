@@ -24,6 +24,7 @@ const dependencies: Record<string, unknown> = {
   react: React,
   "react/jsx-runtime": require("react/jsx-runtime"),
   "lucide-react": require("lucide-react"),
+  "@/components/agent-icon": { AgentIcon: require("lucide-react").Workflow },
   "next/navigation": {
     usePathname: () => window.location.pathname,
     useSearchParams: () => new URLSearchParams(window.location.search),

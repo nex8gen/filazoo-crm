@@ -1,0 +1,44 @@
+.content[data-slot="dropdown-menu-content"] {
+  --popover-foreground: #171717;
+  --ai-foreground: #b83224;
+  --ai-contrast: #ffffff;
+  --muted-foreground: #626262;
+  --accent: #f4f4f4;
+  --accent-foreground: #171717;
+  --border: #e5e5e5;
+  width: 18rem;
+  background: #ffffff;
+  color: #171717;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.content .role {
+  background: #171717;
+  color: #ffffff;
+}
+
+.content .subscription[data-slot="dropdown-menu-item"] {
+  --accent-foreground: #853d16;
+  background-color: #ffdfbf;
+  background-image:
+    radial-gradient(ellipse at 18% 15%, #fff8ed 0%, transparent 62%),
+    radial-gradient(ellipse at 78% 90%, #fff1df 0%, transparent 58%),
+    radial-gradient(ellipse at 95% 0%, #ffc890 0%, transparent 65%);
+  color: #853d16;
+  transition: background-color 150ms ease;
+}
+
+.content .subscription[data-slot="dropdown-menu-item"]:is(:hover, :focus, [data-highlighted]) {
+  background-color: #ffd0a3;
+}
+
+.content .subscription[data-slot="dropdown-menu-item"]:focus-visible {
+  outline: 2px solid #a55325;
+  outline-offset: -2px;
+}
+
+.content .plan {
+  background: rgb(255 255 255 / 80%);
+  color: #853d16;
+}

@@ -40,8 +40,8 @@
 }
 .agent-follow-up-button span { min-width: 0; overflow-wrap: anywhere; }
 .agent-follow-up-button svg { color: var(--muted-foreground); }
-.agent-follow-up-button:hover:not(:disabled) { border-color: var(--primary); background: var(--muted); }
-.agent-follow-up-button:hover:not(:disabled) svg { color: var(--primary); }
+.agent-follow-up-button:hover:not(:disabled) { border-color: var(--ai-foreground); background: var(--muted); }
+.agent-follow-up-button:hover:not(:disabled) svg { color: var(--ai-foreground); }
 .agent-follow-up-button:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
 .agent-follow-up-button:disabled { opacity: .5; cursor: not-allowed; }
 .ai-markdown { min-width: 0; white-space: normal; font-size: inherit; line-height: inherit; }
@@ -55,7 +55,7 @@
 .ai-markdown ol { list-style: decimal; }
 .ai-markdown li { margin-block: 4px; }
 .ai-markdown li > p { margin-block: 3px; }
-.ai-markdown a { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
+.ai-markdown a { color: var(--ai-foreground); text-decoration: underline; text-underline-offset: 3px; }
 .ai-markdown a:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
 .ai-markdown code { border-radius: 4px; background: var(--muted); padding: 2px 4px; font-size: .86em; }
 .ai-markdown pre { overflow: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--muted); padding: 12px; }

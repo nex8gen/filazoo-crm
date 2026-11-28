@@ -1,3 +1,4 @@
+import { defaultWorkspaceSettings } from "../lib/workspace-settings.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
@@ -28,6 +29,7 @@ function load(options: { denied?: boolean; failed?: string; total?: number; page
     return query;
   } };
   const deps: Record<string, unknown> = {
+    "./workspace-settings.ts": { getWorkspaceSettings: async () => { assert.ok(authorized); return defaultWorkspaceSettings; } },
     "../analytics-dashboard.ts": analytics,
     "../auth.ts": { requireWorkspaceMember: async () => { if (options.denied) throw new Error("Denied"); authorized = true; return { id: "viewer" }; } },
     "../supabase/admin.ts": { createSupabaseAdmin: () => client },

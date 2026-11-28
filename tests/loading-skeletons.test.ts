@@ -7,6 +7,7 @@ import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { JSDOM } from "jsdom";
 import ts from "typescript";
+import { isStandaloneRoute } from "../lib/standalone-routes.ts";
 
 const require = createRequire(import.meta.url);
 function load(file: string, dependencies: Record<string, unknown> = {}) {
@@ -40,6 +41,9 @@ test("theme editor navigation uses its layout skeleton and unrelated pages keep 
   const { RouteLoadingSkeleton } = load("components/route-loading.tsx", {
     "next/navigation": { usePathname: () => pathname },
     "@/components/home-skeleton": { HomeSkeleton },
+    "@/components/app-loading": { AppLoading: () => null },
+    "@/components/auth-skeleton": { AuthSkeleton: () => null },
+    "@/lib/standalone-routes": { isStandaloneRoute },
     "@/components/loading-skeletons": skeletons,
   });
   for (const [path, expected] of [
@@ -52,4 +56,54 @@ test("theme editor navigation uses its layout skeleton and unrelated pages keep 
     const render = RouteLoadingSkeleton as (props: Record<string, never>) => React.ReactElement;
     assert.equal(render({}).type, expected, path);
   }
+});
+
+test("auth and onboarding navigation never falls back to dashboard placeholders", () => {
+  let pathname: string | null = null;
+  const AppLoading = () => null;
+  const AuthSkeleton = () => null;
+  const { RouteLoadingSkeleton } = load("components/route-loading.tsx", {
+    "next/navigation": { usePathname: () => pathname },
+    "@/components/home-skeleton": { HomeSkeleton: () => { throw Error('Dashboard rendered during authentication'); } },
+    "@/components/loading-skeletons": skeletons,
+    "@/components/app-loading": { AppLoading },
+    "@/components/auth-skeleton": { AuthSkeleton },
+    "@/lib/standalone-routes": { isStandaloneRoute },
+  });
+  const render = RouteLoadingSkeleton as (props: Record<string, never>) => React.ReactElement<{ variant?: string; fields?: number }>;
+  for (const [path, variant, fields] of [["/login", "signin", undefined], ["/login/", "signin", undefined], ["/signup", "signup", 5], ["/signup/", "signup", 5], ["/signup/verify", undefined, 1]] as const) {
+    pathname = path;
+    const element = render({});
+    assert.equal(element.type, AuthSkeleton, path);
+    assert.equal(element.props.variant, variant, path);
+    assert.equal(element.props.fields, fields, path);
+  }
+  for (const path of [null, "/subscribe", "/subscribe/orders/test", "/workspaces/new", "/workspaces/setup", "/join/token", "/auth/mfa", "/forgot-password", "/update-password"]) {
+    pathname = path;
+    assert.equal(render({}).type, AppLoading, String(path));
+  }
+  for (const path of ["/login-other", "/signup-other", "/workspaces-other"]) {
+    pathname = path;
+    assert.equal(render({}).type, skeletons.PageLoadingSkeleton, path);
+  }
+});
+
+test("the root layout shows a neutral loader while its account-dependent surface is suspended", () => {
+  const { AppLoading } = load("components/app-loading.tsx");
+  const { default: RootLayout } = load("app/layout.tsx", {
+    "geist/font/sans": { GeistSans: { variable: "font-sans" } },
+    "@/components/theme-provider": { ThemeProvider: React.Fragment },
+    "@/components/ui/tooltip": { TooltipProvider: React.Fragment },
+    "@/components/ui/sonner": { Toaster: () => null },
+    "@/components/workspace-surface": { WorkspaceSurface: () => { throw new Promise(() => {}); } },
+    "@/components/app-loading": { AppLoading },
+    "@/components/language-provider": { LanguageProvider: React.Fragment },
+    "@/components/site-monitoring": { SiteMonitoring: () => null },
+    "@/components/workspace-error-boundary": { WorkspaceErrorBoundary: React.Fragment },
+  });
+  const dom = new JSDOM(renderToStaticMarkup(React.createElement(RootLayout)));
+  try {
+    assert.ok(dom.window.document.querySelector('[role="status"][aria-label="Loading application"][aria-busy="true"]'));
+    assert.equal(dom.window.document.querySelector('[aria-label="Loading page"], [data-slot="skeleton"], [data-workspace-shell]'), null);
+  } finally { dom.window.close(); }
 });

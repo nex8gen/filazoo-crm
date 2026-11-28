@@ -1,0 +1,48 @@
+.progress {
+  display: flex;
+  align-items: center;
+  width: min(100%, 440px);
+  margin-inline: auto;
+  padding: 0;
+  list-style: none;
+  font-size: .8125rem;
+  line-height: 1.25rem;
+}
+
+.step { display: flex; flex: 1; align-items: center; gap: 9px; min-width: 0; }
+.step:last-child { flex: 0 0 auto; }
+.marker {
+  display: grid;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid var(--border, #dedede);
+  border-radius: 50%;
+  background: var(--card, #fff);
+  color: var(--muted-foreground, #737373);
+  font-size: .75rem;
+  font-weight: 500;
+}
+.label { white-space: nowrap; color: var(--muted-foreground, #737373); }
+.connector { flex: 1; min-width: 12px; height: 1px; margin-inline: 5px 14px; background: var(--border, #dedede); }
+.step[data-state="complete"] .marker {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--primary, #0a2d53) 9%, var(--card, #fff));
+  color: var(--primary, #0a2d53);
+}
+.step[data-state="complete"] .connector { background: color-mix(in srgb, var(--primary, #0a2d53) 28%, var(--border, #dedede)); }
+.step[data-state="current"] .marker {
+  border-color: var(--primary, #0a2d53);
+  background: var(--primary, #0a2d53);
+  color: var(--primary-foreground, #fff);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand-orange, #f43425) 12%, transparent);
+}
+.step[data-state="current"] .label { color: var(--primary, #0a2d53); font-weight: 600; }
+
+@media (max-width: 360px) {
+  .progress { font-size: .75rem; }
+  .step { gap: 6px; }
+  .marker { width: 24px; height: 24px; font-size: .6875rem; }
+  .connector { min-width: 8px; margin-inline: 2px 8px; }
+}

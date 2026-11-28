@@ -10,7 +10,7 @@ import { navigation } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { BrandMark } from "@/components/brand-mark";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { useVisitedPageRefresh } from "@/components/use-visited-page-refresh";
+import { useSessionRecoveryRefresh } from "@/components/use-session-recovery-refresh";
 import { useCustomerTagRefresh } from "@/components/use-customer-tag-refresh";
 import { WorkspaceSidebar, itemIsActive, useWorkspaceSidebar } from "@/components/workspace-sidebar";
 import { isStandaloneRoute } from "@/lib/standalone-routes";
@@ -71,8 +71,9 @@ export function AppShell({ children, userMenu }: { children: React.ReactNode; us
   // Only company views render server-owned customer tags. Inbox tags have
   // their own mailbox refresh; other pages don't need another polling request.
   useCustomerTagRefresh(companyPopupOpen || pathname === "/companies" || pathname.startsWith("/companies/"));
-  // Inbox and automation already refresh their own data in place.
-  useVisitedPageRefresh(pathname, !hideWorkspaceChrome && !usesViewportCanvas && !companyPopupOpen);
+  // Routine router.refresh() evicts every visited route in Next's BFCache.
+  // Keep session memory; live views refresh their own data in place.
+  useSessionRecoveryRefresh(!hideWorkspaceChrome);
 
   useEffect(() => {
     if (hideWorkspaceChrome) return;

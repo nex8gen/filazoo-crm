@@ -6,14 +6,14 @@
 .ai-reply-purpose-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .ai-reply-purpose-card { position: relative; display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: 12px; cursor: pointer; transition: border-color 150ms, background 150ms; }
 .ai-reply-purpose-card:hover { background: var(--muted); }
-.ai-reply-purpose-card[data-selected=true] { border-color: var(--primary); background: var(--brand-soft); box-shadow: 0 0 0 1px var(--primary); }
+.ai-reply-purpose-card[data-selected=true] { border-color: var(--ai-foreground); background: var(--ai-soft); box-shadow: 0 0 0 1px var(--ai-foreground); }
 .ai-reply-purpose-card:has(input:focus-visible) { outline: 2px solid var(--ring); outline-offset: 3px; }
 .ai-reply-purpose-card input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .ai-reply-purpose-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 3px; color: var(--muted-foreground); }
 .ai-reply-purpose-top > svg { width: 19px; height: 19px; }
-.ai-reply-purpose-card[data-selected=true] .ai-reply-purpose-top { color: var(--primary); }
+.ai-reply-purpose-card[data-selected=true] .ai-reply-purpose-top { color: var(--ai-foreground); }
 .ai-reply-choice-mark { display: grid; place-items: center; width: 17px; height: 17px; border: 1px solid var(--border); border-radius: 50%; }
-.ai-reply-purpose-card[data-selected=true] .ai-reply-choice-mark { background: var(--primary); border-color: var(--primary); color: var(--primary-foreground); }
+.ai-reply-purpose-card[data-selected=true] .ai-reply-choice-mark { background: var(--ai-foreground); border-color: var(--ai-foreground); color: var(--ai-contrast); }
 .ai-reply-choice-mark svg { width: 12px; height: 12px; }
 .ai-reply-purpose-card strong { font-size: 13px; font-weight: 600; line-height: 19px; }
 .ai-reply-group { min-width: 0; border: 1px solid var(--border); border-radius: 12px; }

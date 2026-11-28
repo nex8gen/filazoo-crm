@@ -1,4 +1,5 @@
 import { policyTestDependency } from "./helpers/ai-policy.ts";
+import { defaultWorkspaceSettings } from "../lib/workspace-settings.ts";
 import assert from "node:assert/strict";
 import * as customerTags from "../lib/customer-tags.ts";
 import { customerTagDataFixture } from "./helpers/customer-tags.ts";
@@ -35,9 +36,10 @@ const code = ts.transpileModule(readFileSync(new URL("../lib/data/flow-runtime.t
 
 // Execute the real enrollment and email runtime against an in-memory database.
 // SMTP is intercepted even when testing live-send mode.
-function runtime(options: { dormantState?: { eligible: boolean; baseline: string }; footerImages?: boolean; businessWindow?: Date | null; beforeQuery?: (table: string, operation: string) => Promise<void>; aiReplyError?: unknown; smtpError?: unknown; onAiPrepare?: () => Promise<void>; projectionError?: Error; projectionComplete?: boolean; targetedProjectionComplete?: boolean; freshnessError?: Error } = {}) {
+function runtime(options: { quotaError?: unknown; dormantState?: { eligible: boolean; baseline: string }; footerImages?: boolean; businessWindow?: Date | null; beforeQuery?: (table: string, operation: string) => Promise<void>; aiReplyError?: unknown; smtpError?: unknown; onAiPrepare?: () => Promise<void>; projectionError?: Error; projectionComplete?: boolean; targetedProjectionComplete?: boolean; freshnessError?: Error } = {}) {
   const contactId = randomUUID(), companyId = randomUUID(), flowId = randomUUID();
   const createdAt = new Date().toISOString();
+  const quotaEvents: string[] = [];
   const db: Record<string, Row[]> = {
     contacts: [{ id: contactId, company_id: companyId, created_at: createdAt, name: "Test", email: "lead@example.com", verification_status: "valid", unsubscribed: false }],
     companies: [{ id: companyId, segment: "Shopify B2B lead", country: "US", status: "new" }],
@@ -122,6 +124,12 @@ function runtime(options: { dormantState?: { eligible: boolean; baseline: string
     })[name],
   });
   const dependencies: Record<string, unknown> = {
+    "../billing/workflow-email.ts": {
+      reserveWorkflowEmail: async () => { quotaEvents.push("reserved"); if (options.quotaError) throw options.quotaError; return true; },
+      finishWorkflowEmail: async (_run: string, _step: string, outcome: string) => { quotaEvents.push(outcome); },
+      workflowEmailNotSubmitted: (error: unknown) => /^SMTP connection failed before submission:/.test(executionErrors.workflowErrorMessage(error)) || (error as { code?: string })?.code === "EAUTH",
+    },
+    "./workspace-settings.ts": { getWorkspaceSettings: async () => ({ ...defaultWorkspaceSettings, timezone: "UTC" }) },
     "../ai/flow-reply.ts": { FlowReplyNotNeeded, flowCatalogAttached },
     "./dormant-customers.ts": {
       dormantCustomers: async (_user: string, _months: number, input: { after?: string }) => input.after ? [] : [{ company_id: companyId, contact_id: contactId, last_activity_at: options.dormantState?.baseline, eligible: options.dormantState?.eligible }],
@@ -177,8 +185,30 @@ function runtime(options: { dormantState?: { eligible: boolean; baseline: string
     scanTimeBasedFlowTriggers: (id?: string, onError?: unknown, options?: { deadline?: number; deferExecution?: boolean }) => Promise<number>;
   };
   vm.runInNewContext(code, { exports, require: (name: string) => policyTestDependency(name) ?? (dependencies[name] ?? require(name)), Date, console });
-  return { db, env, contactId, companyId, flowId, exports, deliveries, aiCalls, failures, delivered: () => delivered };
+  return { db, env, contactId, companyId, flowId, exports, deliveries, aiCalls, failures, quotaEvents, delivered: () => delivered };
 }
+
+test("monthly workflow email limits pause before SMTP and resume at the quota reset", async () => {
+  const app = runtime({ quotaError: new executionErrors.FlowPreparationRetry('Monthly workflow email allowance reached', 10 * 86_400_000, 'monthly_limit') });
+  await app.exports.enrollNewLeadFlows(app.contactId);
+  assert.equal(app.delivered(), 0);
+  const run = app.db.flow_runs[0];
+  assert.equal(run.status, 'active');
+  assert.equal((run.context as Row).executionCheckpoint && ((run.context as Row).executionCheckpoint as Row).phase, 'preparing');
+  assert.equal(((run.context as Row).preparationRetry as Row).category, 'monthly_limit');
+  assert.ok(Date.parse(String(run.next_run_at)) > Date.now() + 9 * 86_400_000);
+  assert.deepEqual(app.quotaEvents, ['reserved']);
+});
+
+test("accepted workflow emails settle their allowance once", async () => {
+  const app = runtime();
+  await app.exports.enrollNewLeadFlows(app.contactId);
+  assert.equal(app.delivered(), 1);
+  assert.deepEqual(app.quotaEvents, ['reserved', 'sent']);
+  await app.exports.processFlowRun(String(app.db.flow_runs[0].id));
+  assert.equal(app.delivered(), 1);
+  assert.deepEqual(app.quotaEvents, ['reserved', 'sent']);
+});
 
 test("accepted email records persist sequentially without trigger lock collisions or duplicate SMTP", async () => {
   let writing = false;

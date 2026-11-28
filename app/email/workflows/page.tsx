@@ -1,5 +1,6 @@
 import { NotificationToast } from "@/components/ui/notification-toast";
 import Link from "next/link";
+import { getWorkspaceSettings } from "@/lib/data/workspace-settings";
 import { FlowBuilder } from "@/components/flow-builder";
 import { requireWorkspaceMember } from "@/lib/auth";
 import { resolveEmailFlowScope } from "@/lib/data/email-flows";
@@ -20,8 +21,8 @@ export default async function EmailFlowsPage({ searchParams }: { searchParams: P
   } catch (error) {
     return <div className="mx-auto max-w-lg space-y-4 p-8"><h2 className="text-xl font-semibold">Email workflows</h2><NotificationToast>{error instanceof Error ? error.message : "Unable to load this email's company."}</NotificationToast><Link href="/email" className="text-sm font-medium text-primary">Back to email</Link></div>;
   }
-  const [flows, mailboxes, members, filterOptions] = await Promise.all([
-    listEmailFlows(scope), getViewerMailboxes(viewer.id), listFlowMemberOptions(), listFlowFilterOptions(),
+  const [flows, mailboxes, members, filterOptions, settings] = await Promise.all([
+    listEmailFlows(scope), getViewerMailboxes(viewer.id), listFlowMemberOptions(), listFlowFilterOptions(), getWorkspaceSettings(),
   ]);
   const query = new URLSearchParams({ recipient: String(params.recipient), scope: String(scope.flowScope), companyId: String(scope.scopeCompanyId) });
   if (typeof params.thread === "string") query.set("thread", params.thread);
@@ -39,7 +40,7 @@ export default async function EmailFlowsPage({ searchParams }: { searchParams: P
       </nav>
     </div>
     <div className="min-h-0 flex-1">
-      <FlowBuilder key={query.toString()} initialFlows={flows} liveSendingEnabled={!env.flowDryRun} viewerId={viewer.id} isAdmin={viewer.role === "admin"}
+      <FlowBuilder schedule={{ timezone: settings.timezone, businessHours: settings.businessHours }} key={query.toString()} initialFlows={flows} liveSendingEnabled={!env.flowDryRun} viewerId={viewer.id} isAdmin={viewer.role === "admin"}
         initialFlowId={typeof params.flow === "string" ? params.flow : flows[0]?.id}
         initialDraft={{ ...defaultFlowInput, name: `${scope.scopeLabel} workflow`.slice(0, 160), triggerType: "email_received", triggerConfig: scope,
           steps: defaultFlowInput.steps.map((step) => ({ ...step, config: { ...step.config, ...(step.type === "send_email" && selectedMailbox ? { mailboxId: selectedMailbox.id } : {}) } })) }}

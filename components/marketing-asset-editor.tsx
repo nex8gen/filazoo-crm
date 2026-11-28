@@ -1,9 +1,10 @@
 "use client";
+import { AiIcon } from "@/components/ai-icon";
 import { NotificationToast } from "@/components/ui/notification-toast";
 
 
 import { useEffect, useState } from "react";
-import { Check, Copy, Download, Loader2, Mail, Sparkles, Trash2 } from "lucide-react";
+import { Check, Copy, Download, Loader2, Mail, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -106,7 +107,7 @@ export function MarketingAssetEditor({ initial, canWrite, onSaved, onDeleted, on
               <Textarea aria-label="Campaign offer" value={draft.offer} maxLength={8000} onChange={event => update("offer", event.target.value)} placeholder="What are you offering? Include pricing, minimum order, eligibility, and any terms your customers should know." className="min-h-28 resize-y" />
             </fieldset>
             <div className="space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2"><label htmlFor="marketing-message" className="text-sm font-semibold">Message draft</label><Button type="button" variant="outline" size="sm" disabled={disabled} onClick={() => void generate()}>{busy === "ai" ? <Loader2 className="animate-spin" /> : <Sparkles />} {busy === "ai" ? "Drafting…" : draft.message ? "Improve with AI" : "Draft with AI"}</Button></div>
+              <div className="flex flex-wrap items-center justify-between gap-2"><label htmlFor="marketing-message" className="text-sm font-semibold">Message draft</label><Button type="button" variant="outline" size="sm" disabled={disabled} onClick={() => void generate()}>{busy === "ai" ? <Loader2 className="animate-spin" /> : <AiIcon />} {busy === "ai" ? "Drafting…" : draft.message ? "Improve with AI" : "Draft with AI"}</Button></div>
               <Textarea id="marketing-message" disabled={disabled} value={draft.message} maxLength={12000} onChange={event => update("message", event.target.value)} placeholder="Write your email or campaign message, or let AI help you get started." className="min-h-48 resize-y leading-relaxed" />
               <p className="text-xs text-muted-foreground">AI uses your offer and campaign details. Review the draft before use.</p>
             </div>

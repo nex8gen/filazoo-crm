@@ -91,9 +91,9 @@ begin
  if not denied then raise exception 'FAIL: flow limit'; end if;
  insert into public.flow_runs(workspace_id,flow_id,conversation_id,status) values(w,fid,'fixture-1','done'),(w,fid,'fixture-2','done'),(w,fid,'fixture-3','done');
  delete from public.flow_runs where workspace_id=w;
- denied:=false;
- begin insert into public.flow_runs(workspace_id,flow_id,conversation_id) values(w,fid,'fixture-4'); exception when raise_exception then denied:=true; end;
- if not denied then raise exception 'FAIL: deleting history bypassed monthly run limit'; end if;
+ insert into public.flow_runs(workspace_id,flow_id,conversation_id) values(w,fid,'fixture-4');
+ -- Starting runs is no longer a commercial meter; only actual workflow email
+ -- submissions reserve capacity in the durable delivery ledger.
  -- Paid seats are enforced when membership is written, not merely in the UI.
  insert into public.workspace_members(workspace_id,user_id,role,display_name,activated_at) values(w,stranger,'viewer','Fixture colleague',now());
  perform set_config('role','none',true);

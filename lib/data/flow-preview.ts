@@ -1,4 +1,5 @@
 import "server-only";
+import { getWorkspaceSettings } from "./workspace-settings.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 import { loadFlowFacts } from "./flow-runtime.ts";
 import { matchesFlowCustomer, matchesFlowScope, matchesProfileFilters, simulateFlow } from "../flow-engine.ts";
@@ -43,6 +44,7 @@ export async function previewFlow(input: FlowPreviewInput, userId: string, isAdm
   if (customer) warnings.push("Assumes a new entry now, with no later replies, opens or clicks. Use Scenario to explore future engagement.");
   if (customer?.unsubscribed) warnings.push("This customer is unsubscribed. Production email delivery remains blocked.");
   if (customer && customer.verification_status !== "valid") warnings.push("Email verification and suppression are checked again at delivery time.");
-  return { ok: true, enters, checks, facts, trace: enters ? simulateFlow(flow, facts).trace : [],
+  const schedule = await getWorkspaceSettings();
+  return { ok: true, enters, checks, facts, trace: enters ? simulateFlow(flow, facts, new Date(), { schedule }).trace : [],
     customer: customer ? { id: customer.id, name: customer.name, email: customer.email, companyId: customer.company_id } : null, warnings };
 }

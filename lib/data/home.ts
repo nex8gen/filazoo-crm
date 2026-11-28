@@ -1,4 +1,5 @@
 import "server-only";
+import { getWorkspaceSettings } from "./workspace-settings.ts";
 import { requireWorkspaceMember } from "../auth.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
 import { buildHomePeriod, buildHomeReport, type HomeData, type HomeInputs, type HomePeriod, type HomeRange } from "../home.ts";
@@ -12,6 +13,7 @@ type PageResult = { data: unknown[] | null; count: number | null; error: { messa
 
 export async function getHomeData(range?: Partial<HomeRange>): Promise<HomeData> {
   const viewer = await requireWorkspaceMember();
+  const settings = await getWorkspaceSettings();
   const client = createSupabaseAdmin(), now = new Date(), isAdmin = viewer.role === "admin";
   const unavailable: string[] = [];
   async function read<T>(label: string, query: (from: number, to: number) => PromiseLike<PageResult>): Promise<T[]> {
@@ -52,6 +54,7 @@ export async function getHomeData(range?: Partial<HomeRange>): Promise<HomeData>
   ]);
   const avatars = isAdmin ? await resolveMemberAvatars(members.map(row => row.user_id)) : new Map<string, string>();
   const input: HomeInputs = {
+    timezone: settings.timezone,
     companies: companies.map(row => ({ id: row.id, createdAt: row.created_at, ownerId: first(row.pipeline)?.owner_id ?? null, stage: first(row.pipeline)?.stage ?? "new" })),
     emails: emails.map(row => ({ ownerId: row.owner_id, sentAt: row.sent_at || row.created_at })),
     orders: orders.map(row => ({ companyId: row.company_id, date: row.order_date || row.created_at, status: row.status || "draft", currency: row.currency || "USD", totalMinor: Number(row.total_minor) })),

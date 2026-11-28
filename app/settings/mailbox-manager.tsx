@@ -22,7 +22,7 @@ export function MailboxManager({ mailbox, controlsOnly = false }: { mailbox: Mai
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   return (
-    <div className={controlsOnly ? "space-y-3 text-xs" : "space-y-3 rounded-md border px-3 py-3 text-xs"}>
+    <div className={controlsOnly ? "space-y-3 text-xs" : "settings-panel space-y-3 px-3 py-3 text-xs"}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         {!controlsOnly ? <div className="min-w-0">
           <p className="break-all font-medium text-foreground">{mailbox.email}</p>

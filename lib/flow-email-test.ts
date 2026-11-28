@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { WorkspaceSchedule } from "./workspace-settings.ts";
 import { flowInputSchema } from "./flows.ts";
 import { flowStepAtPath, simulateFlow, type FlowFacts, type SimulationEntry } from "./flow-engine.ts";
 
@@ -45,8 +46,8 @@ export function flowEmailTestFacts(input: FlowEmailTestInput): FlowFacts {
   };
 }
 
-export function flowEmailTestTrace(input: FlowEmailTestInput, now = new Date()): SimulationEntry[] {
-  if (!input.messageStepPath) return simulateFlow(input.flow, flowEmailTestFacts(input), now).trace;
+export function flowEmailTestTrace(input: FlowEmailTestInput, now = new Date(), schedule?: WorkspaceSchedule): SimulationEntry[] {
+  if (!input.messageStepPath) return simulateFlow(input.flow, flowEmailTestFacts(input), now, { schedule }).trace;
   const step = flowStepAtPath(input.flow, input.messageStepPath);
   if (!step || !["send_email", "ai_auto_reply"].includes(step.type)) throw new Error("Choose an email action to preview or test.");
   return [{ step: input.messageStepPath[0] + 1, stepPath: input.messageStepPath, type: step.type, status: "would_run", scheduledAt: now.toISOString(), detail: "Previewing this message independently of journey entry and delays." }];

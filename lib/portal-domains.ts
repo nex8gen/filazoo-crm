@@ -23,7 +23,7 @@ export function portalRequestHost(value: string) {
   try { return new URL(`http://${value}`).hostname.toLowerCase().replace(/\.$/, ""); } catch { return ""; }
 }
 export function isPlatformHost(hostname: string, environment: Record<string, string | undefined> = process.env) {
-  const hosts = ["localhost", "127.0.0.1", "[::1]", "crm.filazoosupply.com", "filazoo-crm.vercel.app"];
+  const hosts = ["localhost", "127.0.0.1", "[::1]", "app.newai.xin", "www.newai.xin", "newai.xin", "crm.filazoosupply.com", "filazoo-crm.vercel.app"];
   for (const value of [environment.NEXT_PUBLIC_APP_URL, environment.VERCEL_URL, environment.VERCEL_PROJECT_PRODUCTION_URL, environment.VERCEL_BRANCH_URL]) {
     if (value) { try { hosts.push(new URL(value.includes("://") ? value : `https://${value}`).hostname); } catch {} }
   }

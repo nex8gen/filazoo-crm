@@ -1,28 +1,55 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ArrowLeft, ArrowUpRight, Check, QrCode } from "lucide-react";
+import { OnboardingShell } from "@/components/onboarding-shell";
 import { requireViewer } from "@/lib/auth";
 import { ownerOrder } from "@/lib/billing/data";
 import { alipayReady, orderExpired } from "@/lib/billing/alipay";
 import { orderProduct, yuan } from "@/lib/billing/plans";
 import { PaymentStatus } from "./payment-status";
+import styles from "@/components/onboarding-completion.module.css";
 
-export const metadata = { title: "Pay with Alipay · Filazoo" };
+export const metadata = { title: "Subscription checkout · NewAI" };
 export const instant = false;
 export default async function PaymentPage({ params }: { params: Promise<{ id: string }> }) {
   const viewer = await requireViewer();
   const order = await ownerOrder(viewer.id, (await params).id);
   if (!order) notFound();
   const expired = orderExpired(order);
-  const payable = order.status === "pending" && !expired && alipayReady();
-  return <main className="min-h-dvh bg-slate-50 px-5 py-12 text-slate-900 dark:bg-slate-950 dark:text-slate-100"><div className="mx-auto max-w-lg">
-    <Link href={`/subscribe?workspace=${order.workspace_id}`} className="text-sm text-slate-500 underline underline-offset-4">← Subscription</Link>
-    <section className="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-9">
-      <p className="text-center text-sm font-medium text-teal-700 dark:text-teal-400">Filazoo {orderProduct(order)?.name}{order.kind === "credits" ? " · Expires after one year" : ` · ${order.seats ?? 1} ${order.catalog_version === 4 ? "included users" : "seat(s)"} · ${order.period_months === 12 ? "12 months" : "1 month"}`}</p>
-      <h1 className="my-3 text-center text-3xl font-semibold">Pay ¥{yuan(order.amount_fen)}</h1>
-      {payable && <><p className="mb-5 text-center text-sm text-slate-500">Open Alipay and scan the payment QR code below.</p><iframe title="Alipay secure payment QR code" src={`/api/billing/orders/${order.id}/checkout`} referrerPolicy="no-referrer" className="mx-auto h-[350px] w-full max-w-[300px] rounded-xl border border-slate-200 bg-white" /><a href={`/api/billing/orders/${order.id}/checkout`} target="_blank" rel="noopener noreferrer" className="mt-4 block text-center text-sm text-teal-700 underline underline-offset-4 dark:text-teal-400">Open Alipay payment in a new tab</a></>}
-      {!alipayReady() && order.status === "pending" && <p className="mt-6 text-center text-sm text-slate-500">Alipay payments are temporarily unavailable. Please check back shortly.</p>}
-      <PaymentStatus id={order.id} initialStatus={order.status} initialExpired={expired} workspaceId={order.workspace_id} />
-      <p className="mt-7 text-center text-xs leading-5 text-slate-500">Access starts after Alipay confirms payment. One-time payment in RMB; no automatic renewal.</p>
-    </section>
-  </div></main>;
+  const paymentsEnabled = alipayReady();
+  const payable = order.status === "pending" && !expired && paymentsEnabled;
+  const discounted = Boolean(order.subscription_discount_id) && order.amount_fen === 0;
+  const paid = order.status === "paid";
+  const recharge = order.kind === "credits";
+  const product = orderProduct(order);
+  const users = order.seats ?? 1;
+  const backHref = recharge ? "/settings/credits#add-ai-credits" : `/subscribe?workspace=${order.workspace_id}`;
+  const title = paid ? recharge ? "Your credits are ready" : "Plan activated" : order.status === "refunded" ? "Payment refunded" : order.status === "closed" ? "Checkout closed" : expired ? "Checkout expired" : "Complete your payment";
+  return <OnboardingShell step={recharge ? undefined : 2}>
+    <div className={styles.checkout}>
+      <Link href={backHref} className={styles.back}><ArrowLeft size={15} aria-hidden="true" />{recharge ? "AI credits" : "Subscription"}</Link>
+      <section aria-labelledby="checkout-title">
+        <div className={styles.intro}>
+          <div className={paid ? styles.successIcon : styles.paymentIcon}>{paid ? <Check size={28} strokeWidth={1.75} aria-hidden="true" /> : <QrCode size={27} strokeWidth={1.5} aria-hidden="true" />}</div>
+          <p className={styles.eyebrow}>{paid ? "You're all set" : "Your checkout"}</p>
+          <h1 id="checkout-title" className={styles.title}>{title}</h1>
+          <p className={styles.description}>{paid ? recharge ? "More room for your next idea. Your AI credits have been added." : "Your next chapter starts here. Your workspace is ready to go." : payable ? "One quick step to get everything in place. Pay securely with Alipay." : "Review your order details below."}</p>
+        </div>
+        <section className={styles.summary} aria-labelledby="order-summary-title">
+          <div className={styles.summaryHeading}><h2 id="order-summary-title">{recharge ? "Credit recharge" : "Your subscription"}</h2>{paid ? <span className={styles.badge}>{discounted ? "100% off applied" : "Paid"}</span> : null}</div>
+          <dl className={styles.details}>
+            <div><dt>{recharge ? "Credits" : "Plan"}</dt><dd>{product?.name ?? (recharge ? "AI credits" : "Workspace subscription")}</dd></div>
+            {!recharge ? <div><dt>{order.catalog_version === 4 || order.catalog_version === 6 ? "Included users" : "Users"}</dt><dd>{users} {users === 1 ? "user" : "users"}</dd></div> : null}
+            <div><dt>{recharge ? "Valid for" : "Subscription period"}</dt><dd>{recharge ? "1 year" : order.period_months === 12 ? "12 months" : "1 month"}</dd></div>
+            {discounted ? <div className={styles.discount}><dt>Discount</dt><dd>100%</dd></div> : null}
+            <div className={styles.total}><dt>{paid ? "Total paid" : "Total due"}</dt><dd>¥{yuan(order.amount_fen)} <span className="text-xs font-normal">CNY</span></dd></div>
+          </dl>
+        </section>
+        {payable ? <div className={styles.cashier}><p>Open Alipay and scan the QR code to pay.</p><iframe title="Alipay secure payment QR code" src={`/api/billing/orders/${order.id}/checkout`} referrerPolicy="no-referrer" className={styles.qr} /><a href={`/api/billing/orders/${order.id}/checkout`} target="_blank" rel="noopener noreferrer" className={styles.externalPayment}>Open Alipay in a new tab<ArrowUpRight size={14} aria-hidden="true" /></a></div> : null}
+        {!paymentsEnabled && order.status === "pending" && !expired ? <p className={styles.note}>Alipay payments are temporarily unavailable. Please check back shortly.</p> : null}
+        <PaymentStatus id={order.id} initialStatus={order.status} initialExpired={expired} workspaceId={order.workspace_id} kind={order.kind} discounted={discounted} />
+        <p className={`${styles.note} ${styles.assurance}`}>{discounted ? "Your discount covers this subscription period. No payment required. No automatic renewal or charges." : recharge ? "One-time payment in RMB. Credits expire after one year. No automatic charges." : "One-time payment in RMB. No automatic renewal."}</p>
+      </section>
+    </div>
+  </OnboardingShell>;
 }

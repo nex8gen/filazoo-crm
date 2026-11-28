@@ -63,7 +63,7 @@
 .ai-result-table-scroll td { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; max-width: 280px; }
 .ai-result-table-scroll td:first-child { min-width: 160px; font-weight: 500; }
 .ai-result-table-scroll tbody tr:hover { background: color-mix(in srgb, var(--muted) 45%, var(--card)); }
-.ai-result-chart { --trend-current: #df548f; margin: 0; padding: 0 0 4px; }
+.ai-result-chart { --trend-current: var(--ai-accent); margin: 0; padding: 0 0 4px; }
 .ai-result-chart figcaption { display: flex; justify-content: space-between; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; margin-bottom: 20px; }
 .ai-result-chart h4 { margin: 0; font-size: 14px; font-weight: 550; line-height: 22px; }
 .ai-result-chart figcaption span { color: var(--muted-foreground); font-size: 12px; line-height: 20px; }
@@ -71,7 +71,7 @@
 .ai-result-chart li { display: grid; grid-template-columns: minmax(80px, 1.2fr) minmax(60px, 2fr) minmax(28px, auto); align-items: center; gap: 12px; font-size: 13px; line-height: 20px; }
 .ai-result-chart-label { overflow-wrap: anywhere; }
 .ai-result-chart-track { height: 12px; overflow: hidden; border-radius: 3px; background: var(--muted); }
-.ai-result-chart-track > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #fa937c, #e65596 43%, #5886de); }
+.ai-result-chart-track > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--ai-highlight), var(--ai-accent)); }
 .ai-result-chart strong { text-align: right; font-weight: 500; font-variant-numeric: tabular-nums; }
 .ai-result-chart-loading { height: 200px; background: var(--muted); border-radius: 6px; }
 .ai-response-presentation :is(button, a, select, summary, [tabindex]):focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
@@ -101,7 +101,7 @@
 .ai-conversation[open] > summary .ai-conversation-chevron { transform: rotate(90deg); }
 .ai-conversation-sender, .ai-conversation-subject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ai-conversation-subject { font-weight: 500; }
-.ai-conversation-replied { width: 14px; height: 14px; color: var(--primary); }
+.ai-conversation-replied { width: 14px; height: 14px; color: var(--ai-foreground); }
 .ai-conversation time { color: var(--muted-foreground); font-size: 0.6875rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .ai-conversation-messages { border-top: 1px solid var(--border); padding: 0 1rem; }
 .ai-conversation-messages article { padding: 1rem 0; }

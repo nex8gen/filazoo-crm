@@ -1,8 +1,9 @@
 "use client";
 
+import { AiIcon } from "@/components/ai-icon";
 import { useId, useState, useSyncExternalStore, type RefObject } from "react";
 import { useTheme } from "next-themes";
-import { ArrowUp, AtSign, ChevronDown, Sparkles } from "lucide-react";
+import { ArrowUp, AtSign, ChevronDown } from "lucide-react";
 import { BorderBeam } from "@/components/ui/border-beam";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import "./ai-chat-input.css";
@@ -44,8 +45,8 @@ export function AiChatInput({ contextLabel, value, onChange, onSend, inputRef, d
   const beamTheme = mounted && resolvedTheme === "light" ? "light" : "dark";
   const canSend = !disabled && !attachments?.processing && Boolean(value.trim() || attachments?.images.length || attachments?.files.length);
 
-  return <form onSubmit={(event) => { event.preventDefault(); if (canSend) onSend(); }} className="min-w-0">
-    <BorderBeam size="md" colorVariant="colorful" theme={beamTheme} active={mounted} borderRadius={20} strength={1} saturation={beamTheme === "light" ? 1.5 : 1.25} brightness={beamTheme === "light" ? 1 : 1.3} duration={3} css={composerBeamCss} className="customer-chat-beam" style={{ display: "block", width: "100%" }}>
+  return <form onSubmit={(event) => { event.preventDefault(); if (canSend) onSend(); }} className="ai-surface min-w-0">
+    <BorderBeam size="md" colorVariant="sunset" staticColors theme={beamTheme} active={mounted} borderRadius={20} strength={1} saturation={beamTheme === "light" ? 1.5 : 1.25} brightness={beamTheme === "light" ? 1 : 1.3} duration={3} css={composerBeamCss} className="customer-chat-beam" style={{ display: "block", width: "100%" }}>
       <div className="customer-chatbox">
         <div className="customer-chatbox-inner">
           <div className="flex min-w-0 items-center justify-between gap-3">
@@ -67,7 +68,7 @@ export function AiChatInput({ contextLabel, value, onChange, onSend, inputRef, d
             {attachments ? <AiImagePicker attachments={attachments} disabled={disabled} /> : null}
             <DropdownMenu>
               <DropdownMenuTrigger disabled={disabled} className="customer-chat-chip gap-1 pl-2.5 pr-1.5" aria-label="Customer assistant shortcuts">
-                <Sparkles aria-hidden="true" className="mr-0.5 size-3 text-muted-foreground" /><span>Assistant</span><ChevronDown aria-hidden="true" className="size-3.5 text-muted-foreground" />
+                <AiIcon aria-hidden="true" className="mr-0.5 size-3 text-muted-foreground" /><span>Assistant</span><ChevronDown aria-hidden="true" className="size-3.5 text-muted-foreground" />
               </DropdownMenuTrigger>
               <DropdownMenuContent side="top" align="start" className="min-w-48">
                 {shortcuts.map(({ label, prompt }) => <DropdownMenuItem key={label} onClick={() => onChange(prompt)}>{label}</DropdownMenuItem>)}

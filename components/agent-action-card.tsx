@@ -66,7 +66,7 @@ export function AgentActionCard({ proposal, result, executing, progress, disable
   const crmAction = action.type === "crm_action" ? action : null;
   return <div className="rounded-xl border bg-muted/30 p-3.5">
     <div className="flex items-start gap-3">
-      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-background text-primary"><AgentWorkIcon area={actionWorkProgress(action).area} className="size-4" /></span>
+      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-background text-ai-foreground"><AgentWorkIcon area={actionWorkProgress(action).area} className="size-4" /></span>
       <div className="min-w-0 flex-1"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{crmAction ? crmOperationLabels[crmAction.operation.op] : title}</p><p className="mt-1 break-words text-sm font-semibold">{crmAction?.target || flow?.name || company?.name || profile?.companyName || document?.customerName || email?.to}</p>
         {company ? <><p className="mt-1 text-xs leading-5 text-muted-foreground">{company.country} · {company.city} · {company.segment}</p>{company.website ? <p className="break-all text-xs">{company.website}</p> : null}{company.contactEmail ? <p className="break-all text-xs">{company.contactName} · {company.contactRole} · {company.contactEmail}</p> : null}</> : null}
       </div>
@@ -89,7 +89,7 @@ export function AgentActionCard({ proposal, result, executing, progress, disable
     {result?.error ? <p role="status" className="mt-2 text-xs leading-5 text-muted-foreground">{result.error}</p> : null}
     {!executing && result?.status === "failed" && result.canResume && onResume ? <Button type="button" variant="outline" size="sm" className="mt-3" disabled={disabled} onClick={onResume}>Resume remaining work</Button> : null}
     {!executing && onCheck && ["running", "unknown"].includes(result?.status ?? "") ? <Button type="button" variant="outline" size="sm" className="mt-3" disabled={disabled} onClick={onCheck}>Check saved result</Button> : null}
-    {result?.href && crmAction && ["export_companies", "download_document"].includes(crmAction.operation.op) ? <a href={result.href} download className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-primary underline underline-offset-4">Download file<ExternalLink className="size-3" /></a> : result?.href ? <Link href={result.href} onClick={(event) => {
+    {result?.href && crmAction && ["export_companies", "download_document"].includes(crmAction.operation.op) ? <a href={result.href} download className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-ai-foreground underline underline-offset-4">Download file<ExternalLink className="size-3" /></a> : result?.href ? <Link href={result.href} onClick={(event) => {
       if (result.draftMessage && window.document.querySelector(".messenger-workspace")) {
         event.preventDefault();
         window.dispatchEvent(new CustomEvent("filazoo:agent-action", { detail: { draftMessage: result.draftMessage } }));
@@ -100,7 +100,7 @@ export function AgentActionCard({ proposal, result, executing, progress, disable
         event.preventDefault();
         window.dispatchEvent(new CustomEvent("filazoo:agent-action", { detail: { draftId, reopen: true } }));
       }
-    }} className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-primary underline underline-offset-4">Open result<ExternalLink className="size-3" /></Link> : null}
+    }} className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-ai-foreground underline underline-offset-4">Open result<ExternalLink className="size-3" /></Link> : null}
     {!finished && !executing ? <div className="mt-3 flex gap-2"><Button type="button" size="sm" className="min-w-0 flex-1" disabled={disabled} onClick={onApprove}><Check />{email && email.delivery !== "draft" ? "Approve and send" : "Approve and apply"}</Button><Button type="button" variant="outline" size="sm" disabled={disabled} onClick={onDecline}><X />Decline</Button></div> : null}
     {!finished && !executing ? <p className="mt-2 text-xs leading-4 text-muted-foreground">Review the details above. Approval expires after 30 minutes.</p> : null}
   </div>;

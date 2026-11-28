@@ -7,5 +7,5 @@ export function LegacyPlanForm({ workspaceId, activePlan, enabled }: { workspace
   const [state, action, pending] = useActionState(startCheckout, {});
   const plan = legacyPlans.find(value => value.id === activePlan);
   if (!plan) return null;
-  return <form action={action} className="mt-8 space-y-4"><input name="workspaceId" type="hidden" value={workspaceId} /><input name="plan" type="hidden" value={plan.id} /><input name="legacy" type="hidden" value="1" /><p>{plan.name} · ¥{plan.amountFen / 100}/month · {plan.members} member(s). Existing pricing is retained.</p><Button type="submit" disabled={pending || !enabled}>{pending ? "Preparing checkout…" : "Renew legacy plan with Alipay"}</Button>{state.error && <p role="alert">{state.error}</p>}</form>;
+  return <form action={action} className="mt-8 space-y-4"><input name="workspaceId" type="hidden" value={workspaceId} /><input name="plan" type="hidden" value={plan.id} /><input name="legacy" type="hidden" value="1" /><p>{plan.name} · ¥{plan.amountFen / 100}/month · {plan.members} member(s). Existing pricing is retained.</p><Button type="submit" disabled={pending || !enabled} className="subscription-checkout-button" data-payment="alipay">{pending ? "Preparing checkout…" : "Renew legacy plan with Alipay"}</Button>{state.error && <p role="alert">{state.error}</p>}</form>;
 }

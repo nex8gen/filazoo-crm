@@ -32,7 +32,7 @@ function load(file: string, dependencies: Record<string, unknown>) {
   vm.runInNewContext(code, { exports, require: (name: string) => name.endsWith(".css") ? {} : dependencies[name] ?? require(name) });
   return exports;
 }
-const controls = { "@/components/ui/button": { Button: native("button") }, "@/components/ui/input": { Input: native("input") }, "@/components/ui/badge": { Badge: native("span") } };
+const controls = { "@/components/ai-icon": load("components/ai-icon.tsx", {}), "@/components/ui/button": { Button: native("button") }, "@/components/ui/input": { Input: native("input") }, "@/components/ui/badge": { Badge: native("span") } };
 const sheet = load("components/ui/sheet.tsx", controls);
 const { FlowStarterDialog } = load("components/flow-starter-dialog.tsx", { ...controls, "@/components/ui/sheet": sheet, "@/lib/flow-recipes": recipes, "@/lib/flow-tree": tree, "@/lib/flows": flows, "@/components/language-provider": { useLanguage: () => ({ t: (text: string) => text }) } });
 

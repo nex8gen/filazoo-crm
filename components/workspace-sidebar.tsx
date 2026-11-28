@@ -156,7 +156,7 @@ export function WorkspaceSidebar({ pathname, expanded, onToggle, onSearch, userM
       </div>
       <nav aria-label="Primary navigation" className="workspace-sidebar-navigation scrollbar-hidden min-h-0 flex-1 overflow-y-auto px-1.5 pb-4">
         <ul className="space-y-0.5">
-          {navigation.filter(group => group.label !== "Settings").map(group => <SidebarGroup key={`${group.label}:${pathname}`} group={group} pathname={pathname} expanded={expanded} />)}
+          {navigation.filter(group => group.label !== "Settings").map(group => <SidebarGroup key={group.label} group={group} pathname={pathname} expanded={expanded} />)}
         </ul>
       </nav>
       <div className="workspace-sidebar-utility shrink-0 px-2 pb-2"><AiUsageShortcut expanded={expanded} /></div>

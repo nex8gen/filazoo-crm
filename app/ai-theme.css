@@ -1,0 +1,37 @@
+:root {
+  --ai-accent: #f43425;
+  --ai-foreground: #b83224;
+  --ai-contrast: #ffffff;
+  --ai-highlight: #ffb580;
+  --ai-canvas: #fffaf7;
+  --ai-soft: color-mix(in srgb, var(--ai-accent) 8%, var(--card));
+  --ai-border: color-mix(in srgb, var(--ai-accent) 24%, var(--border));
+  --ai-glow: color-mix(in srgb, var(--ai-accent) 16%, transparent);
+  --ai-shell: #fff2e9;
+  --ai-shell-stroke: #c88262;
+}
+
+.dark {
+  --ai-accent: #ff986e;
+  --ai-foreground: #ffb08c;
+  --ai-contrast: #2a160f;
+  --ai-canvas: #191412;
+  --ai-shell: #2a1c17;
+  --ai-shell-stroke: #ab745a;
+}
+
+/* Scope AI controls so the rest of the workspace keeps its own palette. */
+.ai-surface, .ai-composer, [data-ai-workspace], .workspace-ai-launcher, .lead-discovery, .lead-search-dialog {
+  --primary: var(--ai-foreground);
+  --primary-foreground: var(--ai-contrast);
+  --ring: var(--ai-accent);
+  --brand-soft: var(--ai-soft);
+  --action: var(--ai-foreground);
+  --action-foreground: var(--ai-contrast);
+  --action-hover: color-mix(in srgb, var(--ai-foreground) 85%, var(--foreground));
+  --action-ring: var(--ai-accent);
+}
+
+
+.workspace-sidebar a[href="/lead-channel/ai-leads"] svg,
+.ai-surface .settings-policy-group .settings-row-title > svg { color: var(--ai-accent); }

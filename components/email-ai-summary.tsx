@@ -16,7 +16,7 @@ function SummarySources({ ids, summary }: { ids: string[]; summary: EmailSummary
   const sources = summary.research?.sources ?? [];
   return <span className="ml-1 inline-flex flex-wrap gap-1">{ids.flatMap(id => {
     const source = sources.find(source => source.id === id);
-    return source ? [<a key={id} href={source.url} target="_blank" rel="noopener noreferrer" title={source.label} aria-label={`Source: ${source.label}`} className="rounded bg-violet-100 px-1 text-xs font-medium text-violet-800 hover:underline dark:bg-violet-500/15 dark:text-violet-200">{id}</a>] : [];
+    return source ? [<a key={id} href={source.url} target="_blank" rel="noopener noreferrer" title={source.label} aria-label={`Source: ${source.label}`} className="rounded bg-ai-soft px-1 text-xs font-medium text-ai-foreground hover:underline dark:bg-ai-soft dark:text-ai-foreground">{id}</a>] : [];
   })}</span>;
 }
 
@@ -30,8 +30,8 @@ function SummaryCompanyResearch({ summary, language }: { summary: EmailSummary; 
     unavailable: zh ? "在线调研暂时不可用；以下分析仅依据对话。" : "Online research is unavailable; this brief uses conversation details.",
     complete: zh ? "未找到可确认属于该公司的信息。" : "No company findings could be confidently matched to this lead.",
   };
-  return <div className="mt-4 border-t border-violet-200/70 pt-3 dark:border-violet-500/20">
-    <p className="text-xs font-semibold text-violet-700 dark:text-violet-300">{zh ? "公司信息" : "Company research"}</p>
+  return <div className="mt-4 border-t border-ai-border pt-3 dark:border-ai-border">
+    <p className="text-xs font-semibold text-ai-foreground dark:text-ai-foreground">{zh ? "公司信息" : "Company research"}</p>
     {summary.companyFindings?.length ? <ul className="mt-2 list-disc space-y-2 pl-4 text-xs leading-5">{summary.companyFindings.map((finding, index) => <li key={index}>{finding.text}<SummarySources ids={finding.sourceIds} summary={summary} /></li>)}</ul>
       : <p className="mt-1 text-xs leading-5 text-muted-foreground">{messages[summary.research.status]}</p>}
   </div>;
@@ -42,7 +42,7 @@ function SummaryProductCard({ product, language }: { product: NonNullable<EmailS
   const hasImage = product.imageUrl && failedImage !== product.imageUrl;
   return <Link href={`/products/${encodeURIComponent(product.sku)}`} prefetch={false}
     aria-label={`${language === "zh-CN" ? "查看产品" : "View product"}: ${product.title}`}
-    className="group flex min-w-0 items-center gap-3 rounded-xl border border-violet-200/80 bg-background/80 p-2.5 transition-colors hover:border-violet-400 hover:bg-violet-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:border-violet-500/25 dark:hover:bg-violet-500/10">
+    className="group flex min-w-0 items-center gap-3 rounded-xl border border-ai-border bg-background/80 p-2.5 transition-colors hover:border-ai-border hover:bg-ai-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:border-ai-border dark:hover:bg-ai-soft">
     <span className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/30">
       {hasImage
         // Private and external catalog images use the same URLs as the product page.
@@ -75,7 +75,7 @@ function SummaryProducts({ summary, language }: { summary: EmailSummary; languag
     return message || confirmation ? <div className="mt-3">{message ? <p className="text-xs leading-5 text-muted-foreground">{message}</p> : null}{confirmation}</div> : null;
   }
   return <div className="mt-4 space-y-2" role="group" aria-label={zh ? "客户感兴趣的产品" : "Products of interest"}>
-    <p className="text-xs font-semibold text-violet-700 dark:text-violet-300">{zh ? "推荐产品" : "Products to offer"}</p>
+    <p className="text-xs font-semibold text-ai-foreground dark:text-ai-foreground">{zh ? "推荐产品" : "Products to offer"}</p>
     {products.map(product => <SummaryProductCard key={product.sku} product={product} language={language} />)}
     {confirmation}
   </div>;
@@ -144,23 +144,23 @@ export function EmailAiSummary({ context, configured, ready, autoAnalyze, curren
 
   return <section className="mx-6 mb-6" aria-labelledby="email-ai-summary">
     <div className="mb-2 flex items-center justify-between gap-2">
-      <h3 id="email-ai-summary" className="flex items-center gap-2 text-sm font-semibold text-primary"><AiIcon state={loading ? "thinking" : "idle"} />AI summary</h3>
+      <h3 id="email-ai-summary" className="flex items-center gap-2 text-sm font-semibold text-ai-foreground"><AiIcon state={loading ? "thinking" : "idle"} />AI summary</h3>
     </div>
     <div className="rounded-xl border border-border/70 bg-background p-4">
       <div aria-live="polite" aria-busy={loading}>
         {!configured ? <p className="text-xs leading-5 text-muted-foreground">Connect an AI provider in Settings to generate conversation summaries.</p>
           : !autoAnalyze && attempt === 0 ? <div className="space-y-3">
             <p className="text-xs leading-5 text-muted-foreground">This sender is not linked to a company in your Companies list. Analyze this conversation when needed.</p>
-            <button type="button" disabled={!ready} onClick={() => setAttempt(value => value + 1)} className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold text-primary hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"><AiIcon aria-hidden="true" />Analyze with AI</button>
+            <button type="button" disabled={!ready} onClick={() => setAttempt(value => value + 1)} className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold text-ai-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"><AiIcon aria-hidden="true" />Analyze with AI</button>
             {!ready ? <p className="text-xs leading-5 text-muted-foreground">Waiting for the message to load before analysis.</p> : null}
           </div>
           : !ready ? <p className="text-xs leading-5 text-muted-foreground">Waiting for the message to load before analysis.</p>
-          : loading && !summary ? <p className="flex items-center gap-2 text-xs text-violet-700 dark:text-violet-300"><AiIcon state="thinking" />Researching company and checking product fit…</p>
-          : error && !summary ? <NotificationToast tone="error"><p className="text-xs leading-5 text-muted-foreground">{error}</p><button type="button" onClick={() => setAttempt((value) => value + 1)} className="mt-2 text-xs font-semibold text-primary hover:underline">Try again</button></NotificationToast>
-          : summary ? <><h4 className="flex items-start gap-2 text-sm font-semibold"><AiIcon className="mt-0.5 size-4 shrink-0 text-violet-600 dark:text-violet-300" />{summary.title}</h4><p className="mt-3 text-xs leading-5">{summary.summary}</p>{summary.keyPoints?.length ? <ul className="mt-2 list-disc space-y-1.5 pl-4 text-xs leading-5">{summary.keyPoints.map((point, index) => <li key={index}>{point}</li>)}</ul> : null}<SummaryCompanyResearch summary={summary} language={language} /><SummaryProducts summary={summary} language={language} /><div className="mt-4 border-t border-violet-200/70 pt-3 dark:border-violet-500/20"><p className="text-xs font-semibold text-violet-700 dark:text-violet-300">Suggested next step</p><p className="mt-1 text-xs leading-5">{summary.nextStep}</p></div></> : null}
+          : loading && !summary ? <p className="flex items-center gap-2 text-xs text-ai-foreground dark:text-ai-foreground"><AiIcon state="thinking" />Researching company and checking product fit…</p>
+          : error && !summary ? <NotificationToast tone="error"><p className="text-xs leading-5 text-muted-foreground">{error}</p><button type="button" onClick={() => setAttempt((value) => value + 1)} className="mt-2 text-xs font-semibold text-ai-foreground hover:underline">Try again</button></NotificationToast>
+          : summary ? <><h4 className="flex items-start gap-2 text-sm font-semibold"><AiIcon className="mt-0.5 size-4 shrink-0" />{summary.title}</h4><p className="mt-3 text-xs leading-5">{summary.summary}</p>{summary.keyPoints?.length ? <ul className="mt-2 list-disc space-y-1.5 pl-4 text-xs leading-5">{summary.keyPoints.map((point, index) => <li key={index}>{point}</li>)}</ul> : null}<SummaryCompanyResearch summary={summary} language={language} /><SummaryProducts summary={summary} language={language} /><div className="mt-4 border-t border-ai-border pt-3 dark:border-ai-border"><p className="text-xs font-semibold text-ai-foreground dark:text-ai-foreground">Suggested next step</p><p className="mt-1 text-xs leading-5">{summary.nextStep}</p></div></> : null}
       </div>
-      {summary && error ? <NotificationToast>{error}<button type="button" onClick={() => setAttempt(value => value + 1)} className="ml-2 font-semibold text-primary hover:underline">Retry next step</button></NotificationToast> : null}
-      {saveError ? <NotificationToast tone="error"><p className="text-xs leading-5 text-destructive">The summary is ready, but the follow-up could not be saved: {saveError}</p><button type="button" disabled={loading} onClick={() => void retrySaving()} className="mt-2 text-xs font-semibold text-primary hover:underline disabled:opacity-40">Retry saving follow-up</button></NotificationToast> : null}
+      {summary && error ? <NotificationToast>{error}<button type="button" onClick={() => setAttempt(value => value + 1)} className="ml-2 font-semibold text-ai-foreground hover:underline">Retry next step</button></NotificationToast> : null}
+      {saveError ? <NotificationToast tone="error"><p className="text-xs leading-5 text-destructive">The summary is ready, but the follow-up could not be saved: {saveError}</p><button type="button" disabled={loading} onClick={() => void retrySaving()} className="mt-2 text-xs font-semibold text-ai-foreground hover:underline disabled:opacity-40">Retry saving follow-up</button></NotificationToast> : null}
       {loading && summary ? <p role="status" className="mt-3 text-xs text-muted-foreground">Updating suggested next step…</p> : null}
       {scheduleFollowUp && (autoAnalyze || attempt > 0) ? <p className="mt-4 text-xs leading-4 text-muted-foreground">Follow-up scheduled automatically when needed</p> : null}
     </div>

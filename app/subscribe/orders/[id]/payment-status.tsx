@@ -2,9 +2,12 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { LoaderCircle } from "lucide-react";
+import styles from "@/components/onboarding-completion.module.css";
 
-export function PaymentStatus({ id, initialStatus, initialExpired, workspaceId }: { id: string; initialStatus: string; initialExpired: boolean; workspaceId: string }) {
+export function PaymentStatus({ id, initialStatus, initialExpired, workspaceId, kind, discounted = false }: { id: string; initialStatus: string; initialExpired: boolean; workspaceId: string; kind?: "subscription" | "credits"; discounted?: boolean }) {
   const router = useRouter();
+  const isRecharge = kind === "credits";
   const [status, setStatus] = useState(initialStatus);
   const [expired, setExpired] = useState(initialExpired);
   const [error, setError] = useState("");
@@ -16,8 +19,8 @@ export function PaymentStatus({ id, initialStatus, initialExpired, workspaceId }
     let checks = 0;
     async function finish() {
       const response = await fetch(`/api/billing/orders/${id}/complete`, { method: "POST", signal: controller.signal });
-      if (!response.ok) throw new Error("Unable to open this workspace. Please retry or contact support.");
-      router.replace("/workspaces/setup");
+      if (!response.ok) throw new Error(isRecharge ? "Unable to open your credit balance. Please retry or contact support." : "Unable to open this workspace. Please retry or contact support.");
+      router.replace(isRecharge ? "/settings/credits" : "/workspaces/setup");
       router.refresh();
     }
     async function poll() {
@@ -37,12 +40,12 @@ export function PaymentStatus({ id, initialStatus, initialExpired, workspaceId }
     }
     void poll();
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [id, router, retry, status]);
-  return <div className="mt-6 space-y-4 text-center">
-    <p role="status" aria-live="polite" className="font-medium">{status === "paid" ? "Payment confirmed. Opening your workspace…" : status === "refunded" ? "This payment was refunded." : status === "closed" ? "This payment was closed." : expired ? "This QR code has expired." : "Waiting for your Alipay payment…"}</p>
-    {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
-    {(status === "pending" || (status === "paid" && error)) && <button onClick={() => setRetry(value => value + 1)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm dark:border-slate-700">{status === "paid" ? "Open workspace" : "I’ve paid — check payment"}</button>}
-    {(expired || status === "closed" || status === "refunded") && <p className="text-sm"><Link className="underline underline-offset-4" href={`/subscribe?workspace=${workspaceId}`}>Return to subscriptions</Link></p>}
-    {expired && status === "pending" && <p className="text-xs text-slate-500">Already paid? Check payment before starting another checkout.</p>}
+  }, [id, router, retry, status, isRecharge]);
+  return <div className={styles.status}>
+    <p role="status" aria-live="polite" className={styles.statusMessage}>{!error && (status === "paid" || (status === "pending" && !expired)) ? <LoaderCircle size={16} className={styles.spinner} aria-hidden="true" /> : null}{status === "paid" ? isRecharge ? "Credits added. Opening your balance…" : discounted ? "Plan activated. Opening your workspace…" : "Payment confirmed. Opening your workspace…" : status === "refunded" ? "This payment was refunded." : status === "closed" ? "This payment was closed." : expired ? "This QR code has expired." : "Waiting for your Alipay payment…"}</p>
+    {error && <p role="alert" className={styles.error}>{error}</p>}
+    {(status === "pending" || (status === "paid" && error)) && <button type="button" onClick={() => setRetry(value => value + 1)} className={styles.retry}>{status === "paid" ? isRecharge ? "View AI credits" : "Open workspace" : "I’ve paid — check payment"}</button>}
+    {(expired || status === "closed" || status === "refunded") && <p><Link className={styles.returnLink} href={isRecharge ? "/settings/credits#add-ai-credits" : `/subscribe?workspace=${workspaceId}`}>{isRecharge ? "Return to AI credits" : "Return to subscriptions"}</Link></p>}
+    {expired && status === "pending" && <p className={styles.note}>Already paid? Check payment before starting another checkout.</p>}
   </div>;
 }

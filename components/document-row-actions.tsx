@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { ArrowDownToLine, ExternalLink, Mail, MoreHorizontal, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { documentSourceHref } from "@/lib/document-connections";
 import { toast } from "sonner";
@@ -11,6 +12,7 @@ import { isBuiltinEmailTemplate } from "@/lib/documents";
 export function DocumentRowActions({ document, canWrite, onEmail, onEdit, onTrash, onRestore }: {
   document: LibraryDocument; canWrite: boolean; onEmail: () => void; onEdit: () => void; onTrash: () => void; onRestore: () => void;
 }) {
+  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const sourceHref = documentSourceHref(document);
   const binary = document.mime_type !== "application/x-filazoo-record";
@@ -32,7 +34,7 @@ export function DocumentRowActions({ document, canWrite, onEmail, onEdit, onTras
   }
   return <DropdownMenu><DropdownMenuTrigger className="library-row-menu" aria-label={`Actions for ${document.name}`} disabled={busy}><MoreHorizontal className="size-4" /></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuGroup>
     {document.deleted_at ? canWrite ? <DropdownMenuItem onClick={onRestore}><RotateCcw />Restore</DropdownMenuItem> : null : <>
-      {sourceHref ? <DropdownMenuItem onClick={() => window.location.assign(sourceHref)}><ExternalLink />Open source record</DropdownMenuItem> : null}
+      {sourceHref ? <DropdownMenuItem onClick={() => router.push(sourceHref)}><ExternalLink />Open source record</DropdownMenuItem> : null}
       {canWrite && binary ? <DropdownMenuItem disabled={document.kind === "file" && document.size > 7500000} onClick={onEmail}><Mail />Use in email</DropdownMenuItem> : null}
       {binary ? <DropdownMenuItem onClick={() => void download()}><ArrowDownToLine />Download</DropdownMenuItem> : null}
       {canWrite && builtin ? <DropdownMenuItem onClick={onEdit}><Pencil />Customize a copy</DropdownMenuItem> : null}

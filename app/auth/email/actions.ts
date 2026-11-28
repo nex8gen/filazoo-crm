@@ -31,7 +31,7 @@ export async function sendAccountEmail(_state: EmailState, form: FormData): Prom
   const { error } = await client.auth.updateUser({ email: email.data }, {
     emailRedirectTo: new URL(`/auth/confirm?next=${encodeURIComponent(next)}`, env.NEXT_PUBLIC_APP_URL).toString(),
   });
-  if (error) return { error: error.status === 429 ? "Please wait a minute before requesting another email." : "Unable to verify this address. If you already have an account, sign in with email and connect Alipay in your profile." };
+  if (error) return { error: error.status === 429 ? "Please wait a minute before requesting another email." : "Unable to verify this address. If you already have an account, sign in with email and connect your sign-in provider in Settings → Security." };
   (await cookies()).set(pendingCookie, JSON.stringify({ email: email.data, userId: viewer.id, expires: Date.now() + 3600_000 }), cookieOptions);
   return { sent: true, success: "Check your email for the verification code." };
 }

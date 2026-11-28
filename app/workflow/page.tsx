@@ -1,5 +1,6 @@
 import { NotificationToast } from "@/components/ui/notification-toast";
 import type { Metadata } from "next";
+import { getWorkspaceSettings } from "@/lib/data/workspace-settings";
 import { FlowBuilder } from "@/components/flow-builder";
 import { requireWorkspaceMember } from "@/lib/auth";
 import { listFlowFilterOptions, listFlowMemberOptions, listWorkspaceFlows } from "@/lib/data/flows";
@@ -28,7 +29,8 @@ export default async function AiAgentPage({ searchParams }: PageProps<"/workflow
     }
     initialDraft = createSegmentFlowDraft(savedSegment ? { ...savedSegment, kind: "saved" } : { id: "", name: businessSegment.data!, kind: "business" });
   }
-  const [flows, mailboxes, members, filterOptions] = await Promise.all([
+  const [settings, flows, mailboxes, members, filterOptions] = await Promise.all([
+    getWorkspaceSettings(),
     listWorkspaceFlows(),
     getViewerMailboxes(viewer.id),
     listFlowMemberOptions().catch(() => [{ id: viewer.id, label: viewer.displayName || viewer.email || "You" }]),
@@ -36,7 +38,7 @@ export default async function AiAgentPage({ searchParams }: PageProps<"/workflow
   ]);
 
   return <div className="h-full min-h-0">
-    <FlowBuilder
+    <FlowBuilder schedule={{ timezone: settings.timezone, businessHours: settings.businessHours }}
       key={initialDraft ? `segment:${String(params.segmentId ?? params.segment)}` : typeof params.flow === "string" ? params.flow : params.create === "1" ? "create" : "list"}
       initialFlows={flows}
       liveSendingEnabled={!env.flowDryRun}

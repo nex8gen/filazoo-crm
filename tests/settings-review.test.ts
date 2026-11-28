@@ -48,6 +48,8 @@ function harness(file: string, name: string, props: Props, overrides: Props = {}
     "@/components/ui/switch": { Switch: "switch" },
     "@/components/ui/notification-toast": { NotificationToast: "toast" },
     "@/components/connection-app-logo": { ConnectionAppLogo: "logo" },
+    "@/components/agent-icon": { AgentIcon: "agent-icon" },
+    "@/components/ai-icon": { AiIcon: "ai-icon" },
     "@/lib/ai-policy": policy,
     "@/lib/connection-apps": apps,
     "@/lib/email-connections": connections,

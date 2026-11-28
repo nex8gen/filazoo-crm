@@ -5,16 +5,18 @@ import vm from "node:vm";
 import ts from "typescript";
 import { signupSchema, signupDestination, readPendingSignup, pendingSignupCookie } from "../lib/signup.ts";
 
-const account = { firstName: " Alex ", lastName: " Rivera ", email: " ALEX@example.test ", password: "SafePassword123!", terms: "on" };
+const account = { firstName: " Alex ", lastName: " Rivera ", companyName: " Acme Studio ", email: " ALEX@example.test ", password: "SafePassword123!", terms: "on" };
 
 test("public signup validates identity, password and consent without requiring workspace membership", () => {
   const parsed = signupSchema.parse(account);
   assert.equal(parsed.firstName, "Alex");
   assert.equal(parsed.lastName, "Rivera");
+  assert.equal(parsed.companyName, "Acme Studio");
   assert.equal(parsed.email, "alex@example.test");
   assert.equal(signupSchema.safeParse({ ...account, terms: undefined }).success, false);
   assert.equal(signupSchema.safeParse({ ...account, password: "weak" }).success, false);
   assert.equal(signupSchema.safeParse({ ...account, firstName: " " }).success, false);
+  for (const companyName of [undefined, "", " ", "A", "A".repeat(81)]) assert.equal(signupSchema.safeParse({ ...account, companyName }).success, false);
 });
 
 test("signup keeps invitation destinations and rejects external destinations and auth loops", () => {
@@ -64,6 +66,7 @@ test("signup sends confirmation to the application and takes an unverified user 
   assert.equal(new URL(options.emailRedirectTo).origin, "https://crm.example.test");
   assert.equal(new URL(options.emailRedirectTo).searchParams.get("next"), "/join/team-token");
   assert.equal(options.data.display_name, "Alex Rivera");
+  assert.equal(options.data.company_name, "Acme Studio");
   assert.equal(options.data.product_updates, false);
   assert.equal(options.data.terms_version, "2026-11-05");
 });
@@ -128,8 +131,9 @@ test("invalid signup never contacts the provider or saves a password in form sta
 test("provider failures return safe retry guidance and preserve names and email", async () => {
   for (const options of [{ throws: true }, { error: { status: 429 } }, { error: { status: 500 } }]) {
     const f = fixture(options);
-    const state = await f.run() as { error: string; firstName: string; email: string };
+    const state = await f.run() as { error: string; firstName: string; companyName: string; email: string };
     assert.equal(state.firstName, account.firstName);
+    assert.equal(state.companyName, account.companyName);
     assert.equal(state.email, account.email);
     assert.ok(!JSON.stringify(state).includes(account.password));
     assert.ok(!state.error.includes("secret provider details"));

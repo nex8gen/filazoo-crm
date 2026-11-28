@@ -16,7 +16,7 @@
   bottom: 0;
   width: min(600px, 100vw);
   height: min(640px, 100dvh);
-  background: radial-gradient(ellipse 100% 100% at 100% 100%, #0a2d5352 0%, #4c8bc440 24%, #b9d8f224 48%, transparent 90%), radial-gradient(ellipse 100% 100% at 100% 100%, #edf4fad9 0%, #edf4fab3 28%, #edf4fa66 52%, #edf4fa1a 76%, transparent 98%);
+  background: radial-gradient(ellipse 100% 100% at 100% 100%, var(--ai-glow) 0%, color-mix(in srgb, var(--ai-highlight) 12%, transparent) 30%, transparent 82%), radial-gradient(ellipse 100% 100% at 100% 100%, color-mix(in srgb, var(--ai-canvas) 85%, transparent) 0%, transparent 98%);
   -webkit-backdrop-filter: blur(44px);
   backdrop-filter: blur(44px);
   filter: blur(48px);
@@ -54,7 +54,7 @@
   border-radius: 999px;
   background: linear-gradient(145deg, #ffffff38, transparent 65%), color-mix(in srgb, var(--card) 64%, transparent);
   color: var(--foreground);
-  box-shadow: inset 0 1px 0 #ffffff80, 0 6px 24px #0a2d530d;
+  box-shadow: inset 0 1px 0 #ffffff80, 0 6px 24px color-mix(in srgb, var(--ai-foreground) 5%, transparent);
   -webkit-backdrop-filter: blur(24px) saturate(1.2);
   backdrop-filter: blur(24px) saturate(1.2);
   text-align: left;

@@ -24,14 +24,14 @@ async function readSession(input: Parameters<typeof fetch>[0], init: RequestInit
 }
 
 /** Session readers use POST, so the SDK's idempotent-method retries do not apply.
- * Retry these two read-only RPCs once; never replay provisioning or CRM writes.
+ * Retry only these read-only RPCs once; never replay provisioning or CRM writes.
  */
 export function sessionFetch(fetcher: typeof fetch = fetch): typeof fetch {
   return async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
     const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
     const read = method === "POST" && typeof init?.body === "string"
-      && ["/rest/v1/rpc/read_subscribed_workspace_session", "/rest/v1/rpc/read_workspace_session", "/rest/v1/rpc/read_crm_session"].includes(url.pathname);
+      && ["/rest/v1/rpc/read_secure_workspace_session", "/rest/v1/rpc/read_subscribed_workspace_session", "/rest/v1/rpc/read_workspace_session", "/rest/v1/rpc/read_crm_session"].includes(url.pathname);
     if (read) return readSession(input, init!, fetcher);
     if (url.pathname.startsWith("/rest/v1/") && ["GET", "HEAD"].includes(method)) return fetchRead(input, init, fetcher);
     return fetcher(input, init);

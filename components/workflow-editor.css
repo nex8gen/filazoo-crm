@@ -27,8 +27,8 @@
 .wf-toolbar-actions .wf-text-button svg { width: 16px; height: 16px; flex-shrink: 0; }
 .wf-toolbar-actions .wf-reports-toggle[aria-pressed=true] { background: var(--brand-soft); color: var(--primary); }
 .wf-toolbar-tools > [title='Tasks and notifications'] { display: inline-flex; min-width: 32px; height: 32px; flex-shrink: 0; gap: 4px; padding: 0 6px; border-color: transparent; background: transparent; }
-.wf-toolbar-actions .wf-audit-button { background: #e9e1fc; color: #4e2bc4; }
-.dark .wf-toolbar-actions .wf-audit-button { background: #3b2d62; color: #d8c7ff; }
+.wf-toolbar-actions .wf-audit-button { background: var(--ai-soft); color: var(--ai-foreground); }
+
 .wf-workbench { display: flex; flex: 1; gap: 16px; min-height: 0; padding: 8px; overflow: hidden; pointer-events: none; }
 .wf-canvas-safe-area { position: relative; flex: 1; min-width: 0; min-height: 0; pointer-events: none; }
 .wf-panel { position: relative; z-index: 2; min-width: 0; min-height: 0; border: 1px solid var(--wf-line); border-radius: 18px; background: var(--background); pointer-events: auto; }

@@ -1,4 +1,5 @@
 "use client";
+import type { WorkspaceSchedule } from "@/lib/workspace-settings";
 import { NotificationToast } from "@/components/ui/notification-toast";
 
 
@@ -15,8 +16,8 @@ import type { FlowInput } from "@/lib/flows";
 import { stepLabels } from "@/lib/flows";
 import { previewFlowScenario, type FlowPreviewResult } from "@/lib/flow-preview";
 
-export function FlowJourneyPreview({ flow, flowId, result, onResult, onFocus, onTestMessage }: {
-  flow: FlowInput; flowId: string | null; result: FlowPreviewResult | null;
+export function FlowJourneyPreview({ flow, flowId, result, onResult, onFocus, onTestMessage, schedule }: {
+  schedule?: WorkspaceSchedule; flow: FlowInput; flowId: string | null; result: FlowPreviewResult | null;
   onResult: (result: FlowPreviewResult | null) => void;
   onFocus: (id: string) => void;
   onTestMessage: (path: number[]) => void;
@@ -54,7 +55,7 @@ export function FlowJourneyPreview({ flow, flowId, result, onResult, onFocus, on
     const controller = new AbortController(); previewRequest.current = controller;
     setLoading(true); setError(""); onResult(null);
     try {
-      if (mode === "scenario") { onResult(previewFlowScenario(flow, facts)); return; }
+      if (mode === "scenario") { onResult(previewFlowScenario(flow, facts, schedule)); return; }
       const response = await fetch("/api/flows/preview", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ flow, ...(flowId ? { flowId } : {}), ...(mode === "customer" && selected ? { contactId: selected.id } : { scenario: facts }) }) });
       const data = await response.json();

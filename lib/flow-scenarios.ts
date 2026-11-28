@@ -1,4 +1,5 @@
 import { simulateFlow, matchesProfileFilters, type FlowFacts } from "./flow-engine.ts";
+import type { WorkspaceSchedule } from "./workspace-settings.ts";
 import { flowActionLocations, flowPaths } from "./flow-tree.ts";
 import { flowInputSchema, type FlowInput, type JsonConfig } from "./flows.ts";
 
@@ -7,7 +8,7 @@ const fields: Record<string, ScenarioField> = { country_is: "country", segment_i
 const baseFacts: FlowFacts = { customerReplied: false, openedEmail: false, clickedLink: false, category: null, segment: null, country: null, companyStatus: null, pipelineStage: null, fitScore: null };
 
 /** Bounded, deterministic condition coverage. This is a simulation, never a delivery test. */
-export function testFlowScenarios(input: FlowInput, limit = 256, now = new Date()) {
+export function testFlowScenarios(input: FlowInput, limit = 256, now = new Date(), schedule?: WorkspaceSchedule) {
   const parsed = flowInputSchema.safeParse(input);
   if (!parsed.success) throw new Error(parsed.error.issues[0]?.message || "Complete the workflow settings first.");
   const flow = parsed.data;
@@ -57,7 +58,7 @@ export function testFlowScenarios(input: FlowInput, limit = 256, now = new Date(
   const paths = new Set<string>();
   const cases = scenarios.map(({ facts, afterWait }, index) => {
     const enters = matchesProfileFilters(flow.triggerConfig, facts);
-    const trace = enters ? simulateFlow(flow, facts, now, { afterWait }).trace : [];
+    const trace = enters ? simulateFlow(flow, facts, now, { afterWait, schedule }).trace : [];
     trace.forEach((entry) => {
       if (entry.stepPath && entry.status !== "skipped") reached.add(entry.stepPath.join("."));
       if (entry.pathId) paths.add(entry.pathId);

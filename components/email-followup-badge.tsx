@@ -1,9 +1,11 @@
-import { Bell, Bot, CheckCircle2, CircleAlert, CircleMinus, CircleStop, Sparkles } from "lucide-react";
+import { AgentIcon } from "@/components/agent-icon";
+import { AiIcon } from "@/components/ai-icon";
+import { Bell, CheckCircle2, CircleAlert, CircleMinus, CircleStop } from "lucide-react";
 import type { AppLanguage } from "@/lib/app-language";
 import type { FollowupActionRecord } from "@/lib/email-followup-filters";
 import { emailFollowupBadge } from "@/lib/email-followup-badge";
 
-const icons = { ai: Bot, reminder: Bell, nurture: Sparkles, completed: CheckCircle2, stopped: CircleStop, unset: CircleMinus, attention: CircleAlert };
+const icons = { ai: AgentIcon, reminder: Bell, nurture: AiIcon, completed: CheckCircle2, stopped: CircleStop, unset: CircleMinus, attention: CircleAlert };
 
 export function EmailFollowupBadge({ actions, language }: { actions: FollowupActionRecord[]; language: AppLanguage }) {
   const badge = emailFollowupBadge(actions, language);

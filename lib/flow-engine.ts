@@ -1,4 +1,5 @@
 import { flowEmailStatus, type FlowInput, type FlowStepType, type JsonConfig, type TriggerType } from "./flows.ts";
+import { nextWorkspaceBusinessWindow, type BusinessHours } from "./workspace-settings.ts";
 
 export type FlowFacts = {
   customerReplied: boolean;
@@ -138,7 +139,8 @@ export function calculateWaitUntil(config: JsonConfig, from = new Date()) {
   return result;
 }
 
-export function nextBusinessWindow(now = new Date()) {
+export function nextBusinessWindow(now = new Date(), schedule?: { timezone: string; businessHours: BusinessHours }) {
+  if (schedule) return nextWorkspaceBusinessWindow(now, schedule.timezone, schedule.businessHours);
   const next = new Date(now);
   const hour = next.getUTCHours();
   if (!isWeekend(next) && hour >= 9 && hour < 17) return null;
@@ -207,7 +209,7 @@ function actionForCondition(config: JsonConfig, matched: boolean) {
   return String(matched ? config.action || "continue" : config.unmatchedAction || "continue");
 }
 
-export function simulateFlow(flow: FlowInput, facts: FlowFacts, from = new Date(), scenario: { afterWait?: { number: number; facts: Partial<FlowFacts> } } = {}) {
+export function simulateFlow(flow: FlowInput, facts: FlowFacts, from = new Date(), scenario: { afterWait?: { number: number; facts: Partial<FlowFacts> }; schedule?: { timezone: string; businessHours: BusinessHours } } = {}) {
   const trace: SimulationEntry[] = [];
   const currentFacts = { ...facts };
   let cursor = new Date(from);
@@ -272,7 +274,7 @@ export function simulateFlow(flow: FlowInput, facts: FlowFacts, from = new Date(
       if (step.config.segment) currentFacts.segment = String(step.config.segment);
     }
     if (step.type === "ai_auto_reply") {
-      if (step.config.sendWindow === "business_hours") cursor = nextBusinessWindow(cursor) ?? cursor;
+      if (step.config.sendWindow === "business_hours") cursor = nextBusinessWindow(cursor, scenario.schedule) ?? cursor;
       push({ step: index + 1, type: step.type, status: "would_run", scheduledAt: cursor.toISOString(), detail: `Would read the latest email and draft a personalized English reply${step.config.useProducts ? " using active CRM products" : ""}${step.config.usePrices ? " and verified prices" : ""}${step.config.attachCatalog ? "; attach a matching-product catalog PDF when requested or clearly needed" + (step.config.catalogFirstMessageOnly !== false ? ", also on the first automated email" : "") : ""}. No AI request or email is sent in simulation.` });
       index += 1;
       continue;
@@ -281,7 +283,7 @@ export function simulateFlow(flow: FlowInput, facts: FlowFacts, from = new Date(
       push({ step: index + 1, type: step.type, status: "stopped", detail: "Customer replied; run would be cancelled." });
       break;
     }
-    if (step.type === "send_email" && step.config.sendWindow === "business_hours") cursor = nextBusinessWindow(cursor) ?? cursor;
+    if (step.type === "send_email" && step.config.sendWindow === "business_hours") cursor = nextBusinessWindow(cursor, scenario.schedule) ?? cursor;
     const detail = step.type === "stop" ? String(step.config.reason || "Workflow would end here.")
       : step.type === "create_task" ? `Would create “${String(step.config.title)}”; due in ${Number(step.config.dueInDays || 0)} days.`
       : step.type === "change_category" ? `Would set the email category to ${String(step.config.category)}.`

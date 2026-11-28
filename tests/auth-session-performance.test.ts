@@ -6,7 +6,7 @@ import ts from "typescript";
 import { isAvatarPreset } from "../lib/profile-avatar.ts";
 import { readUserPreferences } from "../lib/user-preferences.ts";
 import { readTableColumnPreferences } from "../lib/table-column-preferences.ts";
-import { workspaceIdSchema, workspaceCookie } from "../lib/workspaces.ts";
+import { workspaceIdSchema, workspaceCookie, workspaceNameSchema } from "../lib/workspaces.ts";
 import { isTransientAuthError } from "../lib/supabase/auth-error.ts";
 
 const id = "aaaaaaaa-1111-2222-3333-444444444444";
@@ -26,7 +26,7 @@ function load(options: Options = {}) {
     "./table-column-preferences.ts": { readTableColumnPreferences },
     "next/server": { connection: async () => {} }, "next/navigation": { redirect: (path: string) => { throw new Error(path); } },
     "next/headers": { cookies: async () => ({ get: () => undefined }) },
-    "./workspaces.ts": { workspaceIdSchema, workspaceCookie },
+    "./workspaces.ts": { workspaceIdSchema, workspaceCookie, workspaceNameSchema },
     "./supabase/server.ts": { createClient: async () => ({ auth: {
       getClaims: async () => { calls.claims++; return { data: state.claims ? { claims: state.claims } : null, error: options.claimError ?? null }; },
       getUser: async () => { calls.getUser++; return { data: { user: options.legacySignedIn === false ? null : member }, error: null }; },
@@ -59,6 +59,16 @@ test("table preferences come from current account metadata without another backe
   const viewer = await api.getViewer() as { tableColumns: ReturnType<typeof readTableColumnPreferences> };
   assert.deepEqual(viewer.tableColumns.companies, { email: false });
   assert.deepEqual(calls, { claims: 1, rpc: 1, getUser: 0, membership: 0 });
+});
+
+test("company naming uses current account metadata without trusting stale JWT values or affecting roles", async () => {
+  for (const [company_name, expected] of [[" Acme Studio ", "Acme Studio"], [undefined, undefined], ["A", undefined], ["A".repeat(81), undefined]]) {
+    const { api, calls } = load({ row: { ...member, user_metadata: { company_name, role: "admin" } } });
+    const viewer = await api.getWorkspaceViewer() as { companyName?: string; role: string };
+    assert.equal(viewer.companyName, expected);
+    assert.equal(viewer.role, "operator");
+    assert.equal(calls.rpc, 1);
+  }
 });
 
 test("invalid, tampered, missing, or wrong-project claims cannot reach the privileged reader", async () => {

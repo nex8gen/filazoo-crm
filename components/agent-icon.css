@@ -1,11 +1,11 @@
-.ai-robot { --robot-light: #82b5e1; }
-.ai-robot-shell { fill: #eef4fa; stroke: #7597b7; }
-.dark .ai-robot-shell { fill: #14283d; stroke: #4c8bc4; }
+.ai-robot { --robot-light: var(--ai-accent, #f43425); }
+.ai-robot-shell { fill: var(--ai-shell, #fff2e9); stroke: var(--ai-shell-stroke, #c88262); }
 .ai-robot-light { fill: var(--robot-light); filter: drop-shadow(0 0 3px var(--robot-light)); }
 .ai-robot-eyes { transform: translateX(var(--robot-eye-offset, 0px)); transition: transform 180ms ease-out; }
 .ai-robot-eye { transform-box: fill-box; transform-origin: center; }
-.ai-robot[data-state="thinking"] { --robot-light: #facc15; }
-.ai-robot[data-state="error"], .ai-robot[data-listening="true"] { --robot-light: #ef4444; }
+.ai-robot[data-state="thinking"] { --robot-light: var(--ai-highlight, #ffb580); }
+.ai-robot[data-state="error"] { --robot-light: var(--destructive); }
+.ai-robot[data-listening="true"]:not([data-state="error"]) { --robot-light: var(--ai-accent, #f43425); }
 @media (prefers-reduced-motion: no-preference) {
   .ai-robot-head { animation: ai-robot-float 2.8s ease-in-out infinite; }
   .ai-robot-eye { animation: ai-robot-blink 4.5s infinite; }

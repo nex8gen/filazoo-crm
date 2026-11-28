@@ -21,7 +21,7 @@ export default async function AcceptInvitationPage() {
   if (membership.activated_at) redirect("/login?message=This%20account%20is%20already%20active.");
 
   return (
-    <AuthShell animatedBackground footer="Secure Filazoo workspace invitation">
+    <AuthShell variant="signup">
       <AcceptInvitationForm email={viewer.email || ""} displayName={membership.display_name || ""} role={membership.role} />
     </AuthShell>
   );

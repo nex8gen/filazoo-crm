@@ -2,11 +2,11 @@
 
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { Download, Info, MoreHorizontal, Plus, RefreshCw, Search, TriangleAlert } from "lucide-react";
 import { PageActions } from "@/components/page-header";
 import { FlowViewToggle } from "@/components/flow-view-toggle";
-import { FlowAnalyticsChart } from "@/components/flow-analytics-chart";
 import { WorkflowAnalyticsIdeas } from "@/components/workflow-analytics-ideas";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +19,11 @@ import { TablePagination } from "@/components/ui/table-pagination";
 import { flowAnalyticsCsv, flowAnalyticsRanges, type FlowAnalyticsReport, type FlowAnalyticsRow } from "@/lib/flow-analytics";
 import { flowChartMetrics, type FlowChartMetric } from "@/lib/flow-analytics-chart";
 import { useLanguage } from "@/components/language-provider";
+
+const FlowAnalyticsChart = dynamic(() => import("@/components/flow-analytics-chart").then(module => module.FlowAnalyticsChart), {
+  ssr: false,
+  loading: () => <div aria-busy="true" className="h-64 animate-pulse rounded-lg bg-muted motion-reduce:animate-none" />,
+});
 
 function AnalyticsSelect({ label, value, options, onChange, disabled, className = "" }: {
   label: string; value: string; options: Array<{ value: string; label: string }>;

@@ -8,8 +8,8 @@ export function workflowErrorMessage(cause: unknown) {
 // classifier to SMTP submission, completed actions, or delivery persistence.
 export class FlowPreparationRetry extends Error {
   readonly delayMs: number;
-  readonly category: "provider" | "configuration" | "daily_limit" | "data";
-  constructor(message: string, delayMs: number, category: "provider" | "configuration" | "daily_limit" | "data") {
+  readonly category: "provider" | "configuration" | "daily_limit" | "monthly_limit" | "data";
+  constructor(message: string, delayMs: number, category: "provider" | "configuration" | "daily_limit" | "monthly_limit" | "data") {
     super(message);
     this.name = "FlowPreparationRetry";
     this.delayMs = delayMs;

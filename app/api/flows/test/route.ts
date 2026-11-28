@@ -1,4 +1,5 @@
 import { requireWorkspaceMember } from "@/lib/auth";
+import { getWorkspaceSettings } from "@/lib/data/workspace-settings";
 import { loadFlowFacts, validateFlowResources } from "@/lib/data/flow-runtime";
 import { flowInputSchema } from "@/lib/flows";
 import { simulateFlow, matchesProfileFilters } from "@/lib/flow-engine";
@@ -16,7 +17,8 @@ export async function POST(request: Request) {
     const facts = await loadFlowFacts({ userId: viewer.id, contactId, companyId, messageKey: conversationId, conversationId, savedSegmentId: typeof flow.triggerConfig.savedSegmentId === "string" ? flow.triggerConfig.savedSegmentId : undefined });
     const warnings = ["This is a simulation; it does not send email or execute CRM actions."];
     if (!contactId && !companyId) warnings.push("No sample contact selected; engagement and company facts are empty.");
-    return Response.json({ ...simulateFlow(flow, facts), facts, mode: "simulation", profileMatches: matchesProfileFilters(flow.triggerConfig, facts), warnings }, { headers: { "Cache-Control": "no-store" } });
+    const schedule = await getWorkspaceSettings();
+    return Response.json({ ...simulateFlow(flow, facts, new Date(), { schedule }), facts, mode: "simulation", profileMatches: matchesProfileFilters(flow.triggerConfig, facts), warnings }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return Response.json({ ok: false, error: error instanceof Error ? error.message : "Workflow test failed." }, { status: 400 });
   }

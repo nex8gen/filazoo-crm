@@ -1,9 +1,10 @@
 "use client";
+import { AiIcon } from "@/components/ai-icon";
 import { NotificationToast } from "@/components/ui/notification-toast";
 
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Check, ChevronDown, Loader2, MapPin, Package2, Search, SlidersHorizontal, Sparkles, Target } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChevronDown, Loader2, MapPin, Package2, Search, SlidersHorizontal, Target } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -152,7 +153,7 @@ export function AiLeadsSearchDialog({ open, onOpenChange, products, countries, s
           <p className="ld-cost-note">Uses existing AI credits. Up to $0.20 for a new buyer profile and one search. No paid contact databases or automatic outreach.</p>
         </div> : null}
       </div>
-      <div className="ld-dialog-footer"><Button variant="ghost" onClick={() => step ? setStep(previous => previous - 1) : onOpenChange(false)} disabled={Boolean(busy)}>{step ? <><ArrowLeft size={15} />Back</> : "Cancel"}</Button><span className="ld-footer-step">Step {step + 1} of 3</span><Button onClick={step === 0 ? prepare : step === 1 ? review : start} disabled={Boolean(busy)}>{busy ? <Loader2 size={16} className="animate-spin" /> : step === 2 ? <Search size={16} /> : <Sparkles size={16} />}{busy === "profile" ? "Preparing buyer profile…" : busy === "search" ? "Starting research…" : step === 0 ? "Build buyer profile" : step === 1 ? "Review search" : "Find companies"}{!busy && step < 2 ? <ArrowRight size={15} /> : null}</Button></div>
+      <div className="ld-dialog-footer"><Button variant="ghost" onClick={() => step ? setStep(previous => previous - 1) : onOpenChange(false)} disabled={Boolean(busy)}>{step ? <><ArrowLeft size={15} />Back</> : "Cancel"}</Button><span className="ld-footer-step">Step {step + 1} of 3</span><Button onClick={step === 0 ? prepare : step === 1 ? review : start} disabled={Boolean(busy)}>{busy ? <Loader2 size={16} className="animate-spin" /> : step === 2 ? <Search size={16} /> : <AiIcon className="size-[16px]" />}{busy === "profile" ? "Preparing buyer profile…" : busy === "search" ? "Starting research…" : step === 0 ? "Build buyer profile" : step === 1 ? "Review search" : "Find companies"}{!busy && step < 2 ? <ArrowRight size={15} /> : null}</Button></div>
     </DialogContent>
   </Dialog>;
 }

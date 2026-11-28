@@ -1,4 +1,5 @@
 import "server-only";
+import { getWorkspaceSettings } from "./workspace-settings.ts";
 import { analyticsChannelForSource, analyticsDay, type AnalyticsDashboardData, type AnalyticsSource } from "../analytics-dashboard.ts";
 import { requireWorkspaceMember } from "../auth.ts";
 import { createSupabaseAdmin } from "../supabase/admin.ts";
@@ -13,7 +14,7 @@ const currency = (value: string | null) => value?.trim() || "USD";
 type PageResult = { data: unknown[] | null; error: { message: string } | null; count: number | null };
 
 // Exported separately so the database reader can be checked without bypassing auth.
-export async function readAnalyticsData(client: ReturnType<typeof createSupabaseAdmin>, viewer: { id: string }, now = new Date()): Promise<AnalyticsDashboardData> {
+export async function readAnalyticsData(client: ReturnType<typeof createSupabaseAdmin>, viewer: { id: string }, now = new Date(), timezone = "Asia/Shanghai"): Promise<AnalyticsDashboardData> {
   const sources: AnalyticsSource[] = [];
   async function read<T>(id: AnalyticsSource["id"], label: string, page: (from: number, to: number) => PromiseLike<PageResult>): Promise<T[]> {
     try {
@@ -55,12 +56,12 @@ export async function readAnalyticsData(client: ReturnType<typeof createSupabase
   const invoices = invoiceRows.map(row => ({ id: row.id, companyId: row.company_id, number: Number(row.number), status: row.status, currency: currency(row.currency), issueDate: row.issue_date, dueDate: row.due_date, totalMinor: Number(row.total_minor), paidMinor: Number(row.paid_minor) }));
   const orders = orderRows.map(row => ({ id: row.id, companyId: row.company_id, date: row.order_date, currency: currency(row.currency), status: row.status, totalMinor: Number(row.total_minor) }));
   const catalogs = catalogRows.map(row => ({ id: row.id, companyId: row.company_id, createdAt: row.created_at, currency: currency(row.currency), productSkus: row.product_skus ?? [] }));
-  const maxDate = analyticsDay(now);
-  const dates = [...companies.map(row => analyticsDay(row.createdAt)), ...invoices.map(row => row.issueDate), ...orders.map(row => row.date), ...payments.map(row => row.paid_on), ...catalogs.map(row => analyticsDay(row.createdAt))].filter(day => day && day <= maxDate).sort();
+  const maxDate = analyticsDay(now, timezone);
+  const dates = [...companies.map(row => analyticsDay(row.createdAt, timezone)), ...invoices.map(row => row.issueDate), ...orders.map(row => row.date), ...payments.map(row => row.paid_on), ...catalogs.map(row => analyticsDay(row.createdAt, timezone))].filter(day => day && day <= maxDate).sort();
   const currencies = [...new Set([...invoices.map(row => row.currency), ...orders.map(row => row.currency), ...catalogs.map(row => row.currency)])].sort();
   if (!currencies.length) currencies.push("USD");
   return {
-    companies, invoices, orders, catalogs, products, currencies, asOf: now.toISOString(), minDate: dates[0] ?? maxDate, maxDate,
+    companies, invoices, orders, catalogs, products, currencies, timezone, asOf: now.toISOString(), minDate: dates[0] ?? maxDate, maxDate,
     sources: sources.sort((a, b) => a.label.localeCompare(b.label)), owners: members.map(row => ({ id: row.user_id, name: row.display_name || "Workspace member" })),
     payments: payments.map(row => ({ id: row.id, invoiceId: row.invoice_id, paidOn: row.paid_on, amountMinor: Number(row.amount_minor) })),
   };
@@ -68,5 +69,6 @@ export async function readAnalyticsData(client: ReturnType<typeof createSupabase
 
 export async function getAnalyticsDashboardData(): Promise<AnalyticsDashboardData> {
   const viewer = await requireWorkspaceMember(["admin", "operator", "bd_manager", "viewer"]);
-  return readAnalyticsData(createSupabaseAdmin(), viewer);
+  const settings = await getWorkspaceSettings();
+  return readAnalyticsData(createSupabaseAdmin(), viewer, new Date(), settings.timezone);
 }

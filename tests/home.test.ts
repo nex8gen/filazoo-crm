@@ -1,3 +1,4 @@
+import { defaultWorkspaceSettings } from "../lib/workspace-settings.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
@@ -77,6 +78,7 @@ function readerFixture(role: string, failedTable?: string, paginated = false) {
   const exports: Record<string, () => Promise<import("../lib/home.ts").HomeData>> = {};
   const code = ts.transpileModule(readFileSync(new URL("../lib/data/home.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
   const deps: Record<string, unknown> = {
+    "./workspace-settings.ts": { getWorkspaceSettings: async () => defaultWorkspaceSettings },
     "server-only": {}, "../auth.ts": { requireWorkspaceMember: async () => ({ id: "alice", role, displayName: "Alice", workspaceName: "Test" }) },
     "../supabase/admin.ts": { createSupabaseAdmin: () => client }, "../home.ts": { buildHomePeriod, buildHomeReport },
     "./cached-member-avatars.ts": { resolveMemberAvatars: async (ids: string[]) => {

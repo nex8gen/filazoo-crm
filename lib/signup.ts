@@ -5,6 +5,7 @@ import { safeInternalPath } from "./safe-redirect.ts";
 export const signupSchema = z.object({
   firstName: z.string().trim().min(1, "Enter your first name.").max(40),
   lastName: z.string().trim().min(1, "Enter your last name.").max(40),
+  companyName: z.string({ error: "Enter your company name." }).trim().min(2, "Enter your company name (2–80 characters).").max(80, "Company name must be 80 characters or fewer."),
   email: z.string().trim().toLowerCase().email("Enter a valid email address."),
   password: passwordSchema,
   terms: z.literal("on", { error: "Accept the Terms of Service and Privacy Policy to continue." }),

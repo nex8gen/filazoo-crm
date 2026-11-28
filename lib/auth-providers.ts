@@ -1,6 +1,7 @@
 import { env, hasSupabaseAuthConfig } from "./env";
+import { wechatLoginEnabled } from "./wechat-auth/config.ts";
 
-export type AuthProvider = "google" | "apple" | "alipay";
+export type AuthProvider = "google" | "apple" | "alipay" | "wechat";
 
 export async function getPasskeysEnabled(): Promise<boolean> {
   if (!hasSupabaseAuthConfig()) return false;
@@ -21,6 +22,7 @@ export async function getAuthProviders(): Promise<AuthProvider[]> {
     // Custom OAuth providers are intentionally absent from public /settings.
     // This flag is enabled together with the server-managed custom provider.
     if (process.env.ALIPAY_LOGIN_ENABLED === "true") providers.push("alipay");
+    if (wechatLoginEnabled()) providers.push("wechat");
     return providers;
   } catch { return []; }
 }

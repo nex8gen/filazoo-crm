@@ -1,9 +1,11 @@
 import "server-only";
+import { getWorkspaceSettings } from "./workspace-settings.ts";
 import { requireAiAutomation } from "./ai-settings.ts";
 import { requireWorkspaceMember } from "../auth.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { uploadFlowAttachment } from "../attachment-upload.ts";
 import { submitFlowEmail } from "../flow-smtp.ts";
+import { reserveWorkflowEmail, finishWorkflowEmail, workflowEmailNotSubmitted } from "../billing/workflow-email.ts";
 import { buildFlowEmail } from "../flow-tracking.ts";
 import { emailTemplates, renderFlowTemplate as renderTemplate } from "../flow-templates.ts";
 
@@ -342,7 +344,7 @@ async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: F
     return "terminal" as const;
   }
   if (step.config.sendWindow === "business_hours") {
-    const resumeAt = nextBusinessWindow();
+    const resumeAt = nextBusinessWindow(new Date(), await getWorkspaceSettings());
     if (resumeAt) {
       await Promise.all([
         admin.from("flow_runs").update({ next_run_at: resumeAt.toISOString(), locked_at: null }).eq("id", run.id).throwOnError(),
@@ -409,6 +411,7 @@ async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: F
   const uploadPaths: string[] = [];
   let sent;
   let submissionStarted = false;
+  let emailReserved = false;
   let responseClaimId: string | null = null;
   try {
     for (const [index, attachment] of attachments.entries()) {
@@ -517,12 +520,19 @@ async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: F
         || currentSender.assignedUserId !== routedSender.assignedUserId || currentSender.actorId !== routedSender.actorId || currentSender.mailbox.id !== mailbox.id)
         throw new FlowPreparationRetry("The customer's assigned user or available sender changed during preparation. The email will be prepared again before sending.", 1_000, "data");
     }
+    if (!await reserveWorkflowEmail(run.id, step.id)) {
+      if (uploadPaths.length) await admin.storage.from("mailbox-attachments").remove(uploadPaths);
+      await logEmail({ action: "email_skipped", reason: "This workflow email was already sent." });
+      return "continue" as const;
+    }
+    emailReserved = true;
     run.context = { ...run.context, executionCheckpoint: { stepId: step.id, type: step.type, phase: "submitting" } };
     await admin.from("flow_runs").update({ context: run.context }).eq("id", run.id).throwOnError();
     submissionStarted = true;
     try {
       sent = await submitFlowEmail(() => sendMailboxEmail({ host: mailbox.smtpHost, port: mailbox.smtpPort, user: mailbox.smtpUsername, pass: mailbox.smtpPassword, from: mailbox.email }, { to: contact.email, subject, ...content, ...replyHeaders, attachments }));
     } catch (cause) {
+      if (!workflowEmailNotSubmitted(cause)) await finishWorkflowEmail(run.id, step.id, "uncertain");
       const error = cause as { code?: string; command?: string };
       const authFailure = /^AUTH(?:\s|$)/.test(error.command || "") && error.code === "EAUTH";
       if (/^SMTP connection failed before submission:/.test(workflowErrorMessage(cause)) || authFailure) {
@@ -534,6 +544,7 @@ async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: F
       throw cause;
     }
   } catch (error) {
+    if (emailReserved && (!submissionStarted || workflowEmailNotSubmitted(error))) await finishWorkflowEmail(run.id, step.id, "released");
     if (!submissionStarted && uploadPaths.length) await admin.storage.from("mailbox-attachments").remove(uploadPaths);
     if (!submissionStarted && responseClaimId) await admin.from("flow_run_logs").delete().eq("id", responseClaimId).eq("run_id", run.id).throwOnError();
     throw error;
@@ -546,6 +557,7 @@ async function executeEmail(run: RunRow, flow: FlowRow, step: FlowStep, facts: F
   // Save the accepted checkpoint first, then persist each projection in order.
   // Database-only rollback retries must never encompass SMTP submission.
   await admin.from("flow_runs").update({ context: run.context }).eq("id", run.id).throwOnError();
+  await finishWorkflowEmail(run.id, step.id, "sent");
   await admin.from("mailbox_sent_messages").insert({ id: sentRecordId, user_id: flow.user_id, mailbox_id: mailbox.id, message_id: sent.messageId || null, thread_key: threadId, in_reply_to: inReplyTo || null, reference_ids: inReplyTo ? [inReplyTo] : [], from_email: mailbox.email, to_email: contact.email, subject, body, body_html: content.html || null, status: "sent", attachments: storedAttachments }).throwOnError();
   await admin.from("emails").insert({ contact_id: contact.id, direction: "sent", subject, body, thread_id: threadId, owner_id: flow.user_id, message_id: sent.messageId || null, status: "sent", step: run.current_step + 1, sent_at: new Date().toISOString() }).throwOnError();
   await logEmail({ action: "email_sent", to: contact.email, subject, messageId: sent.messageId || null, aiGenerated: Boolean(aiReply), catalogAttached });
@@ -761,7 +773,7 @@ export async function processFlowRun(runId: string, options: { deadline?: number
     const retry = previous && typeof previous === "object" && !Array.isArray(previous) && previous.stepId === step?.id ? Number(previous.attempt || 0) : 0;
     if (recovery instanceof FlowPreparationRetry) {
       const attempt = retry + 1;
-      const delay = recovery.category === "daily_limit" ? recovery.delayMs : Math.min(recovery.delayMs * 2 ** Math.min(retry, 16), 6 * 3_600_000);
+      const delay = recovery.category === "daily_limit" || recovery.category === "monthly_limit" ? recovery.delayMs : Math.min(recovery.delayMs * 2 ** Math.min(retry, 16), 6 * 3_600_000);
       const nextRunAt = new Date(Date.now() + delay).toISOString();
       const blocked = recovery.category === "configuration" || recovery.category === "data" || attempt > 5;
       run.context = { ...run.context, executionState: blocked ? "blocked" : "retrying", preparationRetry: { stepId: step?.id ?? null, attempt, reason: message, category: recovery.category, nextRunAt } };

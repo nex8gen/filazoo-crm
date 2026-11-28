@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ArrowUpRight, Gauge } from "lucide-react";
-import { MICROS_PER_CREDIT, usagePercent, type CreditBalance } from "@/lib/billing/credits";
+import { formatCredits, usagePercent, type CreditBalance } from "@/lib/billing/credits";
 import { AI_CREDITS_CHANGED } from "@/lib/billing/credit-events";
 
 type Usage = { credits: CreditBalance; enabled: boolean };
@@ -50,8 +50,8 @@ export function AiUsageShortcut({ expanded = false }: { expanded?: boolean }) {
   }, []);
 
   const credits = result?.credits;
-  const remaining = credits ? Math.max(0, credits.remainingMicros) / MICROS_PER_CREDIT : 0;
-  const balance = remaining > 0 && remaining < 1 ? "<1" : Math.floor(remaining).toLocaleString("en-US");
+  const remaining = credits ? Math.max(0, credits.remainingMicros) : 0;
+  const balance = formatCredits(remaining);
   const used = credits ? usagePercent(credits.usedMicros, credits.includedMicros + credits.topupMicros) ?? 0 : 0;
   const warning = result?.enabled === false ? "AI paused" : credits && remaining <= 0 ? "AI credits are used up." : credits && used >= 80 ? "Low balance" : null;
 
@@ -63,7 +63,7 @@ export function AiUsageShortcut({ expanded = false }: { expanded?: boolean }) {
       {credits ? <>
         <span className="mt-3 flex flex-wrap items-baseline gap-x-1.5 gap-y-1"><strong className="text-xl font-semibold leading-none tracking-tight tabular-nums" data-no-translate>{balance}</strong><span className="workspace-ai-usage-caption text-[11px]">credits left</span></span>
         <span role="progressbar" aria-label="AI credits available" aria-valuemin={0} aria-valuemax={100} aria-valuenow={100 - used} className="workspace-ai-usage-track mt-3 block h-1 overflow-hidden rounded-full">
-          <span className={`block h-full rounded-full transition-[width] motion-reduce:transition-none ${used >= 80 ? "workspace-ai-usage-track-fill-warning" : "bg-current"}`} style={{ width: `${100 - used}%` }} />
+          <span className={`block h-full rounded-full transition-[width] motion-reduce:transition-none ${used >= 80 ? "workspace-ai-usage-track-fill-warning" : "bg-ai-accent"}`} style={{ width: `${100 - used}%` }} />
         </span>
         {warning ? <span role="status" className="workspace-ai-usage-warning mt-2 block text-[11px] font-medium">{warning}</span> : null}
       </> : error ? <span role="status" className="workspace-ai-usage-caption mt-3 block text-xs">Unable to load usage</span> : <span role="status" className="mt-3 block" aria-label="Loading usage">
